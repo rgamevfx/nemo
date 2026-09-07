@@ -7,6 +7,7 @@ add_library(nemo_core
     core/evaluation/CpuReference.cpp
 )
 add_library(nemo::core ALIAS nemo_core)
+add_subdirectory(media)
 
 target_include_directories(nemo_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(nemo_core PUBLIC nlohmann_json::nlohmann_json)

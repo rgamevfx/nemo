@@ -7,11 +7,56 @@ namespace nemo {
 
 namespace {
 
+// The CPU reference inventory and any declared no-op node types live here so
+// edge validation, serialization warnings, and the evaluator share one table.
+struct NodeInterface {
+    std::string type;
+    std::vector<PortSpec> inputs;
+    std::vector<PortSpec> outputs;
+};
+
+const std::vector<NodeInterface>& nodeInterfaces() {
+    static const std::vector<NodeInterface> interfaces{
+        {"constcolor", {}, {{PortKind::Color, "color"}}},
+        {"merge",
+         {{PortKind::Color, "A"}, {PortKind::Color, "B"}},  // A = over base, B = over source
+         {{PortKind::Color, "out"}}},
+        {"output", {{PortKind::Color, "color"}}, {}},
+        {"testpattern", {}, {{PortKind::Color, "color"}}},
+    };
+    return interfaces;
+}
+
+const NodeInterface* interfaceOf(const std::string& type) {
+    for (const auto& interface : nodeInterfaces()) {
+        if (interface.type == type) {
+            return &interface;
+        }
+    }
+    return nullptr;
+}
+
 std::string describe(PortRef ref) {
     return "node " + std::to_string(ref.node) + " port " + std::to_string(ref.port);
 }
 
 }  // namespace
+
+const std::vector<PortSpec>& inputPorts(const std::string& type) {
+    static const std::vector<PortSpec> none;
+    const NodeInterface* interface = interfaceOf(type);
+    return interface ? interface->inputs : none;
+}
+
+const std::vector<PortSpec>& outputPorts(const std::string& type) {
+    static const std::vector<PortSpec> none;
+    const NodeInterface* interface = interfaceOf(type);
+    return interface ? interface->outputs : none;
+}
+
+bool isKnownNodeType(const std::string& type) {
+    return interfaceOf(type) != nullptr;
+}
 
 const Node* Graph::findNode(NodeId id) const {
     const auto it = std::find_if(nodes_.begin(), nodes_.end(), [id](const Node& n) { return n.id == id; });
@@ -81,9 +126,36 @@ bool Graph::reachable(NodeId origin, NodeId target) const {
 }
 
 std::optional<GraphErrorDetails> Graph::validateEdge(PortRef from, PortRef to) const {
-    if (!findNode(from.node) || !findNode(to.node)) {
+    const Node* fromNode = findNode(from.node);
+    const Node* toNode = findNode(to.node);
+    if (!fromNode || !toNode) {
         return GraphErrorDetails{GraphError::UnknownNode,
                                  "connect references an unknown node: " + describe(from) + " -> " + describe(to)};
+    }
+    // Typed ports: reject connections whose source is not a declared output
+    // port, or whose destination is not a declared input port of the same
+    // kind. Unknown node types declare no ports and are not type-checked
+    // (spec section 10.7 recovery rule).
+    const NodeInterface* fromInterface = interfaceOf(fromNode->type);
+    const NodeInterface* toInterface = interfaceOf(toNode->type);
+    if (fromInterface && static_cast<std::size_t>(from.port) >= fromInterface->outputs.size()) {
+        return GraphErrorDetails{GraphError::PortType,
+                                 "cannot connect from " + describe(from) + ": node '" + fromNode->name + "' of type '" +
+                                     fromNode->type + "' declares " + std::to_string(fromInterface->outputs.size()) +
+                                     " output port(s)"};
+    }
+    if (toInterface && static_cast<std::size_t>(to.port) >= toInterface->inputs.size()) {
+        return GraphErrorDetails{GraphError::PortType, "cannot connect into " + describe(to) + ": node '" +
+                                                           toNode->name + "' of type '" + toNode->type + "' declares " +
+                                                           std::to_string(toInterface->inputs.size()) +
+                                                           " input port(s)"};
+    }
+    if (fromInterface && toInterface && fromInterface->outputs[from.port].kind != toInterface->inputs[to.port].kind) {
+        return GraphErrorDetails{GraphError::PortType,
+                                 "cannot connect " + describe(from) + " -> " + describe(to) + ": port kind " +
+                                     std::to_string(static_cast<int>(fromInterface->outputs[from.port].kind)) +
+                                     " does not match port kind " +
+                                     std::to_string(static_cast<int>(toInterface->inputs[to.port].kind))};
     }
     for (const auto& edge : edges_) {
         if (edge.to == to) {

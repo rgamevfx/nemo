@@ -8,12 +8,9 @@ namespace nemo {
 
 namespace {
 
-// Node types this build knows how to evaluate. Unknown types load fine and
-// surface as warnings; they are never silently dropped.
-const std::set<std::string>& knownNodeTypes() {
-    static const std::set<std::string> types{"output", "testpattern"};
-    return types;
-}
+// Node types this build knows how to evaluate come from the graph's port
+// interface table (one source of truth). Unknown types load fine and surface
+// as warnings; they are never silently dropped.
 
 }  // namespace
 
@@ -73,7 +70,7 @@ LoadResult loadDocument(const nlohmann::json& json) {
         if (fileId != 0) {
             idMap.emplace(fileId, newId);
         }
-        if (!knownNodeTypes().contains(node.type)) {
+        if (!isKnownNodeType(node.type)) {
             result.warnings.push_back("unknown node type '" + node.type + "' (node '" + node.name +
                                       "'); retained as data, not evaluated");
         }

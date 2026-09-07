@@ -20,7 +20,7 @@ Document sampleDocument() {
     doc.name = "sample";
     const NodeId plate = doc.graph.addNode("testpattern", "plate");
     doc.graph.node(plate)->params["gain"] = "1.5";
-    const NodeId comp = doc.graph.addNode("testpattern", "comp");
+    const NodeId comp = doc.graph.addNode("merge", "comp");
     const NodeId out = doc.graph.addNode("output", "out");
     doc.graph.connect(PortRef{plate, 0}, PortRef{comp, 0});
     doc.graph.connect(PortRef{comp, 0}, PortRef{out, 0});

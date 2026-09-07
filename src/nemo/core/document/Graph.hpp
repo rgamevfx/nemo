@@ -18,8 +18,26 @@ struct PortRef {
     friend bool operator==(const PortRef&, const PortRef&) = default;
 };
 
+// Declared port interfaces of node types known to this build. Ports are
+// typed so invalid-type connections are rejected when the graph is edited,
+// not when it is evaluated (spec section 10.4: typed ports). Node types
+// unknown to this build declare no ports; they load as data (spec
+// section 10.7) and are only rejected when a request actually needs them.
+enum class PortKind { Color };
+
+struct PortSpec {
+    PortKind kind;
+    std::string name;
+};
+
+// The port interface of `type`: empty vectors when the type is unknown.
+[[nodiscard]] const std::vector<PortSpec>& inputPorts(const std::string& type);
+[[nodiscard]] const std::vector<PortSpec>& outputPorts(const std::string& type);
+// True for node types this build declares a port interface for.
+[[nodiscard]] bool isKnownNodeType(const std::string& type);
 struct Node {
     NodeId id{kInvalidNode};
+
     std::string type;
     std::string name;
     std::map<std::string, std::string> params;
@@ -32,7 +50,7 @@ struct Edge {
 };
 
 // Rejected graph edits always explain the offending relationship.
-enum class GraphError { UnknownNode, UnknownEdge, PortOccupied, Cycle, DuplicateName };
+enum class GraphError { UnknownNode, UnknownEdge, PortOccupied, Cycle, DuplicateName, PortType };
 
 struct GraphErrorDetails {
     GraphError code;
@@ -69,9 +87,9 @@ public:
     // Throws GraphException on UnknownEdge.
     void disconnect(EdgeId id);
 
-    // Returns the offending relationship when the edge would be rejected.
+    // Returns the offending relationship when the edge would be rejected,
+    // including typed-port mismatches for known node types.
     [[nodiscard]] std::optional<GraphErrorDetails> validateEdge(PortRef from, PortRef to) const;
-
     [[nodiscard]] const std::vector<Node>& nodes() const { return nodes_; }
     [[nodiscard]] const std::vector<Edge>& edges() const { return edges_; }
     [[nodiscard]] const std::vector<Edge>& edgesInto(NodeId node) const;

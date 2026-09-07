@@ -1,10 +1,10 @@
 find_package(GTest CONFIG REQUIRED)
 
 add_executable(nemo_core_tests
-    GraphTests.cpp
+    TimingTests.cpp
+    EvaluationTests.cpp
     CommandTests.cpp
     PersistenceTests.cpp
-    TimingTests.cpp
 )
 target_link_libraries(nemo_core_tests PRIVATE nemo::core GTest::gtest_main)
 

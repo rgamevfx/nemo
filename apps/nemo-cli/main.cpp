@@ -1,12 +1,17 @@
 // nemo-cli: headless verification surface for agents and CI.
 //
 //   nemo-cli validate <project.json>          machine-readable JSON diagnostics
+//   nemo-cli evaluate <project.json> --out f.ppm [--frame N] [--width W --height H]
+//           [--output NAME]
 //   nemo-cli render <project.json> --out f.ppm [--frame N] [--width W --height H]
 //
-// `render` evaluates the project's document and writes a Portable Pixmap
-// (P6, binary). Node types available to the headless evaluator live in the
-// core testpattern stage; every node with no CPU evaluation contributes a
-// documented neutral placeholder pattern, never a silent miss.
+// `evaluate` walks the document graph topologically and renders the Output
+// node from the CPU reference inventory (issue #1). It emits JSON
+// diagnostics on stdout and writes a Portable Pixmap (P6, binary); the PPM
+// bytes are the scene-linear reference values clamped to [0, 1] -- no
+// viewing transform is applied (spec section 8). `render` is the older
+// single-node pattern writer kept for the CI smoke test.
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -19,12 +24,15 @@
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Serialization.hpp"
+#include "nemo/core/evaluation/CpuReference.hpp"
 
 namespace {
 
 int printUsage() {
     std::cerr << "usage:\n"
                  "  nemo-cli validate <project.json>\n"
+                 "  nemo-cli evaluate <project.json> --out <file.ppm> [--frame N] "
+                 "[--width W] [--height H] [--output NAME]\n"
                  "  nemo-cli render <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H]\n";
     return 2;
@@ -146,6 +154,93 @@ int commandRender(const std::vector<std::string>& args) {
     } catch (const std::exception& e) {
         report["errors"].push_back(std::string{"error: "} + e.what());
     }
+    return report["ok"].get<bool>() ? 0 : 1;
+}
+
+// Scene-linear reference bytes: clamp to [0, 1] and scale; no viewing
+// transform (spec section 8, issue #1 non-goal).
+void writeCpuPpm(std::ostream& out, const nemo::CpuImage& image) {
+    out << "P6\n" << image.width() << ' ' << image.height() << "\n255\n";
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const auto pixel = image.pixel(x, y);
+            for (std::size_t c = 0; c < 3; ++c) {
+                const float clamped = std::clamp(pixel[c], 0.0F, 1.0F);
+                out.put(static_cast<char>(static_cast<int>(clamped * 255.0F + 0.5F)));
+            }
+        }
+    }
+}
+
+int commandEvaluate(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        return printUsage();
+    }
+    std::string outPath;
+    std::string outputName;
+    int frame = 0;
+    int width = 64;
+    int height = 64;
+    for (std::size_t i = 1; i < args.size(); i += 2) {
+        const std::string& flag = args[i];
+        if (i + 1 >= args.size()) {
+            std::cerr << "missing value for " << flag << '\n';
+            return 2;
+        }
+        const std::string& value = args[i + 1];
+        if (flag == "--out") {
+            outPath = value;
+        } else if (flag == "--frame") {
+            frame = std::stoi(value);
+        } else if (flag == "--width") {
+            width = std::stoi(value);
+        } else if (flag == "--height") {
+            height = std::stoi(value);
+        } else if (flag == "--output") {
+            outputName = value;
+        } else {
+            std::cerr << "unknown flag " << flag << '\n';
+            return 2;
+        }
+    }
+    if (outPath.empty() || width <= 0 || height <= 0 || width > 8192 || height > 8192) {
+        std::cerr << "evaluate requires --out and 1..8192 dimensions\n";
+        return 2;
+    }
+
+    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}};
+    try {
+        std::ifstream in(args.front());
+        if (!in) {
+            report["errors"].push_back("cannot open file: " + args.front());
+        } else {
+            const auto loaded = nemo::loadDocument(nlohmann::json::parse(in));
+            report["warnings"] = loaded.warnings;
+
+            nemo::EvaluationRequest request;
+            request.output = nemo::resolveOutput(loaded.document, outputName);
+            request.localTime = frame;
+            request.region = {0, 0, width, height};
+            const nemo::CpuEvaluation evaluation = nemo::evaluateCpu(loaded.document, request);
+
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out) {
+                report["errors"].push_back("cannot write: " + outPath);
+            } else {
+                writeCpuPpm(out, evaluation.image);
+                report["ok"] = true;
+                report["rendered"] = {{"path", std::filesystem::absolute(outPath).string()},
+                                      {"width", width},
+                                      {"height", height},
+                                      {"frame", frame}};
+                report["evaluation"] = nemo::planToJson(evaluation.plan);
+            }
+        }
+    } catch (const nemo::EvaluationException& e) {
+        report["errors"].push_back(e.what());
+    } catch (const std::exception& e) {
+        report["errors"].push_back(std::string{"error: "} + e.what());
+    }
     std::cout << report.dump(2) << '\n';
     return report["ok"].get<bool>() ? 0 : 1;
 }
@@ -163,6 +258,9 @@ int main(int argc, char** argv) {
     }
     if (command == "render") {
         return commandRender(args);
+    }
+    if (command == "evaluate") {
+        return commandEvaluate(args);
     }
     return printUsage();
 }

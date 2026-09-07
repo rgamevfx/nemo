@@ -4,6 +4,7 @@ add_library(nemo_core
     core/document/Graph.cpp
     core/document/Document.cpp
     core/document/Serialization.cpp
+    core/evaluation/CpuReference.cpp
 )
 add_library(nemo::core ALIAS nemo_core)
 

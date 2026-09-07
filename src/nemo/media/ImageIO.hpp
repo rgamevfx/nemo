@@ -7,8 +7,9 @@
 // for CPU-reference and GPU-native consumption; it imposes no CPU-only
 // residency contract (GPU interop validation is issue #10).
 //
-// Pass-through values, explicit metadata: the adapter does not apply color
-// management or alpha-association conversion (OCIO viewing transforms are
+// Pass-through values, explicit metadata: the read path does not apply
+// color management or alpha-association conversion (the OCIO viewing
+// transform is a separate, explicit viewing operation — ViewingTransform.hpp,
 // issue #6). It reports what the file declares so downstream stages can
 // honor it explicitly.
 

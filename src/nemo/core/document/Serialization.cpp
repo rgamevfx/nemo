@@ -25,7 +25,14 @@ nlohmann::json saveDocument(const Document& document) {
                          {"from", {{"node", edge.from.node}, {"port", edge.from.port}}},
                          {"to", {{"node", edge.to.node}, {"port", edge.to.port}}}});
     }
-    return {{"schema", Document::kSchemaVersion}, {"name", document.name}, {"nodes", nodes}, {"edges", edges}};
+    return {{"schema", Document::kSchemaVersion},
+            {"name", document.name},
+            {"color",
+             {{"workingSpace", document.color.workingSpace},
+              {"viewerTransform", document.color.viewerTransform},
+              {"deliveryTransform", document.color.deliveryTransform}}},
+            {"nodes", nodes},
+            {"edges", edges}};
 }
 
 LoadResult loadDocument(const nlohmann::json& json) {
@@ -44,6 +51,19 @@ LoadResult loadDocument(const nlohmann::json& json) {
 
     LoadResult result;
     result.document.name = json.value("name", std::string{});
+
+    // Color policy: default-constructed ColorPolicy is the documented default
+    // (spec section 5), so a document saved without the block loads with
+    // defaults. Individual fields fall back the same way, keeping older
+    // partial blocks loadable.
+    if (auto color = json.find("color"); color != json.end() && color->is_object()) {
+        result.document.color.workingSpace = color->value("workingSpace", result.document.color.workingSpace);
+        result.document.color.viewerTransform = color->value("viewerTransform", result.document.color.viewerTransform);
+        result.document.color.deliveryTransform =
+            color->value("deliveryTransform", result.document.color.deliveryTransform);
+    } else if (color != json.end()) {
+        result.warnings.push_back("document 'color' field is not an object; using default color policy");
+    }
 
     // Pass 1: nodes (ids are remapped through insertion order to keep Graph's
     // identity guarantees; edges are re-linked by the same map).

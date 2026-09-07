@@ -20,6 +20,15 @@ if(NEMO_BUILD_GPU)
     target_link_libraries(nemo_core_tests PRIVATE nemo::gpu)
 endif()
 
+if(NEMO_BUILD_GPU)
+    # Color* tests (issue #6): policy serialization plus the OCIO viewing
+    # transform with its GPU-native acceptance path (`ctest -R Color`).
+    add_executable(nemo_color_tests
+        ColorTests.cpp
+    )
+    target_link_libraries(nemo_color_tests PRIVATE nemo::media nemo::gpu GTest::gtest_main)
+endif()
+
 # Tests intentionally ignore returned ids when they only need the side effect.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(nemo_core_tests PRIVATE -Wno-unused-result)
@@ -29,6 +38,10 @@ endif()
 include(GoogleTest)
 gtest_discover_tests(nemo_core_tests)
 gtest_discover_tests(nemo_media_tests)
+
+if(NEMO_BUILD_GPU)
+    gtest_discover_tests(nemo_color_tests)
+endif()
 
 add_executable(nemo_workspace_tests WorkspaceTests.cpp)
 target_link_libraries(nemo_workspace_tests PRIVATE nemo::workspace GTest::gtest_main)

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace nemo {
@@ -41,6 +42,11 @@ struct ImageLayout {
 class CpuImage {
 public:
     CpuImage() = default;
+
+    explicit CpuImage(ImageLayout layout) : layout_(std::move(layout)) {
+        pixels_.assign(
+            static_cast<std::size_t>(layout_.width) * static_cast<std::size_t>(layout_.height) * kImageChannels, 0.0F);
+    }
     CpuImage(int width, int height) : layout_{.width = width, .height = height} {
         pixels_.assign(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * kImageChannels, 0.0F);
     }

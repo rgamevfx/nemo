@@ -25,6 +25,7 @@
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/media/ImageIO.hpp"
 
 namespace {
 
@@ -34,7 +35,8 @@ int printUsage() {
                  "  nemo-cli evaluate <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H] [--output NAME]\n"
                  "  nemo-cli render <project.json> --out <file.ppm> [--frame N] "
-                 "[--width W] [--height H]\n";
+                 "[--width W] [--height H]\n"
+                 "  nemo-cli imageinfo <image> [--frame N]\n";
     return 2;
 }
 
@@ -245,6 +247,50 @@ int commandEvaluate(const std::vector<std::string>& args) {
     return report["ok"].get<bool>() ? 0 : 1;
 }
 
+// Image source probe: reports the image contract for one still or sequence
+// frame as machine-readable JSON diagnostics (issue #4 acceptance: a
+// missing path surfaces the offending file in `errors`).
+int commandImageInfo(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        return printUsage();
+    }
+    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
+    try {
+        std::int64_t frame = 0;
+        for (std::size_t i = 1; i < args.size(); i += 2) {
+            if (args[i] == "--frame" && i + 1 < args.size()) {
+                frame = std::stoll(args[i + 1]);
+            } else {
+                std::cerr << "unknown flag " << args[i] << '\n';
+                return printUsage();
+            }
+        }
+        const std::string path = nemo::media::resolveFramePath(args.front(), frame);
+        const nemo::media::ImageReadResult read = nemo::media::readImage(path);
+        report["ok"] = true;
+        report["image"] = {
+            {"path", path},
+            {"format", read.formatName},
+            {"width", read.image.width()},
+            {"height", read.image.height()},
+            {"pixel_aspect", read.image.layout().pixelAspect},
+            {"channels", read.channelNames},
+            {"precision", read.nativePrecision},
+            {"alpha", read.alpha == nemo::media::AlphaAssociation::Premultiplied ? "premultiplied"
+                      : read.alpha == nemo::media::AlphaAssociation::Straight    ? "straight"
+                                                                                 : "none"},
+            {"data_window", {read.dataWindow.xMin, read.dataWindow.yMin, read.dataWindow.xMax, read.dataWindow.yMax}},
+            {"display_window",
+             {read.displayWindow.xMin, read.displayWindow.yMin, read.displayWindow.xMax, read.displayWindow.yMax}}};
+    } catch (const nemo::media::ImageIoException& e) {
+        report["errors"].push_back(e.what());
+    } catch (const std::exception& e) {
+        report["errors"].push_back(std::string{"error: "} + e.what());
+    }
+    std::cout << report.dump(2) << '\n';
+    return report["ok"].get<bool>() ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -261,6 +307,9 @@ int main(int argc, char** argv) {
     }
     if (command == "evaluate") {
         return commandEvaluate(args);
+    }
+    if (command == "imageinfo") {
+        return commandImageInfo(args);
     }
     return printUsage();
 }

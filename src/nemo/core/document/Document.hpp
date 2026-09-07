@@ -32,8 +32,7 @@ struct Command {
 // a failed apply leaves the document untouched and throws through.
 class CommandStack {
 public:
-    explicit CommandStack(Document& document, std::size_t capacity = 256)
-        : document_(document), capacity_(capacity) {}
+    explicit CommandStack(Document& document, std::size_t capacity = 256) : document_(document), capacity_(capacity) {}
 
     void push(Command command);
     [[nodiscard]] bool canUndo() const { return !undo_.empty(); }
@@ -54,4 +53,4 @@ private:
 // Convenience factory: renames an existing node's parameter.
 Command setParamCommand(std::string nodeName, std::string key, std::string value);
 
-} // namespace nemo
+}  // namespace nemo

@@ -15,15 +15,12 @@ const std::set<std::string>& knownNodeTypes() {
     return types;
 }
 
-} // namespace
+}  // namespace
 
 nlohmann::json saveDocument(const Document& document) {
     nlohmann::json nodes = nlohmann::json::array();
     for (const auto& node : document.graph.nodes()) {
-        nodes.push_back({{"id", node.id},
-                         {"type", node.type},
-                         {"name", node.name},
-                         {"params", node.params}});
+        nodes.push_back({{"id", node.id}, {"type", node.type}, {"name", node.name}, {"params", node.params}});
     }
     nlohmann::json edges = nlohmann::json::array();
     for (const auto& edge : document.graph.edges()) {
@@ -31,10 +28,7 @@ nlohmann::json saveDocument(const Document& document) {
                          {"from", {{"node", edge.from.node}, {"port", edge.from.port}}},
                          {"to", {{"node", edge.to.node}, {"port", edge.to.port}}}});
     }
-    return {{"schema", Document::kSchemaVersion},
-            {"name", document.name},
-            {"nodes", nodes},
-            {"edges", edges}};
+    return {{"schema", Document::kSchemaVersion}, {"name", document.name}, {"nodes", nodes}, {"edges", edges}};
 }
 
 LoadResult loadDocument(const nlohmann::json& json) {
@@ -46,8 +40,7 @@ LoadResult loadDocument(const nlohmann::json& json) {
     }
     const int schema = json.at("schema").get<int>();
     if (schema > Document::kSchemaVersion) {
-        throw DeserializeError("document schema " + std::to_string(schema) +
-                               " is newer than this build supports (" +
+        throw DeserializeError("document schema " + std::to_string(schema) + " is newer than this build supports (" +
                                std::to_string(Document::kSchemaVersion) + ")");
     }
     // schema < kSchemaVersion migrates here, one step at a time, before load.
@@ -116,4 +109,4 @@ LoadResult loadDocument(const nlohmann::json& json) {
     return result;
 }
 
-} // namespace nemo
+}  // namespace nemo

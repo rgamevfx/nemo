@@ -34,8 +34,7 @@ int commandValidate(const std::vector<std::string>& args) {
     if (args.empty()) {
         return printUsage();
     }
-    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()},
-                          {"warnings", nlohmann::json::array()}};
+    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
         std::ifstream in(args.front());
         if (!in) {
@@ -75,8 +74,7 @@ Rgb testPatternPixel(int x, int y, int width, int height, int frame) {
     const int barWidth = std::max(2, width / 16);
     const int barPos = (frame * (width / 8)) % (width + barWidth);
     const bool inBar = x >= barPos && x < barPos + barWidth;
-    return {static_cast<std::uint8_t>(u * 255.0),
-            static_cast<std::uint8_t>(v * 255.0),
+    return {static_cast<std::uint8_t>(u * 255.0), static_cast<std::uint8_t>(v * 255.0),
             static_cast<std::uint8_t>(inBar ? 255 : 0)};
 }
 
@@ -152,7 +150,7 @@ int commandRender(const std::vector<std::string>& args) {
     return report["ok"].get<bool>() ? 0 : 1;
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv) {
     if (argc < 3) {

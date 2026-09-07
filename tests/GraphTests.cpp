@@ -6,9 +6,11 @@ using namespace nemo;
 
 namespace {
 
-PortRef out(NodeId node, std::uint32_t port = 0) { return PortRef{node, port}; }
+PortRef out(NodeId node, std::uint32_t port = 0) {
+    return PortRef{node, port};
+}
 
-} // namespace
+}  // namespace
 
 TEST(GraphTest, AddNodeAssignsDistinctIncreasingIds) {
     Graph g;
@@ -49,7 +51,7 @@ TEST(GraphTest, ConnectRejectsDirectAndTransitiveCycles) {
     EXPECT_NE(direct->message.find(std::to_string(b)), std::string::npos);
     // Transitive cycle through a third node c.
     const NodeId c = g.addNode("testpattern", "c");
-    g.connect(out(c), out(b, 1)); // a -> c -> b path now exists
+    g.connect(out(c), out(b, 1));  // a -> c -> b path now exists
     auto transitive = g.validateEdge(out(b), out(c));
     ASSERT_TRUE(transitive.has_value());
     EXPECT_EQ(transitive->code, GraphError::Cycle);

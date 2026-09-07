@@ -12,4 +12,4 @@ using EdgeId = std::uint64_t;
 inline constexpr NodeId kInvalidNode = 0;
 inline constexpr EdgeId kInvalidEdge = 0;
 
-} // namespace nemo
+}  // namespace nemo

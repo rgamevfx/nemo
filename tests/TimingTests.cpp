@@ -11,8 +11,8 @@ TEST(TimingTest, AcceptanceScenario1_LocalOffsetsFromParentPlacement) {
     // One composition spans both inputs; its local time zero sits at the
     // parent frame of the earliest input (200). The overlay lands at local 12.
     const Timing composition{.parentStart = 200, .rate = 1.0};
-    EXPECT_EQ(composition.toLocal(200), 0);  // plate input local start
-    EXPECT_EQ(composition.toLocal(212), 12); // overlay input local start
+    EXPECT_EQ(composition.toLocal(200), 0);   // plate input local start
+    EXPECT_EQ(composition.toLocal(212), 12);  // overlay input local start
     // Moving the composition shifts only parent placement.
     const Timing moved{.parentStart = 350, .rate = 1.0};
     EXPECT_EQ(moved.toLocal(362), 12);

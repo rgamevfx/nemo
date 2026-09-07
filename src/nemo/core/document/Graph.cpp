@@ -11,19 +11,17 @@ std::string describe(PortRef ref) {
     return "node " + std::to_string(ref.node) + " port " + std::to_string(ref.port);
 }
 
-} // namespace
+}  // namespace
 
 const Node* Graph::findNode(NodeId id) const {
-    const auto it = std::find_if(nodes_.begin(), nodes_.end(),
-                                 [id](const Node& n) { return n.id == id; });
+    const auto it = std::find_if(nodes_.begin(), nodes_.end(), [id](const Node& n) { return n.id == id; });
     return it == nodes_.end() ? nullptr : &*it;
 }
 
 NodeId Graph::addNode(std::string type, std::string name) {
     for (const auto& existing : nodes_) {
         if (existing.name == name) {
-            throw GraphException(GraphError::DuplicateName,
-                                 "node name '" + name + "' already exists in this graph");
+            throw GraphException(GraphError::DuplicateName, "node name '" + name + "' already exists in this graph");
         }
     }
     const NodeId id = nextNodeId_++;
@@ -36,22 +34,23 @@ void Graph::removeNode(NodeId id) {
         throw GraphException(GraphError::UnknownNode, "cannot remove unknown node " + std::to_string(id));
     }
     edges_.erase(std::remove_if(edges_.begin(), edges_.end(),
-                                [id](const Edge& e) {
-                                    return e.from.node == id || e.to.node == id;
-                                }),
+                                [id](const Edge& e) { return e.from.node == id || e.to.node == id; }),
                  edges_.end());
     incomingCache_.erase(id);
     nodes_.erase(std::remove_if(nodes_.begin(), nodes_.end(), [id](const Node& n) { return n.id == id; }),
                  nodes_.end());
 }
 
-const Node* Graph::node(NodeId id) const { return findNode(id); }
+const Node* Graph::node(NodeId id) const {
+    return findNode(id);
+}
 
-Node* Graph::node(NodeId id) { return const_cast<Node*>(findNode(id)); }
+Node* Graph::node(NodeId id) {
+    return const_cast<Node*>(findNode(id));
+}
 
 const Node* Graph::nodeByName(const std::string& name) const {
-    const auto it = std::find_if(nodes_.begin(), nodes_.end(),
-                                 [&name](const Node& n) { return n.name == name; });
+    const auto it = std::find_if(nodes_.begin(), nodes_.end(), [&name](const Node& n) { return n.name == name; });
     return it == nodes_.end() ? nullptr : &*it;
 }
 
@@ -88,16 +87,14 @@ std::optional<GraphErrorDetails> Graph::validateEdge(PortRef from, PortRef to) c
     }
     for (const auto& edge : edges_) {
         if (edge.to == to) {
-            return GraphErrorDetails{GraphError::PortOccupied,
-                                     "input " + describe(to) + " is already fed by node " +
-                                         std::to_string(edge.from.node)};
+            return GraphErrorDetails{GraphError::PortOccupied, "input " + describe(to) + " is already fed by node " +
+                                                                   std::to_string(edge.from.node)};
         }
     }
     if (reachable(to.node, from.node)) {
-        return GraphErrorDetails{GraphError::Cycle,
-                                 "connecting " + describe(from) + " -> " + describe(to) +
-                                     " would create a circular dependency through node " +
-                                     std::to_string(to.node)};
+        return GraphErrorDetails{GraphError::Cycle, "connecting " + describe(from) + " -> " + describe(to) +
+                                                        " would create a circular dependency through node " +
+                                                        std::to_string(to.node)};
     }
     return std::nullopt;
 }
@@ -135,4 +132,4 @@ const std::vector<Edge>& Graph::edgesInto(NodeId node) const {
     return it->second;
 }
 
-} // namespace nemo
+}  // namespace nemo

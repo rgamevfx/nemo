@@ -27,7 +27,7 @@ Document sampleDocument() {
     return doc;
 }
 
-} // namespace
+}  // namespace
 
 TEST(PersistenceTest, SaveLoadRoundTripPreservesStructure) {
     const Document original = sampleDocument();
@@ -87,9 +87,7 @@ TEST(PersistenceTest, EdgeToMissingNodeDroppedWithWarning) {
     const NodeId plate = doc.graph.addNode("testpattern", "plate");
     EXPECT_NE(plate, kInvalidNode);
     nlohmann::json saved = saveDocument(doc);
-    saved["edges"].push_back({{"id", 99},
-                              {"from", {{"node", 9999}, {"port", 0}}},
-                              {"to", {{"node", 1}, {"port", 0}}}});
+    saved["edges"].push_back({{"id", 99}, {"from", {{"node", 9999}, {"port", 0}}}, {"to", {{"node", 1}, {"port", 0}}}});
     const LoadResult loaded = loadDocument(saved);
     EXPECT_EQ(loaded.document.graph.edges().size(), 0u);
     ASSERT_EQ(loaded.warnings.size(), 1u);

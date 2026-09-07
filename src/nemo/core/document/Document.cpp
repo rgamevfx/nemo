@@ -56,8 +56,7 @@ Command setParamCommand(std::string nodeName, std::string key, std::string value
         }
         if (!*previous) {
             const auto it = node->params.find(key);
-            *previous = it != node->params.end() ? std::optional<std::string>{it->second}
-                                                 : std::nullopt;
+            *previous = it != node->params.end() ? std::optional<std::string>{it->second} : std::nullopt;
         }
         node->params[key] = value;
     };
@@ -75,4 +74,4 @@ Command setParamCommand(std::string nodeName, std::string key, std::string value
     return command;
 }
 
-} // namespace nemo
+}  // namespace nemo

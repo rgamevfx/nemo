@@ -65,5 +65,5 @@ jobs:
            "edges": [{"id": 1, "from": {"node": 1, "port": 0}, "to": {"node": 2, "port": 0}}]}
           EOF
           build/${{ matrix.preset }}/apps/nemo-cli/nemo-cli validate /tmp/sample.json
-          build/${{ matrix.preset }}/apps/nemo-cli/nemo-cli render /tmp/sample.json --out /tmp/frame.ppm --frame 3 --width 32 --height 32
+          build/${{ matrix.preset }}/apps/nemo-cli/nemo-cli render /tmp/sample.json --out /tmp/frame.ppm --frame 3 --width 64 --height 64
           [ "$(stat -c%s /tmp/frame.ppm)" -gt 4000 ]

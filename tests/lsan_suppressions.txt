@@ -1,0 +1,6 @@
+# LeakSanitizer suppressions for the Vulkan stack (issue #2 GPU bootstrap).
+# The Vulkan loader and dlopen'd ICD drivers allocate through libdbus and
+# keep working allocations alive until process exit; those leaks sit inside
+# third-party code, not nemo's RAII-owned resources. Keep this list narrow:
+# each entry must name third-party machinery, never a nemo frame.
+leak:libdbus-1.so.3

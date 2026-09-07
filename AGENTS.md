@@ -102,3 +102,18 @@ humans inspect image differences.
   commands. PRs report: what changed, test evidence, limitations, and image
   diffs where relevant.
 - Keep ticket status and decisions in GitHub/docs, never in chat history.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on rgamevfx/nemo via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + ADRs in `docs/decisions/`. See `docs/agents/domain.md`.
+

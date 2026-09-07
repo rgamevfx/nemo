@@ -1,5 +1,6 @@
 #include "nemo/core/document/Document.hpp"
 
+#include <memory>
 #include <stdexcept>
 #include <utility>
 
@@ -42,36 +43,34 @@ void CommandStack::clear() {
 }
 
 Command setParamCommand(std::string nodeName, std::string key, std::string value) {
-    // Capture enough state to restore the previous value without keeping a
-    // reference into the document across undo.
-    std::string previous;
-    bool hadPrevious = false;
+    // The previous value is snapshotted by the first apply and shared with
+    // revert; redo re-applies without re-snapshotting.
+    auto previous = std::make_shared<std::optional<std::string>>();
 
     Command command;
     command.label = "set " + key + " on " + nodeName;
-    command.apply = [nodeName, key, value](Document& doc) {
-        for (auto& node : doc.graph.nodes()) {
-            if (node.name != nodeName) {
-                continue;
-            }
-            node.params[key] = value;
-            return;
+    command.apply = [nodeName, key, value, previous](Document& doc) {
+        Node* node = doc.graph.nodeByName(nodeName);
+        if (!node) {
+            throw std::runtime_error("setParam: no node named '" + nodeName + "'");
         }
-        throw std::runtime_error("setParam: no node named '" + nodeName + "'");
+        if (!*previous) {
+            const auto it = node->params.find(key);
+            *previous = it != node->params.end() ? std::optional<std::string>{it->second}
+                                                 : std::nullopt;
+        }
+        node->params[key] = value;
     };
-    command.revert = [nodeName, key, previous, hadPrevious](Document& doc) {
-        for (auto& node : doc.graph.nodes()) {
-            if (node.name != nodeName) {
-                continue;
-            }
-            if (hadPrevious) {
-                node.params[key] = previous;
-            } else {
-                node.params.erase(key);
-            }
-            return;
+    command.revert = [nodeName, key, previous](Document& doc) {
+        Node* node = doc.graph.nodeByName(nodeName);
+        if (!node) {
+            throw std::runtime_error("setParam revert: no node named '" + nodeName + "'");
         }
-        throw std::runtime_error("setParam revert: no node named '" + nodeName + "'");
+        if (*previous) {
+            node->params[key] = **previous;
+        } else {
+            node->params.erase(key);
+        }
     };
     return command;
 }

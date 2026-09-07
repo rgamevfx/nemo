@@ -27,7 +27,7 @@ NodeId Graph::addNode(std::string type, std::string name) {
         }
     }
     const NodeId id = nextNodeId_++;
-    nodes_.push_back(Node{.id = id, .type = std::move(type), .name = std::move(name)});
+    nodes_.push_back(Node{.id = id, .type = std::move(type), .name = std::move(name), .params = {}});
     return id;
 }
 
@@ -48,6 +48,16 @@ void Graph::removeNode(NodeId id) {
 const Node* Graph::node(NodeId id) const { return findNode(id); }
 
 Node* Graph::node(NodeId id) { return const_cast<Node*>(findNode(id)); }
+
+const Node* Graph::nodeByName(const std::string& name) const {
+    const auto it = std::find_if(nodes_.begin(), nodes_.end(),
+                                 [&name](const Node& n) { return n.name == name; });
+    return it == nodes_.end() ? nullptr : &*it;
+}
+
+Node* Graph::nodeByName(const std::string& name) {
+    return const_cast<Node*>(static_cast<const Graph*>(this)->nodeByName(name));
+}
 
 bool Graph::reachable(NodeId origin, NodeId target) const {
     if (origin == target) {

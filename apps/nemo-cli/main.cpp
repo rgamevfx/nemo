@@ -42,12 +42,14 @@ int commandValidate(const std::vector<std::string>& args) {
             report["errors"].push_back("cannot open file: " + args.front());
         } else {
             const auto parsed = nlohmann::json::parse(in);
-            auto loaded = loadDocument(parsed);
+            auto loaded = nemo::loadDocument(parsed);
             report["ok"] = true;
             report["warnings"] = loaded.warnings;
-            report["document"] = {{"name", loaded.document.name},
-                                  {"nodes", loaded.document.graph.nodes().size()},
-                                  {"edges", loaded.document.graph.edges().size()}};
+            nlohmann::json info;
+            info["name"] = loaded.document.name;
+            info["nodes"] = loaded.document.graph.nodes().size();
+            info["edges"] = loaded.document.graph.edges().size();
+            report["document"] = std::move(info);
         }
     } catch (const nemo::DeserializeError& e) {
         report["errors"].push_back(std::string{"deserialize: "} + e.what());
@@ -129,7 +131,7 @@ int commandRender(const std::vector<std::string>& args) {
         if (!in) {
             report["errors"].push_back("cannot open file: " + args.front());
         } else {
-            const auto loaded = loadDocument(nlohmann::json::parse(in));
+            const auto loaded = nemo::loadDocument(nlohmann::json::parse(in));
             report["warnings"] = loaded.warnings;
             std::ofstream out(outPath, std::ios::binary);
             if (!out) {

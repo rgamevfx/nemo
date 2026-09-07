@@ -8,13 +8,14 @@ using namespace nemo;
 // 212 become a composition with local starts 0 and 12; moving that
 // composition preserves the offset and its internal animation.
 TEST(TimingTest, AcceptanceScenario1_LocalOffsetsFromParentPlacement) {
-    const Timing plate{.parentStart = 200, .rate = 1.0};
-    const Timing overlay{.parentStart = 212, .rate = 1.0};
-    // Composition-local frame 0 of each input maps back to its parent frame.
-    EXPECT_EQ(plate.toParent(0), 200);
-    EXPECT_EQ(overlay.toParent(0), 212);
-    // The 12-frame offset between the two inputs is preserved in local time.
-    EXPECT_EQ(overlay.toLocal(plate.toParent(12)), 12);
+    // One composition spans both inputs; its local time zero sits at the
+    // parent frame of the earliest input (200). The overlay lands at local 12.
+    const Timing composition{.parentStart = 200, .rate = 1.0};
+    EXPECT_EQ(composition.toLocal(200), 0);  // plate input local start
+    EXPECT_EQ(composition.toLocal(212), 12); // overlay input local start
+    // Moving the composition shifts only parent placement.
+    const Timing moved{.parentStart = 350, .rate = 1.0};
+    EXPECT_EQ(moved.toLocal(362), 12);
 }
 
 TEST(TimingTest, MoveChangesPlacementOnly) {

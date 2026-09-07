@@ -62,7 +62,8 @@ TEST(PersistenceTest, SaveLoadRoundTripPreservesStructure) {
 
 TEST(PersistenceTest, UnknownNodeTypeIsRetainedWithWarning) {
     Document doc;
-    doc.graph.addNode("legacyplugin", "old");
+    const NodeId legacy = doc.graph.addNode("legacyplugin", "old");
+    EXPECT_NE(legacy, kInvalidNode);
     const LoadResult loaded = loadDocument(saveDocument(doc));
     ASSERT_EQ(loaded.document.graph.nodes().size(), 1u);
     EXPECT_EQ(loaded.document.graph.nodes().front().type, "legacyplugin");
@@ -83,7 +84,8 @@ TEST(PersistenceTest, MalformedRootRejected) {
 
 TEST(PersistenceTest, EdgeToMissingNodeDroppedWithWarning) {
     Document doc;
-    doc.graph.addNode("testpattern", "plate");
+    const NodeId plate = doc.graph.addNode("testpattern", "plate");
+    EXPECT_NE(plate, kInvalidNode);
     nlohmann::json saved = saveDocument(doc);
     saved["edges"].push_back({{"id", 99},
                               {"from", {{"node", 9999}, {"port", 0}}},

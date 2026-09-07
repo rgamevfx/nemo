@@ -70,5 +70,5 @@ TEST(CommandStackTest, HistoryBoundedByCapacity) {
     EXPECT_TRUE(stack.undo());
     EXPECT_TRUE(stack.undo());
     EXPECT_FALSE(stack.undo());
-    EXPECT_EQ(doc.graph.node(1)->params.at("gain"), "2.0");
+    EXPECT_EQ(doc.graph.node(1)->params.at("gain"), "1.0");
 }

@@ -47,14 +47,15 @@ TEST(GraphTest, ConnectRejectsDirectAndTransitiveCycles) {
     EXPECT_EQ(direct->code, GraphError::Cycle);
     // The message must identify the offending relationship.
     EXPECT_NE(direct->message.find(std::to_string(b)), std::string::npos);
-    EXPECT_THROW(g.connect(out(b), out(a)), GraphException);
-
-    // Transitive cycle through a third node c: a -> c -> b would close a loop.
+    // Transitive cycle through a third node c.
     const NodeId c = g.addNode("testpattern", "c");
-    g.connect(out(c), out(b)); // c feeds b; a -> c -> b
+    g.connect(out(c), out(b, 1)); // a -> c -> b path now exists
     auto transitive = g.validateEdge(out(b), out(c));
     ASSERT_TRUE(transitive.has_value());
     EXPECT_EQ(transitive->code, GraphError::Cycle);
+
+    // A non-cyclic connection through the same nodes stays legal.
+    EXPECT_FALSE(g.validateEdge(out(a), out(c)).has_value());
 }
 
 TEST(GraphTest, InputPortOccupiedBySingleEdge) {

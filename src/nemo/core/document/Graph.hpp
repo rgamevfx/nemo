@@ -62,6 +62,9 @@ public:
     [[nodiscard]] const Node* node(NodeId id) const;
     [[nodiscard]] Node* node(NodeId id);
 
+    [[nodiscard]] const Node* nodeByName(const std::string& name) const;
+    [[nodiscard]] Node* nodeByName(const std::string& name);
+
     // Throws GraphException on UnknownNode, PortOccupied, or Cycle.
     [[nodiscard]] EdgeId connect(PortRef from, PortRef to);
     // Throws GraphException on UnknownEdge.

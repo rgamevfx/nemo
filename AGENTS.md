@@ -58,8 +58,8 @@ Headless verification without any UI (agents: use this instead of launching
 the app):
 
 ```bash
-build/debug/apps/nemo-cli validate <project.json>   # JSON diagnostics on stdout
-build/debug/apps/nemo-cli render <project.json> --out frame.ppm --frame 12
+build/debug/apps/nemo-cli/nemo-cli validate <project.json>   # JSON diagnostics on stdout
+build/debug/apps/nemo-cli/nemo-cli render <project.json> --out frame.ppm --frame 12
 ```
 
 `render` output is deterministic; use it for image assertions. Treat

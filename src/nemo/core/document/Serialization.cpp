@@ -76,6 +76,7 @@ LoadResult loadDocument(const nlohmann::json& json) {
         }
         const std::uint64_t fileId = entry.value("id", std::uint64_t{0});
         const NodeId newId = result.document.graph.addNode(node.type, node.name);
+        result.document.graph.node(newId)->params = node.params;
         if (fileId != 0) {
             idMap.emplace(fileId, newId);
         }
@@ -109,7 +110,7 @@ LoadResult loadDocument(const nlohmann::json& json) {
             result.warnings.push_back("invalid edge in file: " + problem->message);
             continue;
         }
-        result.document.graph.connect(*from, *to);
+        static_cast<void>(result.document.graph.connect(*from, *to));
     }
 
     return result;

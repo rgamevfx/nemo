@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: Check formatting
+        run: |
+          find src apps tests -name '*.cpp' -o -name '*.hpp' | xargs clang-format --dry-run --Werror
+
+  build-test:
+    name: ${{ matrix.preset }} (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc]
+        preset: [debug, release, asan]
+        include:
+          - compiler: gcc
+            cc: gcc-13
+            cxx: g++-13
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      CC: gcc-13
+      CXX: g++-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-13
+
+      - name: Bootstrap vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitURL: https://github.com/microsoft/vcpkg.git
+          vcpkgGitCommitId: 04a9d8e5212d01ee1dd9478eadd9caade4f8b0d4
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Headless smoke test
+        run: |
+          cat > /tmp/sample.json <<'EOF'
+          {"schema": 1, "name": "smoke",
+           "nodes": [{"id": 1, "type": "testpattern", "name": "plate"},
+                     {"id": 2, "type": "output", "name": "out"}],
+           "edges": [{"id": 1, "from": {"node": 1, "port": 0}, "to": {"node": 2, "port": 0}}]}
+          EOF
+          build/${{ matrix.preset }}/apps/nemo-cli validate /tmp/sample.json
+          build/${{ matrix.preset }}/apps/nemo-cli render /tmp/sample.json --out /tmp/frame.ppm --frame 3 --width 32 --height 32
+          [ "$(stat -c%s /tmp/frame.ppm)" -gt 4000 ]

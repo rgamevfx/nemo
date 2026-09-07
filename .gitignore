@@ -1,0 +1,20 @@
+# Build output
+build/
+cmake-build-*/
+out/
+
+# CMake user presets are machine-specific (see CMakeUserPresets.json.example)
+CMakeUserPresets.json
+
+# Compilation database is generated per-config; editors should symlink it
+compile_commands.json
+
+# vcpkg working files
+vcpkg_installed/
+
+# Editors / OS
+.vscode/
+.idea/
+.cache/
+*.swp
+.DS_Store

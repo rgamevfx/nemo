@@ -1,0 +1,42 @@
+name: Work ticket
+description: One small unit of work — outcome, scope, acceptance, verification.
+labels: []
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: Observable end state. What works after this ticket, stated so a stranger can verify it.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Modules/files/behaviors in play. Name the spec sections.
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals
+      description: Explicitly out of scope; anything listed here must not appear in the PR.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance examples
+      description: Concrete input → expected behavior examples, including edge cases.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification commands
+      description: Exact commands that prove it (cmake presets, ctest filters, nemo-cli invocations).
+      placeholder: |
+        cmake --preset debug && cmake --build --preset debug && ctest --preset debug
+        build/debug/apps/nemo-cli validate ...
+    validations:
+      required: true

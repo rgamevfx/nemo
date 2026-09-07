@@ -1,0 +1,77 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+                "NEMO_BUILD_TESTS": "ON",
+                "NEMO_BUILD_CLI": "ON"
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug",
+            "inherits": "base",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "release",
+            "displayName": "Release",
+            "inherits": "base",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "NEMO_ENABLE_IPO": "ON" }
+        },
+        {
+            "name": "asan",
+            "displayName": "Debug + ASan/UBSan",
+            "inherits": "debug",
+            "cacheVariables": {
+                "NEMO_SANITIZER": "address;undefined",
+                "NEMO_WARN_AS_ERROR": "ON"
+            }
+        },
+        {
+            "name": "tsan",
+            "displayName": "Debug + TSan",
+            "inherits": "debug",
+            "cacheVariables": { "NEMO_SANITIZER": "thread" }
+        }
+    ],
+    "buildPresets": [
+        { "name": "debug", "configurePreset": "debug" },
+        { "name": "release", "configurePreset": "release" },
+        { "name": "asan", "configurePreset": "asan" },
+        { "name": "tsan", "configurePreset": "tsan" }
+    ],
+    "testPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "output": { "outputOnFailure": true },
+            "execution": { "jobs": 0 }
+        },
+        {
+            "name": "release",
+            "configurePreset": "release",
+            "output": { "outputOnFailure": true },
+            "execution": { "jobs": 0 }
+        },
+        {
+            "name": "asan",
+            "configurePreset": "asan",
+            "output": { "outputOnFailure": true },
+            "execution": { "jobs": 0 }
+        },
+        {
+            "name": "tsan",
+            "configurePreset": "tsan",
+            "output": { "outputOnFailure": true },
+            "execution": { "jobs": 0 }
+        }
+    ]
+}

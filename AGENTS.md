@@ -47,7 +47,28 @@ cmake --preset asan && cmake --build --preset asan && ctest --preset asan   # AS
 cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan   # TSan
 # Release
 cmake --preset release && cmake --build --preset release
+# Shaders only
+cmake --build --preset debug --target nemo_shaders  # Rebuild SPIR-V from .slang
+```
 
+### Shader tooling (Slang → SPIR-V)
+
+The `nemo_shaders` target compiles `src/nemo/gpu/shaders/*.slang` to SPIR-V
+binaries as part of the normal build. `slangc` is resolved in this order:
+
+1. `-D NEMO_SLANGC=<path>` — explicit path (put it in `CMakeUserPresets.json`).
+2. `find_program(slangc)` — e.g. install the Slang release `bin/slangc` on PATH.
+3. `-D NEMO_DOWNLOAD_SLANGC=ON` — downloads the pinned Slang release
+   (`NEMO_SLANG_VERSION` in `cmake/NemoSlangShaders.cmake`, currently
+   2026.17) into the build directory. Requires network at configure time.
+
+If no tooling is found, configure/build still succeeds and reports the
+omitted GPU path explicitly; a CPU-only build without shader compilation is
+**not** GPU-gate evidence (issue #3). Shader compile failures fail the build
+with slangc diagnostics. A compiled module loading is build plumbing only —
+execution and image validation are the native execution gate (issue #8).
+
+```bash
 # Format (CI enforces)
 clang-format -i <changed .cpp/.hpp files>
 # Static analysis (opt-in locally, required for new modules)

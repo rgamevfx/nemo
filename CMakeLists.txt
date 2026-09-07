@@ -15,6 +15,9 @@ option(NEMO_BUILD_CLI "Build the nemo-cli headless tool" ON)
 option(NEMO_ENABLE_IPO "Enable interprocedural optimization in release builds" ON)
 option(NEMO_ENABLE_CLANG_TIDY "Run clang-tidy during compilation when found" OFF)
 option(NEMO_WARN_AS_ERROR "Treat compiler warnings as errors" OFF)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(NemoSlangShaders)
+
 # Sanitizers, e.g. "address;undefined" (preset asan) or "thread" (preset tsan).
 set(NEMO_SANITIZER "" CACHE STRING "Enable the listed sanitizers")
 
@@ -37,6 +40,7 @@ if(NEMO_ENABLE_CLANG_TIDY)
 endif()
 
 add_subdirectory(src/nemo)
+add_subdirectory(src/nemo/gpu/shaders)
 
 if(NEMO_BUILD_CLI)
     add_subdirectory(apps/nemo-cli)

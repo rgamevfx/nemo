@@ -1,10 +1,10 @@
 # Unified VFX Compositor and NLE
 
-## Product and architecture specification · Revision 2.2
+## Product and architecture specification · Revision 2.3
 
 **Purpose:** A professional node-based compositor with integrated editing and color workflows. Nuke defines the primary compositing interaction model; Houdini informs network hierarchy, reusable tools, and programmatic control; Resolve informs continuity between editing, VFX, color, and delivery.
 
-This specification consolidates the concept decisions and targeted technical architecture. “Must” denotes required behavior or an architectural constraint. The stack in Section 10 is the implementation target, subject to the prototype gates in Section 11; it is not a claim of implemented capability. Format coverage, exact platform baselines, and quantitative performance budgets remain separate technical decisions.
+This specification consolidates the concept decisions and targeted technical architecture. “Must” denotes required behavior or an architectural constraint. The stack in Section 10 is the implementation target, subject to the prototype gates in Section 11; it is not a claim of implemented capability. Format coverage, exact platform baselines, and measured performance budgets remain separate technical decisions; Section 11 establishes initial benchmark targets, not measured results.
 
 ## 1. Product principles
 
@@ -162,23 +162,47 @@ Published assets use pinned versions and explicit updates. Saving a new asset ve
 
 ### Interactive evaluation
 
-The engine must prioritize current-frame work, cancel obsolete requests, reuse unaffected branches, and evaluate only required regions/channels where supported. Preview controls include resolution and node-supported quality reductions. Refinement after interaction stops is configurable.
+The engine must prioritize current-frame work, cancel obsolete requests, reuse unaffected branches, and evaluate only required regions/channels where supported. Automatic evaluation renders only requested frames and their necessary dependencies: no speculative neighboring-frame rendering, render-ahead, or idle range filling. Temporal dependencies needed to produce a requested frame are not speculative playback work.
 
-The viewer and timeline must distinguish full-quality, reduced-quality, pending, and outdated results. Quality substitutions must be explicit; unsupported approximations must not silently change node meaning.
+The viewer offers **Auto / Full / Half / Quarter** resolution controls and shows the effective preview scale. Auto chooses stable resolution levels from the displayed image area in physical pixels, accounting for aspect ratio, display scaling, and zoom; one-pixel panel resizes must not continually rebuild representations. Explicit modes override Auto. Fitting an image samples across the whole image at the selected resolution; zooming requests the visible region at the appropriate sampling density. Full preserves source sampling, even in a small panel; region-of-interest evaluation remains permitted.
 
-Cache identity must include relevant sources, graph/parameter state, time, resolution, quality, channels, and color configuration. Affected cached results invalidate on dependency changes. Approximate results must not satisfy full-quality requests.
+Reduced-resolution evaluation must preserve full-resolution coordinate semantics and include spatial/temporal dependencies, such as blur support outside the visible region. Nodes declare supported reductions; unsupported reductions require adequate-resolution processing of necessary dependencies or an explicit limitation. Reduced sampling can change fine detail, grain, and other effects; it is not universally equivalent to downsampling a full-resolution render. No additional draft effect mode is implied by compressed playback.
+
+The viewer and timeline must distinguish selected resolution, cached representation, pending, and outdated results without describing all compressed playback as draft processing. Resolution reduction, processing quality, and encoding fidelity are separate properties. Pausing playback does not invalidate a frame, force refinement, or rerender a matching cached result. A changed explicit request may require another representation.
+
+Reduced-resolution or reduced-quality results must not satisfy higher-quality requests. Unsupported quality substitutions must not silently change node meaning.
+
+### Automatic viewer playback cache
+
+Native processing and reusable composition intermediates remain scene-linear, with half-/full-float precision as required. The viewer playback cache is a separate, compact **display-referred Rec.709 4:2:0** representation of the selected-resolution result after its viewer color transform. Color primaries, transfer function, matrix, range, chroma sampling, and bit depth must be explicit and correctly interpreted during encoding, decoding, and presentation. Do not apply the baked viewer transform twice. Rec.709 and sRGB encodings are not interchangeable labels.
+
+Correct color interpretation is required, but 4:2:0 discards chroma detail and lossy encoding can further change pixels. These accepted encoding differences are distinct from resolution approximation. The representation must not substitute for scene-linear node inputs, precise source-value inspection, or full-quality delivery. UI overlays, handles, guides, and other presentation-only decorations remain outside the encoded image.
+
+Display a current rendered frame without waiting for compression, then automatically encode/store its reusable viewer representation in the background. Revisit and replay matching cached frames without reevaluating the graph. Bounded encoding queues must discard superseded revisions rather than retain every transient slider-drag result; asynchronous writes must not publish obsolete results as current. Cache work must not block interactive rendering. Automatic retention does not request unvisited frames. An uncached first traversal may run at live-render speed; smooth first-pass playback is not guaranteed.
+
+HEVC is a candidate, not a selected mandatory codec. Prototype codec/profile, bit depth, bitrate, and indexed independently decodable chunk sizes against color fidelity, cache construction, forward/reverse playback, random seeking, and invalidated-frame replacement. NVENC denotes NVIDIA encoding and NVDEC decoding, not codecs. Hardware support and interoperability must be capability-tested.
+
+### Validity, residency, and budgets
+
+Cache identity includes effective sources and revisions, graph/parameter/input state, implementation versions, mapped time, resolution, region, quality, channels, and relevant color configuration. Viewer representations additionally identify baked viewing state and encoding interpretation. Dependency edits invalidate affected results; a viewer-transform change invalidates the affected viewer representation, not upstream scene-linear results. Resolution/region/channel changes select different representations and need not erase still-valid previous ones. Timeline movement need not invalidate composition-local results when effective inputs and local times still match.
+
+Use a budgeted disk-backed cache with a bounded RAM hot set and a small decoded GPU playback queue. Retain valid entries while budgets permit, evicting least-recently-used eligible entries under pressure; eviction removes residency, whereas invalidation means a result no longer matches its dependencies. Explicit clearing removes the selected cache storage. Both eviction and clearing may require rerendering on the next request without modifying the graph.
+
+A settings menu exposes the disk-cache location and disk, RAM, and VRAM allocation budgets, plus cache clearing. The GPU budget includes processing images, selected reusable intermediates, decoder surfaces, in-flight work, and viewer resources, not just playback history. Budget accounting and eviction must respect in-flight lifetimes. Application budgets do not guarantee available OS/driver memory. Do not retain a 100–200-frame float playback history merely to replay the viewer; selective float intermediate reuse remains allowed.
 
 ### Artist-facing commands
 
 | Action | Contract |
 | --- | --- |
-| Cache for Playback | Builds managed, disposable results for a selected range at preview or full quality. Invalidated results recompute; storage may be evicted. The live graph remains authoritative. |
+| Cache for Playback | Explicitly requests a selected range and builds managed, disposable representations for its declared viewing/quality requirements. Automatic caching already retains requested frames without this action; it never fills an unrequested range. A compressed viewer representation cannot claim full-quality composition fidelity. |
 | Bake and Use Render | Creates a persistent render of specified outputs/range and selects it as a playback representation while retaining the editable network. |
 | Update Bake | Regenerates the persistent representation from the current graph. |
 | Return to Live | Stops substituting the bake and evaluates the retained network. |
 | Write / Export | Produces an explicitly requested deliverable with selected output, range, format, and delivery settings. |
 
 Cache and bake commands are available directly from a timeline composition's context menu and from the graph. Users do not need to insert Write nodes to accelerate playback.
+
+When baked viewing settings change, request the current frame with the new settings immediately. Invalidated range entries rebuild only when explicitly requested or visited; no automatic range render-ahead is implied.
 
 Bakes record graph/source state, range, channels, quality, and color interpretation. Upstream edits mark them outdated without silently overwriting them. Requests outside their coverage, or requiring unavailable channels, use live evaluation or report the missing coverage; a limited bake cannot masquerade as a complete network result.
 
@@ -246,6 +270,8 @@ For two timeline occurrences sharing a VFX composition, the evaluator may reuse 
 
 Cache identity includes effective inputs and overrides, node/asset implementation versions, source revisions, time, image requirements, and relevant color policy. Shared definition identity alone is insufficient for reuse. Viewer display transforms are downstream viewing operations and must not contaminate reusable composition results.
 
+Evaluation plans and image interfaces must support GPU-resident results with explicit lifetime/completion contracts from the outset; a CPU pixel buffer is not the universal execution or storage contract. CPU implementations provide correctness references and supported media/plugin paths, not an architectural prerequisite for native per-pixel processing. Request revision establishes publication freshness; effective dependencies establish reuse, so unrelated document changes must not destroy valid branch reuse.
+
 ### 10.4 GPU and native effect contract
 
 Native effects are packages containing shader code, typed ports, parameter/UI metadata, implementation version, supported quality modes, and declared region/channel/temporal dependencies. A shader compiler alone does not establish effect compatibility: bindings, coordinates, sampling, alpha conventions, color interpretation, and output formats must conform to the application contract. Arbitrary OpenGL programs are not drop-in GLSL effects.
@@ -253,6 +279,8 @@ Native effects are packages containing shader code, typed ports, parameter/UI me
 The image contract must represent dimensions, bounds, pixel aspect, named channels, precision, alpha association, and color interpretation. Image processing uses floating-point representations as required; final precision is declared by operation and pipeline policy. Preview precision reductions must be marked and cannot satisfy higher-quality requests. CPU and GPU implementations are compared with operation-specific tolerances rather than an unsupported promise of universal bitwise equality.
 
 GPU resources use explicit lifetime and synchronization rules with budgeted allocation/reuse. Avoid routine CPU readback between native GPU effects and the viewer. Capability-dependent external sharing may require transfers; measure and expose their cost in profiling. GPU acceleration is the native target, not a promise that every media decoder or third-party node executes on GPU.
+
+Vulkan/Slang is the native effects path; no NVIDIA-specific shader implementation is required for GPU acceleration. Hardware decode/encode belongs behind the Media interface, with GPU resource sharing and synchronization owned by the GPU module. Validate NVIDIA first on available hardware without making NVIDIA a product requirement. Query supported codec/profile/format capabilities and measure transfers into Vulkan; hardware decode alone is not proof of an efficient end-to-end path. Unsupported media acceleration must use a declared supported path or identify the limitation.
 
 Shader compilation and pipeline creation run asynchronously and are cached. Compilation errors identify the node and source location where available. No implicit effect fallback may silently change the image. Full-resolution requests that exceed memory budgets must use supported tiling/spill strategies or report a clear failure rather than silently reducing quality.
 
@@ -293,20 +321,25 @@ Windows and native Wayland are required validation targets, not merely build tar
 
 ## 11. Technical prototype gates
 
-Before freezing the stack, build a vertical slice: **decode → native Slang effect → OpenFX effect → OpenColorIO viewing transform → viewer**, alongside a functioning graph and timeline in a tiled workspace.
+Before freezing the stack, build a native GPU vertical slice: **decode → native Slang effect → GPU OpenColorIO viewing transform → viewer**, then prove automatic compressed viewer-cache construction and hardware-assisted replay. Integrate the **OpenFX effect** path and a functioning graph and timeline in a tiled workspace as additional mandatory gates; CPU plugin compatibility must not defer proof of native GPU execution. Vulkan bootstrap and shader compilation alone are prerequisites, not evidence of image processing or interactive performance. See [ADR-0004](decisions/0004-gpu-first-viewer-cache.md) for the policy and trade-offs.
 
 | Gate | Required evidence |
 | --- | --- |
-| GPU/UI integration | Correct resource synchronization and no routine viewer readback on the chosen native path. |
-| Interactive behavior | Scrubbing, cancellation, edits during rendering, resizing, and workspace switching remain responsive. |
-| Graph reuse | Shared VFX plus independent grades reuse and invalidate only the appropriate results. |
-| Shader contract | Equivalent sample Slang/GLSL effects bind correctly and pass declared image tolerances. |
-| Plugin support | Representative CPU/OpenGL plugins render and interact correctly; incompatible paths report clearly. |
-| Platform behavior | Pass on Windows and native Wayland across a declared GPU/driver and desktop test matrix. |
-| Resource pressure | Measured RAM/VRAM budgets, cache eviction, bake coverage, and failure recovery. |
-| Reproducibility | Headless and interactive full-quality outputs agree within declared tolerances for the same project state. |
+| GPU/UI integration | Real GPU image processing and GPU viewing transform with correct synchronization; no routine CPU readback between native effects and viewer. Capability-dependent decode/encode transfers are measured. |
+| Interactive behavior | Scrubbing, cancellation, parameter/view changes, resizing, zoom, and workspace switching remain responsive. Auto/Full/Half/Quarter behaves as specified; matching cached frames survive pause without rerender. Only requested frames and their necessary dependencies evaluate. |
+| Graph reuse | Shared VFX plus independent grades reuse and invalidate only appropriate results. Viewer-transform changes preserve upstream scene-linear reuse; different representations do not erase valid siblings. |
+| Shader contract | Equivalent sample Slang/GLSL effects execute and pass declared image tolerances; precision, sampling scale, regions, and dependencies preserve operation semantics. |
+| Viewer playback cache | Correct Rec.709 encoding/decoding interpretation, no double viewer transform, accepted 4:2:0/compression differences characterized; requested frames cache asynchronously. Forward/reverse/random replay, invalidated-frame replacement, and obsolete-write rejection are demonstrated. |
+| Plugin support | Representative CPU/OpenGL plugins render and interact correctly; incompatible paths report clearly. Native GPU progress does not remove this gate. |
+| Platform behavior | Pass on Windows and native Wayland across a declared GPU/driver and desktop test matrix. NVIDIA-first evidence is not evidence of universal device support. |
+| Resource pressure | Disk/RAM/VRAM settings and accounting, bounded queues, safe cache eviction/clearing, bake coverage, and failure recovery demonstrated, including in-flight resource ownership. |
+| Reproducibility | Headless GPU and interactive full-quality outputs agree within declared tolerances for the same project state; CPU references use operation-specific tolerances. Compressed viewer caches never satisfy full-quality export. |
 
 Record hardware, media, resolution, graph, quality, cache state, and driver for each benchmark. Set numerical latency, throughput, startup, and memory budgets from these workloads before making release performance commitments. UI framework choice, external GPU sharing, plugin isolation, and minimum Vulkan/device requirements remain provisional until these gates are evaluated.
+
+Initial performance workload: GTX 1070, 4K source imagery displayed as a 1080p preview, a range of **200 explicitly requested frames**, and **24 fps** playback. For a simple grade/transform/merge graph, target **≤100 ms p95 edit-to-visible-frame latency** and **≥24 completed cached frames per second** for cache construction including rendering and encoding. Also characterize a heavier blur/keying graph without assuming it meets the simple-graph targets. Record exact graphs, assets, source format, GPU model/VRAM, driver, OS, viewing configuration, cache state, and sampling mode so results can be reproduced.
+
+Measure initial frame latency, cache construction and encoder backlog, warm forward/reverse playback, random seeks, dropped frames, decode/encode/interoperability costs, and peak disk/RAM/VRAM usage. Latency ends at visible presentation, not submission; cache construction ends when the representation is reusable. These are initial acceptance targets, **not measured performance claims**. Codec settings, chunk sizes, default budgets, and supported device/profile matrix remain evidence-driven prototype decisions. Benchmarks must not introduce speculative rendering to meet the targets.
 
 ## 12. Public API, extensions, and agent control
 

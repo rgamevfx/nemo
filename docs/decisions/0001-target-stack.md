@@ -16,10 +16,11 @@ Adopt the spec section 10.1 stack: C++20 core, Vulkan backend, Slang→SPIR-V
 shaders (glslang as the second ingestion path), Qt 6 Quick with custom C++
 scene-graph items. CMake + Ninja, pinned dependencies.
 
-The stack is subject to the prototype gates in spec section 11: a vertical
-slice (decode → Slang effect → OpenFX effect → OCIO viewing transform →
-viewer) must pass before the stack is frozen. Qt Widgets remains the fallback
-if prototype results favor it.
+The stack is subject to the prototype gates in spec section 11. As refined by
+[ADR-0004](0004-gpu-first-viewer-cache.md), prove decode → Slang effect → GPU
+OCIO viewing transform → viewer and compressed viewer-cache replay first;
+OpenFX integration remains mandatory before stack freeze. Qt Widgets remains
+the fallback if prototype results favor it.
 
 ## Consequences
 

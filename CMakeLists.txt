@@ -12,6 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(NEMO_BUILD_TESTS "Build core unit tests" ON)
 option(NEMO_BUILD_CLI "Build the nemo-cli headless tool" ON)
+option(NEMO_BUILD_UI "Build the Qt Quick workspace shell" OFF)
 option(NEMO_ENABLE_IPO "Enable interprocedural optimization in release builds" ON)
 option(NEMO_ENABLE_CLANG_TIDY "Run clang-tidy during compilation when found" OFF)
 option(NEMO_WARN_AS_ERROR "Treat compiler warnings as errors" OFF)
@@ -44,6 +45,10 @@ add_subdirectory(src/nemo/gpu/shaders)
 
 if(NEMO_BUILD_CLI)
     add_subdirectory(apps/nemo-cli)
+endif()
+
+if(NEMO_BUILD_UI OR NEMO_BUILD_TESTS)
+    add_subdirectory(apps/nemo-ui)
 endif()
 
 if(NEMO_BUILD_TESTS)

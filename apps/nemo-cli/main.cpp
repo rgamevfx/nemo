@@ -364,14 +364,15 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
                 } else {
                     writeCpuPpm(out, image);
                     report["ok"] = true;
-                    report["rendered"] = {{"path", std::filesystem::absolute(outPath).string()},
-                                          {"width", width},
-                                          {"height", height},
-                                          {"frame", frame},
-                                          {"backend", backend},
-                                          {"device", device->properties().deviceName},
-                                          {"precision", "float32"},
-                                          {"color", "scene-linear"}};
+                    report["rendered"] = {
+                        {"path", std::filesystem::absolute(outPath).string()},
+                        {"width", width},
+                        {"height", height},
+                        {"frame", frame},
+                        {"backend", backend},
+                        {"device", device->properties().deviceName},
+                        {"precision", image.layout().precision == nemo::Precision::Float32 ? "float32" : "unknown"},
+                        {"color", "scene-linear"}};
                     report["readback"] = {
                         {"node", request.output},
                         {"note", "diagnostic-only; the executor path itself performs no host readback"}};

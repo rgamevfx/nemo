@@ -145,6 +145,10 @@ struct Composition {
     return composition;
 }
 
+[[nodiscard]] CpuImage evaluateCpuImage(const Document& doc, const EvaluationRequest& request) {
+    return evaluateCpu(doc, request).image;
+}
+
 [[nodiscard]] EvaluationRequest requestFor(const Document& doc, Region region, std::int64_t frame) {
     EvaluationRequest request;
     request.output = resolveOutput(doc);
@@ -153,10 +157,18 @@ struct Composition {
     return request;
 }
 
-// Declared tolerance for this inventory (float32 pointwise ops on both
-// sides; differences come from CPU double-precision gradient rounding and
-// potential GPU FMA fusion in the over blend).
-constexpr float kTolerance = 1e-6F;
+// Declared, operation-specific tolerances (spec section 10.4: operation-
+// specific, not a universal bitwise promise):
+//   constcolor: 0      — one constant broadcast, exact on both executors.
+//   merge:      2e-7   — same float32 expression; difference budget covers
+//                        potential FMA fusion in the GPU compiler.
+//   testpattern: 1e-6  — CPU computes gradients in double then rounds once;
+//                        the shaders compute in float (<= 1 ulp difference).
+// The composition comparisons below bound by the max of the ops involved
+// (kTolerance), keeping one named constant for the shared helpers.
+constexpr float kMergeTolerance = 2e-7F;
+constexpr float kTestpatternTolerance = 1e-6F;
+constexpr float kTolerance = kTestpatternTolerance;
 
 void expectImagesClose(const CpuImage& expected, const CpuImage& actual, float tolerance, const char* what) {
     ASSERT_EQ(expected.width(), actual.width()) << what;
@@ -170,6 +182,38 @@ void expectImagesClose(const CpuImage& expected, const CpuImage& actual, float t
             }
         }
     }
+}
+
+// The constcolor operation's declared tolerance is 0: one broadcast
+// constant must be bit-exact on every executor (this is what "operation-
+// specific tolerances" buys — exact where the op is exact).
+TEST(Effect, ConstcolorIsBitExact) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    discardSetupChatter(*boot.instance);
+
+    Document doc;
+    doc.name = "exact-const";
+    const NodeId color = doc.graph.addNode("constcolor", "color");
+    doc.graph.node(color)->params = {{"color", "4 -2 2.5 0.125"}};
+    const NodeId out = doc.graph.addNode("output", "result");
+    (void)doc.graph.connect({color, 0}, {out, 0});
+    const EvaluationRequest request = requestFor(doc, {0, 0, 9, 7}, 0);
+
+    const CpuImage cpuImage = evaluateCpuImage(doc, request);
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    eval::GpuEvaluation slangEval = evaluateGpu(doc, request, slang, *boot.device, *boot.allocator);
+    const CpuImage slangImage = slangEval.readBack(request.output, *boot.device, *boot.allocator);
+    eval::GpuEvaluation glslEval = evaluateGpu(doc, request, glsl, *boot.device, *boot.allocator);
+    const CpuImage glslImage = glslEval.readBack(request.output, *boot.device, *boot.allocator);
+    for (int y = 0; y < request.region.height; ++y) {
+        for (int x = 0; x < request.region.width; ++x) {
+            EXPECT_EQ(slangImage.pixel(x, y), cpuImage.pixel(x, y)) << "pixel (" << x << "," << y << ")";
+            EXPECT_EQ(glslImage.pixel(x, y), cpuImage.pixel(x, y)) << "pixel (" << x << "," << y << ")";
+        }
+    }
+    expectValidationClean(*boot.instance);
 }
 
 // Max channel difference over the shared extent, for threshold-style checks
@@ -186,10 +230,6 @@ void expectImagesClose(const CpuImage& expected, const CpuImage& actual, float t
         }
     }
     return diff;
-}
-
-[[nodiscard]] CpuImage evaluateCpuImage(const Document& doc, const EvaluationRequest& request) {
-    return evaluateCpu(doc, request).image;
 }
 
 }  // namespace
@@ -325,8 +365,10 @@ TEST(Effect, WrongBindingsAndAlphaFailComparison) {
         const eval::EffectLibrary wrong = glslLibraryWithMerge(mergeBody);
         eval::GpuEvaluation wrongEval = evaluateGpu(composition.doc, request, wrong, *boot.device, *boot.allocator);
         const CpuImage wrongImage = wrongEval.readBack(request.output, *boot.device, *boot.allocator);
-        // The declared tolerance must catch the wrong interpretation.
-        EXPECT_GT(maxChannelDiff(cpuImage, wrongImage), kTolerance)
+        // The wrong interpretation must exceed the merge operation's own
+        // declared tolerance (kMergeTolerance), not just the composition
+        // bound — this is the contract-enforcement bar for this op.
+        EXPECT_GT(maxChannelDiff(cpuImage, wrongImage), kMergeTolerance)
             << "wrong interpretation passed the declared tolerance";
         discardSetupChatter(*boot.instance);
     }

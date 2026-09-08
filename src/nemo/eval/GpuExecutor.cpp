@@ -53,13 +53,17 @@ void afterWriteBeforeRead(SubmissionQueue& queue, const gpu::Image& image, std::
                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, timeout_ns);
 }
 
-// Fills the uniforms a step's effect consumes and records the consumed
-// effective parameters (plan state, not authored guesses). Returns the
-// port-ordered input count the effect declares.
-std::uint32_t prepareUniforms(const Node& node, const EvaluationRequest& request, const EffectProgram& program,
-                              std::map<std::string, std::string>& effectiveParams, EffectUniforms& uniforms,
-                              std::vector<ComputeBinding>& bindings, gpu::Buffer& uniformBuffer,
-                              gpu::Allocator& allocator) {
+// Prepares one step's effect execution: fills the uniform block the
+// effect's declared contract consumes (recording consumed effective
+// parameters into `effectiveParams` — plan state, not authored guesses),
+// uploads it, binds set 0, and returns the port-ordered input count the
+// effect declares. The type dispatch mirrors the CPU reference inventory
+// (CpuReference.cpp); the per-type param parsing is shared with it via
+// parseColor4 so both executors resolve identical effective state.
+std::uint32_t prepareEffectStep(const Node& node, const EvaluationRequest& request, const EffectProgram& program,
+                                std::map<std::string, std::string>& effectiveParams, EffectUniforms& uniforms,
+                                std::vector<ComputeBinding>& bindings, gpu::Buffer& uniformBuffer,
+                                gpu::Allocator& allocator) {
     uniforms.misc[0] = static_cast<float>(request.localTime);
     uniforms.meta[0] = static_cast<std::uint32_t>(request.region.width);
     uniforms.meta[1] = static_cast<std::uint32_t>(request.region.height);
@@ -193,6 +197,12 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
 
     const std::vector<const Node*> order = scheduleDependencies(document, request.output);
     SubmissionQueue queue(device, device.graphics_family());
+    // Runtime-compile cache within this evaluation (the same effect source
+    // can run on several steps). Cross-evaluation shader compilation and
+    // pipeline creation — asynchronous and cached so they never block the
+    // UI path (spec section 10.4) — is the evaluator reuse work of issues
+    // #9/#13; this executor creates each step's pipeline synchronously.
+    std::map<std::string, std::vector<std::uint32_t>> compiled;
 
     GpuEvaluation evaluation;
     evaluation.plan.request = request;
@@ -232,17 +242,23 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
         // Compile/binding failures identify the node and the available
         // shader source location (spec section 10.4).
         std::vector<std::uint32_t> spirv;
-        try {
-            spirv = program.glsl.empty() ? program.spirv : gpu::compileGlslToSpirv(program.glsl);
-        } catch (const gpu::CompileException& error) {
-            failEffect(*node, program, std::string("shader compile failed: ") + error.what());
+        const auto cached = compiled.find(node->type);
+        if (cached != compiled.end()) {
+            spirv = cached->second;
+        } else {
+            try {
+                spirv = program.glsl.empty() ? program.spirv : gpu::compileGlslToSpirv(program.glsl);
+            } catch (const gpu::CompileException& error) {
+                failEffect(*node, program, std::string("shader compile failed: ") + error.what());
+            }
+            compiled.emplace(node->type, spirv);
         }
 
         EffectUniforms uniforms{};
         std::vector<ComputeBinding> bindings;
         gpu::Buffer uniformBuffer;
-        const std::uint32_t inputCount = prepareUniforms(*node, request, program, step.effectiveParams, uniforms,
-                                                         bindings, uniformBuffer, allocator);
+        const std::uint32_t inputCount = prepareEffectStep(*node, request, program, step.effectiveParams, uniforms,
+                                                           bindings, uniformBuffer, allocator);
         if (inputCount != inputs.size()) {
             failEffect(*node, program,
                        "effect declares " + std::to_string(inputCount) + " inputs but the plan wires " +

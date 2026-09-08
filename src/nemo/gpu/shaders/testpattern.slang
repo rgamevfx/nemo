@@ -50,7 +50,9 @@ void main(uint3 tid : SV_DispatchThreadID)
     float u = fullWidth > 1 ? (float)fullX / (float)(fullWidth - 1) : 0.0;
     float v = fullHeight > 1 ? (float)fullY / (float)(fullHeight - 1) : 0.0;
     int barWidth = max(2, fullWidth / 16);
-    int barPos = (int)(misc.x * (float)(fullWidth / 8)) % (fullWidth + barWidth);
+    // Integer math, identical to the GLSL equivalent and the CPU reference
+    // (front ends must agree for non-integer times, not just integer frames).
+    int barPos = (int(misc.x) * (fullWidth / 8)) % (fullWidth + barWidth);
     bool inBar = fullX >= barPos && fullX < barPos + barWidth;
 
     out_color[p] = float4(u, v, inBar ? 1.0 : 0.0, 1.0);

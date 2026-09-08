@@ -5,17 +5,25 @@
 find_package(OpenImageIO CONFIG REQUIRED)
 find_package(OpenColorIO CONFIG REQUIRED)
 
+# System FFmpeg (ADR-0002): hardware media decode/encode adapter (issue #10).
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET libavcodec libavutil libavformat libswscale)
+
 add_library(nemo_media
     ImageIO.cpp
     ViewingTransform.cpp
+    Probe.cpp
+    VideoDecode.cpp
 )
 add_library(nemo::media ALIAS nemo_media)
 
 target_include_directories(nemo_media PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(nemo_media
     PUBLIC nemo::core
+    PUBLIC nemo::gpu
     PRIVATE OpenImageIO::OpenImageIO
     PRIVATE OpenColorIO::OpenColorIO
+    PRIVATE PkgConfig::LIBAV
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

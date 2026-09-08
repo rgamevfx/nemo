@@ -93,6 +93,31 @@ TEST(Gpu, BootstrapCreateDestroy) {
     boot.instance.reset();
 }
 
+// Video queue selection (issue #10): when the physical device advertises a
+// decode or encode video queue family, Device::create must reserve it and
+// expose it; otherwise the accessor reports none. Internal consistency is
+// the contract — never an assumption about driver capabilities.
+TEST(Gpu, VideoQueueFamiliesReportedWhenAdvertised) {
+    auto boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    ASSERT_NE(boot.device, nullptr);
+
+    if (boot.device->decode_family() || boot.device->encode_family()) {
+        if (boot.device->decode_family()) {
+            EXPECT_TRUE(boot.device->family_capabilities(*boot.device->decode_family()) &
+                        VK_QUEUE_VIDEO_DECODE_BIT_KHR);
+        }
+        if (boot.device->encode_family()) {
+            EXPECT_TRUE(boot.device->family_capabilities(*boot.device->encode_family()) &
+                        VK_QUEUE_VIDEO_ENCODE_BIT_KHR);
+        }
+    }
+
+    boot.device.reset();
+    expectValidationClean(*boot.instance);
+    boot.instance.reset();
+}
+
 // The full acceptance path (issue #2 example 1): instance, device, and
 // allocator are created, an empty command buffer is submitted, the fence is
 // waited on, and everything is destroyed before the collected validation

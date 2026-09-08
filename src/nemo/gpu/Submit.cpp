@@ -61,6 +61,11 @@ SubmissionQueue::~SubmissionQueue() {
 }
 
 void SubmissionQueue::submit_and_wait(const std::function<void(VkCommandBuffer)>& record, uint64_t timeout_ns) {
+    submit_and_wait(record, TimelineSemaphores{}, timeout_ns);
+}
+
+void SubmissionQueue::submit_and_wait(const std::function<void(VkCommandBuffer)>& record,
+                                      const TimelineSemaphores& semaphores, uint64_t timeout_ns) {
     checkVulkan(vkResetFences(device_, 1, &fence_), "vkResetFences");
     checkVulkan(vkResetCommandBuffer(command_buffer_, 0), "vkResetCommandBuffer");
 
@@ -74,6 +79,24 @@ void SubmissionQueue::submit_and_wait(const std::function<void(VkCommandBuffer)>
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer_;
+    VkTimelineSemaphoreSubmitInfo timeline_info{};
+    timeline_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timeline_info.waitSemaphoreValueCount = static_cast<uint32_t>(semaphores.wait.size());
+    timeline_info.pWaitSemaphoreValues = semaphores.waitValues.data();
+    timeline_info.signalSemaphoreValueCount = static_cast<uint32_t>(semaphores.signal.size());
+    timeline_info.pSignalSemaphoreValues = semaphores.signalValues.data();
+    if (!semaphores.wait.empty() || !semaphores.signal.empty()) {
+        submit_info.waitSemaphoreCount = static_cast<uint32_t>(semaphores.wait.size());
+        submit_info.pWaitSemaphores = semaphores.wait.data();
+        submit_info.signalSemaphoreCount = static_cast<uint32_t>(semaphores.signal.size());
+        submit_info.pSignalSemaphores = semaphores.signal.data();
+        // Legacy-submit validation requires a non-null pWaitDstStageMask
+        // whenever semaphores are waited on; timeline waits are ordered by
+        // value, so the stage mask is a no-op (ALL_COMMANDS).
+        waitDstStageMask_.assign(semaphores.wait.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        submit_info.pWaitDstStageMask = waitDstStageMask_.data();
+        submit_info.pNext = &timeline_info;
+    }
     checkVulkan(vkQueueSubmit(queue_, 1, &submit_info, fence_), "vkQueueSubmit");
 
     VkResult waited = vkWaitForFences(device_, 1, &fence_, VK_TRUE, timeout_ns);

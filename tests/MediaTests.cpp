@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "nemo/media/ImageIO.hpp"
+#include "nemo/media/Probe.hpp"
 
 using namespace nemo;
 using namespace nemo::media;
@@ -163,4 +164,33 @@ TEST(MediaTest, MissingFileErrorNamesPath) {
         EXPECT_EQ(e.path, path.string());
         EXPECT_NE(std::string(e.what()).find(path.string()), std::string::npos);
     }
+}
+
+// Capability probe (issue #10 acceptance example 1/2): every reported
+// capability carries evidence; an unavailable capability names a clear
+// reason; no claim is "supported" without init verification. The probe is
+// self-consistent on any machine — hardware presence is measured, and
+// devices without video queues must never claim Vulkan decode.
+TEST(MediaTest, ProbeReportsEvidenceAndReasons) {
+    const MediaCapabilities capabilities = probeMediaCapabilities(nullptr);
+
+    ASSERT_FALSE(capabilities.decoders.empty());
+    for (const MediaCapability& decoder : capabilities.decoders) {
+        if (decoder.evidence == CapabilityEvidence::Unavailable) {
+            EXPECT_FALSE(decoder.reason.empty()) << decoder.codec;
+        } else {
+            EXPECT_TRUE(decoder.reason.empty()) << decoder.codec << ": " << decoder.reason;
+        }
+        if (decoder.codec == "h264-vulkan") {
+            // Vulkan decode needs the reserved video decode queue; without
+            // a device the probe can never init-verify it.
+            EXPECT_EQ(decoder.evidence, CapabilityEvidence::RegisteredOnly) << decoder.reason;
+        }
+    }
+    for (const MediaCapability& encoder : capabilities.encoders) {
+        if (encoder.evidence == CapabilityEvidence::Unavailable) {
+            EXPECT_FALSE(encoder.reason.empty()) << encoder.codec;
+        }
+    }
+    EXPECT_FALSE(capabilities.vulkanVideoDecodeQueues);
 }

@@ -8,7 +8,7 @@ add_library(nemo_core
     core/evaluation/Reuse.cpp
 )
 add_library(nemo::core ALIAS nemo_core)
-add_subdirectory(media)
+
 
 target_include_directories(nemo_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(nemo_core PUBLIC nlohmann_json::nlohmann_json)
@@ -19,6 +19,7 @@ if(NEMO_BUILD_GPU)
         gpu/Compile.cpp
         gpu/ComputePass.cpp
         gpu/Error.cpp
+        gpu/MediaInterop.cpp
         gpu/Instance.cpp
         gpu/Device.cpp
         gpu/Submit.cpp
@@ -38,6 +39,8 @@ if(NEMO_BUILD_GPU)
     set_source_files_properties(gpu/Compile.cpp PROPERTIES COMPILE_OPTIONS
         "$<$<CXX_COMPILER_ID:GNU,Clang>:-fno-sanitize=vptr>")
     add_subdirectory(eval)
+    # Media's hardware decode/encode adapter consumes the GPU interop seam.
+    add_subdirectory(media)
  endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

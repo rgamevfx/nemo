@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 #include "nemo/gpu/Device.hpp"
@@ -48,8 +50,26 @@ public:
     // descriptive message on any vk* error or on timeout.
     void submit_and_wait(const std::function<void(VkCommandBuffer)>& record, uint64_t timeout_ns);
 
+    // Timeline-semaphore variant (issue #10 interop): the submitted command
+    // buffer waits for each `wait` semaphore at `waitValues` before
+    // executing, and signals each `signal` semaphore at `signalValues` when
+    // the command buffer completes. This is the cross-queue dependency form
+    // for frames produced by an external producer queue (Vulkan video
+    // decode): the wait establishes the decode→use dependency in-queue, and
+    // the signal hands the frame back to the producer. Same fence/lifetime
+    // contract as the fence-only overload.
+    struct TimelineSemaphores {
+        std::vector<VkSemaphore> wait;
+        std::vector<std::uint64_t> waitValues;
+        std::vector<VkSemaphore> signal;
+        std::vector<std::uint64_t> signalValues;
+    };
+    void submit_and_wait(const std::function<void(VkCommandBuffer)>& record, const TimelineSemaphores& semaphores,
+                         uint64_t timeout_ns);
+
 private:
     VkDevice device_ = VK_NULL_HANDLE;
+    std::vector<VkPipelineStageFlags> waitDstStageMask_;
     VkQueue queue_ = VK_NULL_HANDLE;
     VkCommandPool command_pool_ = VK_NULL_HANDLE;
     VkCommandBuffer command_buffer_ = VK_NULL_HANDLE;

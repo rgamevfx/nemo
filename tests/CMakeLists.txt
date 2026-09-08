@@ -28,6 +28,17 @@ if(NEMO_BUILD_GPU)
         ColorTests.cpp
     )
     target_link_libraries(nemo_color_tests PRIVATE nemo::media nemo::gpu GTest::gtest_main)
+
+    # HwMedia* tests (issue #10): hardware decode interop and the codec
+    # sweep harness. Vulkan video decode requires the application device;
+    # the mediaConvert SPIR-V comes from the nemo_shaders target.
+    add_executable(nemo_hwmedia_tests
+        HwMediaTests.cpp
+    )
+    target_link_libraries(nemo_hwmedia_tests PRIVATE nemo::media nemo::gpu GTest::gtest_main)
+    if(DEFINED NEMO_SLANG_SPV_DIR)
+        target_compile_definitions(nemo_hwmedia_tests PRIVATE NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
+    endif()
 endif()
 
 # Tests intentionally ignore returned ids when they only need the side effect.
@@ -42,6 +53,7 @@ gtest_discover_tests(nemo_media_tests)
 
 if(NEMO_BUILD_GPU)
     gtest_discover_tests(nemo_color_tests)
+    gtest_discover_tests(nemo_hwmedia_tests)
 endif()
 
 # Effect* tests (issue #8): native GPU effect execution over the shared

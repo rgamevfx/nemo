@@ -44,6 +44,14 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
     device->physical_ = selectPhysicalDevice(instance.handle());
     vkGetPhysicalDeviceProperties(device->physical_, &device->properties_);
     device->family_properties_ = queueFamilyProperties(device->physical_);
+    // Storage-image effect kernels (issue #8): Slang emits RGBA32F storage
+    // images with Unknown format, which requires the without-format
+    // features. Enable each only when the device reports support; the
+    // effect executor refuses to run when the format path is unavailable.
+    vkGetPhysicalDeviceFeatures(device->physical_, &device->features_);
+    VkPhysicalDeviceFeatures enabled{};
+    enabled.shaderStorageImageReadWithoutFormat = device->features_.shaderStorageImageReadWithoutFormat;
+    enabled.shaderStorageImageWriteWithoutFormat = device->features_.shaderStorageImageWriteWithoutFormat;
 
     // Explicit queue selection per the class contract: the graphics family is
     // the first family advertising graphics+compute; the transfer family is a
@@ -93,10 +101,8 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_infos.size());
     create_info.pQueueCreateInfos = queue_infos.data();
-    // No device extensions yet: headless bootstrap needs none. #8 adds the
-    // ones its shader/image path requires.
+    create_info.pEnabledFeatures = &enabled;
     checkVulkan(vkCreateDevice(device->physical_, &create_info, nullptr, &device->device_), "vkCreateDevice");
-
     vkGetDeviceQueue(device->device_, device->graphics_family_, 0, &device->graphics_queue_);
     if (device->transfer_family_ != device->graphics_family_) {
         vkGetDeviceQueue(device->device_, device->transfer_family_, 0, &device->transfer_queue_);

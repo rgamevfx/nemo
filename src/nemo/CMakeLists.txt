@@ -36,7 +36,8 @@ if(NEMO_BUILD_GPU)
     # rebuild, so it is disabled for this translation unit only.
     set_source_files_properties(gpu/Compile.cpp PROPERTIES COMPILE_OPTIONS
         "$<$<CXX_COMPILER_ID:GNU,Clang>:-fno-sanitize=vptr>")
-endif()
+    add_subdirectory(eval)
+ endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(nemo_core PRIVATE -Wall -Wextra -Wpedantic)

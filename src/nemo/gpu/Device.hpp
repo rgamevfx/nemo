@@ -39,6 +39,13 @@ public:
     [[nodiscard]] uint32_t graphics_family() const { return graphics_family_; }
     [[nodiscard]] uint32_t transfer_family() const { return transfer_family_; }
 
+    // Physical-device feature support queried at creation. Creation enables
+    // shaderStorageImageReadWithoutFormat and shaderStorageImageWriteWithout
+    // Format — each exactly when reported here — because native effect
+    // kernels (issue #8) read/write storage images whose format Slang emits
+    // as Unknown. The effect executor refuses to run when either is absent.
+    [[nodiscard]] const VkPhysicalDeviceFeatures& features() const { return features_; }
+
     // Queue-family capabilities as advertised by the driver; 0 for an unknown
     // family index.
     [[nodiscard]] VkQueueFlags family_capabilities(uint32_t family) const;
@@ -56,6 +63,7 @@ private:
     uint32_t transfer_family_ = 0;
     VkQueue graphics_queue_ = VK_NULL_HANDLE;
     VkQueue transfer_queue_ = VK_NULL_HANDLE;
+    VkPhysicalDeviceFeatures features_{};
 };
 
 }  // namespace nemo::gpu

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Ids.hpp"
@@ -44,5 +46,26 @@ struct CpuEvaluation {
 // required dependencies of the output are scheduled (spec section 10.3).
 // Throws EvaluationException with node-identifying messages.
 [[nodiscard]] CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request);
+
+// Validates a request for any executor (CPU reference and native GPU,
+// issue #8): quality must be Full (spec section 8), channels RGBA, region
+// within the reference bounds, and the output node must exist and be an
+// Output node. Throws EvaluationException otherwise.
+void validateRequest(const Document& document, const EvaluationRequest& request);
+
+// Collects the required dependency set of `output` (spec section 10.3:
+// schedule only required dependencies) and orders it dependencies-first.
+// Shared by the CPU reference and the native GPU effect executor: both
+// consume the same scheduled plan.
+[[nodiscard]] std::vector<const Node*> scheduleDependencies(const Document& document, NodeId output);
+
+// Resolves `node`'s inputs in declared port order against `evaluated` (the
+// image identities already produced). Fills `step.inputs` and
+// `step.inputImages`; returns the producing node ids in port order. Throws
+// EvaluationException when a port is unconnected or its producer was not
+// evaluated. Shared by the CPU reference and the native GPU executor so
+// both record identical plan input state.
+std::vector<NodeId> resolveStepInputs(const Document& document, const Node& node,
+                                      const std::map<NodeId, ImageIdentity>& evaluated, PlanStep& step);
 
 }  // namespace nemo

@@ -43,6 +43,25 @@ if(NEMO_BUILD_GPU)
     gtest_discover_tests(nemo_color_tests)
 endif()
 
+# Effect* tests (issue #8): native GPU effect execution over the shared
+# plan — Slang/GLSL front ends, CPU-reference tolerances, contract
+# violations must fail. Slang SPIR-V comes from the nemo_shaders target.
+if(NEMO_BUILD_GPU)
+    # Effect* tests (issue #8): native GPU effect execution over the shared
+    # plan — Slang/GLSL front ends, CPU-reference tolerances, contract
+    # violations must fail. Slang SPIR-V comes from the nemo_shaders target.
+    add_executable(nemo_effect_tests
+        GpuEffectTests.cpp
+    )
+    target_link_libraries(nemo_effect_tests PRIVATE nemo::eval nemo::gpu GTest::gtest_main)
+    if(DEFINED NEMO_SLANG_SPV_DIR)
+        target_compile_definitions(nemo_effect_tests PRIVATE
+            NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}"
+            NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/gpu/shaders")
+    endif()
+    gtest_discover_tests(nemo_effect_tests)
+endif()
+
 add_executable(nemo_workspace_tests WorkspaceTests.cpp)
 target_link_libraries(nemo_workspace_tests PRIVATE nemo::workspace GTest::gtest_main)
 gtest_discover_tests(nemo_workspace_tests)

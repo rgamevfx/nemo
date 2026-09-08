@@ -12,7 +12,6 @@ namespace {
 [[noreturn]] void fail(const std::string& what, const std::string& detail = {}) {
     throw GpuException(GpuError::VulkanError, "compute pass: " + what + (detail.empty() ? "" : ": " + detail));
 }
-
 [[nodiscard]] VkDescriptorType descriptorType(DescriptorKind kind) {
     switch (kind) {
     case DescriptorKind::UniformBuffer:
@@ -21,6 +20,8 @@ namespace {
         return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     case DescriptorKind::CombinedImageSampler:
         return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    case DescriptorKind::StorageImage:
+        return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     }
     fail("unknown descriptor kind");
 }
@@ -181,6 +182,12 @@ std::unique_ptr<ComputePass> ComputePass::create(Device& device, const std::vect
             impl->samplers.push_back(sampler);
             imageInfos.push_back({sampler, binding.image->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
             write.pImageInfo = &imageInfos.back();
+        } else if (binding.kind == DescriptorKind::StorageImage) {
+            // GENERAL throughout: the effect executor writes a result and
+            // hands the same image to the next dependent pass (spec 10.4),
+            // synchronized by imageBarrier between dispatches.
+            imageInfos.push_back({VK_NULL_HANDLE, binding.image->view(), VK_IMAGE_LAYOUT_GENERAL});
+            write.pImageInfo = &imageInfos.back();
         } else {
             bufferInfos.push_back({binding.buffer->handle(), 0, VK_WHOLE_SIZE});
             write.pBufferInfo = &bufferInfos.back();
@@ -256,6 +263,54 @@ void uploadImage(SubmissionQueue& queue, Allocator& allocator, const Image& imag
                                  nullptr, 0, nullptr, 1, &toShader);
         },
         timeout_ns);
+}
+
+void imageBarrier(SubmissionQueue& queue, const Image& image, VkImageLayout oldLayout, VkImageLayout newLayout,
+                  VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkPipelineStageFlags dst_stage,
+                  VkAccessFlags dst_access, uint64_t timeout_ns) {
+    queue.submit_and_wait(
+        [&](VkCommandBuffer cmd) {
+            VkImageMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.srcAccessMask = src_access;
+            barrier.dstAccessMask = dst_access;
+            barrier.oldLayout = oldLayout;
+            barrier.newLayout = newLayout;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = image.handle();
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        },
+        timeout_ns);
+}
+
+void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& image, void* data, std::size_t bytes,
+                   uint64_t timeout_ns) {
+    if (bytes == 0 || data == nullptr) {
+        throw GpuException(GpuError::InvalidRequest, "downloadImage: empty download");
+    }
+    Buffer staging = allocator.create_buffer(static_cast<VkDeviceSize>(bytes), VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                             MemoryPreference::HostMapped);
+    // GENERAL → TRANSFER_SRC → copy → GENERAL: the diagnostic readback
+    // must not change the resident image's layout convention.
+    imageBarrier(queue, image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                 VK_ACCESS_TRANSFER_READ_BIT, timeout_ns);
+    const VkExtent3D extent = image.extent();
+    queue.submit_and_wait(
+        [&](VkCommandBuffer cmd) {
+            VkBufferImageCopy copy{};
+            copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            copy.imageExtent = extent;
+            vkCmdCopyImageToBuffer(cmd, image.handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, staging.handle(), 1,
+                                   &copy);
+        },
+        timeout_ns);
+    imageBarrier(queue, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                 VK_ACCESS_SHADER_READ_BIT, timeout_ns);
+    std::memcpy(data, staging.mapped(), bytes);
 }
 
 }  // namespace nemo::gpu

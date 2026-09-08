@@ -31,7 +31,7 @@
 
 namespace nemo::gpu {
 
-enum class DescriptorKind { UniformBuffer, StorageBuffer, CombinedImageSampler };
+enum class DescriptorKind { UniformBuffer, StorageBuffer, CombinedImageSampler, StorageImage };
 
 struct ComputeBinding {
     uint32_t set{};
@@ -39,6 +39,9 @@ struct ComputeBinding {
     DescriptorKind kind{};
     // Buffers: the bound Buffer must outlive the pass. Images: the bound
     // Image must outlive the pass; the pass owns its sampler.
+    // StorageImage (issue #8) binds the image for shader read/write in
+    // GENERAL layout — the effect-executor image convention: no sampler,
+    // and the image must carry VK_IMAGE_USAGE_STORAGE_IMAGE_BIT.
     const Buffer* buffer{};
     const Image* image{};
     // Image sampling filter: LUT1D textures need LINEAR, 3D LUTs NEAREST
@@ -79,5 +82,26 @@ private:
 // Synchronous (SubmissionQueue fence). 1D/2D/3D images supported.
 void uploadImage(SubmissionQueue& queue, Allocator& allocator, const Image& image, const void* data, std::size_t bytes,
                  uint64_t timeout_ns);
+
+// Issue #8: explicit image layout/barrier control and a diagnostic-only
+// download, so a native effect graph keeps results device-resident between
+// dependent passes and reads pixels back only in test/verification paths
+// (spec section 10.4 "no routine readback").
+
+// Records one image memory barrier and waits for completion. Establishes
+// the write→read dependency between compute dispatches over `image` with
+// an explicit layout transition (UNDEFINED → GENERAL prepares a fresh
+// image for its first storage write; GENERAL → GENERAL re-synchronizes a
+// written image for its next reader). Synchronous (SubmissionQueue fence).
+void imageBarrier(SubmissionQueue& queue, const Image& image, VkImageLayout oldLayout, VkImageLayout newLayout,
+                  VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkPipelineStageFlags dst_stage,
+                  VkAccessFlags dst_access, uint64_t timeout_ns);
+
+// Test/diagnostic readback ONLY: copies `bytes` from `image` (in GENERAL
+// layout) into `data` through a staging buffer and leaves the image in
+// GENERAL. The effect executor surfaces this through
+// GpuEvaluation::readBack; production/viewer paths never call it.
+void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& image, void* data, std::size_t bytes,
+                   uint64_t timeout_ns);
 
 }  // namespace nemo::gpu

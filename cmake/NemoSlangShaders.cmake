@@ -140,7 +140,8 @@ function(nemo_add_slang_shaders target)
             DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${_shader}" "${NEMO_SLANGC_TOOL}"
             COMMENT "slangc ${_shader} -> ${_name}.spv"
             VERBATIM)
-        list(APPEND _outputs "${_spv}")
-    endforeach()
-    add_custom_target(${target} ${_all_flag} DEPENDS ${_outputs} SOURCES ${ARG_SHADERS})
+    list(APPEND _outputs "${_spv}")
+endforeach()
+add_custom_target(${target} ${_all_flag} DEPENDS ${_outputs} SOURCES ${ARG_SHADERS})
+set(NEMO_SLANG_SPV_DIR "${_spv_dir}" PARENT_SCOPE)
 endfunction()

@@ -26,7 +26,15 @@
 #include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/media/ImageIO.hpp"
-
+#ifdef NEMO_BUILD_GPU
+#include "nemo/eval/GpuExecutor.hpp"
+#include "nemo/gpu/Allocator.hpp"
+#include "nemo/gpu/Device.hpp"
+#include "nemo/gpu/Instance.hpp"
+#ifndef NEMO_SLANG_SRC_DIR
+#define NEMO_SLANG_SRC_DIR ""
+#endif
+#endif
 namespace {
 
 int printUsage() {
@@ -36,7 +44,13 @@ int printUsage() {
                  "[--width W] [--height H] [--output NAME]\n"
                  "  nemo-cli render <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H]\n"
-                 "  nemo-cli imageinfo <image> [--frame N]\n";
+                 "  nemo-cli imageinfo <image> [--frame N]\n"
+#ifdef NEMO_BUILD_GPU
+                 "  nemo-cli evaluate-gpu <project.json> --out <file.ppm> [--frame N] "
+                 "[--width W] [--height H] [--output NAME]\n"
+                 "          [--backend slang|glsl] [--shaders <spv-dir>]\n"
+#endif
+                 "\n";
     return 2;
 }
 
@@ -250,6 +264,136 @@ int commandEvaluate(const std::vector<std::string>& args) {
 // Image source probe: reports the image contract for one still or sequence
 // frame as machine-readable JSON diagnostics (issue #4 acceptance: a
 // missing path surfaces the offending file in `errors`).
+#ifdef NEMO_BUILD_GPU
+// Headless GPU execution smoke scenario (issue #8): evaluates the document
+// through the native Vulkan effect path (GPU-resident intermediates, no
+// routine readback), then performs ONE declared diagnostic readback of the
+// requested output for the machine-readable report and the PPM. The
+// readback is the verification seam; the executor path itself is
+// readback-free.
+int commandEvaluateGpu(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        return printUsage();
+    }
+    std::string outPath;
+    std::string outputName;
+    std::string shaderDir;
+    std::string backend = "slang";
+    int frame = 0;
+    int width = 64;
+    int height = 64;
+    for (std::size_t i = 1; i < args.size(); i += 2) {
+        const std::string& flag = args[i];
+        if (i + 1 >= args.size()) {
+            std::cerr << "missing value for " << flag << '\n';
+            return 2;
+        }
+        const std::string& value = args[i + 1];
+        if (flag == "--out") {
+            outPath = value;
+        } else if (flag == "--frame") {
+            frame = std::stoi(value);
+        } else if (flag == "--width") {
+            width = std::stoi(value);
+        } else if (flag == "--height") {
+            height = std::stoi(value);
+        } else if (flag == "--output") {
+            outputName = value;
+        } else if (flag == "--shaders") {
+            shaderDir = value;
+        } else if (flag == "--backend") {
+            backend = value;
+        } else {
+            std::cerr << "unknown flag " << flag << '\n';
+            return 2;
+        }
+    }
+    if (outPath.empty() || width <= 0 || height <= 0 || width > 8192 || height > 8192) {
+        std::cerr << "evaluate-gpu requires --out and 1..8192 dimensions\n";
+        return 2;
+    }
+    if (backend != "slang" && backend != "glsl") {
+        std::cerr << "unknown backend '" << backend << "' (supported: slang, glsl)\n";
+        return 2;
+    }
+    if (backend == "slang" && shaderDir.empty()) {
+#ifdef NEMO_SLANG_SPV_DIR
+        shaderDir = NEMO_SLANG_SPV_DIR;
+#endif
+    }
+
+    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}};
+    try {
+        std::ifstream in(args.front());
+        if (!in) {
+            report["errors"].push_back("cannot open file: " + args.front());
+        } else {
+            const auto loaded = nemo::loadDocument(nlohmann::json::parse(in));
+            report["warnings"] = loaded.warnings;
+
+            nemo::EvaluationRequest request;
+            request.output = nemo::resolveOutput(loaded.document, outputName);
+            request.localTime = frame;
+            request.region = {0, 0, width, height};
+
+            auto instance = nemo::gpu::Instance::create({.validation = true});
+            auto device = nemo::gpu::Device::create(*instance);
+            auto allocator = nemo::gpu::Allocator::create(*instance, *device, {.max_device_bytes = 256u << 20});
+
+            nemo::eval::EffectLibrary effects;
+            if (backend == "slang") {
+                if (shaderDir.empty()) {
+                    report["errors"].push_back("no Slang shader directory: pass --shaders <spv-dir> or configure with "
+                                               "-D NEMO_DOWNLOAD_SLANGC=ON / -D NEMO_SLANGC=<path>");
+                } else {
+                    effects = nemo::eval::loadSlangEffectLibrary(shaderDir, NEMO_SLANG_SRC_DIR);
+                }
+            } else {
+                effects = nemo::eval::glslEffectLibrary();
+            }
+            if (report["errors"].empty()) {
+                nemo::eval::GpuEvaluation evaluation =
+                    nemo::eval::evaluateGpu(loaded.document, request, effects, *device, *allocator);
+
+                // Declared diagnostic-only readback of the requested output.
+                const nemo::CpuImage image = evaluation.readBack(request.output, *device, *allocator);
+
+                std::ofstream out(outPath, std::ios::binary);
+                if (!out) {
+                    report["errors"].push_back("cannot write: " + outPath);
+                } else {
+                    writeCpuPpm(out, image);
+                    report["ok"] = true;
+                    report["rendered"] = {{"path", std::filesystem::absolute(outPath).string()},
+                                          {"width", width},
+                                          {"height", height},
+                                          {"frame", frame},
+                                          {"backend", backend},
+                                          {"device", device->properties().deviceName},
+                                          {"precision", "float32"},
+                                          {"color", "scene-linear"}};
+                    report["readback"] = {
+                        {"node", request.output},
+                        {"note", "diagnostic-only; the executor path itself performs no host readback"}};
+                    report["evaluation"] = nemo::planToJson(evaluation.plan);
+                }
+            }
+        }
+    } catch (const nemo::EvaluationException& e) {
+        report["errors"].push_back(e.what());
+    } catch (const nemo::gpu::GpuException& e) {
+        report["errors"].push_back(std::string{"gpu: "} + e.what());
+    } catch (const std::exception& e) {
+        report["errors"].push_back(std::string{"error: "} + e.what());
+    }
+    std::cout << report.dump(2) << '\n';
+    return report["ok"].get<bool>() ? 0 : 1;
+}
+#endif  // NEMO_BUILD_GPU
+
+// Image source probe: reports the image contract for one still or sequence
+// frame as machine-readable JSON diagnostics (issue #4 acceptance: a
+// missing path surfaces the offending file in `errors`).
 int commandImageInfo(const std::vector<std::string>& args) {
     if (args.empty()) {
         return printUsage();
@@ -308,6 +452,11 @@ int main(int argc, char** argv) {
     if (command == "evaluate") {
         return commandEvaluate(args);
     }
+#ifdef NEMO_BUILD_GPU
+    if (command == "evaluate-gpu") {
+        return commandEvaluateGpu(args);
+    }
+#endif
     if (command == "imageinfo") {
         return commandImageInfo(args);
     }

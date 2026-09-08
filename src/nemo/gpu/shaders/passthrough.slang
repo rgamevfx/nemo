@@ -3,8 +3,8 @@
 // name: passthrough
 // version: 1
 // ports:
-//   - in_color  : image2D  input   (float4, RGBA, premultiplied-alpha, linear color interpretation)
-//   - out_color : image2D  output  (float4, RGBA, premultiplied-alpha, matches input format)
+//   - in_color  : image2D  input   (float4, RGBA, straight alpha, linear color interpretation)
+//   - out_color : image2D  output  (float4, RGBA, straight alpha, matches input format)
 // parameters: none
 // dependencies:
 //   region: output pixel (x, y) depends only on input pixel (x, y); no neighborhood reads.

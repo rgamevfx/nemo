@@ -1,0 +1,13 @@
+{
+  "reporters": ["json"],
+  "formats": ["cpp"],
+  "formatsExts": {
+    "cpp": "cpp,hpp"
+  },
+  "ignore": ["**/build/**", "**/cmake-build-*/**", "**/out/**", "**/vcpkg_installed/**", "**/node_modules/**", "**/vendor/**", "**/third_party/**", "**/generated/**"],
+  "minLines": 12,
+  "minTokens": 100,
+  "mode": "mild",
+  "absolute": false,
+  "silent": true
+}

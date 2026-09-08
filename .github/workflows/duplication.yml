@@ -1,0 +1,108 @@
+# Advisory duplication scan. Local usage (from the repository root):
+#   PATH="tools/duplication/node_modules/.bin:$PATH" \
+#     jscpd -c tools/duplication/jscpd.json --pattern '{src,apps}/**/*.{cpp,hpp}' -o /tmp/jscpd .
+# The pattern is passed on the command line because it is ignored in the config
+# file once "formats" is set. Report lands at <output>/jscpd-report.json.
+name: Duplication (advisory)
+
+on:
+  pull_request:
+    paths:
+      - 'src/**/*.cpp'
+      - 'src/**/*.hpp'
+      - 'apps/**/*.cpp'
+      - 'apps/**/*.hpp'
+      - 'tools/duplication/**'
+      - '.github/workflows/duplication.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: duplication-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  duplication:
+    name: C++ duplication candidates (advisory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Set report directory
+        run: echo "REPORT_DIR=$RUNNER_TEMP/jscpd" >> "$GITHUB_ENV"
+
+      - name: Check out PR head with full history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pinned jscpd
+        id: install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: tools/duplication
+
+      - name: Run jscpd
+        id: scan
+        run: |
+          mkdir -p "$REPORT_DIR"
+          set +e
+          PATH="$PWD/tools/duplication/node_modules/.bin:$PATH" \
+            jscpd -c tools/duplication/jscpd.json \
+                  --pattern '{src,apps}/**/*.{cpp,hpp}' \
+                  --output "$REPORT_DIR" .
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::jscpd scan failed with exit code $rc; no duplication findings can be trusted from this run"
+          fi
+          exit "$rc"
+
+      - name: Build duplication summary
+        id: report
+        if: always() && steps.scan.outcome == 'success'
+        env:
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 tools/duplication/report.py --base "$BASE_SHA" --head "$HEAD_SHA" --report "$REPORT_DIR/jscpd-report.json" --output "$REPORT_DIR/summary.md"
+
+      - name: Publish summary
+        if: always()
+        run: |
+          mkdir -p "$REPORT_DIR"
+          SUMMARY_MD="$REPORT_DIR/summary.md"
+          if [ ! -f "$SUMMARY_MD" ]; then
+            {
+              echo "## C++ duplication scan (advisory)"
+              echo ""
+              echo "**Report unavailable.** This is a tooling failure, not a clean result."
+              echo ""
+              echo "- Install: ${{ steps.install.outcome }}"
+              echo "- Detector: ${{ steps.scan.outcome }}"
+              echo "- Reporter: ${{ steps.report.outcome }}"
+              echo ""
+              echo "See the step logs for diagnostics. This check does not block merging."
+            } > "$SUMMARY_MD"
+          fi
+          cat "$SUMMARY_MD" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: duplication-report-${{ github.event.pull_request.number }}
+          path: |
+            ${{ runner.temp }}/jscpd/jscpd-report.json
+            ${{ runner.temp }}/jscpd/summary.md
+          if-no-files-found: warn
+          retention-days: 7

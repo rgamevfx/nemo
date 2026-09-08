@@ -101,6 +101,13 @@ humans inspect image differences.
   their own layer of the mapping.
 - Threading: document the contract of anything shared across threads;
   bounded queues; no blocking the UI event thread.
+- **Reuse before writing:** before adding logic, identify the existing owner
+  of that responsibility and its callers. Reuse or consolidate it; if similar
+  implementations remain, explain their concrete contract difference in the
+  PR. Preserve CPU/GPU reference independence, scene-linear source versus
+  display-referred replay semantics, and independently derived test oracles.
+  Share responsibilities, not merely matching text; an abstraction must
+  simplify ownership or maintenance without adding render-path copies/waits.
 
 ## Definition of done (for a PR)
 

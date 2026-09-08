@@ -1,0 +1,9 @@
+{
+  "name": "nemo-duplication-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned tooling for the advisory C++ duplication workflow.",
+  "devDependencies": {
+    "jscpd": "5.2.0"
+  }
+}

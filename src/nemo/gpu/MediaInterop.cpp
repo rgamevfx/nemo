@@ -1,5 +1,6 @@
 #include "nemo/gpu/MediaInterop.hpp"
 
+#include <cstddef>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -146,21 +147,36 @@ std::unique_ptr<MediaInterop> MediaInterop::create(Device& device, Allocator& al
 
 void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns) {
     const VkDevice vkDevice = impl_->device->handle();
+    if (frame.chromaLocation != MediaChromaLocation::Left) {
+        fail("foreign frame chroma location must be left (the only supported sample position)");
+    }
+    if (frame.primaries != MediaPrimaries::Bt709) {
+        // The kernel maps into scene-linear Rec.709 with no chromaticity
+        // conversion: anything else would be mislabeled output, so it is an
+        // explicit error, not a guess.
+        fail("foreign frame primaries must be bt709 (the only supported working-space source)");
+    }
+    if (frame.width == 0 || frame.height == 0) {
+        fail("foreign frame extent must be non-empty");
+    }
     if (frame.planeCount == 0 || frame.planeCount > 2) {
         fail("foreign frame must carry 1..2 planes");
     }
     if (frame.multiplane && frame.planeCount != 1) {
         fail("multiplane foreign frame must carry exactly one image");
     }
-    if (frame.width == 0 || frame.height == 0) {
-        fail("foreign frame extent must be non-empty");
-    }
 
-    // meta = (width, height, 0, 0) for the kernel's region guard.
+    // meta = (width, height, 0, 0) for the kernel's region guard; param0
+    // carries the declared color interpretation: (transfer, range, matrix,
+    // 0). The kernel converts Y′CbCr(range/matrix) → R′G′B′ and inverts
+    // `transfer` into scene-linear Rec.709.
     Buffer uniform =
         impl_->allocator->create_buffer(64, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryPreference::HostMapped);
     const std::uint32_t meta[4] = {frame.width, frame.height, 0, 0};
+    const float param0[4] = {static_cast<float>(frame.transfer), static_cast<float>(frame.range),
+                             static_cast<float>(frame.matrix), 0.0F};
     std::memcpy(uniform.mapped(), meta, sizeof(meta));
+    std::memcpy(static_cast<std::byte*>(uniform.mapped()) + 32, param0, sizeof(param0));
 
     // Sample views on the borrowed images; freed after the synchronous
     // submit completes. Multiplane frames take one view per aspect plane

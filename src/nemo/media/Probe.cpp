@@ -126,6 +126,9 @@ std::string formatMediaCapabilities(const MediaCapabilities& capabilities) {
             case CapabilityEvidence::RegisteredOnly:
                 out << "registered (not init-verified)";
                 break;
+            case CapabilityEvidence::QueueVerified:
+                out << "queue-verified (clip/profile not init-verified)";
+                break;
             case CapabilityEvidence::Unavailable:
                 out << "unavailable: " << capability.reason;
                 break;

@@ -34,6 +34,8 @@ if(NEMO_BUILD_GPU)
     # the mediaConvert SPIR-V comes from the nemo_shaders target.
     add_executable(nemo_hwmedia_tests
         HwMediaTests.cpp
+        MediaDecodeTests.cpp
+        MediaEncodeTests.cpp
     )
     target_link_libraries(nemo_hwmedia_tests PRIVATE nemo::media nemo::gpu GTest::gtest_main)
     if(DEFINED NEMO_SLANG_SPV_DIR)

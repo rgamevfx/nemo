@@ -93,9 +93,9 @@ struct OcioGpuProgram {
 [[nodiscard]] std::string resolveConfigPath(const std::string& configPath);
 
 // CPU reference path (OpenColorIO CPU processor). Applies the named viewing
-// transform to `image`'s RGB in place; alpha passes through. Throws
-// OcioException when the config or any policy name is missing, with the
-// offending name in the message.
+// transform to `image`'s RGB in place; alpha passes through and successful
+// output is marked DisplayReferred. Throws OcioException when the config
+// or any policy name is missing, naming the offending relationship.
 void applyViewingTransformCpu(CpuImage& image, const std::string& configPath, const std::string& workingSpace,
                               const std::string& viewerTransform, TransformKind kind = TransformKind::Viewer);
 

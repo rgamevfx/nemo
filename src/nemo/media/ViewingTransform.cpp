@@ -312,6 +312,7 @@ void applyViewingTransformCpu(CpuImage& image, const std::string& configPath, co
                                      OCIO::BIT_DEPTH_F32, sizeof(float), 4 * sizeof(float),
                                      static_cast<ptrdiff_t>(4 * sizeof(float)) * image.width());
     cpu->apply(desc);
+    image.setColorInterpretation(ColorInterpretation::DisplayReferred);
 }
 
 void applyViewingTransformCpu(CpuImage& image, const std::string& configPath, const ColorPolicy& policy,

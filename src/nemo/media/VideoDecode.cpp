@@ -1,6 +1,9 @@
 #include "nemo/media/VideoDecode.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,14 +18,18 @@ extern "C" {
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vulkan.h>
 #include <libavutil/imgutils.h>
-#include <libswscale/swscale.h>
+#include <libavutil/pixdesc.h>
 }
 
 namespace nemo::media {
 
 namespace {
 
-// FFmpeg AV* objects stay in RAII guards; no library types leak further.
+// ---------------------------------------------------------------------------
+// FFmpeg RAII guards: every AV* object allocated in this file is owned by a
+// guard, so allocation failures and thrown errors cannot leak contexts.
+// ---------------------------------------------------------------------------
+
 struct FormatGuard {
     AVFormatContext* context = nullptr;
     ~FormatGuard() {
@@ -32,15 +39,15 @@ struct FormatGuard {
     }
 };
 
+struct CodecContextGuard {
+    AVCodecContext* context = nullptr;
+    ~CodecContextGuard() { avcodec_free_context(&context); }
+};
+
 struct PacketGuard {
     AVPacket* packet = nullptr;
     PacketGuard() : packet(av_packet_alloc()) {}
     ~PacketGuard() { av_packet_free(&packet); }
-};
-
-struct CodecContextGuard {
-    AVCodecContext* context = nullptr;
-    ~CodecContextGuard() { avcodec_free_context(&context); }
 };
 
 struct FrameGuard {
@@ -49,47 +56,398 @@ struct FrameGuard {
     ~FrameGuard() { av_frame_free(&frame); }
 };
 
-[[noreturn]] void fail(const std::string& path, const std::string& what, int status = 0) {
+// Failures always name the clip, the offending format, and the reason.
+[[noreturn]] void fail(const std::string& clip, const std::string& format, const std::string& reason, int status = 0) {
     std::string detail;
     if (status < 0) {
         char buffer[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(status, buffer, sizeof(buffer));
-        detail = std::string(": ") + buffer;
+        detail = std::string(" (") + buffer + ")";
     }
-    throw std::runtime_error("media clip: " + path + ": " + what + detail);
+    throw MediaDecodeError(clip, format, reason + detail);
 }
 
-// Manual YUV420p -> RGBA float32 conversion with BT.709 limited-range
-// decode — byte-for-byte the same matrix/range formula the mediaConvert
-// kernel declares, so the software reference path and the hardware interop
-// path are comparable by construction (swscale would otherwise silently
-// pick BT.601/full-range for untagged streams).
-std::vector<float> yuv420pToRgba32f(const AVFrame* frame) {
-    std::vector<float> pixels(static_cast<size_t>(frame->width) * frame->height * 4);
-    const uint8_t* yPlane = frame->data[0];
-    const uint8_t* uPlane = frame->data[1];
-    const uint8_t* vPlane = frame->data[2];
-    for (int y = 0; y < frame->height; ++y) {
-        for (int x = 0; x < frame->width; ++x) {
-            const float yv = static_cast<float>(yPlane[y * frame->linesize[0] + x]);
-            const int cx = x / 2;
-            const int cy = y / 2;
-            const float u = static_cast<float>(uPlane[cy * frame->linesize[1] + cx]);
-            const float v = static_cast<float>(vPlane[cy * frame->linesize[2] + cx]);
-            const float yy = (yv - 16.0F) * (255.0F / 219.0F) / 255.0F;
-            const float uu = (u - 128.0F) * (255.0F / 224.0F) / 255.0F;
-            const float vv = (v - 128.0F) * (255.0F / 224.0F) / 255.0F;
-            const float r = yy + 1.5748F * vv;
-            const float g = yy - 0.1873F * uu - 0.4681F * vv;
-            const float b = yy + 1.8556F * uu;
-            const size_t offset = (static_cast<size_t>(y) * frame->width + x) * 4;
-            pixels[offset + 0] = r;
-            pixels[offset + 1] = g;
-            pixels[offset + 2] = b;
-            pixels[offset + 3] = 1.0F;
+[[noreturn]] void failStatus(const std::string& clip, const std::string& what, int status = 0) {
+    fail(clip, "container/codec", what, status);
+}
+
+[[nodiscard]] std::string pixelFormatName(AVPixelFormat format) {
+    const char* name = av_get_pix_fmt_name(format);
+    return name != nullptr ? name : "unknown pixel format";
+}
+
+template <typename T>
+[[nodiscard]] const char* colorName(T value, const char* (*lookup)(T), const char* fallback) {
+    const char* name = lookup(value);
+    return name != nullptr ? name : fallback;
+}
+
+[[nodiscard]] std::string declaredProfile(const AVCodecParameters* parameters) {
+    if (parameters->profile == AV_PROFILE_UNKNOWN) {
+        return {};
+    }
+    const char* name = avcodec_profile_name(parameters->codec_id, parameters->profile);
+    if (name == nullptr) {
+        return "profile " + std::to_string(parameters->profile);
+    }
+    return std::string("profile ") + name;
+}
+
+// ---------------------------------------------------------------------------
+// Declared color interpretation: an explicitly supported subset. Anything
+// outside it is rejected with clip/format/reason — never silently guessed.
+// ---------------------------------------------------------------------------
+
+// Chroma arrangement of a supported pixel format.
+enum class ChromaKind { Yuv420, Yuv444, Nv12, Gray };
+
+struct FormatSpec {
+    AVPixelFormat format;
+    ChromaKind kind;
+    int depth;
+};
+
+constexpr FormatSpec kSupportedFormats[] = {
+    {AV_PIX_FMT_YUV420P, ChromaKind::Yuv420, 8},      {AV_PIX_FMT_YUVJ420P, ChromaKind::Yuv420, 8},
+    {AV_PIX_FMT_NV12, ChromaKind::Nv12, 8},           {AV_PIX_FMT_YUV444P, ChromaKind::Yuv444, 8},
+    {AV_PIX_FMT_YUVJ444P, ChromaKind::Yuv444, 8},     {AV_PIX_FMT_YUV420P10LE, ChromaKind::Yuv420, 10},
+    {AV_PIX_FMT_YUV444P10LE, ChromaKind::Yuv444, 10}, {AV_PIX_FMT_GRAY8, ChromaKind::Gray, 8},
+    {AV_PIX_FMT_GRAY10LE, ChromaKind::Gray, 10},      {AV_PIX_FMT_GRAY16LE, ChromaKind::Gray, 16},
+};
+
+constexpr const char* kSupportedFormatNames =
+    "yuv420p, yuvj420p, nv12, yuv444p, yuvj444p, yuv420p10le, yuv444p10le, gray8, gray10le, gray16le";
+
+[[nodiscard]] const FormatSpec* findFormatSpec(AVPixelFormat format) {
+    for (const FormatSpec& spec : kSupportedFormats) {
+        if (spec.format == format) {
+            return &spec;
         }
     }
-    return pixels;
+    return nullptr;
+}
+
+[[nodiscard]] const FormatSpec* requireFormatSpec(AVPixelFormat format, const std::string& clip) {
+    const FormatSpec* spec = findFormatSpec(format);
+    if (spec == nullptr) {
+        fail(clip, pixelFormatName(format),
+             "unsupported pixel format; the decoder converts a conservative explicit subset, supported "
+             "formats: " +
+                 std::string(kSupportedFormatNames));
+    }
+    return spec;
+}
+
+// Inverse transfer with signed extension; matrix expansion may produce
+// negative RGB even when the stored YUV samples are unsigned.
+[[nodiscard]] float transferToLinear(float value, gpu::MediaTransfer transfer) {
+    switch (transfer) {
+    case gpu::MediaTransfer::Srgb:
+        return value < 0.04045F ? value / 12.92F : std::pow((value + 0.055F) / 1.055F, 2.4F);
+    case gpu::MediaTransfer::Gamma22:
+        return std::copysign(std::pow(std::abs(value), 2.2F), value);
+    case gpu::MediaTransfer::Gamma28:
+        return std::copysign(std::pow(std::abs(value), 2.8F), value);
+    case gpu::MediaTransfer::Linear:
+        return value;
+    case gpu::MediaTransfer::Bt709:
+    default:
+        return value < 0.081F ? value / 4.5F : std::pow((value + 0.099F) / 1.099F, 1.0F / 0.45F);
+    }
+}
+
+// One decoded frame → RGBA float32. `linearize` selects the contract: the
+// source path inverts the declared transfer into scene-linear Rec.709;
+// viewer replay keeps the baked display-referred R′G′B′ untouched. The
+// frame's actual pixel format is validated BEFORE any plane access.
+[[nodiscard]] CpuImage convertDecodedFrame(const AVFrame* frame, const MediaColorMetadata& color,
+                                           const std::string& clip, bool linearize) {
+    const FormatSpec* spec = requireFormatSpec(static_cast<AVPixelFormat>(frame->format), clip);
+    const std::string formatName = pixelFormatName(spec->format);
+    if (frame->width <= 0 || frame->height <= 0 || av_image_check_size(frame->width, frame->height, 0, nullptr) < 0) {
+        fail(clip, formatName, "decoded frame has invalid dimensions");
+    }
+    const bool subsampled = spec->kind == ChromaKind::Yuv420 || spec->kind == ChromaKind::Nv12;
+    const int chromaWidth = subsampled ? (frame->width + 1) / 2 : frame->width;
+    const int chromaHeight = subsampled ? (frame->height + 1) / 2 : frame->height;
+    const int planes = spec->kind == ChromaKind::Gray ? 1 : spec->kind == ChromaKind::Nv12 ? 2 : 3;
+    for (int plane = 0; plane < planes; ++plane) {
+        const int components = plane == 1 && spec->kind == ChromaKind::Nv12 ? 2 : 1;
+        const int rowBytes = (plane == 0 ? frame->width : chromaWidth) * components * (spec->depth > 8 ? 2 : 1);
+        if (!frame->data[plane] || std::abs(static_cast<int64_t>(frame->linesize[plane])) < rowBytes) {
+            fail(clip, formatName,
+                 "decoded frame has missing plane or invalid stride at plane " + std::to_string(plane));
+        }
+    }
+    const auto sample = [&](int plane, int x, int y, int component = 0) -> float {
+        const int step = spec->kind == ChromaKind::Nv12 && plane == 1 ? 2 : 1;
+        const auto* row = frame->data[plane] + static_cast<ptrdiff_t>(y) * frame->linesize[plane];
+        const int offset = x * step + component;
+        if (spec->depth == 8)
+            return row[offset];
+        return static_cast<float>(row[offset * 2] | (static_cast<unsigned>(row[offset * 2 + 1]) << 8));
+    };
+    const auto chromaSample = [&](int plane, int component, int x, int y) {
+        if (!subsampled)
+            return sample(plane, x, y, component);
+        // Left-sited 4:2:0: centers are (2k, 2j + 0.5) in luma coordinates.
+        const float cx = static_cast<float>(x) / 2.0F;
+        const float cy = std::max(0.0F, static_cast<float>(y) / 2.0F - 0.25F);
+        const int x0 = std::min(static_cast<int>(cx), chromaWidth - 1);
+        const int y0 = std::min(static_cast<int>(cy), chromaHeight - 1);
+        const int x1 = std::min(x0 + 1, chromaWidth - 1);
+        const int y1 = std::min(y0 + 1, chromaHeight - 1);
+        const float a = std::lerp(sample(plane, x0, y0, component), sample(plane, x1, y0, component), cx - x0);
+        const float b = std::lerp(sample(plane, x0, y1, component), sample(plane, x1, y1, component), cx - x0);
+        return std::lerp(a, b, cy - y0);
+    };
+    const bool fullRange = color.range == gpu::MediaYuvRange::Full;
+    const float scale = static_cast<float>(1 << (spec->depth - 8));
+    const float maximum = static_cast<float>((1u << spec->depth) - 1);
+    const float yOffset = fullRange ? 0.0F : 16.0F * scale;
+    const float yRange = fullRange ? maximum : 219.0F * scale;
+    const float cRange = fullRange ? maximum : 224.0F * scale;
+    const float cOffset = 128.0F * scale;
+    CpuImage image(
+        ImageLayout{.width = frame->width,
+                    .height = frame->height,
+                    .color = linearize ? ColorInterpretation::SceneLinear : ColorInterpretation::DisplayReferred});
+    for (int y = 0; y < frame->height; ++y) {
+        for (int x = 0; x < frame->width; ++x) {
+            const float yy = (sample(0, x, y) - yOffset) / yRange;
+            float uu = 0.0F;
+            float vv = 0.0F;
+            if (spec->kind != ChromaKind::Gray) {
+                uu = (chromaSample(1, 0, x, y) - cOffset) / cRange;
+                vv = (chromaSample(spec->kind == ChromaKind::Nv12 ? 1 : 2, spec->kind == ChromaKind::Nv12 ? 1 : 0, x,
+                                   y) -
+                      cOffset) /
+                     cRange;
+            }
+            const bool bt601 = color.matrix == gpu::MediaMatrix::Bt601;
+            float r = yy + (bt601 ? 1.402F : 1.5748F) * vv;
+            float g = yy - (bt601 ? 0.344136F : 0.187324F) * uu - (bt601 ? 0.714136F : 0.468124F) * vv;
+            float b = yy + (bt601 ? 1.772F : 1.8556F) * uu;
+            if (linearize) {
+                r = transferToLinear(r, color.transfer);
+                g = transferToLinear(g, color.transfer);
+                b = transferToLinear(b, color.transfer);
+            }
+            image.setPixel(x, y, {r, g, b, 1.0F});
+        }
+    }
+    return image;
+}
+
+// Resolve the clip's color interpretation from its DECLARED stream metadata.
+// Unspecified fields must be resolved by `overrides` — the decoder never
+// guesses: unspecified transfer/primaries/matrix/range (and chroma location
+// on subsampled formats) is an error naming what is missing. Overrides only
+// fill missing fields; a stream-tagged field keeps its declared value.
+[[nodiscard]] MediaColorMetadata resolveColor(const AVCodecParameters* parameters, const std::string& clip,
+                                              const ColorPolicy& policy, const ColorOverride& overrides) {
+    if (policy.workingSpace != "linear") {
+        fail(clip, policy.workingSpace,
+             "working space '" + policy.workingSpace +
+                 "' is outside the decoder's explicit supported subset; only the declared default 'linear' "
+                 "(scene-linear Rec.709) is supported for source interpretation");
+    }
+    const FormatSpec* spec = requireFormatSpec(static_cast<AVPixelFormat>(parameters->format), clip);
+
+    MediaColorMetadata color;
+    color.bitDepth = spec->depth;
+
+    const std::string formatName = pixelFormatName(spec->format);
+
+    // Transfer characteristic.
+    switch (parameters->color_trc) {
+    case AVCOL_TRC_BT709:
+    case AVCOL_TRC_SMPTE170M:  // identical published curve to BT.709
+        color.transfer = gpu::MediaTransfer::Bt709;
+        break;
+    case AVCOL_TRC_IEC61966_2_1:
+        color.transfer = gpu::MediaTransfer::Srgb;
+        break;
+    case AVCOL_TRC_GAMMA22:
+        color.transfer = gpu::MediaTransfer::Gamma22;
+        break;
+    case AVCOL_TRC_GAMMA28:
+        color.transfer = gpu::MediaTransfer::Gamma28;
+        break;
+    case AVCOL_TRC_LINEAR:
+        color.transfer = gpu::MediaTransfer::Linear;
+        break;
+    case AVCOL_TRC_UNSPECIFIED:
+        if (overrides.transfer.has_value()) {
+            color.transfer = *overrides.transfer;
+        } else {
+            fail(clip, formatName,
+                 "source transfer characteristic is unspecified; interpreting it is unsupported without "
+                 "an explicit ColorOverride.transfer — the decoder never guesses a transfer "
+                 "(or re-tag the clip)");
+        }
+        break;
+    default:
+        fail(clip, formatName,
+             std::string("unsupported source transfer characteristic ") +
+                 colorName(parameters->color_trc, av_color_transfer_name, "?") +
+                 " (supported: bt709, smpte170m, iec61966-2-1/srgb, gamma22, gamma28, linear)");
+    }
+
+    // Primaries: only Rec.709 — the working space is scene-linear Rec.709,
+    // so no chromaticity mapping exists yet; other primaries must not be
+    // passed through unconverted (that would relabel them Rec.709).
+    switch (parameters->color_primaries) {
+    case AVCOL_PRI_BT709:
+        color.primaries = gpu::MediaPrimaries::Bt709;
+        break;
+    case AVCOL_PRI_UNSPECIFIED:
+        if (overrides.primaries.has_value()) {
+            color.primaries = *overrides.primaries;
+        } else {
+            fail(clip, formatName,
+                 "source primaries are unspecified; interpreting them is unsupported without an "
+                 "explicit ColorOverride.primaries (scene-linear Rec.709 is the only supported target, "
+                 "so only bt709 can be declared)");
+        }
+        break;
+    default:
+        fail(clip, formatName,
+             std::string("unsupported source primaries ") +
+                 colorName(parameters->color_primaries, av_color_primaries_name, "?") +
+                 " (only bt709 is supported: mapping other chromaticities into the Rec.709 working "
+                 "space is not implemented, and the decoder will not silently assume them)");
+    }
+
+    // Matrix coefficients and chroma position — meaningless for grayscale
+    // (no chroma); the position is also meaningless at 4:4:4.
+    if (spec->kind != ChromaKind::Gray) {
+        switch (parameters->color_space) {
+        case AVCOL_SPC_BT709:
+            color.matrix = gpu::MediaMatrix::Bt709;
+            break;
+        case AVCOL_SPC_SMPTE170M:
+        case AVCOL_SPC_BT470BG:
+            color.matrix = gpu::MediaMatrix::Bt601;
+            break;
+        case AVCOL_SPC_UNSPECIFIED:
+            if (overrides.matrix.has_value()) {
+                color.matrix = *overrides.matrix;
+            } else {
+                fail(clip, formatName,
+                     "source matrix coefficients are unspecified; interpreting them is unsupported "
+                     "without an explicit ColorOverride.matrix");
+            }
+            break;
+        default:
+            fail(clip, formatName,
+                 std::string("unsupported source matrix coefficients ") +
+                     colorName(parameters->color_space, av_color_space_name, "?") +
+                     " (supported: bt709, smpte170m/bt470bg)");
+        }
+
+        if (spec->kind == ChromaKind::Yuv420 || spec->kind == ChromaKind::Nv12) {
+            switch (parameters->chroma_location) {
+            case AVCHROMA_LOC_LEFT:
+                color.chromaLocation = gpu::MediaChromaLocation::Left;
+                break;
+            case AVCHROMA_LOC_UNSPECIFIED:
+                if (overrides.chromaLocation.has_value()) {
+                    color.chromaLocation = *overrides.chromaLocation;
+                } else {
+                    fail(clip, formatName,
+                         "source chroma sample position is unspecified; interpreting it is unsupported "
+                         "without an explicit ColorOverride.chromaLocation (only left is supported)");
+                }
+                break;
+            default:
+                fail(clip, formatName,
+                     std::string("unsupported source chroma sample position ") +
+                         colorName(parameters->chroma_location, av_chroma_location_name, "?") +
+                         " (only left is supported)");
+            }
+        }
+    }
+
+    // Quantization range.
+    switch (parameters->color_range) {
+    case AVCOL_RANGE_MPEG:
+        color.range = gpu::MediaYuvRange::Limited;
+        break;
+    case AVCOL_RANGE_JPEG:
+        color.range = gpu::MediaYuvRange::Full;
+        break;
+    case AVCOL_RANGE_UNSPECIFIED:
+        if (overrides.range.has_value()) {
+            color.range = *overrides.range;
+        } else if (spec->format == AV_PIX_FMT_YUVJ420P || spec->format == AV_PIX_FMT_YUVJ444P) {
+            color.range = gpu::MediaYuvRange::Full;  // YUVJ declares full range by definition
+        } else {
+            fail(clip, formatName,
+                 "source quantization range is unspecified; interpreting it is unsupported without an "
+                 "explicit ColorOverride.range");
+        }
+        break;
+    default:
+        fail(clip, formatName, "source quantization range is invalid");
+    }
+
+    if (parameters->width <= 0 || parameters->height <= 0) {
+        fail(clip, formatName, "stream declares non-positive dimensions");
+    }
+    return color;
+}
+
+[[nodiscard]] MediaColorMetadata frameColor(const AVFrame* frame, const AVCodecParameters* stream,
+                                            const std::string& clip, const ColorPolicy& policy,
+                                            const ColorOverride& overrides) {
+    AVCodecParameters tags = *stream;  // Borrowed pointers; only scalar metadata is inspected.
+    tags.format = frame->format;
+    tags.width = frame->width;
+    tags.height = frame->height;
+    if (frame->decode_error_flags != 0 || (frame->flags & AV_FRAME_FLAG_CORRUPT) != 0) {
+        fail(clip, pixelFormatName(static_cast<AVPixelFormat>(frame->format)), "corrupt decoded frame");
+    }
+    if (frame->format == AV_PIX_FMT_VULKAN) {
+        if (!frame->hw_frames_ctx || !frame->data[0])
+            fail(clip, "vulkan", "missing hardware frame context or planes");
+        const auto* hw = reinterpret_cast<const AVHWFramesContext*>(frame->hw_frames_ctx->data);
+        if (hw->format != AV_PIX_FMT_VULKAN || hw->sw_format != AV_PIX_FMT_NV12) {
+            fail(clip, pixelFormatName(hw->sw_format), "unsupported Vulkan surface format; expected nv12");
+        }
+        tags.format = hw->sw_format;
+    }
+    if (frame->color_trc != AVCOL_TRC_UNSPECIFIED)
+        tags.color_trc = frame->color_trc;
+    if (frame->color_primaries != AVCOL_PRI_UNSPECIFIED)
+        tags.color_primaries = frame->color_primaries;
+    if (frame->colorspace != AVCOL_SPC_UNSPECIFIED)
+        tags.color_space = frame->colorspace;
+    if (frame->color_range != AVCOL_RANGE_UNSPECIFIED)
+        tags.color_range = frame->color_range;
+    if (frame->chroma_location != AVCHROMA_LOC_UNSPECIFIED)
+        tags.chroma_location = frame->chroma_location;
+    return resolveColor(&tags, clip, policy, overrides);
+}
+
+// Compiled mediaConvert SPIR-V for the Vulkan-resident conversion.
+[[nodiscard]] std::vector<std::uint32_t> loadConvertSpirv(const std::filesystem::path& file, const std::string& clip) {
+    std::ifstream stream(file, std::ios::binary);
+    if (!stream) {
+        fail(clip, file.string(), "mediaConvert SPIR-V not found (build the nemo_shaders target)");
+    }
+    std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    if (bytes.size() < 4 || bytes.size() % 4 != 0 || std::memcmp(bytes.data(), "\x03\x02\x23\x07", 4) != 0) {
+        fail(clip, file.string(), "is not a valid SPIR-V module");
+    }
+    std::vector<std::uint32_t> spirv(bytes.size() / 4);
+    std::memcpy(spirv.data(), bytes.data(), bytes.size());
+    return spirv;
+}
+
+[[nodiscard]] double frameRateOf(const AVStream* stream) {
+    const AVRational rate = stream->avg_frame_rate.num != 0 ? stream->avg_frame_rate : stream->r_frame_rate;
+    return rate.num != 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
 }
 
 }  // namespace
@@ -99,17 +457,25 @@ struct ClipDecoder::Impl {
     int streamIndex = -1;
     AVCodecContext* codecContext = nullptr;
     AVBufferRef* hwDevice = nullptr;
-    AVBufferRef* hwFrames = nullptr;
+    int hardwareSetupError = 0;
     std::unique_ptr<gpu::MediaInterop> interop;
     gpu::Device* device = nullptr;
     gpu::Allocator* allocator = nullptr;
     std::unique_ptr<gpu::SubmissionQueue> queue;
     ClipInfo info;
     DecodeDecision decision;
+    MediaColorMetadata color;
+    ColorPolicy policy;
+    ColorOverride overrides;
     bool opened = false;
     bool endOfStreamReached = false;
     int64_t decodedFrameCount = 0;
     int64_t framesDecodedHardware = 0;
+    // Extension names handed to FFmpeg's AVVulkanDeviceContext: owned per
+    // decoder instance for its whole lifetime (strings AND the char* array)
+    // — never a borrowed thread-local array.
+    std::vector<std::string> extensionStorage;
+    std::vector<const char*> extensionNames;
 
     // Destruction order: the codec closes first (it frees its video
     // session and internal command pools on the device), then the frame
@@ -118,9 +484,6 @@ struct ClipDecoder::Impl {
     ~Impl() {
         if (codecContext != nullptr) {
             avcodec_free_context(&codecContext);
-        }
-        if (hwFrames != nullptr) {
-            av_buffer_unref(&hwFrames);
         }
         if (hwDevice != nullptr) {
             av_buffer_unref(&hwDevice);
@@ -131,47 +494,55 @@ struct ClipDecoder::Impl {
 ClipDecoder::~ClipDecoder() = default;
 
 std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                                               const std::string& path, const std::filesystem::path& convertSpirv) {
+                                               const std::string& path, const std::filesystem::path& convertSpirv,
+                                               const ColorPolicy& policy, const ColorOverride& overrides) {
     auto decoder = std::unique_ptr<ClipDecoder>(new ClipDecoder());
     auto impl = std::make_unique<Impl>();
     decoder->impl_ = std::move(impl);
+    Impl& d = *decoder->impl_;
 
     FormatGuard format;
     const int openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
     if (openStatus < 0) {
-        fail(path, "avformat_open_input failed", openStatus);
+        failStatus(path, "avformat_open_input failed", openStatus);
     }
     if (avformat_find_stream_info(format.context, nullptr) < 0) {
-        fail(path, "avformat_find_stream_info failed");
+        failStatus(path, "avformat_find_stream_info failed");
     }
     const int streamIndex = av_find_best_stream(format.context, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
     if (streamIndex < 0) {
-        fail(path, "no video stream");
+        failStatus(path, "no video stream");
     }
     AVStream* stream = format.context->streams[streamIndex];
     const AVCodec* decoderCodec = avcodec_find_decoder(stream->codecpar->codec_id);
     if (decoderCodec == nullptr) {
-        fail(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
+        failStatus(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
     }
 
-    decoder->impl_->device = &device;
-    decoder->impl_->allocator = &allocator;
-    decoder->impl_->streamIndex = streamIndex;
-
-    AVCodecContext* codec = avcodec_alloc_context3(decoderCodec);
-    if (codec == nullptr) {
-        fail(path, "avcodec_alloc_context3 failed");
+    CodecContextGuard codec;
+    codec.context = avcodec_alloc_context3(decoderCodec);
+    if (codec.context == nullptr) {
+        failStatus(path, "avcodec_alloc_context3 failed");
     }
-    if (avcodec_parameters_to_context(codec, stream->codecpar) < 0) {
-        fail(path, "avcodec_parameters_to_context failed");
+    if (avcodec_parameters_to_context(codec.context, stream->codecpar) < 0) {
+        failStatus(path, "avcodec_parameters_to_context failed");
     }
-    codec->thread_count = 1;  // deterministic decode for image assertions
+    codec.context->thread_count = 1;  // deterministic decode for image assertions
+    codec.context->err_recognition = AV_EF_EXPLODE;
 
-    // Capability-measured decode path selection (issue #10): Vulkan video
-    // decode is used exactly when the device reserved a decode queue AND
-    // libavcodec ships a Vulkan frame configuration for this codec.
-    // Otherwise software decode with the precise recorded reason — no
-    // silent substitution.
+    // Resolve the declared color interpretation BEFORE path selection: an
+    // interpretation outside the explicit subset is a hard error for both
+    // paths (no silent relabeling as scene-linear).
+    d.color = resolveColor(stream->codecpar, path, policy, overrides);
+    d.policy = policy;
+    d.overrides = overrides;
+
+    // Capability-measured decode path selection (issues #10/#21): Vulkan
+    // video decode is used exactly when the device reserved a decode queue
+    // AND libavcodec ships a Vulkan frame configuration for this codec AND
+    // the stream decodes into the 8-bit 4:2:0 surfaces the device-resident
+    // converter consumes. Otherwise software decode with the precise
+    // recorded reason — no silent substitution.
     bool hasVulkanConfig = false;
     for (int configIndex = 0;; ++configIndex) {
         const AVCodecHWConfig* config = avcodec_get_hw_config(decoderCodec, configIndex);
@@ -183,15 +554,19 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
             break;
         }
     }
-    if (device.decode_family() && hasVulkanConfig) {
+    const FormatSpec* streamSpec = findFormatSpec(static_cast<AVPixelFormat>(stream->codecpar->format));
+    const bool nv12SurfaceStream = streamSpec != nullptr && streamSpec->depth == 8 &&
+                                   (streamSpec->kind == ChromaKind::Yuv420 || streamSpec->kind == ChromaKind::Nv12);
+    if (device.decode_family() && hasVulkanConfig && nv12SurfaceStream) {
         // AVVulkanDeviceContext over the application device: decode runs on
         // the device's video decode queue; the produced frames are
         // Vulkan-resident planes on the application device, so interop
         // needs no external-memory bridge at all.
         AVBufferRef* deviceRef = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_VULKAN);
         if (deviceRef == nullptr) {
-            fail(path, "av_hwdevice_ctx_alloc (vulkan) failed");
+            failStatus(path, "av_hwdevice_ctx_alloc (vulkan) failed");
         }
+        d.hwDevice = deviceRef;
         AVHWDeviceContext* deviceContext = reinterpret_cast<AVHWDeviceContext*>(deviceRef->data);
         AVVulkanDeviceContext* vulkan = reinterpret_cast<AVVulkanDeviceContext*>(deviceContext->hwctx);
         vulkan->get_proc_addr = &vkGetInstanceProcAddr;
@@ -211,124 +586,118 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
         vulkan->nb_decode_queues = device.decode_family() ? 1 : 0;
         vulkan->lock_queue = nullptr;
         vulkan->unlock_queue = nullptr;
-        static thread_local std::vector<const char*> extensionNames;
-        extensionNames.clear();
+        // Extension names are owned by this decoder instance for its whole
+        // lifetime (strings AND the char* array).
+        d.extensionStorage.reserve(device.enabled_extensions().size());
         for (const std::string& extension : device.enabled_extensions()) {
-            extensionNames.push_back(extension.c_str());
+            d.extensionStorage.push_back(extension);
         }
-        vulkan->enabled_dev_extensions = extensionNames.data();
-        vulkan->nb_enabled_dev_extensions = static_cast<int>(extensionNames.size());
+        d.extensionNames.reserve(d.extensionStorage.size());
+        for (const std::string& extension : d.extensionStorage) {
+            d.extensionNames.push_back(extension.c_str());
+        }
+        vulkan->enabled_dev_extensions = d.extensionNames.data();
+        vulkan->nb_enabled_dev_extensions = static_cast<int>(d.extensionNames.size());
 
         const int deviceInitStatus = av_hwdevice_ctx_init(deviceRef);
         if (deviceInitStatus < 0) {
-            av_free(deviceRef);
-            decoder->impl_->decision = {false, "Vulkan hwdevice init failed over the application device"};
-        } else {
-            decoder->impl_->hwDevice = deviceRef;
-            AVBufferRef* framesRef = av_hwframe_ctx_alloc(decoder->impl_->hwDevice);
-            if (framesRef == nullptr) {
-                // Allocation failure is a hard error, not a capability
-                // fact: name the clip and throw (repo rule — errors
-                // identify the offending relationship).
-                fail(path, "av_hwframe_ctx_alloc (vulkan frames) failed");
-            }
-            AVHWFramesContext* framesContext = reinterpret_cast<AVHWFramesContext*>(framesRef->data);
-            framesContext->format = AV_PIX_FMT_VULKAN;
-            framesContext->sw_format = AV_PIX_FMT_NV12;
-            framesContext->width = codec->width;
-            framesContext->height = codec->height;
-            framesContext->initial_pool_size = 4;
-            AVVulkanFramesContext* vkFrames = static_cast<AVVulkanFramesContext*>(framesContext->hwctx);
-            // Per-plane images (R8 luma + R8G8 chroma): the interop converter
-            // samples single-plane views directly, no multiplane plumbing.
-            // Explicit flag selection (NONE disables autodetect OR'ing).
-            vkFrames->flags = static_cast<AVVkFrameFlags>(AV_VK_FRAME_FLAG_NONE | AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE);
-            vkFrames->tiling = VK_IMAGE_TILING_OPTIMAL;
-            // Sampling + transfer staging only; the decoder adds the
-            // video-decode usage bits (with the required video-profile
-            // list) when it initializes the session.
-            vkFrames->usage = static_cast<VkImageUsageFlagBits>(
-                VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-            const int framesInitStatus = av_hwframe_ctx_init(framesRef);
-            if (framesInitStatus < 0) {
-                av_free(framesRef);
-                decoder->impl_->decision = {false, "Vulkan frame pool init failed (decode surfaces unavailable)"};
-            } else {
-                decoder->impl_->hwFrames = framesRef;
-            }
+            av_buffer_unref(&d.hwDevice);
+            d.decision = {false, "Vulkan hwdevice init failed over the application device"};
         }
     } else if (!device.decode_family()) {
-        decoder->impl_->decision = {false, "device has no reserved Vulkan video decode queue family"};
+        d.decision = {false, "device has no reserved Vulkan video decode queue family"};
+    } else if (!hasVulkanConfig) {
+        d.decision = {false, "libavcodec build has no Vulkan hwaccel for this codec"};
     } else {
-        decoder->impl_->decision = {false, "libavcodec build has no Vulkan hwaccel for this codec"};
+        d.decision = {false, "stream pixel format " +
+                                 pixelFormatName(static_cast<AVPixelFormat>(stream->codecpar->format)) +
+                                 " does not decode into the 8-bit 4:2:0 surfaces the device-resident "
+                                 "converter consumes"};
     }
 
-    if (decoder->impl_->hwFrames != nullptr) {
-        codec->hw_device_ctx = av_buffer_ref(decoder->impl_->hwDevice);
-        codec->hw_frames_ctx = av_buffer_ref(decoder->impl_->hwFrames);
-        decoder->impl_->decision = {true, {}};
+    if (d.hwDevice != nullptr) {
+        // The codec context takes its own references; both are released by
+        // avcodec_free_context when the decoder is destroyed.
+        codec.context->hw_device_ctx = av_buffer_ref(d.hwDevice);
+        if (codec.context->hw_device_ctx == nullptr) {
+            failStatus(path, "av_buffer_ref (vulkan hw contexts) failed");
+        }
+        d.decision = {true, {}};
         // The interop converter consumes the device-resident planes.
-        std::vector<std::uint32_t> spirv;
-        FILE* file = fopen(convertSpirv.string().c_str(), "rb");
-        if (file == nullptr) {
-            fail(path,
-                 "mediaConvert SPIR-V not found at " + convertSpirv.string() + " (build the nemo_shaders target)");
-        }
-        std::uint8_t header[4] = {0};
-        if (std::fread(header, 1, 4, file) != 4 || std::memcmp(header, "\x03\x02\x23\x07", 4) != 0) {
-            std::fclose(file);
-            fail(path, convertSpirv.string() + " is not a SPIR-V module");
-        }
-        std::fseek(file, 0, SEEK_END);
-        const long bytes = std::ftell(file);
-        std::fseek(file, 0, SEEK_SET);
-        if (bytes < 0 || bytes % 4 != 0) {
-            std::fclose(file);
-            fail(path, convertSpirv.string() + " has invalid SPIR-V size");
-        }
-        spirv.resize(static_cast<size_t>(bytes) / 4);
-        const size_t readBytes = std::fread(spirv.data(), 1, static_cast<size_t>(bytes), file);
-        std::fclose(file);
-        if (readBytes != static_cast<size_t>(bytes)) {
-            fail(path, "short read of " + convertSpirv.string());
-        }
-        decoder->impl_->interop = gpu::MediaInterop::create(device, allocator, spirv);
+        d.interop = gpu::MediaInterop::create(device, allocator, loadConvertSpirv(convertSpirv, path));
     }
 
-    // Prefer Vulkan frames only when our hardware pool is attached;
-    // otherwise decode plainly (software) — never an unusable hwaccel.
-    codec->get_format = [](AVCodecContext* context, const enum AVPixelFormat* formats)->enum AVPixelFormat {
-        if (context->hw_frames_ctx != nullptr) {
+    // FFmpeg unrefs hw_frames_ctx before each get_format callback; attach
+    // a fresh reference here, not before avcodec_open2.
+    codec.context->opaque = &d;
+    codec.context->get_format = [](AVCodecContext* context, const enum AVPixelFormat* formats)->enum AVPixelFormat {
+        auto& state = *static_cast<Impl*>(context->opaque);
+        // Sequence headers may change after open; never force a new 10-bit
+        // or 4:4:4 sequence into the eight-bit NV12 conversion contract.
+        const bool nv12Compatible = context->sw_pix_fmt == AV_PIX_FMT_YUV420P ||
+                                    context->sw_pix_fmt == AV_PIX_FMT_YUVJ420P ||
+                                    context->sw_pix_fmt == AV_PIX_FMT_NV12;
+        if (state.hwDevice != nullptr && nv12Compatible) {
             for (const enum AVPixelFormat* format = formats; *format != AV_PIX_FMT_NONE; ++format) {
                 if (*format == AV_PIX_FMT_VULKAN) {
+                    AVBufferRef* frames = nullptr;
+                    int status = avcodec_get_hw_frames_parameters(context, state.hwDevice, *format, &frames);
+                    if (status < 0) {
+                        av_buffer_unref(&frames);
+                        state.hardwareSetupError = status;
+                        break;
+                    }
+                    auto* pool = reinterpret_cast<AVHWFramesContext*>(frames->data);
+                    pool->sw_format = AV_PIX_FMT_NV12;
+                    auto* vkPool = static_cast<AVVulkanFramesContext*>(pool->hwctx);
+                    vkPool->flags =
+                        static_cast<AVVkFrameFlags>(AV_VK_FRAME_FLAG_NONE | AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE);
+                    vkPool->usage = static_cast<VkImageUsageFlagBits>(vkPool->usage | VK_IMAGE_USAGE_SAMPLED_BIT);
+                    status = av_hwframe_ctx_init(frames);
+                    if (status < 0) {
+                        av_buffer_unref(&frames);
+                        state.hardwareSetupError = status;
+                        break;
+                    }
+                    context->hw_frames_ctx = frames;
                     return AV_PIX_FMT_VULKAN;
                 }
             }
         }
-        return formats[0];
+        for (const auto* format = formats; *format != AV_PIX_FMT_NONE; ++format) {
+            const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(*format);
+            if (desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0)
+                return *format;
+        }
+        return AV_PIX_FMT_NONE;
     };
-    const int codecStatus = avcodec_open2(codec, decoderCodec, nullptr);
+    const int codecStatus = avcodec_open2(codec.context, decoderCodec, nullptr);
     if (codecStatus < 0) {
-        fail(path, "avcodec_open2 failed", codecStatus);
+        const std::string profile = declaredProfile(stream->codecpar);
+        fail(path, profile.empty() ? "" : profile,
+             std::string("avcodec_open2 failed") + (profile.empty() ? "" : " (unsupported " + profile + ")"),
+             codecStatus);
     }
 
-    decoder->impl_->codecContext = codec;
-    codec = nullptr;  // impl owns it now
-    decoder->impl_->format.context = format.context;
+    d.codecContext = codec.context;
+    codec.context = nullptr;  // impl owns it now
+    d.format.context = format.context;
     format.context = nullptr;
+    d.streamIndex = streamIndex;
+    d.device = &device;
+    d.allocator = &allocator;
 
     // Public clip metadata.
-    ClipInfo& info = decoder->impl_->info;
+    ClipInfo& info = d.info;
     info.path = path;
-    info.codecName = avcodec_get_name(decoder->impl_->codecContext->codec_id);
-    info.width = decoder->impl_->codecContext->width;
-    info.height = decoder->impl_->codecContext->height;
-    const AVRational rate = stream->avg_frame_rate.num != 0 ? stream->avg_frame_rate : stream->r_frame_rate;
-    info.frameRate = rate.num != 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
+    info.codecName = avcodec_get_name(d.codecContext->codec_id);
+    info.width = d.codecContext->width;
+    info.height = d.codecContext->height;
+    info.frameRate = frameRateOf(stream);
     info.frameCount = stream->nb_frames > 0 ? stream->nb_frames : -1;
 
-    decoder->impl_->queue = std::make_unique<gpu::SubmissionQueue>(device, device.graphics_family());
-    decoder->impl_->opened = true;
+    d.queue = std::make_unique<gpu::SubmissionQueue>(device, device.graphics_family());
+    d.opened = true;
     return decoder;
 }
 
@@ -343,7 +712,7 @@ const DecodeDecision& ClipDecoder::decision() const {
 std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
     Impl& impl = *impl_;
     if (!impl.opened) {
-        fail(impl.info.path, "decoder is not open");
+        failStatus(impl.info.path, "decoder is not open");
     }
     if (impl.endOfStreamReached) {
         return nullptr;
@@ -351,6 +720,9 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
 
     PacketGuard packet;
     FrameGuard frame;
+    if (packet.packet == nullptr || frame.frame == nullptr) {
+        failStatus(impl.info.path, "av_packet_alloc/av_frame_alloc failed");
+    }
     while (true) {
         const int receiveStatus = avcodec_receive_frame(impl.codecContext, frame.frame);
         if (receiveStatus == 0) {
@@ -361,7 +733,7 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
             return nullptr;
         }
         if (receiveStatus != AVERROR(EAGAIN)) {
-            fail(impl.info.path, "avcodec_receive_frame failed", receiveStatus);
+            failStatus(impl.info.path, "avcodec_receive_frame failed", receiveStatus);
         }
         // Feed more input: read packets until the decoder accepts one (or
         // the stream ends, which flushes the decoder).
@@ -370,47 +742,60 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
             if (readStatus == AVERROR_EOF) {
                 const int sendStatus = avcodec_send_packet(impl.codecContext, nullptr);  // flush
                 if (sendStatus < 0 && sendStatus != AVERROR_EOF) {
-                    fail(impl.info.path, "avcodec_send_packet (flush) failed", sendStatus);
+                    failStatus(impl.info.path, "avcodec_send_packet (flush) failed", sendStatus);
                 }
                 break;
             }
             if (readStatus < 0) {
-                fail(impl.info.path, "av_read_frame failed", readStatus);
+                failStatus(impl.info.path, "av_read_frame failed", readStatus);
             }
             if (packet.packet->stream_index != impl.streamIndex) {
+                av_packet_unref(packet.packet);
                 continue;
             }
             const int sendStatus = avcodec_send_packet(impl.codecContext, packet.packet);
-            if (sendStatus == 0 || sendStatus == AVERROR(EAGAIN) || sendStatus == AVERROR_EOF) {
+            av_packet_unref(packet.packet);
+            if (sendStatus == 0) {
                 break;
             }
-            fail(impl.info.path, "avcodec_send_packet failed", sendStatus);
+            failStatus(impl.info.path, "avcodec_send_packet failed", sendStatus);
         }
     }
 
     ++impl.decodedFrameCount;
+    impl.color = frameColor(frame.frame, impl.format.context->streams[impl.streamIndex]->codecpar, impl.info.path,
+                            impl.policy, impl.overrides);
     if (frame.frame->format == AV_PIX_FMT_VULKAN) {
+        impl.decision = {true, {}};
         // Hardware path: frames are Vulkan-resident NV12 planes on the
         // application device; the conversion kernel keeps every pixel on
-        // device. No CPU readback occurs here.
+        // device and interprets them per the DECLARED color metadata. No
+        // CPU readback occurs here.
         auto* vkFrame = reinterpret_cast<AVVkFrame*>(frame.frame->data[0]);
         gpu::ForeignVideoFrame foreign;
-        const VkFormat* planeFormats = av_vkfmt_from_pixfmt(AV_PIX_FMT_NV12);
+        foreign.transfer = impl.color.transfer;
+        foreign.matrix = impl.color.matrix;
+        foreign.range = impl.color.range;
+        foreign.chromaLocation = impl.color.chromaLocation;
+        foreign.primaries = impl.color.primaries;
+        if (vkFrame->img[0] == VK_NULL_HANDLE || vkFrame->sem[0] == VK_NULL_HANDLE) {
+            fail(impl.info.path, "vulkan", "decoded frame has missing image or semaphore");
+        }
         // FFmpeg 6.1 allocates NV12 as a single two-plane multiplane image
         // by default; honor the recorded form instead of assuming.
         foreign.multiplane = vkFrame->img[1] == VK_NULL_HANDLE;
         if (foreign.multiplane) {
             foreign.planeCount = 1;
             foreign.images[0] = vkFrame->img[0];
-            foreign.formats[0] = planeFormats != nullptr ? planeFormats[0] : VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+            foreign.formats[0] = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
         } else {
             foreign.planeCount = 2;
             foreign.images[0] = vkFrame->img[0];
             foreign.images[1] = vkFrame->img[1];
-            foreign.formats[0] = planeFormats != nullptr ? planeFormats[0] : VK_FORMAT_R8_UNORM;
-            foreign.formats[1] = planeFormats != nullptr && planeFormats[1] != VK_FORMAT_UNDEFINED
-                                     ? planeFormats[1]
-                                     : VK_FORMAT_R8G8_UNORM;
+            foreign.formats[0] = VK_FORMAT_R8_UNORM;
+            foreign.formats[1] = VK_FORMAT_R8G8_UNORM;
+            if (vkFrame->sem[1] == VK_NULL_HANDLE)
+                fail(impl.info.path, "nv12", "missing chroma semaphore");
         }
         foreign.semaphores[0] = vkFrame->sem[0];
         foreign.semaphores[1] = vkFrame->sem[1];
@@ -433,11 +818,7 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
         auto output = std::make_unique<gpu::Image>(
             impl.allocator->create_image(foreign.width, foreign.height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
                                          VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
-        try {
-            impl.interop->convertToRgba32f(foreign, *output, timeout_ns);
-        } catch (const std::exception& error) {
-            throw;
-        }
+        impl.interop->convertToRgba32f(foreign, *output, timeout_ns);
 
         // Hand the updated interop state back to FFmpeg for plane reuse.
         vkFrame->sem_value[0] = foreign.waitValues[0];
@@ -449,15 +830,28 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
         return output;
     }
 
+    if (impl.decision.hardware) {
+        impl.decision = {false, "hardware decode rejected the clip/profile; FFmpeg produced software " +
+                                    pixelFormatName(static_cast<AVPixelFormat>(frame.frame->format))};
+        if (impl.hardwareSetupError < 0) {
+            char detail[AV_ERROR_MAX_STRING_SIZE] = {};
+            av_strerror(impl.hardwareSetupError, detail, sizeof(detail));
+            impl.decision.reason += std::string("; Vulkan frame setup: ") + detail;
+        }
+    }
+
     // Measured software path (chosen explicitly at open time when the
-    // device has no Vulkan video queues): explicit 709 conversion to the
-    // contract, then the frame uploads to device residency. The upload is
-    // the capability-dependent transfer cost this path carries.
-    std::vector<float> pixels = yuv420pToRgba32f(frame.frame);
+    // device has no usable Vulkan video configuration): the actual frame is
+    // validated and converted per its DECLARED interpretation to the
+    // scene-linear contract, then uploaded to device residency. The upload
+    // is the capability-dependent transfer cost this path carries.
+    const CpuImage pixels = convertDecodedFrame(frame.frame, impl.color, impl.info.path, /*linearize=*/true);
     auto output = std::make_unique<gpu::Image>(impl.allocator->create_image(
         static_cast<uint32_t>(frame.frame->width), static_cast<uint32_t>(frame.frame->height), 1,
-        VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
-    gpu::uploadImage(*impl.queue, *impl.allocator, *output, pixels.data(), pixels.size() * sizeof(float), timeout_ns);
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT));
+    gpu::uploadImage(*impl.queue, *impl.allocator, *output, pixels.data(),
+                     static_cast<size_t>(pixels.width()) * pixels.height() * 4 * sizeof(float), timeout_ns);
     // Keep the contract layout consistent with the interop path: GENERAL.
     gpu::imageBarrier(*impl.queue, *output, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
                       VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -465,83 +859,125 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
     return output;
 }
 
-SoftwareClip decodeClipSoftware(const std::string& path, int64_t maxFrames) {
+// Shared software-decode engine: opens the clip, resolves the DECLARED color
+// interpretation, and converts every frame to RGBA float32. `linearize`
+// selects the contract: the source path inverts the declared transfer into
+// scene-linear working images; viewer replay keeps the baked
+// display-referred representation untouched.
+[[nodiscard]] SoftwareClip decodeSoftware(const std::string& path, int64_t maxFrames, bool linearize,
+                                          const ColorPolicy& policy, const ColorOverride& overrides) {
     SoftwareClip result;
     FormatGuard format;
     const int openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
     if (openStatus < 0) {
-        fail(path, "avformat_open_input failed", openStatus);
+        failStatus(path, "avformat_open_input failed", openStatus);
     }
     if (avformat_find_stream_info(format.context, nullptr) < 0) {
-        fail(path, "avformat_find_stream_info failed");
+        failStatus(path, "avformat_find_stream_info failed");
     }
     const int streamIndex = av_find_best_stream(format.context, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
     if (streamIndex < 0) {
-        fail(path, "no video stream");
+        failStatus(path, "no video stream");
     }
     AVStream* stream = format.context->streams[streamIndex];
     const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
     if (codec == nullptr) {
-        fail(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
+        failStatus(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
     }
     CodecContextGuard context;
     context.context = avcodec_alloc_context3(codec);
     if (context.context == nullptr) {
-        fail(path, "avcodec_alloc_context3 failed");
+        failStatus(path, "avcodec_alloc_context3 failed");
     }
     if (avcodec_parameters_to_context(context.context, stream->codecpar) < 0) {
-        fail(path, "avcodec_parameters_to_context failed");
+        failStatus(path, "avcodec_parameters_to_context failed");
     }
     context.context->thread_count = 1;
+    context.context->err_recognition = AV_EF_EXPLODE;
     if (avcodec_open2(context.context, codec, nullptr) < 0) {
-        fail(path, "avcodec_open2 failed");
+        fail(path, declaredProfile(stream->codecpar), "avcodec_open2 failed");
     }
+
+    result.metadata = resolveColor(stream->codecpar, path, policy, overrides);
 
     result.info.path = path;
     result.info.codecName = avcodec_get_name(context.context->codec_id);
     result.info.width = context.context->width;
     result.info.height = context.context->height;
-    const AVRational rate = stream->avg_frame_rate.num != 0 ? stream->avg_frame_rate : stream->r_frame_rate;
-    result.info.frameRate = rate.num != 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
+    result.info.frameRate = frameRateOf(stream);
+    result.info.frameCount = stream->nb_frames > 0 ? stream->nb_frames : -1;
 
     PacketGuard packet;
     FrameGuard decoded;
+    if (packet.packet == nullptr || decoded.frame == nullptr) {
+        failStatus(path, "av_packet_alloc/av_frame_alloc failed");
+    }
     const auto convertFrame = [&](const AVFrame* yuv) {
-        CpuImage image(result.info.width, result.info.height);
-        std::vector<float> pixels = yuv420pToRgba32f(yuv);
-        for (int y = 0; y < yuv->height; ++y) {
-            for (int x = 0; x < yuv->width; ++x) {
-                const size_t offset = (static_cast<size_t>(y) * yuv->width + x) * 4;
-                image.setPixel(x, y, {pixels[offset + 0], pixels[offset + 1], pixels[offset + 2], 1.0F});
+        const auto color = frameColor(yuv, stream->codecpar, path, policy, overrides);
+        if (!linearize &&
+            (color.transfer != gpu::MediaTransfer::Bt709 || color.matrix != gpu::MediaMatrix::Bt709 ||
+             color.range != gpu::MediaYuvRange::Limited || color.bitDepth != 8 || yuv->format != AV_PIX_FMT_YUV420P)) {
+            fail(path, pixelFormatName(static_cast<AVPixelFormat>(yuv->format)),
+                 "unsupported viewer representation; expected tagged limited-range BT.709 8-bit yuv420p");
+        }
+        if (!result.frames.empty() && color != result.metadata) {
+            fail(path, pixelFormatName(static_cast<AVPixelFormat>(yuv->format)),
+                 "changing color interpretation within a clip is unsupported");
+        }
+        result.metadata = color;
+        result.frames.push_back(convertDecodedFrame(yuv, color, path, linearize));
+    };
+    if (maxFrames == 0)
+        return result;
+
+    bool flushed = false;
+    while (true) {
+        int receiveStatus;
+        while ((receiveStatus = avcodec_receive_frame(context.context, decoded.frame)) == 0) {
+            convertFrame(decoded.frame);
+            av_frame_unref(decoded.frame);
+            if (maxFrames >= 0 && static_cast<int64_t>(result.frames.size()) >= maxFrames) {
+                return result;
             }
         }
-        result.frames.push_back(std::move(image));
-    };
-    while (av_read_frame(format.context, packet.packet) >= 0) {
+        if (receiveStatus != AVERROR(EAGAIN) && receiveStatus != AVERROR_EOF) {
+            failStatus(path, "avcodec_receive_frame failed", receiveStatus);
+        }
+        if (flushed) {
+            break;  // flushed decoder drained dry
+        }
+        int readStatus = av_read_frame(format.context, packet.packet);
+        if (readStatus == AVERROR_EOF) {
+            const int sendStatus = avcodec_send_packet(context.context, nullptr);
+            if (sendStatus < 0 && sendStatus != AVERROR_EOF) {
+                failStatus(path, "avcodec_send_packet (flush) failed", sendStatus);
+            }
+            flushed = true;
+            continue;
+        }
+        if (readStatus < 0) {
+            failStatus(path, "av_read_frame failed", readStatus);
+        }
         if (packet.packet->stream_index != streamIndex) {
             av_packet_unref(packet.packet);
             continue;
         }
-        if (avcodec_send_packet(context.context, packet.packet) == 0) {
-            while (avcodec_receive_frame(context.context, decoded.frame) == 0) {
-                convertFrame(decoded.frame);
-                av_frame_unref(decoded.frame);
-                if (maxFrames >= 0 && static_cast<int64_t>(result.frames.size()) >= maxFrames) {
-                    av_packet_unref(packet.packet);
-                    return result;
-                }
-            }
-        }
+        const int sendStatus = avcodec_send_packet(context.context, packet.packet);
         av_packet_unref(packet.packet);
-    }
-    // Flush the delayed decoder (B-frame reordering holds frames).
-    if (avcodec_send_packet(context.context, nullptr) == 0) {
-        while (avcodec_receive_frame(context.context, decoded.frame) == 0) {
-            convertFrame(decoded.frame);
-            av_frame_unref(decoded.frame);
+        if (sendStatus < 0) {
+            failStatus(path, "avcodec_send_packet failed", sendStatus);
         }
     }
     return result;
+}
+
+SoftwareClip decodeClipSoftware(const std::string& path, int64_t maxFrames, const ColorPolicy& policy,
+                                const ColorOverride& overrides) {
+    return decodeSoftware(path, maxFrames, /*linearize=*/true, policy, overrides);
+}
+
+SoftwareClip decodeViewerChunkSoftware(const std::string& path, int64_t maxFrames) {
+    return decodeSoftware(path, maxFrames, /*linearize=*/false, ColorPolicy{}, ColorOverride{});
 }
 
 }  // namespace nemo::media

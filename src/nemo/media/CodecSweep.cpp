@@ -50,7 +50,7 @@ struct ChunkTimings {
 [[nodiscard]] bool decodeChunkAndMeasure(const std::string& path, const std::vector<CpuImage>& source,
                                          ChunkTimings& timings, bool seekAtBoundary) {
     const auto decodeStart = clock::now();
-    const SoftwareClip decoded = decodeClipSoftware(path);
+    const SoftwareClip decoded = decodeViewerChunkSoftware(path);
     if (decoded.frames.empty()) {
         return false;
     }
@@ -63,7 +63,7 @@ struct ChunkTimings {
         // boundary frame — this is the actual viewer-replay behavior at a
         // chunk boundary (issue #10 acceptance example 2).
         const auto seekStart = clock::now();
-        const SoftwareClip boundary = decodeClipSoftware(path, 1);
+        const SoftwareClip boundary = decodeViewerChunkSoftware(path, 1);
         timings.seekMsAtBoundary =
             boundary.frames.empty()
                 ? -1.0

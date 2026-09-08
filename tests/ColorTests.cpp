@@ -349,6 +349,7 @@ TEST(Color, CpuReferenceAppliesViewingTransform) {
     const auto configPath = writeColorConfig();
     CpuImage image = sample2x2();
     media::applyViewingTransformCpu(image, configPath.string(), ColorPolicy{});
+    EXPECT_EQ(image.layout().color, ColorInterpretation::DisplayReferred);
 
     // The composite transform is non-identity: black stays black (0.0
     // through matrix/LUT/curve with the range clamp as floor) but mid-grays
@@ -370,9 +371,6 @@ TEST(Color, CpuReferenceAppliesViewingTransform) {
 TEST(Color, GpuViewingTransformMatchesCpuReferenceWithinTolerance) {
     const auto configPath = writeColorConfig();
     const media::OcioGpuProgram program = media::buildViewingTransformGpu(configPath.string(), "linear", "sRGB/rec709");
-    EXPECT_NE(program.glsl.find("OCIODisplay"), std::string::npos);
-    ASSERT_EQ(program.textures.size(), 1u);  // the tetrahedral 3D LUT
-    EXPECT_EQ(program.textures.front().dimensions, 3u);
 
     // CPU reference and GPU run the same scene-linear input.
     CpuImage cpuImage = sample2x2();

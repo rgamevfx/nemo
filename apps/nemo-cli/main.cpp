@@ -51,7 +51,7 @@ int printUsage() {
                  "[--width W] [--height H]\n"
                  "  nemo-cli imageinfo <image> [--frame N]\n"
                  "  nemo-cli probe-media [project.json]      hardware codec capability report\n"
-                 "  nemo-cli codec-sweep <clip> [--codecs a,b] [--chunks a,b] [--max-frames N]\n"
+                 "  nemo-cli codec-sweep <tagged-viewer-clip> [--codecs a,b] [--chunks a,b] [--max-frames N]\n"
 #ifdef NEMO_BUILD_GPU
                  "  nemo-cli evaluate-gpu <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H] [--output NAME]\n"
@@ -477,10 +477,9 @@ std::filesystem::path shaderSpvDir() {
 }
 #endif
 
-// codec-sweep: the codec/chunk experiment harness (issue #10 acceptance
-// example 2). Decodes the source clip on the software reference path,
-// re-encodes it with each candidate codec at each chunk size as
-// independently decodable chunks, and prints the measured table.
+// codec-sweep consumes an already display-referred, tagged Rec.709 fixture,
+// not a scene-linear composition input. Replay preserves its baked transfer;
+// source conversion is measured separately by the hardware decode path.
 int commandCodecSweep(const std::vector<std::string>& args) {
     if (args.empty()) {
         return printUsage();
@@ -519,7 +518,7 @@ int commandCodecSweep(const std::vector<std::string>& args) {
             return printUsage();
         }
     }
-    nemo::media::SoftwareClip source = nemo::media::decodeClipSoftware(clipPath, maxFrames);
+    nemo::media::SoftwareClip source = nemo::media::decodeViewerChunkSoftware(clipPath, maxFrames);
     if (source.frames.empty()) {
         std::cerr << "codec-sweep: cannot decode " << clipPath << "\n";
         return 1;
@@ -537,23 +536,29 @@ int commandCodecSweep(const std::vector<std::string>& args) {
         auto device = nemo::gpu::Device::create(*instance);
         auto allocator = nemo::gpu::Allocator::create(*instance, *device, {.max_device_bytes = 1 << 30});
         const std::filesystem::path spv = shaderSpvDir();
-        auto decoder = nemo::media::ClipDecoder::open(*instance, *device, *allocator, clipPath,
-                                                      spv / "mediaConvert.spv");
-        if (decoder->decision().hardware) {
-            const auto decodeStart = std::chrono::steady_clock::now();
-            int hardwareFrames = 0;
-            while (decoder->next(1'000'000'000ULL) != nullptr) {
+        auto decoder =
+            nemo::media::ClipDecoder::open(*instance, *device, *allocator, clipPath, spv / "mediaConvert.spv");
+        const auto decodeStart = std::chrono::steady_clock::now();
+        int hardwareFrames = 0;
+        int softwareFrames = 0;
+        std::string fallbackReason;
+        while (auto frame = decoder->next(1'000'000'000ULL)) {
+            if (decoder->decision().hardware) {
                 ++hardwareFrames;
+            } else {
+                ++softwareFrames;
+                fallbackReason = decoder->decision().reason;
             }
-            const double decodeNs =
-                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - decodeStart)
-                    .count();
-            std::cout << "hw-decode (" << decoder->info().codecName
-                      << "-vulkan, device-resident, no CPU readback): "
-                      << (hardwareFrames > 0 ? decodeNs / 1e6 / hardwareFrames : 0.0) << " ms/frame over "
-                      << hardwareFrames << " frames\n";
-        } else {
-            std::cout << "hw-decode unavailable: " << decoder->decision().reason << "\n";
+        }
+        const double decodeNs =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - decodeStart)
+                .count();
+        std::cout << "source-decode (" << decoder->info().codecName << "): " << hardwareFrames << " hardware frames, "
+                  << softwareFrames << " software-upload frames; "
+                  << (hardwareFrames + softwareFrames > 0 ? decodeNs / 1e6 / (hardwareFrames + softwareFrames) : 0.0)
+                  << " ms/frame\n";
+        if (!fallbackReason.empty()) {
+            std::cout << "hw-decode fallback: " << fallbackReason << "\n";
         }
     } catch (const nemo::gpu::GpuException& error) {
         std::cout << "hw-decode unavailable (no device): " << error.what() << "\n";
@@ -594,7 +599,12 @@ int main(int argc, char** argv) {
         return commandImageInfo(args);
     }
     if (command == "codec-sweep") {
-        return commandCodecSweep(args);
+        try {
+            return commandCodecSweep(args);
+        } catch (const std::exception& error) {
+            std::cerr << "codec-sweep: " << error.what() << "\n";
+            return 1;
+        }
     }
     return printUsage();
 }

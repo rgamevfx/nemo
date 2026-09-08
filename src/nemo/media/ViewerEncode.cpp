@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <memory>
+#include <system_error>
 #include <utility>
 
 extern "C" {
@@ -33,7 +35,130 @@ constexpr EncoderInfo kEncoders[] = {
     {"libx265-cpu", "libx265", false},
 };
 
-}  // namespace
+// --- Exception-safe FFmpeg ownership (issue #21). Each guard owns one
+// FFmpeg allocation; the encode function holds them so every error path —
+// including injected failures — releases the same set, and no error path
+// reports partial success.
+
+struct CodecContextDelete {
+    void operator()(AVCodecContext* value) const { avcodec_free_context(&value); }
+};
+struct FormatContextDelete {
+    void operator()(AVFormatContext* value) const { avformat_free_context(value); }
+};
+struct PacketDelete {
+    void operator()(AVPacket* value) const { av_packet_free(&value); }
+};
+struct FrameDelete {
+    void operator()(AVFrame* value) const { av_frame_free(&value); }
+};
+struct BufferRefDelete {
+    void operator()(AVBufferRef* value) const { av_buffer_unref(&value); }
+};
+
+using CodecContextPtr = std::unique_ptr<AVCodecContext, CodecContextDelete>;
+using FormatContextPtr = std::unique_ptr<AVFormatContext, FormatContextDelete>;
+using PacketPtr = std::unique_ptr<AVPacket, PacketDelete>;
+using FramePtr = std::unique_ptr<AVFrame, FrameDelete>;
+using BufferRefPtr = std::unique_ptr<AVBufferRef, BufferRefDelete>;
+
+[[nodiscard]] std::string avError(int status) {
+    char text[AV_ERROR_MAX_STRING_SIZE] = {0};
+    av_strerror(status, text, sizeof(text));
+    return text;
+}
+
+// Deterministic failure injection (issue #21): counts stage actions and
+// throws exactly when the caller-requested (stage, occurrence) is hit.
+// Lives only inside one encode call — no global mutable state.
+class FailureInjector {
+public:
+    explicit FailureInjector(const EncodeOptions& options) : failure_(options.injectedFailure), codec_(options.codec) {}
+
+    // Counts one action of `stage`; throws when this action is the
+    // injected occurrence. Stages other than the injected one return.
+    void check(EncodeFailure::Stage stage) {
+        if (failure_ == nullptr || failure_->stage != stage) {
+            return;
+        }
+        const int occurrence = ++count_;
+        if (occurrence == failure_->occurrence) {
+            throw MediaCodecError(codec_, std::string("injected failure: ") + stageName(stage) + " occurrence " +
+                                              std::to_string(occurrence));
+        }
+    }
+
+private:
+    [[nodiscard]] static const char* stageName(EncodeFailure::Stage stage) {
+        switch (stage) {
+        case EncodeFailure::Stage::Allocation:
+            return "allocation";
+        case EncodeFailure::Stage::Init:
+            return "init";
+        case EncodeFailure::Stage::Submission:
+            return "submission";
+        case EncodeFailure::Stage::Write:
+            return "write";
+        case EncodeFailure::Stage::Finalization:
+            return "finalization";
+        }
+        return "unknown";
+    }
+
+    const EncodeFailure* failure_;
+    const std::string& codec_;
+    int count_ = 0;
+};
+// Removes the encode's own output when the encode does not finish: the
+// error paths never leave a partial file behind (avio_open truncates the
+// path either way, so the remove discards only bytes this call wrote).
+// The AVIO context is closed here too — avformat_free_context does not
+// close `pb`, so an error path that skips this would leak it.
+struct OutputGuard {
+    std::filesystem::path path;
+    AVFormatContext* format = nullptr;  // set once the format exists
+    bool fileWritten = false;           // avio_open succeeded
+    bool success = false;
+    ~OutputGuard() {
+        if (!success) {
+            if (format != nullptr && format->pb != nullptr) {
+                avio_closep(&format->pb);
+            }
+            if (fileWritten) {
+                std::error_code ignored;
+                std::filesystem::remove(path, ignored);
+            }
+        }
+    }
+};
+
+// Packs display-referred RGBA (already converted by
+// yuv420pFromDisplayReferred) into an 8-bit YUV420P AVFrame. Returns
+// nullptr on allocation failure; the caller frees the frame.
+[[nodiscard]] AVFrame* makeYuv420pFrame(int width, int height, const std::vector<std::uint8_t>& planes) {
+    AVFrame* frame = av_frame_alloc();
+    if (frame == nullptr) {
+        return nullptr;
+    }
+    frame->format = AV_PIX_FMT_YUV420P;
+    frame->width = width;
+    frame->height = height;
+    if (av_frame_get_buffer(frame, 0) < 0) {
+        av_frame_free(&frame);
+        return nullptr;
+    }
+    const std::uint8_t* y = planes.data();
+    const std::uint8_t* cb = y + static_cast<size_t>(width) * height;
+    const std::uint8_t* cr = cb + static_cast<size_t>(width / 2) * (height / 2);
+    for (int row = 0; row < height; ++row) {
+        std::memcpy(frame->data[0] + row * frame->linesize[0], y + row * width, static_cast<size_t>(width));
+    }
+    for (int row = 0; row < height / 2; ++row) {
+        std::memcpy(frame->data[1] + row * frame->linesize[1], cb + row * (width / 2), static_cast<size_t>(width / 2));
+        std::memcpy(frame->data[2] + row * frame->linesize[2], cr + row * (width / 2), static_cast<size_t>(width / 2));
+    }
+    return frame;
+}
 
 std::vector<std::uint8_t> yuv420pFromDisplayReferred(const CpuImage& image) {
     const int width = image.width();
@@ -52,8 +177,8 @@ std::vector<std::uint8_t> yuv420pFromDisplayReferred(const CpuImage& image) {
         // Rec.709 matrix, limited range: Y' 16..235, Cb/Cr 16..240.
         const float luma = 0.2126F * r + 0.7152F * g + 0.0722F * b;
         yv = 16.0F + 219.0F * luma;
-        cbv = 128.0F + 224.0F * (-0.11457F * r - 0.38543F * g + 0.5F * b);
-        crv = 128.0F + 224.0F * (0.5F * r - 0.41869F * g - 0.08131F * b);
+        cbv = 128.0F + (112.0F / (1.0F - 0.0722F)) * (b - luma);
+        crv = 128.0F + (112.0F / (1.0F - 0.2126F)) * (r - luma);
     };
     for (int row = 0; row < height; ++row) {
         for (int col = 0; col < width; ++col) {
@@ -62,17 +187,17 @@ std::vector<std::uint8_t> yuv420pFromDisplayReferred(const CpuImage& image) {
             encode709(rgba[0], rgba[1], rgba[2], yv, cbv, crv);
             y[row * width + col] = static_cast<uint8_t>(std::clamp(yv, 0.0F, 255.0F));
             if (row % 2 == 0 && col % 2 == 0) {
-                // Chroma averaged over the co-sited 2x2 block.
+                // Left-sited chroma: centered horizontally on the even
+                // luma sample and halfway between the two luma rows.
                 const auto mean = [&](int channel) {
                     float sum = 0.0F;
                     for (int dy = 0; dy < 2; ++dy) {
-                        for (int dx = 0; dx < 2; ++dx) {
-                            const auto sample =
-                                image.pixel(std::min(col + dx, width - 1), std::min(row + dy, height - 1));
-                            sum += std::clamp(sample[channel], 0.0F, 1.0F);
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            const auto sample = image.pixel(std::clamp(col + dx, 0, width - 1), row + dy);
+                            sum += std::clamp(sample[channel], 0.0F, 1.0F) * (dx == 0 ? 2.0F : 1.0F);
                         }
                     }
-                    return sum / 4.0F;
+                    return sum / 8.0F;
                 };
                 float yv2 = 0, cbv2 = 0, crv2 = 0;
                 encode709(mean(0), mean(1), mean(2), yv2, cbv2, crv2);
@@ -84,13 +209,45 @@ std::vector<std::uint8_t> yuv420pFromDisplayReferred(const CpuImage& image) {
     return planes;
 }
 
+}  // namespace
+
 EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<CpuImage>& displayReferredFrames,
                               const EncodeOptions& options) {
     if (displayReferredFrames.empty()) {
         throw MediaCodecError(options.codec, "no frames to encode");
     }
+    if (options.gopSize < 1) {
+        throw MediaCodecError(options.codec, "gopSize must be >= 1");
+    }
+    if (options.bitrateKbps < 1) {
+        throw MediaCodecError(options.codec, "bitrateKbps must be >= 1");
+    }
     const int width = displayReferredFrames.front().width();
     const int height = displayReferredFrames.front().height();
+    // Left-chroma 4:2:0 needs even dimensions, and the buffer math below
+    // must stay inside addressable ranges (memory safety, issue #21).
+    if (width % 2 != 0 || height % 2 != 0) {
+        throw MediaCodecError(options.codec,
+                              "viewer chunks encode as 4:2:0 left chroma; dimensions must be even (got " +
+                                  std::to_string(width) + "x" + std::to_string(height) + ")");
+    }
+    if (av_image_check_size(static_cast<unsigned>(width), static_cast<unsigned>(height), 0, nullptr) < 0) {
+        throw MediaCodecError(options.codec, "frame dimensions are outside the encodable range (" +
+                                                 std::to_string(width) + "x" + std::to_string(height) + ")");
+    }
+    for (size_t index = 0; index < displayReferredFrames.size(); ++index) {
+        const CpuImage& frame = displayReferredFrames[index];
+        if (frame.width() != width || frame.height() != height) {
+            throw MediaCodecError(options.codec, "frame " + std::to_string(index) + " is " +
+                                                     std::to_string(frame.width()) + "x" +
+                                                     std::to_string(frame.height()) + ", expected " +
+                                                     std::to_string(width) + "x" + std::to_string(height));
+        }
+        if (frame.layout().color != ColorInterpretation::DisplayReferred) {
+            throw MediaCodecError(options.codec, "frame " + std::to_string(index) +
+                                                     " is scene-linear; apply the viewing transform before encoding");
+        }
+    }
 
     const AVCodec* encoder = nullptr;
     bool hardware = false;
@@ -108,18 +265,8 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
         throw MediaCodecError(options.codec, "unknown encoder id (probe with probe-media)");
     }
 
-    AVBufferRef* hwDevice = nullptr;
-    AVBufferRef* hwFrames = nullptr;
-    auto releaseHw = [&]() {
-        if (hwFrames != nullptr) {
-            av_buffer_unref(&hwFrames);
-        }
-        if (hwDevice != nullptr) {
-            av_buffer_unref(&hwDevice);
-        }
-    };
-
-    AVCodecContext* codec = avcodec_alloc_context3(encoder);
+    FailureInjector injection(options);
+    CodecContextPtr codec(avcodec_alloc_context3(encoder));
     if (codec == nullptr) {
         throw MediaCodecError(options.codec, "context allocation failed");
     }
@@ -129,71 +276,93 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     codec->framerate = AVRational{24, 1};
     codec->gop_size = options.gopSize;
     codec->bit_rate = static_cast<int64_t>(options.bitrateKbps) * 1000;
+    // Complete display-referred interpretation (issue #21): every field
+    // the chunk must carry so replay is unambiguous — the transfer is as
+    // much interpretation metadata as the matrix.
+    codec->color_primaries = AVCOL_PRI_BT709;
+    codec->color_trc = AVCOL_TRC_BT709;
     codec->colorspace = AVCOL_SPC_BT709;
     codec->color_range = AVCOL_RANGE_MPEG;
+    codec->chroma_sample_location = AVCHROMA_LOC_LEFT;
 
+    BufferRefPtr hwDevice;
+    BufferRefPtr hwFrames;
     if (hardware) {
         // NVENC consumes CUDA frames: upload measured, not hidden.
         codec->pix_fmt = AV_PIX_FMT_CUDA;
-        if (av_hwdevice_ctx_create(&hwDevice, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0) < 0) {
-            avcodec_free_context(&codec);
-            releaseHw();
+        AVBufferRef* device = nullptr;
+        if (av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0) < 0) {
             throw MediaCodecError(options.codec, "CUDA hwdevice init failed (engine unavailable on this device)");
         }
-        hwFrames = av_hwframe_ctx_alloc(hwDevice);
-        if (hwFrames == nullptr) {
-            avcodec_free_context(&codec);
-            releaseHw();
+        hwDevice.reset(device);
+        AVBufferRef* pool = av_hwframe_ctx_alloc(hwDevice.get());
+        if (pool == nullptr) {
             throw MediaCodecError(options.codec, "frame pool allocation failed");
         }
+        hwFrames.reset(pool);
         AVHWFramesContext* frames = reinterpret_cast<AVHWFramesContext*>(hwFrames->data);
         frames->format = AV_PIX_FMT_CUDA;
         frames->sw_format = AV_PIX_FMT_YUV420P;
         frames->width = width;
         frames->height = height;
         frames->initial_pool_size = 4;
-        if (av_hwframe_ctx_init(hwFrames) < 0) {
-            avcodec_free_context(&codec);
-            releaseHw();
+        // The allocation phase ends here: context, device and pool all
+        // exist and must be released by the unwound error path.
+        injection.check(EncodeFailure::Stage::Allocation);
+        if (av_hwframe_ctx_init(hwFrames.get()) < 0) {
             throw MediaCodecError(options.codec, "frame pool init failed");
         }
-        codec->hw_frames_ctx = av_buffer_ref(hwFrames);
+        codec->hw_frames_ctx = av_buffer_ref(hwFrames.get());
+        if (codec->hw_frames_ctx == nullptr) {
+            throw MediaCodecError(options.codec, "frame pool reference failed");
+        }
     } else {
         codec->pix_fmt = AV_PIX_FMT_YUV420P;
+        injection.check(EncodeFailure::Stage::Allocation);
     }
 
-    const int openStatus = avcodec_open2(codec, encoder, nullptr);
+    const int openStatus = avcodec_open2(codec.get(), encoder, nullptr);
     if (openStatus < 0) {
-        char error[AV_ERROR_MAX_STRING_SIZE] = {0};
-        av_strerror(openStatus, error, sizeof(error));
-        avcodec_free_context(&codec);
-        releaseHw();
-        throw MediaCodecError(options.codec, std::string("encoder open failed: ") + error);
+        throw MediaCodecError(options.codec, "encoder open failed: " + avError(openStatus));
     }
+    // The init phase ends here: codec open, and on the hw path the pool
+    // is initialized and referenced.
+    injection.check(EncodeFailure::Stage::Init);
 
-    // Muxer.
-    AVFormatContext* format = nullptr;
-    if (avformat_alloc_output_context2(&format, nullptr, nullptr, outputPath.c_str()) < 0 || format == nullptr) {
-        avcodec_free_context(&codec);
-        releaseHw();
-        throw MediaCodecError(options.codec, "output context allocation failed");
+    FormatContextPtr format;
+    {
+        AVFormatContext* raw = nullptr;
+        if (avformat_alloc_output_context2(&raw, nullptr, nullptr, outputPath.c_str()) < 0 || raw == nullptr) {
+            throw MediaCodecError(options.codec, "output context allocation failed");
+        }
+        format.reset(raw);
     }
-    AVStream* stream = avformat_new_stream(format, nullptr);
-    if (stream == nullptr || avcodec_parameters_from_context(stream->codecpar, codec) != 0) {
-        avcodec_free_context(&codec);
-        releaseHw();
+    AVStream* stream = avformat_new_stream(format.get(), nullptr);
+    if (stream == nullptr || avcodec_parameters_from_context(stream->codecpar, codec.get()) != 0) {
         throw MediaCodecError(options.codec, "stream setup failed");
     }
-    stream->time_base = AVRational{1, 24};
+    // The container must describe the coded representation, not the
+    // device staging format, and must carry the interpretation even where
+    // avcodec_parameters_from_context would leave a field unset. Replay
+    // reads primaries/transfer/matrix/range/chroma from this metadata.
+    stream->codecpar->format = AV_PIX_FMT_YUV420P;
+    stream->codecpar->color_primaries = AVCOL_PRI_BT709;
+    stream->codecpar->color_trc = AVCOL_TRC_BT709;
+    stream->codecpar->color_space = AVCOL_SPC_BT709;
+    stream->codecpar->color_range = AVCOL_RANGE_MPEG;
+    stream->codecpar->chroma_location = AVCHROMA_LOC_LEFT;
+    OutputGuard output{std::filesystem::path(outputPath), format.get()};
     if (avio_open(&format->pb, outputPath.c_str(), AVIO_FLAG_WRITE) < 0) {
-        avcodec_free_context(&codec);
-        releaseHw();
         throw MediaCodecError(options.codec, "output open failed: " + outputPath);
     }
-    if (avformat_write_header(format, nullptr) < 0) {
-        avcodec_free_context(&codec);
-        releaseHw();
+    output.fileWritten = true;
+    if (avformat_write_header(format.get(), nullptr) < 0) {
         throw MediaCodecError(options.codec, "header write failed");
+    }
+
+    PacketPtr packet(av_packet_alloc());
+    if (packet == nullptr) {
+        throw MediaCodecError(options.codec, "packet allocation failed");
     }
 
     EncodeStats stats;
@@ -202,112 +371,103 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     double uploadNsTotal = 0.0;
     int encodedCount = 0;
 
-    AVPacket* packet = av_packet_alloc();
-    AVFrame* frame = av_frame_alloc();
-    auto drain = [&]() {
-        while (avcodec_receive_packet(codec, packet) == 0) {
-            av_packet_rescale_ts(packet, AVRational{1, 24}, stream->time_base);
-            packet->stream_index = stream->index;
-            stats.encodedBytes += packet->size;
-            if (av_interleaved_write_frame(format, packet) != 0) {
-                av_packet_free(&packet);
-                av_frame_free(&frame);
-                avcodec_free_context(&codec);
-                releaseHw();
-                throw MediaCodecError(options.codec, "packet write failed");
+    // Drains finished packets. A receive error or a write failure throws:
+    // a swallowed drain error is exactly the partial-success report the
+    // corrected contracts forbid.
+    const auto drain = [&]() {
+        while (true) {
+            const int receiveStatus = avcodec_receive_packet(codec.get(), packet.get());
+            if (receiveStatus == AVERROR(EAGAIN) || receiveStatus == AVERROR_EOF) {
+                return;
             }
-            av_packet_unref(packet);
+            if (receiveStatus < 0) {
+                throw MediaCodecError(options.codec, "packet receive failed: " + avError(receiveStatus));
+            }
+            av_packet_rescale_ts(packet.get(), AVRational{1, 24}, stream->time_base);
+            packet->stream_index = stream->index;
+            // movenc derives the last sample's duration from packet
+            // duration; leaving it 0 collapses a single-frame chunk into a
+            // zero-length edit list the demuxer then drops entirely.
+            packet->duration = av_rescale_q(1, AVRational{1, 24}, stream->time_base);
+            stats.encodedBytes += packet->size;
+            injection.check(EncodeFailure::Stage::Write);
+            const int writeStatus = av_interleaved_write_frame(format.get(), packet.get());
+            av_packet_unref(packet.get());
+            if (writeStatus < 0) {
+                throw MediaCodecError(options.codec, "packet write failed: " + avError(writeStatus));
+            }
         }
     };
 
     for (const CpuImage& display : displayReferredFrames) {
+        FramePtr deviceFrame;
+        FramePtr cpuFrame;
         AVFrame* source = nullptr;
         if (hardware) {
             // Measured capability-dependent transfer: CPU staging into
             // device-resident encode frames.
             const auto uploadStart = std::chrono::steady_clock::now();
-            AVFrame* deviceFrame = av_frame_alloc();
+            deviceFrame.reset(av_frame_alloc());
+            if (deviceFrame == nullptr) {
+                throw MediaCodecError(options.codec, "device frame allocation failed");
+            }
             deviceFrame->format = AV_PIX_FMT_CUDA;
             deviceFrame->width = width;
             deviceFrame->height = height;
-            if (av_hwframe_get_buffer(hwFrames, deviceFrame, 0) < 0) {
-                av_frame_free(&deviceFrame);
+            if (av_hwframe_get_buffer(hwFrames.get(), deviceFrame.get(), 0) < 0) {
                 throw MediaCodecError(options.codec, "device frame allocation failed");
             }
-            const std::vector<uint8_t> planes = yuv420pFromDisplayReferred(display);
-            AVFrame* cpuFrame = av_frame_alloc();
-            cpuFrame->format = AV_PIX_FMT_YUV420P;
-            cpuFrame->width = width;
-            cpuFrame->height = height;
-            if (av_frame_get_buffer(cpuFrame, 0) < 0) {
-                av_frame_free(&cpuFrame);
-                av_frame_free(&deviceFrame);
+            cpuFrame.reset(makeYuv420pFrame(width, height, yuv420pFromDisplayReferred(display)));
+            if (cpuFrame == nullptr) {
                 throw MediaCodecError(options.codec, "frame buffer allocation failed");
             }
-            const uint8_t* y = planes.data();
-            const uint8_t* cb = y + static_cast<size_t>(width) * height;
-            const uint8_t* cr = cb + static_cast<size_t>(width / 2) * (height / 2);
-            for (int row = 0; row < height; ++row) {
-                std::memcpy(cpuFrame->data[0] + row * cpuFrame->linesize[0], y + row * width, width);
-            }
-            for (int row = 0; row < height / 2; ++row) {
-                std::memcpy(cpuFrame->data[1] + row * cpuFrame->linesize[1], cb + row * (width / 2), width / 2);
-                std::memcpy(cpuFrame->data[2] + row * cpuFrame->linesize[2], cr + row * (width / 2), width / 2);
-            }
-            if (av_hwframe_transfer_data(deviceFrame, cpuFrame, 0) < 0) {
-                av_frame_free(&cpuFrame);
-                av_frame_free(&deviceFrame);
+            if (av_hwframe_transfer_data(deviceFrame.get(), cpuFrame.get(), 0) < 0) {
                 throw MediaCodecError(options.codec, "device frame upload failed");
             }
             uploadNsTotal +=
                 std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - uploadStart)
                     .count();
-            av_frame_free(&cpuFrame);
             deviceFrame->pts = encodedCount;
-            source = deviceFrame;
+            source = deviceFrame.get();
         } else {
-            AVFrame* cpu = av_frame_alloc();
-            cpu->format = AV_PIX_FMT_YUV420P;
-            cpu->width = width;
-            cpu->height = height;
-            if (av_frame_get_buffer(cpu, 0) < 0) {
-                av_frame_free(&cpu);
+            cpuFrame.reset(makeYuv420pFrame(width, height, yuv420pFromDisplayReferred(display)));
+            if (cpuFrame == nullptr) {
                 throw MediaCodecError(options.codec, "frame buffer allocation failed");
             }
-            const std::vector<uint8_t> planes = yuv420pFromDisplayReferred(display);
-            const uint8_t* y = planes.data();
-            const uint8_t* cb = y + static_cast<size_t>(width) * height;
-            const uint8_t* cr = cb + static_cast<size_t>(width / 2) * (height / 2);
-            for (int row = 0; row < height; ++row) {
-                std::memcpy(cpu->data[0] + row * cpu->linesize[0], y + row * width, width);
-            }
-            for (int row = 0; row < height / 2; ++row) {
-                std::memcpy(cpu->data[1] + row * cpu->linesize[1], cb + row * (width / 2), width / 2);
-                std::memcpy(cpu->data[2] + row * cpu->linesize[2], cr + row * (width / 2), width / 2);
-            }
-            cpu->pts = encodedCount;
-            source = cpu;
+            cpuFrame->pts = encodedCount;
+            source = cpuFrame.get();
         }
         ++encodedCount;
-        if (avcodec_send_frame(codec, source) != 0) {
-            av_frame_free(&source);
-            throw MediaCodecError(options.codec, "frame submission failed");
+        injection.check(EncodeFailure::Stage::Submission);
+        const int sendStatus = avcodec_send_frame(codec.get(), source);
+        if (sendStatus < 0) {
+            throw MediaCodecError(options.codec, "frame submission failed: " + avError(sendStatus));
         }
-        av_frame_free(&source);
+        // Drain as we go: encoders with lookahead (libx264) buffer many
+        // frames; skipping the per-frame drain fills the encoder and makes
+        // the next send_frame return EAGAIN.
         drain();
     }
-    if (avcodec_send_frame(codec, nullptr) == 0) {
-        drain();
+    const int flushStatus = avcodec_send_frame(codec.get(), nullptr);
+    if (flushStatus < 0 && flushStatus != AVERROR_EOF) {
+        throw MediaCodecError(options.codec, "encoder flush failed: " + avError(flushStatus));
     }
+    drain();
     const double encodeNsTotal =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - timerStart).count();
-    av_write_trailer(format);
-    avio_closep(&format->pb);
-    avformat_free_context(format);
-    av_packet_free(&packet);
-    av_frame_free(&frame);
-    avcodec_free_context(&codec);
-    releaseHw();
+
+    // Finalization: the trailer and the close are checked — a failure
+    // here is an error, never a silent success (the output guard then
+    // removes the unusable file).
+    injection.check(EncodeFailure::Stage::Finalization);
+    const int trailerStatus = av_write_trailer(format.get());
+    if (trailerStatus < 0) {
+        throw MediaCodecError(options.codec, "trailer write failed: " + avError(trailerStatus));
+    }
+    if (avio_closep(&format->pb) < 0) {
+        throw MediaCodecError(options.codec, "output close failed");
+    }
+    output.success = true;
 
     stats.encodedFrames = encodedCount;
     stats.encodeMsPerFrame = encodedCount > 0 ? encodeNsTotal / 1e6 / encodedCount : 0.0;

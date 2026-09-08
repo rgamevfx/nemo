@@ -22,7 +22,7 @@ enum class Precision { Float32 };
 
 // Composition results are scene-linear; viewing transforms are downstream
 // operations and must not contaminate reusable results (spec section 8).
-enum class ColorInterpretation { SceneLinear };
+enum class ColorInterpretation { SceneLinear, DisplayReferred };
 
 struct ImageLayout {
     int width{0};
@@ -52,6 +52,8 @@ public:
     }
 
     [[nodiscard]] const ImageLayout& layout() const { return layout_; }
+    // Update interpretation after an in-place color transform, without copying pixels.
+    void setColorInterpretation(ColorInterpretation color) { layout_.color = color; }
     [[nodiscard]] int width() const { return layout_.width; }
     [[nodiscard]] int height() const { return layout_.height; }
     [[nodiscard]] static std::size_t channelCount() { return kImageChannels; }

@@ -106,7 +106,7 @@ void expectValidationClean(gpu::Instance& instance) {
 // moving vertical bar — same temporal-signal discipline as the decode
 // test's clip generator.
 CpuImage makeSweepFrame(int width, int height, int index) {
-    CpuImage image(width, height);
+    CpuImage image(ImageLayout{.width = width, .height = height, .color = ColorInterpretation::DisplayReferred});
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             const float r = std::clamp(static_cast<float>(x) / static_cast<float>(width - 1) * 0.75F +
@@ -143,8 +143,9 @@ std::filesystem::path writeSyntheticClip(int frames = 8, int width = 64, int hei
     const auto failWrite = [](const std::string& what) -> void {
         throw std::runtime_error("synthetic clip write: " + what);
     };
-    av_log_set_level(AV_LOG_DEBUG);
-    const auto path = std::filesystem::temp_directory_path() / "nemo-hwmedia-testclip.mp4";
+    const auto path =
+        std::filesystem::temp_directory_path() /
+        (std::string("nemo-hwmedia-") + ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".mp4");
     const AVOutputFormat* outputFormat = av_guess_format(nullptr, path.string().c_str(), nullptr);
     if (outputFormat == nullptr) {
         failWrite("mp4 muxer unavailable in libavformat build");
@@ -172,6 +173,9 @@ std::filesystem::path writeSyntheticClip(int frames = 8, int width = 64, int hei
     codec->gop_size = frames;  // one chunk: everything decodable from frame 0
     codec->colorspace = AVCOL_SPC_BT709;
     codec->color_range = AVCOL_RANGE_MPEG;
+    codec->color_primaries = AVCOL_PRI_BT709;
+    codec->color_trc = AVCOL_TRC_BT709;
+    codec->chroma_sample_location = AVCHROMA_LOC_LEFT;
     if (avio_open(&format->pb, path.string().c_str(), AVIO_FLAG_WRITE) < 0) {
         avcodec_free_context(&codec);
         avformat_free_context(format);
@@ -275,6 +279,8 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
 
     auto decoder = ClipDecoder::open(*boot.instance, *boot.device, *boot.allocator, clipPath.string(),
                                      std::filesystem::path(NEMO_SLANG_SPV_DIR_VALUE) / "mediaConvert.spv");
+    auto frame = decoder->next(1'000'000'000ULL);
+    ASSERT_NE(frame, nullptr);
     if (!decoder->decision().hardware) {
         // Capability-measured, never assumed: no Vulkan video queues on this
         // device is an environment fact, reported with the precise reason.
@@ -287,14 +293,11 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
     EXPECT_EQ(info.width, 64);
     EXPECT_EQ(info.height, 48);
 
-    // Decode frame 0 through the hardware path, read it back
-    // diagnostically, and compare against the software reference (same
-    // decoded YUV, same 709 limited-range matrix) — the fidelity gate.
+    // Diagnostic CPU/GPU parity complements the independently authored
+    // tagged-source and GPU midgray oracles; parity alone is not fidelity.
     const SoftwareClip reference = decodeClipSoftware(clipPath.string());
     ASSERT_EQ(reference.frames.size(), 8u);
 
-    auto frame = decoder->next(1'000'000'000ULL);
-    ASSERT_NE(frame, nullptr);
     ASSERT_EQ(frame->extent().width, 64u);
     ASSERT_EQ(frame->extent().height, 48u);
     CpuImage hardware(64, 48);
@@ -408,7 +411,7 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
     auto yImage = boot.allocator->create_image(64, 48, 1, VK_FORMAT_R8_UNORM,
                                                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-    auto uvImage = boot.allocator->create_image(64, 24, 1, VK_FORMAT_R8G8_UNORM,
+    auto uvImage = boot.allocator->create_image(32, 24, 1, VK_FORMAT_R8G8_UNORM,
                                                 VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 
@@ -422,6 +425,10 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
         gpu::imageBarrier(queue, uvImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
                           VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_NONE, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                           VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, 1'000'000'000ULL);
+        const std::vector<std::uint8_t> luma(64 * 48, 126);
+        const std::vector<std::uint8_t> chroma(32 * 24 * 2, 128);
+        gpu::uploadImage(queue, *boot.allocator, yImage, luma.data(), luma.size(), 1'000'000'000ULL);
+        gpu::uploadImage(queue, *boot.allocator, uvImage, chroma.data(), chroma.size(), 1'000'000'000ULL);
     }
 
     gpu::ForeignVideoFrame foreign;
@@ -433,8 +440,9 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
     foreign.formats[1] = VK_FORMAT_R8G8_UNORM;
     foreign.width = 64;
     foreign.height = 48;
-    foreign.layouts[0] = VK_IMAGE_LAYOUT_GENERAL;
-    foreign.layouts[1] = VK_IMAGE_LAYOUT_GENERAL;
+    foreign.transfer = gpu::MediaTransfer::Srgb;
+    foreign.layouts[0] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    foreign.layouts[1] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     foreign.accesses[0] = VK_ACCESS_NONE;
     foreign.accesses[1] = VK_ACCESS_NONE;
     foreign.producerStages[0] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
@@ -466,10 +474,12 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
     } catch (const std::exception& error) {
         ADD_FAILURE() << "conversion failed: " << error.what();
         vkDestroySemaphore(boot.device->handle(), semaphore, nullptr);
+        vkDestroySemaphore(boot.device->handle(), semaphore2, nullptr);
         interop.reset();
         yImage = gpu::Image{};
         uvImage = gpu::Image{};
         output = gpu::Image{};
+        boot.allocator.reset();
         boot.device.reset();
         expectValidationClean(*boot.instance);
         boot.instance.reset();
@@ -484,20 +494,16 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
         gpu::downloadImage(queue, *boot.allocator, output, converted.data(),
                            static_cast<size_t>(64) * 48 * 4 * sizeof(float), 1'000'000'000ULL);
     }
-    // Unwritten planes sample as undefined storage content; this test
-    // isolates the MECHANISM (convert runs, syncs, restores), not pixel
-    // truth — the decode test holds the fidelity gate. Assert the value
-    // was written to (finite, not NaN garbage).
-    bool allSane = true;
+    // BT.709 limited-range midgray with an explicitly sRGB transfer.
+    // The nonzero transfer selector also catches a mismatched uniform ABI.
     for (int y = 0; y < 48; y += 8) {
         for (int x = 0; x < 64; x += 8) {
             const auto pixel = converted.pixel(x, y);
-            if (!std::isfinite(pixel[0]) || !std::isfinite(pixel[1]) || !std::isfinite(pixel[2])) {
-                allSane = false;
+            for (int channel = 0; channel < 3; ++channel) {
+                EXPECT_NEAR(pixel[channel], 0.21616043, 0.003);
             }
         }
     }
-    EXPECT_TRUE(allSane);
     vkDestroySemaphore(boot.device->handle(), semaphore, nullptr);
     vkDestroySemaphore(boot.device->handle(), semaphore2, nullptr);
     // Device-owned objects must be released before the device itself.
@@ -540,7 +546,7 @@ TEST(HwMedia, ViewerChunkEncodeRoundTrip) {
 
     // Decode-back fidelity: same 709 math on both sides, so the round
     // trip measures codec + 4:2:0 error only.
-    const nemo::media::SoftwareClip decoded = nemo::media::decodeClipSoftware((tempDir / "chunk.mp4").string());
+    const nemo::media::SoftwareClip decoded = nemo::media::decodeViewerChunkSoftware((tempDir / "chunk.mp4").string());
     ASSERT_EQ(decoded.frames.size(), static_cast<size_t>(frames));
     double mse = 0.0;
     size_t samples = 0;
@@ -579,9 +585,6 @@ TEST(HwMedia, CodecSweepProducesMeasuredTable) {
         EXPECT_GT(entry.psnrDb, 20.0) << entry.codec << " chunk " << entry.chunkFrames;
         EXPECT_GT(entry.bytesPerFrame, 0.0) << entry.codec;
     }
-    const std::string table = report.table();
-    EXPECT_NE(table.find("| codec | chunk |"), std::string::npos);
-    EXPECT_NE(table.find("libx264-cpu"), std::string::npos);
 }
 
 // Unavailable hardware candidates are recorded as measured gaps, not

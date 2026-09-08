@@ -1,6 +1,6 @@
 #pragma once
 
-// Foreign video-frame interop (issue #10, spec section 10.4).
+// Foreign video-frame interop (issues #10/#21, spec section 10.4).
 //
 // Vulkan video decode (through the Media module's FFmpeg hwaccel, backed by
 // the NVDEC engine) produces NV12 plane images and timeline semaphores on
@@ -19,6 +19,13 @@
 // fence); it returns only after the conversion completed and the planes
 // were restored for reuse by the decoder. The ForeignVideoFrame's images
 // must outlive the call.
+//
+// Color interpretation travels as plain data on the frame: the media module
+// resolves the clip's declared color metadata (transfer, primaries, matrix,
+// range, chroma location) and records what the Y/Cb/Cr samples mean. The
+// mediaConvert kernel converts Y′CbCr(range/matrix) → R′G′B′ and then
+// linearizes by `transfer` — matrix conversion alone yields nonlinear
+// R′G′B′, never scene-linear RGB.
 
 #include <vulkan/vulkan.h>
 
@@ -27,6 +34,29 @@
 #include "nemo/gpu/Submit.hpp"
 
 namespace nemo::gpu {
+
+// Plain-data color interpretation consumed by the mediaConvert kernel. The
+// supported set is deliberately explicit: combinations outside it are
+// rejected by the media module rather than silently guessed.
+
+// Source transfer characteristic. The kernel inverts it into scene-linear
+// Rec.709; `Linear` passes the decoded values through unlinearized.
+enum class MediaTransfer { Bt709, Srgb, Gamma22, Gamma28, Linear };
+
+// Y′CbCr → R′G′B′ matrix coefficients.
+enum class MediaMatrix { Bt709, Bt601 };
+
+// Luma/chroma quantization range.
+enum class MediaYuvRange { Limited, Full };
+
+// Chroma sample position. Only left (horizontally co-sited with even luma
+// columns, vertically midway between luma rows) is supported.
+enum class MediaChromaLocation { Left };
+
+// Source chromaticities. Only Rec.709 is supported: the working space is
+// scene-linear Rec.709, so no chromaticity mapping exists yet; other
+// primaries are an explicit error, not an identity pass-through.
+enum class MediaPrimaries { Bt709 };
 
 // One external producer frame: up to two planes (NV12: R8 luma + R8G8
 // chroma), each with its own timeline semaphore the producer signals at
@@ -49,6 +79,15 @@ struct ForeignVideoFrame {
     // formats[0] = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM and views taken per
     // aspect plane. false = per-plane images (images[0]=Y, images[1]=UV).
     bool multiplane = false;
+    // Color interpretation of the plane samples, resolved by the media
+    // module from the clip's declared metadata (defaults match the Vulkan
+    // video decode surface contract: 8-bit BT.709 limited-range, left
+    // chroma).
+    MediaTransfer transfer = MediaTransfer::Bt709;
+    MediaMatrix matrix = MediaMatrix::Bt709;
+    MediaYuvRange range = MediaYuvRange::Limited;
+    MediaChromaLocation chromaLocation = MediaChromaLocation::Left;
+    MediaPrimaries primaries = MediaPrimaries::Bt709;
     uint32_t planeCount = 0;
     uint32_t width = 0;
     uint32_t height = 0;
@@ -70,11 +109,12 @@ public:
     MediaInterop& operator=(const MediaInterop&) = delete;
 
     // Converts one foreign NV12 frame into `output` (rgba32f storage image,
-    // GENERAL layout maintained). Synchronous. Establishes the producer→
-    // conversion dependency with in-queue timeline waits, signals the
-    // producer semaphores back at waitValue+1, and updates `frame`
-    // (waitValues, queueFamilies, accesses) so the producer can reuse the
-    // planes. Throws GpuException naming the failure.
+    // GENERAL layout maintained) using the frame's declared color
+    // interpretation. Synchronous. Establishes the producer→conversion
+    // dependency with in-queue timeline waits, signals the producer
+    // semaphores back at waitValue+1, and updates `frame` (waitValues,
+    // queueFamilies, accesses) so the producer can reuse the planes.
+    // Throws GpuException naming the failure.
     void convertToRgba32f(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns);
 
 private:

@@ -12,6 +12,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(NEMO_BUILD_TESTS "Build core unit tests" ON)
 option(NEMO_BUILD_CLI "Build the nemo-cli headless tool" ON)
+option(NEMO_BUILD_UI "Build the Qt Quick workspace shell" OFF)
+option(NEMO_BUILD_GPU "Build the nemo::gpu Vulkan module" ON)
 option(NEMO_ENABLE_IPO "Enable interprocedural optimization in release builds" ON)
 option(NEMO_ENABLE_CLANG_TIDY "Run clang-tidy during compilation when found" OFF)
 option(NEMO_WARN_AS_ERROR "Treat compiler warnings as errors" OFF)
@@ -39,11 +41,27 @@ if(NEMO_ENABLE_CLANG_TIDY)
     endif()
 endif()
 
+if(NEMO_BUILD_GPU)
+    # Vulkan is a system package (ADR-0002); VulkanMemoryAllocator is a pinned
+    # vcpkg manifest entry. Missing either disables the GPU module at configure
+    # time so machines and CI without Vulkan still build the rest of the tree.
+    find_package(Vulkan QUIET)
+    find_package(VulkanMemoryAllocator QUIET CONFIG)
+    if(NOT Vulkan_FOUND OR NOT VulkanMemoryAllocator_FOUND)
+        message(STATUS "Vulkan headers/loader or VulkanMemoryAllocator not found; building without nemo::gpu (NEMO_BUILD_GPU=OFF)")
+        set(NEMO_BUILD_GPU OFF)
+    endif()
+endif()
+
 add_subdirectory(src/nemo)
 add_subdirectory(src/nemo/gpu/shaders)
 
 if(NEMO_BUILD_CLI)
     add_subdirectory(apps/nemo-cli)
+endif()
+
+if(NEMO_BUILD_UI OR NEMO_BUILD_TESTS)
+    add_subdirectory(apps/nemo-ui)
 endif()
 
 if(NEMO_BUILD_TESTS)

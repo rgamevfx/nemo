@@ -65,7 +65,10 @@
             "name": "asan",
             "configurePreset": "asan",
             "output": { "outputOnFailure": true },
-            "execution": { "jobs": 0 }
+            "execution": { "jobs": 0 },
+            "environment": {
+                "LSAN_OPTIONS": "suppressions=${sourceDir}/tests/lsan_suppressions.txt"
+            }
         },
         {
             "name": "tsan",

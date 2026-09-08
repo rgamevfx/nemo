@@ -1,10 +1,13 @@
-# Media module: OpenImageIO/OpenEXR image source adapter (issue #4).
-# External formats never leak past this adapter: OIIO/OpenEXR types stay in
-# the .cpp files; the public surface is the application image contract only.
+# Media module: OpenImageIO/OpenEXR image source adapter (issue #4) and the
+# OpenColorIO viewing-transform adapter (issue #6). External library types
+# never leak past the adapters: OIIO/OpenEXR/OCIO types stay in the .cpp
+# files; the public surface is the application image contract only.
 find_package(OpenImageIO CONFIG REQUIRED)
+find_package(OpenColorIO CONFIG REQUIRED)
 
 add_library(nemo_media
     ImageIO.cpp
+    ViewingTransform.cpp
 )
 add_library(nemo::media ALIAS nemo_media)
 
@@ -12,6 +15,7 @@ target_include_directories(nemo_media PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(nemo_media
     PUBLIC nemo::core
     PRIVATE OpenImageIO::OpenImageIO
+    PRIVATE OpenColorIO::OpenColorIO
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

@@ -4,10 +4,13 @@
     "version": "0.1.0",
     "description": "Unified VFX compositor and NLE",
     "dependencies": [
+        "glslang",
         "gtest",
         "nlohmann-json",
         "openexr",
-        "openimageio"
+        "openimageio",
+        "opencolorio",
+        "vulkan-memory-allocator"
     ],
     "builtin-baseline": "04a9d8e5212d01ee1dd9478eadd9caade4f8b0d4"
 }

@@ -9,6 +9,23 @@
 
 namespace nemo {
 
+// Project color policy per spec section 5: the names the project resolves
+// against its OpenColorIO config. Plain name records only — the persistent
+// model carries no OCIO runtime objects (spec section 10.2).
+//
+// Defaults (documented, applied by the loader when a saved document carries
+// no policy block): scene-linear working space, standard sRGB display view
+// for both viewing and delivery. Viewer and delivery transforms are
+// identified as "display/view" pairs; a bare name is interpreted as
+// "<name>/<name>" by consumers.
+struct ColorPolicy {
+    std::string workingSpace{"linear"};
+    std::string viewerTransform{"sRGB/rec709"};
+    std::string deliveryTransform{"sRGB/rec709"};
+
+    [[nodiscard]] bool operator==(const ColorPolicy&) const = default;
+};
+
 // Document model per spec section 10.2: no Qt, Vulkan, or plugin-runtime
 // objects live in the persistent model.
 struct Document {
@@ -17,6 +34,7 @@ struct Document {
     int schemaVersion{kSchemaVersion};
     std::string name;
     Graph graph;
+    ColorPolicy color;
 };
 
 // A validated edit with its inverse. Commands are the only sanctioned way to

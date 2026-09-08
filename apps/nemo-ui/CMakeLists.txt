@@ -1,0 +1,33 @@
+find_package(nlohmann_json CONFIG REQUIRED)
+
+# The workspace model deliberately has no Qt or rendering dependencies.
+add_library(nemo_workspace Workspace.cpp)
+add_library(nemo::workspace ALIAS nemo_workspace)
+target_include_directories(nemo_workspace PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(nemo_workspace PUBLIC nlohmann_json::nlohmann_json)
+
+if(NEMO_BUILD_UI)
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2)
+    qt_standard_project_setup()
+    qt_add_executable(nemo-ui main.cpp WorkspaceController.cpp WorkspaceController.hpp)
+    qt_add_qml_module(nemo-ui
+        URI Nemo
+        VERSION 1.0
+        RESOURCE_PREFIX /qt/qml
+        QML_FILES qml/Main.qml qml/WorkspaceNode.qml qml/Panel.qml qml/DockDrag.qml qml/PanelDragHandler.qml
+    )
+    target_link_libraries(nemo-ui PRIVATE nemo::workspace Qt6::Quick Qt6::QuickControls2)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(nemo_workspace PRIVATE -Wall -Wextra -Wpedantic)
+    if(NEMO_WARN_AS_ERROR)
+        target_compile_options(nemo_workspace PRIVATE -Werror)
+    endif()
+    if(TARGET nemo-ui)
+        target_compile_options(nemo-ui PRIVATE -Wall -Wextra -Wpedantic)
+        if(NEMO_WARN_AS_ERROR)
+            target_compile_options(nemo-ui PRIVATE -Werror)
+        endif()
+    endif()
+endif()

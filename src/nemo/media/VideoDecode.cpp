@@ -450,6 +450,63 @@ constexpr const char* kSupportedFormatNames =
     return rate.num != 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
 }
 
+// Owns common initialization without opening the codec: the native path must
+// attach its Vulkan device and format callback before openCodec().
+struct PreparedDecoder {
+    FormatGuard format;
+    CodecContextGuard codec;
+    int streamIndex = -1;
+    AVStream* stream = nullptr;             // Borrowed from format.
+    const AVCodec* decoderCodec = nullptr;  // FFmpeg's static registry.
+
+    explicit PreparedDecoder(const std::string& path) {
+        const int openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
+        if (openStatus < 0) {
+            failStatus(path, "avformat_open_input failed", openStatus);
+        }
+        if (avformat_find_stream_info(format.context, nullptr) < 0) {
+            failStatus(path, "avformat_find_stream_info failed");
+        }
+        streamIndex = av_find_best_stream(format.context, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+        if (streamIndex < 0) {
+            failStatus(path, "no video stream");
+        }
+        stream = format.context->streams[streamIndex];
+        decoderCodec = avcodec_find_decoder(stream->codecpar->codec_id);
+        if (decoderCodec == nullptr) {
+            failStatus(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
+        }
+        codec.context = avcodec_alloc_context3(decoderCodec);
+        if (codec.context == nullptr) {
+            failStatus(path, "avcodec_alloc_context3 failed");
+        }
+        if (avcodec_parameters_to_context(codec.context, stream->codecpar) < 0) {
+            failStatus(path, "avcodec_parameters_to_context failed");
+        }
+        codec.context->thread_count = 1;  // Deterministic decode for image assertions.
+        codec.context->err_recognition = AV_EF_EXPLODE;
+    }
+
+    PreparedDecoder(const PreparedDecoder&) = delete;
+    PreparedDecoder& operator=(const PreparedDecoder&) = delete;
+
+    [[nodiscard]] ClipInfo openCodec(const std::string& path) {
+        const int status = avcodec_open2(codec.context, decoderCodec, nullptr);
+        if (status < 0) {
+            const std::string profile = declaredProfile(stream->codecpar);
+            fail(path, profile,
+                 std::string("avcodec_open2 failed") + (profile.empty() ? "" : " (unsupported " + profile + ")"),
+                 status);
+        }
+        return {path,
+                avcodec_get_name(codec.context->codec_id),
+                codec.context->width,
+                codec.context->height,
+                frameRateOf(stream),
+                stream->nb_frames > 0 ? stream->nb_frames : -1};
+    }
+};
+
 }  // namespace
 
 struct ClipDecoder::Impl {
@@ -501,34 +558,9 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
     decoder->impl_ = std::move(impl);
     Impl& d = *decoder->impl_;
 
-    FormatGuard format;
-    const int openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
-    if (openStatus < 0) {
-        failStatus(path, "avformat_open_input failed", openStatus);
-    }
-    if (avformat_find_stream_info(format.context, nullptr) < 0) {
-        failStatus(path, "avformat_find_stream_info failed");
-    }
-    const int streamIndex = av_find_best_stream(format.context, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-    if (streamIndex < 0) {
-        failStatus(path, "no video stream");
-    }
-    AVStream* stream = format.context->streams[streamIndex];
-    const AVCodec* decoderCodec = avcodec_find_decoder(stream->codecpar->codec_id);
-    if (decoderCodec == nullptr) {
-        failStatus(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
-    }
-
-    CodecContextGuard codec;
-    codec.context = avcodec_alloc_context3(decoderCodec);
-    if (codec.context == nullptr) {
-        failStatus(path, "avcodec_alloc_context3 failed");
-    }
-    if (avcodec_parameters_to_context(codec.context, stream->codecpar) < 0) {
-        failStatus(path, "avcodec_parameters_to_context failed");
-    }
-    codec.context->thread_count = 1;  // deterministic decode for image assertions
-    codec.context->err_recognition = AV_EF_EXPLODE;
+    PreparedDecoder prepared(path);
+    auto& codec = prepared.codec;
+    AVStream* stream = prepared.stream;
 
     // Resolve the declared color interpretation BEFORE path selection: an
     // interpretation outside the explicit subset is a hard error for both
@@ -545,7 +577,7 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
     // recorded reason — no silent substitution.
     bool hasVulkanConfig = false;
     for (int configIndex = 0;; ++configIndex) {
-        const AVCodecHWConfig* config = avcodec_get_hw_config(decoderCodec, configIndex);
+        const AVCodecHWConfig* config = avcodec_get_hw_config(prepared.decoderCodec, configIndex);
         if (config == nullptr) {
             break;
         }
@@ -676,30 +708,12 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
         }
         return AV_PIX_FMT_NONE;
     };
-    const int codecStatus = avcodec_open2(codec.context, decoderCodec, nullptr);
-    if (codecStatus < 0) {
-        const std::string profile = declaredProfile(stream->codecpar);
-        fail(path, profile.empty() ? "" : profile,
-             std::string("avcodec_open2 failed") + (profile.empty() ? "" : " (unsupported " + profile + ")"),
-             codecStatus);
-    }
-
-    d.codecContext = codec.context;
-    codec.context = nullptr;  // impl owns it now
-    d.format.context = format.context;
-    format.context = nullptr;
-    d.streamIndex = streamIndex;
+    d.info = prepared.openCodec(path);
+    d.codecContext = std::exchange(codec.context, nullptr);
+    d.format.context = std::exchange(prepared.format.context, nullptr);
+    d.streamIndex = prepared.streamIndex;
     d.device = &device;
     d.allocator = &allocator;
-
-    // Public clip metadata.
-    ClipInfo& info = d.info;
-    info.path = path;
-    info.codecName = avcodec_get_name(d.codecContext->codec_id);
-    info.width = d.codecContext->width;
-    info.height = d.codecContext->height;
-    info.frameRate = frameRateOf(stream);
-    info.frameCount = stream->nb_frames > 0 ? stream->nb_frames : -1;
 
     d.queue = std::make_unique<gpu::SubmissionQueue>(device, device.graphics_family());
     d.opened = true;
@@ -888,45 +902,14 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
 [[nodiscard]] SoftwareClip decodeSoftware(const std::string& path, int64_t maxFrames, bool linearize,
                                           const ColorPolicy& policy, const ColorOverride& overrides) {
     SoftwareClip result;
-    FormatGuard format;
-    const int openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
-    if (openStatus < 0) {
-        failStatus(path, "avformat_open_input failed", openStatus);
-    }
-    if (avformat_find_stream_info(format.context, nullptr) < 0) {
-        failStatus(path, "avformat_find_stream_info failed");
-    }
-    const int streamIndex = av_find_best_stream(format.context, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-    if (streamIndex < 0) {
-        failStatus(path, "no video stream");
-    }
-    AVStream* stream = format.context->streams[streamIndex];
-    const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
-    if (codec == nullptr) {
-        failStatus(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
-    }
-    CodecContextGuard context;
-    context.context = avcodec_alloc_context3(codec);
-    if (context.context == nullptr) {
-        failStatus(path, "avcodec_alloc_context3 failed");
-    }
-    if (avcodec_parameters_to_context(context.context, stream->codecpar) < 0) {
-        failStatus(path, "avcodec_parameters_to_context failed");
-    }
-    context.context->thread_count = 1;
-    context.context->err_recognition = AV_EF_EXPLODE;
-    if (avcodec_open2(context.context, codec, nullptr) < 0) {
-        fail(path, declaredProfile(stream->codecpar), "avcodec_open2 failed");
-    }
+    PreparedDecoder prepared(path);
+    auto& format = prepared.format;
+    auto& context = prepared.codec;
+    const int streamIndex = prepared.streamIndex;
+    AVStream* stream = prepared.stream;
+    result.info = prepared.openCodec(path);
 
     result.metadata = resolveColor(stream->codecpar, path, policy, overrides);
-
-    result.info.path = path;
-    result.info.codecName = avcodec_get_name(context.context->codec_id);
-    result.info.width = context.context->width;
-    result.info.height = context.context->height;
-    result.info.frameRate = frameRateOf(stream);
-    result.info.frameCount = stream->nb_frames > 0 ? stream->nb_frames : -1;
 
     PacketGuard packet;
     FrameGuard decoded;

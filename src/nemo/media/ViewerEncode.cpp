@@ -1,9 +1,9 @@
 #include "nemo/media/ViewerEncode.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
-#include <chrono>
 #include <filesystem>
 #include <utility>
 
@@ -67,7 +67,8 @@ std::vector<std::uint8_t> yuv420pFromDisplayReferred(const CpuImage& image) {
                     float sum = 0.0F;
                     for (int dy = 0; dy < 2; ++dy) {
                         for (int dx = 0; dx < 2; ++dx) {
-                            const auto sample = image.pixel(std::min(col + dx, width - 1), std::min(row + dy, height - 1));
+                            const auto sample =
+                                image.pixel(std::min(col + dx, width - 1), std::min(row + dy, height - 1));
                             sum += std::clamp(sample[channel], 0.0F, 1.0F);
                         }
                     }
@@ -83,8 +84,8 @@ std::vector<std::uint8_t> yuv420pFromDisplayReferred(const CpuImage& image) {
     return planes;
 }
 
-EncodeStats encodeViewerChunk(const std::string& outputPath,
-                              const std::vector<CpuImage>& displayReferredFrames, const EncodeOptions& options) {
+EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<CpuImage>& displayReferredFrames,
+                              const EncodeOptions& options) {
     if (displayReferredFrames.empty()) {
         throw MediaCodecError(options.codec, "no frames to encode");
     }
@@ -258,9 +259,9 @@ EncodeStats encodeViewerChunk(const std::string& outputPath,
                 av_frame_free(&deviceFrame);
                 throw MediaCodecError(options.codec, "device frame upload failed");
             }
-            uploadNsTotal += std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                 std::chrono::steady_clock::now() - uploadStart)
-                                 .count();
+            uploadNsTotal +=
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - uploadStart)
+                    .count();
             av_frame_free(&cpuFrame);
             deviceFrame->pts = encodedCount;
             source = deviceFrame;
@@ -298,9 +299,8 @@ EncodeStats encodeViewerChunk(const std::string& outputPath,
     if (avcodec_send_frame(codec, nullptr) == 0) {
         drain();
     }
-    const double encodeNsTotal = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                     std::chrono::steady_clock::now() - timerStart)
-                                     .count();
+    const double encodeNsTotal =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - timerStart).count();
     av_write_trailer(format);
     avio_closep(&format->pb);
     avformat_free_context(format);

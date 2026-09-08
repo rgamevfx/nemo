@@ -3,12 +3,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 
-#include "nemo/media/ViewerEncode.hpp"
 #include "nemo/media/VideoDecode.hpp"
+#include "nemo/media/ViewerEncode.hpp"
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -22,6 +23,7 @@ using clock = std::chrono::steady_clock;
 
 struct ChunkTimings {
     double encodeMsPerFrame = 0.0;
+    double uploadNsPerFrame = 0.0;
     double decodeMsPerFrame = 0.0;
     double seekMsAtBoundary = 0.0;
     double psnrDb = -0.0;
@@ -34,9 +36,9 @@ struct ChunkTimings {
     try {
         const EncodeStats stats = encodeViewerChunk(path, frames, options);
         timings.encodeMsPerFrame = stats.encodeMsPerFrame;
-        timings.bytesPerFrame = stats.encodedFrames > 0
-                                    ? static_cast<double>(stats.encodedBytes) / stats.encodedFrames
-                                    : 0.0;
+        timings.uploadNsPerFrame = stats.uploadNsPerFrame;
+        timings.bytesPerFrame =
+            stats.encodedFrames > 0 ? static_cast<double>(stats.encodedBytes) / stats.encodedFrames : 0.0;
         return true;
     } catch (const MediaCodecError&) {
         return false;  // unavailable codec: recorded as a gap in the table
@@ -45,8 +47,7 @@ struct ChunkTimings {
 
 // Decodes the chunk back and measures decode cost + fidelity (PSNR in the
 // display-referred float space against the same source frames).
-[[nodiscard]] bool decodeChunkAndMeasure(const std::string& path,
-                                         const std::vector<CpuImage>& source,
+[[nodiscard]] bool decodeChunkAndMeasure(const std::string& path, const std::vector<CpuImage>& source,
                                          ChunkTimings& timings, bool seekAtBoundary) {
     const auto decodeStart = clock::now();
     const SoftwareClip decoded = decodeClipSoftware(path);
@@ -63,12 +64,10 @@ struct ChunkTimings {
         // chunk boundary (issue #10 acceptance example 2).
         const auto seekStart = clock::now();
         const SoftwareClip boundary = decodeClipSoftware(path, 1);
-        timings.seekMsAtBoundary = boundary.frames.empty()
-                                       ? -1.0
-                                       : std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() -
-                                                                                              seekStart)
-                                             .count() /
-                                             1e6;
+        timings.seekMsAtBoundary =
+            boundary.frames.empty()
+                ? -1.0
+                : std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - seekStart).count() / 1e6;
     }
 
     // Fidelity: PSNR over the decode-back RGBA against the source frames
@@ -115,6 +114,7 @@ SweepReport runCodecSweep(const std::vector<CpuImage>& sourceDisplayReferred, co
             entry.codec = codec;
             entry.chunkFrames = chunkFrames;
             double encodeMsTotal = 0.0;
+            double uploadNsTotal = 0.0;
             double decodeMsTotal = 0.0;
             double seekMsTotal = 0.0;
             double psnrMin = 1000.0;
@@ -126,14 +126,12 @@ SweepReport runCodecSweep(const std::vector<CpuImage>& sourceDisplayReferred, co
                 if (start >= sourceDisplayReferred.size()) {
                     break;
                 }
-                const size_t count =
-                    std::min(static_cast<size_t>(chunkFrames), sourceDisplayReferred.size() - start);
+                const size_t count = std::min(static_cast<size_t>(chunkFrames), sourceDisplayReferred.size() - start);
                 std::vector<CpuImage> frames(sourceDisplayReferred.begin() + static_cast<long>(start),
                                              sourceDisplayReferred.begin() + static_cast<long>(start + count));
-                const std::string path =
-                    (tempDir / ("chunk-" + codec + "-" + std::to_string(chunkFrames) + "-" +
-                                std::to_string(start) + ".mp4"))
-                        .string();
+                const std::string path = (tempDir / ("chunk-" + codec + "-" + std::to_string(chunkFrames) + "-" +
+                                                     std::to_string(start) + ".mp4"))
+                                             .string();
 
                 ChunkTimings chunkTimings;
                 if (!encodeChunk(path, frames, {codec, chunkFrames, 2000}, chunkTimings)) {
@@ -141,6 +139,7 @@ SweepReport runCodecSweep(const std::vector<CpuImage>& sourceDisplayReferred, co
                     break;
                 }
                 encodeMsTotal += chunkTimings.encodeMsPerFrame * static_cast<double>(count);
+                uploadNsTotal += chunkTimings.uploadNsPerFrame * static_cast<double>(count);
                 bytesPerFrameTotal += chunkTimings.bytesPerFrame * static_cast<double>(count);
                 if (!decodeChunkAndMeasure(path, frames, chunkTimings, chunks > 0)) {
                     usable = false;
@@ -151,15 +150,32 @@ SweepReport runCodecSweep(const std::vector<CpuImage>& sourceDisplayReferred, co
                 psnrMin = std::min(psnrMin, chunkTimings.psnrDb);
                 ++chunks;
             }
+            if (!usable) {
+                // Unavailable candidate: recorded as a measured gap (the
+                // table renders n/a), never as an all-zero row.
+                entry.psnrDb = -1.0;
+            }
 
             if (usable && chunks > 0) {
                 entry.encodeMsPerFrame = encodeMsTotal / static_cast<double>(sourceDisplayReferred.size());
+                entry.uploadNsPerFrame = uploadNsTotal / static_cast<double>(sourceDisplayReferred.size()) / 1e6;
                 entry.decodeMsPerFrame = decodeMsTotal / static_cast<double>(sourceDisplayReferred.size());
                 entry.seekMsAtBoundary = chunks > 0 ? seekMsTotal / static_cast<double>(chunks - 1) : -1.0;
                 entry.psnrDb = psnrMin;
                 entry.bytesPerFrame = bytesPerFrameTotal / static_cast<double>(sourceDisplayReferred.size());
             }
             report.entries.push_back(entry);
+        }
+        // Peak decode resources: VmHWM after the decode-back workload.
+        std::ifstream statusFile("/proc/self/status");
+        std::string line;
+        while (std::getline(statusFile, line)) {
+            if (line.starts_with("VmHWM:")) {
+                // "VmHWM:  12345 kB" — skip the label + colon.
+                const long kb = std::strtol(line.c_str() + 6, nullptr, 10);
+                report.peakDecodeVmHwmKb = std::max(report.peakDecodeVmHwmKb, kb);
+                report.available = true;
+            }
         }
     }
     // Clean the temp chunks (they are measurement artifacts).
@@ -178,13 +194,20 @@ std::string SweepReport::table() const {
         }
         return text.str();
     };
-    std::string out = "| codec | chunk | encode ms/frame | decode ms/frame | seek ms @ boundary | PSNR dB (min) | B/frame |\n";
-    out += "| --- | --- | --- | --- | --- | --- | --- |\n";
+    std::string out =
+        "| codec | chunk | encode ms/frame | upload ms/frame | decode ms/frame | seek ms @ boundary | PSNR dB (min) | "
+        "B/frame |\n";
+    out += "| --- | --- | --- | --- | --- | --- | --- | --- |\n";
     for (const SweepEntry& entry : entries) {
-        out += "| " + entry.codec + " | " + std::to_string(entry.chunkFrames) + " | " +
-               fixed(entry.encodeMsPerFrame) + " | " + fixed(entry.decodeMsPerFrame) + " | " +
-               fixed(entry.seekMsAtBoundary) + " | " + fixed(entry.psnrDb) + " | " +
-               fixed(entry.bytesPerFrame, 0) + " |\n";
+        out += "| " + entry.codec + " | " + std::to_string(entry.chunkFrames) + " | " + fixed(entry.encodeMsPerFrame) +
+               " | " + fixed(entry.uploadNsPerFrame) + " | " + fixed(entry.decodeMsPerFrame) + " | " +
+               fixed(entry.seekMsAtBoundary) + " | " + fixed(entry.psnrDb) + " | " + fixed(entry.bytesPerFrame, 0) +
+               " |\n";
+    }
+    if (available) {
+        out +=
+            "\npeak decode resources (process VmHWM after decode-back workload): " + std::to_string(peakDecodeVmHwmKb) +
+            " KiB\n";
     }
     return out;
 }

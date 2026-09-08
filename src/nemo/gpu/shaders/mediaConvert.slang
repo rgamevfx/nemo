@@ -69,8 +69,10 @@ void main(uint3 tid : SV_DispatchThreadID)
     // odd pixels).
     float2 lumaUv = (float2(p) + 0.5) / float2(meta.x, meta.y);
     float2 chromaUv = (float2(p) + 1.0) / float2(meta.x, meta.y);
-    float2 uvVal = chroma.SampleLevel(chromaUv, 0).rg;  // r = Cr, g = Cb
+    // VK_FORMAT_G8_B8R8_2PLANE_420_UNORM plane 1 stores (Cb, Cr): the
+    // R8G8 view reads .r = Cb, .g = Cr.
+    float2 uvVal = chroma.SampleLevel(chromaUv, 0).rg;  // r = Cb, g = Cr
     float y = luma.SampleLevel(lumaUv, 0).r;
-    float3 rgb = yuvToRgb709(y, uvVal.g, uvVal.r);
+    float3 rgb = yuvToRgb709(y, uvVal.r, uvVal.g);
     out_color[p] = float4(rgb, 1.0);
 }

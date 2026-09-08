@@ -125,7 +125,14 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
     const bool video_decode = video_queue && advertised(kVideoDecode);
     const bool video_encode = video_queue && advertised(kVideoEncode);
 
-    std::vector<uint32_t> reserved_families = {device->graphics_family_, device->transfer_family_};
+    // Selected families, deduplicated when the driver offers no dedicated
+    // transfer family (VUID-02802 requires unique family indices).
+    std::vector<uint32_t> reserved_families;
+    for (uint32_t family : {device->graphics_family_, device->transfer_family_}) {
+        if (std::find(reserved_families.begin(), reserved_families.end(), family) == reserved_families.end()) {
+            reserved_families.push_back(family);
+        }
+    }
     const auto reserve_video = [&](VkQueueFlags flag, std::optional<uint32_t>& into) {
         const auto found = std::find_if(device->family_properties_.begin(), device->family_properties_.end(),
                                         [&](const VkQueueFamilyProperties& properties) {
@@ -145,8 +152,9 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
         reserve_video(VK_QUEUE_VIDEO_ENCODE_BIT_KHR, device->encode_family_);
     }
 
-    // One queue per selected family, deduplicated when the driver offers no
-    // dedicated transfer family.
+    // One queue per selected family, deduplicated when the driver offers
+    // no dedicated transfer family (VUID-02802 requires unique family
+    // indices).
     std::vector<VkDeviceQueueCreateInfo> queue_infos;
     std::vector<float> priorities(1, 1.0f);
     for (uint32_t family : reserved_families) {
@@ -159,6 +167,9 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
     }
 
     // Device extensions enabled exactly when advertised: video decode (with
+    // the codec profiles the media path uses) and video encode stay
+    // capability-measured; the enabled list is also reported to FFmpeg's
+    // AVVulkanDeviceContext (issue #10).: video decode (with
     // the codec profiles the media path uses) and video encode stay
     // capability-measured; the enabled list is also reported to FFmpeg's
     // AVVulkanDeviceContext (issue #10).

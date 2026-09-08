@@ -227,7 +227,10 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
             decoder->impl_->hwDevice = deviceRef;
             AVBufferRef* framesRef = av_hwframe_ctx_alloc(decoder->impl_->hwDevice);
             if (framesRef == nullptr) {
-                decoder->impl_->decision = {false, "Vulkan frame pool allocation failed"};
+                // Allocation failure is a hard error, not a capability
+                // fact: name the clip and throw (repo rule — errors
+                // identify the offending relationship).
+                fail(path, "av_hwframe_ctx_alloc (vulkan frames) failed");
             }
             AVHWFramesContext* framesContext = reinterpret_cast<AVHWFramesContext*>(framesRef->data);
             framesContext->format = AV_PIX_FMT_VULKAN;

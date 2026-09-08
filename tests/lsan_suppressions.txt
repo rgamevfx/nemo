@@ -15,9 +15,10 @@ leak:libdbus-1.so.3
 # - the glibc/ffmpeg loader keeps per-thread key allocations alive.
 leak:libx265
 leak:libcuda.so
-leak:libavcodec.so.60
-leak:pthread_cond_broadcast
-# FFmpeg 6.1 vulkan hwcontext keeps its internal device/frames priv
-# structs (VulkanDevicePriv/VulkanFramesPriv, allocated via av_malloc)
-# alive across hwdevice/hwframes unref; freeing them is ff-internal.
 leak:libavutil.so.58
+# Probe/decode init threads: allocations inside dlopen'd NVIDIA/x265
+# engine code surface with an <unknown module> frame; the only nameable
+# frame is glibc's pthread_cond_broadcast (thread-key machinery that
+# stays alive until exit). Function-level is the narrowest match
+# available — no nemo allocation stack passes through it.
+leak:pthread_cond_broadcast

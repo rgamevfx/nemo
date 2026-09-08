@@ -19,6 +19,7 @@ struct SweepEntry {
     std::string codec;       // encoder id (e.g. "hevc-nvenc")
     int chunkFrames = 0;     // independently decodable chunk size
     double encodeMsPerFrame = 0.0;
+    double uploadNsPerFrame = 0.0;   // measured device-upload cost (hw path)
     double seekMsAtBoundary = 0.0;   // open + decode first chunk frame
     double decodeMsPerFrame = 0.0;
     double psnrDb = 0.0;             // fidelity vs source representation
@@ -27,6 +28,10 @@ struct SweepEntry {
 
 struct SweepReport {
     std::vector<SweepEntry> entries;
+    // Peak decode resources: process VmHWM (peak resident set, KiB)
+    // captured after the decode-back runs (issue #10 acceptance example 2).
+    long peakDecodeVmHwmKb = 0;
+    bool available = false;
     // Markdown table of the measured results (evidence artifact).
     [[nodiscard]] std::string table() const;
 };

@@ -30,8 +30,8 @@ extern "C" {
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/Probe.hpp"
-#include "nemo/media/ViewerEncode.hpp"
 #include "nemo/media/VideoDecode.hpp"
+#include "nemo/media/ViewerEncode.hpp"
 
 using namespace nemo;
 using namespace nemo::media;
@@ -88,9 +88,11 @@ void expectValidationClean(gpu::Instance& instance) {
         // Measured third-party limitation (issue #10): FFmpeg 6.1 creates
         // its Vulkan video decode DPB images with
         // MUTABLE_FORMAT|EXTENDED_USAGE|ALIAS flags that the driver's
-        // video-format properties reject (VUID-06811). Decode succeeds
-        // bit-exact anyway; flagged as a known FFmpeg-6.1 quirk, not as a
-        // Nemo contract violation.
+        // video-format properties reject (VUID-06811). Decoded frames
+        // still pass the fidelity gate below (4/255 tolerance vs the 709
+        // software reference, measured maxDelta 0 on the test clip);
+        // flagged as a known FFmpeg-6.1 quirk, not a Nemo contract
+        // violation.
         if (message.text.find("VUID-VkImageCreateInfo-pNext-06811") != std::string::npos) {
             continue;
         }
@@ -204,12 +206,14 @@ std::filesystem::path writeSyntheticClip(int frames = 8, int width = 64, int hei
                 frame->data[0][y * frame->linesize[0] + x] = static_cast<uint8_t>(std::clamp(gradient + bar, 16, 235));
             }
         }
-        // Chroma: fixed mid-gray (neutral color, so the luma structure and
-        // the conversion math are the fidelity test surface).
+        // Non-neutral chroma (cool-blue shift varying per frame): a Cb/Cr
+        // swap in the conversion path must fail the fidelity gate.
+        const uint8_t cbValue = static_cast<uint8_t>(100 + (index % 4) * 10);
+        const uint8_t crValue = static_cast<uint8_t>(140 - (index % 4) * 10);
         for (int y = 0; y < height / 2; ++y) {
             for (int x = 0; x < width / 2; ++x) {
-                frame->data[1][y * frame->linesize[1] + x] = 128;
-                frame->data[2][y * frame->linesize[2] + x] = 128;
+                frame->data[1][y * frame->linesize[1] + x] = cbValue;
+                frame->data[2][y * frame->linesize[2] + x] = crValue;
             }
         }
         frame->pts = index;
@@ -318,23 +322,6 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
             }
         }
     }
-    if (maxDelta > kConvertTolerance) {
-        for (int x = 0; x < 64; x += 8) {
-            const auto a = hardware.pixel(x, 24);
-            const auto b = reference.frames[0].pixel(x, 24);
-        }
-        for (size_t candidate = 0; candidate < reference.frames.size(); ++candidate) {
-            double d = 0.0;
-            for (int y = 0; y < 48; ++y) {
-                for (int x = 0; x < 64; ++x) {
-                    const auto a = hardware.pixel(x, y);
-                    const auto b = reference.frames[candidate].pixel(x, y);
-                    d = std::max(d, (double)std::max(std::abs(a[0] - b[0]),
-                                                     std::max(std::abs(a[1] - b[1]), std::abs(a[2] - b[2]))));
-                }
-            }
-        }
-    }
     EXPECT_LE(maxDelta, kConvertTolerance) << "hardware-converted frame diverges from the 709 software reference";
 
     // Decode the rest of the clip through the device-resident path; each
@@ -370,7 +357,7 @@ TEST(HwMedia, ProbeMatchesDeviceVideoQueues) {
     for (const MediaCapability& decoder : capabilities.decoders) {
         if (decoder.codec == "h264-vulkan" || decoder.codec == "hevc-vulkan") {
             if (capabilities.vulkanVideoDecodeQueues) {
-                EXPECT_EQ(decoder.evidence, CapabilityEvidence::InitVerified)
+                EXPECT_EQ(decoder.evidence, CapabilityEvidence::QueueVerified)
                     << decoder.codec << ": " << decoder.reason;
             } else {
                 EXPECT_EQ(decoder.evidence, CapabilityEvidence::Unavailable) << decoder.codec;
@@ -581,7 +568,8 @@ TEST(HwMedia, CodecSweepProducesMeasuredTable) {
     for (int index = 0; index < frames; ++index) {
         source.push_back(makeSweepFrame(64, 48, index));
     }
-    const nemo::media::SweepReport report = nemo::media::runCodecSweep(source, {"libx264-cpu", "libx265-cpu"}, {12, 24});
+    const nemo::media::SweepReport report =
+        nemo::media::runCodecSweep(source, {"libx264-cpu", "libx265-cpu"}, {12, 24});
     ASSERT_EQ(report.entries.size(), 4u);
     for (const auto& entry : report.entries) {
         if (entry.psnrDb < 0) {
@@ -590,11 +578,6 @@ TEST(HwMedia, CodecSweepProducesMeasuredTable) {
         EXPECT_GT(entry.encodeMsPerFrame, 0.0) << entry.codec;
         EXPECT_GT(entry.psnrDb, 20.0) << entry.codec << " chunk " << entry.chunkFrames;
         EXPECT_GT(entry.bytesPerFrame, 0.0) << entry.codec;
-        if (entry.seekMsAtBoundary > 0) {
-            // Boundary seek must not be faster than raw streaming decode
-            // (it pays open + prime; a smaller value would be a lie).
-            EXPECT_GE(entry.seekMsAtBoundary, entry.decodeMsPerFrame * 0.0);
-        }
     }
     const std::string table = report.table();
     EXPECT_NE(table.find("| codec | chunk |"), std::string::npos);

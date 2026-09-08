@@ -75,7 +75,10 @@ MediaCapability vulkanDecoderClaim(const gpu::Device* device, const char* codecN
         return {codecName, true, CapabilityEvidence::Unavailable,
                 "Vulkan device did not reserve a video decode queue family (extensions/queues absent)"};
     }
-    return {codecName, true, CapabilityEvidence::InitVerified, {}};
+    // Honest evidence tier: the probe verifies queue reservation + hwaccel
+    // availability, it does not open a decoder; actual decode is verified
+    // by the HwMedia tests and the CLI decode path.
+    return {codecName, true, CapabilityEvidence::QueueVerified, {}};
 }
 
 MediaCapability softwareDecoderClaim(AVCodecID codecId, const char* codecName) {

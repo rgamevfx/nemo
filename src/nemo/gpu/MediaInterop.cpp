@@ -194,14 +194,14 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
     };
     VkDescriptorImageInfo outputInfo{VK_NULL_HANDLE, output.view(), VK_IMAGE_LAYOUT_GENERAL};
     VkWriteDescriptorSet writes[4] = {};
-    writes[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[0], 0, 0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                 nullptr, &bufferInfo, nullptr};
-    writes[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[1], 0, 0, 1,
+    writes[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[0],     0,      0, 1,
+                 VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,      nullptr, &bufferInfo, nullptr};
+    writes[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,    nullptr,        sets[1], 0,      0, 1,
                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &planeInfos[0], nullptr, nullptr};
-    writes[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[1], 1, 0, 1,
+    writes[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,    nullptr,        sets[1], 1,      0, 1,
                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &planeInfos[1], nullptr, nullptr};
-    writes[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[2], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                 &outputInfo, nullptr, nullptr};
+    writes[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,     sets[2], 0,      0, 1,
+                 VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,       &outputInfo, nullptr, nullptr};
     vkUpdateDescriptorSets(vkDevice, 4, writes, 0, nullptr);
 
     // Cross-queue dependency: wait for the producer's decode signal, hand
@@ -227,9 +227,9 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
             // barrier the single image over both plane aspects; per-plane
             // frames barrier each image with COLOR aspects.
             const VkImageAspectFlags barrierAspects[2] = {
-                frame.multiplane ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_PLANE_0_BIT |
-                                                                   VK_IMAGE_ASPECT_PLANE_1_BIT)
-                                 : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT),
+                frame.multiplane
+                    ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT)
+                    : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT),
                 static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT)};
             const uint32_t barrierCount = frame.multiplane ? 1u : frame.planeCount;
             VkImageMemoryBarrier2 acquires[3] = {};

@@ -22,6 +22,8 @@ namespace nemo::media {
 enum class CapabilityEvidence {
     Unavailable,        // not usable; `reason` explains precisely why
     RegisteredOnly,     // compiled into libavcodec, not init-verified
+    QueueVerified,      // decoder: device reserved the video queue AND
+                        // libavcodec ships the hwaccel; not opened here
     InitVerified,       // codec opened successfully (real engine test)
 };
 

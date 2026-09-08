@@ -28,40 +28,49 @@ boundaries.
 
 ## Codec × chunk sweep (measured table)
 
-| codec | chunk | encode ms/frame | decode ms/frame | seek ms @ boundary | PSNR dB (min) | B/frame |
-|---|---|---|---|---|---|---|
-| h264-nvenc | 12 | 30.41 | 16.53 | 21.58 | 25.83 | 10575 |
-| h264-nvenc | 24 | 30.12 | 16.27 | 21.44 | 25.83 | 10319 |
-| h264-nvenc | 48 | 30.14 | 16.10 | 21.18 | 25.85 | 10158 |
-| hevc-nvenc | 12 | 30.09 | 17.19 | 22.79 | 25.83 | 11667 |
-| hevc-nvenc | 24 | 30.00 | 16.84 | 22.78 | 25.84 | 11252 |
-| hevc-nvenc | 48 | 30.09 | 16.58 | 22.50 | 25.85 | 11079 |
-| libx264-cpu | 12 | 33.16 | 16.34 | 19.99 | 25.81 | 6477 |
-| libx264-cpu | 24 | 33.00 | 16.07 | 19.81 | 25.82 | 6650 |
-| libx264-cpu | 48 | 32.08 | 16.17 | 20.32 | 25.84 | 7598 |
-| libx265-cpu | 12 | 45.49 | 17.37 | 26.59 | 25.81 | 8307 |
-| libx265-cpu | 24 | 44.14 | 16.47 | 24.43 | 25.83 | 8544 |
-| libx265-cpu | 48 | 38.76 | 16.35 | 21.58 | 25.84 | 9084 |
+| codec | chunk | encode ms/frame | upload ms/frame | decode ms/frame | seek ms @ boundary | PSNR dB (min) | B/frame |
+|---|---|---|---|---|---|---|---|
+| h264-nvenc | 12 | 32.30 | 31.85 | 17.11 | 22.08 | 25.83 | 10575 |
+| h264-nvenc | 24 | 31.42 | 31.15 | 16.66 | 22.43 | 25.83 | 10319 |
+| h264-nvenc | 48 | 31.45 | 31.26 | 16.53 | 21.26 | 25.85 | 10158 |
+| hevc-nvenc | 12 | 30.96 | 30.69 | 17.46 | 24.35 | 25.83 | 11667 |
+| hevc-nvenc | 24 | 31.62 | 31.43 | 17.12 | 23.67 | 25.84 | 11252 |
+| hevc-nvenc | 48 | 30.74 | 30.59 | 16.95 | 23.56 | 25.85 | 11079 |
+| libx264-cpu | 12 | 34.31 | 0.00 | 16.65 | 20.17 | 25.81 | 6477 |
+| libx264-cpu | 24 | 34.05 | 0.00 | 16.84 | 20.37 | 25.82 | 6650 |
+| libx264-cpu | 48 | 32.34 | 0.00 | 16.35 | 20.40 | 25.84 | 7598 |
+| libx265-cpu | 12 | 47.41 | 0.00 | 17.53 | 26.42 | 25.81 | 8307 |
+| libx265-cpu | 24 | 46.54 | 0.00 | 17.14 | 26.11 | 25.83 | 8544 |
+| libx265-cpu | 48 | 40.72 | 0.00 | 16.92 | 27.07 | 25.84 | 9084 |
+
+Peak decode resources (process VmHWM after the decode-back workload):
+858208 KiB (~838 MiB — dominated by the Vulkan video session + decode DPB
+surfaces, ~71 MB of video-session memory visible in the decoder logs plus
+process libraries).
 
 Hardware decode + Vulkan interop (decode → NV12 planes resident on the
 application device → `mediaConvert` kernel → RGBA32F scene-linear
 contract; no CPU readback):
 
 ```
-hw-decode (h264-vulkan, device-resident, no CPU readback): 1.18028 ms/frame over 96 frames
+hw-decode (h264-vulkan, device-resident, no CPU readback): 1.09294 ms/frame over 96 frames
 ```
 
-Software decode + convert baseline (the always-available path whose
-upload cost is the measured capability-dependent transfer):
-~16.5 ms/frame (decode + sw conversion; device upload excluded).
+Software decode + convert baseline (the always-available path; its
+device upload is a separate, additionally-measured cost):
+~16.6 ms/frame (decode + explicit 709 conversion to the contract).
 
 ## Reading of the numbers (evidence, not a decision)
 
-1. **Encode cost**: NVENC ≈ 30 ms/frame at this resolution — dominated by
-   CUDA staging (`uploadNsPerFrame` is measured and surfaced per encode;
-   the 64x360-scale test frames make the fixed session setup amortize
-   poorly). CPU x264 ≈ 33 ms/frame is close at this small scale; x265 is
-   ~25% slower than x264 at medium preset.
+1. **Encode cost — the upload dominates**: the NVENC rows' encode time is
+   ~31 ms/frame, of which ~31 ms/frame is the measured CUDA staging
+   upload (`upload ms/frame` column): the capability-dependent transfer
+   dominates hardware encoding at this scale. This is the transfer cost
+   the spec requires exposing rather than hiding — and it is the concrete
+   argument for consuming the viewer representation from device residency
+   (via CUDA interop) in #12 rather than via CPU staging. CPU x264 ≈
+   33 ms/frame is close at this small scale; x265 is ~25% slower than
+   x264 at medium preset.
 2. **Compression**: CPU x264 produces the smallest chunks (~6.5-7.6
    KB/frame); NVENC ~10-11.7 KB at the same 2000 kbps target (rate
    control differences at tiny frames).
@@ -77,6 +86,16 @@ upload cost is the measured capability-dependent transfer):
    the software decode+convert path — with zero CPU readback between
    decode and the application image contract (spec §10.4, §11
    no-readback gate).
+
+## Test fidelity gate
+
+The decode interop fidelity gate (HwMedia.DecodeInterop...) compares the
+hardware-converted frame against the software 709 reference with a 4/255
+per-component tolerance on a synthetic clip with NON-neutral chroma
+(varying Cb/Cr per frame), so it catches decode corruption, range/matrix
+errors, and Cb/Cr plane-order swaps. The measured max delta on the test
+clip was 0.0 — but "bit-exact" is not claimed as an invariant; the gate is
+the tolerance.
 
 ## Explicitly NOT decided here (acceptance example 4)
 

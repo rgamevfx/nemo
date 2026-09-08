@@ -183,7 +183,7 @@ TEST(MediaTest, ProbeReportsEvidenceAndReasons) {
         }
         if (decoder.codec == "h264-vulkan") {
             // Vulkan decode needs the reserved video decode queue; without
-            // a device the probe can never init-verify it.
+            // a device the probe can never verify beyond registration.
             EXPECT_EQ(decoder.evidence, CapabilityEvidence::RegisteredOnly) << decoder.reason;
         }
     }

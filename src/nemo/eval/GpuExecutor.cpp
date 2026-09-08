@@ -37,20 +37,16 @@ using gpu::SubmissionQueue;
                                   VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 }
 
-void prepareFreshImage(SubmissionQueue& queue, const gpu::Image& image, std::uint64_t timeout_ns) {
-    // UNDEFINED → GENERAL: first use is a storage write by the next dispatch.
-    gpu::imageBarrier(queue, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
-                      VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                      VK_ACCESS_SHADER_WRITE_BIT, timeout_ns);
+void prepareFreshImage(VkCommandBuffer command, const gpu::Image& image) {
+    gpu::recordImageBarrier(command, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            VK_ACCESS_SHADER_WRITE_BIT);
 }
 
-void afterWriteBeforeRead(SubmissionQueue& queue, const gpu::Image& image, std::uint64_t timeout_ns) {
-    // The declared write→read dependency between dependent passes (spec
-    // section 10.4): the previous dispatch's shader writes are visible to
-    // the next dispatch's image reads.
-    gpu::imageBarrier(queue, image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
-                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, timeout_ns);
+void afterWriteBeforeRead(VkCommandBuffer command, const gpu::Image& image) {
+    gpu::recordImageBarrier(command, image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 }
 
 // Prepares one step's effect execution: fills the uniform block the
@@ -180,7 +176,7 @@ CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocato
     const std::size_t bytes = static_cast<std::size_t>(resident.layout.width) *
                               static_cast<std::size_t>(resident.layout.height) * kImageChannels * sizeof(float);
     {
-        SubmissionQueue queue(device, device.graphics_family());
+        auto& queue = device.submissions(device.graphics_family());
         gpu::downloadImage(queue, allocator, resident.image, image.data(), bytes, timeout_ns);
     }
     // The diagnostic readback also establishes content identity for the
@@ -199,9 +195,10 @@ CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocato
     return image;
 }
 
-GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, const EffectLibrary& effects,
-                          gpu::Device& device, gpu::Allocator& allocator, std::uint64_t timeout_ns,
-                          ResultCache<GpuNodeImage>* reuse) {
+static std::optional<GpuEvaluation> executeGpu(const Document& document, EvaluationRequest request,
+                                               const EffectLibrary& effects, gpu::Device& device,
+                                               gpu::Allocator& allocator, std::optional<std::uint64_t> timeout_ns,
+                                               ResultCache<GpuNodeImage>* reuse) {
     validateRequest(document, request);
     if (device.features().shaderStorageImageReadWithoutFormat == VK_FALSE ||
         device.features().shaderStorageImageWriteWithoutFormat == VK_FALSE) {
@@ -211,12 +208,10 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
     }
 
     const std::vector<const Node*> order = scheduleDependencies(document, request.output);
-    SubmissionQueue queue(device, device.graphics_family());
-    // Runtime-compile cache within this evaluation (the same effect source
-    // can run on several steps). Cross-evaluation shader compilation and
-    // pipeline creation — asynchronous and cached so they never block the
-    // UI path (spec section 10.4) — is future interactive work (issue #13);
-    // this executor creates each step's pipeline synchronously.
+    auto& queue = device.submissions(device.graphics_family());
+    // Shader compilation is preparation work on the calling worker; native
+    // Slang packages are precompiled. No GPU wait occurs until the complete
+    // graph has been recorded into one submission.
     std::map<std::string, std::vector<std::uint32_t>> compiled;
     // Reuse (issue #9): the ticket captures revision + generation for the
     // publication guard; the library fingerprint keeps front ends (Slang vs
@@ -226,6 +221,13 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
     std::map<NodeId, ResultKey> keys;
 
     GpuEvaluation evaluation;
+    struct Dispatch {
+        std::unique_ptr<ComputePass> pass;
+        std::shared_ptr<const GpuNodeImage> output;
+        std::vector<const gpu::Image*> inputs;
+    };
+    std::vector<Dispatch> dispatches;
+    gpu::SubmissionQueue::RetainedResources retained;
     evaluation.plan.request = request;
     std::map<NodeId, ImageIdentity> identities;
     const ImageLayout layout = [&] {
@@ -287,17 +289,17 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
 
         // Compile/binding failures identify the node and the available
         // shader source location (spec section 10.4).
-        std::vector<std::uint32_t> spirv;
-        const auto cached = compiled.find(node->type);
-        if (cached != compiled.end()) {
-            spirv = cached->second;
-        } else {
-            try {
-                spirv = program.glsl.empty() ? program.spirv : gpu::compileGlslToSpirv(program.glsl);
-            } catch (const gpu::CompileException& error) {
-                failEffect(*node, program, std::string("shader compile failed: ") + error.what());
+        const std::vector<std::uint32_t>* spirv = &program.spirv;
+        if (!program.glsl.empty()) {
+            auto cached = compiled.find(node->type);
+            if (cached == compiled.end()) {
+                try {
+                    cached = compiled.emplace(node->type, gpu::compileGlslToSpirv(program.glsl)).first;
+                } catch (const gpu::CompileException& error) {
+                    failEffect(*node, program, std::string("shader compile failed: ") + error.what());
+                }
             }
-            compiled.emplace(node->type, spirv);
+            spirv = &cached->second;
         }
 
         EffectUniforms uniforms{};
@@ -322,44 +324,68 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
             failEffect(*node, program, std::string("output image allocation failed: ") + error.what());
         }
 
-        // Fresh output image: UNDEFINED → GENERAL before its first write.
-        prepareFreshImage(queue, resident->image, timeout_ns);
-        // Written inputs become readable by this dispatch (write→read). A
-        // reused input's writes completed in an earlier submission; the
-        // same barrier makes them readable to this dispatch.
-        for (const gpu::Image* input : inputs) {
-            afterWriteBeforeRead(queue, *input, timeout_ns);
-        }
-
         bindings.push_back({2, 0, DescriptorKind::StorageImage, nullptr, &resident->image, false});
 
         std::unique_ptr<ComputePass> pass;
         try {
-            pass = ComputePass::create(device, spirv, bindings);
+            pass = ComputePass::create(device, *spirv, bindings);
         } catch (const gpu::GpuException& error) {
             failEffect(*node, program, std::string("pipeline creation failed: ") + error.what());
         }
-        const uint32_t groupsX = static_cast<uint32_t>((request.region.width + 7) / 8);
-        const uint32_t groupsY = static_cast<uint32_t>((request.region.height + 7) / 8);
-        try {
-            pass->dispatch(groupsX, groupsY, 1, timeout_ns);
-        } catch (const gpu::GpuException& error) {
-            failEffect(*node, program, std::string("dispatch failed: ") + error.what());
-        }
+        retained.push_back(pass->retain());
+        dispatches.push_back({std::move(pass), resident, std::move(inputs)});
 
         step.produced.contentHash = 0;  // established by declared readback only
         step.produced.layout = layout;
         step.produced.residency = Residency::GpuDevice;
         identities.emplace(node->id, step.produced);
-        if (reuse != nullptr) {
-            reuse->publish(document, ticket, key, resident, step.produced);
-        }
         evaluation.images.emplace(node->id, std::move(resident));
         evaluation.plan.steps.push_back(std::move(step));
     }
 
     evaluation.plan.result = identities.at(request.output);
+    if (!dispatches.empty()) {
+        const auto completion = queue.submit(
+            [&](VkCommandBuffer command) {
+                for (const auto& dispatch : dispatches) {
+                    prepareFreshImage(command, dispatch.output->image);
+                    for (const auto* input : dispatch.inputs)
+                        afterWriteBeforeRead(command, *input);
+                    dispatch.pass->record(command, (request.region.width + 7) / 8, (request.region.height + 7) / 8, 1);
+                }
+            },
+            std::move(retained));
+        if (!completion)
+            return std::nullopt;
+        evaluation.completion = completion;
+        if (timeout_ns && !queue.wait(*completion, *timeout_ns)) {
+            throw gpu::GpuException(gpu::GpuError::SubmissionTimeout,
+                                    "GPU evaluation did not complete within " + std::to_string(*timeout_ns) + " ns");
+        }
+    }
+    // Only completed work enters the existing cache. The async interface
+    // leaves publication to its consumer after checking completion/freshness.
+    if (reuse != nullptr && timeout_ns) {
+        for (const auto& step : evaluation.plan.steps) {
+            if (!step.cacheReused)
+                reuse->publish(document, ticket, keys.at(step.node), evaluation.images.at(step.node), step.produced);
+        }
+    }
     return evaluation;
+}
+
+std::optional<GpuEvaluation> submitGpu(const Document& document, EvaluationRequest request,
+                                       const EffectLibrary& effects, gpu::Device& device, gpu::Allocator& allocator) {
+    return executeGpu(document, request, effects, device, allocator, std::nullopt, nullptr);
+}
+
+GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, const EffectLibrary& effects,
+                          gpu::Device& device, gpu::Allocator& allocator, std::uint64_t timeout_ns,
+                          ResultCache<GpuNodeImage>* reuse) {
+    auto evaluation = executeGpu(document, request, effects, device, allocator, timeout_ns, reuse);
+    if (!evaluation)
+        throw gpu::GpuException(gpu::GpuError::InvalidRequest, "GPU submission capacity exhausted");
+    return std::move(*evaluation);
 }
 
 }  // namespace nemo::eval

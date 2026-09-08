@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -84,6 +85,10 @@ struct GpuNodeImage {
 class GpuEvaluation {
 public:
     EvaluationPlan plan;
+    // Completion belongs to device.submissions(device.graphics_family()).
+    // Poll/wait before consuming on another queue. Dropping this result
+    // cancels publication, not execution: the queue retains its resources.
+    std::optional<std::uint64_t> completion;
     // Device-resident result of every scheduled node, keyed by node id.
     // Shared ownership keeps reused results alive in the evaluator cache
     // (issue #9) while the caller holds the returned evaluation.
@@ -96,6 +101,14 @@ public:
     [[nodiscard]] CpuImage readBack(NodeId node, gpu::Device& device, gpu::Allocator& allocator,
                                     std::uint64_t timeout_ns = 10'000'000'000ULL);
 };
+
+// Worker-side preparation and nonblocking GPU submission. nullopt reports
+// bounded in-flight capacity; no host GPU wait. Compilation/allocation are
+// CPU preparation, not suitable for the UI event thread. No cache publication
+// is performed; consumers own freshness/publication after completion.
+[[nodiscard]] std::optional<GpuEvaluation> submitGpu(const Document& document, EvaluationRequest request,
+                                                     const EffectLibrary& effects, gpu::Device& device,
+                                                     gpu::Allocator& allocator);
 
 // Executes `request` on `device` through the effect library's native
 // kernels, keeping every intermediate GPU-resident. With `reuse` (issue

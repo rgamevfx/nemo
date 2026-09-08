@@ -4,6 +4,9 @@
 #include <cstring>
 #include <string>
 
+#include "nemo/gpu/ComputePass.hpp"
+#include "nemo/gpu/Submit.hpp"
+
 namespace nemo::gpu {
 
 struct Device::Token {};
@@ -53,6 +56,13 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
     VkPhysicalDeviceFeatures enabled{};
     enabled.shaderStorageImageReadWithoutFormat = device->features_.shaderStorageImageReadWithoutFormat;
     enabled.shaderStorageImageWriteWithoutFormat = device->features_.shaderStorageImageWriteWithoutFormat;
+    VkPhysicalDeviceHostQueryResetFeatures hostQueryReset{};
+    hostQueryReset.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
+    VkPhysicalDeviceFeatures2 queried{};
+    queried.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    queried.pNext = &hostQueryReset;
+    vkGetPhysicalDeviceFeatures2(device->physical_, &queried);
+    device->host_query_reset_ = hostQueryReset.hostQueryReset == VK_TRUE;
     // Timeline semaphores: the cross-queue dependency for external video
     // frames (issue #10 interop). 1.2-promoted feature; via the KHR
     // extension feature struct so the 1.0-style enabled-features path
@@ -67,6 +77,7 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
     VkPhysicalDeviceSamplerYcbcrConversionFeatures ycbcrFeatures{};
     ycbcrFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES;
     ycbcrFeatures.samplerYcbcrConversion = VK_TRUE;
+    ycbcrFeatures.pNext = &hostQueryReset;
     sync2Features.pNext = &ycbcrFeatures;
     VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeatures{};
     timelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
@@ -213,6 +224,12 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
 }
 
 Device::~Device() {
+    // Teardown order (issue #22): persistent submission queues first — each
+    // drains only its own pending fences, never vkDeviceWaitIdle — then the
+    // compute pipeline cache, then the VkDevice. Nothing may be in flight
+    // when the pipelines and the device handle go away.
+    submission_queues_.clear();
+    compute_pipeline_cache_.reset();
     if (device_ != VK_NULL_HANDLE) {
         vkDestroyDevice(device_, nullptr);
     }
@@ -228,6 +245,45 @@ VkQueue Device::queue(uint32_t family) const {
     if (family == transfer_family_)
         return transfer_queue_;
     return VK_NULL_HANDLE;
+}
+
+uint32_t Device::family_timestamp_bits(uint32_t family) const {
+    return family < family_properties_.size() ? family_properties_[family].timestampValidBits : 0;
+}
+
+std::mutex& Device::queueMutex(uint32_t family) {
+    std::lock_guard<std::mutex> lock(queue_mutexes_mutex_);
+    return queue_mutexes_[family];
+}
+
+SubmissionQueue& Device::submissions(uint32_t family) {
+    std::lock_guard<std::mutex> lock(submissions_mutex_);
+    std::unique_ptr<SubmissionQueue>& entry = submission_queues_[family];
+    if (!entry) {
+        entry = std::make_unique<SubmissionQueue>(*this, family);
+    }
+    return *entry;
+}
+
+ComputePipelineCache& Device::computePipelineCache() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    if (!compute_pipeline_cache_) {
+        compute_pipeline_cache_ = ComputePipelineCache::create(*this);
+    }
+    return *compute_pipeline_cache_;
+}
+
+SubmissionStats Device::submissionStats() const {
+    SubmissionStats snapshot;
+    snapshot.submissions = counters_.submissions.load(std::memory_order_relaxed);
+    snapshot.waits = counters_.waits.load(std::memory_order_relaxed);
+    snapshot.pipelineCreations = counters_.pipelineCreations.load(std::memory_order_relaxed);
+    snapshot.cpuSubmitNs = counters_.cpuSubmitNs.load(std::memory_order_relaxed);
+    snapshot.cpuWaitNs = counters_.cpuWaitNs.load(std::memory_order_relaxed);
+    snapshot.completions = counters_.completions.load(std::memory_order_relaxed);
+    snapshot.gpuExecutionNs = counters_.gpuExecutionNs.load(std::memory_order_relaxed);
+    snapshot.gpuTimedSubmissions = counters_.gpuTimedSubmissions.load(std::memory_order_relaxed);
+    return snapshot;
 }
 
 }  // namespace nemo::gpu

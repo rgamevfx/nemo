@@ -1,25 +1,5 @@
 #pragma once
 
-// A SPIR-V compute pass over explicit descriptor bindings (issue #6).
-//
-// This is the smallest execution surface the viewing transform needs and the
-// reusable seam for native effect execution (issue #8): build a compute
-// pipeline from SPIR-V, bind storage/uniform buffers and sampled images by
-// (set, binding), and run one dispatch synchronously. Image layout transitions
-// and staging uploads are explicit Transfer helpers, not pass machinery.
-//
-// Lifetime/completion contract (spec section 10.2): dispatch() is
-// synchronous — it returns only after the submitted command buffer completed
-// (SubmissionQueue fence). Every bound resource must outlive the ComputePass
-// (pass-owned samplers excepted). On timeout the SubmissionQueue contract
-// applies: resources stay alive until the pass is destroyed.
-//
-// Thread safety: not thread-safe, like the Device it borrows.
-//
-// Validation-only CPU readback: host-mapped output buffers let a test or
-// diagnostic read dispatch results. Routine viewer/display paths must not
-// read back (spec section 11 no-readback gate is issue #8/#11 evidence).
-
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -37,39 +17,59 @@ struct ComputeBinding {
     uint32_t set{};
     uint32_t binding{};
     DescriptorKind kind{};
-    // Buffers: the bound Buffer must outlive the pass. Images: the bound
-    // Image must outlive the pass; the pass owns its sampler.
-    // StorageImage (issue #8) binds the image for shader read/write in
-    // GENERAL layout — the effect-executor image convention: no sampler,
-    // and the image must carry VK_IMAGE_USAGE_STORAGE_IMAGE_BIT.
+    // Borrowed only during create(); the pass captures handles and owners.
     const Buffer* buffer{};
     const Image* image{};
-    // Image sampling filter: LUT1D textures need LINEAR, 3D LUTs NEAREST
-    // (OCIO's tetrahedral interpolation does its own filtering).
+    // LUT1D uses LINEAR; OCIO tetrahedral 3D LUT sampling uses NEAREST.
     bool nearest{false};
+    // CombinedImageSampler may instead reference a foreign plane view.
+    // Its owner must retain the view, image, and decoder backing resources.
+    VkImageView foreignView = VK_NULL_HANDLE;
+    std::shared_ptr<const void> foreignOwner{};
 };
 
+// GPU-module device-lifetime cache, not a global registry. Full SPIR-V and
+// normalized (set,binding,kind) layout identify immutable pipelines. Descriptor
+// bundles are reused only after every pass/submission reference retires.
+// All cache and pool access is synchronized. Device outlives every entry.
+class ComputePipelineCache {
+public:
+    ComputePipelineCache() = default;
+    ~ComputePipelineCache();
+    ComputePipelineCache(const ComputePipelineCache&) = delete;
+    ComputePipelineCache& operator=(const ComputePipelineCache&) = delete;
+    static std::unique_ptr<ComputePipelineCache> create(Device& device);
+    struct Entry;
+    [[nodiscard]] std::shared_ptr<Entry> entry(const std::vector<std::uint32_t>& spirv,
+                                               const std::vector<ComputeBinding>& bindings);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+// Immutable per-pass descriptor contents, samplers, and resource ownership;
+// compiled pipelines are shared through the Device cache. The source wrapper
+// objects may move or die immediately after create(). Host writes/GPU access
+// to the retained allocations still require caller synchronization.
+// record()/retain() may run concurrently; moving/destruction must not overlap
+// access to the pass object. Device/Instance outlive all retained tokens.
 class ComputePass {
 public:
     ComputePass() = default;
     ~ComputePass();
-
     ComputePass(ComputePass&&) noexcept;
     ComputePass& operator=(ComputePass&&) noexcept;
-
     ComputePass(const ComputePass&) = delete;
     ComputePass& operator=(const ComputePass&) = delete;
-
-    // Builds a compute pipeline from `spirv` (entry point "main") with the
-    // given descriptor bindings. Descriptor set layouts are derived from
-    // the binding table; every (set, binding) pair must be unique and every
-    // set the SPIR-V references must be covered.
-    // Throws a descriptive GpuException on any Vulkan failure.
     static std::unique_ptr<ComputePass> create(Device& device, const std::vector<std::uint32_t>& spirv,
                                                const std::vector<ComputeBinding>& bindings);
-
-    // Records bindPipeline + bindDescriptorSets + dispatch(x, y, z) and
-    // waits for completion. Graphics queue (graphics+compute family).
+    // Pass this token to submit whenever record() references this pass.
+    // Destruction of the pass or cancellation never frees submitted state.
+    [[nodiscard]] std::shared_ptr<const void> retain() const;
+    void record(VkCommandBuffer cmd, uint32_t x, uint32_t y, uint32_t z) const;
+    // Headless convenience. Timeout throws but the shared queue retains all
+    // submitted state; neither pass destruction nor retry resets live work.
     void dispatch(uint32_t x, uint32_t y, uint32_t z, uint64_t timeout_ns);
 
 private:
@@ -77,31 +77,21 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// Uploads `bytes` from `data` into `image` through a staging buffer and
-// transitions the image to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL.
-// Synchronous (SubmissionQueue fence). 1D/2D/3D images supported.
+// Cold upload via staging; ends SHADER_READ_ONLY_OPTIMAL. 1D/2D/3D supported.
+// Synchronous helpers retain their staging/image owners and drain on timeout.
 void uploadImage(SubmissionQueue& queue, Allocator& allocator, const Image& image, const void* data, std::size_t bytes,
                  uint64_t timeout_ns);
 
-// Issue #8: explicit image layout/barrier control and a diagnostic-only
-// download, so a native effect graph keeps results device-resident between
-// dependent passes and reads pixels back only in test/verification paths
-// (spec section 10.4 "no routine readback").
-
-// Records one image memory barrier and waits for completion. Establishes
-// the write→read dependency between compute dispatches over `image` with
-// an explicit layout transition (UNDEFINED → GENERAL prepares a fresh
-// image for its first storage write; GENERAL → GENERAL re-synchronizes a
-// written image for its next reader). Synchronous (SubmissionQueue fence).
+// Record-only barrier for batched dependencies; no submission or host wait.
+void recordImageBarrier(VkCommandBuffer cmd, const Image& image, VkImageLayout oldLayout, VkImageLayout newLayout,
+                        VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkPipelineStageFlags dst_stage,
+                        VkAccessFlags dst_access);
 void imageBarrier(SubmissionQueue& queue, const Image& image, VkImageLayout oldLayout, VkImageLayout newLayout,
                   VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkPipelineStageFlags dst_stage,
                   VkAccessFlags dst_access, uint64_t timeout_ns);
 
-// Test/diagnostic readback ONLY: copies `bytes` from `image` (in GENERAL
-// layout) into `data` through a staging buffer and leaves the image in
-// GENERAL. The effect executor surfaces this through
-// GpuEvaluation::readBack; production/viewer paths never call it.
+// Explicit diagnostic readback ONLY. GENERAL -> copy -> GENERAL in one
+// submission. Native evaluation and resident viewing never call this.
 void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& image, void* data, std::size_t bytes,
                    uint64_t timeout_ns);
-
 }  // namespace nemo::gpu

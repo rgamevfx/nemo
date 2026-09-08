@@ -18,6 +18,7 @@ if(NEMO_BUILD_GPU)
         gpu/Allocator.cpp
         gpu/Compile.cpp
         gpu/ComputePass.cpp
+        gpu/GpuViewingTransform.cpp
         gpu/Error.cpp
         gpu/MediaInterop.cpp
         gpu/Instance.cpp

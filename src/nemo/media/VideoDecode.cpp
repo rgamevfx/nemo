@@ -584,8 +584,13 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
         vulkan->nb_encode_queues = device.encode_family() ? 1 : 0;
         vulkan->queue_family_decode_index = device.decode_family().value_or(-1);
         vulkan->nb_decode_queues = device.decode_family() ? 1 : 0;
-        vulkan->lock_queue = nullptr;
-        vulkan->unlock_queue = nullptr;
+        deviceContext->user_opaque = &device;
+        vulkan->lock_queue = [](AVHWDeviceContext* context, uint32_t family, uint32_t) {
+            static_cast<gpu::Device*>(context->user_opaque)->queueMutex(family).lock();
+        };
+        vulkan->unlock_queue = [](AVHWDeviceContext* context, uint32_t family, uint32_t) {
+            static_cast<gpu::Device*>(context->user_opaque)->queueMutex(family).unlock();
+        };
         // Extension names are owned by this decoder instance for its whole
         // lifetime (strings AND the char* array).
         d.extensionStorage.reserve(device.enabled_extensions().size());
@@ -773,6 +778,10 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
         // CPU readback occurs here.
         auto* vkFrame = reinterpret_cast<AVVkFrame*>(frame.frame->data[0]);
         gpu::ForeignVideoFrame foreign;
+        AVFrame* retainedFrame = av_frame_clone(frame.frame);
+        if (retainedFrame == nullptr)
+            failStatus(impl.info.path, "av_frame_clone failed");
+        foreign.owner = std::shared_ptr<AVFrame>(retainedFrame, [](AVFrame* retained) { av_frame_free(&retained); });
         foreign.transfer = impl.color.transfer;
         foreign.matrix = impl.color.matrix;
         foreign.range = impl.color.range;
@@ -818,13 +827,25 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
         auto output = std::make_unique<gpu::Image>(
             impl.allocator->create_image(foreign.width, foreign.height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
                                          VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
-        impl.interop->convertToRgba32f(foreign, *output, timeout_ns);
+        const auto completion = impl.interop->submitToRgba32f(foreign, *output);
+        if (!completion)
+            fail(impl.info.path, "vulkan", "GPU submission capacity exhausted");
 
         // Hand the updated interop state back to FFmpeg for plane reuse.
         vkFrame->sem_value[0] = foreign.waitValues[0];
         vkFrame->sem_value[1] = foreign.waitValues[1];
         vkFrame->access[0] = static_cast<VkAccessFlagBits>(foreign.accesses[0]);
         vkFrame->access[1] = static_cast<VkAccessFlagBits>(foreign.accesses[1]);
+        auto& submissions = impl.device->submissions(impl.device->graphics_family());
+        try {
+            if (!submissions.wait(*completion, timeout_ns))
+                throw gpu::GpuException(gpu::GpuError::SubmissionTimeout, "decoded frame conversion timed out");
+        } catch (...) {
+            // Decoder teardown owns FFmpeg extension-name storage. This
+            // synchronous convenience path drains before that state unwinds.
+            submissions.drain();
+            throw;
+        }
 
         impl.framesDecodedHardware++;
         return output;

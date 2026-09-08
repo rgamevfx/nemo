@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 #include <vulkan/vulkan.h>
 
 #include "nemo/gpu/Device.hpp"
@@ -21,10 +22,8 @@ struct AllocatorConfig {
     uint64_t max_device_bytes = 0;
 };
 
-// A created device buffer. Move-only RAII handle: destruction releases the
-// underlying VMA allocation and uncharges it from the owning Allocator.
-// VMA types stay private to the module; the public surface only carries
-// Vulkan handles and sizes.
+// Move-only application handle. retain() shares allocation ownership with
+// submissions without making the writable handle copyable.
 class Buffer {
 public:
     Buffer() = default;
@@ -41,13 +40,14 @@ public:
     // Persistently mapped host pointer for HostMapped buffers; nullptr for
     // device buffers. Valid for the buffer's lifetime.
     [[nodiscard]] void* mapped() const { return mapped_; }
+    [[nodiscard]] std::shared_ptr<const void> retain() const { return owner_; }
 
 private:
     friend class Allocator;
-    Buffer(class Allocator* allocator, VkBuffer buffer, VkDeviceSize size, void* mapped = nullptr)
-        : allocator_(allocator), buffer_(buffer), size_(size), mapped_(mapped) {}
+    Buffer(std::shared_ptr<const void> owner, VkBuffer buffer, VkDeviceSize size, void* mapped = nullptr)
+        : owner_(std::move(owner)), buffer_(buffer), size_(size), mapped_(mapped) {}
 
-    Allocator* allocator_ = nullptr;
+    std::shared_ptr<const void> owner_;
     VkBuffer buffer_ = VK_NULL_HANDLE;
     VkDeviceSize size_ = 0;
     void* mapped_ = nullptr;
@@ -73,15 +73,16 @@ public:
     [[nodiscard]] VkExtent3D extent() const { return extent_; }
     // 1, 2, or 3 dimensions.
     [[nodiscard]] uint32_t dimensions() const { return dimensions_; }
+    [[nodiscard]] std::shared_ptr<const void> retain() const { return owner_; }
 
 private:
     friend class Allocator;
-    Image(class Allocator* allocator, VkImage image, VkImageView view, VkFormat format, VkExtent3D extent,
+    Image(std::shared_ptr<const void> owner, VkImage image, VkImageView view, VkFormat format, VkExtent3D extent,
           uint32_t dimensions)
-        : allocator_(allocator), image_(image), view_(view), format_(format), extent_(extent), dimensions_(dimensions) {
-    }
+        : owner_(std::move(owner)), image_(image), view_(view), format_(format), extent_(extent),
+          dimensions_(dimensions) {}
 
-    Allocator* allocator_ = nullptr;
+    std::shared_ptr<const void> owner_;
     VkImage image_ = VK_NULL_HANDLE;
     VkImageView view_ = VK_NULL_HANDLE;
     VkFormat format_ = VK_FORMAT_UNDEFINED;
@@ -96,13 +97,10 @@ private:
 // host-mapped buffers and LUT images for the viewing transform (issue #6);
 // no custom suballocation, eviction, or pooling yet.
 //
-// Lifetime contract: `instance` and `device` must outlive the Allocator;
-// created Buffers/Images must outlive their Allocator (RAII ordering in a
-// shared scope gives both; the destructor aborts in debug if allocations
-// are still charged).
-//
-// Threading contract: not thread-safe in this bootstrap; revisit and bound
-// concurrent allocation when evaluation (#8) starts submitting work.
+// Lifetime: Instance and Device outlive all retained allocations. Allocation
+// tokens retain the VMA state, even after the Allocator wrapper is destroyed.
+// Threading: creation, retirement, and accounting are synchronized. Clients
+// synchronize host writes and GPU access to each resource independently.
 class Allocator {
 public:
     // Pass-key construction: `Token` is a private type, so callers outside
@@ -135,13 +133,8 @@ public:
                                      VkImageUsageFlags usage);
 
 private:
-    friend class Buffer;
-    friend class Image;
     struct Impl;
-    std::unique_ptr<Impl> impl_;
-
-    void release_buffer(Buffer& buffer);
-    void release_image(Image& image);
+    std::shared_ptr<Impl> impl_;
 };
 
 }  // namespace nemo::gpu

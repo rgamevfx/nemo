@@ -196,10 +196,11 @@ void fillUniformBuffer(OCIO::GpuShaderDesc& desc, std::vector<std::byte>& buffer
     glsl += "#version 450\n";
     glsl += "layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;\n";
     glsl += makeComputeCompatible(ocioText);
-    glsl += "\nlayout(set = 1, binding = 0) buffer InPixels { vec4 in_pixels[]; };\n";
-    glsl += "layout(set = 1, binding = 1) buffer OutPixels { vec4 out_pixels[]; };\n";
+    glsl += "\nlayout(set = 1, binding = 0) readonly buffer InPixels { vec4 in_pixels[]; };\n";
+    glsl += "layout(set = 1, binding = 1) writeonly buffer OutPixels { vec4 out_pixels[]; };\n";
     glsl += "void main()\n{\n";
     glsl += "    uint idx = gl_GlobalInvocationID.x;\n";
+    glsl += "    if (idx >= in_pixels.length() || idx >= out_pixels.length()) return;\n";
     glsl += "    out_pixels[idx] = " + functionName + "(in_pixels[idx]);\n";
     glsl += "}\n";
     return glsl;

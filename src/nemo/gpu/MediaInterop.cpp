@@ -1,4 +1,5 @@
 #include "nemo/gpu/MediaInterop.hpp"
+#include "nemo/gpu/ComputePass.hpp"
 
 #include <cstddef>
 #include <cstring>
@@ -32,120 +33,42 @@ VkImageView createPlaneView(VkDevice device, VkImage image, VkFormat format, VkI
 struct MediaInterop::Impl {
     Device* device = nullptr;
     Allocator* allocator = nullptr;
-    VkDescriptorSetLayout setLayouts[3] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkSampler sampler = VK_NULL_HANDLE;
-    std::unique_ptr<SubmissionQueue> queue;
+    std::vector<std::uint32_t> spirv;
 };
 
-MediaInterop::~MediaInterop() {
-    if (impl_ == nullptr) {
-        return;
-    }
-    const VkDevice device = impl_->device->handle();
-    if (impl_->descriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, impl_->descriptorPool, nullptr);
-    }
-    if (impl_->pipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(device, impl_->pipeline, nullptr);
-    }
-    if (impl_->pipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device, impl_->pipelineLayout, nullptr);
-    }
-    for (VkDescriptorSetLayout layout : impl_->setLayouts) {
-        if (layout != VK_NULL_HANDLE) {
-            vkDestroyDescriptorSetLayout(device, layout, nullptr);
-        }
-    }
-    if (impl_->sampler != VK_NULL_HANDLE) {
-        vkDestroySampler(device, impl_->sampler, nullptr);
-    }
-}
+MediaInterop::~MediaInterop() = default;
+struct MediaInterop::Token {};
+MediaInterop::MediaInterop(Token) {}
 
 std::unique_ptr<MediaInterop> MediaInterop::create(Device& device, Allocator& allocator,
                                                    const std::vector<std::uint32_t>& convertSpirv) {
-    auto interop = std::unique_ptr<MediaInterop>(new MediaInterop());
+    auto interop = std::make_unique<MediaInterop>(Token{});
     interop->impl_ = std::make_unique<Impl>();
-    Impl& impl = *interop->impl_;
-    impl.device = &device;
-    impl.allocator = &allocator;
-    const VkDevice vkDevice = device.handle();
-
-    // One binding per set (mediaConvert.slang): set 0 = uniform meta;
-    // set 1 = TWO sampled planes (bindings 0 and 1, luma + chroma);
-    // set 2 = rgba32f storage output.
-    const VkDescriptorSetLayoutBinding bindings[3][2] = {
-        {{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-         {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 0, nullptr}},
-        {{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}},
-        {{0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-         {0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, 0, nullptr}},
-    };
-    const uint32_t bindingCounts[3] = {1, 2, 1};
-    for (int set = 0; set < 3; ++set) {
-        VkDescriptorSetLayoutCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        info.bindingCount = bindingCounts[set];
-        info.pBindings = bindings[set];
-        checkVulkan(vkCreateDescriptorSetLayout(vkDevice, &info, nullptr, &impl.setLayouts[set]),
-                    "vkCreateDescriptorSetLayout");
-    }
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 3;
-    layoutInfo.pSetLayouts = impl.setLayouts;
-    checkVulkan(vkCreatePipelineLayout(vkDevice, &layoutInfo, nullptr, &impl.pipelineLayout), "vkCreatePipelineLayout");
-
-    VkShaderModuleCreateInfo moduleInfo{};
-    moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    moduleInfo.codeSize = convertSpirv.size() * sizeof(std::uint32_t);
-    moduleInfo.pCode = convertSpirv.data();
-    VkShaderModule module = VK_NULL_HANDLE;
-    checkVulkan(vkCreateShaderModule(vkDevice, &moduleInfo, nullptr, &module), "vkCreateShaderModule");
-    VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                          nullptr,
-                          0,
-                          VK_SHADER_STAGE_COMPUTE_BIT,
-                          module,
-                          "main",
-                          nullptr};
-    pipelineInfo.layout = impl.pipelineLayout;
-    checkVulkan(vkCreateComputePipelines(vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &impl.pipeline),
-                "vkCreateComputePipelines");
-    vkDestroyShaderModule(vkDevice, module, nullptr);
-
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.maxLod = 1.0F;
-    checkVulkan(vkCreateSampler(vkDevice, &samplerInfo, nullptr, &impl.sampler), "vkCreateSampler");
-
-    VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4},
-                                        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8},
-                                        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 4}};
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.maxSets = 4;
-    poolInfo.poolSizeCount = 3;
-    poolInfo.pPoolSizes = poolSizes;
-    checkVulkan(vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &impl.descriptorPool), "vkCreateDescriptorPool");
-
-    impl.queue = std::make_unique<SubmissionQueue>(device, device.graphics_family());
+    interop->impl_->device = &device;
+    interop->impl_->allocator = &allocator;
+    interop->impl_->spirv = convertSpirv;
     return interop;
 }
 
 void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns) {
+    const auto completion = submitToRgba32f(frame, output);
+    if (!completion)
+        fail("submission capacity exhausted");
+    auto& queue = impl_->device->submissions(impl_->device->graphics_family());
+    try {
+        if (!queue.wait(*completion, timeout_ns))
+            throw GpuException(GpuError::SubmissionTimeout, "media conversion wait timed out");
+    } catch (...) {
+        // The synchronous decoder adapter hands frame bookkeeping back only
+        // after this call; drain before unwinding its borrowed decoder state.
+        queue.drain();
+        throw;
+    }
+}
+
+std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(ForeignVideoFrame& frame, Image& output) {
+    if (!frame.owner)
+        fail("foreign frame requires retained ownership");
     const VkDevice vkDevice = impl_->device->handle();
     if (frame.chromaLocation != MediaChromaLocation::Left) {
         fail("foreign frame chroma location must be left (the only supported sample position)");
@@ -178,12 +101,20 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
     std::memcpy(uniform.mapped(), meta, sizeof(meta));
     std::memcpy(static_cast<std::byte*>(uniform.mapped()) + 32, param0, sizeof(param0));
 
-    // Sample views on the borrowed images; freed after the synchronous
-    // submit completes. Multiplane frames take one view per aspect plane
-    // over images[0] (R8 luma, R8G8 chroma); per-plane frames take one
-    // view per image.
-    const uint32_t viewCount = frame.multiplane ? 2u : frame.planeCount;
-    VkImageView views[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    struct PlaneViews {
+        VkDevice device;
+        std::shared_ptr<const void> frame;
+        VkImageView views[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        ~PlaneViews() {
+            for (auto view : views)
+                if (view != VK_NULL_HANDLE)
+                    vkDestroyImageView(device, view, nullptr);
+        }
+    };
+    auto owners = std::make_shared<PlaneViews>();
+    owners->device = vkDevice;
+    owners->frame = frame.owner;
+    auto& views = owners->views;
     const VkFormat planeFormats[2] = {VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8_UNORM};
     if (frame.multiplane) {
         views[0] = createPlaneView(vkDevice, frame.images[0], planeFormats[0], VK_IMAGE_ASPECT_PLANE_0_BIT);
@@ -195,30 +126,13 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
         }
     }
 
-    // Descriptor sets, one allocation per frame conversion.
-    VkDescriptorSet sets[3] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = impl_->descriptorPool;
-    allocInfo.descriptorSetCount = 3;
-    allocInfo.pSetLayouts = impl_->setLayouts;
-    checkVulkan(vkAllocateDescriptorSets(vkDevice, &allocInfo, sets), "vkAllocateDescriptorSets");
-    VkDescriptorBufferInfo bufferInfo{uniform.handle(), 0, VK_WHOLE_SIZE};
-    VkDescriptorImageInfo planeInfos[2] = {
-        {impl_->sampler, views[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-        {impl_->sampler, views[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+    std::vector<ComputeBinding> bindings = {
+        {0, 0, DescriptorKind::UniformBuffer, &uniform},
+        {1, 0, DescriptorKind::CombinedImageSampler, nullptr, nullptr, false, views[0], owners},
+        {1, 1, DescriptorKind::CombinedImageSampler, nullptr, nullptr, false, views[1], owners},
+        {2, 0, DescriptorKind::StorageImage, nullptr, &output},
     };
-    VkDescriptorImageInfo outputInfo{VK_NULL_HANDLE, output.view(), VK_IMAGE_LAYOUT_GENERAL};
-    VkWriteDescriptorSet writes[4] = {};
-    writes[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[0],     0,      0, 1,
-                 VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,      nullptr, &bufferInfo, nullptr};
-    writes[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,    nullptr,        sets[1], 0,      0, 1,
-                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &planeInfos[0], nullptr, nullptr};
-    writes[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,    nullptr,        sets[1], 1,      0, 1,
-                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &planeInfos[1], nullptr, nullptr};
-    writes[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,     sets[2], 0,      0, 1,
-                 VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,       &outputInfo, nullptr, nullptr};
-    vkUpdateDescriptorSets(vkDevice, 4, writes, 0, nullptr);
+    auto pass = ComputePass::create(*impl_->device, impl_->spirv, bindings);
 
     // Cross-queue dependency: wait for the producer's decode signal, hand
     // the planes back at waitValue+1 when the conversion completed.
@@ -233,11 +147,9 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
         semaphores.signalValues.push_back(frame.waitValues[plane] + 1);
     }
 
-    impl_->queue->submit_and_wait(
+    auto& queue = impl_->device->submissions(impl_->device->graphics_family());
+    const auto completion = queue.submit(
         [&](VkCommandBuffer cmd) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, impl_->pipeline);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, impl_->pipelineLayout, 0, 3, sets, 0, nullptr);
-
             // Synchronization2 barriers: the producer stage bits (video
             // decode) exist only in the FlagBits2 form. Multiplane frames
             // barrier the single image over both plane aspects; per-plane
@@ -252,12 +164,12 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
             for (uint32_t plane = 0; plane < barrierCount; ++plane) {
                 VkImageMemoryBarrier2& barrier = acquires[plane];
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                // The producer→consumer ordering is established by the
-                // timeline-semaphore wait on this submission, so the
-                // barrier itself carries no source stage: it performs the
-                // layout/ownership transfer only (stages must be valid for
-                // this queue family; video-decode stages are not).
-                barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+                // Chain the ALL_COMMANDS semaphore wait into the layout
+                // transition. NONE would let that transition race the
+                // producer's decode/DPB accesses even though sampling waits.
+                // ALL_COMMANDS is valid here; VIDEO_DECODE is not a stage
+                // supported by this graphics queue family.
+                barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
                 barrier.srcAccessMask = VK_ACCESS_2_NONE;
                 barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
                 barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -294,7 +206,7 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
             acquires[barrierCount] = outputAcquire;
             vkCmdPipelineBarrier2(cmd, &acquireInfo);
 
-            vkCmdDispatch(cmd, (frame.width + 7) / 8, (frame.height + 7) / 8, 1);
+            pass->record(cmd, (frame.width + 7) / 8, (frame.height + 7) / 8, 1);
 
             // Release back to the producer: restored layout/access and
             // family ownership, so the decoder's next pass over the planes
@@ -325,12 +237,9 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
             releaseInfo.pImageMemoryBarriers = releases;
             vkCmdPipelineBarrier2(cmd, &releaseInfo);
         },
-        semaphores, timeout_ns);
-
-    vkFreeDescriptorSets(vkDevice, impl_->descriptorPool, 3, sets);
-    for (uint32_t plane = 0; plane < viewCount; ++plane) {
-        vkDestroyImageView(vkDevice, views[plane], nullptr);
-    }
+        {pass->retain()}, semaphores);
+    if (!completion)
+        return std::nullopt;
     for (uint32_t plane = 0; plane < (frame.multiplane ? 1u : frame.planeCount); ++plane) {
         // The producer waits on the incremented value before reusing the
         // plane; our last access was the shader read recorded below.
@@ -340,6 +249,7 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
             frame.queueFamilies[plane] = impl_->device->graphics_family();
         }
     }
+    return completion;
 }
 
 }  // namespace nemo::gpu

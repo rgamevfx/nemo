@@ -36,6 +36,7 @@
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
+#include "nemo/gpu/Submit.hpp"
 
 using namespace nemo;
 
@@ -73,10 +74,6 @@ struct Bootstrap {
             return;                                                                                                    \
         }                                                                                                              \
     } while (false)
-
-void discardSetupChatter(gpu::Instance& instance) {
-    (void)instance.take_debug_messages();
-}
 
 void expectValidationClean(gpu::Instance& instance) {
     if (!instance.validation_enabled()) {
@@ -190,7 +187,6 @@ void expectImagesClose(const CpuImage& expected, const CpuImage& actual, float t
 TEST(Effect, ConstcolorIsBitExact) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
-    discardSetupChatter(*boot.instance);
 
     Document doc;
     doc.name = "exact-const";
@@ -242,7 +238,6 @@ TEST(Effect, ConstcolorIsBitExact) {
 TEST(Effect, MultiNodeGpuCompositionMatchesCpuReference) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
-    discardSetupChatter(*boot.instance);
 
     const Composition composition = makeComposition();
     const EvaluationRequest request = requestFor(composition.doc, {0, 0, 24, 17}, 3);
@@ -290,7 +285,6 @@ TEST(Effect, MultiNodeGpuCompositionMatchesCpuReference) {
 TEST(Effect, SlangAndGlslEffectsAgree) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
-    discardSetupChatter(*boot.instance);
 
     const Composition composition = makeComposition();
     const EvaluationRequest request = requestFor(composition.doc, {0, 0, 24, 17}, 3);
@@ -355,7 +349,6 @@ void main() {
 TEST(Effect, WrongBindingsAndAlphaFailComparison) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_OR_FAIL(boot);
-    discardSetupChatter(*boot.instance);
 
     const Composition composition = makeComposition();
     const EvaluationRequest request = requestFor(composition.doc, {0, 0, 24, 17}, 3);
@@ -370,7 +363,6 @@ TEST(Effect, WrongBindingsAndAlphaFailComparison) {
         // bound — this is the contract-enforcement bar for this op.
         EXPECT_GT(maxChannelDiff(cpuImage, wrongImage), kMergeTolerance)
             << "wrong interpretation passed the declared tolerance";
-        discardSetupChatter(*boot.instance);
     }
     expectValidationClean(*boot.instance);
 }
@@ -383,7 +375,6 @@ TEST(Effect, WrongBindingsAndAlphaFailComparison) {
 TEST(Effect, RegionLimitedRequestPreservesCoordinates) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
-    discardSetupChatter(*boot.instance);
 
     const Composition composition = makeComposition();
     const Region region{8, 4, 33, 21};
@@ -411,7 +402,6 @@ TEST(Effect, RegionLimitedRequestPreservesCoordinates) {
 TEST(Effect, DependentChainSynchronizesWithoutIntermediateReadback) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
-    discardSetupChatter(*boot.instance);
 
     // plate ── over1(A) ── over2(A) ── out
     // tint1 ──↗          tint2 ──↗
@@ -453,7 +443,6 @@ TEST(Effect, DependentChainSynchronizesWithoutIntermediateReadback) {
 TEST(Effect, InvalidShaderSourceIdentifiesNodeAndLocation) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_OR_FAIL(boot);
-    discardSetupChatter(*boot.instance);
 
     const Composition composition = makeComposition();
     const EvaluationRequest request = requestFor(composition.doc, {0, 0, 16, 16}, 0);
@@ -510,7 +499,7 @@ TEST(Effect, MissingSlangKernelFailsWithoutSubstitution) {
     // substitute another implementation.
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_OR_FAIL(boot);
-    discardSetupChatter(*boot.instance);
+
     const Composition composition = makeComposition();
     const EvaluationRequest request = requestFor(composition.doc, {0, 0, 16, 16}, 0);
     eval::EffectLibrary partial = eval::glslEffectLibrary();
@@ -533,7 +522,6 @@ TEST(Effect, MissingSlangKernelFailsWithoutSubstitution) {
 TEST(Effect, GpuReuseAvoidsRecomputationAndPreservesResults) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
-    discardSetupChatter(*boot.instance);
 
     const Composition composition = makeComposition();
     const EvaluationRequest request = requestFor(composition.doc, {0, 0, 16, 16}, 0);
@@ -568,5 +556,64 @@ TEST(Effect, GpuReuseAvoidsRecomputationAndPreservesResults) {
     const CacheCounts afterTimeChange = cache.counts();
     EXPECT_EQ(afterTimeChange.misses - afterSecond.misses, 4u);
     EXPECT_EQ(afterTimeChange.hits, afterSecond.hits);
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, DroppedAsyncGraphRetainsResourcesUntilCompletion) {
+    auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto composition = makeComposition();
+    const auto request = requestFor(composition.doc, {0, 0, 16, 16}, 0);
+    const auto effects = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    auto& queue = boot.device->submissions(boot.device->graphics_family());
+    struct Gate {
+        VkDevice device;
+        VkSemaphore semaphore{};
+        ~Gate() {
+            if (semaphore)
+                vkDestroySemaphore(device, semaphore, nullptr);
+        }
+    };
+    auto gate = std::make_shared<Gate>();
+    gate->device = boot.device->handle();
+    VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO, nullptr, VK_SEMAPHORE_TYPE_TIMELINE,
+                                   0};
+    VkSemaphoreCreateInfo create{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &type, 0};
+    ASSERT_EQ(vkCreateSemaphore(gate->device, &create, nullptr, &gate->semaphore), VK_SUCCESS);
+    gpu::SubmissionQueue::TimelineSemaphores dependencies;
+    dependencies.wait = {gate->semaphore};
+    dependencies.waitValues = {1};
+    const auto blocker = queue.submit([](VkCommandBuffer) {}, {gate}, dependencies);
+    ASSERT_TRUE(blocker);
+    // Always release the timeline gate before propagating a preparation
+    // exception or using a fatal assertion on the graph result.
+    std::optional<eval::GpuEvaluation> pending;
+    std::exception_ptr failure;
+    try {
+        pending = eval::submitGpu(composition.doc, request, effects, *boot.device, *boot.allocator);
+    } catch (...) {
+        failure = std::current_exception();
+    }
+    if (pending) {
+        EXPECT_TRUE(pending->completion);
+        EXPECT_FALSE(queue.poll(*pending->completion));
+    }
+    const auto completion = pending ? pending->completion : std::nullopt;
+    pending.reset();  // cancellation: no publication, but GPU ownership remains
+    if (completion)
+        EXPECT_GT(boot.allocator->charged_bytes(), 0u);
+    VkSemaphoreSignalInfo signal{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, nullptr, gate->semaphore, 1};
+    EXPECT_EQ(vkSignalSemaphore(gate->device, &signal), VK_SUCCESS);
+    EXPECT_TRUE(queue.wait(*blocker, 5'000'000'000ULL));
+    if (completion)
+        EXPECT_TRUE(queue.wait(*completion, 5'000'000'000ULL));
+    if (failure)
+        std::rethrow_exception(failure);
+    ASSERT_TRUE(completion);
+    EXPECT_EQ(boot.allocator->charged_bytes(), 0u);
+    auto retry = eval::evaluateGpu(composition.doc, request, effects, *boot.device, *boot.allocator);
+    expectImagesClose(evaluateCpuImage(composition.doc, request),
+                      retry.readBack(request.output, *boot.device, *boot.allocator), kTolerance,
+                      "retry after cancellation");
     expectValidationClean(*boot.instance);
 }

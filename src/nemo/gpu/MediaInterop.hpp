@@ -9,16 +9,12 @@
 // family ownership (exclusive-sharing frames move decode→graphics→decode),
 // the cross-queue timeline waits/signals, and the dispatch of the
 // mediaConvert kernel. All Vulkan execution and synchronization stays here;
-// the Media module sees plain structs and one synchronous call.
+// the Media module sees frame metadata and completion identities.
 //
-// "Foreign" means the images/semaphores are created and destroyed by the
-// external decoder library: this module borrows them for the duration of
-// one submission and never destroys them.
-//
-// Lifetime/completion contract: convert() is synchronous (SubmissionQueue
-// fence); it returns only after the conversion completed and the planes
-// were restored for reuse by the decoder. The ForeignVideoFrame's images
-// must outlive the call.
+// Foreign images/semaphores are never destroyed here. The owner token must
+// retain them and their decoder context until completion. Device and Instance
+// outlive all work. Preparation is worker-side; admission never waits for GPU
+// capacity. Frame metadata itself is caller-synchronized.
 //
 // Color interpretation travels as plain data on the frame: the media module
 // resolves the clip's declared color metadata (transfer, primaries, matrix,
@@ -62,6 +58,7 @@ enum class MediaPrimaries { Bt709 };
 // chroma), each with its own timeline semaphore the producer signals at
 // `waitValues` when the plane is readable.
 struct ForeignVideoFrame {
+    std::shared_ptr<const void> owner;
     VkImage images[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     VkFormat formats[2] = {VK_FORMAT_UNDEFINED, VK_FORMAT_UNDEFINED};
     VkSemaphore semaphores[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
@@ -93,14 +90,13 @@ struct ForeignVideoFrame {
     uint32_t height = 0;
 };
 
-// The interop converter: owns the convert pipeline + descriptor machinery
-// and one graphics SubmissionQueue. Descriptor lifecycle differs from the
-// effect ComputePass (per-frame rewrites of foreign views), so it builds
-// its own; the pipeline table mirrors mediaConvert.slang's declared
-// bindings: set 0 binding 0 uniform, set 1 bindings 0/1 sampled planes,
-// set 2 binding 0 rgba32f storage output.
+// Uses the shared device execution queue and immutable compute pipeline cache.
+// Per-dispatch descriptors, views, uniform and foreign owners are retained by
+// the submitted completion, independently of this converter's lifetime.
 class MediaInterop {
 public:
+    struct Token;
+    explicit MediaInterop(Token);
     // `convertSpirv` is the compiled mediaConvert compute kernel.
     static std::unique_ptr<MediaInterop> create(Device& device, Allocator& allocator,
                                                 const std::vector<std::uint32_t>& convertSpirv);
@@ -116,9 +112,13 @@ public:
     // queueFamilies, accesses) so the producer can reuse the planes.
     // Throws GpuException naming the failure.
     void convertToRgba32f(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns);
+    // Asynchronous equivalent. Requires frame.owner. Returns nullopt on
+    // capacity exhaustion without modifying producer state. On success,
+    // producer waitValues advance immediately; producer reuse must wait on
+    // those timeline values. Dropping the completion never frees live work.
+    [[nodiscard]] std::optional<SubmissionQueue::Completion> submitToRgba32f(ForeignVideoFrame& frame, Image& output);
 
 private:
-    MediaInterop() = default;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

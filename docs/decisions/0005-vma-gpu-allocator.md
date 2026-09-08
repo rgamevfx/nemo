@@ -32,8 +32,30 @@ lifetime behavior only — no custom suballocation, eviction, or pooling.
   charged bytes, and the budget (repo rule: errors identify the offending
   relationship). The charge is the requested size; VMA's block-level
   accounting is not the Nemo budget.
-- `Buffer` is a move-only RAII handle that uncharges on release; buffers must
-  be released before their allocator (asserted in debug).
-- When evaluation (#8) submits work concurrently, the allocator's threading
-  contract must be revisited and bounded queues added; the bootstrap is not
-  thread-safe.
+- Issue #22 keeps `Buffer` and `Image` move-only while `retain()` shares
+  allocation/view ownership with submissions. The charge ends at final
+  retirement, not destruction of the caller's wrapper. Retained allocations
+  keep VMA state alive; Device and Instance still outlive all allocations.
+- Creation, retirement, and budget accounting are mutex-protected. Queue
+  admission is a separate bounded GPU-execution concern, not a byte-budget
+  or eviction policy.
+
+## Retained execution refinement (issue #22)
+
+Device owns persistent per-family submission queues and the immutable compute
+pipeline cache. Every application wrapper and FFmpeg uses the same per-family
+queue mutex. A submission slot owns a command pool, buffer, fence, completion
+identity, and retained resource tokens. Separate pools permit concurrent
+recording without violating Vulkan's pool synchronization rule. Capacity or
+queue-owner contention returns backpressure rather than waiting for GPU work.
+
+Fence completion, not timeout or cancellation, permits retirement and reuse.
+Completion IDs remain queryable after slot reuse. Device-loss submissions
+quarantine their slot; teardown drains pending fences without routine
+device-wide idle. Device destroys queues before its pipeline cache.
+
+The cache key contains full SPIR-V and normalized descriptor layout; resource
+bindings are immutable per pass. Descriptor bundles return to their pool only
+after the last pass/submission token retires. Uniform allocations remain
+per-dispatch to avoid mutable in-flight data; no image pool or cache budget
+policy is introduced. Native graph barriers and dispatches record as one batch.

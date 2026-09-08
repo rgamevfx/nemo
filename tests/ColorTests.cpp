@@ -30,6 +30,7 @@
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Device.hpp"
+#include "nemo/gpu/GpuViewingTransform.hpp"
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/gpu/Submit.hpp"
 #include "nemo/media/ViewingTransform.hpp"
@@ -145,15 +146,6 @@ struct Bootstrap {
 
 // Zero validation warnings/errors matches the GpuTests bar; benign info
 // chatter (e.g. physical-device sorting notes) does not fail the check.
-// Discards setup-time validation chatter. The implicit MESA device-select
-// layer emits physical-device ordering notes (and on some installs a
-// vkGetDeviceProcAddr lookup warning) while the instance/device/allocator
-// are created; those are environment noise, not Nemo defects. Messages
-// produced after this flush — i.e. anything Nemo's own submissions cause —
-// are still checked by expectValidationClean.
-void discardSetupChatter(gpu::Instance& instance) {
-    instance.take_debug_messages();
-}
 
 void expectValidationClean(gpu::Instance& instance) {
     if (!instance.validation_enabled()) {
@@ -169,61 +161,42 @@ void expectValidationClean(gpu::Instance& instance) {
 }
 
 // Runs the adapter's GPU program over `pixels` (RGBA float32, count =
-// pixels.size()/4) on the device and returns the transformed pixels.
+// pixels.size()/4) through the device-resident path (issue #22): the
+// pixels upload into a device image, GpuViewingTransform submits
+// asynchronously on the device's shared queue (no host transfer inside the
+// graph), and the displayed image is read back through the declared
+// diagnostic download. Returns the transformed pixels.
 [[nodiscard]] std::vector<float> runGpuProgram(const Bootstrap& boot, const media::OcioGpuProgram& program,
                                                const std::vector<float>& pixels,
                                                uint64_t timeout_ns = 5'000'000'000ULL) {
     const std::size_t pixelCount = pixels.size() / 4;
     const VkDeviceSize byteSize = static_cast<VkDeviceSize>(pixels.size() * sizeof(float));
-    const std::vector<std::uint32_t> spirv = gpu::compileGlslToSpirv(program.glsl);
+    const uint32_t width = 2;
+    const uint32_t height = static_cast<uint32_t>(pixelCount / width);
+    EXPECT_EQ(static_cast<std::size_t>(width) * height, pixelCount);
 
-    gpu::Buffer input =
-        boot.allocator->create_buffer(byteSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, gpu::MemoryPreference::HostMapped);
-    gpu::Buffer output =
-        boot.allocator->create_buffer(byteSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, gpu::MemoryPreference::HostMapped);
-    std::memcpy(input.mapped(), pixels.data(), byteSize);
+    gpu::SubmissionQueue& queue = boot.device->submissions(boot.device->graphics_family());
 
-    // Binding table: OCIO's UBO + LUT textures on the program's set, the
-    // adapter's pixel SSBOs on the next set. Buffers and images stay alive
-    // for the pass's lifetime.
-    gpu::Buffer uniforms;
-    std::vector<gpu::Image> lutImages;
-    lutImages.reserve(program.textures.size());
-    for (const auto& texture : program.textures) {
-        const VkFormat format = texture.channels == 1   ? VK_FORMAT_R32_SFLOAT
-                                : texture.channels == 3 ? VK_FORMAT_R32G32B32_SFLOAT
-                                                        : VK_FORMAT_R32G32B32A32_SFLOAT;
-        const uint32_t depth = texture.dimensions == 3 ? texture.width : 1;
-        gpu::Image image = boot.allocator->create_image(texture.width, texture.height, depth, format,
-                                                        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-        gpu::SubmissionQueue queue(*boot.device, boot.device->graphics_family());
-        gpu::uploadImage(queue, *boot.allocator, image, texture.values.data(), texture.values.size() * sizeof(float),
-                         timeout_ns);
-        lutImages.push_back(std::move(image));
-    }
-    if (!program.uniformBytes.empty()) {
-        uniforms = boot.allocator->create_buffer(static_cast<VkDeviceSize>(program.uniformBytes.size()),
-                                                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, gpu::MemoryPreference::HostMapped);
-        std::memcpy(uniforms.mapped(), program.uniformBytes.data(), program.uniformBytes.size());
-    }
+    // Source image: RGBA32F 2D, uploaded then transitioned to GENERAL —
+    // the layout convention GpuViewingTransform's submit() documents.
+    gpu::Image source = boot.allocator->create_image(width, height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                                         VK_IMAGE_USAGE_SAMPLED_BIT);
+    gpu::uploadImage(queue, *boot.allocator, source, pixels.data(), byteSize, timeout_ns);
+    gpu::imageBarrier(queue, source, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                      VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, timeout_ns);
 
-    std::vector<gpu::ComputeBinding> bindings;
-    if (!program.uniformBytes.empty()) {
-        bindings.push_back({program.descriptorSet, 0, gpu::DescriptorKind::UniformBuffer, &uniforms, nullptr, false});
+    gpu::GpuViewingTransform transform(*boot.device, *boot.allocator, program);
+    std::optional<gpu::GpuViewedImage> viewed = transform.submit(source);
+    EXPECT_TRUE(viewed.has_value());
+    if (!viewed.has_value()) {
+        return {};
     }
-    for (std::size_t i = 0; i < program.textures.size(); ++i) {
-        bindings.push_back({program.descriptorSet, program.textures[i].binding,
-                            gpu::DescriptorKind::CombinedImageSampler, nullptr, &lutImages[i],
-                            program.textures[i].dimensions == 3});
-    }
-    bindings.push_back({program.descriptorSet + 1, 0, gpu::DescriptorKind::StorageBuffer, &input, nullptr, false});
-    bindings.push_back({program.descriptorSet + 1, 1, gpu::DescriptorKind::StorageBuffer, &output, nullptr, false});
+    EXPECT_TRUE(queue.wait(viewed->completion, timeout_ns));
 
-    auto pass = gpu::ComputePass::create(*boot.device, spirv, bindings);
-    const uint32_t groups = static_cast<uint32_t>((pixelCount + 63) / 64);
-    pass->dispatch(groups, 1, 1, timeout_ns);
     std::vector<float> result(pixels.size());
-    std::memcpy(result.data(), output.mapped(), byteSize);
+    gpu::downloadImage(queue, *boot.allocator, viewed->image, result.data(), byteSize, timeout_ns);
     return result;
 }
 
@@ -378,7 +351,6 @@ TEST(Color, GpuViewingTransformMatchesCpuReferenceWithinTolerance) {
 
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_OR_FAIL(boot);
-    discardSetupChatter(*boot.instance);
 
     const std::vector<float> gpuPixels = runGpuProgram(boot, program, sample2x2Flat());
 
@@ -414,7 +386,6 @@ TEST(Color, GpuMatrixViewMatchesCpuReferenceWithinTolerance) {
 
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_OR_FAIL(boot);
-    discardSetupChatter(*boot.instance);
 
     const std::vector<float> gpuPixels = runGpuProgram(boot, program, sample2x2Flat());
 
@@ -429,5 +400,153 @@ TEST(Color, GpuMatrixViewMatchesCpuReferenceWithinTolerance) {
             EXPECT_NEAR(actual[3], expected[3], 0.0F) << "pixel (" << x << "," << y << ") A";
         }
     }
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Compute pipeline cache + retained execution (issue #22)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Minimal scale kernel: out[i] = in[i] * scale over vec4s. Same descriptor
+// layout shape for every pass in the tests below, so the device-owned
+// pipeline cache must serve them all from one VkPipeline.
+constexpr const char* kScaleKernel = R"GLSL(#version 450
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(std430, set = 0, binding = 0) readonly buffer InData { vec4 inData[]; };
+layout(std430, set = 0, binding = 1) writeonly buffer OutData { vec4 outData[]; };
+layout(std140, set = 1, binding = 0) uniform Scale { vec4 scale; };
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= inData.length()) return;
+    outData[i] = inData[i] * scale;
+}
+)GLSL";
+
+constexpr uint64_t kGpuTimeoutNs = 5'000'000'000ULL;
+
+}  // namespace
+
+// Repeated pipeline reuse with independently expected pixels: two passes
+// over the same SPIR-V + layout shape but different input buffers and
+// uniform params run through one cached pipeline, interleaved. Immutable
+// descriptor contents must not leak between passes or recycled bundles.
+TEST(Color, ComputePipelineCacheReusesPipelineAcrossPasses) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+
+    const std::vector<std::uint32_t> spirv = gpu::compileGlslToSpirv(kScaleKernel);
+
+    // Pass A: input ×2.0.
+    gpu::Buffer inA = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                    gpu::MemoryPreference::HostMapped);
+    gpu::Buffer outA = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                     gpu::MemoryPreference::HostMapped);
+    gpu::Buffer uniA = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                     gpu::MemoryPreference::HostMapped);
+    const float inputA[4] = {0.5F, 1.0F, 1.5F, 2.0F};
+    const float scaleA[4] = {2.0F, 2.0F, 2.0F, 2.0F};
+    std::memcpy(inA.mapped(), inputA, sizeof(inputA));
+    std::memcpy(uniA.mapped(), scaleA, sizeof(scaleA));
+    const float expectedA[4] = {1.0F, 2.0F, 3.0F, 4.0F};
+    std::vector<gpu::ComputeBinding> bindingsA = {
+        {0, 0, gpu::DescriptorKind::StorageBuffer, &inA, nullptr, false},
+        {0, 1, gpu::DescriptorKind::StorageBuffer, &outA, nullptr, false},
+        {1, 0, gpu::DescriptorKind::UniformBuffer, &uniA, nullptr, false},
+    };
+    auto passA = gpu::ComputePass::create(*boot.device, spirv, bindingsA);
+
+    passA->dispatch(1, 1, 1, kGpuTimeoutNs);
+    const auto* gotA = static_cast<const float*>(outA.mapped());
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(gotA[i], expectedA[i]) << "pass A element " << i;
+    }
+
+    // Pass B: same shader and layout shape, different input and params.
+    // The device cache must serve it without building another pipeline.
+    const uint64_t pipelinesBefore = boot.device->submissionStats().pipelineCreations;
+    gpu::Buffer inB = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                    gpu::MemoryPreference::HostMapped);
+    gpu::Buffer outB = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                     gpu::MemoryPreference::HostMapped);
+    gpu::Buffer uniB = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                     gpu::MemoryPreference::HostMapped);
+    const float inputB[4] = {2.0F, 1.5F, 1.0F, 0.5F};
+    const float scaleB[4] = {0.5F, 0.5F, 0.5F, 0.5F};
+    std::memcpy(inB.mapped(), inputB, sizeof(inputB));
+    std::memcpy(uniB.mapped(), scaleB, sizeof(scaleB));
+    const float expectedB[4] = {1.0F, 0.75F, 0.5F, 0.25F};
+    std::vector<gpu::ComputeBinding> bindingsB = {
+        {0, 0, gpu::DescriptorKind::StorageBuffer, &inB, nullptr, false},
+        {0, 1, gpu::DescriptorKind::StorageBuffer, &outB, nullptr, false},
+        {1, 0, gpu::DescriptorKind::UniformBuffer, &uniB, nullptr, false},
+    };
+    auto passB = gpu::ComputePass::create(*boot.device, spirv, bindingsB);
+    EXPECT_EQ(boot.device->submissionStats().pipelineCreations, pipelinesBefore)
+        << "compatible layout/shader must reuse the cached pipeline";
+
+    passB->dispatch(1, 1, 1, kGpuTimeoutNs);
+    const auto* gotB = static_cast<const float*>(outB.mapped());
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(gotB[i], expectedB[i]) << "pass B element " << i;
+    }
+
+    // Returning to A must not pick up B's descriptor contents.
+    passA->dispatch(1, 1, 1, kGpuTimeoutNs);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(gotA[i], expectedA[i]) << "pass A re-dispatch element " << i;
+    }
+    EXPECT_EQ(boot.device->submissionStats().pipelineCreations, pipelinesBefore);
+    // Same layout, different shader: a layout-only cache key is incorrect.
+    std::string addKernel = kScaleKernel;
+    const std::string expression = "inData[i] * scale";
+    addKernel.replace(addKernel.find(expression), expression.size(), "inData[i] + scale");
+    auto addition = gpu::ComputePass::create(*boot.device, gpu::compileGlslToSpirv(addKernel), bindingsA);
+    addition->dispatch(1, 1, 1, kGpuTimeoutNs);
+    const float expectedSum[4] = {2.5F, 3.0F, 3.5F, 4.0F};
+    for (int i = 0; i < 4; ++i)
+        EXPECT_FLOAT_EQ(gotA[i], expectedSum[i]);
+    expectValidationClean(*boot.instance);
+}
+
+// Retained execution: the pass may be destroyed while its recorded work is
+// in flight — the retain() token keeps the descriptor bundle, samplers, and
+// bound resources alive until the fence signals.
+TEST(Color, ComputeRetainedExecutionSurvivesPassDestruction) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+
+    const std::vector<std::uint32_t> spirv = gpu::compileGlslToSpirv(kScaleKernel);
+    gpu::Buffer inC = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                    gpu::MemoryPreference::HostMapped);
+    gpu::Buffer outC = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                     gpu::MemoryPreference::HostMapped);
+    gpu::Buffer uniC = boot.allocator->create_buffer(4 * sizeof(float), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                     gpu::MemoryPreference::HostMapped);
+    const float inputC[4] = {1.0F, 2.0F, 3.0F, 4.0F};
+    const float scaleC[4] = {3.0F, 3.0F, 3.0F, 3.0F};
+    std::memcpy(inC.mapped(), inputC, sizeof(inputC));
+    std::memcpy(uniC.mapped(), scaleC, sizeof(scaleC));
+    std::vector<gpu::ComputeBinding> bindingsC = {
+        {0, 0, gpu::DescriptorKind::StorageBuffer, &inC, nullptr, false},
+        {0, 1, gpu::DescriptorKind::StorageBuffer, &outC, nullptr, false},
+        {1, 0, gpu::DescriptorKind::UniformBuffer, &uniC, nullptr, false},
+    };
+    auto pass = gpu::ComputePass::create(*boot.device, spirv, bindingsC);
+
+    inC = gpu::Buffer{};
+    uniC = gpu::Buffer{};
+    auto token = pass->retain();
+    auto completion = boot.device->submissions(boot.device->graphics_family())
+                          .submit([&](VkCommandBuffer cmd) { pass->record(cmd, 1, 1, 1); }, {std::move(token)});
+    ASSERT_TRUE(completion.has_value());
+    pass.reset();  // the submission stays in flight without the pass
+    EXPECT_TRUE(boot.device->submissions(boot.device->graphics_family()).wait(*completion, kGpuTimeoutNs));
+
+    const auto* gotC = static_cast<const float*>(outC.mapped());
+    const float expectedC[4] = {3.0F, 6.0F, 9.0F, 12.0F};
+    for (int i = 0; i < 4; ++i)
+        EXPECT_FLOAT_EQ(gotC[i], expectedC[i]) << "retained dispatch element " << i;
     expectValidationClean(*boot.instance);
 }

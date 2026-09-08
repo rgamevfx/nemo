@@ -396,10 +396,9 @@ TEST(HwMedia, SoftwareReferenceDecodesDistinctFrames) {
     EXPECT_TRUE(distinct) << "software decode produced temporally identical frames";
 }
 
-// The interop converter against an allocator-created multiplane NV12
-// image (no external producer): timeline waits at value 0 pass
-// immediately, so this isolates the conversion itself from the decoder.
-TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
+// Delayed foreign decode completion retains planes, semaphores, views and
+// uniforms even after the producer and converter handles are dropped.
+TEST(HwMedia, InteropRetainsDelayedForeignPlanesAndConvertsPixels) {
     auto boot = createBootstrap();
     NEMO_SKIP_OR_FAIL(boot);
 
@@ -448,20 +447,35 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
     foreign.producerStages[0] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     foreign.producerStages[1] = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 
-    // Timeline semaphore at value 0: the interop waits at waitValues[0]
-    // (=0, trivially satisfied) and signals at 1.
+    // Host-gated timelines delay consumption until after caller teardown.
+    struct ForeignOwner {
+        VkDevice device{};
+        std::shared_ptr<const void> luma, chroma;
+        VkSemaphore semaphores[2]{};
+        ~ForeignOwner() {
+            for (auto semaphore : semaphores)
+                if (semaphore != VK_NULL_HANDLE)
+                    vkDestroySemaphore(device, semaphore, nullptr);
+        }
+    };
+    auto owner = std::make_shared<ForeignOwner>();
+    owner->device = boot.device->handle();
+    owner->luma = yImage.retain();
+    owner->chroma = uvImage.retain();
+    foreign.owner = owner;
+    std::weak_ptr<ForeignOwner> weakOwner = owner;
     VkSemaphoreTypeCreateInfo typeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO, nullptr,
                                        VK_SEMAPHORE_TYPE_TIMELINE, 0};
     VkSemaphoreCreateInfo semInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &typeInfo, 0};
-    VkSemaphore semaphore = VK_NULL_HANDLE;
+    auto& semaphore = owner->semaphores[0];
     ASSERT_EQ(vkCreateSemaphore(boot.device->handle(), &semInfo, nullptr, &semaphore), VK_SUCCESS);
     // Second plane semaphore, also at 0.
-    VkSemaphore semaphore2 = VK_NULL_HANDLE;
+    auto& semaphore2 = owner->semaphores[1];
     ASSERT_EQ(vkCreateSemaphore(boot.device->handle(), &semInfo, nullptr, &semaphore2), VK_SUCCESS);
     foreign.semaphores[0] = semaphore;
     foreign.semaphores[1] = semaphore2;
-    foreign.waitValues[0] = 0;
-    foreign.waitValues[1] = 0;
+    foreign.waitValues[0] = 1;
+    foreign.waitValues[1] = 1;
 
     auto output = boot.allocator->create_image(64, 48, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
                                                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
@@ -469,22 +483,26 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
     std::vector<std::uint32_t> spirv =
         loadSpirvFile(std::filesystem::path(NEMO_SLANG_SPV_DIR_VALUE) / "mediaConvert.spv");
     auto interop = gpu::MediaInterop::create(*boot.device, *boot.allocator, spirv);
-    try {
-        interop->convertToRgba32f(foreign, output, 1'000'000'000ULL);
-    } catch (const std::exception& error) {
-        ADD_FAILURE() << "conversion failed: " << error.what();
-        vkDestroySemaphore(boot.device->handle(), semaphore, nullptr);
-        vkDestroySemaphore(boot.device->handle(), semaphore2, nullptr);
-        interop.reset();
-        yImage = gpu::Image{};
-        uvImage = gpu::Image{};
-        output = gpu::Image{};
-        boot.allocator.reset();
-        boot.device.reset();
-        expectValidationClean(*boot.instance);
-        boot.instance.reset();
-        return;
+    auto& execution = boot.device->submissions(boot.device->graphics_family());
+    const auto completion = interop->submitToRgba32f(foreign, output);
+    ASSERT_TRUE(completion);
+    EXPECT_FALSE(execution.wait(*completion, 1));
+    EXPECT_FALSE(execution.poll(*completion));
+    const VkSemaphore gates[2] = {semaphore, semaphore2};
+    foreign.owner.reset();
+    owner.reset();
+    interop.reset();
+    yImage = gpu::Image{};
+    uvImage = gpu::Image{};
+    EXPECT_FALSE(weakOwner.expired());
+    // No fatal assertions between submission and signaling: teardown must
+    // never hang behind a test's unsignalled host gate.
+    for (auto gate : gates) {
+        VkSemaphoreSignalInfo signal{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, nullptr, gate, 1};
+        EXPECT_EQ(vkSignalSemaphore(boot.device->handle(), &signal), VK_SUCCESS);
     }
+    EXPECT_TRUE(execution.wait(*completion, 5'000'000'000ULL));
+    EXPECT_TRUE(weakOwner.expired());
     CpuImage converted(64, 48);
     {
         gpu::SubmissionQueue queue(*boot.device, boot.device->graphics_family());
@@ -504,8 +522,6 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
             }
         }
     }
-    vkDestroySemaphore(boot.device->handle(), semaphore, nullptr);
-    vkDestroySemaphore(boot.device->handle(), semaphore2, nullptr);
     // Device-owned objects must be released before the device itself.
     interop.reset();
     yImage = gpu::Image{};

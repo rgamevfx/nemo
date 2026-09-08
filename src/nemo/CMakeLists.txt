@@ -5,6 +5,7 @@ add_library(nemo_core
     core/document/Document.cpp
     core/document/Serialization.cpp
     core/evaluation/CpuReference.cpp
+    core/evaluation/Reuse.cpp
 )
 add_library(nemo::core ALIAS nemo_core)
 add_subdirectory(media)

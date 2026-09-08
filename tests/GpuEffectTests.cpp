@@ -523,3 +523,50 @@ TEST(Effect, MissingSlangKernelFailsWithoutSubstitution) {
         EXPECT_NE(std::string(error.what()).find("no silent substitution"), std::string::npos) << error.what();
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #9: graph reuse over the native GPU path. Identical requests reuse
+// device-resident results without re-dispatch; a changed dependency (a new
+// mapped time) invalidates exactly the time-dependent keys. Declared
+// diagnostic readbacks: two (before/after reuse) at the output.
+// ---------------------------------------------------------------------------
+TEST(Effect, GpuReuseAvoidsRecomputationAndPreservesResults) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    discardSetupChatter(*boot.instance);
+
+    const Composition composition = makeComposition();
+    const EvaluationRequest request = requestFor(composition.doc, {0, 0, 16, 16}, 0);
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+
+    ResultCache<eval::GpuNodeImage> cache;
+    eval::GpuEvaluation first =
+        evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &cache);
+    const CacheCounts afterFirst = cache.counts();
+    EXPECT_EQ(afterFirst.hits, 0u);
+    EXPECT_GT(afterFirst.misses, 0u);
+    const CpuImage firstImage = first.readBack(request.output, *boot.device, *boot.allocator);
+    const std::uint64_t firstIdentity = first.plan.result.contentHash;
+
+    eval::GpuEvaluation second =
+        evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &cache);
+    const CacheCounts afterSecond = cache.counts();
+    EXPECT_GT(afterSecond.hits, afterFirst.hits);
+    EXPECT_EQ(afterSecond.misses, afterFirst.misses);  // no recomputation
+    for (const PlanStep& step : second.plan.steps) {
+        EXPECT_TRUE(step.cacheReused) << "step " << step.name;
+    }
+    const CpuImage secondImage = second.readBack(request.output, *boot.device, *boot.allocator);
+    EXPECT_EQ(secondImage.pixel(0, 0), firstImage.pixel(0, 0));
+    EXPECT_GT(firstIdentity, 0u);
+
+    // A different mapped time is a different request: the conservative
+    // identity includes mapped local time for every node, so all keys move
+    // and nothing is served for the new frame (no wrong reuse).
+    eval::GpuEvaluation changedTime = evaluateGpu(composition.doc, requestFor(composition.doc, {0, 0, 16, 16}, 1),
+                                                  slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &cache);
+    const CacheCounts afterTimeChange = cache.counts();
+    EXPECT_EQ(afterTimeChange.misses - afterSecond.misses, 4u);
+    EXPECT_EQ(afterTimeChange.hits, afterSecond.hits);
+    expectValidationClean(*boot.instance);
+}

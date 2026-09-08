@@ -42,6 +42,33 @@ void CommandStack::clear() {
     redo_.clear();
 }
 
+std::uint64_t Document::stateRevision() const {
+    // FNV-1a 64 over the graph edit revision and the color policy names.
+    // Content-derived: no mutation path can forget to bump it.
+    std::uint64_t hash = 14695981039346656037ULL;
+    const auto mix = [&hash](unsigned char byte) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+    };
+    const auto mixWord = [&mix](std::uint64_t value) {
+        for (int i = 0; i < 8; ++i) {
+            mix(static_cast<unsigned char>(value & 0xFFU));
+            value >>= 8;
+        }
+    };
+    const auto mixString = [&mix, &mixWord](const std::string& text) {
+        for (char c : text) {
+            mix(static_cast<unsigned char>(c));
+        }
+        mixWord(0xFFU);  // separator so distinct name sequences cannot alias
+    };
+    mixWord(graph.revision());
+    mixString(color.workingSpace);
+    mixString(color.viewerTransform);
+    mixString(color.deliveryTransform);
+    return hash;
+}
+
 Command setParamCommand(std::string nodeName, std::string key, std::string value) {
     // The previous value is snapshotted by the first apply and shared with
     // revert; redo re-applies without re-snapshotting.
@@ -58,7 +85,7 @@ Command setParamCommand(std::string nodeName, std::string key, std::string value
             const auto it = node->params.find(key);
             *previous = it != node->params.end() ? std::optional<std::string>{it->second} : std::nullopt;
         }
-        node->params[key] = value;
+        doc.graph.setParam(node->id, key, value);
     };
     command.revert = [nodeName, key, previous](Document& doc) {
         Node* node = doc.graph.nodeByName(nodeName);
@@ -66,9 +93,30 @@ Command setParamCommand(std::string nodeName, std::string key, std::string value
             throw std::runtime_error("setParam revert: no node named '" + nodeName + "'");
         }
         if (*previous) {
-            node->params[key] = **previous;
+            doc.graph.setParam(node->id, key, **previous);
         } else {
-            node->params.erase(key);
+            doc.graph.eraseParam(node->id, key);
+        }
+    };
+    return command;
+}
+
+Command setColorPolicyCommand(ColorPolicy value) {
+    // The previous policy is snapshotted by the first apply and shared with
+    // revert; redo re-applies without re-snapshotting.
+    auto previous = std::make_shared<std::optional<ColorPolicy>>();
+
+    Command command;
+    command.label = "set color policy";
+    command.apply = [value, previous](Document& doc) {
+        if (!*previous) {
+            *previous = doc.color;
+        }
+        doc.color = value;
+    };
+    command.revert = [previous](Document& doc) {
+        if (*previous) {
+            doc.color = **previous;
         }
     };
     return command;

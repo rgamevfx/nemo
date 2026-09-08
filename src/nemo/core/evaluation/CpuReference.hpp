@@ -2,7 +2,6 @@
 
 #include <map>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -11,6 +10,8 @@
 #include "nemo/core/evaluation/Image.hpp"
 #include "nemo/core/evaluation/Plan.hpp"
 #include "nemo/core/evaluation/Request.hpp"
+#include "nemo/core/evaluation/Reuse.hpp"
+#include <stdexcept>
 
 namespace nemo {
 
@@ -44,8 +45,12 @@ struct CpuEvaluation {
 // Evaluates the document graph topologically to satisfy `request.output`.
 // The graph is acyclic by construction (Graph rejects cycles); only the
 // required dependencies of the output are scheduled (spec section 10.3).
-// Throws EvaluationException with node-identifying messages.
-[[nodiscard]] CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request);
+// With `reuse` (issue #9), matching content-keyed results are served from
+// the cache, computed results are published under the evaluation ticket's
+// freshness guard, and plan steps record reuse evidence. Throws
+// EvaluationException with node-identifying messages.
+[[nodiscard]] CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request,
+                                        ResultCache<CpuImage>* reuse = nullptr);
 
 // Validates a request for any executor (CPU reference and native GPU,
 // issue #8): quality must be Full (spec section 8), channels RGBA, region

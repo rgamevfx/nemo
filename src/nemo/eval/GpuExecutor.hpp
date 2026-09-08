@@ -35,6 +35,7 @@
 #include "nemo/core/evaluation/Image.hpp"
 #include "nemo/core/evaluation/Plan.hpp"
 #include "nemo/core/evaluation/Request.hpp"
+#include "nemo/core/evaluation/Reuse.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Device.hpp"
 
@@ -73,7 +74,8 @@ using EffectLibrary = std::map<std::string, EffectProgram>;
 // with glslang (the seam the OCIO adapter already uses).
 [[nodiscard]] EffectLibrary glslEffectLibrary();
 
-// One executed step's device-resident result.
+// One executed step's device-resident result. Shared ownership: a cache
+// entry (issue #9) and a returned evaluation can hold the same image.
 struct GpuNodeImage {
     gpu::Image image;  // RGBA32F, region-sized, GENERAL layout invariant
     ImageLayout layout;
@@ -83,7 +85,9 @@ class GpuEvaluation {
 public:
     EvaluationPlan plan;
     // Device-resident result of every scheduled node, keyed by node id.
-    std::map<NodeId, GpuNodeImage> images;
+    // Shared ownership keeps reused results alive in the evaluator cache
+    // (issue #9) while the caller holds the returned evaluation.
+    std::map<NodeId, std::shared_ptr<const GpuNodeImage>> images;
 
     // Test/diagnostic readback ONLY (spec section 10.4: no routine host
     // readback between native GPU effects): downloads the node's image,
@@ -94,10 +98,13 @@ public:
 };
 
 // Executes `request` on `device` through the effect library's native
-// kernels, keeping every intermediate GPU-resident. Throws
-// EvaluationException (node-identifying) for plan/effect failures and
-// GpuException for Vulkan failures.
+// kernels, keeping every intermediate GPU-resident. With `reuse` (issue
+// #9), matching content-keyed device-resident results skip their dispatch
+// and are reused in place; computed results publish under the evaluation
+// ticket's freshness guard. Throws EvaluationException (node-identifying)
+// for plan/effect failures and GpuException for Vulkan failures.
 [[nodiscard]] GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request,
                                         const EffectLibrary& effects, gpu::Device& device, gpu::Allocator& allocator,
-                                        std::uint64_t timeout_ns = 10'000'000'000ULL);
+                                        std::uint64_t timeout_ns = 10'000'000'000ULL,
+                                        ResultCache<GpuNodeImage>* reuse = nullptr);
 }  // namespace nemo::eval

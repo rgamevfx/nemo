@@ -4,12 +4,13 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <utility>
 
 #include "nemo/core/evaluation/Params.hpp"
-
+#include "nemo/core/evaluation/Reuse.hpp"
 namespace nemo {
 
 namespace {
@@ -107,7 +108,7 @@ void evalConstcolor(const Node& node, const EvaluationRequest& /*request*/,
 }
 
 void evalMerge(const Node& node, const EvaluationRequest&, std::map<std::string, std::string>& effectiveParams,
-               const std::vector<CpuImage>& inputs, CpuImage& out) {
+               const std::vector<const CpuImage*>& inputs, CpuImage& out) {
     const std::string operation = effectiveParams.count("operation") > 0 ? effectiveParams.at("operation") : [&] {
         effectiveParams.emplace("operation", "over");
         return std::string{"over"};
@@ -115,8 +116,8 @@ void evalMerge(const Node& node, const EvaluationRequest&, std::map<std::string,
     if (operation != "over") {
         failNode(node, "unsupported merge operation '" + operation + "' (CPU reference implements 'over' only)");
     }
-    const CpuImage& base = inputs[0];    // port A: over base (background)
-    const CpuImage& source = inputs[1];  // port B: over source (foreground)
+    const CpuImage& base = *inputs[0];    // port A: over base (background)
+    const CpuImage& source = *inputs[1];  // port B: over source (foreground)
     for (int y = 0; y < out.height(); ++y) {
         for (int x = 0; x < out.width(); ++x) {
             const std::array<float, 4> bg = base.pixel(x, y);
@@ -134,10 +135,10 @@ void evalMerge(const Node& node, const EvaluationRequest&, std::map<std::string,
 }
 
 void evalOutput(const Node&, const EvaluationRequest&, std::map<std::string, std::string>&,
-                const std::vector<CpuImage>& inputs, CpuImage& out) {
+                const std::vector<const CpuImage*>& inputs, CpuImage& out) {
     for (int y = 0; y < out.height(); ++y) {
         for (int x = 0; x < out.width(); ++x) {
-            out.setPixel(x, y, inputs[0].pixel(x, y));
+            out.setPixel(x, y, inputs[0]->pixel(x, y));
         }
     }
 }
@@ -290,14 +291,21 @@ std::vector<NodeId> resolveStepInputs(const Document& document, const Node& node
     return producers;
 }
 
-CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request) {
+CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, ResultCache<CpuImage>* reuse) {
     validateRequest(document, request);
 
     const std::vector<const Node*> order = scheduleDependencies(document, request.output);
+    // Publication freshness (issue #9): capture revision + generation at
+    // request start; computed results publish only while both hold.
+    const EvaluationTicket ticket = reuse != nullptr ? reuse->beginTicket(document) : EvaluationTicket{};
 
     // Execute dependencies-first; each step's image identity feeds the plan.
-    std::map<NodeId, CpuImage> images;
+    // Results live in the cache (or locally when no cache is given) as
+    // shared ownership so a downstream step can read an image the cache
+    // also retains.
+    std::map<NodeId, std::shared_ptr<const CpuImage>> images;
     std::map<NodeId, ImageIdentity> identities;
+    std::map<NodeId, ResultKey> keys;
     EvaluationPlan plan;
     plan.request = request;
 
@@ -311,25 +319,53 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request) {
         // Resolve inputs in declared port order; every required dependency
         // must be connected and already evaluated.
         const std::vector<NodeId> producers = resolveStepInputs(document, *node, identities, step);
-        std::vector<CpuImage> inputs;
+
+        // Reuse identity: effective state, including the effective input
+        // results' keys in port order (spec section 10.3).
+        std::vector<std::uint64_t> inputKeyHashes;
+        inputKeyHashes.reserve(producers.size());
         for (const NodeId producer : producers) {
-            inputs.push_back(images.at(producer));
+            inputKeyHashes.push_back(keys.at(producer).hash);
+        }
+        const ResultKey key = nodeResultKey(document, *node, inputKeyHashes, request);
+        keys.emplace(node->id, key);
+
+        std::shared_ptr<const CpuImage> image;
+        if (reuse != nullptr) {
+            if (const std::optional<ResultCache<CpuImage>::Entry> hit = reuse->find(key)) {
+                image = hit->image;
+                step.produced = hit->identity;
+                step.cacheReused = true;
+            }
         }
 
-        CpuImage image(request.region.width, request.region.height);
-        if (node->type == "testpattern") {
-            evalTestpattern(*node, request, step.effectiveParams, image);
-        } else if (node->type == "constcolor") {
-            evalConstcolor(*node, request, step.effectiveParams, image);
-        } else if (node->type == "merge") {
-            evalMerge(*node, request, step.effectiveParams, inputs, image);
-        } else if (node->type == "output") {
-            evalOutput(*node, request, step.effectiveParams, inputs, image);
-        } else {
-            failNode(*node, "type '" + node->type + "' has no CPU reference implementation");
+        if (!image) {
+            auto fresh = std::make_shared<CpuImage>(request.region.width, request.region.height);
+            std::vector<const CpuImage*> inputs;
+            inputs.reserve(producers.size());
+            for (const NodeId producer : producers) {
+                inputs.push_back(images.at(producer).get());
+            }
+
+            if (node->type == "testpattern") {
+                evalTestpattern(*node, request, step.effectiveParams, *fresh);
+            } else if (node->type == "constcolor") {
+                evalConstcolor(*node, request, step.effectiveParams, *fresh);
+            } else if (node->type == "merge") {
+                evalMerge(*node, request, step.effectiveParams, inputs, *fresh);
+            } else if (node->type == "output") {
+                evalOutput(*node, request, step.effectiveParams, inputs, *fresh);
+            } else {
+                failNode(*node, "type '" + node->type + "' has no CPU reference implementation");
+            }
+
+            step.produced = identityOf(*fresh, Residency::HostCpuReference);
+            image = fresh;
+            if (reuse != nullptr) {
+                reuse->publish(document, ticket, key, fresh, step.produced);
+            }
         }
 
-        step.produced = identityOf(image, Residency::HostCpuReference);
         identities.emplace(node->id, step.produced);
         images.emplace(node->id, std::move(image));
         plan.steps.push_back(std::move(step));
@@ -338,7 +374,9 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request) {
     plan.result = identities.at(request.output);
     CpuEvaluation evaluation;
     evaluation.plan = std::move(plan);
-    evaluation.image = std::move(images.at(request.output));
+    // The CPU reference is a correctness reference (ADR-0004); when reuse
+    // is active the output image is shared with the cache and copied out.
+    evaluation.image = *images.at(request.output);
     return evaluation;
 }
 

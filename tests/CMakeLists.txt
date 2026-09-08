@@ -4,6 +4,7 @@ find_package(OpenImageIO CONFIG REQUIRED)
 add_executable(nemo_core_tests
     TimingTests.cpp
     EvaluationTests.cpp
+    ReuseTests.cpp
     CommandTests.cpp
     PersistenceTests.cpp
 )

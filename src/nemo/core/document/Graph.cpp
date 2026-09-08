@@ -71,6 +71,7 @@ NodeId Graph::addNode(std::string type, std::string name) {
     }
     const NodeId id = nextNodeId_++;
     nodes_.push_back(Node{.id = id, .type = std::move(type), .name = std::move(name), .params = {}});
+    ++revision_;
     return id;
 }
 
@@ -84,6 +85,7 @@ void Graph::removeNode(NodeId id) {
     incomingCache_.erase(id);
     nodes_.erase(std::remove_if(nodes_.begin(), nodes_.end(), [id](const Node& n) { return n.id == id; }),
                  nodes_.end());
+    ++revision_;
 }
 
 const Node* Graph::node(NodeId id) const {
@@ -178,6 +180,7 @@ EdgeId Graph::connect(PortRef from, PortRef to) {
     const EdgeId id = nextEdgeId_++;
     edges_.push_back(Edge{.id = id, .from = from, .to = to});
     incomingCache_.erase(to.node);
+    ++revision_;
     return id;
 }
 
@@ -188,6 +191,25 @@ void Graph::disconnect(EdgeId id) {
     }
     incomingCache_.erase(it->to.node);
     edges_.erase(it);
+    ++revision_;
+}
+
+void Graph::setParam(NodeId id, const std::string& key, const std::string& value) {
+    Node* node = const_cast<Node*>(findNode(id));
+    if (node == nullptr) {
+        throw GraphException(GraphError::UnknownNode, "cannot set a parameter on unknown node " + std::to_string(id));
+    }
+    node->params[key] = value;
+    ++revision_;
+}
+
+void Graph::eraseParam(NodeId id, const std::string& key) {
+    Node* node = const_cast<Node*>(findNode(id));
+    if (node == nullptr) {
+        throw GraphException(GraphError::UnknownNode, "cannot erase a parameter on unknown node " + std::to_string(id));
+    }
+    node->params.erase(key);
+    ++revision_;
 }
 
 const std::vector<Edge>& Graph::edgesInto(NodeId node) const {

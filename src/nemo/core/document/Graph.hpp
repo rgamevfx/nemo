@@ -92,6 +92,18 @@ public:
     [[nodiscard]] std::optional<GraphErrorDetails> validateEdge(PortRef from, PortRef to) const;
     [[nodiscard]] const std::vector<Node>& nodes() const { return nodes_; }
     [[nodiscard]] const std::vector<Edge>& edges() const { return edges_; }
+
+    // Sanctioned parameter mutation: records the parameter and advances the
+    // graph revision. Direct writes through node() are fixture/setup only —
+    // they bypass revision bookkeeping.
+    void setParam(NodeId id, const std::string& key, const std::string& value);
+    void eraseParam(NodeId id, const std::string& key);
+
+    // Monotonic graph-edit counter: every structural or sanctioned parameter
+    // mutation advances it. Combined with the color policy into
+    // Document::stateRevision() for publication-freshness checks (issue #9,
+    // spec section 8); reuse identity itself is content-derived (Reuse.hpp).
+    [[nodiscard]] std::uint64_t revision() const { return revision_; }
     [[nodiscard]] const std::vector<Edge>& edgesInto(NodeId node) const;
 
     // True when `target` is reachable from `origin` through existing edges.
@@ -105,6 +117,7 @@ private:
     mutable std::map<NodeId, std::vector<Edge>> incomingCache_;
     NodeId nextNodeId_{1};
     EdgeId nextEdgeId_{1};
+    std::uint64_t revision_{1};
 };
 
 }  // namespace nemo

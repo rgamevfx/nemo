@@ -35,6 +35,14 @@ struct Document {
     std::string name;
     Graph graph;
     ColorPolicy color;
+
+    // Freshness token for evaluation publication (issue #9, spec section 8):
+    // combines the graph edit revision with the color policy values. Any
+    // sanctioned mutation changes it; equality with a value captured at
+    // request start is the stale-publication check. Reuse identity itself is
+    // content-derived (see evaluation/Reuse.hpp) and deliberately ignores
+    // this value, so unrelated edits never invalidate branch reuse.
+    [[nodiscard]] std::uint64_t stateRevision() const;
 };
 
 // A validated edit with its inverse. Commands are the only sanctioned way to
@@ -70,5 +78,9 @@ private:
 
 // Convenience factory: renames an existing node's parameter.
 Command setParamCommand(std::string nodeName, std::string key, std::string value);
+
+// Convenience factory: replaces the whole color policy (the sanctioned edit
+// for viewer/delivery/working-space changes, issue #9 acceptance example 3).
+Command setColorPolicyCommand(ColorPolicy value);
 
 }  // namespace nemo

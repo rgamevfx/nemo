@@ -108,6 +108,36 @@ std::uint32_t prepareEffectStep(const Node& node, const EvaluationRequest& reque
     return inputs;
 }
 
+// FNV-1a 64 over a byte stream (mirrors the core content-addressing
+// helpers; one hashing convention in the repo).
+void hashBytes(std::uint64_t& hash, const void* data, std::size_t size) {
+    const auto* bytes = static_cast<const unsigned char*>(data);
+    for (std::size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 1099511628211ULL;
+    }
+}
+
+void hashText(std::uint64_t& hash, const std::string& text) {
+    hashBytes(hash, text.data(), text.size());
+    const unsigned char separator = 0x1F;
+    hashBytes(hash, &separator, 1);
+}
+
+// Stable fingerprint of an effect library: the front end (Slang vs GLSL,
+// and any source change) must never share reuse keys (issue #9: reuse
+// includes implementation identity).
+[[nodiscard]] std::uint64_t fingerprintEffectLibrary(const EffectLibrary& effects) {
+    std::uint64_t hash = 14695981039346656037ULL;
+    for (const auto& [type, program] : effects) {
+        hashText(hash, type);
+        hashBytes(hash, program.spirv.data(), program.spirv.size() * sizeof(std::uint32_t));
+        hashText(hash, program.glsl);
+        hashText(hash, program.sourcePath);
+    }
+    return hash;
+}
+
 }  // namespace
 
 EffectLibrary loadSlangEffectLibrary(const std::filesystem::path& spvDir, const std::filesystem::path& sourceDir) {
@@ -161,7 +191,7 @@ CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocato
     if (it == images.end()) {
         throw EvaluationException("no device-resident image for node " + std::to_string(node));
     }
-    const GpuNodeImage& resident = it->second;
+    const GpuNodeImage& resident = *it->second;
     CpuImage image(resident.layout);
     const std::size_t bytes = static_cast<std::size_t>(resident.layout.width) *
                               static_cast<std::size_t>(resident.layout.height) * kImageChannels * sizeof(float);
@@ -186,7 +216,8 @@ CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocato
 }
 
 GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, const EffectLibrary& effects,
-                          gpu::Device& device, gpu::Allocator& allocator, std::uint64_t timeout_ns) {
+                          gpu::Device& device, gpu::Allocator& allocator, std::uint64_t timeout_ns,
+                          ResultCache<GpuNodeImage>* reuse) {
     validateRequest(document, request);
     if (device.features().shaderStorageImageReadWithoutFormat == VK_FALSE ||
         device.features().shaderStorageImageWriteWithoutFormat == VK_FALSE) {
@@ -200,9 +231,15 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
     // Runtime-compile cache within this evaluation (the same effect source
     // can run on several steps). Cross-evaluation shader compilation and
     // pipeline creation — asynchronous and cached so they never block the
-    // UI path (spec section 10.4) — is the evaluator reuse work of issues
-    // #9/#13; this executor creates each step's pipeline synchronously.
+    // UI path (spec section 10.4) — is future interactive work (issue #13);
+    // this executor creates each step's pipeline synchronously.
     std::map<std::string, std::vector<std::uint32_t>> compiled;
+    // Reuse (issue #9): the ticket captures revision + generation for the
+    // publication guard; the library fingerprint keeps front ends (Slang vs
+    // GLSL) from sharing reuse keys.
+    const EvaluationTicket ticket = reuse != nullptr ? reuse->beginTicket(document) : EvaluationTicket{};
+    const KeyContext keyContext{fingerprintEffectLibrary(effects)};
+    std::map<NodeId, ResultKey> keys;
 
     GpuEvaluation evaluation;
     evaluation.plan.request = request;
@@ -229,14 +266,39 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
         step.effectiveParams = node->params;
         const std::vector<NodeId> producers = resolveStepInputs(document, *node, identities, step);
 
-        // Inputs in port order: GPU-resident results of earlier steps.
+        // Reuse identity (issue #9): effective state including the effective
+        // input results' keys in port order, under the library fingerprint.
+        std::vector<std::uint64_t> inputKeyHashes;
+        inputKeyHashes.reserve(producers.size());
+        for (const NodeId producer : producers) {
+            inputKeyHashes.push_back(keys.at(producer).hash);
+        }
+        const ResultKey key = nodeResultKey(document, *node, inputKeyHashes, request, keyContext);
+        keys.emplace(node->id, key);
+
+        if (reuse != nullptr) {
+            if (const std::optional<ResultCache<GpuNodeImage>::Entry> hit = reuse->find(key)) {
+                // Reused in place: no dispatch, no allocation. The cached
+                // image keeps its GENERAL layout invariant, so downstream
+                // reads are identical to a freshly written result.
+                step.produced = hit->identity;
+                step.cacheReused = true;
+                identities.emplace(node->id, step.produced);
+                evaluation.images.emplace(node->id, hit->image);
+                evaluation.plan.steps.push_back(std::move(step));
+                continue;
+            }
+        }
+
+        // Inputs in port order: GPU-resident results of earlier steps (or
+        // reused device-resident cache results, issue #9).
         std::vector<const gpu::Image*> inputs;
         for (const NodeId producer : producers) {
             const auto found = evaluation.images.find(producer);
             if (found == evaluation.images.end()) {
                 failEffect(*node, program, "input image for port was not produced by an earlier step");
             }
-            inputs.push_back(&found->second.image);
+            inputs.push_back(&found->second->image);
         }
 
         // Compile/binding failures identify the node and the available
@@ -268,22 +330,24 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
             bindings.push_back({1, i, DescriptorKind::StorageImage, nullptr, inputs[i], false});
         }
 
-        GpuNodeImage resident;
-        resident.layout = layout;
+        auto resident = std::make_shared<GpuNodeImage>();
+        resident->layout = layout;
         try {
-            resident.image = createEffectImage(allocator, request);
+            resident->image = createEffectImage(allocator, request);
         } catch (const gpu::GpuException& error) {
             failEffect(*node, program, std::string("output image allocation failed: ") + error.what());
         }
 
         // Fresh output image: UNDEFINED → GENERAL before its first write.
-        prepareFreshImage(queue, resident.image, timeout_ns);
-        // Written inputs become readable by this dispatch (write→read).
+        prepareFreshImage(queue, resident->image, timeout_ns);
+        // Written inputs become readable by this dispatch (write→read). A
+        // reused input's writes completed in an earlier submission; the
+        // same barrier makes them readable to this dispatch.
         for (const gpu::Image* input : inputs) {
             afterWriteBeforeRead(queue, *input, timeout_ns);
         }
 
-        bindings.push_back({2, 0, DescriptorKind::StorageImage, nullptr, &resident.image, false});
+        bindings.push_back({2, 0, DescriptorKind::StorageImage, nullptr, &resident->image, false});
 
         std::unique_ptr<ComputePass> pass;
         try {
@@ -303,6 +367,9 @@ GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, c
         step.produced.layout = layout;
         step.produced.residency = Residency::GpuDevice;
         identities.emplace(node->id, step.produced);
+        if (reuse != nullptr) {
+            reuse->publish(document, ticket, key, resident, step.produced);
+        }
         evaluation.images.emplace(node->id, std::move(resident));
         evaluation.plan.steps.push_back(std::move(step));
     }

@@ -65,6 +65,9 @@ struct PlanStep {
     std::vector<NodeId> inputs;
     std::vector<ImageIdentity> inputImages;
     ImageIdentity produced;
+    // True when this step's result was reused from the evaluator result
+    // cache instead of recomputed (issue #9 plan evidence).
+    bool cacheReused{false};
 };
 
 // The executable plan: what the evaluator scheduled, in execution order
@@ -92,6 +95,7 @@ struct EvaluationPlan {
         }
         json["inputImages"] = std::move(inputImages);
         json["produced"] = imageIdentityToJson(step.produced);
+        json["reused"] = step.cacheReused;
         steps.push_back(std::move(json));
     }
     nlohmann::json json;

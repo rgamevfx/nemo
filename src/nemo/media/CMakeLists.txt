@@ -14,6 +14,8 @@ add_library(nemo_media
     ViewingTransform.cpp
     Probe.cpp
     VideoDecode.cpp
+    ViewerEncode.cpp
+    CodecSweep.cpp
 )
 add_library(nemo::media ALIAS nemo_media)
 

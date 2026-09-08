@@ -193,32 +193,15 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
         {impl_->sampler, views[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
     };
     VkDescriptorImageInfo outputInfo{VK_NULL_HANDLE, output.view(), VK_IMAGE_LAYOUT_GENERAL};
-    VkWriteDescriptorSet writes[] = {
-        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-         .dstSet = sets[0],
-         .dstBinding = 0,
-         .descriptorCount = 1,
-         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-         .pBufferInfo = &bufferInfo},
-        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-         .dstSet = sets[1],
-         .dstBinding = 0,
-         .descriptorCount = 1,
-         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-         .pImageInfo = &planeInfos[0]},
-        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-         .dstSet = sets[1],
-         .dstBinding = 1,
-         .descriptorCount = 1,
-         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-         .pImageInfo = &planeInfos[1]},
-        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-         .dstSet = sets[2],
-         .dstBinding = 0,
-         .descriptorCount = 1,
-         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-         .pImageInfo = &outputInfo},
-    };
+    VkWriteDescriptorSet writes[4] = {};
+    writes[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[0], 0, 0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                 nullptr, &bufferInfo, nullptr};
+    writes[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[1], 0, 0, 1,
+                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &planeInfos[0], nullptr, nullptr};
+    writes[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[1], 1, 0, 1,
+                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &planeInfos[1], nullptr, nullptr};
+    writes[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, sets[2], 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                 &outputInfo, nullptr, nullptr};
     vkUpdateDescriptorSets(vkDevice, 4, writes, 0, nullptr);
 
     // Cross-queue dependency: wait for the producer's decode signal, hand
@@ -244,9 +227,10 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
             // barrier the single image over both plane aspects; per-plane
             // frames barrier each image with COLOR aspects.
             const VkImageAspectFlags barrierAspects[2] = {
-                frame.multiplane ? (VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT)
-                                 : VK_IMAGE_ASPECT_COLOR_BIT,
-                VK_IMAGE_ASPECT_COLOR_BIT};
+                frame.multiplane ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_PLANE_0_BIT |
+                                                                   VK_IMAGE_ASPECT_PLANE_1_BIT)
+                                 : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT),
+                static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT)};
             const uint32_t barrierCount = frame.multiplane ? 1u : frame.planeCount;
             VkImageMemoryBarrier2 acquires[3] = {};
             for (uint32_t plane = 0; plane < barrierCount; ++plane) {
@@ -287,7 +271,8 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
             outputAcquire.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             outputAcquire.image = output.handle();
             outputAcquire.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-            VkDependencyInfo acquireInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            VkDependencyInfo acquireInfo{};
+            acquireInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             acquireInfo.imageMemoryBarrierCount = barrierCount + 1;
             acquireInfo.pImageMemoryBarriers = acquires;
             acquires[barrierCount] = outputAcquire;
@@ -318,7 +303,8 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
                 barrier.image = frame.images[plane];
                 barrier.subresourceRange = {barrierAspects[plane], 0, 1, 0, 1};
             }
-            VkDependencyInfo releaseInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            VkDependencyInfo releaseInfo{};
+            releaseInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             releaseInfo.imageMemoryBarrierCount = barrierCount;
             releaseInfo.pImageMemoryBarriers = releases;
             vkCmdPipelineBarrier2(cmd, &releaseInfo);

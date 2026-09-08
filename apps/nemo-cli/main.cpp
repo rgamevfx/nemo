@@ -25,7 +25,10 @@
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/ImageIO.hpp"
+#include "nemo/media/Probe.hpp"
+#include "nemo/media/VideoDecode.hpp"
 #ifdef NEMO_BUILD_GPU
 #include "nemo/eval/GpuExecutor.hpp"
 #include "nemo/gpu/Allocator.hpp"
@@ -34,6 +37,8 @@
 #ifndef NEMO_SLANG_SRC_DIR
 #define NEMO_SLANG_SRC_DIR ""
 #endif
+#else
+#define NEMO_BUILD_GPU_UNUSED 0
 #endif
 namespace {
 
@@ -45,6 +50,8 @@ int printUsage() {
                  "  nemo-cli render <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H]\n"
                  "  nemo-cli imageinfo <image> [--frame N]\n"
+                 "  nemo-cli probe-media [project.json]      hardware codec capability report\n"
+                 "  nemo-cli codec-sweep <clip> [--codecs a,b] [--chunks a,b] [--max-frames N]\n"
 #ifdef NEMO_BUILD_GPU
                  "  nemo-cli evaluate-gpu <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H] [--output NAME]\n"
@@ -436,14 +443,139 @@ int commandImageInfo(const std::vector<std::string>& args) {
     return report["ok"].get<bool>() ? 0 : 1;
 }
 
+// probe-media: measured hardware decode/encode capability report
+// (issue #10). With the GPU build, Vulkan video queue evidence comes from
+// the real device; without it, claims are registered-only by definition.
+int commandProbeMedia(const std::vector<std::string>& args) {
+    static_cast<void>(args);
+#ifdef NEMO_BUILD_GPU
+    std::unique_ptr<nemo::gpu::Instance> instance;
+    std::unique_ptr<nemo::gpu::Device> device;
+    try {
+        instance = nemo::gpu::Instance::create();
+        device = nemo::gpu::Device::create(*instance);
+    } catch (const nemo::gpu::GpuException&) {
+        device.reset();  // no usable device: probe reports registered-only claims
+    }
+    const nemo::media::MediaCapabilities capabilities = nemo::media::probeMediaCapabilities(device.get());
+    std::cout << nemo::media::formatMediaCapabilities(capabilities);
+    return 0;
+#else
+    const nemo::media::MediaCapabilities capabilities = nemo::media::probeMediaCapabilities(nullptr);
+    std::cout << nemo::media::formatMediaCapabilities(capabilities);
+    return 0;
+#endif
+}
+
+#ifdef NEMO_BUILD_GPU
+std::filesystem::path shaderSpvDir() {
+#ifdef NEMO_SLANG_SPV_DIR
+    return NEMO_SLANG_SPV_DIR;
+#else
+    return {};
+#endif
+}
+#endif
+
+// codec-sweep: the codec/chunk experiment harness (issue #10 acceptance
+// example 2). Decodes the source clip on the software reference path,
+// re-encodes it with each candidate codec at each chunk size as
+// independently decodable chunks, and prints the measured table.
+int commandCodecSweep(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        return printUsage();
+    }
+    const std::string clipPath = args[0];
+    std::vector<std::string> codecs = {"h264-nvenc", "hevc-nvenc", "libx264-cpu", "libx265-cpu"};
+    std::vector<int> chunks = {12, 24, 48};
+    int64_t maxFrames = 96;
+    for (size_t i = 1; i + 1 < args.size(); i += 2) {
+        if (args[i] == "--codecs") {
+            codecs.clear();
+            std::string value = args[i + 1];
+            value.erase(std::remove(value.begin(), value.end(), ' '), value.end());
+            std::string token;
+            std::istringstream tokens(value);
+            while (std::getline(tokens, token, ',')) {
+                if (!token.empty()) {
+                    codecs.push_back(token);
+                }
+            }
+        } else if (args[i] == "--chunks") {
+            chunks.clear();
+            std::string value = args[i + 1];
+            value.erase(std::remove(value.begin(), value.end(), ' '), value.end());
+            std::string chunkToken;
+            std::istringstream chunkTokens(value);
+            while (std::getline(chunkTokens, chunkToken, ',')) {
+                if (!chunkToken.empty()) {
+                    chunks.push_back(std::stoi(chunkToken));
+                }
+            }
+        } else if (args[i] == "--max-frames") {
+            maxFrames = std::stoll(args[i + 1]);
+        } else {
+            std::cerr << "codec-sweep: unknown option " << args[i] << "\n";
+            return printUsage();
+        }
+    }
+    nemo::media::SoftwareClip source = nemo::media::decodeClipSoftware(clipPath, maxFrames);
+    if (source.frames.empty()) {
+        std::cerr << "codec-sweep: cannot decode " << clipPath << "\n";
+        return 1;
+    }
+    std::cout << "source: " << clipPath << " (" << source.info.width << "x" << source.info.height << ", "
+              << source.frames.size() << " frames)\n";
+    const nemo::media::SweepReport report = nemo::media::runCodecSweep(source.frames, codecs, chunks);
+    std::cout << report.table();
+
+#ifdef NEMO_BUILD_GPU
+    // Hardware decode + interop cost, measured on the real device path
+    // (acceptance example 3: capability-dependent transfers exposed).
+    try {
+        auto instance = nemo::gpu::Instance::create();
+        auto device = nemo::gpu::Device::create(*instance);
+        auto allocator = nemo::gpu::Allocator::create(*instance, *device, {.max_device_bytes = 1 << 30});
+        const std::filesystem::path spv = shaderSpvDir();
+        auto decoder = nemo::media::ClipDecoder::open(*instance, *device, *allocator, clipPath,
+                                                      spv / "mediaConvert.spv");
+        if (decoder->decision().hardware) {
+            const auto decodeStart = std::chrono::steady_clock::now();
+            int hardwareFrames = 0;
+            while (decoder->next(1'000'000'000ULL) != nullptr) {
+                ++hardwareFrames;
+            }
+            const double decodeNs =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - decodeStart)
+                    .count();
+            std::cout << "hw-decode (" << decoder->info().codecName
+                      << "-vulkan, device-resident, no CPU readback): "
+                      << (hardwareFrames > 0 ? decodeNs / 1e6 / hardwareFrames : 0.0) << " ms/frame over "
+                      << hardwareFrames << " frames\n";
+        } else {
+            std::cout << "hw-decode unavailable: " << decoder->decision().reason << "\n";
+        }
+    } catch (const nemo::gpu::GpuException& error) {
+        std::cout << "hw-decode unavailable (no device): " << error.what() << "\n";
+    }
+#endif
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 3) {
+    if (argc < 2) {
         return printUsage();
     }
     const std::string command = argv[1];
     std::vector<std::string> args(argv + 2, argv + argc);
+    if (command == "probe-media") {
+        return commandProbeMedia(args);
+    }
+    if (argc < 3) {
+        return printUsage();
+    }
     if (command == "validate") {
         return commandValidate(args);
     }
@@ -460,6 +592,9 @@ int main(int argc, char** argv) {
 #endif
     if (command == "imageinfo") {
         return commandImageInfo(args);
+    }
+    if (command == "codec-sweep") {
+        return commandCodecSweep(args);
     }
     return printUsage();
 }

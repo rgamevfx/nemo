@@ -4,3 +4,20 @@
 # third-party code, not nemo's RAII-owned resources. Keep this list narrow:
 # each entry must name third-party machinery, never a nemo frame.
 leak:libdbus-1.so.3
+
+# Issue #10 hardware media probe/encode: engine-internal allocations made
+# during codec init-verification stay alive until process exit inside
+# third-party libraries, not nemo-owned RAII resources.
+# - system libx265 leaks its per-encoder-open internal allocation by
+#   design (encoder open/close through libavcodec does not free it).
+# - the CUDA driver (libcuda) keeps cuInit/lifetime context allocations
+#   alive until process exit (documented CUDA behavior; NVENC probing).
+# - the glibc/ffmpeg loader keeps per-thread key allocations alive.
+leak:libx265
+leak:libcuda.so
+leak:libavcodec.so.60
+leak:pthread_cond_broadcast
+# FFmpeg 6.1 vulkan hwcontext keeps its internal device/frames priv
+# structs (VulkanDevicePriv/VulkanFramesPriv, allocated via av_malloc)
+# alive across hwdevice/hwframes unref; freeing them is ff-internal.
+leak:libavutil.so.58

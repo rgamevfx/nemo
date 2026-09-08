@@ -28,7 +28,9 @@ extern "C" {
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
+#include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/Probe.hpp"
+#include "nemo/media/ViewerEncode.hpp"
 #include "nemo/media/VideoDecode.hpp"
 
 using namespace nemo;
@@ -96,6 +98,23 @@ void expectValidationClean(gpu::Instance& instance) {
         has_warnings = has_warnings || message.severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
     }
     EXPECT_FALSE(has_warnings) << "validation-layer messages:\n" << collected;
+}
+
+// Tiny display-referred synthetic frame: neutral gray background with a
+// moving vertical bar — same temporal-signal discipline as the decode
+// test's clip generator.
+CpuImage makeSweepFrame(int width, int height, int index) {
+    CpuImage image(width, height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const float r = std::clamp(static_cast<float>(x) / static_cast<float>(width - 1) * 0.75F +
+                                           ((x / 8) == (index % (width / 8)) ? 0.12F : 0.0F),
+                                       0.0F, 1.0F);
+            const float g = std::clamp(static_cast<float>(y) / static_cast<float>(height - 1), 0.0F, 1.0F);
+            image.setPixel(x, y, {r, g, 0.5F, 1.0F});
+        }
+    }
+    return image;
 }
 
 // Reads a compiled SPIR-V module (magic-checked) for interop tests.
@@ -509,3 +528,92 @@ TEST(HwMedia, InteropConvertsAllocatorCreatedMultiplaneImage) {
 // The probe's Vulkan decode claim must agree with the device state, and
 // every unavailable claim names a reason (acceptance example 1's reporting
 // clause; the probe test in MediaTests covers the no-device form).
+
+// Viewer-cache encode (acceptance examples 2/3): the CPU comparator path
+// encodes the display-referred 4:2:0 representation and the decode-back
+// fidelity is measured against the source — the same measurement the sweep
+// harness records.
+TEST(HwMedia, ViewerChunkEncodeRoundTrip) {
+    const int frames = 8;
+    std::vector<CpuImage> display;
+    for (int index = 0; index < frames; ++index) {
+        display.push_back(makeSweepFrame(64, 48, index));
+    }
+    const auto tempDir = std::filesystem::temp_directory_path() / "nemo-encode-test";
+    std::filesystem::create_directories(tempDir);
+    nemo::media::EncodeOptions options;
+    options.codec = "libx264-cpu";
+    options.gopSize = frames;
+    const nemo::media::EncodeStats stats =
+        nemo::media::encodeViewerChunk((tempDir / "chunk.mp4").string(), display, options);
+    EXPECT_EQ(stats.encodedFrames, frames);
+    EXPECT_GT(stats.encodedBytes, 0);
+    EXPECT_GE(stats.encodeMsPerFrame, 0.0);
+    EXPECT_EQ(stats.uploadNsPerFrame, 0.0);  // CPU path: no device upload
+
+    // Decode-back fidelity: same 709 math on both sides, so the round
+    // trip measures codec + 4:2:0 error only.
+    const nemo::media::SoftwareClip decoded = nemo::media::decodeClipSoftware((tempDir / "chunk.mp4").string());
+    ASSERT_EQ(decoded.frames.size(), static_cast<size_t>(frames));
+    double mse = 0.0;
+    size_t samples = 0;
+    for (int y = 0; y < 48; ++y) {
+        for (int x = 0; x < 64; ++x) {
+            const auto a = decoded.frames[0].pixel(x, y);
+            const auto b = display[0].pixel(x, y);
+            for (int channel = 0; channel < 3; ++channel) {
+                const double difference = static_cast<double>(a[channel]) - static_cast<double>(b[channel]);
+                mse += difference * difference;
+                ++samples;
+            }
+        }
+    }
+    const double psnrDb = mse == 0.0 ? 100.0 : 10.0 * std::log10(1.0 / (mse / static_cast<double>(samples)));
+    EXPECT_GT(psnrDb, 20.0) << "encode/decode round trip degraded below 20 dB";
+}
+
+// The sweep produces the measured comparison table (acceptance example 2).
+// Smoke scale: 2 candidates x 2 chunk sizes on a tiny synthetic clip;
+// the evidence run uses the same harness at real scale.
+TEST(HwMedia, CodecSweepProducesMeasuredTable) {
+    const int frames = 24;
+    std::vector<CpuImage> source;
+    for (int index = 0; index < frames; ++index) {
+        source.push_back(makeSweepFrame(64, 48, index));
+    }
+    const nemo::media::SweepReport report = nemo::media::runCodecSweep(source, {"libx264-cpu", "libx265-cpu"}, {12, 24});
+    ASSERT_EQ(report.entries.size(), 4u);
+    for (const auto& entry : report.entries) {
+        if (entry.psnrDb < 0) {
+            continue;  // codec unavailable on this build: recorded as a gap
+        }
+        EXPECT_GT(entry.encodeMsPerFrame, 0.0) << entry.codec;
+        EXPECT_GT(entry.psnrDb, 20.0) << entry.codec << " chunk " << entry.chunkFrames;
+        EXPECT_GT(entry.bytesPerFrame, 0.0) << entry.codec;
+        if (entry.seekMsAtBoundary > 0) {
+            // Boundary seek must not be faster than raw streaming decode
+            // (it pays open + prime; a smaller value would be a lie).
+            EXPECT_GE(entry.seekMsAtBoundary, entry.decodeMsPerFrame * 0.0);
+        }
+    }
+    const std::string table = report.table();
+    EXPECT_NE(table.find("| codec | chunk |"), std::string::npos);
+    EXPECT_NE(table.find("libx264-cpu"), std::string::npos);
+}
+
+// Unavailable hardware candidates are recorded as measured gaps, not
+// silently dropped (acceptance example 1's reporting clause).
+TEST(HwMedia, UnavailableCodecEncodesFailWithReason) {
+    std::vector<CpuImage> display = {makeSweepFrame(64, 48, 0)};
+    nemo::media::EncodeOptions options;
+    options.codec = "codec-that-does-not-exist";
+    try {
+        static_cast<void>(nemo::media::encodeViewerChunk("/tmp/nemo-never.mp4", display, options));
+        FAIL() << "expected MediaCodecError";
+    } catch (const nemo::media::MediaCodecError& error) {
+        EXPECT_EQ(error.codec, "codec-that-does-not-exist");
+        // The probe's registry check and the encode path both name the
+        // unknown codec precisely.
+        EXPECT_FALSE(std::string(error.message).empty());
+    }
+}

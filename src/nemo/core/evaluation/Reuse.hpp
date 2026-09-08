@@ -6,13 +6,15 @@
 // Reuse identity is content-derived, never history-derived:
 //
 //   * A node result's ResultKey covers the implementation version, node
-//     type, effective parameter state, the ResultKeys of its effective
-//     inputs in port order, and the request's mapped local time, region,
-//     channels, quality, plus the working-space color interpretation.
-//   * Editing a node (or anything upstream of it) changes the keys of
-//     exactly the affected results — dependency-scoped invalidation falls
-//     out of key computation; no edit broadcast is needed and unrelated
-//     edits never invalidate branch reuse.
+//     type, the node's authored parameter state, the ResultKeys of its
+//     effective inputs in port order, and the request's mapped local time,
+//     region, channels, quality, plus the working-space color
+//     interpretation. Keys are computed before execution, so authored
+//     state is what is hashed: executor-injected defaults are a
+//     deterministic function of the implementation version (recorded into
+//     effectiveParams at execution). A node with an explicit default value
+//     and one relying on the default therefore get different keys —
+//     conservative: this can only miss reuse, never serve a wrong result.
 //   * Sharing is by effective state, so shared VFX with different grades
 //     reuse the shared upstream results, structurally identical
 //     occurrences share results, and different representations (time,

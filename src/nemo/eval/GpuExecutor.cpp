@@ -1,11 +1,11 @@
 #include "nemo/eval/GpuExecutor.hpp"
 
+#include "nemo/core/Hashing.hpp"
 #include "nemo/core/evaluation/Params.hpp"
 #include "nemo/eval/EffectShaders.hpp"
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Error.hpp"
-#include "nemo/gpu/Submit.hpp"
 #include <cstring>
 #include <fstream>
 #include <memory>
@@ -108,32 +108,16 @@ std::uint32_t prepareEffectStep(const Node& node, const EvaluationRequest& reque
     return inputs;
 }
 
-// FNV-1a 64 over a byte stream (mirrors the core content-addressing
-// helpers; one hashing convention in the repo).
-void hashBytes(std::uint64_t& hash, const void* data, std::size_t size) {
-    const auto* bytes = static_cast<const unsigned char*>(data);
-    for (std::size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 1099511628211ULL;
-    }
-}
-
-void hashText(std::uint64_t& hash, const std::string& text) {
-    hashBytes(hash, text.data(), text.size());
-    const unsigned char separator = 0x1F;
-    hashBytes(hash, &separator, 1);
-}
-
 // Stable fingerprint of an effect library: the front end (Slang vs GLSL,
 // and any source change) must never share reuse keys (issue #9: reuse
 // includes implementation identity).
 [[nodiscard]] std::uint64_t fingerprintEffectLibrary(const EffectLibrary& effects) {
-    std::uint64_t hash = 14695981039346656037ULL;
+    std::uint64_t hash = kFnv1a64Basis;
     for (const auto& [type, program] : effects) {
-        hashText(hash, type);
-        hashBytes(hash, program.spirv.data(), program.spirv.size() * sizeof(std::uint32_t));
-        hashText(hash, program.glsl);
-        hashText(hash, program.sourcePath);
+        hashMixText(hash, type);
+        hashMix(hash, program.spirv.data(), program.spirv.size() * sizeof(std::uint32_t));
+        hashMixText(hash, program.glsl);
+        hashMixText(hash, program.sourcePath);
     }
     return hash;
 }

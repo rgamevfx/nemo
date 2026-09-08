@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -427,4 +428,44 @@ TEST(ReuseTest, EditingCachedNodeInvalidatesOnlyItsResults) {
     const CacheCounts after = cache.counts();
     EXPECT_EQ(after.hits - before.hits, 0u);
     EXPECT_EQ(after.misses - before.misses, 2u);  // plate + out re-render
+}
+
+// The canonical key form is injective: param sets that would alias under
+// naive string concatenation ('=' or separator bytes inside names/values)
+// must produce distinct keys — otherwise the cache could serve wrong
+// results (ADR-0007: canonical equality is the collision protection).
+TEST(ReuseTest, AliasedParamSetsGetDistinctKeys) {
+    Document doc = makeDocument({{"constcolor", "tint"}});
+    Node* tint = doc.graph.nodeByName("tint");
+    EvaluationRequest request;
+    request.localTime = 0;
+
+    const auto keyFor = [&](const std::map<std::string, std::string>& params) {
+        tint->params = params;
+        return nodeResultKey(doc, *tint, {}, request);
+    };
+
+    const ResultKey valueWithEquals = keyFor({{"a", "b=c"}});
+    const ResultKey keyWithEquals = keyFor({{"a=b", "c"}});
+    const ResultKey valueWithSeparator = keyFor({{"a", "v\x1Fb=c"}});
+    const ResultKey twoParams = keyFor({{"a", "v"}, {"b", "c"}});
+
+    EXPECT_NE(valueWithEquals, keyWithEquals);
+    EXPECT_NE(valueWithSeparator, twoParams);
+    EXPECT_NE(valueWithEquals, twoParams);
+    EXPECT_NE(valueWithSeparator, keyWithEquals);
+}
+
+// Acceptance example 2 (implementation-identity arm): a different
+// implementation identity — a different version of the operation or a
+// different effect library — must not hit the same cache entry.
+TEST(ReuseTest, ImplementationIdentityChangesTheKey) {
+    Document doc = makeDocument({{"constcolor", "tint"}});
+    const Node* tint = doc.graph.nodeByName("tint");
+    EvaluationRequest request;
+    request.localTime = 0;
+
+    const ResultKey cpuReference = nodeResultKey(doc, *tint, {}, request);
+    const ResultKey otherImplementation = nodeResultKey(doc, *tint, {}, request, KeyContext{1});
+    EXPECT_NE(cpuReference, otherImplementation);
 }

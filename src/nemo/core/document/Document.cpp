@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "nemo/core/Hashing.hpp"
+
 namespace nemo {
 
 void CommandStack::push(Command command) {
@@ -45,27 +47,11 @@ void CommandStack::clear() {
 std::uint64_t Document::stateRevision() const {
     // FNV-1a 64 over the graph edit revision and the color policy names.
     // Content-derived: no mutation path can forget to bump it.
-    std::uint64_t hash = 14695981039346656037ULL;
-    const auto mix = [&hash](unsigned char byte) {
-        hash ^= byte;
-        hash *= 1099511628211ULL;
-    };
-    const auto mixWord = [&mix](std::uint64_t value) {
-        for (int i = 0; i < 8; ++i) {
-            mix(static_cast<unsigned char>(value & 0xFFU));
-            value >>= 8;
-        }
-    };
-    const auto mixString = [&mix, &mixWord](const std::string& text) {
-        for (char c : text) {
-            mix(static_cast<unsigned char>(c));
-        }
-        mixWord(0xFFU);  // separator so distinct name sequences cannot alias
-    };
-    mixWord(graph.revision());
-    mixString(color.workingSpace);
-    mixString(color.viewerTransform);
-    mixString(color.deliveryTransform);
+    std::uint64_t hash = kFnv1a64Basis;
+    hashMixWord(hash, graph.revision());
+    hashMixText(hash, color.workingSpace);
+    hashMixText(hash, color.viewerTransform);
+    hashMixText(hash, color.deliveryTransform);
     return hash;
 }
 

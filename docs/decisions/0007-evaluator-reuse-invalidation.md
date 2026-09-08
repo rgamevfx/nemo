@@ -17,12 +17,18 @@ document revision, result cache, or publication guard existed.
 
 1. **Content-derived keys, not history-derived.** A node result's identity
    (`ResultKey`, `src/nemo/core/evaluation/Reuse.hpp/.cpp`) covers the
-   implementation version, node type, effective parameter state, the keys of
-   its effective inputs in declared port order, the mapped local time,
-   region, channels, quality, working space, and (for the GPU path) a
-   fingerprint of the supplied effect library. Keys are canonical strings
-   with an FNV-1a 64 hash; equality compares the canonical form, so hash
-   collisions cannot cause wrong reuse.
+   implementation version, node type, the node's authored parameter state,
+   the keys of its effective inputs in declared port order, the mapped
+   local time, region, channels, quality, working space, and (for the GPU
+   path) a fingerprint of the supplied effect library. Keys are computed
+   before execution, so authored state is what is hashed:
+   executor-injected defaults are a deterministic function of the
+   implementation version. A node with an explicit default value and one
+   relying on the default get different keys — conservative: this can
+   only miss reuse, never serve a wrong result. The canonical form is
+   length-prefixed per field (injective over arbitrary strings), so hash
+   collisions and content aliasing cannot cause wrong reuse; equality
+   compares the canonical form.
 
    Consequences: dependency-scoped invalidation falls out of key
    computation — an edit changes the keys of exactly the affected results;

@@ -25,8 +25,14 @@ benchmarks.
 
 Rules carried from the checklist:
 
-- Agents verify via headless commands; agent-generated image expectations are
-  evidence, never the sole correctness oracle — humans inspect diffs.
+- Agents verify model/evaluation/render changes via headless commands;
+  agent-generated image expectations are evidence, never the sole
+  correctness oracle — humans inspect diffs. Headless is not a substitute
+  for the real surface: presentation, input handling, and visible-latency
+  changes verify on the actual running UI.
+- References are derived independently of the code under test —
+  independently authored fixtures and reference interpretations. Agreement
+  between two paths sharing the same mistake is not correctness.
 - CI without real GPU/Wayland is insufficient for platform verification;
   dedicated-hardware runs remain a human/agent task on qualifying machines.
 

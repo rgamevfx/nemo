@@ -168,4 +168,25 @@ struct SoftwareClip {
 // back from the chunk's declared color tags (all must be specified).
 [[nodiscard]] SoftwareClip decodeViewerChunkSoftware(const std::string& path, int64_t maxFrames = -1);
 
+// Thread-confined incremental display-referred reference/replay decoder.
+// Zero dimensions preserve native size; otherwise sample source luma pixel
+// centers by nearest neighbor, reconstruct left-sited chroma bilinearly at
+// that source coordinate, then expand limited-range BT.709 to float RGB.
+// No source-sized float image, linearization or view transform is produced.
+// Owns codec surfaces plus one decoded YUV frame; next() transfers ownership
+// of one output image to the caller. EOF and corrupt input are distinct.
+class ViewerReferenceDecoder {
+public:
+    explicit ViewerReferenceDecoder(const std::string& path, int width = 0, int height = 0);
+    ~ViewerReferenceDecoder();
+    ViewerReferenceDecoder(const ViewerReferenceDecoder&) = delete;
+    ViewerReferenceDecoder& operator=(const ViewerReferenceDecoder&) = delete;
+    [[nodiscard]] const ClipInfo& info() const;
+    [[nodiscard]] std::optional<CpuImage> next();
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
 }  // namespace nemo::media

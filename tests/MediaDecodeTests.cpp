@@ -12,6 +12,7 @@ extern "C" {
 }
 
 #include "nemo/core/document/Document.hpp"
+#include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/VideoDecode.hpp"
 
 namespace {
@@ -21,7 +22,7 @@ namespace {
 class TaggedClip {
 public:
     explicit TaggedClip(AVPixelFormat pixels, int y = 126, int cb = 128, int cr = 128,
-                        AVColorTransferCharacteristic transfer = AVCOL_TRC_BT709, int lowBits = 0) {
+                        AVColorTransferCharacteristic transfer = AVCOL_TRC_BT709, int lowBits = 0, bool split = false) {
         path = std::filesystem::temp_directory_path() /
                (std::string("nemo-source-") + ::testing::UnitTest::GetInstance()->current_test_info()->name() + "-" +
                 av_get_pix_fmt_name(pixels) + "-" + std::to_string(y) + "-" + std::to_string(cb) + "-" +
@@ -51,6 +52,7 @@ public:
             throw std::bad_alloc();
         check(avcodec_parameters_from_context(stream->codecpar, codec.get()));
         stream->time_base = codec->time_base;
+        stream->avg_frame_rate = {24, 1};
         check(avio_open(&format->pb, path.c_str(), AVIO_FLAG_WRITE));
         check(avformat_write_header(format, nullptr));
         frame.reset(av_frame_alloc());
@@ -64,11 +66,13 @@ public:
         const AVPixFmtDescriptor* descriptor = av_pix_fmt_desc_get(pixels);
         const int values[] = {y, cb, cr};
         for (int plane = 0; plane < descriptor->nb_components; ++plane) {
-            for (int row = 0; row < 48; ++row) {
-                for (int col = 0; col < 64; ++col) {
+            const int rows = plane == 0 ? 48 : AV_CEIL_RSHIFT(48, descriptor->log2_chroma_h);
+            const int cols = plane == 0 ? 64 : AV_CEIL_RSHIFT(64, descriptor->log2_chroma_w);
+            for (int row = 0; row < rows; ++row) {
+                for (int col = 0; col < cols; ++col) {
                     auto* dest = frame->data[plane] + row * frame->linesize[plane];
                     if (descriptor->comp[plane].depth == 8)
-                        dest[col] = values[plane];
+                        dest[col] = split && plane == 0 ? (col < 32 ? 16 : 235) : values[plane];
                     else
                         reinterpret_cast<uint16_t*>(dest)[col] =
                             static_cast<uint16_t>(values[plane] * 4 + (plane == 0 ? lowBits : 0));
@@ -123,6 +127,49 @@ private:
         }
     } output;
 };
+
+TEST(MediaDecode, IncrementalReferenceSamplesIndependentTaggedPixelsWithoutLinearizing) {
+    TaggedClip clip(AV_PIX_FMT_YUV420P, 126, 100, 150);
+    nemo::media::ViewerReferenceDecoder reader(clip.path.string(), 32, 24);
+    auto frame = reader.next();
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(frame->width(), 32);
+    EXPECT_EQ(frame->height(), 24);
+    EXPECT_EQ(frame->layout().color, nemo::ColorInterpretation::DisplayReferred);
+    // Independently evaluated limited-range BT.709 Y=126,Cb=100,Cr=150.
+    for (int y = 0; y < 24; ++y) {
+        for (int x = 0; x < 32; ++x) {
+            auto pixel = frame->pixel(x, y);
+            EXPECT_NEAR(pixel[0], 0.656951, 0.00001);
+            EXPECT_NEAR(pixel[1], 0.479722, 0.00001);
+            EXPECT_NEAR(pixel[2], 0.270333, 0.00001);
+        }
+    }
+    EXPECT_FALSE(reader.next());
+}
+
+TEST(MediaDecode, IncrementalReferencePreservesIndependentSpatialBoundary) {
+    TaggedClip clip(AV_PIX_FMT_YUV420P, 126, 128, 128, AVCOL_TRC_BT709, 0, true);
+    nemo::media::ViewerReferenceDecoder reader(clip.path.string(), 32, 24);
+    auto frame = reader.next();
+    ASSERT_TRUE(frame);
+    EXPECT_FLOAT_EQ(frame->pixel(15, 12)[0], 0.0F);
+    EXPECT_FLOAT_EQ(frame->pixel(16, 12)[0], 1.0F);
+}
+
+TEST(MediaDecode, SweepFrameLimitAcceptsCleanEofWithoutContainerFrameCount) {
+    TaggedClip clip(AV_PIX_FMT_YUV420P);
+    nemo::media::SweepOptions options;
+    options.codecs = {"libx264-cpu"};
+    options.chunkSizes = {1};
+    options.maxFrames = 8;
+    options.width = 32;
+    options.height = 24;
+    const auto report = nemo::media::runCodecSweep(clip.path.string(), options);
+    ASSERT_TRUE(report.entries[0].measurements) << report.entries[0].unavailableReason;
+    EXPECT_EQ(report.entries[0].verifiedFrames, 1);
+    EXPECT_FALSE(report.entries[0].measurements->seekMsAtBoundary);
+}
 
 TEST(MediaDecode, TaggedNonlinearMidgrayBecomesSceneLinear) {
     TaggedClip clip(AV_PIX_FMT_YUV444P);

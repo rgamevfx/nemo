@@ -18,6 +18,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -32,6 +34,7 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
+#include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/VideoDecode.hpp"
 #include "nemo/media/ViewerEncode.hpp"
 
@@ -215,6 +218,46 @@ EncodeFailure injected(EncodeFailure::Stage stage, int occurrence) {
     return failure;
 }
 
+TEST(MediaEncode, ChunkComparisonRejectsIncompleteDecodeAndDimensionMismatch) {
+    TempFile output("nemo-encode-incomplete-comparison.mp4");
+    const std::vector<CpuImage> single{flatImage(kWidth, kHeight, 0.5F, 0.5F, 0.5F)};
+    static_cast<void>(encodeViewerChunk(output.path.string(), single, cpuOptions()));
+    const std::vector<CpuImage> two(2, single.front());
+    EXPECT_THROW(static_cast<void>(compareViewerChunk(output.path.string(), two)), std::runtime_error);
+    const std::vector<CpuImage> wrong{flatImage(32, 24, 0.5F, 0.5F, 0.5F)};
+    EXPECT_THROW(static_cast<void>(compareViewerChunk(output.path.string(), wrong)), std::runtime_error);
+}
+
+TEST(MediaEncode, SweepFrameLimitDoesNotRejectShortDeclaredSources) {
+    TempFile output("nemo-encode-short-source.mp4");
+    const std::vector<CpuImage> frames{flatImage(kWidth, kHeight, 0.5F, 0.5F, 0.5F)};
+    static_cast<void>(encodeViewerChunk(output.path.string(), frames, cpuOptions()));
+    SweepOptions options;
+    options.codecs = {"libx264-cpu"};
+    options.chunkSizes = {8};
+    options.maxFrames = 8;
+    options.width = kWidth;
+    options.height = kHeight;
+    for (const auto& report : {runCodecSweep(output.path.string(), options), runCodecSweep(frames, options)}) {
+        ASSERT_TRUE(report.entries[0].measurements) << report.entries[0].unavailableReason;
+        EXPECT_EQ(report.entries[0].verifiedFrames, 1);
+        EXPECT_FALSE(report.entries[0].measurements->seekMsAtBoundary);
+    }
+}
+
+TEST(MediaEncode, CompleteChunkTimingUsesMillisecondsAndIncludesExclusiveStages) {
+    TempFile output("nemo-encode-timing.mp4");
+    const std::vector<CpuImage> frames(8, gradientImage(kWidth, kHeight));
+    const auto start = std::chrono::steady_clock::now();
+    const auto stats = encodeViewerChunk(output.path.string(), frames, cpuOptions());
+    const auto wall = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    const double stages = stats.initializationMs + stats.allocationPackingMs + stats.conversionMs +
+                          stats.hostToDeviceMs + stats.submissionDrainMs + stats.muxFinalizationMs;
+    EXPECT_LE(stages, stats.completeChunkMs);
+    EXPECT_LE(stats.completeChunkMs, wall);
+    EXPECT_GT(stats.completeChunkMs, wall / 100.0);  // detects ns/us/seconds-to-ms scale errors
+    EXPECT_EQ(decodeViewerChunkSoftware(output.path.string()).frames.size(), 8u);
+}
 }  // namespace
 
 // Acceptance example 3 (metadata half): the container stream carries the
@@ -303,7 +346,7 @@ TEST(MediaEncode, ChromaSamplesMatchDeclaredLeftSiting) {
         for (int x = 31; x < kWidth; ++x)
             image.setPixel(x, y, {1.0F, 0.0F, 0.0F, 1.0F});
     }
-    static_cast<void>(encodeViewerChunk(output.path.string(), {image}, cpuOptions()));
+    static_cast<void>(encodeViewerChunk(output.path.string(), std::span(&image, 1), cpuOptions()));
     const auto replay = decodeViewerChunkSoftware(output.path.string());
     ASSERT_EQ(replay.frames.size(), 1u);
     // At left-sited x=30 a symmetric chroma filter sees 1/4 red; the
@@ -329,8 +372,8 @@ TEST(MediaEncode, SingleFrameChunkIsDecodable) {
 
 TEST(MediaEncode, SaturatedGreenDoesNotGainRedFromWrongMatrix) {
     TempFile output("nemo-encode-bt709-green.mp4");
-    static_cast<void>(
-        encodeViewerChunk(output.path.string(), {flatImage(kWidth, kHeight, 0.0F, 1.0F, 0.0F)}, cpuOptions()));
+    static_cast<void>(encodeViewerChunk(output.path.string(), std::array{flatImage(kWidth, kHeight, 0.0F, 1.0F, 0.0F)},
+                                        cpuOptions()));
     const auto replay = decodeViewerChunkSoftware(output.path.string());
     ASSERT_EQ(replay.frames.size(), 1u);
     const auto pixel = replay.frames[0].pixel(32, 24);
@@ -342,7 +385,7 @@ TEST(MediaEncode, SaturatedGreenDoesNotGainRedFromWrongMatrix) {
 TEST(MediaEncode, SceneLinearInputRequiresViewingTransform) {
     TempFile output("nemo-encode-reject-scene-linear.mp4");
     const CpuImage sceneLinear(kWidth, kHeight);
-    EXPECT_THROW(static_cast<void>(encodeViewerChunk(output.path.string(), {sceneLinear}, cpuOptions())),
+    EXPECT_THROW(static_cast<void>(encodeViewerChunk(output.path.string(), std::span(&sceneLinear, 1), cpuOptions())),
                  MediaCodecError);
     EXPECT_FALSE(std::filesystem::exists(output.path));
 }
@@ -358,7 +401,7 @@ TEST(MediaEncode, InjectedAllocationFailureThrowsAndCleansUp) {
 
     try {
         static_cast<void>(
-            encodeViewerChunk(output.path.string(), {flatImage(kWidth, kHeight, 0.5F, 0.5F, 0.5F)}, options));
+            encodeViewerChunk(output.path.string(), std::array{flatImage(kWidth, kHeight, 0.5F, 0.5F, 0.5F)}, options));
         FAIL() << "expected injected allocation failure to throw";
     } catch (const MediaCodecError& error) {
         EXPECT_EQ(error.codec, "libx264-cpu");
@@ -375,7 +418,7 @@ TEST(MediaEncode, InjectedInitFailureThrowsAndCleansUp) {
 
     try {
         static_cast<void>(
-            encodeViewerChunk(output.path.string(), {flatImage(kWidth, kHeight, 0.5F, 0.5F, 0.5F)}, options));
+            encodeViewerChunk(output.path.string(), std::array{flatImage(kWidth, kHeight, 0.5F, 0.5F, 0.5F)}, options));
         FAIL() << "expected injected init failure to throw";
     } catch (const MediaCodecError& error) {
         EXPECT_EQ(error.codec, "libx264-cpu");

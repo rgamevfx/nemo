@@ -160,13 +160,11 @@ struct OutputGuard {
     return frame;
 }
 
-std::vector<std::uint8_t> yuv420pFromDisplayReferred(const CpuImage& image) {
+void yuv420pFromDisplayReferred(const CpuImage& image, std::vector<std::uint8_t>& planes) {
     const int width = image.width();
     const int height = image.height();
     const int chromaWidth = width / 2;
     const int chromaHeight = height / 2;
-    std::vector<std::uint8_t> planes(static_cast<size_t>(width) * height +
-                                     2 * static_cast<size_t>(chromaWidth) * chromaHeight);
     auto* y = planes.data();
     auto* cb = planes.data() + static_cast<size_t>(width) * height;
     auto* cr = cb + static_cast<size_t>(chromaWidth) * chromaHeight;
@@ -206,13 +204,19 @@ std::vector<std::uint8_t> yuv420pFromDisplayReferred(const CpuImage& image) {
             }
         }
     }
-    return planes;
 }
 
 }  // namespace
 
-EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<CpuImage>& displayReferredFrames,
+EncodeStats encodeViewerChunk(const std::string& outputPath, std::span<const CpuImage> displayReferredFrames,
                               const EncodeOptions& options) {
+    using Clock = std::chrono::steady_clock;
+    const auto elapsed = [](Clock::time_point start) {
+        return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    };
+    const auto completeStart = Clock::now();
+    EncodeStats stats;
+    stats.codec = options.codec;
     if (displayReferredFrames.empty()) {
         throw MediaCodecError(options.codec, "no frames to encode");
     }
@@ -221,6 +225,10 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     }
     if (options.bitrateKbps < 1) {
         throw MediaCodecError(options.codec, "bitrateKbps must be >= 1");
+    }
+    if (options.bitDepth != 8) {
+        throw MediaCodecError(options.codec, "unsupported bit depth " + std::to_string(options.bitDepth) +
+                                                 "; viewer encoder supports 8-bit 4:2:0 only");
     }
     const int width = displayReferredFrames.front().width();
     const int height = displayReferredFrames.front().height();
@@ -264,6 +272,12 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     if (encoder == nullptr) {
         throw MediaCodecError(options.codec, "unknown encoder id (probe with probe-media)");
     }
+    const bool hevc = encoder->id == AV_CODEC_ID_HEVC;
+    stats.profile = options.profile.empty() ? (hevc ? "main" : "high") : options.profile;
+    if (stats.profile != (hevc ? "main" : "high")) {
+        throw MediaCodecError(options.codec, "unsupported profile '" + stats.profile +
+                                                 "'; supported 8-bit profile is " + (hevc ? "main" : "high"));
+    }
 
     FailureInjector injection(options);
     CodecContextPtr codec(avcodec_alloc_context3(encoder));
@@ -276,6 +290,14 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     codec->framerate = AVRational{24, 1};
     codec->gop_size = options.gopSize;
     codec->bit_rate = static_cast<int64_t>(options.bitrateKbps) * 1000;
+    codec->profile = hevc ? FF_PROFILE_HEVC_MAIN : FF_PROFILE_H264_HIGH;
+    // Bound the experiment's codec worker count; rate control remains ABR.
+    codec->thread_count = 2;
+    if (!hardware && hevc) {
+        const int status = av_opt_set(codec->priv_data, "x265-params", "pools=2:frame-threads=2", 0);
+        if (status < 0)
+            throw MediaCodecError(options.codec, "x265 thread configuration failed: " + avError(status));
+    }
     // Complete display-referred interpretation (issue #21): every field
     // the chunk must carry so replay is unambiguous — the transfer is as
     // much interpretation metadata as the matrix.
@@ -288,7 +310,7 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     BufferRefPtr hwDevice;
     BufferRefPtr hwFrames;
     if (hardware) {
-        // NVENC consumes CUDA frames: upload measured, not hidden.
+        // NVENC consumes CUDA frames: transfer API submission is measured separately.
         codec->pix_fmt = AV_PIX_FMT_CUDA;
         AVBufferRef* device = nullptr;
         if (av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0) < 0) {
@@ -328,6 +350,8 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     // The init phase ends here: codec open, and on the hw path the pool
     // is initialized and referenced.
     injection.check(EncodeFailure::Stage::Init);
+    stats.initializationMs = elapsed(completeStart);
+    auto muxStart = Clock::now();
 
     FormatContextPtr format;
     {
@@ -359,16 +383,16 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     if (avformat_write_header(format.get(), nullptr) < 0) {
         throw MediaCodecError(options.codec, "header write failed");
     }
+    stats.muxFinalizationMs += elapsed(muxStart);
+    auto allocationStart = Clock::now();
 
     PacketPtr packet(av_packet_alloc());
     if (packet == nullptr) {
         throw MediaCodecError(options.codec, "packet allocation failed");
     }
 
-    EncodeStats stats;
-    stats.codec = options.codec;
-    const auto timerStart = std::chrono::steady_clock::now();
-    double uploadNsTotal = 0.0;
+    std::vector<uint8_t> planes(static_cast<size_t>(width) * height * 3 / 2);
+    stats.allocationPackingMs += elapsed(allocationStart);
     int encodedCount = 0;
 
     // Drains finished packets. A receive error or a write failure throws:
@@ -376,13 +400,16 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     // corrected contracts forbid.
     const auto drain = [&]() {
         while (true) {
+            const auto receiveStart = Clock::now();
             const int receiveStatus = avcodec_receive_packet(codec.get(), packet.get());
+            stats.submissionDrainMs += elapsed(receiveStart);
             if (receiveStatus == AVERROR(EAGAIN) || receiveStatus == AVERROR_EOF) {
                 return;
             }
             if (receiveStatus < 0) {
                 throw MediaCodecError(options.codec, "packet receive failed: " + avError(receiveStatus));
             }
+            muxStart = Clock::now();
             av_packet_rescale_ts(packet.get(), AVRational{1, 24}, stream->time_base);
             packet->stream_index = stream->index;
             // movenc derives the last sample's duration from packet
@@ -393,6 +420,7 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
             injection.check(EncodeFailure::Stage::Write);
             const int writeStatus = av_interleaved_write_frame(format.get(), packet.get());
             av_packet_unref(packet.get());
+            stats.muxFinalizationMs += elapsed(muxStart);
             if (writeStatus < 0) {
                 throw MediaCodecError(options.codec, "packet write failed: " + avError(writeStatus));
             }
@@ -400,65 +428,62 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
     };
 
     for (const CpuImage& display : displayReferredFrames) {
+        const auto conversionStart = Clock::now();
+        yuv420pFromDisplayReferred(display, planes);
+        stats.conversionMs += elapsed(conversionStart);
+        allocationStart = Clock::now();
+        FramePtr cpuFrame(makeYuv420pFrame(width, height, planes));
+        if (cpuFrame == nullptr)
+            throw MediaCodecError(options.codec, "frame buffer allocation failed");
         FramePtr deviceFrame;
-        FramePtr cpuFrame;
-        AVFrame* source = nullptr;
+        AVFrame* source = cpuFrame.get();
         if (hardware) {
-            // Measured capability-dependent transfer: CPU staging into
-            // device-resident encode frames.
-            const auto uploadStart = std::chrono::steady_clock::now();
             deviceFrame.reset(av_frame_alloc());
-            if (deviceFrame == nullptr) {
+            if (deviceFrame == nullptr)
                 throw MediaCodecError(options.codec, "device frame allocation failed");
-            }
             deviceFrame->format = AV_PIX_FMT_CUDA;
             deviceFrame->width = width;
             deviceFrame->height = height;
-            if (av_hwframe_get_buffer(hwFrames.get(), deviceFrame.get(), 0) < 0) {
+            if (av_hwframe_get_buffer(hwFrames.get(), deviceFrame.get(), 0) < 0)
                 throw MediaCodecError(options.codec, "device frame allocation failed");
+        }
+        stats.allocationPackingMs += elapsed(allocationStart);
+        if (hardware) {
+            const auto transferStart = Clock::now();
+            const int status = av_hwframe_transfer_data(deviceFrame.get(), cpuFrame.get(), 0);
+            stats.hostToDeviceMs += elapsed(transferStart);
+            if (status < 0)
+                throw MediaCodecError(options.codec, "device frame upload failed: " + avError(status));
+            // FFmpeg's CUDA transfer copies min(src,dst pitch) bytes per
+            // row, not just the active pixels. It submits asynchronous
+            // copies on H2D; this timer does not isolate DMA completion.
+            for (int plane = 0; plane < 3; ++plane) {
+                const auto rowBytes = std::min(cpuFrame->linesize[plane], deviceFrame->linesize[plane]);
+                stats.hostToDeviceBytes += static_cast<uint64_t>(rowBytes) * (plane == 0 ? height : height / 2);
             }
-            cpuFrame.reset(makeYuv420pFrame(width, height, yuv420pFromDisplayReferred(display)));
-            if (cpuFrame == nullptr) {
-                throw MediaCodecError(options.codec, "frame buffer allocation failed");
-            }
-            if (av_hwframe_transfer_data(deviceFrame.get(), cpuFrame.get(), 0) < 0) {
-                throw MediaCodecError(options.codec, "device frame upload failed");
-            }
-            uploadNsTotal +=
-                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - uploadStart)
-                    .count();
-            deviceFrame->pts = encodedCount;
             source = deviceFrame.get();
-        } else {
-            cpuFrame.reset(makeYuv420pFrame(width, height, yuv420pFromDisplayReferred(display)));
-            if (cpuFrame == nullptr) {
-                throw MediaCodecError(options.codec, "frame buffer allocation failed");
-            }
-            cpuFrame->pts = encodedCount;
-            source = cpuFrame.get();
         }
-        ++encodedCount;
+        source->pts = encodedCount++;
         injection.check(EncodeFailure::Stage::Submission);
+        const auto sendStart = Clock::now();
         const int sendStatus = avcodec_send_frame(codec.get(), source);
-        if (sendStatus < 0) {
+        stats.submissionDrainMs += elapsed(sendStart);
+        if (sendStatus < 0)
             throw MediaCodecError(options.codec, "frame submission failed: " + avError(sendStatus));
-        }
-        // Drain as we go: encoders with lookahead (libx264) buffer many
-        // frames; skipping the per-frame drain fills the encoder and makes
-        // the next send_frame return EAGAIN.
         drain();
     }
+    const auto flushStart = Clock::now();
     const int flushStatus = avcodec_send_frame(codec.get(), nullptr);
+    stats.submissionDrainMs += elapsed(flushStart);
     if (flushStatus < 0 && flushStatus != AVERROR_EOF) {
         throw MediaCodecError(options.codec, "encoder flush failed: " + avError(flushStatus));
     }
     drain();
-    const double encodeNsTotal =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - timerStart).count();
 
     // Finalization: the trailer and the close are checked — a failure
     // here is an error, never a silent success (the output guard then
     // removes the unusable file).
+    muxStart = Clock::now();
     injection.check(EncodeFailure::Stage::Finalization);
     const int trailerStatus = av_write_trailer(format.get());
     if (trailerStatus < 0) {
@@ -468,10 +493,10 @@ EncodeStats encodeViewerChunk(const std::string& outputPath, const std::vector<C
         throw MediaCodecError(options.codec, "output close failed");
     }
     output.success = true;
+    stats.muxFinalizationMs += elapsed(muxStart);
 
     stats.encodedFrames = encodedCount;
-    stats.encodeMsPerFrame = encodedCount > 0 ? encodeNsTotal / 1e6 / encodedCount : 0.0;
-    stats.uploadNsPerFrame = encodedCount > 0 ? uploadNsTotal / encodedCount : 0.0;
+    stats.completeChunkMs = elapsed(completeStart);
     return stats;
 }
 

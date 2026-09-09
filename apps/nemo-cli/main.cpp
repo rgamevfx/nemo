@@ -12,11 +12,14 @@
 // viewing transform is applied (spec section 8). `render` is the older
 // single-node pattern writer kept for the CI smoke test.
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -53,6 +56,7 @@ int printUsage() {
                  "  nemo-cli imageinfo <image> [--frame N]\n"
                  "  nemo-cli probe-media [project.json]      hardware codec capability report\n"
                  "  nemo-cli codec-sweep <tagged-viewer-clip> [--codecs a,b] [--chunks a,b] [--max-frames N]\n"
+                 "          [--width W --height H] [--profile NAME] [--bit-depth N] [--bitrate-kbps N]\n"
 #ifdef NEMO_BUILD_GPU
                  "  nemo-cli evaluate-gpu <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H] [--output NAME]\n"
@@ -474,104 +478,67 @@ int commandProbeMedia(const std::vector<std::string>& args) {
 #endif
 }
 
-#ifdef NEMO_BUILD_GPU
-std::filesystem::path shaderSpvDir() {
-#ifdef NEMO_SLANG_SPV_DIR
-    return NEMO_SLANG_SPV_DIR;
-#else
-    return {};
-#endif
-}
-#endif
-
-// codec-sweep consumes an already display-referred, tagged Rec.709 fixture,
-// not a scene-linear composition input. Replay preserves its baked transfer;
-// source conversion is measured separately by the hardware decode path.
+// Tagged display-referred reference preparation, not source/viewer integration.
 int commandCodecSweep(const std::vector<std::string>& args) {
-    if (args.empty()) {
+    if (args.empty())
         return printUsage();
-    }
-    const std::string clipPath = args[0];
-    std::vector<std::string> codecs = {"h264-nvenc", "hevc-nvenc", "libx264-cpu", "libx265-cpu"};
-    std::vector<int> chunks = {12, 24, 48};
-    int64_t maxFrames = 96;
-    for (size_t i = 1; i + 1 < args.size(); i += 2) {
-        if (args[i] == "--codecs") {
-            codecs.clear();
-            std::string value = args[i + 1];
-            value.erase(std::remove(value.begin(), value.end(), ' '), value.end());
-            std::string token;
-            std::istringstream tokens(value);
-            while (std::getline(tokens, token, ',')) {
-                if (!token.empty()) {
-                    codecs.push_back(token);
-                }
-            }
-        } else if (args[i] == "--chunks") {
-            chunks.clear();
-            std::string value = args[i + 1];
-            value.erase(std::remove(value.begin(), value.end(), ' '), value.end());
-            std::string chunkToken;
-            std::istringstream chunkTokens(value);
-            while (std::getline(chunkTokens, chunkToken, ',')) {
-                if (!chunkToken.empty()) {
-                    chunks.push_back(std::stoi(chunkToken));
-                }
-            }
-        } else if (args[i] == "--max-frames") {
-            maxFrames = std::stoll(args[i + 1]);
+    nemo::media::SweepOptions options;
+    const auto positive = [](const std::string& text, const std::string& option) {
+        int64_t value = 0;
+        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+        if (error != std::errc{} || end != text.data() + text.size() || value <= 0 ||
+            value > std::numeric_limits<int>::max())
+            throw std::invalid_argument(option + ": expected integer in 1..2147483647, got '" + text + "'");
+        return static_cast<int>(value);
+    };
+    const auto list = [](const std::string& text, const std::string& option) {
+        std::vector<std::string> result;
+        size_t start = 0;
+        do {
+            const auto end = text.find(',', start);
+            auto token = text.substr(start, end == std::string::npos ? end : end - start);
+            if (token.empty() || token.find_first_of(" \t\n\r") != std::string::npos)
+                throw std::invalid_argument(option + ": expected nonempty comma-separated values without whitespace");
+            result.push_back(std::move(token));
+            if (end == std::string::npos)
+                break;
+            start = end + 1;
+        } while (true);
+        return result;
+    };
+    for (size_t i = 1; i < args.size(); i += 2) {
+        const auto& option = args[i];
+        if (i + 1 == args.size())
+            throw std::invalid_argument(option + ": missing value");
+        const auto& value = args[i + 1];
+        if (option == "--codecs") {
+            options.codecs = list(value, option);
+        } else if (option == "--chunks") {
+            options.chunkSizes.clear();
+            for (const auto& token : list(value, option))
+                options.chunkSizes.push_back(positive(token, option));
+        } else if (option == "--max-frames") {
+            options.maxFrames = positive(value, option);
+        } else if (option == "--width") {
+            options.width = positive(value, option);
+        } else if (option == "--height") {
+            options.height = positive(value, option);
+        } else if (option == "--bitrate-kbps") {
+            options.bitrateKbps = positive(value, option);
+        } else if (option == "--bit-depth") {
+            options.bitDepth = positive(value, option);
+        } else if (option == "--profile") {
+            if (value.empty())
+                throw std::invalid_argument(option + ": empty profile");
+            options.profile = value;
         } else {
-            std::cerr << "codec-sweep: unknown option " << args[i] << "\n";
-            return printUsage();
+            throw std::invalid_argument("unknown option " + option);
         }
     }
-    nemo::media::SoftwareClip source = nemo::media::decodeViewerChunkSoftware(clipPath, maxFrames);
-    if (source.frames.empty()) {
-        std::cerr << "codec-sweep: cannot decode " << clipPath << "\n";
-        return 1;
-    }
-    std::cout << "source: " << clipPath << " (" << source.info.width << "x" << source.info.height << ", "
-              << source.frames.size() << " frames)\n";
-    const nemo::media::SweepReport report = nemo::media::runCodecSweep(source.frames, codecs, chunks);
+    const auto report = nemo::media::runCodecSweep(args[0], options);
     std::cout << report.table();
-
-#ifdef NEMO_BUILD_GPU
-    // Hardware decode + interop cost, measured on the real device path
-    // (acceptance example 3: capability-dependent transfers exposed).
-    try {
-        auto instance = nemo::gpu::Instance::create();
-        auto device = nemo::gpu::Device::create(*instance);
-        auto allocator = nemo::gpu::Allocator::create(*instance, *device, {.max_device_bytes = 1 << 30});
-        const std::filesystem::path spv = shaderSpvDir();
-        auto decoder =
-            nemo::media::ClipDecoder::open(*instance, *device, *allocator, clipPath, spv / "mediaConvert.spv");
-        const auto decodeStart = std::chrono::steady_clock::now();
-        int hardwareFrames = 0;
-        int softwareFrames = 0;
-        std::string fallbackReason;
-        while (auto frame = decoder->next(1'000'000'000ULL)) {
-            if (decoder->decision().hardware) {
-                ++hardwareFrames;
-            } else {
-                ++softwareFrames;
-                fallbackReason = decoder->decision().reason;
-            }
-        }
-        const double decodeNs =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - decodeStart)
-                .count();
-        std::cout << "source-decode (" << decoder->info().codecName << "): " << hardwareFrames << " hardware frames, "
-                  << softwareFrames << " software-upload frames; "
-                  << (hardwareFrames + softwareFrames > 0 ? decodeNs / 1e6 / (hardwareFrames + softwareFrames) : 0.0)
-                  << " ms/frame\n";
-        if (!fallbackReason.empty()) {
-            std::cout << "hw-decode fallback: " << fallbackReason << "\n";
-        }
-    } catch (const nemo::gpu::GpuException& error) {
-        std::cout << "hw-decode unavailable (no device): " << error.what() << "\n";
-    }
-#endif
-    return 0;
+    return std::ranges::any_of(report.entries, [](const auto& entry) { return entry.measurements.has_value(); }) ? 0
+                                                                                                                 : 1;
 }
 
 }  // namespace

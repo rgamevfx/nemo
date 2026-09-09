@@ -1,0 +1,30 @@
+Issue #23 — captured release measurement table, 2026-09-08
+Command:
+TMPDIR=/tmp/nemo-issue23-wYkGZW build/release/apps/nemo-cli/nemo-cli codec-sweep /tmp/nemo-issue23-wYkGZW/reference-4k-200.mp4 --width 1920 --height 1080 --max-frames 200 --codecs h264-nvenc,hevc-nvenc --chunks 4,8,12 --bit-depth 8 --bitrate-kbps 2000
+Exit: 0. Whole-command wall time reported by command runner: 348.46 seconds.
+
+Source: 3840x2160, 200 explicitly requested frames, 24 fps.
+Reference: 1920x1080 display-referred Rec.709 RGBA32F; nearest source luma pixel center and bilinear left-sited chroma reconstruction, no linearization/view transform.
+Fidelity: full-image RGB versus the sampled reference (not error versus the 4K source); PSNR peak 1.0, no clipping, alpha excluded, plus maximum absolute component error.
+
+All per-frame times are milliseconds, divided by verified frames. Initialization includes codec/device/pool setup. Allocation/packing and CPU RGB/YUV conversion are separate from host-to-device transfer API submission latency. FFmpeg submits asynchronous CUDA H2D copies: isolated DMA completion time is unavailable, and send/drain may include upload dependency waits. Transfer bytes are CUDA copy extents including copied row padding. Complete chunk time ends at closed/finalized output, before encoder resource destruction; verification must succeed before credit. Source preparation and decode-back verification are excluded from complete fps.
+Every chunk has fresh encoder/device/pool resources. First chunk is first use within the candidate, not guaranteed process-cold. Later-chunk means are not warm-encoder measurements and include the shorter final chunk where applicable. OS/library caches are uncontrolled; warm encoder reuse is unavailable.
+
+| codec | profile | bits | kbps | chunk | verified/requested | init ms/f | alloc/pack ms/f | RGB/YUV ms/f | H2D API ms/f | H2D B | send/drain ms/f | mux ms/f | complete ms/f | complete fps | first chunk ms | later chunk mean ms | prepare ms/f | decode ms/f | boundary ms | PSNR dB | max error | container B/f |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| h264-nvenc | high | 8 | 2000 | 4 | 200/200 | 43.602 | 0.626 | 19.344 | 0.665 | 622080000 | 2.990 | 0.157 | 67.386 | 14.840 | 340.532 | 268.095 | 100.569 | 85.496 | 98.405 | 25.812 | 1.078 | 19054.305 |
+| h264-nvenc | high | 8 | 2000 | 8 | 200/200 | 21.682 | 0.814 | 18.862 | 0.679 | 622080000 | 1.631 | 0.046 | 43.715 | 22.875 | 330.775 | 350.513 | 102.515 | 84.583 | 104.878 | 25.892 | 1.114 | 18853.395 |
+| h264-nvenc | high | 8 | 2000 | 12 | 200/200 | 15.061 | 0.768 | 19.429 | 0.676 | 622080000 | 1.200 | 0.049 | 37.186 | 26.892 | 579.518 | 428.600 | 103.876 | 82.482 | 101.934 | 25.877 | 1.115 | 17451.055 |
+| hevc-nvenc | main | 8 | 2000 | 4 | 200/200 | 30.591 | 1.014 | 19.138 | 0.674 | 622080000 | 1.360 | 0.155 | 52.934 | 18.892 | 206.129 | 211.850 | 100.653 | 87.052 | 87.368 | 26.061 | 0.904 | 22445.660 |
+| hevc-nvenc | main | 8 | 2000 | 8 | 200/200 | 15.565 | 0.692 | 19.166 | 0.684 | 622080000 | 0.744 | 0.079 | 36.931 | 27.077 | 420.004 | 290.262 | 105.721 | 84.795 | 86.494 | 26.068 | 1.055 | 19600.390 |
+| hevc-nvenc | main | 8 | 2000 | 12 | 200/200 | 10.800 | 0.583 | 18.948 | 0.698 | 622080000 | 0.536 | 0.039 | 31.606 | 31.640 | 367.911 | 372.078 | 103.736 | 86.237 | 87.144 | 26.051 | 0.952 | 17590.805 |
+
+Host payload and process memory (separate scopes):
+- h264-nvenc/4: reference peak payload 132710400 B; verified replay payload 33177600 B; process peak RSS 508580 KiB
+- h264-nvenc/8: reference peak payload 265420800 B; verified replay payload 33177600 B; process peak RSS 607768 KiB
+- h264-nvenc/12: reference peak payload 398131200 B; verified replay payload 33177600 B; process peak RSS 737268 KiB
+- hevc-nvenc/4: reference peak payload 132710400 B; verified replay payload 33177600 B; process peak RSS 737268 KiB
+- hevc-nvenc/8: reference peak payload 265420800 B; verified replay payload 33177600 B; process peak RSS 737268 KiB
+- hevc-nvenc/12: reference peak payload 398131200 B; verified replay payload 33177600 B; process peak RSS 737268 KiB
+
+RSS is cumulative process VmHWM, not per-candidate or decoder memory. Decoder surfaces, encoder/decoder internals and VRAM are unavailable (not instrumented). These data do not establish codec-neutral fidelity, an isolated DMA cost, or integrated graph/viewer throughput or latency. Full environment, source generation and limitations: issue10-codec-sweep.md, Corrected #23 experiment.

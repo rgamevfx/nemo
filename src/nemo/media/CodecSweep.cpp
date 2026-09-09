@@ -3,213 +3,376 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <memory>
+#include <random>
 #include <sstream>
+#include <stdexcept>
 
 #include "nemo/media/VideoDecode.hpp"
-#include "nemo/media/ViewerEncode.hpp"
-
-extern "C" {
-#include <libavformat/avformat.h>
-}
 
 namespace nemo::media {
-
 namespace {
+using Clock = std::chrono::steady_clock;
+double elapsedMs(Clock::time_point start) {
+    return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+}
 
-using clock = std::chrono::steady_clock;
+class TemporaryChunks {
+public:
+    TemporaryChunks() {
+        std::random_device random;
+        for (int attempt = 0; attempt < 64; ++attempt) {
+            auto candidate = std::filesystem::temp_directory_path() /
+                             ("nemo-codec-sweep-" + std::to_string(random()) + "-" + std::to_string(random()));
+            // Atomic creation, never adopt (and later delete) an existing directory.
+            if (std::filesystem::create_directory(candidate)) {
+                path_ = std::move(candidate);
+                return;
+            }
+        }
+        throw std::runtime_error("codec-sweep: unable to create isolated temporary directory");
+    }
+    ~TemporaryChunks() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path_, ignored);
+    }
+    TemporaryChunks(const TemporaryChunks&) = delete;
+    TemporaryChunks& operator=(const TemporaryChunks&) = delete;
+    [[nodiscard]] std::string chunk() const { return (path_ / "chunk.mp4").string(); }
 
-struct ChunkTimings {
-    double encodeMsPerFrame = 0.0;
-    double uploadNsPerFrame = 0.0;
-    double decodeMsPerFrame = 0.0;
-    double seekMsAtBoundary = 0.0;
-    double psnrDb = -0.0;
-    double bytesPerFrame = 0.0;
+private:
+    std::filesystem::path path_;
 };
 
-// Encodes the frames as one independently decodable chunk and measures.
-[[nodiscard]] bool encodeChunk(const std::string& path, const std::vector<CpuImage>& frames,
-                               const EncodeOptions& options, ChunkTimings& timings) {
-    try {
-        const EncodeStats stats = encodeViewerChunk(path, frames, options);
-        timings.encodeMsPerFrame = stats.encodeMsPerFrame;
-        timings.uploadNsPerFrame = stats.uploadNsPerFrame;
-        timings.bytesPerFrame =
-            stats.encodedFrames > 0 ? static_cast<double>(stats.encodedBytes) / stats.encodedFrames : 0.0;
-        return true;
-    } catch (const MediaCodecError&) {
-        return false;  // unavailable codec: recorded as a gap in the table
+std::optional<uint64_t> peakRss() {
+    std::ifstream status("/proc/self/status");
+    std::string line;
+    while (std::getline(status, line)) {
+        if (line.starts_with("VmHWM:")) {
+            std::istringstream value(line.substr(6));
+            uint64_t kib;
+            if (value >> kib)
+                return kib;
+        }
+    }
+    return std::nullopt;
+}
+
+void validateOptions(const SweepOptions& options) {
+    if (options.codecs.empty() || std::ranges::any_of(options.codecs, [](const auto& s) { return s.empty(); }))
+        throw std::invalid_argument("codec-sweep: codecs must be a nonempty list of nonempty IDs");
+    if (options.chunkSizes.empty() || std::ranges::any_of(options.chunkSizes, [](int n) { return n <= 0; }))
+        throw std::invalid_argument("codec-sweep: chunk sizes must be positive integers");
+    if (options.maxFrames <= 0)
+        throw std::invalid_argument("codec-sweep: max-frames must be positive");
+    if (options.bitrateKbps <= 0 || options.bitDepth <= 0)
+        throw std::invalid_argument("codec-sweep: bitrate-kbps and bit-depth must be positive");
+    if (options.width <= 0 || options.height <= 0 || options.width > 8192 || options.height > 8192 ||
+        options.width % 2 || options.height % 2)
+        throw std::invalid_argument("codec-sweep: width/height must be even and in 2..8192");
+    // A bad chunk limit must not turn this harness into an unbounded float history.
+    constexpr uint64_t referenceLimit = 512ULL * 1024 * 1024;
+    const uint64_t frameBytes = static_cast<uint64_t>(options.width) * options.height * 4 * sizeof(float);
+    for (int chunk : options.chunkSizes) {
+        if (static_cast<uint64_t>(std::min<int64_t>(chunk, options.maxFrames)) > referenceLimit / frameBytes)
+            throw std::invalid_argument(
+                "codec-sweep: configured reference chunk bound exceeds 512 MiB; reduce chunk or dimensions");
     }
 }
 
-// Decodes the chunk back and measures decode cost + fidelity (PSNR in the
-// display-referred float space against the same source frames).
-[[nodiscard]] bool decodeChunkAndMeasure(const std::string& path, const std::vector<CpuImage>& source,
-                                         ChunkTimings& timings, bool seekAtBoundary) {
-    const auto decodeStart = clock::now();
-    const SoftwareClip decoded = decodeViewerChunkSoftware(path);
-    if (decoded.frames.empty()) {
-        return false;
-    }
-    const double decodeNs = std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - decodeStart).count();
-    timings.decodeMsPerFrame = decodeNs / 1e6 / decoded.frames.size();
-
-    if (seekAtBoundary) {
-        // Chunk-boundary seek cost: fresh open + decode of the first frame
-        // (the boundary). Re-open and prime through the decoder to the
-        // boundary frame — this is the actual viewer-replay behavior at a
-        // chunk boundary (issue #10 acceptance example 2).
-        const auto seekStart = clock::now();
-        const SoftwareClip boundary = decodeViewerChunkSoftware(path, 1);
-        timings.seekMsAtBoundary =
-            boundary.frames.empty()
-                ? -1.0
-                : std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - seekStart).count() / 1e6;
-    }
-
-    // Fidelity: PSNR over the decode-back RGBA against the source frames
-    // (the same 709 matrix on both sides; deltas are codec + 4:2:0 error).
-    double mse = 0.0;
-    size_t samples = 0;
-    for (size_t frame = 0; frame < decoded.frames.size(); ++frame) {
-        if (frame >= source.size()) {
-            break;
-        }
-        const CpuImage& a = decoded.frames[frame];
-        const CpuImage& b = source[frame];
-        for (int y = 0; y < a.height(); y += 2) {
-            for (int x = 0; x < a.width(); x += 2) {
-                const auto pa = a.pixel(x, y);
-                const auto pb = b.pixel(x, y);
-                for (int channel = 0; channel < 3; ++channel) {
-                    const double difference = static_cast<double>(pa[channel]) - static_cast<double>(pb[channel]);
-                    mse += difference * difference;
-                    ++samples;
-                }
-            }
-        }
-    }
-    if (samples == 0 || mse == 0.0) {
-        timings.psnrDb = 100.0;  // bit-exact
-    } else {
-        timings.psnrDb = 10.0 * std::log10(1.0 / (mse / static_cast<double>(samples)));
-    }
-    return true;
+void addStats(EncodeStats& total, const EncodeStats& part) {
+    total.codec = part.codec;
+    total.profile = part.profile;
+    total.initializationMs += part.initializationMs;
+    total.allocationPackingMs += part.allocationPackingMs;
+    total.conversionMs += part.conversionMs;
+    total.hostToDeviceMs += part.hostToDeviceMs;
+    total.hostToDeviceBytes += part.hostToDeviceBytes;
+    total.submissionDrainMs += part.submissionDrainMs;
+    total.muxFinalizationMs += part.muxFinalizationMs;
+    total.completeChunkMs += part.completeChunkMs;
+    total.encodedBytes += part.encodedBytes;
+    total.encodedFrames += part.encodedFrames;
 }
 
-}  // namespace
-
-SweepReport runCodecSweep(const std::vector<CpuImage>& sourceDisplayReferred, const std::vector<std::string>& codecs,
-                          const std::vector<int>& chunkSizes) {
+SweepReport sweep(const std::string& path, std::span<const CpuImage> supplied, const SweepOptions& options) {
+    validateOptions(options);
+    if (path.empty() && supplied.empty())
+        throw std::invalid_argument("codec-sweep: in-memory workload is empty");
     SweepReport report;
-    const auto tempDir = std::filesystem::temp_directory_path() / "nemo-codec-sweep";
-    std::filesystem::create_directories(tempDir);
-
-    for (const std::string& codec : codecs) {
-        for (int chunkFrames : chunkSizes) {
+    report.width = options.width;
+    report.height = options.height;
+    report.sourceDescription =
+        path.empty() ? "caller-supplied display-referred RGB; caller retention excluded from chunk payload" : path;
+    TemporaryChunks storage;
+    const auto chunkPath = storage.chunk();
+    for (const auto& codec : options.codecs) {
+        for (const int chunkSize : options.chunkSizes) {
             SweepEntry entry;
             entry.codec = codec;
-            entry.chunkFrames = chunkFrames;
-            double encodeMsTotal = 0.0;
-            double uploadNsTotal = 0.0;
-            double decodeMsTotal = 0.0;
-            double seekMsTotal = 0.0;
-            double psnrMin = 1000.0;
-            double bytesPerFrameTotal = 0.0;
-            int chunks = 0;
-            bool usable = true;
-
-            for (size_t start = 0; start + 1 < sourceDisplayReferred.size() + 1; start += chunkFrames) {
-                if (start >= sourceDisplayReferred.size()) {
-                    break;
+            entry.profile = options.profile.empty() ? "auto" : options.profile;
+            entry.bitDepth = options.bitDepth;
+            entry.bitrateKbps = options.bitrateKbps;
+            entry.chunkFrames = chunkSize;
+            entry.requestedFrames =
+                path.empty() ? std::min<int64_t>(options.maxFrames, supplied.size()) : options.maxFrames;
+            SweepMeasurements measured;
+            try {
+                std::unique_ptr<ViewerReferenceDecoder> reader;
+                const auto preparationStart = Clock::now();
+                if (!path.empty()) {
+                    reader = std::make_unique<ViewerReferenceDecoder>(path, options.width, options.height);
+                    const auto& info = reader->info();
+                    report.sourceDescription = path + " (" + std::to_string(info.width) + "x" +
+                                               std::to_string(info.height) + ", " + std::to_string(info.frameRate) +
+                                               " fps source)";
+                    if (std::abs(info.frameRate - 24.0) > 0.001)
+                        throw std::runtime_error(
+                            "reference source must be 24 fps; temporal resampling is not implemented");
+                    if (info.frameCount > 0)
+                        entry.requestedFrames = std::min(options.maxFrames, info.frameCount);
                 }
-                const size_t count = std::min(static_cast<size_t>(chunkFrames), sourceDisplayReferred.size() - start);
-                std::vector<CpuImage> frames(sourceDisplayReferred.begin() + static_cast<long>(start),
-                                             sourceDisplayReferred.begin() + static_cast<long>(start + count));
-                const std::string path = (tempDir / ("chunk-" + codec + "-" + std::to_string(chunkFrames) + "-" +
-                                                     std::to_string(start) + ".mp4"))
-                                             .string();
-
-                ChunkTimings chunkTimings;
-                if (!encodeChunk(path, frames, {codec, chunkFrames, 2000}, chunkTimings)) {
-                    usable = false;
-                    break;
+                measured.preparationMs = elapsedMs(preparationStart);
+                double squaredError = 0.0;
+                uint64_t samples = 0;
+                double seekTotal = 0.0;
+                double subsequentTotal = 0.0;
+                for (int64_t start = 0; start < entry.requestedFrames;) {
+                    const auto prepare = Clock::now();
+                    auto count = static_cast<size_t>(std::min<int64_t>(chunkSize, entry.requestedFrames - start));
+                    std::vector<CpuImage> owned;
+                    std::span<const CpuImage> frames;
+                    if (reader) {
+                        owned.reserve(count);
+                        for (size_t index = 0; index < count; ++index) {
+                            auto frame = reader->next();
+                            if (!frame) {
+                                if (reader->info().frameCount > 0)
+                                    throw std::runtime_error("incomplete source decode: expected " +
+                                                             std::to_string(entry.requestedFrames) +
+                                                             " frames, reached EOF at " +
+                                                             std::to_string(start + static_cast<int64_t>(index)));
+                                // With no declared count, clean EOF defines the
+                                // selected workload; decoder/demux errors still throw.
+                                entry.requestedFrames = start + static_cast<int64_t>(index);
+                                break;
+                            }
+                            owned.push_back(std::move(*frame));
+                        }
+                        if (owned.empty()) {
+                            measured.preparationMs += elapsedMs(prepare);
+                            break;
+                        }
+                        count = owned.size();
+                        frames = owned;
+                    } else {
+                        frames = supplied.subspan(static_cast<size_t>(start), count);
+                    }
+                    measured.preparationMs += elapsedMs(prepare);
+                    for (const auto& frame : frames) {
+                        if (frame.width() != options.width || frame.height() != options.height)
+                            throw std::runtime_error("reference frame dimensions do not match sweep dimensions");
+                    }
+                    const uint64_t frameBytes =
+                        static_cast<uint64_t>(options.width) * options.height * 4 * sizeof(float);
+                    entry.retainedReferenceBytes = std::max(entry.retainedReferenceBytes, count * frameBytes);
+                    EncodeOptions encodeOptions;
+                    encodeOptions.codec = codec;
+                    encodeOptions.gopSize = chunkSize;
+                    encodeOptions.bitrateKbps = options.bitrateKbps;
+                    encodeOptions.profile = options.profile;
+                    encodeOptions.bitDepth = options.bitDepth;
+                    encodeOptions.injectedFailure = options.injectedFailure;
+                    const auto stats = encodeViewerChunk(chunkPath, frames, encodeOptions);
+                    entry.profile = stats.profile;
+                    const auto decoded = compareViewerChunk(chunkPath, frames);
+                    entry.retainedDecodeBytes = frameBytes;
+                    if (stats.encodedFrames != static_cast<int>(count))
+                        throw std::runtime_error("encoder returned incomplete frame count");
+                    if (entry.verifiedChunks > 0) {
+                        const auto seekStart = Clock::now();
+                        ViewerReferenceDecoder boundary(chunkPath);
+                        auto first = boundary.next();
+                        if (!first || first->width() != options.width || first->height() != options.height)
+                            throw std::runtime_error("boundary decode failed or has wrong dimensions");
+                        seekTotal += elapsedMs(seekStart);
+                        subsequentTotal += stats.completeChunkMs;
+                    } else {
+                        measured.firstChunkMs = stats.completeChunkMs;
+                    }
+                    // Credit only fully finalized, independently decoded chunks.
+                    measured.containerBytes += std::filesystem::file_size(chunkPath);
+                    addStats(measured.encode, stats);
+                    measured.decodeMs += decoded.decodeMs;
+                    squaredError += decoded.squaredError;
+                    samples += decoded.samples;
+                    measured.maxAbsoluteError = std::max(measured.maxAbsoluteError, decoded.maxAbsoluteError);
+                    entry.verifiedFrames += static_cast<int64_t>(count);
+                    ++entry.verifiedChunks;
+                    start += static_cast<int64_t>(count);
                 }
-                encodeMsTotal += chunkTimings.encodeMsPerFrame * static_cast<double>(count);
-                uploadNsTotal += chunkTimings.uploadNsPerFrame * static_cast<double>(count);
-                bytesPerFrameTotal += chunkTimings.bytesPerFrame * static_cast<double>(count);
-                if (!decodeChunkAndMeasure(path, frames, chunkTimings, chunks > 0)) {
-                    usable = false;
-                    break;
+                if (entry.verifiedFrames == 0)
+                    throw std::runtime_error("codec-sweep: source contains no decodable frames");
+                if (entry.verifiedChunks > 1) {
+                    measured.seekMsAtBoundary = seekTotal / (entry.verifiedChunks - 1);
+                    measured.subsequentChunkMs = subsequentTotal / (entry.verifiedChunks - 1);
                 }
-                decodeMsTotal += chunkTimings.decodeMsPerFrame * static_cast<double>(count);
-                seekMsTotal += chunkTimings.seekMsAtBoundary;
-                psnrMin = std::min(psnrMin, chunkTimings.psnrDb);
-                ++chunks;
+                measured.psnrDb = squaredError == 0.0 ? std::numeric_limits<double>::infinity()
+                                                      : 10.0 * std::log10(static_cast<double>(samples) / squaredError);
+                entry.measurements = measured;
+            } catch (const std::exception& error) {
+                entry.unavailableReason = error.what();
             }
-            if (!usable) {
-                // Unavailable candidate: recorded as a measured gap (the
-                // table renders n/a), never as an all-zero row.
-                entry.psnrDb = -1.0;
-            }
-
-            if (usable && chunks > 0) {
-                entry.encodeMsPerFrame = encodeMsTotal / static_cast<double>(sourceDisplayReferred.size());
-                entry.uploadNsPerFrame = uploadNsTotal / static_cast<double>(sourceDisplayReferred.size()) / 1e6;
-                entry.decodeMsPerFrame = decodeMsTotal / static_cast<double>(sourceDisplayReferred.size());
-                entry.seekMsAtBoundary = chunks > 0 ? seekMsTotal / static_cast<double>(chunks - 1) : -1.0;
-                entry.psnrDb = psnrMin;
-                entry.bytesPerFrame = bytesPerFrameTotal / static_cast<double>(sourceDisplayReferred.size());
-            }
-            report.entries.push_back(entry);
+            entry.processPeakRssKiB = peakRss();
+            report.entries.push_back(std::move(entry));
         }
-        // Peak decode resources: VmHWM after the decode-back workload.
-        std::ifstream statusFile("/proc/self/status");
-        std::string line;
-        while (std::getline(statusFile, line)) {
-            if (line.starts_with("VmHWM:")) {
-                // "VmHWM:  12345 kB" — skip the label + colon.
-                const long kb = std::strtol(line.c_str() + 6, nullptr, 10);
-                report.peakDecodeVmHwmKb = std::max(report.peakDecodeVmHwmKb, kb);
-                report.available = true;
+    }
+    return report;
+}
+}  // namespace
+
+ChunkDecodeStats compareViewerChunk(const std::string& path, std::span<const CpuImage> reference) {
+    if (reference.empty())
+        throw std::invalid_argument("codec-sweep: cannot compare empty reference");
+    ChunkDecodeStats stats;
+    auto start = Clock::now();
+    ViewerReferenceDecoder reader(path);
+    stats.decodeMs = elapsedMs(start);
+    size_t index = 0;
+    while (true) {
+        start = Clock::now();
+        auto frame = reader.next();
+        stats.decodeMs += elapsedMs(start);
+        if (!frame)
+            break;
+        if (index >= reference.size())
+            throw std::runtime_error("codec-sweep: decoded more frames than reference");
+        const auto& expected = reference[index++];
+        if (frame->width() != expected.width() || frame->height() != expected.height())
+            throw std::runtime_error("codec-sweep: decoded dimensions differ from reference");
+        if (expected.layout().color != ColorInterpretation::DisplayReferred)
+            throw std::invalid_argument("codec-sweep: fidelity reference must be display-referred");
+        for (int y = 0; y < frame->height(); ++y) {
+            for (int x = 0; x < frame->width(); ++x) {
+                const auto actual = frame->pixel(x, y);
+                const auto desired = expected.pixel(x, y);
+                for (int channel = 0; channel < 3; ++channel) {
+                    const double error = static_cast<double>(actual[channel]) - desired[channel];
+                    if (!std::isfinite(error))
+                        throw std::runtime_error("codec-sweep: non-finite fidelity sample");
+                    stats.squaredError += error * error;
+                    stats.maxAbsoluteError = std::max(stats.maxAbsoluteError, std::abs(error));
+                    ++stats.samples;
+                }
             }
         }
     }
-    // Clean the temp chunks (they are measurement artifacts).
-    std::filesystem::remove_all(tempDir);
-    return report;
+    if (index != reference.size())
+        throw std::runtime_error("codec-sweep: incomplete chunk decode: expected " + std::to_string(reference.size()) +
+                                 ", decoded " + std::to_string(index));
+    return stats;
+}
+
+SweepReport runCodecSweep(const std::string& sourcePath, const SweepOptions& options) {
+    if (sourcePath.empty())
+        throw std::invalid_argument("codec-sweep: source path is empty");
+    return sweep(sourcePath, {}, options);
+}
+SweepReport runCodecSweep(std::span<const CpuImage> reference, const SweepOptions& options) {
+    return sweep({}, reference, options);
 }
 
 std::string SweepReport::table() const {
-    const auto fixed = [](double value, int digits = 2) {
-        std::ostringstream text;
-        if (value < 0) {
-            text << "n/a";
+    std::ostringstream out;
+    out.setf(std::ios::fixed);
+    out.precision(3);
+    out << "source: " << sourceDescription << "\nreference: " << width << "x" << height
+        << " display-referred Rec.709 RGBA32F, 24 fps; nearest source luma pixel center, bilinear left-sited chroma; "
+           "no linearization/view transform. Full-image RGB PSNR (peak 1, no clipping, alpha excluded) and max "
+           "absolute error.\n"
+           "Each chunk: fresh encoder/device/pool and closed independent MP4. First chunk is first-use in this "
+           "candidate, "
+           "NOT guaranteed process-cold. Subsequent chunks reuse no encoder resources; OS/library caches uncontrolled. "
+           "Warm encoder/device reuse: n/a (not implemented). Source decoder reused within candidate.\n"
+           "Stages in ms/frame, denominator = verified frames: init includes codec/device/pool setup; alloc/pack = "
+           "frame buffers and host packing; RGB/YUV = CPU conversion; H2D API = av_hwframe_transfer_data submission "
+           "latency only (asynchronous CUDA copies). Isolated DMA completion time: n/a (no completion timer); "
+           "send/drain may include upload dependency waits, excludes mux; mux includes header, packet writes, trailer "
+           "and close. Complete includes setup "
+           "through "
+           "closed readable output and bookkeeping, excludes source preparation and decode verification. "
+           "Complete fps = frames / complete seconds, not integrated cache throughput.\n"
+           "Transfer bytes: host->device CUDA copy extents (min host/device pitch x plane rows), including copied "
+           "padding; CPU rows have no transfer. "
+           "No device->host transfer measured. Rate control: target ABR; codec defaults otherwise, "
+           "CPU threads=2 (x265 pools=2, frame-threads=2); bitrate is a target, not a payload guarantee.\n\n"
+           "| codec | profile | bits | kbps | chunk | verified/requested | init ms/f | alloc/pack ms/f | RGB/YUV ms/f "
+           "| H2D API ms/f | H2D B | send/drain ms/f | mux ms/f | complete ms/f | complete fps | first chunk ms | "
+           "later "
+           "chunk mean ms | prepare ms/f | decode ms/f | boundary ms | PSNR dB | max error | container B/f |\n"
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n";
+    for (const auto& entry : entries) {
+        out << "| " << entry.codec << " | " << entry.profile << " | " << entry.bitDepth << " | " << entry.bitrateKbps
+            << " | " << entry.chunkFrames << " | " << entry.verifiedFrames << '/' << entry.requestedFrames;
+        if (!entry.measurements) {
+            for (int column = 0; column < 17; ++column)
+                out << " | n/a";
+            out << " |\n";
         } else {
-            text.precision(digits);
-            text << std::fixed << value;
+            const auto& m = *entry.measurements;
+            const double frames = static_cast<double>(entry.verifiedFrames);
+            const auto& s = m.encode;
+            out << " | " << s.initializationMs / frames << " | " << s.allocationPackingMs / frames << " | "
+                << s.conversionMs / frames << " | ";
+            if (s.hostToDeviceBytes)
+                out << s.hostToDeviceMs / frames;
+            else
+                out << "n/a";
+            out << " | " << s.hostToDeviceBytes << " | " << s.submissionDrainMs / frames << " | "
+                << s.muxFinalizationMs / frames << " | " << s.completeChunkMs / frames << " | "
+                << frames * 1000.0 / s.completeChunkMs << " | " << m.firstChunkMs << " | ";
+            if (m.subsequentChunkMs)
+                out << *m.subsequentChunkMs;
+            else
+                out << "n/a";
+            out << " | " << m.preparationMs / frames << " | " << m.decodeMs / frames << " | ";
+            if (m.seekMsAtBoundary)
+                out << *m.seekMsAtBoundary;
+            else
+                out << "n/a";
+            out << " | " << m.psnrDb << " | " << m.maxAbsoluteError << " | " << m.containerBytes / frames << " |\n";
         }
-        return text.str();
-    };
-    std::string out =
-        "| codec | chunk | encode ms/frame | upload ms/frame | decode ms/frame | seek ms @ boundary | PSNR dB (min) | "
-        "B/frame |\n";
-    out += "| --- | --- | --- | --- | --- | --- | --- | --- |\n";
-    for (const SweepEntry& entry : entries) {
-        out += "| " + entry.codec + " | " + std::to_string(entry.chunkFrames) + " | " + fixed(entry.encodeMsPerFrame) +
-               " | " + fixed(entry.uploadNsPerFrame) + " | " + fixed(entry.decodeMsPerFrame) + " | " +
-               fixed(entry.seekMsAtBoundary) + " | " + fixed(entry.psnrDb) + " | " + fixed(entry.bytesPerFrame, 0) +
-               " |\n";
     }
-    if (available) {
-        out +=
-            "\npeak decode resources (process VmHWM after decode-back workload): " + std::to_string(peakDecodeVmHwmKb) +
-            " KiB\n";
+    out << "\nMemory scopes: reference/replay payloads are host allocations (not process RSS). No full-resolution "
+           "source "
+           "RGBA32F history is retained. Source/replay codec surfaces, internal buffers, CUDA pool/encoder VRAM: "
+           "n/a (not instrumented). Process VmHWM is cumulative across candidates, includes libraries, allocator "
+           "retention "
+           "and codec/reference buffers; it is NOT isolated decoder memory.\n";
+    for (const auto& entry : entries) {
+        out << "- " << entry.codec << '/' << entry.chunkFrames << ": reference peak payload "
+            << entry.retainedReferenceBytes << " B; verified replay payload ";
+        if (entry.retainedDecodeBytes)
+            out << *entry.retainedDecodeBytes << " B";
+        else
+            out << "n/a (no successful decode)";
+        out << "; process peak RSS ";
+        if (entry.processPeakRssKiB)
+            out << *entry.processPeakRssKiB << " KiB";
+        else
+            out << "n/a (VmHWM unavailable)";
+        if (!entry.unavailableReason.empty())
+            out << "; unavailable: " << entry.unavailableReason;
+        out << '\n';
     }
-    return out;
+    out << "\nFidelity is relative to the sampled reference, not the 4K source; it includes RGB/YUV quantization, "
+           "4:2:0 subsampling/reconstruction and compression, not resolution-approximation error. "
+           "Similar aggregate PSNR does not establish codec neutrality. Diagnostic workload only unless explicitly "
+           "3840x2160 source -> 1920x1080 / 200 frames; neither proves #11 integration or #16 visible "
+           "latency/defaults.\n";
+    return out.str();
 }
-
 }  // namespace nemo::media

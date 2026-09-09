@@ -1,49 +1,80 @@
 #pragma once
 
-// Codec + independently-decodable-chunk experiment harness (issue #10,
-// spec section 10.4, ADR-0004). Produces the MEASURED comparison the gate
-// requires: encoding cost, chunk-boundary seek cost, decode-back fidelity
-// against the source representation, and encoded bytes/frame — compared,
-// not presupposed. The final codec/chunk-size choice is explicitly an
-// evidence-gated prototype decision recorded from this table; nothing here
-// defines completion.
-
+// Corrective codec experiment (#23), not integrated viewer-cache gate evidence.
+#include <cstdint>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
-#include "nemo/core/evaluation/Image.hpp"
+#include "nemo/media/ViewerEncode.hpp"
 
 namespace nemo::media {
 
+struct SweepOptions {
+    std::vector<std::string> codecs = {"h264-nvenc", "hevc-nvenc", "libx264-cpu", "libx265-cpu"};
+    std::vector<int> chunkSizes = {4, 8, 12};
+    int bitrateKbps = 2000;
+    std::string profile;  // empty: explicit H.264 high / HEVC main
+    int bitDepth = 8;
+    int64_t maxFrames = 200;  // upper bound; a shorter source remains a valid workload
+    int width = 1920;
+    int height = 1080;
+    const EncodeFailure* injectedFailure = nullptr;  // same scoped encoder failure seam
+};
+
+struct ChunkDecodeStats {
+    double decodeMs = 0.0;  // open + decode + RGB conversion; excludes comparison
+    double squaredError = 0.0;
+    uint64_t samples = 0;
+    double maxAbsoluteError = 0.0;
+};
+
+// Full-image RGB comparison, peak 1.0, no clipping; alpha excluded. Validates
+// exact frame count, dimensions, corruption and finite pixels before success.
+// Replay uses the Media decoder's bilinear left-sited chroma reconstruction.
+[[nodiscard]] ChunkDecodeStats compareViewerChunk(const std::string& path, std::span<const CpuImage> reference);
+
+struct SweepMeasurements {
+    EncodeStats encode;  // totals over successfully verified chunks, all ms
+    double decodeMs = 0.0;
+    std::optional<double> seekMsAtBoundary;
+    double psnrDb = 0.0;
+    double maxAbsoluteError = 0.0;
+    uint64_t containerBytes = 0;
+    double firstChunkMs = 0.0;
+    std::optional<double> subsequentChunkMs;
+    double preparationMs = 0.0;  // source open/decode/convert/sample, separate from chunk encoding
+};
+
 struct SweepEntry {
-    std::string codec;       // encoder id (e.g. "hevc-nvenc")
-    int chunkFrames = 0;     // independently decodable chunk size
-    double encodeMsPerFrame = 0.0;
-    double uploadNsPerFrame = 0.0;   // measured device-upload cost (hw path)
-    double seekMsAtBoundary = 0.0;   // open + decode first chunk frame
-    double decodeMsPerFrame = 0.0;
-    double psnrDb = 0.0;             // fidelity vs source representation
-    double bytesPerFrame = 0.0;
+    std::string codec;
+    std::string profile;
+    int bitDepth = 8;
+    int bitrateKbps = 0;
+    int chunkFrames = 0;
+    int64_t requestedFrames = 0;
+    int64_t verifiedFrames = 0;
+    int verifiedChunks = 0;
+    std::string unavailableReason;
+    std::optional<SweepMeasurements> measurements;  // absent on ANY candidate failure
+    uint64_t retainedReferenceBytes = 0;            // peak active chunk float payload
+    std::optional<uint64_t> retainedDecodeBytes;    // verified replay float payload; unknown if decode failed
+    std::optional<uint64_t> processPeakRssKiB;      // cumulative process VmHWM, NOT decoder/VRAM
 };
 
 struct SweepReport {
+    std::string sourceDescription;
+    int width = 0;
+    int height = 0;
     std::vector<SweepEntry> entries;
-    // Peak decode resources: process VmHWM (peak resident set, KiB)
-    // captured after the decode-back runs (issue #10 acceptance example 2).
-    long peakDecodeVmHwmKb = 0;
-    bool available = false;
-    // Markdown table of the measured results (evidence artifact).
     [[nodiscard]] std::string table() const;
 };
 
-// Runs the sweep over `sourceDisplayReferred` frames (RGBA float32,
-// display-referred — the viewer output shape). Chunks are encoded as
-// independent files (each decodable from its own keyframe, so seek cost at
-// a chunk boundary is measured as open+prime+first-frame). Unavailable
-// codecs produce an entry with psnrDb < 0 and a codec name preserved (the
-// evidence table shows the gap rather than dropping the candidate).
-[[nodiscard]] SweepReport runCodecSweep(const std::vector<CpuImage>& sourceDisplayReferred,
-                                        const std::vector<std::string>& codecs,
-                                        const std::vector<int>& chunkSizes);
+// Path input retains at most one chunk of scaled references plus one decoded
+// replay frame. Each candidate reopens the source; OS/library warmth is not
+// controlled, and encoder/device/pool resources are fresh for EVERY chunk.
+[[nodiscard]] SweepReport runCodecSweep(const std::string& sourcePath, const SweepOptions& options);
+[[nodiscard]] SweepReport runCodecSweep(std::span<const CpuImage> reference, const SweepOptions& options);
 
 }  // namespace nemo::media

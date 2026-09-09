@@ -1,0 +1,33 @@
+Issue #23 — captured release measurement table, 2026-09-08
+Command:
+TMPDIR=/tmp/nemo-issue23-wYkGZW build/release/apps/nemo-cli/nemo-cli codec-sweep /tmp/nemo-issue23-wYkGZW/reference-4k-200.mp4 --width 1920 --height 1080 --max-frames 200 --codecs h264-nvenc,hevc-nvenc --chunks 4,8,12 --bit-depth 8 --bitrate-kbps 8000
+Exit: 0. Whole-command wall time reported by command runner: 352.51 seconds.
+
+Same source, sampling, timing, fidelity and memory scopes as issue23-reference-2000kbps.txt. This is a separate process, run after the 2000 kbps sweep completed; not a concurrent benchmark. Profiles are H.264 high / HEVC main, 8-bit yuv420p, target ABR at 8000 kbps. Every row verifies 200 frames at 1920x1080 from the 3840x2160 / 24 fps source. Fidelity is against the sampled display-referred reference, not error against the 4K source. H2D API timing is asynchronous transfer submission latency, not isolated DMA completion time. Complete fps excludes preparation, decode verification and post-timestamp encoder destruction. No integrated viewer/cache throughput claim follows.
+
+| codec | profile | bits | kbps | chunk | verified/requested | init ms/f | alloc/pack ms/f | RGB/YUV ms/f | H2D API ms/f | H2D B | send/drain ms/f | mux ms/f | complete ms/f | complete fps | first chunk ms | later chunk mean ms | prepare ms/f | decode ms/f | boundary ms | PSNR dB | max error | container B/f |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| h264-nvenc | high | 8 | 8000 | 4 | 200/200 | 43.727 | 0.573 | 19.408 | 0.679 | 622080000 | 3.058 | 0.179 | 67.626 | 14.787 | 362.890 | 268.620 | 98.286 | 89.982 | 113.124 | 26.340 | 0.881 | 60670.920 |
+| h264-nvenc | high | 8 | 8000 | 8 | 200/200 | 22.147 | 0.826 | 19.388 | 0.685 | 622080000 | 1.662 | 0.125 | 44.836 | 22.304 | 348.196 | 359.121 | 104.944 | 88.297 | 114.954 | 26.363 | 0.899 | 68914.420 |
+| h264-nvenc | high | 8 | 8000 | 12 | 200/200 | 14.540 | 0.749 | 18.998 | 0.691 | 622080000 | 1.196 | 0.091 | 36.267 | 27.573 | 438.639 | 425.923 | 100.618 | 85.001 | 116.009 | 26.366 | 0.912 | 67647.375 |
+| hevc-nvenc | main | 8 | 8000 | 4 | 200/200 | 30.692 | 1.027 | 19.367 | 0.667 | 622080000 | 1.436 | 0.146 | 53.337 | 18.749 | 213.777 | 213.339 | 101.950 | 92.987 | 92.924 | 26.357 | 0.891 | 59050.070 |
+| hevc-nvenc | main | 8 | 8000 | 8 | 200/200 | 15.538 | 0.689 | 19.485 | 0.686 | 622080000 | 0.776 | 0.136 | 37.311 | 26.802 | 283.002 | 299.132 | 102.438 | 87.374 | 90.249 | 26.371 | 0.886 | 60557.810 |
+| hevc-nvenc | main | 8 | 8000 | 12 | 200/200 | 10.540 | 0.580 | 18.993 | 0.695 | 622080000 | 0.558 | 0.108 | 31.476 | 31.771 | 462.779 | 364.523 | 100.382 | 88.233 | 92.207 | 26.375 | 0.894 | 59549.520 |
+
+Host payload and process memory (separate scopes):
+- h264-nvenc/4: reference peak payload 132710400 B; verified replay payload 33177600 B; process peak RSS 508716 KiB
+- h264-nvenc/8: reference peak payload 265420800 B; verified replay payload 33177600 B; process peak RSS 605996 KiB
+- h264-nvenc/12: reference peak payload 398131200 B; verified replay payload 33177600 B; process peak RSS 735820 KiB
+- hevc-nvenc/4: reference peak payload 132710400 B; verified replay payload 33177600 B; process peak RSS 735820 KiB
+- hevc-nvenc/8: reference peak payload 265420800 B; verified replay payload 33177600 B; process peak RSS 735820 KiB
+- hevc-nvenc/12: reference peak payload 398131200 B; verified replay payload 33177600 B; process peak RSS 735820 KiB
+
+Process peaks cannot isolate decoder memory, candidate-specific memory or VRAM. Full environment, source generation, correctness evidence and limitations: issue10-codec-sweep.md, Corrected #23 experiment.
+
+Final-build confirmation after frame-cap/EOF handling and report-wording refinements:
+TMPDIR=/tmp/nemo-issue23-wYkGZW build/release/apps/nemo-cli/nemo-cli codec-sweep /tmp/nemo-issue23-wYkGZW/reference-4k-200.mp4 --width 1920 --height 1080 --max-frames 200 --codecs hevc-nvenc --profile main --chunks 12 --bit-depth 8 --bitrate-kbps 8000
+Exit: 0; whole-command wall time 52.02 seconds.
+| codec | profile | bits | kbps | chunk | verified/requested | init ms/f | alloc/pack ms/f | RGB/YUV ms/f | H2D API ms/f | H2D B | send/drain ms/f | mux ms/f | complete ms/f | complete fps | first chunk ms | later chunk mean ms | prepare ms/f | decode ms/f | boundary ms | PSNR dB | max error | container B/f |
+| hevc-nvenc | main | 8 | 8000 | 12 | 200/200 | 11.028 | 0.450 | 19.422 | 0.695 | 622080000 | 0.563 | 0.105 | 32.265 | 30.993 | 410.395 | 377.667 | 95.226 | 89.484 | 93.755 | 26.375 | 0.894 | 59549.520 |
+Reference payload: 398131200 B; verified replay payload: 33177600 B; process peak RSS: 692572 KiB.
+This confirmation has the same decoded fidelity and container bytes/frame as the earlier matching row. Timings and process peaks differ; neither replaces the earlier measurement.

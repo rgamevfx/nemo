@@ -10,13 +10,11 @@
 // each encode reports the codec used, and an unavailable hardware encoder
 // fails with a clear reason rather than silently encoding on CPU.
 //
-// Every encode carries measured statistics (encode ms/frame, bytes, and
-// the measured upload cost when the source leaves device residency — the
-// capability-dependent transfer the spec requires exposing). The codec /
-// chunk-size decision itself remains an evidence-gated prototype decision
-// (the sweep harness, not this module).
+// Statistics separate host preparation, transfer, codec work and muxing;
+// completeChunkMs includes setup through finalized, closed readable output.
 
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -60,11 +58,20 @@ struct EncodeOptions {
     // When non-null, the named stage fails deterministically on the Nth
     // action (issue #21 robustness tests). Null = never injected.
     const EncodeFailure* injectedFailure = nullptr;
+    std::string profile;  // empty resolves to H.264 high / HEVC main
+    int bitDepth = 8;     // unsupported precision is rejected, never substituted
 };
 struct EncodeStats {
     std::string codec;
-    double encodeMsPerFrame = 0.0;  // measured wall time / frame
-    double uploadNsPerFrame = 0.0;  // measured hw-upload cost (nvenc path)
+    std::string profile;
+    double initializationMs = 0.0;     // validation, codec/device/pool setup
+    double allocationPackingMs = 0.0;  // host/device frame allocation and host packing
+    double conversionMs = 0.0;         // CPU RGB -> YUV only
+    double hostToDeviceMs = 0.0;       // transfer API submission latency, NOT isolated DMA completion
+    uint64_t hostToDeviceBytes = 0;    // CUDA copy extents including copied row padding
+    double submissionDrainMs = 0.0;    // codec send/receive; may include upload dependency waits, excludes mux
+    double muxFinalizationMs = 0.0;    // container setup, packets, trailer and close
+    double completeChunkMs = 0.0;      // enclosing wall time, not the sum of stages
     int64_t encodedBytes = 0;
     int encodedFrames = 0;
 };
@@ -82,7 +89,7 @@ struct EncodeStats {
 // encoder is not available on this build/device; on any error the
 // partially written output is removed (never a partial-success report).
 [[nodiscard]] EncodeStats encodeViewerChunk(const std::string& outputPath,
-                                            const std::vector<CpuImage>& displayReferredFrames,
+                                            std::span<const CpuImage> displayReferredFrames,
                                             const EncodeOptions& options);
 
 }  // namespace nemo::media

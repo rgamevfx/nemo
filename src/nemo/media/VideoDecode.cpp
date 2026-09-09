@@ -161,7 +161,7 @@ constexpr const char* kSupportedFormatNames =
 // viewer replay keeps the baked display-referred R′G′B′ untouched. The
 // frame's actual pixel format is validated BEFORE any plane access.
 [[nodiscard]] CpuImage convertDecodedFrame(const AVFrame* frame, const MediaColorMetadata& color,
-                                           const std::string& clip, bool linearize) {
+                                           const std::string& clip, bool linearize, int width = 0, int height = 0) {
     const FormatSpec* spec = requireFormatSpec(static_cast<AVPixelFormat>(frame->format), clip);
     const std::string formatName = pixelFormatName(spec->format);
     if (frame->width <= 0 || frame->height <= 0 || av_image_check_size(frame->width, frame->height, 0, nullptr) < 0) {
@@ -208,12 +208,18 @@ constexpr const char* kSupportedFormatNames =
     const float yRange = fullRange ? maximum : 219.0F * scale;
     const float cRange = fullRange ? maximum : 224.0F * scale;
     const float cOffset = 128.0F * scale;
+    if (width == 0)
+        width = frame->width;
+    if (height == 0)
+        height = frame->height;
     CpuImage image(
-        ImageLayout{.width = frame->width,
-                    .height = frame->height,
+        ImageLayout{.width = width,
+                    .height = height,
                     .color = linearize ? ColorInterpretation::SceneLinear : ColorInterpretation::DisplayReferred});
-    for (int y = 0; y < frame->height; ++y) {
-        for (int x = 0; x < frame->width; ++x) {
+    for (int outputY = 0; outputY < height; ++outputY) {
+        const int y = static_cast<int>((static_cast<int64_t>(outputY) * 2 + 1) * frame->height / (2 * height));
+        for (int outputX = 0; outputX < width; ++outputX) {
+            const int x = static_cast<int>((static_cast<int64_t>(outputX) * 2 + 1) * frame->width / (2 * width));
             const float yy = (sample(0, x, y) - yOffset) / yRange;
             float uu = 0.0F;
             float vv = 0.0F;
@@ -233,7 +239,7 @@ constexpr const char* kSupportedFormatNames =
                 g = transferToLinear(g, color.transfer);
                 b = transferToLinear(b, color.transfer);
             }
-            image.setPixel(x, y, {r, g, b, 1.0F});
+            image.setPixel(outputX, outputY, {r, g, b, 1.0F});
         }
     }
     return image;
@@ -892,85 +898,120 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
     return output;
 }
 
-// Shared software-decode engine: opens the clip, resolves the DECLARED color
-// interpretation, and converts every frame to RGBA float32. `linearize`
-// selects the contract: the source path inverts the declared transfer into
-// scene-linear working images; viewer replay keeps the baked
-// display-referred representation untouched.
+namespace {
+
+// One software decode owner for both collection APIs and incremental
+// reference preparation. No second interpretation or packet-pump policy.
+class SoftwareReader {
+public:
+    SoftwareReader(const std::string& path, bool linearize, const ColorPolicy& policy, const ColorOverride& overrides,
+                   int width = 0, int height = 0)
+        : prepared_(path), info_(prepared_.openCodec(path)), policy_(policy), overrides_(overrides),
+          linearize_(linearize), width_(width), height_(height) {
+        metadata_ = resolveColor(prepared_.stream->codecpar, path, policy_, overrides_);
+        if (!packet_.packet || !decoded_.frame)
+            failStatus(path, "av_packet_alloc/av_frame_alloc failed");
+    }
+
+    [[nodiscard]] const ClipInfo& info() const { return info_; }
+    [[nodiscard]] const MediaColorMetadata& metadata() const { return metadata_; }
+    [[nodiscard]] std::optional<CpuImage> next() {
+        const auto& path = info_.path;
+        while (true) {
+            const int receive = avcodec_receive_frame(prepared_.codec.context, decoded_.frame);
+            if (receive == 0) {
+                const auto color = frameColor(decoded_.frame, prepared_.stream->codecpar, path, policy_, overrides_);
+                if (!linearize_ &&
+                    (color.transfer != gpu::MediaTransfer::Bt709 || color.matrix != gpu::MediaMatrix::Bt709 ||
+                     color.range != gpu::MediaYuvRange::Limited || color.bitDepth != 8 ||
+                     decoded_.frame->format != AV_PIX_FMT_YUV420P))
+                    fail(path, pixelFormatName(static_cast<AVPixelFormat>(decoded_.frame->format)),
+                         "unsupported viewer representation; expected tagged limited-range BT.709 8-bit yuv420p");
+                if (seenFrame_ && color != metadata_)
+                    failStatus(path, "changing color interpretation within a clip is unsupported");
+                if (decoded_.frame->width != info_.width || decoded_.frame->height != info_.height)
+                    failStatus(path, "changing frame dimensions within a clip is unsupported");
+                metadata_ = color;
+                seenFrame_ = true;
+                auto image = convertDecodedFrame(decoded_.frame, color, path, linearize_, width_, height_);
+                av_frame_unref(decoded_.frame);
+                return image;
+            }
+            if (receive == AVERROR_EOF)
+                return std::nullopt;
+            if (receive != AVERROR(EAGAIN))
+                failStatus(path, "avcodec_receive_frame failed", receive);
+            if (flushed_)
+                failStatus(path, "decoder requested input after flush");
+            const int readStatus = av_read_frame(prepared_.format.context, packet_.packet);
+            if (readStatus == AVERROR_EOF) {
+                const int status = avcodec_send_packet(prepared_.codec.context, nullptr);
+                if (status < 0 && status != AVERROR_EOF)
+                    failStatus(path, "avcodec_send_packet (flush) failed", status);
+                flushed_ = true;
+                continue;
+            }
+            if (readStatus < 0)
+                failStatus(path, "av_read_frame failed", readStatus);
+            if (packet_.packet->stream_index != prepared_.streamIndex) {
+                av_packet_unref(packet_.packet);
+                continue;
+            }
+            const int status = avcodec_send_packet(prepared_.codec.context, packet_.packet);
+            av_packet_unref(packet_.packet);
+            if (status < 0)
+                failStatus(path, "avcodec_send_packet failed", status);
+        }
+    }
+
+private:
+    PreparedDecoder prepared_;
+    ClipInfo info_;
+    ColorPolicy policy_;
+    ColorOverride overrides_;
+    MediaColorMetadata metadata_;
+    PacketGuard packet_;
+    FrameGuard decoded_;
+    bool linearize_;
+    int width_;
+    int height_;
+    bool seenFrame_ = false;
+    bool flushed_ = false;
+};
+
 [[nodiscard]] SoftwareClip decodeSoftware(const std::string& path, int64_t maxFrames, bool linearize,
                                           const ColorPolicy& policy, const ColorOverride& overrides) {
+    SoftwareReader reader(path, linearize, policy, overrides);
     SoftwareClip result;
-    PreparedDecoder prepared(path);
-    auto& format = prepared.format;
-    auto& context = prepared.codec;
-    const int streamIndex = prepared.streamIndex;
-    AVStream* stream = prepared.stream;
-    result.info = prepared.openCodec(path);
-
-    result.metadata = resolveColor(stream->codecpar, path, policy, overrides);
-
-    PacketGuard packet;
-    FrameGuard decoded;
-    if (packet.packet == nullptr || decoded.frame == nullptr) {
-        failStatus(path, "av_packet_alloc/av_frame_alloc failed");
-    }
-    const auto convertFrame = [&](const AVFrame* yuv) {
-        const auto color = frameColor(yuv, stream->codecpar, path, policy, overrides);
-        if (!linearize &&
-            (color.transfer != gpu::MediaTransfer::Bt709 || color.matrix != gpu::MediaMatrix::Bt709 ||
-             color.range != gpu::MediaYuvRange::Limited || color.bitDepth != 8 || yuv->format != AV_PIX_FMT_YUV420P)) {
-            fail(path, pixelFormatName(static_cast<AVPixelFormat>(yuv->format)),
-                 "unsupported viewer representation; expected tagged limited-range BT.709 8-bit yuv420p");
-        }
-        if (!result.frames.empty() && color != result.metadata) {
-            fail(path, pixelFormatName(static_cast<AVPixelFormat>(yuv->format)),
-                 "changing color interpretation within a clip is unsupported");
-        }
-        result.metadata = color;
-        result.frames.push_back(convertDecodedFrame(yuv, color, path, linearize));
-    };
-    if (maxFrames == 0)
-        return result;
-
-    bool flushed = false;
-    while (true) {
-        int receiveStatus;
-        while ((receiveStatus = avcodec_receive_frame(context.context, decoded.frame)) == 0) {
-            convertFrame(decoded.frame);
-            av_frame_unref(decoded.frame);
-            if (maxFrames >= 0 && static_cast<int64_t>(result.frames.size()) >= maxFrames) {
-                return result;
-            }
-        }
-        if (receiveStatus != AVERROR(EAGAIN) && receiveStatus != AVERROR_EOF) {
-            failStatus(path, "avcodec_receive_frame failed", receiveStatus);
-        }
-        if (flushed) {
-            break;  // flushed decoder drained dry
-        }
-        int readStatus = av_read_frame(format.context, packet.packet);
-        if (readStatus == AVERROR_EOF) {
-            const int sendStatus = avcodec_send_packet(context.context, nullptr);
-            if (sendStatus < 0 && sendStatus != AVERROR_EOF) {
-                failStatus(path, "avcodec_send_packet (flush) failed", sendStatus);
-            }
-            flushed = true;
-            continue;
-        }
-        if (readStatus < 0) {
-            failStatus(path, "av_read_frame failed", readStatus);
-        }
-        if (packet.packet->stream_index != streamIndex) {
-            av_packet_unref(packet.packet);
-            continue;
-        }
-        const int sendStatus = avcodec_send_packet(context.context, packet.packet);
-        av_packet_unref(packet.packet);
-        if (sendStatus < 0) {
-            failStatus(path, "avcodec_send_packet failed", sendStatus);
-        }
+    result.info = reader.info();
+    result.metadata = reader.metadata();
+    while (maxFrames < 0 || static_cast<int64_t>(result.frames.size()) < maxFrames) {
+        auto frame = reader.next();
+        if (!frame)
+            break;
+        result.metadata = reader.metadata();
+        result.frames.push_back(std::move(*frame));
     }
     return result;
+}
+}  // namespace
+
+struct ViewerReferenceDecoder::Impl {
+    SoftwareReader reader;
+    Impl(const std::string& path, int width, int height) : reader(path, false, {}, {}, width, height) {}
+};
+
+ViewerReferenceDecoder::ViewerReferenceDecoder(const std::string& path, int width, int height) {
+    if (!((width == 0 && height == 0) || (width > 0 && height > 0 && width <= 8192 && height <= 8192)))
+        failStatus(path, "reference dimensions must both be zero (native) or in 1..8192");
+    impl_ = std::make_unique<Impl>(path, width, height);
+}
+ViewerReferenceDecoder::~ViewerReferenceDecoder() = default;
+const ClipInfo& ViewerReferenceDecoder::info() const {
+    return impl_->reader.info();
+}
+std::optional<CpuImage> ViewerReferenceDecoder::next() {
+    return impl_->reader.next();
 }
 
 SoftwareClip decodeClipSoftware(const std::string& path, int64_t maxFrames, const ColorPolicy& policy,

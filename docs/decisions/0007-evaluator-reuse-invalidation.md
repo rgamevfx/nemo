@@ -112,6 +112,12 @@ content-keyed representations.
 Pending publications coalesce by shared content identity, not destination:
 destination-local freshness must not place a duplicate identity twice in the
 same encoded chunk and retire that chunk while publishing its second entry.
+Coalesced work retains independent eligibility for each contributing
+destination; any still-current producer can publish the shared image.
+The destination registry and contributor set are bounded to 64 destinations.
+Late cancellation during metadata I/O prunes only obsolete identities and
+preserves original codec offsets; the index is rewritten without re-encoding
+or reevaluating surviving frames.
 
 The graph and timeline panels use the same controller and CommandStack.
 The graph exposes node creation, connections, parameter editing, and output

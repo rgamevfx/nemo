@@ -26,7 +26,8 @@ const ViewerScheduler::DestinationState* ViewerScheduler::stateLocked(ViewerDest
 bool ViewerScheduler::admissibleLocked(std::uint64_t id, ViewerDestination destination) const {
     const auto* state = stateLocked(destination);
     return nextToken_ != std::numeric_limits<std::uint64_t>::max() && id >= cancelFloor_ &&
-           ((state == nullptr) || id >= state->id) && ((state != nullptr) || destinations_.size() < kMaxDestinations);
+           ((state == nullptr) || id >= state->id) &&
+           ((state != nullptr) || destinations_.size() < kMaxViewerDestinations);
 }
 
 std::uint64_t ViewerScheduler::remainingRangeLocked() const {
@@ -199,8 +200,7 @@ bool ViewerScheduler::isCacheCurrent(const ViewerScheduledRequest& request) cons
     std::lock_guard const lock(mutex_);
     const auto* state = stateLocked(request.destination);
     return (state != nullptr) && request.token != 0 && request.token >= state->cacheFloor &&
-           request.revision == state->revision &&
-           (request.id > cancelFloor_ || request.token >= cancelToken_);
+           request.revision == state->revision && (request.id > cancelFloor_ || request.token >= cancelToken_);
 }
 
 bool ViewerScheduler::complete(const ViewerScheduledRequest& request, bool published) {

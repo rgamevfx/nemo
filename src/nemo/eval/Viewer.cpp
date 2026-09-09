@@ -94,10 +94,20 @@ std::optional<ViewerCacheCounts> ViewerSession::tryCacheCounts() const {
     return cache_ ? cache_->tryCounts() : std::optional<ViewerCacheCounts>{ViewerCacheCounts{}};
 }
 
+std::uint64_t& ViewerSession::generationForLocked(ViewerDestination destination) {
+    const auto found = latestGenerationByDestination_.find(destination);
+    if (found != latestGenerationByDestination_.end())
+        return found->second;
+    if (latestGenerationByDestination_.size() >= kMaxViewerDestinations)
+        throw std::runtime_error("viewer destination " + std::to_string(static_cast<std::uint32_t>(destination)) +
+                                 " exceeds destination capacity " + std::to_string(kMaxViewerDestinations));
+    return latestGenerationByDestination_.try_emplace(destination, 0).first->second;
+}
+
 void ViewerSession::supersedeCache(std::uint64_t revision, std::uint64_t generation, ViewerDestination destination) {
     std::lock_guard cacheLock(cacheMutex_);
     std::lock_guard freshnessLock(freshnessMutex_);
-    auto& currentGeneration = latestGenerationByDestination_[destination];
+    auto& currentGeneration = generationForLocked(destination);
     if (generation < currentGeneration)
         return;
     currentGeneration = generation;
@@ -128,7 +138,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     const auto revision = document.stateRevision();
     {
         std::lock_guard lock(freshnessMutex_);
-        auto& currentGeneration = latestGenerationByDestination_[destination];
+        auto& currentGeneration = generationForLocked(destination);
         if (generation == 0)
             generation = currentGeneration + 1;
         if (generation >= currentGeneration) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace nemo::eval {
@@ -13,5 +14,7 @@ enum class ViewerDestination : std::uint32_t {
     Interactive = 0,
     Cache = 1,
 };
+
+inline constexpr std::size_t kMaxViewerDestinations = 64;
 
 }  // namespace nemo::eval

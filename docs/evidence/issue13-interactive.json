@@ -65,6 +65,7 @@
     "vulkan_validation_warnings": 0,
     "regressions": [
       "SharedCacheIdentitySurvivesPublicationFromTwoDestinations failed before identity deduplication and passed after the fix, including reopen from disk.",
+      "The occupied-encoder StalePredecessorRetainsEncodedOffsetAcrossPersistence regression also reproduced lost coalesced history. Both producer insertion orders now retain the still-current destination after the other is superseded, including reopen.",
       "CacheRangeReportsAsynchronousDiskAdmissionFailure observes rejected persistence through runtime cache error/drop counters, with zero stored frames.",
       "InteractiveGraphAndTimelineUseCommandsAndSharePlayhead exercises native timeline drag and on-screen slip controls."
     ]

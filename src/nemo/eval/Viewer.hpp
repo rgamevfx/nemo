@@ -82,6 +82,8 @@ private:
         std::unique_ptr<gpu::GpuViewingTransform> transform;
     };
     [[nodiscard]] ViewingState& viewingStateFor(const ColorPolicy& policy);
+    // freshnessMutex_ is held by callers.
+    std::uint64_t& generationForLocked(ViewerDestination destination);
     gpu::Instance& instance_;
     gpu::Device& device_;
     gpu::Allocator& allocator_;

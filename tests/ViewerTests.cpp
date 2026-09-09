@@ -1530,6 +1530,21 @@ TEST(ViewerCache, StalePredecessorRetainsEncodedOffsetAcrossPersistence) {
                                                                .generation = 2,
                                                                .image = first.image,
                                                                .layout = first.layout}));
+        // Both insertion orders must keep the still-current Interactive
+        // producer when the independent Cache producer becomes stale.
+        const eval::ViewerCachePublication shared{.identity = "shared-forward",
+                                                  .chunkGroupKey = "display",
+                                                  .revision = 1,
+                                                  .generation = 3,
+                                                  .image = first.image,
+                                                  .layout = first.layout};
+        std::array<eval::ViewerCachePublication, 4> overlapping{shared, shared, shared, shared};
+        overlapping[1].destination = eval::ViewerDestination::Cache;
+        overlapping[2].destination = eval::ViewerDestination::Cache;
+        overlapping[2].identity = "shared-reverse";
+        overlapping[3].identity = "shared-reverse";
+        ASSERT_TRUE(cache.enqueueBatch(overlapping));
+        cache.supersede(2, 4, eval::ViewerDestination::Cache);
         ASSERT_EQ(release.signal(), VK_SUCCESS);
         cache.flush();
 
@@ -1546,6 +1561,8 @@ TEST(ViewerCache, StalePredecessorRetainsEncodedOffsetAcrossPersistence) {
         ASSERT_TRUE(replay.has_value());
         expectImagesClose(expectedLater, readViewerFrame(eval::ViewerFrame{replay->image, replay->layout}, boot),
                           0.035F, "surviving frame after reopening");
+        EXPECT_TRUE(reopened.lookup("shared-forward", first.layout, 5'000'000'000ULL));
+        EXPECT_TRUE(reopened.lookup("shared-reverse", first.layout, 5'000'000'000ULL));
     }
     expectValidationClean(*boot.instance);
 }

@@ -156,7 +156,18 @@ struct ViewerCache::Impl {
         std::size_t offset{0};
         ImageLayout layout;
     };
-    using Job = ViewerCachePublication;
+    struct Contributor {
+        std::uint64_t revision{};
+        std::uint64_t generation{};
+        ViewerDestination destination{ViewerDestination::Interactive};
+        std::function<bool()> publicationGuard;
+    };
+    struct Job : ViewerCachePublication {
+        explicit Job(ViewerCachePublication publication) : ViewerCachePublication(std::move(publication)) {}
+        // The primary publication needs no extra allocation. Coalescing keeps
+        // one image and at most one eligibility record per other destination.
+        std::vector<Contributor> alternatives;
+    };
     struct DecodedHot {
         std::shared_ptr<const gpu::Image> image;
         ImageLayout layout;
@@ -312,24 +323,83 @@ struct ViewerCache::Impl {
     }
 
     [[nodiscard]] bool staleLocked(const Job& job) const {
-        if (job.publicationGuard && !job.publicationGuard())
-            return true;
-        const auto revision = latestRevisionByDestination.find(job.destination);
-        if (revision != latestRevisionByDestination.end() && job.revision != revision->second)
-            return true;
-        const auto identity = latestGenerationByIdentity.find(std::pair{job.destination, job.identity});
-        return identity != latestGenerationByIdentity.end() && job.generation < identity->second;
+        const auto staleContributor = [&](const auto& contributor) {
+            if (contributor.publicationGuard && !contributor.publicationGuard())
+                return true;
+            const auto revision = latestRevisionByDestination.find(contributor.destination);
+            if (revision != latestRevisionByDestination.end() && contributor.revision != revision->second)
+                return true;
+            const auto identity = latestGenerationByIdentity.find(std::pair{contributor.destination, job.identity});
+            return identity != latestGenerationByIdentity.end() && contributor.generation < identity->second;
+        };
+        return staleContributor(job) && std::all_of(job.alternatives.begin(), job.alternatives.end(), staleContributor);
     }
 
     void retireGenerationLocked(const Job& job) {
-        const auto it = latestGenerationByIdentity.find(std::pair{job.destination, job.identity});
-        if (it != latestGenerationByIdentity.end() && it->second == job.generation)
-            latestGenerationByIdentity.erase(it);
+        const auto retireContributor = [&](const auto& contributor) {
+            const auto it = latestGenerationByIdentity.find(std::pair{contributor.destination, job.identity});
+            if (it != latestGenerationByIdentity.end() && it->second == contributor.generation)
+                latestGenerationByIdentity.erase(it);
+        };
+        retireContributor(job);
+        for (const auto& contributor : job.alternatives)
+            retireContributor(contributor);
+    }
+
+    bool admitDestinationLocked(ViewerDestination destination) {
+        if (latestGenerationByDestination.contains(destination) ||
+            latestGenerationByDestination.size() < kMaxViewerDestinations)
+            return true;
+        ++count.admissionRejected;
+        count.lastError = "viewer cache destination " + std::to_string(static_cast<std::uint32_t>(destination)) +
+                          " exceeds destination capacity " + std::to_string(kMaxViewerDestinations);
+        return false;
+    }
+
+    void mergeContributorLocked(Job& job, ViewerCachePublication publication) {
+        const bool primary = job.destination == publication.destination;
+        const auto found = std::find_if(job.alternatives.begin(), job.alternatives.end(), [&](const auto& origin) {
+            return origin.destination == publication.destination;
+        });
+        const bool append = !primary && found == job.alternatives.end();
+        const auto index = static_cast<std::size_t>(found - job.alternatives.begin());
+        if (append && job.alternatives.size() == job.alternatives.capacity())
+            job.alternatives.reserve(std::max(job.alternatives.size() + 1, job.alternatives.capacity() * 2));
+        // Reserve before touching the generation map; the remaining moves
+        // cannot allocate, so a failed admission cannot leave orphan metadata.
+        latestGenerationByIdentity[{publication.destination, job.identity}] = publication.generation;
+        const auto replace = [&](auto& contributor) {
+            contributor.revision = publication.revision;
+            contributor.generation = publication.generation;
+            contributor.publicationGuard = std::move(publication.publicationGuard);
+        };
+        if (primary)
+            replace(job);
+        else if (append)
+            job.alternatives.push_back({publication.revision, publication.generation, publication.destination,
+                                        std::move(publication.publicationGuard)});
+        else
+            replace(job.alternatives[index]);
     }
 
     void retireGenerationsLocked(const std::vector<Job>& jobs) {
         for (const Job& job : jobs)
             retireGenerationLocked(job);
+    }
+
+    // Called after encoding: preserve original codec offsets while removing
+    // obsolete identities, including a late cancellation during metadata I/O.
+    bool discardStaleEncodedLocked(std::vector<Job>& jobs, std::vector<std::size_t>& offsets) {
+        const auto before = jobs.size();
+        for (std::size_t index = jobs.size(); index-- > 0;) {
+            if (!staleLocked(jobs[index]))
+                continue;
+            ++count.staleRejected;
+            retireGenerationLocked(jobs[index]);
+            jobs.erase(jobs.begin() + static_cast<std::ptrdiff_t>(index));
+            offsets.erase(offsets.begin() + static_cast<std::ptrdiff_t>(index));
+        }
+        return before != jobs.size();
     }
 
     void queueChunkCleanupLocked(const std::shared_ptr<DiskChunk>& chunk, std::vector<Cleanup>& cleanup) {
@@ -603,14 +673,7 @@ struct ViewerCache::Impl {
                 std::lock_guard lock(mutex);
                 addEncodeStats(count.encode, stats);
                 count.encodedFrames += static_cast<std::uint64_t>(std::max(stats.encodedFrames, 0));
-                for (std::size_t index = jobs.size(); index-- > 0;) {
-                    if (!staleLocked(jobs[index]))
-                        continue;
-                    ++count.staleRejected;
-                    retireGenerationLocked(jobs[index]);
-                    jobs.erase(jobs.begin() + static_cast<std::ptrdiff_t>(index));
-                    encodedOffsets.erase(encodedOffsets.begin() + static_cast<std::ptrdiff_t>(index));
-                }
+                discardStaleEncodedLocked(jobs, encodedOffsets);
                 if (jobs.empty()) {
                     discard = true;
                 } else {
@@ -647,70 +710,70 @@ struct ViewerCache::Impl {
                 removePathNoThrow(temporary);
                 return;
             }
-            json frameMetadata = json::array();
-            for (std::size_t index = 0; index < jobs.size(); ++index) {
-                frameMetadata.push_back({{"identity", jobs[index].identity},
-                                         {"representation", jobs[index].chunkGroupKey},
-                                         {"offset", encodedOffsets[index]},
-                                         {"width", jobs[index].layout.width},
-                                         {"height", jobs[index].layout.height}});
-            }
-            const json metadata{{"format", "nemo-viewer-cache-v2"},
-                                {"file", finalMedia.filename().string()},
-                                {"frameCount", encodedFrameCount},
-                                {"frames", frameMetadata}};
-            {
-                std::ofstream output(temporaryMetadata, std::ios::trunc);
-                if (!output)
-                    throw std::runtime_error("cannot create cache metadata");
-                output << metadata.dump();
-                output.close();
-                if (!output)
-                    throw std::runtime_error("cannot write cache metadata");
-            }
-
-            // The metadata is not visible until the finalized media exists.
-            // A crash between these renames leaves only an ignored orphan.
+            // Media is immutable after encoding. Metadata may need a smaller
+            // index if a contributor is cancelled during filesystem I/O.
+            // Each retry removes at least one job; no re-encoding or graph
+            // evaluation occurs, and no filesystem I/O holds the state lock.
             std::filesystem::rename(temporary, finalMedia, fileError);
             if (fileError)
                 throw std::runtime_error("cannot publish encoded chunk: " + fileError.message());
             mediaPublished = true;
-            std::filesystem::rename(temporaryMetadata, finalMetadata, fileError);
-            if (fileError)
-                throw std::runtime_error("cannot publish cache metadata: " + fileError.message());
-            metadataPublished = true;
-
             auto newChunk =
                 std::make_shared<DiskChunk>(DiskChunk{finalMedia, finalMetadata, bytes, 0, 0, {}, false, false});
-            std::vector<Cleanup> cleanup;
-            bool stale = false;
-            {
-                std::lock_guard lock(mutex);
-                for (const Job& job : jobs) {
-                    if (staleLocked(job)) {
-                        stale = true;
-                        ++count.staleRejected;
+            bool retry = false;
+            do {
+                json frameMetadata = json::array();
+                for (std::size_t index = 0; index < jobs.size(); ++index) {
+                    frameMetadata.push_back({{"identity", jobs[index].identity},
+                                             {"representation", jobs[index].chunkGroupKey},
+                                             {"offset", encodedOffsets[index]},
+                                             {"width", jobs[index].layout.width},
+                                             {"height", jobs[index].layout.height}});
+                }
+                const json metadata{{"format", "nemo-viewer-cache-v2"},
+                                    {"file", finalMedia.filename().string()},
+                                    {"frameCount", encodedFrameCount},
+                                    {"frames", frameMetadata}};
+                {
+                    std::ofstream output(temporaryMetadata, std::ios::trunc);
+                    if (!output)
+                        throw std::runtime_error("cannot create cache metadata");
+                    output << metadata.dump();
+                    output.close();
+                    if (!output)
+                        throw std::runtime_error("cannot write cache metadata");
+                }
+                std::filesystem::rename(temporaryMetadata, finalMetadata, fileError);
+                if (fileError)
+                    throw std::runtime_error("cannot publish cache metadata: " + fileError.message());
+                metadataPublished = true;
+
+                std::vector<Cleanup> cleanup;
+                {
+                    std::lock_guard lock(mutex);
+                    retry = discardStaleEncodedLocked(jobs, encodedOffsets);
+                    if (!retry || jobs.empty()) {
+                        reservedDiskBytes -= std::min(reservedDiskBytes, reserved);
+                        reserved = 0;
+                        if (!jobs.empty()) {
+                            if (!chunks.emplace(finalMedia, newChunk).second)
+                                throw std::runtime_error("viewer cache chunk path was concurrently created");
+                            for (std::size_t index = 0; index < jobs.size(); ++index) {
+                                detachEntryLocked(jobs[index].identity, cleanup);
+                                entries.insert_or_assign(
+                                    jobs[index].identity,
+                                    DiskEntry{newChunk, encodedOffsets[index], jobs[index].layout});
+                                ++newChunk->entryRefs;
+                            }
+                            count.diskBytes += bytes;
+                            count.published += jobs.size();
+                        }
+                        retireGenerationsLocked(jobs);
                     }
                 }
-                reservedDiskBytes -= std::min(reservedDiskBytes, reserved);
-                if (!stale) {
-                    if (!chunks.emplace(finalMedia, newChunk).second)
-                        throw std::runtime_error("viewer cache chunk path was concurrently created");
-                    for (std::size_t index = 0; index < jobs.size(); ++index) {
-                        detachEntryLocked(jobs[index].identity, cleanup);
-                        entries.insert_or_assign(jobs[index].identity,
-                                                 DiskEntry{newChunk, encodedOffsets[index], jobs[index].layout});
-                        ++newChunk->entryRefs;
-                    }
-                    count.diskBytes += bytes;
-                    // `published` is a frame count; each finalized chunk may
-                    // independently publish several indexed identities.
-                    count.published += jobs.size();
-                }
-                retireGenerationsLocked(jobs);
-            }
-            removeFilesNoThrow(cleanup);
-            if (stale)
+                removeFilesNoThrow(cleanup);
+            } while (retry && !jobs.empty());
+            if (jobs.empty())
                 removeFilesNoThrow({Cleanup{finalMedia, finalMetadata}});
         } catch (const std::exception& error) {
             removePathNoThrow(temporary);
@@ -1017,6 +1080,8 @@ bool ViewerCache::enqueueLocked(ViewerCachePublication publication) {
         return false;
     if (!impl_->configured || impl_->stopping)
         return false;
+    if (!impl_->admitDestinationLocked(publication.destination))
+        return false;
     // Revision freshness is an equality token within this destination.
     // Generation remains the monotonic ordering used to reject older
     // publications. Other destinations retain their own valid work.
@@ -1043,21 +1108,18 @@ bool ViewerCache::enqueueLocked(ViewerCachePublication publication) {
         impl_->latestRevisionByDestination[publication.destination] = publication.revision;
     }
 
-    const bool alreadyIndexed = impl_->entries.contains(publication.identity);
-    const bool alreadyPending =
-        std::any_of(impl_->pending.begin(), impl_->pending.end(),
-                    [&](const Impl::Job& pending) { return pending.identity == publication.identity; });
-    if (!alreadyIndexed && !alreadyPending && impl_->entries.size() >= impl_->options.maxMetadataEntries) {
+    const auto pending = std::find_if(impl_->pending.begin(), impl_->pending.end(),
+                                      [&](const Impl::Job& job) { return job.identity == publication.identity; });
+    if (pending != impl_->pending.end()) {
+        impl_->mergeContributorLocked(*pending, std::move(publication));
+        impl_->wake.notify_one();
+        return true;
+    }
+    if (!impl_->entries.contains(publication.identity) && impl_->entries.size() >= impl_->options.maxMetadataEntries) {
         ++impl_->count.admissionRejected;
         impl_->count.lastError = "viewer cache metadata capacity reached";
         return false;
     }
-    std::erase_if(impl_->pending, [&](const Impl::Job& pending) {
-        if (pending.identity != publication.identity)
-            return false;
-        impl_->retireGenerationLocked(pending);
-        return true;
-    });
     // The worker removes a whole batch from pending, so activeFrames is the
     // exact number of retained images and must be counted frame-for-frame.
     while (impl_->pending.size() + impl_->count.activeFrames >= impl_->options.maxPendingFrames) {
@@ -1070,7 +1132,7 @@ bool ViewerCache::enqueueLocked(ViewerCachePublication publication) {
         impl_->retireGenerationLocked(dropped);
         ++impl_->count.admissionDropped;
     }
-    impl_->pending.push_back(std::move(publication));
+    impl_->pending.emplace_back(std::move(publication));
     try {
         const auto& pending = impl_->pending.back();
         impl_->latestGenerationByIdentity[{pending.destination, pending.identity}] = pending.generation;
@@ -1087,6 +1149,8 @@ bool ViewerCache::enqueueLocked(ViewerCachePublication publication) {
 
 void ViewerCache::supersede(std::uint64_t revision, std::uint64_t generation, ViewerDestination destination) {
     std::lock_guard lock(impl_->mutex);
+    if (!impl_->admitDestinationLocked(destination))
+        throw std::runtime_error(impl_->count.lastError);
     const auto current = impl_->latestGenerationByDestination.find(destination);
     if (current != impl_->latestGenerationByDestination.end() && generation < current->second)
         return;

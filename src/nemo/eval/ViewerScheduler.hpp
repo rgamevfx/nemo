@@ -121,7 +121,6 @@ private:
     void dropRangeLocked(ViewerDestination destination);
     [[nodiscard]] const DestinationState* stateLocked(ViewerDestination destination) const;
 
-    static constexpr std::size_t kMaxDestinations = 64;
     const std::size_t interactiveCapacity_;
     mutable std::mutex mutex_;
     std::deque<ViewerScheduledRequest> interactive_;

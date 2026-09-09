@@ -1,3 +1,5 @@
+#include "ViewerController.hpp"
+#include "ViewerItem.hpp"
 #include "WorkspaceController.hpp"
 
 #include <QGuiApplication>
@@ -50,6 +52,8 @@ class WorkspaceDragTest : public testing::Test {
 protected:
     QTemporaryDir directory;
     nemo::workspace::WorkspaceController controller{directory.filePath("workspace.json")};
+    nemo::ui::ViewerRuntime viewerRuntime;
+    nemo::ui::ViewerController viewerController{&viewerRuntime};
     QQmlApplicationEngine engine;
     QSignalSpy warnings{&engine, &QQmlEngine::warnings};
     QQuickWindow* window = nullptr;
@@ -59,10 +63,15 @@ protected:
 
     void SetUp() override {
         engine.rootContext()->setContextProperty("workspace", &controller);
+        engine.rootContext()->setContextProperty("viewerController", &viewerController);
         engine.load(QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/Main.qml")));
         ASSERT_FALSE(engine.rootObjects().isEmpty());
         window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
         ASSERT_NE(window, nullptr);
+        // Main starts hidden until its host configures the rendering backend.
+        // These workspace-only gestures use the real unloaded viewer on
+        // Qt's headless Null RHI; native image presentation is verified separately.
+        window->show();
         window->requestActivate();
         QTest::qWait(60);
         const auto initial = snapshot();
@@ -107,8 +116,7 @@ protected:
     void release(QPoint to) {
         QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, to);
         QTest::qWait(40);
-        // Observe a rendered result, not just updated QML properties. Qt's
-        // software scene graph also retires destroyed image textures at sync.
+        // Observe a completed scenegraph frame, not just updated QML properties.
         QSignalSpy rendered(window, &QQuickWindow::frameSwapped);
         window->update();
         EXPECT_TRUE(rendered.wait(1000));
@@ -254,13 +262,39 @@ TEST_F(WorkspaceDragTest, EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges) {
     EXPECT_GE(upper->height(), 80);
     EXPECT_GE(lower->height(), 80);
 }
+
+TEST_F(WorkspaceDragTest, NestedPanelMenusSwitchTypeAndCloseViewer) {
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("panelType_" + other));
+    QTest::qWait(30);
+    QTest::keyClick(window, Qt::Key_Down);  // Viewer
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(60);
+    const auto switched = snapshot();
+    const auto* leaf = containing(switched, other.toStdString());
+    ASSERT_NE(leaf, nullptr);
+    EXPECT_EQ(leaf->at("panels").at(0).at("type"), "viewer");
+
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("panelType_" + other));
+    QTest::qWait(30);
+    // Menus skip separators during keyboard navigation.
+    for (int i = 0; i < 7; ++i)
+        QTest::keyClick(window, Qt::Key_Down);
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(60);
+    EXPECT_EQ(containing(snapshot(), other.toStdString()), nullptr);
+}
 }  // namespace
 
 int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
-    qputenv("QT_QUICK_BACKEND", "software");
+    // Use QRhi like production, but without a platform GPU for these layout
+    // and input assertions. Qt 6.4's software adaptation leaks its texture
+    // cache on invalidate; that upstream path is not used by Nemo's viewer.
+    QQuickWindow::setSceneGraphBackend(QStringLiteral("rhi"));
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::Null);
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
+    qmlRegisterType<nemo::ui::ViewerItem>("Nemo", 1, 0, "ViewerItem");
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

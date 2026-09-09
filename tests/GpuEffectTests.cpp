@@ -151,6 +151,8 @@ struct Composition {
     request.output = resolveOutput(doc);
     request.localTime = frame;
     request.region = region;
+    request.fullWidth = region.x + region.width;
+    request.fullHeight = region.y + region.height;
     return request;
 }
 

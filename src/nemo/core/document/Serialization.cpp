@@ -1,18 +1,11 @@
 #include "nemo/core/document/Serialization.hpp"
 
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <utility>
 
 namespace nemo {
-
-namespace {
-
-// Node types this build knows how to evaluate come from the graph's port
-// interface table (one source of truth). Unknown types load fine and surface
-// as warnings; they are never silently dropped.
-
-}  // namespace
 
 nlohmann::json saveDocument(const Document& document) {
     nlohmann::json nodes = nlohmann::json::array();
@@ -25,12 +18,27 @@ nlohmann::json saveDocument(const Document& document) {
                          {"from", {{"node", edge.from.node}, {"port", edge.from.port}}},
                          {"to", {{"node", edge.to.node}, {"port", edge.to.port}}}});
     }
+    // Persistent source media (issue #11): plain reference records only —
+    // path, time mapping, interpretation policy. No runtime/decoder state.
+    nlohmann::json sources = nlohmann::json::object();
+    for (const auto& [key, source] : document.sources) {
+        nlohmann::json entry{{"path", source.path},
+                             {"frameOffset", source.frameOffset},
+                             {"frameStep", source.frameStep}};
+        if (source.revision != 0)
+            entry["revision"] = source.revision;
+        if (!source.interpretation.empty()) {
+            entry["interpretation"] = source.interpretation;
+        }
+        sources[key] = std::move(entry);
+    }
     return {{"schema", Document::kSchemaVersion},
             {"name", document.name},
             {"color",
              {{"workingSpace", document.color.workingSpace},
               {"viewerTransform", document.color.viewerTransform},
               {"deliveryTransform", document.color.deliveryTransform}}},
+            {"sources", std::move(sources)},
             {"nodes", nodes},
             {"edges", edges}};
 }
@@ -63,6 +71,66 @@ LoadResult loadDocument(const nlohmann::json& json) {
             color->value("deliveryTransform", result.document.color.deliveryTransform);
     } else if (color != json.end()) {
         result.warnings.push_back("document 'color' field is not an object; using default color policy");
+    }
+
+    // Persistent sources (issue #11): plain reference records. A missing
+    // block loads with no sources; malformed entries are structural errors
+    // (silently dropping media would hide broken references), and an
+    // empty path is rejected the same way setSourceCommand rejects it.
+    if (auto sources = json.find("sources"); sources != json.end() && sources->is_object()) {
+        for (auto it = sources->begin(); it != sources->end(); ++it) {
+            if (it.key().empty())
+                throw DeserializeError("source key must not be empty");
+            const nlohmann::json& entry = it.value();
+            if (!entry.is_object() || !entry.contains("path") || !entry.at("path").is_string()) {
+                throw DeserializeError("malformed source '" + it.key() + "': string 'path' is required");
+            }
+            SourceReference source;
+            source.path = entry.at("path").get<std::string>();
+            if (source.path.empty()) {
+                throw DeserializeError("source '" + it.key() + "' has an empty path");
+            }
+            if (entry.contains("revision")) {
+                const auto& revision = entry.at("revision");
+                if (!revision.is_number_unsigned() &&
+                    (!revision.is_number_integer() || revision.get<std::int64_t>() < 0))
+                    throw DeserializeError("source '" + it.key() + "': 'revision' must be a nonnegative integer");
+                source.revision = revision.get<std::uint64_t>();
+            }
+            if (entry.contains("frameOffset")) {
+                const auto& value = entry.at("frameOffset");
+                if (!value.is_number_integer() ||
+                    (value.is_number_unsigned() &&
+                     value.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
+                    throw DeserializeError("source '" + it.key() + "': 'frameOffset' must be a signed 64-bit integer");
+                source.frameOffset = entry.at("frameOffset").get<std::int64_t>();
+            }
+            if (entry.contains("frameStep")) {
+                const auto& value = entry.at("frameStep");
+                if (!value.is_number_integer() ||
+                    (value.is_number_unsigned() &&
+                     value.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
+                    throw DeserializeError("source '" + it.key() + "': 'frameStep' must be a signed 64-bit integer");
+                source.frameStep = entry.at("frameStep").get<std::int64_t>();
+                if (source.frameStep == 0) {
+                    throw DeserializeError("source '" + it.key() + "': 'frameStep' must not be zero");
+                }
+            }
+            if (auto interpretation = entry.find("interpretation");
+                interpretation != entry.end() && interpretation->is_object()) {
+                for (auto tag = interpretation->begin(); tag != interpretation->end(); ++tag) {
+                    if (!tag.value().is_string())
+                        throw DeserializeError("source '" + it.key() + "': interpretation '" + tag.key() +
+                                               "' must be a string");
+                    source.interpretation[tag.key()] = tag.value().get<std::string>();
+                }
+            } else if (interpretation != entry.end()) {
+                throw DeserializeError("source '" + it.key() + "': 'interpretation' must be an object");
+            }
+            result.document.sources[it.key()] = std::move(source);
+        }
+    } else if (sources != json.end()) {
+        throw DeserializeError("document 'sources' field must be an object");
     }
 
     // Pass 1: nodes (ids are remapped through insertion order to keep Graph's

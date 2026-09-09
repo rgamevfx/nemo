@@ -37,6 +37,13 @@ struct SubmissionStats {
     std::uint64_t gpuTimedSubmissions = 0;  // submissions measured with timestamp queries
 };
 
+struct DeviceConfig {
+    bool presentation = false;
+    bool externalSharing = false;
+    // An explicit physical device must belong to the supplied Instance.
+    VkPhysicalDevice physical = VK_NULL_HANDLE;
+};
+
 // Owns the physical/logical device pair with explicit queue selection.
 //
 // Queue selection contract (headless bootstrap): the graphics family is the
@@ -74,9 +81,14 @@ public:
     struct Token;
     explicit Device(Token);
     ~Device();
-    static std::unique_ptr<Device> create(Instance& instance);
+    // Presentation enables swapchain support. Qt adopts a separate logical
+    // device, never an execution queue. External sharing is opt-in and
+    // requires the platform's memory and semaphore handle extensions.
+    static std::unique_ptr<Device> create(Instance& instance, const DeviceConfig& config = {});
     [[nodiscard]] uint32_t graphics_family() const { return graphics_family_; }
     [[nodiscard]] uint32_t transfer_family() const { return transfer_family_; }
+    [[nodiscard]] bool external_sharing_enabled() const { return external_sharing_; }
+    [[nodiscard]] bool presentation_enabled() const { return presentation_; }
 
     // Reserved video queue families, when the driver advertises them
     // (VK_KHR_video_decode/encode extensions enabled at creation). Absent
@@ -159,6 +171,8 @@ private:
     VkPhysicalDevice physical_ = VK_NULL_HANDLE;
     VkDevice device_ = VK_NULL_HANDLE;
     VkPhysicalDeviceProperties properties_{};
+    bool presentation_{false};
+    bool external_sharing_{false};
     bool host_query_reset_ = false;
     std::vector<VkQueueFamilyProperties> family_properties_;
     uint32_t graphics_family_ = 0;

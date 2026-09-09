@@ -31,6 +31,7 @@
 #include "nemo/media/VideoDecode.hpp"
 #ifdef NEMO_BUILD_GPU
 #include "nemo/eval/GpuExecutor.hpp"
+#include "nemo/eval/SourceSession.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
@@ -359,8 +360,14 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
                 effects = nemo::eval::glslEffectLibrary();
             }
             if (report["errors"].empty()) {
-                nemo::eval::GpuEvaluation evaluation =
-                    nemo::eval::evaluateGpu(loaded.document, request, effects, *device, *allocator);
+                std::filesystem::path mediaShaderDir = shaderDir;
+#ifdef NEMO_SLANG_SPV_DIR
+                if (mediaShaderDir.empty())
+                    mediaShaderDir = NEMO_SLANG_SPV_DIR;
+#endif
+                nemo::eval::SourceSession sources(*instance, *device, *allocator, mediaShaderDir / "mediaConvert.spv");
+                nemo::eval::GpuEvaluation evaluation = nemo::eval::evaluateGpu(
+                    loaded.document, request, effects, *device, *allocator, 10'000'000'000ULL, nullptr, &sources);
 
                 // Declared diagnostic-only readback of the requested output.
                 const nemo::CpuImage image = evaluation.readBack(request.output, *device, *allocator);

@@ -4,11 +4,13 @@
 # native path, built only when the GPU module is available.
 add_library(nemo_eval
     GpuExecutor.cpp
+    SourceSession.cpp
+    Viewer.cpp
 )
 add_library(nemo::eval ALIAS nemo_eval)
 
 target_include_directories(nemo_eval PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-target_link_libraries(nemo_eval PUBLIC nemo::core nemo::gpu)
+target_link_libraries(nemo_eval PUBLIC nemo::core nemo::gpu nemo::media)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(nemo_eval PRIVATE -Wall -Wextra -Wpedantic)

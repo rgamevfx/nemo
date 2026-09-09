@@ -26,8 +26,10 @@
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
-    // meta: (region width, region height, region.x, region.y)
+    // meta: (full image width, full image height, region.x, region.y)
     uint4 meta;
+    // meta2: raster (image width, image height, samplingScale, 0) — issue #11
+    uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
     float4 param0;
@@ -47,7 +49,7 @@ RWTexture2D<float4> out_color;
 void main(uint3 tid : SV_DispatchThreadID)
 {
     uint2 p = tid.xy;
-    if (p.x >= meta.x || p.y >= meta.y) { return; }
+    if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
     float4 bg = in_a.Load(p);   // port A: over base (background)
     float4 fg = in_b.Load(p);   // port B: over source (foreground)

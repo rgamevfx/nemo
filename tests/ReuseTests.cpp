@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -47,6 +48,8 @@ EvaluationRequest requestFor(const Document& document, const std::string& output
     request.output = document.graph.nodeByName(outputName)->id;
     request.localTime = frame;
     request.region = region;
+    request.fullWidth = std::max(8, region.x + region.width);
+    request.fullHeight = std::max(4, region.y + region.height);
     return request;
 }
 
@@ -447,7 +450,8 @@ TEST(ReuseTest, AliasedParamSetsGetDistinctKeys) {
 
     const ResultKey valueWithEquals = keyFor({{"a", "b=c"}});
     const ResultKey keyWithEquals = keyFor({{"a=b", "c"}});
-    const ResultKey valueWithSeparator = keyFor({{"a", "v\x1Fb=c"}});
+    const ResultKey valueWithSeparator = keyFor({{"a", "v\x1F"
+                                                       "b=c"}});
     const ResultKey twoParams = keyFor({{"a", "v"}, {"b", "c"}});
 
     EXPECT_NE(valueWithEquals, keyWithEquals);

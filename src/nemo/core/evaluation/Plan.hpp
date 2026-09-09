@@ -107,7 +107,10 @@ struct EvaluationPlan {
                          {"width", plan.request.region.width},
                          {"height", plan.request.region.height}}},
                        {"channels", plan.request.channels},
-                       {"quality", qualityName(plan.request.quality)}};
+                       {"quality", qualityName(plan.request.quality)},
+                       {"samplingScale", plan.request.samplingScale}};
+    json["request"]["fullWidth"] = plan.request.imageWidth();
+    json["request"]["fullHeight"] = plan.request.imageHeight();
     json["steps"] = std::move(steps);
     json["result"] = imageIdentityToJson(plan.result);
     return json;

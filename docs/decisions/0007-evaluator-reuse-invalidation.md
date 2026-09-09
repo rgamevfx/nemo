@@ -19,8 +19,9 @@ document revision, result cache, or publication guard existed.
    (`ResultKey`, `src/nemo/core/evaluation/Reuse.hpp/.cpp`) covers the
    implementation version, node type, the node's authored parameter state,
    the keys of its effective inputs in declared port order, the mapped
-   local time, region, channels, quality, working space, and (for the GPU
-   path) a fingerprint of the supplied effect library. Keys are computed
+   local time, region, full image domain, sampling scale, channels, quality,
+   working space, source reference content (including media revision), and
+   (for the GPU path) a fingerprint of the supplied effect library. Keys are computed
    before execution, so authored state is what is hashed:
    executor-injected defaults are a deterministic function of the
    implementation version. A node with an explicit default value and one
@@ -50,7 +51,7 @@ document revision, result cache, or publication guard existed.
 
 4. **Publication freshness is a ticket, not invalidation.**
    `ResultCache::beginTicket(document)` captures the document revision
-   (`Document::stateRevision()`: graph edit counter + color policy content)
+   (`Document::stateRevision()`: graph edit counter + color policy + source content)
    and a request generation. A computed result publishes only while the
    ticket still matches; superseded publications are discarded and counted
    (`staleRejected`), never stored. Reuse identity deliberately ignores the

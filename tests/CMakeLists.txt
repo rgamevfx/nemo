@@ -7,6 +7,7 @@ add_executable(nemo_core_tests
     ReuseTests.cpp
     CommandTests.cpp
     PersistenceTests.cpp
+    ViewerModelTests.cpp
 )
 target_link_libraries(nemo_core_tests PRIVATE nemo::core GTest::gtest_main)
 
@@ -75,6 +76,13 @@ if(NEMO_BUILD_GPU)
             NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/gpu/shaders")
     endif()
     gtest_discover_tests(nemo_effect_tests)
+    add_executable(nemo_viewer_tests ViewerTests.cpp)
+    target_link_libraries(nemo_viewer_tests PRIVATE nemo::eval nemo::media GTest::gtest_main)
+    if(DEFINED NEMO_SLANG_SPV_DIR)
+        target_compile_definitions(nemo_viewer_tests PRIVATE NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
+        add_dependencies(nemo_viewer_tests nemo_shaders)
+    endif()
+    gtest_discover_tests(nemo_viewer_tests)
 endif()
 
 add_executable(nemo_workspace_tests WorkspaceTests.cpp)
@@ -87,13 +95,19 @@ if(NEMO_BUILD_UI)
         WorkspaceDragTests.cpp
         ../apps/nemo-ui/WorkspaceController.cpp
         ../apps/nemo-ui/WorkspaceController.hpp
+        ../apps/nemo-ui/ViewerController.cpp
+        ../apps/nemo-ui/ViewerController.hpp
+        ../apps/nemo-ui/ViewerRuntime.cpp
+        ../apps/nemo-ui/ViewerRuntime.hpp
+        ../apps/nemo-ui/ViewerItem.cpp
+        ../apps/nemo-ui/ViewerItem.hpp
     )
     set_target_properties(nemo_workspace_ui_tests PROPERTIES AUTOMOC ON)
     target_compile_definitions(nemo_workspace_ui_tests PRIVATE
         NEMO_UI_QML_DIR="${PROJECT_SOURCE_DIR}/apps/nemo-ui/qml"
     )
     target_link_libraries(nemo_workspace_ui_tests PRIVATE
-        nemo::workspace GTest::gtest Qt6::Quick Qt6::QuickControls2 Qt6::Test
+        nemo::workspace nemo::eval GTest::gtest Qt6::Quick Qt6::QuickControls2 Qt6::Test
     )
     gtest_discover_tests(nemo_workspace_ui_tests)
 endif()

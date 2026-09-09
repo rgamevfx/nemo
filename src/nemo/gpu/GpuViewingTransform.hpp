@@ -1,5 +1,6 @@
 #pragma once
 
+#include "nemo/core/evaluation/Image.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 namespace nemo::media {
 struct OcioGpuProgram;
@@ -10,6 +11,7 @@ namespace nemo::gpu {
 struct GpuViewedImage {
     gpu::Image image;  // Display-referred RGBA32F, GENERAL layout after completion.
     gpu::SubmissionQueue::Completion completion;
+    ColorInterpretation color{ColorInterpretation::DisplayReferred};
 };
 
 // Worker-side OCIO preparation; compiles and uploads immutable LUTs once.
@@ -26,7 +28,9 @@ public:
     GpuViewingTransform(gpu::Device& device, gpu::Allocator& allocator, const media::OcioGpuProgram& program);
     // No host wait or pixel readback. nullopt reports shared queue capacity.
     // Dropping the result cancels publication, not GPU resource ownership.
-    [[nodiscard]] std::optional<GpuViewedImage> submit(const gpu::Image& source) const;
+    // Source interpretation is mandatory: viewed/cache-replay images must
+    // never enter this transform a second time.
+    [[nodiscard]] std::optional<GpuViewedImage> submit(const gpu::Image& source, ColorInterpretation sourceColor) const;
 
 private:
     gpu::Device& device_;
@@ -37,4 +41,5 @@ private:
     std::vector<gpu::ComputeBinding> bindings_;
     std::uint32_t descriptorSet_;
 };
+
 }  // namespace nemo::gpu

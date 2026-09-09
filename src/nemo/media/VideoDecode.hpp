@@ -71,7 +71,8 @@ struct ClipInfo {
     int width = 0;
     int height = 0;
     double frameRate = 0.0;
-    int64_t frameCount = -1;  // -1 when the container does not declare it
+    int64_t frameCount = -1;   // -1 when the container does not declare it
+    double pixelAspect = 1.0;  // Display width / height of one source pixel.
 };
 
 // How the clip is being decoded, with the measured reason when the

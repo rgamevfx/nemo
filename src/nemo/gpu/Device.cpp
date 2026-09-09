@@ -43,9 +43,11 @@ std::vector<VkQueueFamilyProperties> queueFamilyProperties(VkPhysicalDevice phys
 
 }  // namespace
 
-std::unique_ptr<Device> Device::create(Instance& instance) {
+std::unique_ptr<Device> Device::create(Instance& instance, const DeviceConfig& config) {
     auto device = std::make_unique<Device>(Device::Token{});
-    device->physical_ = selectPhysicalDevice(instance.handle());
+    device->presentation_ = config.presentation;
+    device->external_sharing_ = config.externalSharing;
+    device->physical_ = config.physical != VK_NULL_HANDLE ? config.physical : selectPhysicalDevice(instance.handle());
     vkGetPhysicalDeviceProperties(device->physical_, &device->properties_);
     device->family_properties_ = queueFamilyProperties(device->physical_);
     // Storage-image effect kernels (issue #8): Slang emits RGBA32F storage
@@ -93,8 +95,9 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
                                      return (properties.queueFlags & flags) == flags && properties.queueCount > 0;
                                  });
     if (graphics == device->family_properties_.end()) {
-        throw GpuException(GpuError::VulkanError, std::string("no graphics+compute queue family on physical device ") +
-                                                      device->properties_.deviceName);
+        throw GpuException(GpuError::InvalidRequest,
+                           std::string("no graphics+compute queue family on physical device ") +
+                               device->properties_.deviceName);
     }
     device->graphics_family_ = static_cast<uint32_t>(graphics - device->family_properties_.begin());
 
@@ -163,24 +166,18 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
         reserve_video(VK_QUEUE_VIDEO_ENCODE_BIT_KHR, device->encode_family_);
     }
 
-    // One queue per selected family, deduplicated when the driver offers
-    // no dedicated transfer family (VUID-02802 requires unique family
-    // indices).
     std::vector<VkDeviceQueueCreateInfo> queue_infos;
-    std::vector<float> priorities(1, 1.0f);
+    const float priority = 1.0f;
     for (uint32_t family : reserved_families) {
         VkDeviceQueueCreateInfo queue_info{};
         queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_info.queueFamilyIndex = family;
         queue_info.queueCount = 1;
-        queue_info.pQueuePriorities = priorities.data();
+        queue_info.pQueuePriorities = &priority;
         queue_infos.push_back(queue_info);
     }
 
     // Device extensions enabled exactly when advertised: video decode (with
-    // the codec profiles the media path uses) and video encode stay
-    // capability-measured; the enabled list is also reported to FFmpeg's
-    // AVVulkanDeviceContext (issue #10).: video decode (with
     // the codec profiles the media path uses) and video encode stay
     // capability-measured; the enabled list is also reported to FFmpeg's
     // AVVulkanDeviceContext (issue #10).
@@ -189,6 +186,22 @@ std::unique_ptr<Device> Device::create(Instance& instance) {
             device->enabled_extensions_.emplace_back(name);
         }
     };
+    if (config.presentation && !advertised(VK_KHR_SWAPCHAIN_EXTENSION_NAME))
+        throw GpuException(GpuError::InvalidRequest, "Vulkan presentation requires VK_KHR_swapchain");
+    enable(config.presentation, VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    if (config.externalSharing) {
+#if defined(_WIN32)
+        const char* sharingExtensions[] = {"VK_KHR_external_memory_win32", "VK_KHR_external_semaphore_win32"};
+#else
+        const char* sharingExtensions[] = {"VK_KHR_external_memory_fd", "VK_KHR_external_semaphore_fd"};
+#endif
+        for (const auto* extension : sharingExtensions) {
+            if (!advertised(extension))
+                throw GpuException(GpuError::InvalidRequest, std::string("GPU presentation sharing requires ") +
+                                                                 extension + " on " + device->properties_.deviceName);
+            enable(true, extension);
+        }
+    }
     enable(video_queue, kVideoQueue);
     enable(video_decode, kVideoDecode);
     enable(video_decode && advertised(kVideoDecodeH264), kVideoDecodeH264);

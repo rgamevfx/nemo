@@ -11,8 +11,9 @@
 //   set 1, binding n : input image2D (rgba32f storage image, straight alpha)
 //   set 2, binding 0 : output image2D (rgba32f storage image)
 // dependencies:
-//   region: output pixel (x, y) depends only on full-image coordinate
-//     (region.x + x, region.y + y) — full-resolution coordinate semantics.
+//   region: output pixel (x, y) depends only on the full-image coordinate
+//     (region.x + x*scale, region.y + y*scale) — full-resolution
+//     coordinate semantics under every declared samplingScale (issue #11).
 //   channels: RGBA, all channels processed uniformly.
 //   temporal: blue bar position depends on misc.x (local time).
 // quality_modes: 1 (single full-quality path)
@@ -21,8 +22,10 @@
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
-    // meta: (region width, region height, region.x, region.y)
+    // meta: (full image width, full image height, region.x, region.y)
     uint4 meta;
+    // meta2: raster (image width, image height, samplingScale, 0) — issue #11
+    uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
     // param0/param1: effect-specific declared parameters (unused here)
@@ -38,15 +41,16 @@ RWTexture2D<float4> out_color;
 void main(uint3 tid : SV_DispatchThreadID)
 {
     uint2 p = tid.xy;
-    if (p.x >= meta.x || p.y >= meta.y) { return; }
+    if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    // Full-image coordinate frame: the evaluated raster sits at
-    // (region.x, region.y) within dimensions (region.x + width,
-    // region.y + height). Identical to the CPU reference anchor.
-    int fullX = (int)meta.z + (int)p.x;
-    int fullY = (int)meta.w + (int)p.y;
-    int fullWidth = (int)meta.z + (int)meta.x;
-    int fullHeight = (int)meta.w + (int)meta.y;
+    // Full-resolution coordinate frame (issue #11): the reduced raster
+    // samples the frame at fullX = region.x + p.x * scale, so the pattern
+    // is the SAME image every representation — not a smaller replica.
+    int scale = (int)meta2.z;
+    int fullX = (int)meta.z + (int)p.x * scale;
+    int fullY = (int)meta.w + (int)p.y * scale;
+    int fullWidth = (int)meta.x;
+    int fullHeight = (int)meta.y;
     float u = fullWidth > 1 ? (float)fullX / (float)(fullWidth - 1) : 0.0;
     float v = fullHeight > 1 ? (float)fullY / (float)(fullHeight - 1) : 0.0;
     int barWidth = max(2, fullWidth / 16);

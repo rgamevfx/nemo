@@ -9,14 +9,24 @@ target_link_libraries(nemo_workspace PUBLIC nlohmann_json::nlohmann_json)
 if(NEMO_BUILD_UI)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2)
     qt_standard_project_setup()
-    qt_add_executable(nemo-ui main.cpp WorkspaceController.cpp WorkspaceController.hpp)
+    if(NOT NEMO_BUILD_GPU)
+        message(FATAL_ERROR "NEMO_BUILD_UI requires NEMO_BUILD_GPU for native viewer presentation")
+    endif()
+    qt_add_executable(nemo-ui main.cpp WorkspaceController.cpp WorkspaceController.hpp
+        ViewerController.cpp ViewerController.hpp ViewerRuntime.cpp ViewerRuntime.hpp
+        ViewerItem.cpp ViewerItem.hpp)
     qt_add_qml_module(nemo-ui
         URI Nemo
         VERSION 1.0
         RESOURCE_PREFIX /qt/qml
         QML_FILES qml/Main.qml qml/WorkspaceNode.qml qml/Panel.qml qml/DockDrag.qml qml/PanelDragHandler.qml
+                  qml/ViewerPanel.qml
     )
-    target_link_libraries(nemo-ui PRIVATE nemo::workspace Qt6::Quick Qt6::QuickControls2)
+    target_link_libraries(nemo-ui PRIVATE nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)
+    if(DEFINED NEMO_SLANG_SPV_DIR)
+        target_compile_definitions(nemo-ui PRIVATE NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
+        add_dependencies(nemo-ui nemo_shaders)
+    endif()
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

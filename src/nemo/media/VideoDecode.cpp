@@ -3,13 +3,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <vulkan/vulkan.h>
 
+#include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 
 extern "C" {
@@ -432,17 +432,11 @@ constexpr const char* kSupportedFormatNames =
 
 // Compiled mediaConvert SPIR-V for the Vulkan-resident conversion.
 [[nodiscard]] std::vector<std::uint32_t> loadConvertSpirv(const std::filesystem::path& file, const std::string& clip) {
-    std::ifstream stream(file, std::ios::binary);
-    if (!stream) {
-        fail(clip, file.string(), "mediaConvert SPIR-V not found (build the nemo_shaders target)");
+    try {
+        return gpu::loadSpirv(file);
+    } catch (const gpu::GpuException& error) {
+        fail(clip, file.string(), error.what());
     }
-    std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
-    if (bytes.size() < 4 || bytes.size() % 4 != 0 || std::memcmp(bytes.data(), "\x03\x02\x23\x07", 4) != 0) {
-        fail(clip, file.string(), "is not a valid SPIR-V module");
-    }
-    std::vector<std::uint32_t> spirv(bytes.size() / 4);
-    std::memcpy(spirv.data(), bytes.data(), bytes.size());
-    return spirv;
 }
 
 [[nodiscard]] double frameRateOf(const AVStream* stream) {
@@ -498,12 +492,14 @@ struct PreparedDecoder {
                  std::string("avcodec_open2 failed") + (profile.empty() ? "" : " (unsupported " + profile + ")"),
                  status);
         }
+        const AVRational aspect = av_guess_sample_aspect_ratio(format.context, stream, nullptr);
         return {path,
                 avcodec_get_name(codec.context->codec_id),
                 codec.context->width,
                 codec.context->height,
                 frameRateOf(stream),
-                stream->nb_frames > 0 ? stream->nb_frames : -1};
+                stream->nb_frames > 0 ? stream->nb_frames : -1,
+                aspect.num > 0 && aspect.den > 0 ? av_q2d(aspect) : 1.0};
     }
 };
 
@@ -840,7 +836,7 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
 
         auto output = std::make_unique<gpu::Image>(
             impl.allocator->create_image(foreign.width, foreign.height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-                                         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
+                                         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 2));
         const auto completion = impl.interop->submitToRgba32f(foreign, *output);
         if (!completion)
             fail(impl.info.path, "vulkan", "GPU submission capacity exhausted");
@@ -881,10 +877,12 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
     // scene-linear contract, then uploaded to device residency. The upload
     // is the capability-dependent transfer cost this path carries.
     const CpuImage pixels = convertDecodedFrame(frame.frame, impl.color, impl.info.path, /*linearize=*/true);
-    auto output = std::make_unique<gpu::Image>(impl.allocator->create_image(
-        static_cast<uint32_t>(frame.frame->width), static_cast<uint32_t>(frame.frame->height), 1,
-        VK_FORMAT_R32G32B32A32_SFLOAT,
-        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT));
+    auto output = std::make_unique<gpu::Image>(
+        impl.allocator->create_image(static_cast<uint32_t>(frame.frame->width),
+                                     static_cast<uint32_t>(frame.frame->height), 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                     VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                     2));
     gpu::uploadImage(*impl.queue, *impl.allocator, *output, pixels.data(),
                      static_cast<size_t>(pixels.width()) * pixels.height() * 4 * sizeof(float), timeout_ns);
     // Keep the contract layout consistent with the interop path: GENERAL.

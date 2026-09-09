@@ -71,26 +71,23 @@ void evalTestpattern(const Node& /*node*/, const EvaluationRequest& request,
     // green gradient, and a blue bar whose position tracks local time. Any
     // change here is an observable image change.
     //
-    // Region semantics (declared contract for the native executor, issue
-    // #8): the pattern is anchored to the full-resolution frame implied by
-    // the request — coordinates evaluate at (region.x + x, region.y + y)
-    // over dimensions (region.x + width, region.y + height). A full-frame
-    // request (origin 0) is unchanged; a region-limited request preserves
-    // full-resolution coordinate semantics instead of restarting the
-    // gradient at the crop origin.
+    // Sample the full-resolution image domain, not the ROI's dimensions.
+    // Cropping and reduced sampling never re-normalize the generator.
+    const int scale = request.samplingScale;
     const int width = out.width();
     const int height = out.height();
     const int fullX = request.region.x;
     const int fullY = request.region.y;
-    const int fullWidth = fullX + width;
-    const int fullHeight = fullY + height;
+    const int fullWidth = request.imageWidth();
+    const int fullHeight = request.imageHeight();
     const int barWidth = std::max(2, fullWidth / 16);
     const int barPos = static_cast<int>((request.localTime * (fullWidth / 8)) % (fullWidth + barWidth));
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            const double u = fullWidth > 1 ? static_cast<double>(fullX + x) / (fullWidth - 1) : 0.0;
-            const double v = fullHeight > 1 ? static_cast<double>(fullY + y) / (fullHeight - 1) : 0.0;
-            const int fullPixelX = fullX + x;
+            const int fullPixelX = fullX + x * scale;
+            const int fullPixelY = fullY + y * scale;
+            const double u = fullWidth > 1 ? static_cast<double>(fullPixelX) / (fullWidth - 1) : 0.0;
+            const double v = fullHeight > 1 ? static_cast<double>(fullPixelY) / (fullHeight - 1) : 0.0;
             const bool inBar = fullPixelX >= barPos && fullPixelX < barPos + barWidth;
             out.setPixel(x, y, {static_cast<float>(u), static_cast<float>(v), inBar ? 1.0F : 0.0F, 1.0F});
         }
@@ -143,9 +140,61 @@ void evalOutput(const Node&, const EvaluationRequest&, std::map<std::string, std
     }
 }
 
-// ---------------------------------------------------------------------------
-// Topological scheduling and shared request validation.
-// ---------------------------------------------------------------------------
+// Real source media (issue #11). The reference lives in the Document; the
+// pixels come from the provider. There is NO synthetic fallback: an
+// unresolved or unprovided source is an explicit evaluation error that
+// identifies the node.
+void evalSource(const Document& document, const Node& node, const EvaluationRequest& request,
+                std::map<std::string, std::string>& effectiveParams, CpuImage& out, SourceProvider* provider) {
+    const auto keyIt = node.params.find("source");
+    if (keyIt == node.params.end() || keyIt->second.empty()) {
+        failNode(node, "source node has no 'source' parameter naming a document source");
+    }
+    const std::string& key = keyIt->second;
+    const auto referenceIt = document.sources.find(key);
+    if (referenceIt == document.sources.end()) {
+        failNode(node, "unresolved source '" + key +
+                           "': no source reference with this key in the document (real media is never "
+                           "evaluated as synthetic content)");
+    }
+    const SourceReference& reference = referenceIt->second;
+    effectiveParams["source"] = key;
+    effectiveParams["sourcePath"] = reference.path;
+    std::int64_t mappedFrame = 0;
+    try {
+        mappedFrame = reference.frameAt(request.localTime);
+    } catch (const std::exception& error) {
+        failNode(node, std::string("source time mapping failed: ") + error.what());
+    }
+    effectiveParams["frame"] = std::to_string(mappedFrame);
+    if (provider == nullptr) {
+        failNode(node, "source '" + key + "' (" + reference.path +
+                           ") requires a decode provider; this "
+                           "executor cannot evaluate real media and never substitutes synthetic content");
+    }
+    CpuImage decoded;
+    try {
+        decoded = provider->frame(document, reference, mappedFrame, request);
+    } catch (const EvaluationException&) {
+        throw;
+    } catch (const std::exception& error) {
+        failNode(node, "source provider failed for '" + key + "' at frame " + std::to_string(mappedFrame) + ": " +
+                           error.what());
+    }
+    const int expectedWidth = scaledDimension(request.region.width, request.samplingScale);
+    const int expectedHeight = scaledDimension(request.region.height, request.samplingScale);
+    if (decoded.width() != expectedWidth || decoded.height() != expectedHeight) {
+        failNode(node, "source '" + key + "' decoded raster " + std::to_string(decoded.width()) + "x" +
+                           std::to_string(decoded.height()) + " does not cover the requested raster " +
+                           std::to_string(expectedWidth) + "x" + std::to_string(expectedHeight) +
+                           " (full-resolution region at sampling scale " + std::to_string(request.samplingScale) + ")");
+    }
+    for (int y = 0; y < decoded.height(); ++y) {
+        for (int x = 0; x < decoded.width(); ++x) {
+            out.setPixel(x, y, decoded.pixel(x, y));
+        }
+    }
+}
 
 const Node* findNode(const Document& document, NodeId id) {
     return document.graph.node(id);
@@ -238,14 +287,22 @@ NodeId resolveOutput(const Document& document, const std::string& outputName) {
 }
 
 // Shared request validation for both executors (CPU reference and native
-// GPU, issue #8): quality (spec section 8: a reduced-quality result must
-// not substitute for a full-quality request), channels, region bounds, and
-// that the request targets an existing Output node.
+// GPU, issues #8/#11): quality (spec section 8: a reduced-quality result
+// must not substitute for a full-quality request), channels, region
+// bounds, sampling scale, and that the request targets an existing Output
+// node. The scale must be one of the declared reductions AND every
+// scheduled node type must declare support for it: unsupported reductions
+// are explicit errors, never silent approximations.
 void validateRequest(const Document& document, const EvaluationRequest& request) {
     if (request.quality != Quality::Full) {
         throw EvaluationException(std::string("quality '") + qualityName(request.quality) +
                                   "' is not implemented by this executor (spec section 8: reduced quality must "
                                   "not substitute for full quality)");
+    }
+    if (!isSamplingScale(request.samplingScale)) {
+        throw EvaluationException("sampling scale " + std::to_string(request.samplingScale) +
+                                  " is not a declared reduction (supported scales: 1, 2, 4; spec section 8: "
+                                  "reductions are explicit, never silent)");
     }
     if (request.channels != "RGBA") {
         throw EvaluationException("channels '" + request.channels + "' are not implemented (supported: RGBA)");
@@ -258,12 +315,45 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
         throw EvaluationException("request region exceeds the " + std::to_string(kMaxDimension) +
                                   " pixel reference limit");
     }
+    if (request.imageWidth() > kMaxDimension || request.imageHeight() > kMaxDimension)
+        throw EvaluationException("full image domain exceeds the 8192 pixel reference limit");
+    if (request.region.x < 0 || request.region.y < 0 || request.fullWidth < 0 || request.fullHeight < 0)
+        throw EvaluationException("image domain and region origin must be nonnegative");
+    if ((request.fullWidth == 0) != (request.fullHeight == 0) ||
+        ((request.region.x != 0 || request.region.y != 0) && request.fullWidth == 0))
+        throw EvaluationException("cropped requests require explicit fullWidth and fullHeight");
+    if (request.region.x > request.imageWidth() - request.region.width ||
+        request.region.y > request.imageHeight() - request.region.height)
+        throw EvaluationException("requested region lies outside the full-resolution image domain");
     const Node* output = findNode(document, request.output);
     if (output == nullptr) {
         throw EvaluationException("request output node " + std::to_string(request.output) + " does not exist");
     }
     if (output->type != "output") {
         failNode(*output, "evaluation request must target an Output node");
+    }
+
+    // Every scheduled node type must declare support for a requested
+    // reduction (spec section 8: nodes declare supported reductions). A
+    // scale-1 request is not a reduction; unknown types keep failing at
+    // their own execution step instead.
+    if (request.samplingScale != 1) {
+        for (const Node* node : scheduleDependencies(document, request.output)) {
+            const auto supported = samplingScalesSupported(node->type);
+            if (std::find(supported.begin(), supported.end(), request.samplingScale) == supported.end()) {
+                std::ostringstream declared;
+                if (supported.empty()) {
+                    declared << "none";
+                } else {
+                    for (std::size_t i = 0; i < supported.size(); ++i) {
+                        declared << (i == 0 ? "" : ", ") << supported[i];
+                    }
+                }
+                failNode(*node, "sampling scale " + std::to_string(request.samplingScale) +
+                                    " is not among the declared reductions (declared: " + std::move(declared).str() +
+                                    "); the request is rejected rather than silently reduced");
+            }
+        }
     }
 }
 
@@ -291,7 +381,8 @@ std::vector<NodeId> resolveStepInputs(const Document& document, const Node& node
     return producers;
 }
 
-CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, ResultCache<CpuImage>* reuse) {
+CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, ResultCache<CpuImage>* reuse,
+                          SourceProvider* sources) {
     validateRequest(document, request);
 
     const std::vector<const Node*> order = scheduleDependencies(document, request.output);
@@ -340,7 +431,8 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         }
 
         if (!image) {
-            auto fresh = std::make_shared<CpuImage>(request.region.width, request.region.height);
+            auto fresh = std::make_shared<CpuImage>(scaledDimension(request.region.width, request.samplingScale),
+                                                    scaledDimension(request.region.height, request.samplingScale));
             std::vector<const CpuImage*> inputs;
             inputs.reserve(producers.size());
             for (const NodeId producer : producers) {
@@ -349,6 +441,8 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
 
             if (node->type == "testpattern") {
                 evalTestpattern(*node, request, step.effectiveParams, *fresh);
+            } else if (node->type == "source") {
+                evalSource(document, *node, request, step.effectiveParams, *fresh, sources);
             } else if (node->type == "constcolor") {
                 evalConstcolor(*node, request, step.effectiveParams, *fresh);
             } else if (node->type == "merge") {

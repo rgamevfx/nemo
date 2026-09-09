@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -35,6 +36,9 @@ struct PortSpec {
 [[nodiscard]] const std::vector<PortSpec>& outputPorts(const std::string& type);
 // True for node types this build declares a port interface for.
 [[nodiscard]] bool isKnownNodeType(const std::string& type);
+// Explicit node sampling capabilities. Unknown/new types declare none
+// until their implementation supports reductions; no per-request allocation.
+[[nodiscard]] std::span<const int> samplingScalesSupported(const std::string& type);
 struct Node {
     NodeId id{kInvalidNode};
 
@@ -98,6 +102,11 @@ public:
     // they bypass revision bookkeeping.
     void setParam(NodeId id, const std::string& key, const std::string& value);
     void eraseParam(NodeId id, const std::string& key);
+
+    // Commands exchange authored content with an undo checkpoint without
+    // reassigning identities. Allocation high-water marks and edit revision
+    // remain monotonic even when a new edit branches from undone history.
+    void exchangeState(Graph& checkpoint);
 
     // Monotonic graph-edit counter: every structural or sanctioned parameter
     // mutation advances it. Combined with the color policy into

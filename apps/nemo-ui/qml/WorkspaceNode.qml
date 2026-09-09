@@ -62,7 +62,7 @@ Item {
                 source: "WorkspaceNode.qml"
                 onLoaded: {
                     item.node = Qt.binding(function() { return rootNode.node.children[0] })
-                    item.workspace = rootNode.workspace
+                    item.workspace = Qt.binding(function() { return rootNode.workspace })
                     item.drag = Qt.binding(function() { return rootNode.drag })
                 }
                 SplitView.minimumWidth: item ? item.minimumPaneWidth : 120
@@ -73,7 +73,7 @@ Item {
                 source: "WorkspaceNode.qml"
                 onLoaded: {
                     item.node = Qt.binding(function() { return rootNode.node.children[1] })
-                    item.workspace = rootNode.workspace
+                    item.workspace = Qt.binding(function() { return rootNode.workspace })
                     item.drag = Qt.binding(function() { return rootNode.drag })
                 }
                 SplitView.minimumWidth: item ? item.minimumPaneWidth : 120

@@ -13,9 +13,11 @@ ApplicationWindow {
     height: 800
     minimumWidth: Math.max(900, rootNode.minimumPaneWidth)
     minimumHeight: Math.max(600, rootNode.minimumPaneHeight)
-    visible: true
-    title: "Nemo"
-    color: "#1e1e1e"
+    // The viewer controller attaches the app-owned Vulkan device and shows
+    // the window once presentation support is verified (attachWindow in
+    // main.cpp). Starting invisible avoids initializing the scene graph with
+    // an uncontrolled graphics device.
+    visible: false
     palette.window: "#1e1e1e"
     palette.windowText: "#d0d0d0"
     palette.base: "#242424"

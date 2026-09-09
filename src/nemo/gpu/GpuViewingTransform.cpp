@@ -30,7 +30,12 @@ GpuViewingTransform::GpuViewingTransform(gpu::Device& device, gpu::Allocator& al
                              nullptr, &luts_[i], program.textures[i].dimensions == 3});
 }
 
-std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& source) const {
+std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& source,
+                                                          ColorInterpretation sourceColor) const {
+    if (sourceColor != ColorInterpretation::SceneLinear)
+        throw gpu::GpuException(gpu::GpuError::InvalidRequest,
+                                "GPU viewing transform requires scene-linear input; display-referred input "
+                                "already has its viewing transform");
     if (source.format() != VK_FORMAT_R32G32B32A32_SFLOAT || source.dimensions() == 0 || source.dimensions() > 2)
         throw gpu::GpuException(gpu::GpuError::InvalidRequest, "GPU viewing transform requires a 1D/2D RGBA32F source");
     const auto extent = source.extent();
@@ -40,7 +45,8 @@ std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& sour
         allocator_.create_buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     auto image = allocator_.create_image(extent.width, extent.height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                             VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
+                                             VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+                                         source.dimensions());
     auto bindings = bindings_;
     bindings.push_back({descriptorSet_ + 1, 0, gpu::DescriptorKind::StorageBuffer, &input});
     bindings.push_back({descriptorSet_ + 1, 1, gpu::DescriptorKind::StorageBuffer, &output});
@@ -86,4 +92,5 @@ std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& sour
         return std::nullopt;
     return GpuViewedImage{std::move(image), *completion};
 }
+
 }  // namespace nemo::gpu

@@ -12,6 +12,7 @@
 // init, finalization at process exit).
 
 #include <cstdint>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -28,5 +29,9 @@ struct CompileException : std::runtime_error {
 // words. Throws CompileException with the full info log on parse or link
 // failure.
 [[nodiscard]] std::vector<std::uint32_t> compileGlslToSpirv(const std::string& glsl);
+
+// Validated, aligned binary loading shared by native effect/presentation
+// consumers. Failures identify the file; no shader substitution.
+[[nodiscard]] std::vector<std::uint32_t> loadSpirv(const std::filesystem::path& path);
 
 }  // namespace nemo::gpu

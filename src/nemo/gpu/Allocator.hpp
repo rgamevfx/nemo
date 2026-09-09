@@ -127,10 +127,20 @@ public:
 
     // Creates an optimal-tiling image with one mip level and one layer and
     // a matching COLOR-aspect view. The budget is charged with the driver's
+    // dimensions=0 infers LUT dimensionality from extents. Image-processing
+    // callers pass 2 explicitly, including one-row/one-pixel representations.
     // reported memory requirement. Throws BudgetExceeded / descriptive
     // GpuException like create_buffer.
     [[nodiscard]] Image create_image(uint32_t width, uint32_t height, uint32_t depth, VkFormat format,
-                                     VkImageUsageFlags usage);
+                                     VkImageUsageFlags usage, uint32_t dimensions = 0);
+
+    // Dedicated external-memory presentation allocation on two logical
+    // devices of the same physical GPU. Both 2D images have identical
+    // metadata and share one retained owner. Physical bytes are charged once
+    // to this allocator; either image retains both sides and that charge.
+    // Both devices must outlive all tokens. No queue operations or readback.
+    [[nodiscard]] std::pair<Image, Image> create_shared_image(Device& consumer, uint32_t width, uint32_t height,
+                                                              VkFormat format, VkImageUsageFlags usage);
 
 private:
     struct Impl;

@@ -1,9 +1,20 @@
 #include "nemo/core/document/Graph.hpp"
+#include "nemo/core/evaluation/Request.hpp"
 
 #include <algorithm>
 #include <utility>
 
 namespace nemo {
+
+void Graph::exchangeState(Graph& checkpoint) {
+    nodes_.swap(checkpoint.nodes_);
+    edges_.swap(checkpoint.edges_);
+    incomingCache_.clear();
+    checkpoint.incomingCache_.clear();
+    nextNodeId_ = checkpoint.nextNodeId_ = std::max(nextNodeId_, checkpoint.nextNodeId_);
+    nextEdgeId_ = checkpoint.nextEdgeId_ = std::max(nextEdgeId_, checkpoint.nextEdgeId_);
+    revision_ = checkpoint.revision_ = std::max(revision_, checkpoint.revision_) + 1;
+}
 
 namespace {
 
@@ -13,16 +24,25 @@ struct NodeInterface {
     std::string type;
     std::vector<PortSpec> inputs;
     std::vector<PortSpec> outputs;
+    std::span<const int> samplingScales{};
 };
 
 const std::vector<NodeInterface>& nodeInterfaces() {
     static const std::vector<NodeInterface> interfaces{
-        {"constcolor", {}, {{PortKind::Color, "color"}}},
+        {"constcolor", {}, {{PortKind::Color, "color"}}, kSamplingScales},
         {"merge",
          {{PortKind::Color, "A"}, {PortKind::Color, "B"}},  // A = over base, B = over source
-         {{PortKind::Color, "out"}}},
-        {"output", {{PortKind::Color, "color"}}, {}},
-        {"testpattern", {}, {{PortKind::Color, "color"}}},
+         {{PortKind::Color, "out"}},
+         kSamplingScales},
+        {"output", {{PortKind::Color, "color"}}, {}, kSamplingScales},
+        // Real source media reference (issue #11): the node carries a
+        // `source` parameter addressing Document::sources and produces the
+        // decoded, working-space-interpreted image. The decode itself is
+        // never a Document/evaluation concern (spec section 10.2); an
+        // executor evaluates it only through its source provider/decoder
+        // layer and rejects unresolved sources explicitly.
+        {"source", {}, {{PortKind::Color, "color"}}, kSamplingScales},
+        {"testpattern", {}, {{PortKind::Color, "color"}}, kSamplingScales},
     };
     return interfaces;
 }
@@ -41,6 +61,11 @@ std::string describe(PortRef ref) {
 }
 
 }  // namespace
+
+std::span<const int> samplingScalesSupported(const std::string& type) {
+    const auto* interface = interfaceOf(type);
+    return interface ? interface->samplingScales : std::span<const int>{};
+}
 
 const std::vector<PortSpec>& inputPorts(const std::string& type) {
     static const std::vector<PortSpec> none;

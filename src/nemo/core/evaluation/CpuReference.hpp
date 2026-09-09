@@ -42,27 +42,49 @@ struct CpuEvaluation {
 // nodes exist without a name to disambiguate.
 [[nodiscard]] NodeId resolveOutput(const Document& document, const std::string& outputName = {});
 
+// Shared dependency-first schedule consumed by CPU and native executors.
+[[nodiscard]] std::vector<const Node*> scheduleDependencies(const Document& document, NodeId output);
+
+// External seam for real source media (issue #11). The persistent Document
+// carries only source references; the decoded frames live behind this
+// interface, supplied by the execution layer (eval's SourceSession / any
+// decode provider). A provider returns the frame interpreted into the
+// document's declared scene-linear working space per the reference's
+// encoding (issue #21 semantics) and covering the request's raster —
+// full-resolution region at the request's sampling scale.
+//
+// The CPU reference NEVER evaluates a source node as a synthetic pattern:
+// without a provider the evaluation fails with an explicit node-identifying
+// error. Throwing providers produce the same treatment; the evaluator
+// attaches the offending node.
+class SourceProvider {
+public:
+    virtual ~SourceProvider() = default;
+
+    [[nodiscard]] virtual CpuImage frame(const Document& document, const SourceReference& source,
+                                         std::int64_t mappedFrame, const EvaluationRequest& request) = 0;
+};
+
 // Evaluates the document graph topologically to satisfy `request.output`.
 // The graph is acyclic by construction (Graph rejects cycles); only the
 // required dependencies of the output are scheduled (spec section 10.3).
 // With `reuse` (issue #9), matching content-keyed results are served from
 // the cache, computed results are published under the evaluation ticket's
-// freshness guard, and plan steps record reuse evidence. Throws
-// EvaluationException with node-identifying messages.
+// freshness guard, and plan steps record reuse evidence. With `sources`
+// (issue #11), source nodes are served by the provider; without one,
+// evaluation rejects them explicitly. Throws EvaluationException with
+// node-identifying messages.
 [[nodiscard]] CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request,
-                                        ResultCache<CpuImage>* reuse = nullptr);
+                                        ResultCache<CpuImage>* reuse = nullptr, SourceProvider* sources = nullptr);
 
 // Validates a request for any executor (CPU reference and native GPU,
 // issue #8): quality must be Full (spec section 8), channels RGBA, region
-// within the reference bounds, and the output node must exist and be an
-// Output node. Throws EvaluationException otherwise.
+// within the reference bounds, the output node must exist and be an Output
+// node, and the sampling scale must be declared (spec section 8: nodes
+// declare supported reductions; a request beyond what the scheduled nodes
+// declare is rejected, never approximated). Throws EvaluationException
+// otherwise.
 void validateRequest(const Document& document, const EvaluationRequest& request);
-
-// Collects the required dependency set of `output` (spec section 10.3:
-// schedule only required dependencies) and orders it dependencies-first.
-// Shared by the CPU reference and the native GPU effect executor: both
-// consume the same scheduled plan.
-[[nodiscard]] std::vector<const Node*> scheduleDependencies(const Document& document, NodeId output);
 
 // Resolves `node`'s inputs in declared port order against `evaluated` (the
 // image identities already produced). Fills `step.inputs` and

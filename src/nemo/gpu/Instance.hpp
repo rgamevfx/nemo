@@ -20,6 +20,9 @@ struct InstanceConfig {
     // layer is installed. Layer absence is not an error: bootstrap runs
     // without validation and reports validation_enabled() == false.
     bool validation = true;
+    // Presentation supplies its platform surface extensions; headless
+    // callers request none. Missing requested extensions are an error.
+    std::vector<std::string> extensions{};
 };
 
 // Owns the VkInstance and, when validation is available, the debug messenger

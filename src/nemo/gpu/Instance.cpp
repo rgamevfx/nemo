@@ -13,7 +13,7 @@ namespace {
 
 constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
 
-VkInstance createInstance(bool validation) {
+VkInstance createInstance(bool validation, const std::vector<std::string>& requestedExtensions) {
     VkApplicationInfo app{};
     app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app.pApplicationName = "nemo";
@@ -28,6 +28,20 @@ VkInstance createInstance(bool validation) {
         enabled_layers.push_back(kValidationLayerName);
         enabled_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
+    uint32_t extensionCount = 0;
+    checkVulkan(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr),
+                "vkEnumerateInstanceExtensionProperties");
+    std::vector<VkExtensionProperties> available(extensionCount);
+    checkVulkan(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, available.data()),
+                "vkEnumerateInstanceExtensionProperties");
+    for (const auto& extension : requestedExtensions) {
+        if (std::none_of(available.begin(), available.end(),
+                         [&](const auto& item) { return extension == item.extensionName; }))
+            throw GpuException(GpuError::InvalidRequest, "Vulkan instance extension unavailable: " + extension);
+        if (std::none_of(enabled_extensions.begin(), enabled_extensions.end(),
+                         [&](const char* name) { return extension == name; }))
+            enabled_extensions.push_back(extension.c_str());
+    }
 
     VkInstanceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -37,8 +51,6 @@ VkInstance createInstance(bool validation) {
     create_info.enabledExtensionCount = static_cast<uint32_t>(enabled_extensions.size());
     create_info.ppEnabledExtensionNames = enabled_extensions.data();
 
-    // Headless bootstrap: no surface extensions; presentation belongs to a
-    // later ticket (#11).
     VkInstance instance = VK_NULL_HANDLE;
     VkResult created = vkCreateInstance(&create_info, nullptr, &instance);
     if (created == VK_ERROR_INCOMPATIBLE_DRIVER) {
@@ -77,7 +89,7 @@ std::unique_ptr<Instance> Instance::create(const InstanceConfig& config) {
     }
 
     auto instance = std::make_unique<Instance>(Instance::Token{});
-    instance->instance_ = createInstance(validation);
+    instance->instance_ = createInstance(validation, config.extensions);
 
     if (validation) {
         auto vkCreateDebugUtilsMessengerEXT = loadCreateMessenger(instance->instance_);

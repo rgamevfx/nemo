@@ -8,7 +8,9 @@ nemo_add_slang_shaders(nemo_shaders ALL
         constcolor.slang
         merge.slang
         output.slang
+        source.slang
         mediaConvert.slang
+        viewerPresentation.slang
 )
 
 if(DEFINED NEMO_SLANG_SPV_DIR)

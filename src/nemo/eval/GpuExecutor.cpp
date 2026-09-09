@@ -3,6 +3,7 @@
 #include "nemo/core/Hashing.hpp"
 #include "nemo/core/evaluation/Params.hpp"
 #include "nemo/eval/EffectShaders.hpp"
+#include "nemo/eval/SourceSession.hpp"
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Error.hpp"
@@ -30,11 +31,23 @@ using gpu::SubmissionQueue;
     throw EvaluationException(std::move(text).str(), node.id, node.name);
 }
 
-// Region-sized RGBA32F storage image, kept in GENERAL for its whole life.
+// Representation-sized RGBA32F storage image (ceil(region/scale), issue
+// #11), kept in GENERAL for its whole life.
 [[nodiscard]] gpu::Image createEffectImage(gpu::Allocator& allocator, const EvaluationRequest& request) {
-    return allocator.create_image(static_cast<uint32_t>(request.region.width),
-                                  static_cast<uint32_t>(request.region.height), 1, VK_FORMAT_R32G32B32A32_SFLOAT,
-                                  VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    const int scale = request.samplingScale;
+    return allocator.create_image(static_cast<uint32_t>((request.region.width + scale - 1) / scale),
+                                  static_cast<uint32_t>((request.region.height + scale - 1) / scale), 1,
+                                  VK_FORMAT_R32G32B32A32_SFLOAT,
+                                  VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 2);
+}
+
+// Barrier for an image whose producing submission is already COMPLETE but
+// was recorded on another wrapper of the graphics queue (decoded source
+// frames, issue #11): the generic write→read dependency over ALL_COMMANDS.
+void afterExternalWriteBeforeRead(VkCommandBuffer command, const gpu::Image& image) {
+    gpu::recordImageBarrier(command, image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 }
 
 void prepareFreshImage(VkCommandBuffer command, const gpu::Image& image) {
@@ -56,18 +69,41 @@ void afterWriteBeforeRead(VkCommandBuffer command, const gpu::Image& image) {
 // effect declares. The type dispatch mirrors the CPU reference inventory
 // (CpuReference.cpp); the per-type param parsing is shared with it via
 // parseColor4 so both executors resolve identical effective state.
+// `sourceFrame` supplies the decoded full-resolution frame for `source`
+// nodes (issue #11): it binds as set 1 input 0 and its dimensions feed the
+// fill kernel through param0.
 std::uint32_t prepareEffectStep(const Node& node, const EvaluationRequest& request, const EffectProgram& program,
                                 std::map<std::string, std::string>& effectiveParams, EffectUniforms& uniforms,
                                 std::vector<ComputeBinding>& bindings, gpu::Buffer& uniformBuffer,
-                                gpu::Allocator& allocator) {
+                                gpu::Allocator& allocator, const gpu::Image* sourceFrame = nullptr) {
     uniforms.misc[0] = static_cast<float>(request.localTime);
-    uniforms.meta[0] = static_cast<std::uint32_t>(request.region.width);
-    uniforms.meta[1] = static_cast<std::uint32_t>(request.region.height);
+    // The request region stays FULL-RESOLUTION; the executed raster samples
+    // it at samplingScale (issue #11). Both sets of numbers travel in the
+    // uniforms so kernels keep full coordinate semantics on any declared
+    // representation.
+    const int scale = request.samplingScale;
+    uniforms.meta[0] = static_cast<std::uint32_t>(request.imageWidth());
+    uniforms.meta[1] = static_cast<std::uint32_t>(request.imageHeight());
     uniforms.meta[2] = static_cast<std::uint32_t>(request.region.x);
     uniforms.meta[3] = static_cast<std::uint32_t>(request.region.y);
+    uniforms.meta2[0] = static_cast<std::uint32_t>((request.region.width + scale - 1) / scale);
+    uniforms.meta2[1] = static_cast<std::uint32_t>((request.region.height + scale - 1) / scale);
+    uniforms.meta2[2] = static_cast<std::uint32_t>(scale);
+    uniforms.meta2[3] = 0;
 
     std::uint32_t inputs = 0;
-    if (node.type == "testpattern" || node.type == "output") {
+    if (node.type == "source") {
+        if (sourceFrame == nullptr) {
+            failEffect(node, program, "source fill has no decoded frame (SourceSession did not supply one)");
+        }
+        const VkExtent3D extent = sourceFrame->extent();
+        uniforms.param0[0] = static_cast<float>(extent.width);
+        uniforms.param0[1] = static_cast<float>(extent.height);
+        effectiveParams.emplace("sourceDimensions", std::to_string(extent.width) + "x" + std::to_string(extent.height));
+        inputs = 0;
+        // The decoded frame is the declared set 1 input of the source fill.
+        bindings.push_back({1, 0, DescriptorKind::StorageImage, nullptr, sourceFrame, false});
+    } else if (node.type == "testpattern" || node.type == "output") {
         inputs = node.type == "output" ? 1u : 0u;
     } else if (node.type == "constcolor") {
         const std::array<float, 4> color = parseColor4(node, effectiveParams, "color", {1.0F, 1.0F, 1.0F, 1.0F});
@@ -121,27 +157,16 @@ std::uint32_t prepareEffectStep(const Node& node, const EvaluationRequest& reque
 }  // namespace
 
 EffectLibrary loadSlangEffectLibrary(const std::filesystem::path& spvDir, const std::filesystem::path& sourceDir) {
-    static const char* kEffects[] = {"testpattern", "constcolor", "merge", "output"};
+    static const char* kEffects[] = {"testpattern", "constcolor", "merge", "output", "source"};
     EffectLibrary library;
     for (const char* type : kEffects) {
         const std::filesystem::path spvPath = spvDir / (std::string(type) + ".spv");
-        std::ifstream in(spvPath, std::ios::binary);
-        if (!in) {
-            throw gpu::GpuException(gpu::GpuError::InvalidRequest,
-                                    std::string("effect '") + type + "': no compiled Slang kernel at " +
-                                        spvPath.string() +
-                                        " (build the nemo_shaders target: configure with -D NEMO_DOWNLOAD_SLANGC=ON, "
-                                        "install slangc, or set NEMO_SLANGC)");
-        }
-        std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        if (bytes.size() < 4 || bytes.size() % sizeof(std::uint32_t) != 0 ||
-            std::memcmp(bytes.data(), "\x03\x02#\x07", 4) != 0) {
-            throw gpu::GpuException(gpu::GpuError::InvalidRequest, std::string("effect '") + type + "': " +
-                                                                       spvPath.string() + " is not a SPIR-V module");
-        }
         EffectProgram program;
-        program.spirv.assign(reinterpret_cast<const std::uint32_t*>(bytes.data()),
-                             reinterpret_cast<const std::uint32_t*>(bytes.data()) + bytes.size() / 4);
+        try {
+            program.spirv = gpu::loadSpirv(spvPath);
+        } catch (const gpu::GpuException& error) {
+            throw gpu::GpuException(error.errorCode(), std::string("effect '") + type + "': " + error.what());
+        }
         program.sourcePath = spvPath.string();
         const std::filesystem::path slangPath = sourceDir / (std::string(type) + ".slang");
         if (!sourceDir.empty() && std::filesystem::exists(slangPath)) {
@@ -153,10 +178,10 @@ EffectLibrary loadSlangEffectLibrary(const std::filesystem::path& spvDir, const 
 }
 
 EffectLibrary glslEffectLibrary() {
-    static const char* kEffects[] = {"testpattern", "constcolor", "merge", "output"};
-    const char* sources[] = {kGlslTestpattern, kGlslConstcolor, kGlslMerge, kGlslOutput};
+    static const char* kEffects[] = {"testpattern", "constcolor", "merge", "output", "source"};
+    const char* sources[] = {kGlslTestpattern, kGlslConstcolor, kGlslMerge, kGlslOutput, kGlslSource};
     EffectLibrary library;
-    for (std::size_t i = 0; i < 4; ++i) {
+    for (std::size_t i = 0; i < 5; ++i) {
         EffectProgram program;
         program.glsl = std::string(kGlslPreamble) + sources[i];
         program.sourcePath = "runtime GLSL (glslang), EffectShaders.hpp:" + std::string(kEffects[i]);
@@ -198,8 +223,12 @@ CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocato
 static std::optional<GpuEvaluation> executeGpu(const Document& document, EvaluationRequest request,
                                                const EffectLibrary& effects, gpu::Device& device,
                                                gpu::Allocator& allocator, std::optional<std::uint64_t> timeout_ns,
-                                               ResultCache<GpuNodeImage>* reuse) {
+                                               ResultCache<GpuNodeImage>* reuse, SourceSession* sources) {
     validateRequest(document, request);
+    if (request.samplingScale != 1 && request.samplingScale != 2 && request.samplingScale != 4) {
+        throw EvaluationException("samplingScale " + std::to_string(request.samplingScale) +
+                                  " is not supported (declared scales: 1, 2, 4)");
+    }
     if (device.features().shaderStorageImageReadWithoutFormat == VK_FALSE ||
         device.features().shaderStorageImageWriteWithoutFormat == VK_FALSE) {
         throw gpu::GpuException(gpu::GpuError::NoDevice,
@@ -225,15 +254,22 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         std::unique_ptr<ComputePass> pass;
         std::shared_ptr<const GpuNodeImage> output;
         std::vector<const gpu::Image*> inputs;
+        // Decoded source frame this dispatch reads (issue #11); retained
+        // with the submission so a bounded session cache eviction or a
+        // dropped evaluation can never free it before GPU completion.
+        std::shared_ptr<const gpu::Image> externalInput;
     };
     std::vector<Dispatch> dispatches;
     gpu::SubmissionQueue::RetainedResources retained;
     evaluation.plan.request = request;
     std::map<NodeId, ImageIdentity> identities;
+    const int scale = request.samplingScale;
+    const int imageWidth = (request.region.width + scale - 1) / scale;
+    const int imageHeight = (request.region.height + scale - 1) / scale;
     const ImageLayout layout = [&] {
         ImageLayout l;
-        l.width = request.region.width;
-        l.height = request.region.height;
+        l.width = imageWidth;
+        l.height = imageHeight;
         return l;
     }();
 
@@ -250,6 +286,30 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         step.type = node->type;
         step.name = node->name;
         step.effectiveParams = node->params;
+
+        // Real-media source (issue #11): resolve the document reference and
+        // its time mapping through the session layer — the executor owns no
+        // decode state. The mapped frame and reference key travel as plan
+        // evidence (effectiveParams); Document::sources itself never holds
+        // runtime objects.
+        std::shared_ptr<const gpu::Image> sourceFrame;
+        if (node->type == "source") {
+            if (sources == nullptr) {
+                failEffect(*node, program,
+                           "real-media source node evaluated without a SourceSession "
+                           "(no silent decode fallback)");
+            }
+            const auto sourceParam = node->params.find("source");
+            if (sourceParam == node->params.end()) {
+                failEffect(*node, program, "parameter 'source' (the document source key) is required");
+            }
+            step.effectiveParams.emplace("source", sourceParam->second);
+            const SourceSession::DecodedFrame decoded =
+                sources->acquire(document, *node, request.localTime, timeout_ns.value_or(10'000'000'000ULL));
+            sourceFrame = std::move(decoded.image);
+            step.effectiveParams.emplace("frame", std::to_string(decoded.frame));
+        }
+
         const std::vector<NodeId> producers = resolveStepInputs(document, *node, identities, step);
 
         // Reuse identity (issue #9): effective state including the effective
@@ -266,13 +326,18 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             if (const std::optional<ResultCache<GpuNodeImage>::Entry> hit = reuse->find(key)) {
                 // Reused in place: no dispatch, no allocation. The cached
                 // image keeps its GENERAL layout invariant, so downstream
-                // reads are identical to a freshly written result.
-                step.produced = hit->identity;
-                step.cacheReused = true;
-                identities.emplace(node->id, step.produced);
-                evaluation.images.emplace(node->id, hit->image);
-                evaluation.plan.steps.push_back(std::move(step));
-                continue;
+                // reads are identical to a freshly written result. The
+                // identity must also match THIS representation's raster —
+                // the key carries samplingScale, so a mismatch would be a
+                // key contract bug; serving it would be wrong (issue #11).
+                if (hit->identity.layout.width == imageWidth && hit->identity.layout.height == imageHeight) {
+                    step.produced = hit->identity;
+                    step.cacheReused = true;
+                    identities.emplace(node->id, step.produced);
+                    evaluation.images.emplace(node->id, hit->image);
+                    evaluation.plan.steps.push_back(std::move(step));
+                    continue;
+                }
             }
         }
 
@@ -305,8 +370,9 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         EffectUniforms uniforms{};
         std::vector<ComputeBinding> bindings;
         gpu::Buffer uniformBuffer;
-        const std::uint32_t inputCount = prepareEffectStep(*node, request, program, step.effectiveParams, uniforms,
-                                                           bindings, uniformBuffer, allocator);
+        const std::uint32_t inputCount =
+            prepareEffectStep(*node, request, program, step.effectiveParams, uniforms, bindings, uniformBuffer,
+                              allocator, sourceFrame ? &*sourceFrame : nullptr);
         if (inputCount != inputs.size()) {
             failEffect(*node, program,
                        "effect declares " + std::to_string(inputCount) + " inputs but the plan wires " +
@@ -333,7 +399,13 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             failEffect(*node, program, std::string("pipeline creation failed: ") + error.what());
         }
         retained.push_back(pass->retain());
-        dispatches.push_back({std::move(pass), resident, std::move(inputs)});
+        dispatches.push_back({std::move(pass), resident, std::move(inputs), std::move(sourceFrame)});
+        if (dispatches.back().externalInput) {
+            // Completion-owned retention (issue #22 mechanism): the decoded
+            // frame's allocation and handle survive until the fence
+            // signals, independently of the bounded session cache.
+            retained.push_back(dispatches.back().externalInput);
+        }
 
         step.produced.contentHash = 0;  // established by declared readback only
         step.produced.layout = layout;
@@ -344,6 +416,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
     }
 
     evaluation.plan.result = identities.at(request.output);
+    evaluation.keys = std::move(keys);
     if (!dispatches.empty()) {
         const auto completion = queue.submit(
             [&](VkCommandBuffer command) {
@@ -351,7 +424,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                     prepareFreshImage(command, dispatch.output->image);
                     for (const auto* input : dispatch.inputs)
                         afterWriteBeforeRead(command, *input);
-                    dispatch.pass->record(command, (request.region.width + 7) / 8, (request.region.height + 7) / 8, 1);
+                    if (dispatch.externalInput)
+                        afterExternalWriteBeforeRead(command, *dispatch.externalInput);
+                    dispatch.pass->record(command, static_cast<uint32_t>((imageWidth + 7) / 8),
+                                          static_cast<uint32_t>((imageHeight + 7) / 8), 1);
                 }
             },
             std::move(retained));
@@ -368,21 +444,23 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
     if (reuse != nullptr && timeout_ns) {
         for (const auto& step : evaluation.plan.steps) {
             if (!step.cacheReused)
-                reuse->publish(document, ticket, keys.at(step.node), evaluation.images.at(step.node), step.produced);
+                reuse->publish(document, ticket, evaluation.keys.at(step.node), evaluation.images.at(step.node),
+                               step.produced);
         }
     }
     return evaluation;
 }
 
 std::optional<GpuEvaluation> submitGpu(const Document& document, EvaluationRequest request,
-                                       const EffectLibrary& effects, gpu::Device& device, gpu::Allocator& allocator) {
-    return executeGpu(document, request, effects, device, allocator, std::nullopt, nullptr);
+                                       const EffectLibrary& effects, gpu::Device& device, gpu::Allocator& allocator,
+                                       SourceSession* sources) {
+    return executeGpu(document, request, effects, device, allocator, std::nullopt, nullptr, sources);
 }
 
 GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, const EffectLibrary& effects,
                           gpu::Device& device, gpu::Allocator& allocator, std::uint64_t timeout_ns,
-                          ResultCache<GpuNodeImage>* reuse) {
-    auto evaluation = executeGpu(document, request, effects, device, allocator, timeout_ns, reuse);
+                          ResultCache<GpuNodeImage>* reuse, SourceSession* sources) {
+    auto evaluation = executeGpu(document, request, effects, device, allocator, timeout_ns, reuse, sources);
     if (!evaluation)
         throw gpu::GpuException(gpu::GpuError::InvalidRequest, "GPU submission capacity exhausted");
     return std::move(*evaluation);

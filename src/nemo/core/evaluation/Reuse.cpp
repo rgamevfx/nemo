@@ -40,14 +40,45 @@ void appendField(std::string& out, const char* label, const std::string& value) 
     return canonical;
 }
 
+// Canonical source-reference content for a source node's key (issue #11):
+// the key it addresses plus the full reference (path, time mapping,
+// interpretation policy), length-prefixed and injective. A source edit
+// therefore invalidates only this node and its dependents, while the rest
+// of the graph keeps its reuse identity.
+[[nodiscard]] std::string canonicalSource(const Document& document, const Node& node) {
+    const auto paramIt = node.params.find("source");
+    std::string out;
+    const std::string key = paramIt != node.params.end() ? paramIt->second : std::string{};
+    const auto it = document.sources.find(key);
+    if (it == document.sources.end()) {
+        appendField(out, "key", key);
+        appendField(out, "unresolved", "1");
+        return out;
+    }
+    appendField(out, "key", key);
+    appendField(out, "path", it->second.path);
+    appendField(out, "offset", std::to_string(it->second.frameOffset));
+    appendField(out, "step", std::to_string(it->second.frameStep));
+    appendField(out, "revision", std::to_string(it->second.revision));
+    appendField(out, "interpretation", [&] {
+        std::string text;
+        for (const auto& [tag, value] : it->second.interpretation) {
+            appendField(text, tag.c_str(), value);
+        }
+        return text;
+    }());
+    return out;
+}
+
 }  // namespace
 
 std::uint64_t implementationVersion(const std::string& nodeType) {
     // Bump a type's version when its evaluation semantics change in a way
     // keys must observe (see Reuse.hpp).
-    static const std::map<std::string, std::uint64_t> versions{{"testpattern", 1},
+    static const std::map<std::string, std::uint64_t> versions{{"testpattern", 2},
                                                                {"constcolor", 1},
                                                                {"merge", 1},
+                                                               {"source", 1},
                                                                {"output", 1}};
     const auto it = versions.find(nodeType);
     return it != versions.end() ? it->second : 1;
@@ -56,12 +87,21 @@ std::uint64_t implementationVersion(const std::string& nodeType) {
 ResultKey nodeResultKey(const Document& document, const Node& node, const std::vector<std::uint64_t>& inputKeyHashes,
                         const EvaluationRequest& request, const KeyContext& context) {
     // Canonical form, every string field length-prefixed:
-    //   impl|type|params|inputs|time|region|channels|quality|working|tag
+    //   impl|type|params|inputs|source|time|region|scale|channels|quality|working|tag
     // Input identity enters through the inputs' key hashes in port order,
     // so a change anywhere upstream changes every downstream key while
     // unrelated branches keep theirs (spec section 10.3: reuse follows
-    // effective dependencies). Number fields (time, region, input hashes)
-    // are decimal and self-delimiting.
+    // effective dependencies). Number fields (time, region, scale, input
+    // hashes) are decimal and self-delimiting.
+    //
+    // Source nodes additionally carry the persistent source reference in
+    // the canonical form: a Document::sources edit changes the key of the
+    // source node and everything downstream of it, and only those (issue
+    // #11 acceptance: source map changes invalidate only dependent
+    // content). samplingScale is part of the identity like quality (spec
+    // section 8: a reduced result must not satisfy a higher-resolution
+    // request); region stays full-resolution so scale and ROI are
+    // distinguishable in the identity.
     std::string canonical;
     canonical.reserve(96 + node.params.size() * 24);
     appendField(canonical, "impl", std::to_string(implementationVersion(node.type)));
@@ -73,10 +113,16 @@ ResultKey nodeResultKey(const Document& document, const Node& node, const std::v
         canonical.push_back(',');
     }
     canonical.push_back('\x1F');
+    if (node.type == "source") {
+        appendField(canonical, "source", canonicalSource(document, node));
+    }
     appendField(canonical, "time", std::to_string(request.localTime));
     appendField(canonical, "region",
                 std::to_string(request.region.x) + ',' + std::to_string(request.region.y) + ',' +
                     std::to_string(request.region.width) + ',' + std::to_string(request.region.height));
+    appendField(canonical, "scale", std::to_string(request.samplingScale));
+    appendField(canonical, "domain",
+                std::to_string(request.imageWidth()) + ',' + std::to_string(request.imageHeight()));
     appendField(canonical, "channels", request.channels);
     appendField(canonical, "quality", qualityName(request.quality));
     appendField(canonical, "working", document.color.workingSpace);

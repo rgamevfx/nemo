@@ -175,11 +175,18 @@ Rectangle {
             }
         }
 
-        // Panel body — intentionally empty. No placeholder text, banners,
-        // status counters, or decorative indicators.
+        // Panel body. The viewer panel hosts the native Vulkan viewer; the
+        // nodegraph/timeline bodies stay intentionally empty (no placeholder
+        // text, banners, or decorative indicators).
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            Loader {
+                anchors.fill: parent
+                active: panelRoot.panelType === "viewer"
+                source: "ViewerPanel.qml"
+            }
         }
     }
 }

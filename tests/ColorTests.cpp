@@ -12,6 +12,7 @@
 // GPU tests guard themselves like GpuTests: without a usable Vulkan device
 // they skip, so CI and device-less machines still pass.
 
+#include "ScopedEnvironment.hpp"
 #include <gtest/gtest.h>
 
 #include <array>
@@ -188,7 +189,7 @@ void expectValidationClean(gpu::Instance& instance) {
                       VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, timeout_ns);
 
     gpu::GpuViewingTransform transform(*boot.device, *boot.allocator, program);
-    std::optional<gpu::GpuViewedImage> viewed = transform.submit(source);
+    std::optional<gpu::GpuViewedImage> viewed = transform.submit(source, ColorInterpretation::SceneLinear);
     EXPECT_TRUE(viewed.has_value());
     if (!viewed.has_value()) {
         return {};
@@ -274,7 +275,7 @@ TEST(Color, MissingConfigNamesPath) {
     }
     try {
         // Empty request and no OCIO environment variable.
-        ::unsetenv("OCIO");
+        const test::ScopedEnvironment ocio("OCIO", std::nullopt);
         (void)media::resolveConfigPath({});
         ADD_FAILURE() << "expected OcioException";
     } catch (const media::OcioException& error) {

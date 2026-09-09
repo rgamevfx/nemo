@@ -1,3 +1,5 @@
+#include "GraphItem.hpp"
+#include "TimelineItem.hpp"
 #include "ViewerController.hpp"
 #include "ViewerItem.hpp"
 #include "WorkspaceController.hpp"
@@ -304,19 +306,33 @@ TEST_F(WorkspaceDragTest, InteractiveGraphAndTimelineUseCommandsAndSharePlayhead
     EXPECT_FALSE(containsExtra());
 
     auto* ruler = item("timelineRuler");
-    const auto quarter = ruler->mapToScene(QPointF(ruler->width() / 4, ruler->height() / 2)).toPoint();
+    const auto quarter = ruler->mapToScene(QPointF(ruler->width() / 4, 10)).toPoint();
+    const auto beforeScrub = viewerController.frame();
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, quarter);
     QTest::qWait(30);
-    EXPECT_NEAR(viewerController.frame(), 60, 1);
+    EXPECT_GT(viewerController.frame(), beforeScrub);
+    const auto quarterFrame = viewerController.frame();
+    const auto middle = ruler->mapToScene(QPointF(ruler->width() / 2, 10)).toPoint();
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, quarter);
+    for (int step = 1; step <= 8; ++step)
+        QTest::mouseMove(window, quarter + (middle - quarter) * step / 8, 2);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, middle);
+    QTest::qWait(30);
+    EXPECT_GT(viewerController.frame(), quarterFrame);
     EXPECT_EQ(item("graphPlayhead")->property("value").toInt(), viewerController.frame());
     auto* slider = item("graphPlayhead");
     slider->forceActiveFocus();
     const auto before = viewerController.frame();
-    const auto previousPosition = item("timelinePlayhead")->x();
+    const auto previousPosition = ruler->property("playheadPosition").toReal();
     QTest::keyClick(window, Qt::Key_Right);
     QTest::qWait(30);
     EXPECT_GT(viewerController.frame(), before);
-    EXPECT_GT(item("timelinePlayhead")->x(), previousPosition);
+    EXPECT_GT(ruler->property("playheadPosition").toReal(), previousPosition);
+    const auto slip = center("timelineSlipPlus");
+    ASSERT_TRUE(QRect(QPoint(), window->size()).contains(slip)) << "Source timing controls must fit the tiled panel";
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, slip);
+    QTest::qWait(30);
+    EXPECT_EQ(viewerController.timelineClips().first().toMap().value("offset").toLongLong(), 1);
 }
 
 }  // namespace
@@ -331,6 +347,8 @@ int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     qmlRegisterType<nemo::ui::ViewerItem>("Nemo", 1, 0, "ViewerItem");
+    qmlRegisterType<nemo::ui::GraphItem>("Nemo", 1, 0, "GraphItem");
+    qmlRegisterType<nemo::ui::TimelineItem>("Nemo", 1, 0, "TimelineItem");
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

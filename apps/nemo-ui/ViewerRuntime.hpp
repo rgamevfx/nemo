@@ -49,6 +49,12 @@ struct ViewerRuntimeCounts {
     std::uint64_t dropped{};
     std::uint64_t staleRejected{};
     std::uint64_t completed{};
+    std::uint64_t cacheQueued{};
+    std::uint64_t cacheDropped{};
+    std::uint64_t cacheErrors{};
+    std::uint64_t cachePublished{};
+    std::string cacheError;
+    [[nodiscard]] bool operator==(const ViewerRuntimeCounts&) const = default;
 };
 
 // GUI submits immutable snapshots to the headless ViewerScheduler. The
@@ -95,7 +101,7 @@ private:
 
     void run(const std::filesystem::path& shaders);
     bool publish(ViewerWorkResult result, const Pending& pending);
-    void finishRange(const Pending& pending);
+    void finishRange(const Pending& pending, bool cacheAccepted);
     void flushValidation();
 
     // Destroy Qt's adopting wrapper BEFORE its borrowed Vulkan instance.
@@ -117,6 +123,10 @@ private:
     };
     std::map<eval::ViewerDestination, Published> results_;
     eval::ViewerCacheOptions cacheOptions_;
+    // Borrowed only under mutex_; worker clears before destroying its session.
+    // GUI counter reads use try-lock snapshots, never a blocking cache query.
+    eval::ViewerSession* session_{};
+    mutable eval::ViewerCacheCounts cacheCounts_;
     bool stopping_{};
     std::thread worker_;
 };

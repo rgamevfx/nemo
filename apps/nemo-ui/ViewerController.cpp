@@ -17,14 +17,14 @@ ViewerController::ViewerController(ViewerRuntime* runtime)
     connect(
         runtime_, &ViewerRuntime::rangeFailed, this,
         [this](const QString& message, qulonglong id) {
-            if (id != generation_)
+            if (id != rangeGeneration_)
                 return;
-            status_ = message;
-            emit statusChanged();
+            rangeError_ = message;
+            emit schedulerChanged();
         },
         Qt::QueuedConnection);
     schedulerPoll_.setInterval(200);
-    connect(&schedulerPoll_, &QTimer::timeout, this, &ViewerController::schedulerChanged);
+    connect(&schedulerPoll_, &QTimer::timeout, this, &ViewerController::pollScheduler);
     schedulerPoll_.start();
 }
 ViewerController::~ViewerController() = default;
@@ -119,19 +119,27 @@ QVariantList ViewerController::timelineClips() const {
 }
 
 qulonglong ViewerController::queued() const {
-    return static_cast<qulonglong>(runtime_->counts().queued);
+    return schedulerCounts_.queued;
 }
 
 qulonglong ViewerController::dropped() const {
-    return static_cast<qulonglong>(runtime_->counts().dropped);
+    return schedulerCounts_.dropped;
 }
 
 qulonglong ViewerController::staleRejected() const {
-    return static_cast<qulonglong>(runtime_->counts().staleRejected);
+    return schedulerCounts_.staleRejected;
 }
 
 qulonglong ViewerController::completed() const {
-    return static_cast<qulonglong>(runtime_->counts().completed);
+    return schedulerCounts_.completed;
+}
+
+void ViewerController::pollScheduler() {
+    auto counts = runtime_->counts();
+    if (counts == schedulerCounts_)
+        return;
+    schedulerCounts_ = std::move(counts);
+    emit schedulerChanged();
 }
 
 void ViewerController::documentChanged() {
@@ -151,14 +159,22 @@ void ViewerController::documentChanged() {
     emit timelineChanged();
     emit historyChanged();
     emit statusChanged();
+    invalidateRequest();
+    refreshRequest();
 }
 
 void ViewerController::invalidateRequest() {
     lastRequest_.reset();
     pending_ = false;
     outdated_ = static_cast<bool>(presentation_);
-    ++generation_;
+    generation_ = ++nextRequestId_;
+    rangeGeneration_ = 0;
+    const bool hadRangeError = !rangeError_.isEmpty();
+    rangeError_.clear();
     runtime_->cancel(generation_);
+    pollScheduler();
+    if (hadRangeError)
+        emit schedulerChanged();
 }
 
 void ViewerController::buildGraph(const SourceReference& reference) {
@@ -197,8 +213,6 @@ void ViewerController::addGraphNode(const QString& type, const QString& name) {
     try {
         commands_.push(addNodeCommand(type.toStdString(), trimmedName.toStdString()));
         documentChanged();
-        invalidateRequest();
-        refreshRequest();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -213,8 +227,6 @@ void ViewerController::connectGraphNodes(qulonglong fromNode, int fromPort, qulo
         commands_.push(connectCommand({static_cast<NodeId>(fromNode), static_cast<std::uint32_t>(fromPort)},
                                       {static_cast<NodeId>(toNode), static_cast<std::uint32_t>(toPort)}));
         documentChanged();
-        invalidateRequest();
-        refreshRequest();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -234,8 +246,6 @@ void ViewerController::setNodeParameter(const QString& nodeName, const QString& 
     try {
         commands_.push(setParamCommand(nodeName.toStdString(), key.toStdString(), value.toStdString()));
         documentChanged();
-        invalidateRequest();
-        refreshRequest();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -262,8 +272,6 @@ void ViewerController::slipTimelineClip(const QString& source, int delta) {
         // parent placement. SourceReference is the persistent timing mapping.
         commands_.push(setSourceCommand(key, replacement));
         documentChanged();
-        invalidateRequest();
-        refreshRequest();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -289,8 +297,6 @@ void ViewerController::retimeTimelineClip(const QString& source, int step) {
         // source frames before downstream graph processing.
         commands_.push(setSourceCommand(key, replacement));
         documentChanged();
-        invalidateRequest();
-        refreshRequest();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -303,8 +309,6 @@ bool ViewerController::undo() {
         if (!commands_.undo())
             return false;
         documentChanged();
-        invalidateRequest();
-        refreshRequest();
         return true;
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
@@ -319,8 +323,6 @@ bool ViewerController::redo() {
         if (!commands_.redo())
             return false;
         documentChanged();
-        invalidateRequest();
-        refreshRequest();
         return true;
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
@@ -329,15 +331,11 @@ bool ViewerController::redo() {
 }
 
 void ViewerController::cancelRender() {
-    lastRequest_.reset();
-    ++generation_;
-    runtime_->cancel(generation_);
-    pending_ = false;
-    outdated_ = static_cast<bool>(presentation_);
+    invalidateRequest();
     status_ = presentation_ ? QStringLiteral("Cancelled; displayed frame is outdated")
                             : QStringLiteral("Cancelled; no frame is displayed");
     emit statusChanged();
-    emit schedulerChanged();
+    pollScheduler();
 }
 
 void ViewerController::requestRange(int first, int last) {
@@ -356,15 +354,18 @@ void ViewerController::requestRange(int first, int last) {
         first = std::max(0, first);
         last = std::max(first, last);
     }
-    if (!runtime_->requestRange(document_, *lastRequest_, first, last, generation_)) {
+    rangeGeneration_ = ++nextRequestId_;
+    rangeError_.clear();
+    emit schedulerChanged();
+    if (!runtime_->requestRange(document_, *lastRequest_, first, last, rangeGeneration_)) {
         status_ = QStringLiteral("Cache range admission rejected; see scheduler drop count");
         emit statusChanged();
-        emit schedulerChanged();
+        pollScheduler();
         return;
     }
     status_ = QStringLiteral("Caching requested range %1–%2; viewer identity unchanged").arg(first).arg(last);
     emit statusChanged();
-    emit schedulerChanged();
+    pollScheduler();
 }
 
 void ViewerController::openSource(const QString& path) {
@@ -382,8 +383,6 @@ void ViewerController::openSource(const QString& path) {
         }
         buildGraph(reference);
         documentChanged();
-        invalidateRequest();
-        refreshRequest();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -393,7 +392,7 @@ void ViewerController::receive() {
     auto result = runtime_->takeResult();
     if (!result)
         return;
-    emit schedulerChanged();
+    pollScheduler();
     if (auto* failure = std::get_if<ViewerFailure>(&*result)) {
         if (failure->requestId == generation_ || failure->requestId == 0)
             fail(QString::fromStdString(failure->message));
@@ -463,7 +462,8 @@ void ViewerController::refreshRequest() {
             status_ = QStringLiteral("Probing %1").arg(QString::fromStdString(reference.path));
             emit sourceChanged();
             emit statusChanged();
-            if (!runtime_->probe(document_, "src", ++generation_))
+            generation_ = ++nextRequestId_;
+            if (!runtime_->probe(document_, "src", generation_))
                 fail(QStringLiteral("Source probe admission rejected"));
             return;
         }
@@ -499,7 +499,7 @@ void ViewerController::refreshRequest() {
             return;
         lastRequest_ = request;
         lastRevision_ = revision;
-        const auto id = ++generation_;
+        const auto id = generation_ = ++nextRequestId_;
         if (!runtime_->submit(document_, request, id))
             throw std::runtime_error("Viewer request admission rejected");
         pending_ = true;
@@ -508,7 +508,7 @@ void ViewerController::refreshRequest() {
         status_ = presentation_ ? QStringLiteral("Pending 1:%1; previous frame is outdated").arg(request.samplingScale)
                                 : QStringLiteral("Rendering 1:%1").arg(request.samplingScale);
         emit statusChanged();
-        emit schedulerChanged();
+        pollScheduler();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }

@@ -21,6 +21,7 @@
     "surface": "Production Main.qml, ViewerController, ViewerRuntime and ViewerItem in a temporary native Qt interaction harness; also launched the packaged nemo-ui executable separately"
   },
   "native_interaction_observations": {
+    "phase": "initial implementation, before review corrections",
     "exit_code": 0,
     "range_frames_still_queued_when_interactive_frame_47_arrived": 93,
     "heartbeat_interval_ms": 5,
@@ -39,6 +40,43 @@
     "qml_warnings": 0,
     "vulkan_validation_warnings": 0,
     "visual_confirmation": "Native window capture inspected; viewer, graph parameter controls, output selector, shared playhead and timeline current/outdated state visible. Graph toolbar scrolls when narrower than its controls."
+  },
+  "review_correction_run": {
+    "exit_code": 0,
+    "graph_nodes": 40,
+    "renderer": "Culled C++ GraphItem and TimelineItem; viewport pan and native timeline pointer input exercised",
+    "chunk_frames": 2,
+    "maximum_pending_encode_frames": 4,
+    "range_backlog_when_interactive_frame_arrived": 94,
+    "heartbeat_callbacks": 5327,
+    "maximum_event_loop_heartbeat_gap_ms": 155,
+    "heartbeat_scope": "Whole scenario including a burst adding 36 unused nodes, source probing, resize and workspace changes; not single-edit or edit-to-visible latency",
+    "scheduler_dropped": 157,
+    "scheduler_stale_rejected": 17,
+    "persisted_cache_frames_at_observation": 8,
+    "cache_admission_drops": 0,
+    "cached_return_without_render": true,
+    "pause_and_no_op_without_refinement": true,
+    "range_error_survived_later_scrubbing": true,
+    "range_error": "Cache frame 1000: node 'source' (id 1, type 'source'): frame 1000 is past the end of source 'src'; the stream is exhausted at frame 95",
+    "current_viewer_unchanged_by_range_error": true,
+    "source_replacement_undo_restored_dimensions": true,
+    "qml_warnings": 0,
+    "vulkan_validation_warnings": 0,
+    "regressions": [
+      "SharedCacheIdentitySurvivesPublicationFromTwoDestinations failed before identity deduplication and passed after the fix, including reopen from disk.",
+      "CacheRangeReportsAsynchronousDiskAdmissionFailure observes rejected persistence through runtime cache error/drop counters, with zero stored frames.",
+      "InteractiveGraphAndTimelineUseCommandsAndSharePlayhead exercises native timeline drag and on-screen slip controls."
+    ]
+  },
+  "thread_sanitizer_scheduler_exercise": {
+    "producers": 4,
+    "requests_per_producer": 1000,
+    "consumers": 1,
+    "completed": 802,
+    "dropped": 3116,
+    "reports": 0,
+    "scope": "Current ViewerScheduler.cpp, Document.cpp and Graph.cpp compiled together with -fsanitize=thread; setarch x86_64 -R avoids this host's default unexpected-memory-mapping startup failure. No race suppression."
   },
   "packaged_application": {
     "command": "QT_QPA_PLATFORM=wayland OCIO=docs/evidence/issue12-view.ocio build/debug/apps/nemo-ui/nemo-ui --source /tmp/nemo-issue13-interactive.mkv --viewer-cache-dir /tmp/nemo-issue13-app-cache --viewer-cache-chunk-frames 1 --cache-benchmark-frames 3",

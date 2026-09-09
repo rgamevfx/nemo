@@ -98,6 +98,10 @@ does not make another viewer's result stale. Cancellation changes eligibility,
 not GPU completion: #22 retains submitted resources through completion.
 `ViewerRuntime` performs decode, compilation, rendering, and presentation
 preparation on its worker, with destination-local result mailboxes.
+Range requests have a separate identity from interactive scrubbing. Worker
+failures remain visible for that range until cancellation or supersession.
+Nonblocking cache-counter snapshots distinguish evaluation/admission from
+persisted frames, queued encoding, rejected admission, and asynchronous errors.
 
 Publication and reusable history remain distinct. Moving the playhead rejects
 an obsolete viewer result but may preserve its already-requested cache history.
@@ -105,6 +109,9 @@ The asynchronous cache writer checks scheduler eligibility before publishing;
 cancellation cannot be undone by later resubmitting the same revision.
 Neither scheduling nor publication freshness removes unrelated committed
 content-keyed representations.
+Pending publications coalesce by shared content identity, not destination:
+destination-local freshness must not place a duplicate identity twice in the
+same encoded chunk and retire that chunk while publishing its second entry.
 
 The graph and timeline panels use the same controller and CommandStack.
 The graph exposes node creation, connections, parameter editing, and output
@@ -112,6 +119,9 @@ selection. Timeline source strips expose the existing persistent source
 offset/step mapping and shared playhead. They do not claim clip-occurrence
 move/trim support: that model is not yet present. Unknown source coverage is
 shown explicitly rather than inferred from the ruler's visible extent.
+Dense graph and timeline content uses culled, batched C++ scene-graph items.
+QML owns chrome and a single selected-source inspector; offscreen nodes,
+connections, and source strips do not create per-element control trees.
 
 ## Verification
 

@@ -25,6 +25,8 @@ struct ViewerFrame {
     std::uint64_t revision{};
     std::uint64_t requestId{};
     bool cacheHit{false};
+    // Accepted for asynchronous encoding, not proof of a persisted chunk.
+    bool cacheQueued{false};
 };
 
 // Worker-confined orchestration over the shared native dependency plan:
@@ -57,9 +59,9 @@ public:
     // admission reported an error.
     void flushCache();
     [[nodiscard]] ViewerCacheCounts cacheCounts() const;
-    // Thread-safe UI freshness signal. It only advances freshness for the
-    // selected destination and does not invalidate valid distinct frame
-    // representations or other destinations.
+    [[nodiscard]] std::optional<ViewerCacheCounts> tryCacheCounts() const;
+    // Thread-safe headless/worker freshness signal; may wait for cache setup.
+    // Interactive callers use scheduler publication guards instead.
     void supersedeCache(std::uint64_t revision, std::uint64_t generation,
                         ViewerDestination destination = ViewerDestination::Interactive);
 

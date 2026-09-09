@@ -103,11 +103,18 @@ if(NEMO_BUILD_UI)
         ../apps/nemo-ui/ViewerRuntime.hpp
         ../apps/nemo-ui/ViewerItem.cpp
         ../apps/nemo-ui/ViewerItem.hpp
+        ../apps/nemo-ui/GraphItem.cpp
+        ../apps/nemo-ui/GraphItem.hpp
+        ../apps/nemo-ui/TimelineItem.cpp
+        ../apps/nemo-ui/TimelineItem.hpp
     )
     set_target_properties(nemo_workspace_ui_tests PROPERTIES AUTOMOC ON)
     target_compile_definitions(nemo_workspace_ui_tests PRIVATE
         NEMO_UI_QML_DIR="${PROJECT_SOURCE_DIR}/apps/nemo-ui/qml"
     )
+    if(DEFINED NEMO_SLANG_SPV_DIR)
+        target_compile_definitions(nemo_workspace_ui_tests PRIVATE NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
+    endif()
     target_link_libraries(nemo_workspace_ui_tests PRIVATE
         nemo::workspace nemo::eval GTest::gtest Qt6::Quick Qt6::QuickControls2 Qt6::Test
     )

@@ -1,14 +1,17 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Nemo
 
 // Graph presentation over the authored Document. Nodes and edges come from
 // ViewerController's query properties; every mutation goes through a command
 // invokable so the same undo/redo and revision path serves UI and automation.
-Rectangle {
+Pane {
     id: graphPanel
     objectName: "graphPanel"
-    color: "#202020"
+    padding: 0
+    font.pixelSize: 12
+    background: Rectangle { color: "#202020" }
     readonly property var controller: viewerController
 
     ColumnLayout {
@@ -18,15 +21,16 @@ Rectangle {
         Flickable {
             id: toolbar
             Layout.fillWidth: true
-            Layout.preferredHeight: 164
+            Layout.preferredHeight: 174
             contentWidth: Math.max(width, toolbarRows.implicitWidth)
-            contentHeight: 154
+            contentHeight: toolbarRows.implicitHeight
             clip: true
             ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             ColumnLayout {
                 id: toolbarRows
                 width: toolbar.contentWidth
-                height: 154
+                height: toolbarRows.implicitHeight
                 spacing: 2
                 RowLayout {
                     Layout.fillWidth: true
@@ -166,108 +170,27 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            contentWidth: Math.max(width, graphColumn.implicitWidth)
-            contentHeight: Math.max(height, graphColumn.implicitHeight)
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: graphItem.width
+            contentHeight: graphItem.height
             ScrollBar.vertical: ScrollBar {}
             ScrollBar.horizontal: ScrollBar {}
 
-            Column {
-                id: graphColumn
-                width: Math.max(graphScroll.width - 8, 520)
-                spacing: 6
-                padding: 6
-
-                Repeater {
-                    model: controller.graphNodes
-                    delegate: Rectangle {
-                        objectName: "graphNode_" + modelData.id
-                        width: graphColumn.width - 12
-                        height: Math.max(76, parameters.implicitHeight + 40)
-                        color: "#343434"
-                        border.color: "#555555"
-                        radius: 3
-                        property var nodeData: modelData
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 3
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Text {
-                                    text: nodeData.name
-                                    color: "#f0f0f0"
-                                    font.bold: true
-                                }
-                                Text {
-                                    text: nodeData.type + "  (#" + nodeData.id + ")"
-                                    color: "#909090"
-                                    font.pixelSize: 11
-                                }
-                                Item { Layout.fillWidth: true }
-                            }
-                            Column {
-                                id: parameters
-                                Layout.fillWidth: true
-                                spacing: 2
-                                Repeater {
-                                    model: Object.keys(nodeData.params)
-                                    delegate: RowLayout {
-                                        width: parameters.width
-                                        spacing: 4
-                                        Text {
-                                            text: modelData
-                                            color: "#adadad"
-                                            Layout.preferredWidth: 88
-                                            elide: Text.ElideRight
-                                        }
-                                        TextField {
-                                            objectName: "graphParam_" + nodeData.name + "_" + modelData
-                                            text: nodeData.params[modelData]
-                                            Layout.fillWidth: true
-                                            selectByMouse: true
-                                            onEditingFinished: controller.setNodeParameter(nodeData.name, modelData, text)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    objectName: "graphConnections"
-                    width: graphColumn.width - 12
-                    height: Math.max(34, edgesColumn.implicitHeight + 12)
-                    color: "#292929"
-                    border.color: "#484848"
-                    Column {
-                        id: edgesColumn
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.margins: 6
-                        spacing: 2
-                        Text { text: "Connections"; color: "#d0d0d0"; font.bold: true }
-                        Repeater {
-                            model: controller.graphEdges
-                            delegate: Text {
-                                objectName: "graphEdge_" + modelData.id
-                                text: "#" + modelData.id + "  " + graphPanel.nodeLabel(modelData.fromNode) + ":" + modelData.fromPort + "  →  " + graphPanel.nodeLabel(modelData.toNode) + ":" + modelData.toPort
-                                color: "#a9c4d8"
-                                font.pixelSize: 11
-                            }
-                        }
-                    }
-                }
+            // The custom item is the only scene-graph content for the dense
+            // graph. It receives model snapshots on the GUI thread, caches
+            // layout records, and draws only the visible records from
+            // updatePaintNode. Flickable supplies the viewport and scrolling;
+            // visibleRect remains in the item's content coordinates.
+            GraphItem {
+                id: graphItem
+                objectName: "graphItem"
+                width: Math.max(graphScroll.width, implicitWidth)
+                height: Math.max(graphScroll.height, implicitHeight)
+                nodes: controller.graphNodes
+                edges: controller.graphEdges
+                visibleRect: Qt.rect(graphScroll.contentX, graphScroll.contentY,
+                                     graphScroll.width, graphScroll.height)
             }
         }
-    }
-
-    function nodeLabel(id) {
-        for (var i = 0; i < controller.graphNodes.length; ++i) {
-            if (controller.graphNodes[i].id === id)
-                return controller.graphNodes[i].name
-        }
-        return "node " + id
     }
 }

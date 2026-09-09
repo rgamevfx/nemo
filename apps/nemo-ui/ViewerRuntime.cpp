@@ -90,7 +90,19 @@ void ViewerRuntime::cancel(std::uint64_t id) {
 ViewerRuntimeCounts ViewerRuntime::counts() const {
     std::lock_guard lock(mutex_);
     const eval::ViewerSchedulerCounts counts = scheduler_.counts();
-    return ViewerRuntimeCounts{counts.queued, counts.dropped, counts.staleRejected, counts.completed};
+    if (session_) {
+        if (auto snapshot = session_->tryCacheCounts())
+            cacheCounts_ = std::move(*snapshot);
+    }
+    return ViewerRuntimeCounts{counts.queued,
+                               counts.dropped,
+                               counts.staleRejected,
+                               counts.completed,
+                               cacheCounts_.pendingFrames + cacheCounts_.activeFrames,
+                               cacheCounts_.admissionDropped + cacheCounts_.admissionRejected,
+                               cacheCounts_.errors,
+                               cacheCounts_.published,
+                               cacheCounts_.lastError};
 }
 
 std::optional<ViewerWorkResult> ViewerRuntime::takeResult(eval::ViewerDestination destination) {
@@ -123,12 +135,11 @@ bool ViewerRuntime::publish(ViewerWorkResult result, const Pending& pending) {
     return accepted;
 }
 
-void ViewerRuntime::finishRange(const Pending& pending) {
+void ViewerRuntime::finishRange(const Pending& pending, bool cacheAccepted) {
     std::lock_guard lock(mutex_);
-    // A range has no viewer mailbox result. `published=true` records terminal
-    // completion only when its destination identity is still current; stale
-    // range work is counted and discarded without touching presentation.
-    (void)scheduler_.complete(pending, true);
+    // Admission is not persistence. Writer progress/errors are reported
+    // separately by counts(), including after this evaluation completes.
+    (void)scheduler_.complete(pending, cacheAccepted);
 }
 
 void ViewerRuntime::run(const std::filesystem::path& shaders) {
@@ -151,6 +162,8 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
                 auto configured = std::make_unique<eval::ViewerSession>(*instance_, *device_, *allocator_, shaders);
                 configured->configureCache(cacheOptions_);
                 session = std::move(configured);
+                std::lock_guard lock(mutex_);
+                session_ = session.get();
             }
             if (pending.kind == eval::ViewerRequestKind::Probe) {
                 publish(SourceProbeResult{session->probeSource(*pending.document, pending.source), pending.id},
@@ -160,7 +173,7 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
                 auto frame = session->render(*pending.document, pending.request, 10'000'000'000ULL, pending.id,
                                              pending.destination, std::move(publicationGuard));
                 if (pending.kind == eval::ViewerRequestKind::CacheRange) {
-                    finishRange(pending);
+                    finishRange(pending, frame.cacheHit || frame.cacheQueued);
                 } else {
                     bool current = false;
                     {
@@ -195,6 +208,8 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
         }
         flushValidation();
     }
+    std::lock_guard lock(mutex_);
+    session_ = nullptr;
 }
 
 QString ViewerRuntime::attachToWindow(QQuickWindow* window) {

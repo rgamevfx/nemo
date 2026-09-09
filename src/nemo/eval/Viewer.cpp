@@ -87,16 +87,21 @@ ViewerCacheCounts ViewerSession::cacheCounts() const {
     return cache_->counts();
 }
 
+std::optional<ViewerCacheCounts> ViewerSession::tryCacheCounts() const {
+    std::unique_lock cacheLock(cacheMutex_, std::try_to_lock);
+    if (!cacheLock.owns_lock())
+        return std::nullopt;
+    return cache_ ? cache_->tryCounts() : std::optional<ViewerCacheCounts>{ViewerCacheCounts{}};
+}
+
 void ViewerSession::supersedeCache(std::uint64_t revision, std::uint64_t generation, ViewerDestination destination) {
-    // This short freshness section is safe from the UI thread. It never
-    // performs cache I/O, decode, or GPU waits; those remain worker-owned.
+    std::lock_guard cacheLock(cacheMutex_);
     std::lock_guard freshnessLock(freshnessMutex_);
     auto& currentGeneration = latestGenerationByDestination_[destination];
     if (generation < currentGeneration)
         return;
     currentGeneration = generation;
     latestRevisionByDestination_[destination] = revision;
-    std::lock_guard cacheLock(cacheMutex_);
     if (cache_)
         cache_->supersede(revision, generation, destination);
 }
@@ -200,15 +205,15 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
         // request. Each frame keeps its full effective identity in the index.
         auto chunkGroupKey =
             viewing.identity + "/" + std::to_string(frame.layout.width) + "x" + std::to_string(frame.layout.height);
-        cache_->enqueue(ViewerCachePublication{.identity = std::move(*identity),
-                                               .chunkGroupKey = std::move(chunkGroupKey),
-                                               .localTime = request.localTime,
-                                               .revision = revision,
-                                               .generation = generation,
-                                               .image = image,
-                                               .layout = frame.layout,
-                                               .destination = destination,
-                                               .publicationGuard = std::move(publicationGuard)});
+        frame.cacheQueued = cache_->enqueue(ViewerCachePublication{.identity = std::move(*identity),
+                                                                   .chunkGroupKey = std::move(chunkGroupKey),
+                                                                   .localTime = request.localTime,
+                                                                   .revision = revision,
+                                                                   .generation = generation,
+                                                                   .image = image,
+                                                                   .layout = frame.layout,
+                                                                   .destination = destination,
+                                                                   .publicationGuard = std::move(publicationGuard)});
     }
     return frame;
 }

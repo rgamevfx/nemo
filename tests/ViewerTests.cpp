@@ -1090,6 +1090,39 @@ TEST(Viewer, CroppedSourceReductionPreservesFullImageCoordinates) {
     expectValidationClean(*boot.instance);
 }
 
+TEST(Interactive, SharedCacheIdentitySurvivesPublicationFromTwoDestinations) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    const auto frame = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    CacheDirectory directory;
+    auto options = directory.options();
+    options.chunkFrames = 2;
+    {
+        eval::ViewerCache cache(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+        cache.configure(options);
+        eval::ViewerCachePublication publication{.identity = "shared-frame",
+                                                 .chunkGroupKey = "display",
+                                                 .revision = 1,
+                                                 .generation = 1,
+                                                 .image = frame.image,
+                                                 .layout = frame.layout};
+        std::array<eval::ViewerCachePublication, 2> batch{publication, publication};
+        batch[1].destination = eval::ViewerDestination::Cache;
+        ASSERT_TRUE(cache.enqueueBatch(batch));
+        cache.flush();
+    }
+    eval::ViewerCache reopened(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    reopened.configure(options);
+    EXPECT_TRUE(reopened.lookup("shared-frame", frame.layout, 5'000'000'000ULL))
+        << "A shared destination identity must not retire its own newly published chunk";
+    expectValidationClean(*boot.instance);
+}
+
 TEST(ViewerCache, SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform) {
     const auto boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);

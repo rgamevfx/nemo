@@ -14,7 +14,7 @@ if(NEMO_BUILD_UI)
     endif()
     qt_add_executable(nemo-ui main.cpp WorkspaceController.cpp WorkspaceController.hpp
         ViewerController.cpp ViewerController.hpp ViewerRuntime.cpp ViewerRuntime.hpp
-        ViewerItem.cpp ViewerItem.hpp)
+        ViewerItem.cpp ViewerItem.hpp GraphItem.cpp GraphItem.hpp TimelineItem.cpp TimelineItem.hpp)
     qt_add_qml_module(nemo-ui
         URI Nemo
         VERSION 1.0

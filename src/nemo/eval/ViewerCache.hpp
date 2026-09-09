@@ -130,6 +130,9 @@ public:
     void flush();
 
     [[nodiscard]] ViewerCacheCounts counts() const;
+    // Never waits for the writer/decoder mutex. A busy cache reports no
+    // snapshot so presentation can keep its previous counters.
+    [[nodiscard]] std::optional<ViewerCacheCounts> tryCounts() const;
 
 private:
     bool enqueueLocked(ViewerCachePublication publication);

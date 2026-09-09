@@ -1,23 +1,28 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Nemo
 
-// Timeline view of actual Document source references. The current model has no
-// persistent clip-occurrence placement/range, so this surface deliberately
-// edits only source timing (slip and integer retime) through commands. The
-// playhead is shared with ViewerPanel and never launches render-ahead.
-Rectangle {
+// Timeline chrome remains QML, while TimelineItem owns the dense ruler and
+// source-reference drawing/input surface. Source timing edits are deliberately
+// limited to the persistent SourceReference mapping exposed by the controller;
+// this document does not invent clip move/trim occurrences.
+Pane {
     id: timelinePanel
     objectName: "timelinePanel"
-    color: "#202020"
+    padding: 0
+    font.pixelSize: 12
+    background: Rectangle { color: "#202020" }
     readonly property var controller: viewerController
     readonly property int timelineLength: controller.frameCount > 0 ? controller.frameCount : 240
-
-    function scrubAt(x, width) {
-        if (width <= 0)
-            return
-        var value = Math.round(Math.max(0, Math.min(1, x / width)) * (timelineLength - 1))
-        controller.setFrame(value)
+    readonly property string selectedSource: timelineItem.selectedSource
+    readonly property var selectedClip: {
+        for (var i = 0; i < controller.timelineClips.length; ++i) {
+            var candidate = controller.timelineClips[i]
+            if (candidate && candidate.source === selectedSource)
+                return candidate
+        }
+        return null
     }
 
     ColumnLayout {
@@ -26,7 +31,7 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 78
+            Layout.preferredHeight: 70
             color: "#303030"
             ColumnLayout {
                 anchors.fill: parent
@@ -36,23 +41,27 @@ Rectangle {
                     Layout.fillWidth: true
                     Text {
                         objectName: "timelineState"
+                        font.pixelSize: 12
                         text: "Frame " + controller.frame + " · " + controller.renderState
                         color: controller.outdated ? "#e7ba76" : "#c8d3df"
                     }
                     Item { Layout.fillWidth: true }
                     Button {
+                        implicitHeight: 26
                         objectName: "timelineUndo"
                         text: "Undo"
                         enabled: controller.canUndo
                         onClicked: controller.undo()
                     }
                     Button {
+                        implicitHeight: 26
                         objectName: "timelineRedo"
                         text: "Redo"
                         enabled: controller.canRedo
                         onClicked: controller.redo()
                     }
                     Button {
+                        implicitHeight: 26
                         objectName: "timelineCancel"
                         text: "Cancel"
                         enabled: controller.pending || controller.queued > 0
@@ -64,6 +73,7 @@ Rectangle {
                     spacing: 4
                     Text { text: "Cache range"; color: "#aeaeae" }
                     SpinBox {
+                        implicitHeight: 26
                         id: rangeFirst
                         objectName: "timelineRangeFirst"
                         from: 0
@@ -74,6 +84,7 @@ Rectangle {
                     }
                     Text { text: "–"; color: "#858585" }
                     SpinBox {
+                        implicitHeight: 26
                         id: rangeLast
                         objectName: "timelineRangeLast"
                         from: 0
@@ -83,13 +94,17 @@ Rectangle {
                         implicitWidth: 78
                     }
                     Button {
+                        implicitHeight: 26
                         objectName: "timelineCacheRange"
                         text: "Cache requested range"
                         onClicked: controller.requestRange(rangeFirst.value, rangeLast.value)
                     }
                     Text {
                         objectName: "timelineSchedulerCounts"
-                        text: "queued " + controller.queued + " · dropped " + controller.dropped + " · stale " + controller.staleRejected + " · done " + controller.completed
+                        text: "queued " + controller.queued + " · dropped " + controller.dropped
+                              + " · stale " + controller.staleRejected + " · request completions " + controller.completed
+                              + " · cache queued " + controller.cacheQueued + " · cache dropped " + controller.cacheDropped
+                              + " · stored " + controller.cachePublished + " · cache errors " + controller.cacheErrors
                         color: "#8e9cab"
                         font.pixelSize: 11
                         elide: Text.ElideRight
@@ -99,176 +114,123 @@ Rectangle {
             }
         }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 34
-            color: "#272727"
-            Text {
-                anchors.fill: parent
-                anchors.margins: 5
-                verticalAlignment: Text.AlignVCenter
-                text: "Source strips · slip/retime edit source timing; parent clip move/trim is not represented by this document model"
-                color: "#9da7b0"
-                font.pixelSize: 11
-                elide: Text.ElideRight
-            }
-        }
 
         Flickable {
             id: timelineScroll
             objectName: "timelineSurface"
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumHeight: 24
             clip: true
-            contentWidth: Math.max(width, timelineColumn.implicitWidth)
-            contentHeight: Math.max(height, timelineColumn.implicitHeight)
+            contentWidth: timelineItem.width
+            contentHeight: timelineItem.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {}
             ScrollBar.horizontal: ScrollBar {}
 
-            Column {
-                id: timelineColumn
+            TimelineItem {
+                id: timelineItem
+                objectName: "timelineRuler"
                 width: Math.max(timelineScroll.width - 8, 600)
-                spacing: 7
-                padding: 7
+                height: implicitHeight
+                clips: controller.timelineClips
+                frame: controller.frame
+                frameCount: controller.frameCount
+                viewportY: timelineScroll.contentY
+                viewportHeight: timelineScroll.height
+                onFrameSelected: function(frameValue) { controller.setFrame(frameValue) }
+            }
 
-                Rectangle {
-                    id: ruler
-                    objectName: "timelineRuler"
-                    width: timelineColumn.width - 14
-                    height: 22
-                    color: "#303030"
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: function(mouse) { timelinePanel.scrubAt(mouse.x, width) }
-                        onPositionChanged: function(mouse) { if (pressed) timelinePanel.scrubAt(mouse.x, width) }
-                    }
-                    Repeater {
-                        model: 9
-                        delegate: Text {
-                            x: (index / 8) * (ruler.width - width)
-                            y: 3
-                            text: Math.round(index * (timelinePanel.timelineLength - 1) / 8)
-                            color: "#8d969f"
-                            font.pixelSize: 10
-                        }
-                    }
-                    Rectangle {
-                        objectName: "timelinePlayhead"
-                        x: timelinePanel.timelineLength > 1 ? (controller.frame / (timelinePanel.timelineLength - 1)) * parent.width - width / 2 : 0
-                        y: 0
-                        width: 2
-                        height: parent.height
-                        color: "#e6b35e"
-                    }
-                }
+        }
 
-                Repeater {
-                    id: clips
-                    model: controller.timelineClips
-                    delegate: Rectangle {
-                        id: clip
-                        objectName: "timelineClip_" + modelData.id
-                        width: timelineColumn.width - 14
-                        height: 84
-                        color: "#353d47"
-                        border.color: "#596a7c"
-                        radius: 3
-                        property var clipData: modelData
-
-                        MouseArea {
-                            anchors.fill: parent
-                            z: 0
-                            onClicked: function(mouse) { timelinePanel.scrubAt(mouse.x, width) }
-                            onPositionChanged: function(mouse) { if (pressed) timelinePanel.scrubAt(mouse.x, width) }
-                        }
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 3
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Text {
-                                    objectName: "timelineClipLabel_" + clipData.id
-                                    text: clipData.source + (clipData.end > 0 ? "   source coverage [0–" + clipData.end + ")" : "   source coverage unknown")
-                                    color: "#e8edf2"
-                                    font.bold: true
-                                }
-                                Item { Layout.fillWidth: true }
-                                Text {
-                                    text: "source frame " + clipData.sourceFrame
-                                    color: "#a9b6c3"
-                                    font.pixelSize: 11
-                                }
-                            }
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 18
-                                color: "#4c6b88"
-                                border.color: "#7698b8"
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "source " + clipData.source + "  offset " + clipData.offset + "  step " + clipData.step
-                                    color: "#e9f0f7"
-                                    font.pixelSize: 10
-                                }
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 4
-                                Button {
-                                    objectName: "timelineSlipMinus_" + clipData.id
-                                    text: "Slip −1"
-                                    implicitHeight: 23
-                                    onClicked: controller.slipTimelineClip(clipData.source, -1)
-                                }
-                                Button {
-                                    objectName: "timelineSlipPlus_" + clipData.id
-                                    text: "Slip +1"
-                                    implicitHeight: 23
-                                    onClicked: controller.slipTimelineClip(clipData.source, 1)
-                                }
-                                Button {
-                                    objectName: "timelineRetime1_" + clipData.id
-                                    text: "Rate 1"
-                                    implicitHeight: 23
-                                    onClicked: controller.retimeTimelineClip(clipData.source, 1)
-                                }
-                                Button {
-                                    objectName: "timelineRetime2_" + clipData.id
-                                    text: "Rate 2"
-                                    implicitHeight: 23
-                                    onClicked: controller.retimeTimelineClip(clipData.source, 2)
-                                }
-                                Button {
-                                    objectName: "timelineRetimeReverse_" + clipData.id
-                                    text: "Reverse"
-                                    implicitHeight: 23
-                                    onClicked: controller.retimeTimelineClip(clipData.source, -1)
-                                }
-                                Item { Layout.fillWidth: true }
-                            }
-                        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 56
+            color: "#292929"
+            border.color: "#414b55"
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 5
+                spacing: 3
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        objectName: "timelineSelectedSource"
+                        font.pixelSize: 12
+                        text: selectedSource.length > 0 ? "Selected source: " + selectedSource : "No source selected"
+                        color: "#e5e9ed"
+                        font.bold: true
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        objectName: "timelineSelectedCoverage"
+                        text: selectedClip ? (selectedClip.end > selectedClip.start ? "coverage [" + selectedClip.start + "–" + selectedClip.end + ")" : "coverage unknown") : ""
+                        color: "#a9b6c3"
+                        font.pixelSize: 11
                     }
                 }
-
-                Text {
-                    objectName: "timelineEmptyState"
-                    visible: controller.timelineClips.length === 0
-                    text: "Open a source in the Viewer to create an authored source strip."
-                    color: "#8b8b8b"
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text {
+                        text: selectedClip ? ("source frame " + (selectedClip.sourceFrame >= 0 ? selectedClip.sourceFrame : "unknown")
+                                               + " · offset " + selectedClip.offset + " · step " + selectedClip.step) : "Open a source in the Viewer to create an authored source strip."
+                        color: "#a9b6c3"
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Button {
+                        objectName: "timelineSlipMinus"
+                        text: "Slip −1"
+                        enabled: selectedSource.length > 0
+                        implicitHeight: 26
+                        onClicked: controller.slipTimelineClip(selectedSource, -1)
+                    }
+                    Button {
+                        objectName: "timelineSlipPlus"
+                        text: "Slip +1"
+                        enabled: selectedSource.length > 0
+                        implicitHeight: 26
+                        onClicked: controller.slipTimelineClip(selectedSource, 1)
+                    }
+                    Button {
+                        objectName: "timelineRetime1"
+                        text: "Rate 1"
+                        enabled: selectedSource.length > 0
+                        implicitHeight: 26
+                        onClicked: controller.retimeTimelineClip(selectedSource, 1)
+                    }
+                    Button {
+                        objectName: "timelineRetime2"
+                        text: "Rate 2"
+                        enabled: selectedSource.length > 0
+                        implicitHeight: 26
+                        onClicked: controller.retimeTimelineClip(selectedSource, 2)
+                    }
+                    Button {
+                        objectName: "timelineRetimeReverse"
+                        text: "Reverse"
+                        enabled: selectedSource.length > 0
+                        implicitHeight: 26
+                        onClicked: controller.retimeTimelineClip(selectedSource, -1)
+                    }
                 }
             }
         }
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: 24
             color: "#252525"
             Text {
+                objectName: "timelineStatus"
                 anchors.fill: parent
                 anchors.margins: 5
-                text: controller.error.length > 0 ? controller.error : controller.status
-                color: controller.error.length > 0 ? "#efb0b0" : "#8f9aa4"
+                text: controller.cacheError.length > 0 ? controller.cacheError
+                      : (controller.error.length > 0 ? controller.error : controller.status)
+                color: controller.cacheError.length > 0 || controller.error.length > 0 ? "#efb0b0" : "#8f9aa4"
                 font.pixelSize: 11
                 elide: Text.ElideRight
             }

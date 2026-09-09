@@ -202,6 +202,15 @@ struct ViewerCache::Impl {
     [[nodiscard]] std::optional<ViewerCacheResult> lookup(const std::string& identity, const ImageLayout& expected,
                                                           std::uint64_t timeout_ns);
 
+    [[nodiscard]] ViewerCacheCounts snapshotCountsLocked() const {
+        ViewerCacheCounts result = count;
+        result.pendingFrames = pending.size();
+        result.compressedHotBytes = compressedHotBytes;
+        result.compressedHotChunks = compressedHotOrder.size();
+        result.decodedHotFrames = decodedHot.size();
+        return result;
+    }
+
     void setErrorLocked(std::string message) {
         ++count.errors;
         count.lastError = std::move(message);
@@ -1036,16 +1045,15 @@ bool ViewerCache::enqueueLocked(ViewerCachePublication publication) {
 
     const bool alreadyIndexed = impl_->entries.contains(publication.identity);
     const bool alreadyPending =
-        std::any_of(impl_->pending.begin(), impl_->pending.end(), [&](const Impl::Job& pending) {
-            return pending.identity == publication.identity && pending.destination == publication.destination;
-        });
+        std::any_of(impl_->pending.begin(), impl_->pending.end(),
+                    [&](const Impl::Job& pending) { return pending.identity == publication.identity; });
     if (!alreadyIndexed && !alreadyPending && impl_->entries.size() >= impl_->options.maxMetadataEntries) {
         ++impl_->count.admissionRejected;
         impl_->count.lastError = "viewer cache metadata capacity reached";
         return false;
     }
     std::erase_if(impl_->pending, [&](const Impl::Job& pending) {
-        if (pending.identity != publication.identity || pending.destination != publication.destination)
+        if (pending.identity != publication.identity)
             return false;
         impl_->retireGenerationLocked(pending);
         return true;
@@ -1101,12 +1109,14 @@ void ViewerCache::flush() {
 
 ViewerCacheCounts ViewerCache::counts() const {
     std::lock_guard lock(impl_->mutex);
-    ViewerCacheCounts result = impl_->count;
-    result.pendingFrames = impl_->pending.size();
-    result.compressedHotBytes = impl_->compressedHotBytes;
-    result.compressedHotChunks = impl_->compressedHotOrder.size();
-    result.decodedHotFrames = impl_->decodedHot.size();
-    return result;
+    return impl_->snapshotCountsLocked();
+}
+
+std::optional<ViewerCacheCounts> ViewerCache::tryCounts() const {
+    std::unique_lock lock(impl_->mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+        return std::nullopt;
+    return impl_->snapshotCountsLocked();
 }
 
 }  // namespace nemo::eval

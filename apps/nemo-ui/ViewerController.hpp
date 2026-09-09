@@ -44,6 +44,11 @@ class ViewerController final : public QObject {
     Q_PROPERTY(qulonglong dropped READ dropped NOTIFY schedulerChanged)
     Q_PROPERTY(qulonglong staleRejected READ staleRejected NOTIFY schedulerChanged)
     Q_PROPERTY(qulonglong completed READ completed NOTIFY schedulerChanged)
+    Q_PROPERTY(qulonglong cacheQueued READ cacheQueued NOTIFY schedulerChanged)
+    Q_PROPERTY(qulonglong cacheDropped READ cacheDropped NOTIFY schedulerChanged)
+    Q_PROPERTY(qulonglong cacheErrors READ cacheErrors NOTIFY schedulerChanged)
+    Q_PROPERTY(qulonglong cachePublished READ cachePublished NOTIFY schedulerChanged)
+    Q_PROPERTY(QString cacheError READ cacheError NOTIFY schedulerChanged)
 public:
     explicit ViewerController(ViewerRuntime* runtime);
     ~ViewerController() override;
@@ -97,6 +102,13 @@ public:
     [[nodiscard]] qulonglong dropped() const;
     [[nodiscard]] qulonglong staleRejected() const;
     [[nodiscard]] qulonglong completed() const;
+    [[nodiscard]] qulonglong cacheQueued() const { return schedulerCounts_.cacheQueued; }
+    [[nodiscard]] qulonglong cacheDropped() const { return schedulerCounts_.cacheDropped; }
+    [[nodiscard]] qulonglong cacheErrors() const { return schedulerCounts_.cacheErrors; }
+    [[nodiscard]] qulonglong cachePublished() const { return schedulerCounts_.cachePublished; }
+    [[nodiscard]] QString cacheError() const {
+        return rangeError_.isEmpty() ? QString::fromStdString(schedulerCounts_.cacheError) : rangeError_;
+    }
     [[nodiscard]] QRectF presentedRegion() const;
     [[nodiscard]] std::shared_ptr<const ViewerResult> presentation() const { return presentation_; }
     [[nodiscard]] WindowPresentationState& presentationState() const { return *presentationState_; }
@@ -127,6 +139,7 @@ private:
     void fail(QString message);
     void documentChanged();
     void invalidateRequest();
+    void pollScheduler();
     ViewerRuntime* runtime_;
     Document document_;
     SourceReference probedSource_;
@@ -148,6 +161,10 @@ private:
     bool pending_{false};
     bool outdated_{false};
     std::uint64_t generation_{};
+    std::uint64_t nextRequestId_{};
+    std::uint64_t rangeGeneration_{};
+    QString rangeError_;
+    ViewerRuntimeCounts schedulerCounts_;
     std::uint64_t lastRevision_{};
     std::optional<EvaluationRequest> lastRequest_;
     std::shared_ptr<const ViewerResult> presentation_;

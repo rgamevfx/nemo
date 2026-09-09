@@ -60,8 +60,7 @@ CacheCounts ViewerSession::reuseCounts() const {
 }
 
 void ViewerSession::configureCache(const ViewerCacheOptions& options) {
-    std::lock_guard freshnessLock(freshnessMutex_);
-    std::lock_guard cacheLock(cacheMutex_);
+    std::scoped_lock stateLocks(cacheMutex_, freshnessMutex_);
     if (cache_)
         throw std::logic_error("viewer cache is already configured");
     auto cache = std::make_unique<ViewerCache>(instance_, device_, allocator_, replayShader_);
@@ -105,8 +104,7 @@ std::uint64_t& ViewerSession::generationForLocked(ViewerDestination destination)
 }
 
 void ViewerSession::supersedeCache(std::uint64_t revision, std::uint64_t generation, ViewerDestination destination) {
-    std::lock_guard cacheLock(cacheMutex_);
-    std::lock_guard freshnessLock(freshnessMutex_);
+    std::scoped_lock stateLocks(cacheMutex_, freshnessMutex_);
     auto& currentGeneration = generationForLocked(destination);
     if (generation < currentGeneration)
         return;

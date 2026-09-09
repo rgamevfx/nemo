@@ -2,6 +2,7 @@
 
 #include <QQuickItem>
 #include <QtQml/qqmlregistration.h>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <set>
@@ -23,6 +24,9 @@ public:
     void setNode(const QSGNode* node, std::shared_ptr<const ViewerResult> result);
     void removeNode(const QSGNode* node);
     void beginFrame(QQuickWindow* window, gpu::Device& device);
+    // Called at Qt's frameSwapped boundary on the render thread. Reports
+    // only a new viewer request actually present in the rendered scene.
+    [[nodiscard]] std::shared_ptr<const ViewerResult> takeNewPresentedFrame();
 
 private:
     struct Pin {
@@ -32,6 +36,7 @@ private:
     };
     std::map<const QSGNode*, std::shared_ptr<const ViewerResult>> nodes_;
     std::map<VkImage, Pin> pins_;
+    std::uint64_t lastReportedRequest_{};
 };
 
 class ViewerItem : public QQuickItem {

@@ -9,20 +9,6 @@ namespace nemo {
 
 namespace {
 
-// Appends one length-prefixed field: label:len:bytes<sep>. The embedded
-// length makes the byte stream injective — a param key/value containing
-// reserved bytes ('=', separators) cannot alias a different effective state
-// into the same canonical form (canonical equality is the collision
-// protection ADR-0007 advertises, so it must hold for arbitrary strings).
-void appendField(std::string& out, const char* label, const std::string& value) {
-    out += label;
-    out.push_back(':');
-    out += std::to_string(value.size());
-    out.push_back(':');
-    out += value;
-    out.push_back('\x1F');
-}
-
 // Length-prefixed params records: count, then per record keyLen:key +
 // valueLen:value. Injective over the whole map regardless of content.
 [[nodiscard]] std::string canonicalParams(const Node& node) {
@@ -51,19 +37,19 @@ void appendField(std::string& out, const char* label, const std::string& value) 
     const std::string key = paramIt != node.params.end() ? paramIt->second : std::string{};
     const auto it = document.sources.find(key);
     if (it == document.sources.end()) {
-        appendField(out, "key", key);
-        appendField(out, "unresolved", "1");
+        appendCanonicalField(out, "key", key);
+        appendCanonicalField(out, "unresolved", "1");
         return out;
     }
-    appendField(out, "key", key);
-    appendField(out, "path", it->second.path);
-    appendField(out, "offset", std::to_string(it->second.frameOffset));
-    appendField(out, "step", std::to_string(it->second.frameStep));
-    appendField(out, "revision", std::to_string(it->second.revision));
-    appendField(out, "interpretation", [&] {
+    appendCanonicalField(out, "key", key);
+    appendCanonicalField(out, "path", it->second.path);
+    appendCanonicalField(out, "offset", std::to_string(it->second.frameOffset));
+    appendCanonicalField(out, "step", std::to_string(it->second.frameStep));
+    appendCanonicalField(out, "revision", std::to_string(it->second.revision));
+    appendCanonicalField(out, "interpretation", [&] {
         std::string text;
         for (const auto& [tag, value] : it->second.interpretation) {
-            appendField(text, tag.c_str(), value);
+            appendCanonicalField(text, tag.c_str(), value);
         }
         return text;
     }());
@@ -104,9 +90,9 @@ ResultKey nodeResultKey(const Document& document, const Node& node, const std::v
     // distinguishable in the identity.
     std::string canonical;
     canonical.reserve(96 + node.params.size() * 24);
-    appendField(canonical, "impl", std::to_string(implementationVersion(node.type)));
-    appendField(canonical, "type", node.type);
-    appendField(canonical, "params", canonicalParams(node));
+    appendCanonicalField(canonical, "impl", std::to_string(implementationVersion(node.type)));
+    appendCanonicalField(canonical, "type", node.type);
+    appendCanonicalField(canonical, "params", canonicalParams(node));
     canonical += "inputs:";
     for (const std::uint64_t inputHash : inputKeyHashes) {
         canonical += std::to_string(inputHash);
@@ -114,19 +100,19 @@ ResultKey nodeResultKey(const Document& document, const Node& node, const std::v
     }
     canonical.push_back('\x1F');
     if (node.type == "source") {
-        appendField(canonical, "source", canonicalSource(document, node));
+        appendCanonicalField(canonical, "source", canonicalSource(document, node));
     }
-    appendField(canonical, "time", std::to_string(request.localTime));
-    appendField(canonical, "region",
-                std::to_string(request.region.x) + ',' + std::to_string(request.region.y) + ',' +
-                    std::to_string(request.region.width) + ',' + std::to_string(request.region.height));
-    appendField(canonical, "scale", std::to_string(request.samplingScale));
-    appendField(canonical, "domain",
-                std::to_string(request.imageWidth()) + ',' + std::to_string(request.imageHeight()));
-    appendField(canonical, "channels", request.channels);
-    appendField(canonical, "quality", qualityName(request.quality));
-    appendField(canonical, "working", document.color.workingSpace);
-    appendField(canonical, "tag", std::to_string(context.implementationTag));
+    appendCanonicalField(canonical, "time", std::to_string(request.localTime));
+    appendCanonicalField(canonical, "region",
+                         std::to_string(request.region.x) + ',' + std::to_string(request.region.y) + ',' +
+                             std::to_string(request.region.width) + ',' + std::to_string(request.region.height));
+    appendCanonicalField(canonical, "scale", std::to_string(request.samplingScale));
+    appendCanonicalField(canonical, "domain",
+                         std::to_string(request.imageWidth()) + ',' + std::to_string(request.imageHeight()));
+    appendCanonicalField(canonical, "channels", request.channels);
+    appendCanonicalField(canonical, "quality", qualityName(request.quality));
+    appendCanonicalField(canonical, "working", document.color.workingSpace);
+    appendCanonicalField(canonical, "tag", std::to_string(context.implementationTag));
 
     ResultKey key;
     key.canonical = std::move(canonical);
@@ -142,9 +128,9 @@ ResultKey viewerResultKey(const ResultKey& sceneLinearKey, const ColorPolicy& po
     std::string canonical;
     canonical.reserve(sceneLinearKey.canonical.size() + policy.viewerTransform.size() +
                       policy.deliveryTransform.size() + 32);
-    appendField(canonical, "scene", sceneLinearKey.canonical);
-    appendField(canonical, "view", policy.viewerTransform);
-    appendField(canonical, "delivery", policy.deliveryTransform);
+    appendCanonicalField(canonical, "scene", sceneLinearKey.canonical);
+    appendCanonicalField(canonical, "view", policy.viewerTransform);
+    appendCanonicalField(canonical, "delivery", policy.deliveryTransform);
     ResultKey key;
     key.canonical = std::move(canonical);
     key.hash = kFnv1a64Basis;

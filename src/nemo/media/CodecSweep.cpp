@@ -89,13 +89,26 @@ void addStats(EncodeStats& total, const EncodeStats& part) {
     total.initializationMs += part.initializationMs;
     total.allocationPackingMs += part.allocationPackingMs;
     total.conversionMs += part.conversionMs;
+    total.gpuConversionMs += part.gpuConversionMs;
     total.hostToDeviceMs += part.hostToDeviceMs;
     total.hostToDeviceBytes += part.hostToDeviceBytes;
+    total.deviceToDeviceMs += part.deviceToDeviceMs;
+    total.deviceToDeviceBytes += part.deviceToDeviceBytes;
+    total.deviceToHostMs += part.deviceToHostMs;
+    total.deviceToHostBytes += part.deviceToHostBytes;
+    total.stagingBytes = std::max(total.stagingBytes, part.stagingBytes);
     total.submissionDrainMs += part.submissionDrainMs;
     total.muxFinalizationMs += part.muxFinalizationMs;
     total.completeChunkMs += part.completeChunkMs;
+    total.coldSetupMs += part.coldSetupMs;
+    total.warmSetupMs += part.warmSetupMs;
+    total.sessionChunkCount += part.sessionChunkCount;
+    total.sessionReuseCount += part.sessionReuseCount;
     total.encodedBytes += part.encodedBytes;
     total.encodedFrames += part.encodedFrames;
+    total.sessionReused = total.sessionReused || part.sessionReused;
+    if (!part.fallbackReason.empty())
+        total.fallbackReason = part.fallbackReason;
 }
 
 SweepReport sweep(const std::string& path, std::span<const CpuImage> supplied, const SweepOptions& options) {

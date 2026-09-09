@@ -34,6 +34,11 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
+#include "nemo/gpu/Allocator.hpp"
+#include "nemo/gpu/ComputePass.hpp"
+#include "nemo/gpu/Device.hpp"
+#include "nemo/gpu/Error.hpp"
+#include "nemo/gpu/Instance.hpp"
 #include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/VideoDecode.hpp"
 #include "nemo/media/ViewerEncode.hpp"
@@ -257,6 +262,76 @@ TEST(MediaEncode, CompleteChunkTimingUsesMillisecondsAndIncludesExclusiveStages)
     EXPECT_LE(stats.completeChunkMs, wall);
     EXPECT_GT(stats.completeChunkMs, wall / 100.0);  // detects ns/us/seconds-to-ms scale errors
     EXPECT_EQ(decodeViewerChunkSoftware(output.path.string()).frames.size(), 8u);
+}
+
+TEST(MediaEncode, DeviceChunksUseGpuConversionAndIndependentRecovery) {
+    std::unique_ptr<gpu::Instance> instance;
+    std::unique_ptr<gpu::Device> device;
+    std::unique_ptr<gpu::Allocator> allocator;
+    try {
+        instance = gpu::Instance::create();
+        device = gpu::Device::create(*instance);
+        allocator = gpu::Allocator::create(*instance, *device, {.max_device_bytes = 1 << 24});
+    } catch (const gpu::GpuException& error) {
+        if (error.errorCode() == gpu::GpuError::NoDevice)
+            GTEST_SKIP() << error.what();
+        ADD_FAILURE() << "GPU bootstrap failed: " << error.what();
+        return;
+    }
+
+    const ImageLayout layout{.width = kWidth, .height = kHeight, .color = ColorInterpretation::DisplayReferred};
+    gpu::Image image = allocator->create_image(
+        kWidth, kHeight, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 2);
+    auto pixels = flatImage(kWidth, kHeight, 0.1F, 0.8F, 0.2F);
+    const std::size_t rgbaBytes = static_cast<std::size_t>(kWidth) * kHeight * kImageChannels * sizeof(float);
+    auto& queue = device->submissions(device->graphics_family());
+    gpu::uploadImage(queue, *allocator, image, pixels.data(), rgbaBytes, 10'000'000'000ULL);
+    gpu::imageBarrier(queue, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, 10'000'000'000ULL);
+
+    EncodeOptions options = cpuOptions();
+    ViewerChunkEncoder encoder(*instance, *device, *allocator, options);
+    const DeviceViewerFrame frame{.image = &image, .layout = layout};
+    const std::filesystem::path firstPath = std::filesystem::temp_directory_path() / "nemo-device-encode-first.mp4";
+    const std::filesystem::path secondPath = std::filesystem::temp_directory_path() / "nemo-device-encode-second.mp4";
+    std::error_code ignored;
+    std::filesystem::remove(firstPath, ignored);
+    std::filesystem::remove(secondPath, ignored);
+    struct Cleanup {
+        std::filesystem::path first;
+        std::filesystem::path second;
+        ~Cleanup() {
+            std::error_code ignored;
+            std::filesystem::remove(first, ignored);
+            std::filesystem::remove(second, ignored);
+        }
+    } cleanup{firstPath, secondPath};
+
+    const EncodeStats cold = encoder.encode(firstPath.string(), std::span(&frame, 1));
+    pixels = flatImage(kWidth, kHeight, 0.8F, 0.2F, 0.7F);
+    gpu::uploadImage(queue, *allocator, image, pixels.data(), rgbaBytes, 10'000'000'000ULL);
+    gpu::imageBarrier(queue, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, 10'000'000'000ULL);
+    const EncodeStats warm = encoder.encode(secondPath.string(), std::span(&frame, 1));
+    EXPECT_EQ(cold.encodedFrames, 1);
+    EXPECT_EQ(warm.encodedFrames, 1);
+    EXPECT_EQ(cold.sessionChunkCount, 1u);
+    EXPECT_EQ(warm.sessionChunkCount, 1u);
+    EXPECT_EQ(cold.deviceToHostBytes, static_cast<std::uint64_t>(kWidth) * kHeight * 3 / 2);
+    EXPECT_LT(cold.stagingBytes, rgbaBytes);
+    EXPECT_FALSE(cold.fallbackReason.empty());
+    EXPECT_TRUE(warm.sessionReused);
+    EXPECT_EQ(warm.sessionReuseCount, 1u);
+    for (const auto& [path, expected] : std::array<std::pair<std::filesystem::path, std::array<float, 3>>, 2>{
+             {{secondPath, {0.8F, 0.2F, 0.7F}}, {firstPath, {0.1F, 0.8F, 0.2F}}}}) {
+        const auto decoded = decodeViewerChunkSoftware(path.string());
+        ASSERT_EQ(decoded.frames.size(), 1U);
+        for (int channel = 0; channel < 3; ++channel)
+            EXPECT_NEAR(decoded.frames.front().pixel(20, 20)[channel], expected[channel], 0.02F);
+    }
 }
 }  // namespace
 
@@ -489,6 +564,9 @@ TEST(MediaEncode, InjectedFinalizationFailureThrowsAndCleansUp) {
         EXPECT_NE(std::string(error.message).find("finalization"), std::string::npos) << error.what();
     }
     EXPECT_FALSE(std::filesystem::exists(output.path)) << "error path left a partial output file";
+    options.injectedFailure = nullptr;
+    EXPECT_NO_THROW(static_cast<void>(encodeViewerChunk(output.path.string(), display, options)));
+    EXPECT_EQ(decodeViewerChunkSoftware(output.path.string()).frames.size(), 1u);
 }
 
 // Memory safety: odd dimensions cannot map onto left-chroma 4:2:0; the

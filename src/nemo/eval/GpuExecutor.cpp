@@ -190,6 +190,38 @@ EffectLibrary glslEffectLibrary() {
     return library;
 }
 
+ResultKey queryViewerResultKey(const Document& document, EvaluationRequest request, const EffectLibrary& effects) {
+    validateRequest(document, request);
+    const auto order = scheduleDependencies(document, request.output);
+    const KeyContext context{fingerprintEffectLibrary(effects)};
+    std::map<NodeId, ResultKey> keys;
+    std::map<NodeId, ImageIdentity> identities;
+    ImageIdentity placeholder;
+    placeholder.layout.width = scaledDimension(request.region.width, request.samplingScale);
+    placeholder.layout.height = scaledDimension(request.region.height, request.samplingScale);
+    placeholder.layout.color = ColorInterpretation::SceneLinear;
+    placeholder.residency = Residency::GpuDevice;
+
+    for (const Node* node : order) {
+        if (effects.find(node->type) == effects.end()) {
+            throw EvaluationException(describeNode(*node) + ": no effect package in the supplied effect library "
+                                                            "(viewer key query cannot prove a cache hit)");
+        }
+        PlanStep step;
+        step.node = node->id;
+        step.type = node->type;
+        step.name = node->name;
+        const auto producers = resolveStepInputs(document, *node, identities, step);
+        std::vector<std::uint64_t> inputKeyHashes;
+        inputKeyHashes.reserve(producers.size());
+        for (const NodeId producer : producers)
+            inputKeyHashes.push_back(keys.at(producer).hash);
+        keys.emplace(node->id, nodeResultKey(document, *node, inputKeyHashes, request, context));
+        identities.emplace(node->id, placeholder);
+    }
+    return viewerResultKey(keys.at(request.output), document.color);
+}
+
 CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocator& allocator,
                                  std::uint64_t timeout_ns) {
     const auto it = images.find(node);
@@ -430,7 +462,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                                           static_cast<uint32_t>((imageHeight + 7) / 8), 1);
                 }
             },
-            std::move(retained));
+            std::move(retained), {}, timeout_ns.value_or(0));
         if (!completion)
             return std::nullopt;
         evaluation.completion = completion;

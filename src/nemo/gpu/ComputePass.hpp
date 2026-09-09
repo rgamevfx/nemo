@@ -94,4 +94,9 @@ void imageBarrier(SubmissionQueue& queue, const Image& image, VkImageLayout oldL
 // submission. Native evaluation and resident viewing never call this.
 void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& image, void* data, std::size_t bytes,
                    uint64_t timeout_ns);
+
+// Crops codec padding from a completed GENERAL RGBA32F image on-device.
+// Source and result remain GENERAL; all copy resources survive completion.
+[[nodiscard]] Image cropRgba32fImage(SubmissionQueue& queue, Allocator& allocator, const Image& source, uint32_t width,
+                                     uint32_t height, uint64_t timeout_ns);
 }  // namespace nemo::gpu

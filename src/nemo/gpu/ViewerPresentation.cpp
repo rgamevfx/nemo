@@ -138,7 +138,7 @@ ViewerPresentation prepareViewerPresentation(Device& producer, Allocator& alloca
             vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
                                  0, nullptr, 0, nullptr, 1, &release);
         },
-        {pass->retain(), ready}, handoff);
+        {pass->retain(), ready}, handoff, timeout_ns);
     if (!completion)
         throw GpuException(GpuError::SubmissionTimeout, "viewer presentation queue capacity unavailable");
     if (!queue.wait(*completion, timeout_ns))

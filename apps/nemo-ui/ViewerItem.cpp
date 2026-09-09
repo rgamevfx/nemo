@@ -65,6 +65,19 @@ void WindowPresentationState::beginFrame(QQuickWindow* window, gpu::Device& devi
     }
 }
 
+std::shared_ptr<const ViewerResult> WindowPresentationState::takeNewPresentedFrame() {
+    std::shared_ptr<const ViewerResult> latest;
+    for (const auto& [node, result] : nodes_) {
+        (void)node;
+        if (!latest || result->requestId > latest->requestId)
+            latest = result;
+    }
+    if (!latest || latest->requestId <= lastReportedRequest_)
+        return {};
+    lastReportedRequest_ = latest->requestId;
+    return latest;
+}
+
 ViewerItem::ViewerItem(QQuickItem* parent) : QQuickItem(parent) {
     setFlag(ItemHasContents, true);
 }

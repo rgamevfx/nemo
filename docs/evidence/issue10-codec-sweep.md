@@ -1,4 +1,8 @@
-# Codec experiment evidence: corrected #23 measurements and historical #10 data
+# Viewer-cache codec evidence: #12 integration, #23 correction, and #10 history
+
+Integrated native-cache measurements are recorded in
+[Integrated native viewer cache (#12)](#integrated-native-viewer-cache-12).
+The historical measurements below retain their original scope.
 
 **Historical #10 workload**, measured 2026-09-07 on the declared prototype device: NVIDIA GTX 1070
 (Pascal), driver 580.173.02, Linux. Source workload: `testsrc2` 640x360,
@@ -342,3 +346,154 @@ again verified **200/200** frames: **26.375 dB**, maximum error **0.894**,
 appended to the 8000 kbps artifact; it confirms the final path without
 replacing the earlier measurements or treating run-to-run timing changes
 as a performance improvement.
+
+## Integrated native viewer cache (#12)
+
+Measured 2026-09-09 on the same Linux GTX 1070 / driver 580.173.02
+reference machine. These are **integrated viewer-cache** measurements,
+not a relabeling of the CPU-fed #23 codec sweep.
+
+### Provisional configuration and behavior
+
+The initial configuration is H.264 NVENC, high profile, 8-bit limited-range
+Rec.709 4:2:0, left chroma, 8000 kbps, and **at most 12 requested frames
+per chunk**. It remains configurable; this is not a final codec winner.
+The worker finalizes available requests without waiting for or rendering
+neighbors, so this run produced 191 independently decodable chunks for
+200 frames, with 190 encoder-session reuses. Sparse and one-frame chunks
+are normal, not incomplete output.
+
+The cache consumes the completed GPU viewing-transform output. It stores
+display-referred RGB video, not scene-linear working images or export
+inputs. Replay decodes that representation without another viewing
+transform. Odd regions are edge-padded for the codec and cropped back to
+their exact requested extent on the GPU.
+
+Identity includes the graph result, requested time/region/scale/layout,
+effective OCIO program (including uniforms and LUTs), and encoding
+configuration. OCIO configuration is snapshotted per viewing state;
+recreate the viewer session to reload external configuration changes.
+An upstream/view edit changes the relevant representation; it is distinct
+from disk eviction. Publication checks reject superseded work, including
+work already inside the encoder. Each cache directory has one writer.
+
+The initial guards are 12 pending/active frames, two simultaneous replay
+decodes, 16384 indexed frames, and a finalized-media byte cap. Replay also
+retains a four-frame decoded GPU FIFO and a compressed RAM hot set of at
+most four chunks / 64 MiB (16 MiB per chunk; larger chunks stream from disk).
+These are bounded safety guards, not the user-facing budget/LRU policy in
+#14. The graph/source working caches remain separate from compressed replay.
+
+### Reference results
+
+Source: 200 frames of 3840×2160 `testsrc2`, 24 fps, H.264 high,
+`yuv420p`, limited range, explicit BT.709 primaries/transfer/matrix and
+left chroma. Graph: source over transparent background through merge and
+output; full domain 3840×2160, sampling scale 2, 1920×1080 viewer output.
+The supplied OCIO fixture applies the Rec.709 view and clamps display RGB.
+
+Raw evidence:
+[headless report](issue12-reference.json),
+[Qt cold samples](issue12-ui-cold.jsonl),
+[Qt warm samples](issue12-ui-warm.jsonl),
+[graph template](issue12-workload.json),
+[view configuration](issue12-view.ocio),
+[reverse replay and edit probes](issue12-invalidation.json), and
+[eight cache boundary regressions](issue12-boundaries.json).
+
+| Measurement | Result | Scope |
+|---|---:|---|
+| Finalized cache construction | 34.011 fps | 200 published frames / 5880.451 ms, including rendering and finalization |
+| Random replay p95 | 39.608 ms | Request to GPU-ready frame, independent session, 200/200 hardware-decoded hits, zero graph reuse misses |
+| Qt cold p95 | 34.026 ms | 200 distinct frames, zero cache hits |
+| Qt warm p95 | 43.459 ms | 200 distinct frames, 200 cache hits |
+| Qt first frame, cold / warm | 213.324 / 49.875 ms | Reported separately; cold startup is not hidden by p95 |
+| Encode H→D / D→H payload | 0 / 0 bytes | GPU-resident encoder path; no CPU-fed fallback |
+| Encode D→D payload | 1244160000 bytes | Vulkan YUV copy and Vulkan→CUDA transfer for 200 frames |
+| Cold / cumulative warm setup | 248.368 / 2.557 ms | Encoder-side setup; 190 warm reuses |
+| Peak reported staging | 69081600 bytes | Staging payload/allocation accounting, not total process memory or total VRAM |
+| Finalized media bytes | 9716634 | Container files; excludes sidecar metadata |
+| Peak pending/active frames | 11 / cap 12 | Zero admission drops/rejections; drained at flush |
+
+Qt timing ends at `QQuickWindow::frameSwapped`: window-system handoff,
+**not physical scanout**. The paired timing runs had no concurrent build,
+test, or screenshot capture. A separate paused native Wayland inspection
+showed frame 37 at Auto 1:4 (960×540), first as live render and after
+reopening as **compressed cache**, with the test image present.
+Warm replay is not claimed faster than this simple live graph; it avoids
+re-evaluation and preserves completed work.
+
+Frame 0 fidelity, comparing the original GPU viewer output to replay:
+RGB RMSE **0.032553**, PSNR **29.748 dB**, maximum local absolute error
+**0.847960**. The predeclared aggregate RMS diagnostic limit is 0.08;
+the large local chroma-edge error is reported, not hidden or treated as
+artist approval. This is not an all-frame quality study. Two explicit
+diagnostic readbacks total 66355200 bytes and are outside encoder transfer
+counts and replay latency samples. Stage timers are host-wall scopes
+(including helper submission/wait work), not isolated GPU timestamp
+queries; do not attribute their entire duration to DMA.
+
+### Reproduction
+
+From the repository root, with the release applications built:
+
+```bash
+repo="$PWD"
+work="$(mktemp -d)"
+ffmpeg -hide_banner -loglevel error -f lavfi \
+  -i testsrc2=size=3840x2160:rate=24 -frames:v 200 \
+  -c:v h264_nvenc -preset p4 -profile:v high -b:v 40M -g 24 -bf 0 \
+  -pix_fmt yuv420p -color_range tv -color_primaries bt709 \
+  -color_trc bt709 -colorspace bt709 -chroma_sample_location left \
+  "$work/source.mp4"
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); p["sources"]["src"]["path"]=sys.argv[2]; print(json.dumps(p))' \
+  docs/evidence/issue12-workload.json "$work/source.mp4" > "$work/project.json"
+export OCIO="$repo/docs/evidence/issue12-view.ocio"
+frames="$(seq -s, 0 199)"
+build/release/apps/nemo-cli/nemo-cli cache-viewer "$work/project.json" \
+  --cache-dir "$work/cache" --frames "$frames" \
+  --width 3840 --height 2160 --scale 2 --codec h264-nvenc \
+  --chunk-frames 12 --bitrate-kbps 8000 --replay random --fidelity
+# Run twice with the same UI cache directory: cold, then warm.
+QT_QPA_PLATFORM=wayland build/release/apps/nemo-ui/nemo-ui \
+  --source "$work/source.mp4" --viewer-cache-dir "$work/ui-cache" \
+  --cache-benchmark-frames 200
+```
+
+For sparse/stale verification, use `--frames 0,11,37 --replay reverse
+--stale-supersede` with a fresh cache directory. Explicit in-memory edit
+probes use `--view-after sRGB/raw --edit-node composite --edit-key grade
+--edit-value 0.5`: only the last requested frame is replaced for each edit,
+with cache/reuse counters and subsequent replay reported separately.
+The pinned edit probes each replace exactly one visited frame, then replay
+it successfully: the view edit has zero graph misses and four upstream hits;
+the parameter edit has two graph misses and two upstream hits. The gated
+in-flight supersession regression records one encoded frame, zero
+publications, one stale rejection, and an actual subsequent lookup miss.
+A distinct-pixel multi-frame regression also verifies that removing a stale
+predecessor preserves the surviving frame's encoded offset, both immediately
+and after reopening the cache.
+The input project is never rewritten. Focused verification:
+
+```bash
+ctest --preset debug -R Cache
+ctest --preset asan -R '^(ViewerCache|MediaEncode|MediaDecode)\.'
+```
+
+Final debug and release suites each passed 204/204 tests.
+Builds retain the existing third-party minizip `mktemp` linker warning.
+Clang-tidy was run on the new interop adapter; remaining style/header
+diagnostics are not represented as a clean static-analysis result.
+The 39 focused ASan/UBSan cases passed. The native Vulkan→CUDA sanitizer
+smoke required `ASAN_OPTIONS=protect_shadow_gap=0` plus the repository's
+existing `LSAN_OPTIONS` suppression file: default shadow-gap protection
+caused CUDA initialization to return out-of-memory. It also required
+`__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json`.
+Default EGL vendor enumeration leaked 248 bytes; loader address maps
+attribute the allocation to `libEGL_mesa.so.0` calling `drmGetDevices2`
+through NVIDIA's EGL probing. Selecting NVIDIA's EGL vendor removed that
+leak without adding a suppression. With these compatibility settings,
+the 4K→1080p sparse native encode/reverse replay and edit probes completed
+with zero encoder H↔D bytes, no Vulkan validation warnings, and no
+unsuppressed sanitizer errors. Windows and other GPU vendors were not
+executed here; #16 remains the integrated performance/selection gate.

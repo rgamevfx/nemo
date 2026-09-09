@@ -26,11 +26,13 @@ public:
     GpuViewingTransform(GpuViewingTransform&&) = delete;
     GpuViewingTransform& operator=(GpuViewingTransform&&) = delete;
     GpuViewingTransform(gpu::Device& device, gpu::Allocator& allocator, const media::OcioGpuProgram& program);
-    // No host wait or pixel readback. nullopt reports shared queue capacity.
+    // No execution wait or pixel readback. Zero admissionTimeout_ns reports
+    // shared queue backpressure as nullopt; positive values wait for admission.
     // Dropping the result cancels publication, not GPU resource ownership.
     // Source interpretation is mandatory: viewed/cache-replay images must
     // never enter this transform a second time.
-    [[nodiscard]] std::optional<GpuViewedImage> submit(const gpu::Image& source, ColorInterpretation sourceColor) const;
+    [[nodiscard]] std::optional<GpuViewedImage> submit(const gpu::Image& source, ColorInterpretation sourceColor,
+                                                       uint64_t admissionTimeout_ns = 0) const;
 
 private:
     gpu::Device& device_;

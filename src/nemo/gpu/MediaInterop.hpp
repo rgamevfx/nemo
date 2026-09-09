@@ -76,10 +76,6 @@ struct ForeignVideoFrame {
     // formats[0] = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM and views taken per
     // aspect plane. false = per-plane images (images[0]=Y, images[1]=UV).
     bool multiplane = false;
-    // Color interpretation of the plane samples, resolved by the media
-    // module from the clip's declared metadata (defaults match the Vulkan
-    // video decode surface contract: 8-bit BT.709 limited-range, left
-    // chroma).
     MediaTransfer transfer = MediaTransfer::Bt709;
     MediaMatrix matrix = MediaMatrix::Bt709;
     MediaYuvRange range = MediaYuvRange::Limited;
@@ -88,6 +84,16 @@ struct ForeignVideoFrame {
     uint32_t planeCount = 0;
     uint32_t width = 0;
     uint32_t height = 0;
+    // Decoder surfaces may omit SAMPLED/MUTABLE image capabilities because
+    // Vulkan video format support only permits decode plus transfer-source
+    // usage. When set, interop copies each plane into an application-owned
+    // sampled image before dispatching mediaConvert; the copy remains in the
+    // same GPU submission as conversion.
+    bool copyBeforeSampling = false;
+    // The metadata transfer remains the source's actual transfer. When true,
+    // mediaConvert inverts it to scene-linear; when false, it passes through
+    // the decoded display-referred R′G′B′ values without inversion.
+    bool sourceLinearization = true;
 };
 
 // Uses the shared device execution queue and immutable compute pipeline cache.
@@ -116,7 +122,10 @@ public:
     // capacity exhaustion without modifying producer state. On success,
     // producer waitValues advance immediately; producer reuse must wait on
     // those timeline values. Dropping the completion never frees live work.
-    [[nodiscard]] std::optional<SubmissionQueue::Completion> submitToRgba32f(ForeignVideoFrame& frame, Image& output);
+    // A positive admission timeout opts synchronous workers into bounded
+    // waiting for queue capacity, without waiting for GPU execution here.
+    [[nodiscard]] std::optional<SubmissionQueue::Completion> submitToRgba32f(ForeignVideoFrame& frame, Image& output,
+                                                                             uint64_t admissionTimeout_ns = 0);
 
 private:
     struct Impl;

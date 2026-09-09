@@ -14,9 +14,11 @@ ViewerRuntime::~ViewerRuntime() {
     quiesceForTeardown();
 }
 
-void ViewerRuntime::bootstrap(const std::vector<std::string>& extensions, const std::filesystem::path& shaders) {
+void ViewerRuntime::bootstrap(const std::vector<std::string>& extensions, const std::filesystem::path& shaders,
+                              eval::ViewerCacheOptions cacheOptions) {
     if (instance_)
         throw std::runtime_error("viewer runtime already initialized");
+    cacheOptions_ = std::move(cacheOptions);
     instance_ = gpu::Instance::create({.validation = true, .extensions = extensions});
     device_ = gpu::Device::create(*instance_, {.externalSharing = true});
     presentationDevice_ = gpu::Device::create(
@@ -36,6 +38,10 @@ void ViewerRuntime::enqueue(Pending pending) {
         if (stopping_)
             return;
         latestId_ = pending.id;
+        latestRevision_ = pending.document.stateRevision();
+        pending.requestedAt = std::chrono::steady_clock::now();
+        if (session_)
+            session_->supersedeCache(latestRevision_, latestId_);
         pending_ = std::move(pending);
         result_.reset();
     }
@@ -75,25 +81,36 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
             pending_.reset();
         }
         try {
-            if (!session)
-                session = std::make_unique<eval::ViewerSession>(*instance_, *device_, *allocator_, shaders);
+            if (!session) {
+                auto configured = std::make_unique<eval::ViewerSession>(*instance_, *device_, *allocator_, shaders);
+                configured->configureCache(cacheOptions_);
+                session = std::move(configured);
+                std::lock_guard lock(mutex_);
+                session_ = session.get();
+                session_->supersedeCache(latestRevision_, latestId_);
+            }
             if (!pending.source.empty()) {
                 publish(SourceProbeResult{session->probeSource(pending.document, pending.source), pending.id},
                         pending.id);
             } else {
                 if (presentationShader.empty())
                     presentationShader = gpu::loadSpirv(shaders / "viewerPresentation.spv");
-                auto frame = session->render(pending.document, pending.request);
-                auto presentation = gpu::prepareViewerPresentation(*device_, *allocator_, *presentationDevice_,
-                                                                   frame.image, frame.layout.color, presentationShader);
-                auto result = std::make_shared<ViewerResult>(
-                    ViewerResult{std::move(presentation), frame.layout, frame.request, pending.id, frame.revision});
+                auto frame = session->render(pending.document, pending.request, 10'000'000'000ULL, pending.id);
+                auto presentation = gpu::prepareViewerPresentation(
+                    *device_, *allocator_, *presentationDevice_, *frame.image, frame.layout.color, presentationShader);
+                auto result = std::make_shared<ViewerResult>(ViewerResult{std::move(presentation), frame.layout,
+                                                                          frame.request, pending.id, frame.revision,
+                                                                          frame.cacheHit, pending.requestedAt});
                 publish(std::shared_ptr<const ViewerResult>(std::move(result)), pending.id);
             }
         } catch (const std::exception& error) {
             publish(ViewerFailure{error.what(), pending.id}, pending.id);
         }
         flushValidation();
+    }
+    {
+        std::lock_guard lock(mutex_);
+        session_ = nullptr;
     }
 }
 

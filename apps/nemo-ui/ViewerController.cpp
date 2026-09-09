@@ -102,11 +102,12 @@ void ViewerController::receive() {
         presentation_ = std::move(frame);
         effectiveScale_ = presentation_->request.samplingScale;
         error_.clear();
-        status_ = QStringLiteral("Displayed %1x%2, 1:%3, frame %4; %5")
+        status_ = QStringLiteral("Displayed %1x%2, 1:%3, frame %4; %5; %6")
                       .arg(presentation_->frame.width)
                       .arg(presentation_->frame.height)
                       .arg(effectiveScale_)
                       .arg(presentation_->request.localTime)
+                      .arg(presentation_->cacheHit ? QStringLiteral("compressed cache") : QStringLiteral("live render"))
                       .arg(sourceDescription_);
         emit effectiveScaleChanged();
         emit frameArrived();
@@ -228,6 +229,19 @@ void ViewerController::attachWindow(QQuickWindow* window) {
     connect(
         window, &QQuickWindow::beforeRendering, this,
         [this, window] { presentationState_->beginFrame(window, runtime_->presentationDevice()); },
+        Qt::DirectConnection);
+    connect(
+        window, &QQuickWindow::frameSwapped, this,
+        [this] {
+            const auto result = presentationState_->takeNewPresentedFrame();
+            if (!result)
+                return;
+            const double elapsed =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - result->requestedAt)
+                    .count();
+            emit framePresented(static_cast<int>(result->request.localTime), result->frame.width, result->frame.height,
+                                result->cacheHit, elapsed);
+        },
         Qt::DirectConnection);
     window->show();
 }

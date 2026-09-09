@@ -29,6 +29,24 @@ if(NEMO_BUILD_GPU)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET libavcodec libavutil libavformat libswscale)
 
+    # FFmpeg-dependent viewer interop remains a separate GPU-owned target.
+    # The base nemo_gpu target deliberately has no libav dependency.
+    add_library(nemo_gpu_viewerinterop
+        "${CMAKE_CURRENT_SOURCE_DIR}/../gpu/ViewerEncodeInterop.cpp"
+    )
+    add_library(nemo::gpu_viewerinterop ALIAS nemo_gpu_viewerinterop)
+    target_include_directories(nemo_gpu_viewerinterop PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    target_link_libraries(nemo_gpu_viewerinterop
+        PUBLIC nemo::gpu
+        PRIVATE PkgConfig::LIBAV
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(nemo_gpu_viewerinterop PRIVATE -Wall -Wextra -Wpedantic)
+        if(NEMO_WARN_AS_ERROR)
+            target_compile_options(nemo_gpu_viewerinterop PRIVATE -Werror)
+        endif()
+    endif()
+
     target_sources(nemo_media
         PRIVATE
             Probe.cpp
@@ -38,6 +56,7 @@ if(NEMO_BUILD_GPU)
     )
     target_link_libraries(nemo_media
         PUBLIC nemo::gpu
+        PRIVATE nemo::gpu_viewerinterop
         PRIVATE PkgConfig::LIBAV
     )
 endif()

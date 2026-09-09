@@ -1,11 +1,13 @@
 #pragma once
 
 #include "nemo/eval/Viewer.hpp"
+#include "nemo/eval/ViewerCache.hpp"
 #include "nemo/gpu/ViewerPresentation.hpp"
 
 #include <QObject>
 #include <QVulkanInstance>
 
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
@@ -22,6 +24,8 @@ struct ViewerResult {
     EvaluationRequest request;
     std::uint64_t requestId{};
     std::uint64_t revision{};
+    bool cacheHit{};
+    std::chrono::steady_clock::time_point requestedAt{};
 };
 struct SourceProbeResult {
     eval::ViewerSession::SourceProbe source;
@@ -41,7 +45,8 @@ class ViewerRuntime final : public QObject {
 public:
     ViewerRuntime() = default;
     ~ViewerRuntime() override;
-    void bootstrap(const std::vector<std::string>& extensions, const std::filesystem::path& shaders);
+    void bootstrap(const std::vector<std::string>& extensions, const std::filesystem::path& shaders,
+                   eval::ViewerCacheOptions cacheOptions);
     [[nodiscard]] QString attachToWindow(QQuickWindow* window);
     void submit(Document document, EvaluationRequest request, std::uint64_t id);
     void probe(Document document, std::string source, std::uint64_t id);
@@ -61,6 +66,7 @@ private:
         EvaluationRequest request;
         std::string source;  // nonempty: probe rather than render
         std::uint64_t id{};
+        std::chrono::steady_clock::time_point requestedAt{};
     };
     void enqueue(Pending pending);
     void run(const std::filesystem::path& shaders);
@@ -81,6 +87,10 @@ private:
     std::optional<Pending> pending_;
     std::optional<ViewerWorkResult> result_;
     std::uint64_t latestId_{};
+    std::uint64_t latestRevision_{};
+    eval::ViewerCacheOptions cacheOptions_;
+    // Borrowed from run() under mutex_. Cleared before worker-side destruction.
+    eval::ViewerSession* session_{};
     bool stopping_{};
     std::thread worker_;
 };

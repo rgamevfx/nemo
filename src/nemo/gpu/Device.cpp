@@ -58,6 +58,8 @@ std::unique_ptr<Device> Device::create(Instance& instance, const DeviceConfig& c
     VkPhysicalDeviceFeatures enabled{};
     enabled.shaderStorageImageReadWithoutFormat = device->features_.shaderStorageImageReadWithoutFormat;
     enabled.shaderStorageImageWriteWithoutFormat = device->features_.shaderStorageImageWriteWithoutFormat;
+    // Compact viewer encoding writes R8 luma/chroma storage planes.
+    enabled.shaderStorageImageExtendedFormats = device->features_.shaderStorageImageExtendedFormats;
     VkPhysicalDeviceHostQueryResetFeatures hostQueryReset{};
     hostQueryReset.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
     VkPhysicalDeviceFeatures2 queried{};

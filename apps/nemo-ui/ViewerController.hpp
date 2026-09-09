@@ -69,6 +69,9 @@ signals:
     void frameChanged();
     void effectiveScaleChanged();
     void frameArrived();
+    // Qt handed the rendered frame to the window system. This is not a
+    // physical scanout timestamp; benchmark reports name that boundary.
+    void framePresented(int frame, int width, int height, bool cacheHit, double requestToSwapMs);
 
 private:
     void buildGraph(const SourceReference& reference);

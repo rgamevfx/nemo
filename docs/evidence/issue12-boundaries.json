@@ -1,0 +1,107 @@
+{
+  "tests": 8,
+  "failures": 0,
+  "disabled": 0,
+  "errors": 0,
+  "timestamp": "2026-09-09T05:33:06Z",
+  "time": "3.643s",
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "ViewerCache",
+      "tests": 8,
+      "failures": 0,
+      "disabled": 0,
+      "errors": 0,
+      "timestamp": "2026-09-09T05:33:06Z",
+      "time": "3.643s",
+      "testsuite": [
+        {
+          "name": "SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ViewerTests.cpp",
+          "line": 1093,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-09T05:33:06Z",
+          "time": "1.005s",
+          "classname": "ViewerCache"
+        },
+        {
+          "name": "ViewEditsPreserveUpstreamReuseAndOnlyReplaceVisitedFrames",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ViewerTests.cpp",
+          "line": 1141,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-09T05:33:07Z",
+          "time": "0.396s",
+          "classname": "ViewerCache"
+        },
+        {
+          "name": "StaleRequestsAndFailedMuxesNeverBecomeReplayable",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ViewerTests.cpp",
+          "line": 1190,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-09T05:33:08Z",
+          "time": "0.42s",
+          "classname": "ViewerCache"
+        },
+        {
+          "name": "QueueContentionWaitsInsteadOfLosingARequestedFrame",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ViewerTests.cpp",
+          "line": 1229,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-09T05:33:08Z",
+          "time": "0.389s",
+          "classname": "ViewerCache"
+        },
+        {
+          "name": "ActiveBatchConsumesAdmissionCapacity",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ViewerTests.cpp",
+          "line": 1256,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-09T05:33:09Z",
+          "time": "0.359s",
+          "classname": "ViewerCache"
+        },
+        {
+          "name": "SupersessionDuringEncodingRejectsTheCompletedWrite",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ViewerTests.cpp",
+          "line": 1344,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-09T05:33:09Z",
+          "time": "0.331s",
+          "classname": "ViewerCache",
+          "actual_frame_count": "1",
+          "encodedFrames": "1",
+          "published": "0",
+          "staleRejected": "1",
+          "post_supersession_lookup_hit": "false"
+        },
+        {
+          "name": "StalePredecessorRetainsEncodedOffsetAcrossPersistence",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ViewerTests.cpp",
+          "line": 1419,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-09T05:33:09Z",
+          "time": "0.399s",
+          "classname": "ViewerCache"
+        },
+        {
+          "name": "OddSizedRegionsReplayAtTheirExactRequestedExtent",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ViewerTests.cpp",
+          "line": 1520,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-09T05:33:10Z",
+          "time": "0.341s",
+          "classname": "ViewerCache"
+        }
+      ]
+    }
+  ]
+}

@@ -38,6 +38,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -120,6 +121,20 @@ public:
     static std::unique_ptr<ClipDecoder> open(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
                                              const std::string& path, const std::filesystem::path& convertSpirv,
                                              const ColorPolicy& policy = {}, const ColorOverride& overrides = {});
+
+    // Opens a viewer-cache chunk in display-referred mode. This mode keeps
+    // the encoded transfer untouched and never applies source linearization
+    // or a viewing transform. Returned frames remain device-resident.
+    static std::unique_ptr<ClipDecoder> openViewer(gpu::Instance& instance, gpu::Device& device,
+                                                   gpu::Allocator& allocator, const std::string& path,
+                                                   const std::filesystem::path& convertSpirv);
+
+    // Opens a viewer-cache chunk from bounded caller-owned compressed bytes.
+    // This entry point is viewer-only; source decode has no memory replay API.
+    static std::unique_ptr<ClipDecoder> openViewerMemory(gpu::Instance& instance, gpu::Device& device,
+                                                         gpu::Allocator& allocator, const std::string& name,
+                                                         std::shared_ptr<const std::vector<std::uint8_t>> bytes,
+                                                         const std::filesystem::path& convertSpirv);
     ~ClipDecoder();
     ClipDecoder(const ClipDecoder&) = delete;
     ClipDecoder& operator=(const ClipDecoder&) = delete;
@@ -129,15 +144,16 @@ public:
     // produced frame path, including any FFmpeg hardware fallback.
     [[nodiscard]] const DecodeDecision& decision() const;
 
-    // Decodes the next frame and returns its device-resident rgba32f
-    // image, scene-linear in the declared working space. The caller owns
-    // the returned image exclusively (unique_ptr) for as long as it
-    // wishes; frames are independent device allocations and the decoder
-    // never touches the image again. nullptr at end of stream.
-    // The allocator, device, and instance must outlive every returned image.
+    // Decodes the next frame and returns its device-resident rgba32f image.
+    // Source mode is scene-linear; openViewer() mode is display-referred.
     [[nodiscard]] std::unique_ptr<gpu::Image> next(uint64_t timeout_ns);
+    [[nodiscard]] std::unique_ptr<gpu::Image> nextViewer(uint64_t timeout_ns);
 
 private:
+    static std::unique_ptr<ClipDecoder>
+    openInternal(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator, const std::string& path,
+                 const std::filesystem::path& convertSpirv, const ColorPolicy& policy, const ColorOverride& overrides,
+                 bool viewerReplay, std::shared_ptr<const std::vector<std::uint8_t>> memoryBytes);
     ClipDecoder() = default;
     struct Impl;
     std::unique_ptr<Impl> impl_;

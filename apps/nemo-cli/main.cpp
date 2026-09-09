@@ -11,6 +11,7 @@
 // bytes are the scene-linear reference values clamped to [0, 1] -- no
 // viewing transform is applied (spec section 8). `render` is the older
 // single-node pattern writer kept for the CI smoke test.
+#include "ViewerCacheCommand.hpp"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -58,6 +59,11 @@ int printUsage() {
                  "  nemo-cli codec-sweep <tagged-viewer-clip> [--codecs a,b] [--chunks a,b] [--max-frames N]\n"
                  "          [--width W --height H] [--profile NAME] [--bit-depth N] [--bitrate-kbps N]\n"
 #ifdef NEMO_BUILD_GPU
+                 "  nemo-cli cache-viewer <project.json> --cache-dir PATH --frames 1,2,3\n"
+                 "          [--replay forward|reverse|random] [--width W --height H --scale 1|2|4]\n"
+                 "          [--codec ID --chunk-frames N --bitrate-kbps N --shaders DIR]\n"
+                 "          [--fidelity] [--stale-supersede]\n"
+                 "          [--view-after DISPLAY/VIEW] [--edit-node NAME --edit-key KEY --edit-value VALUE]\n"
                  "  nemo-cli evaluate-gpu <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H] [--output NAME]\n"
                  "          [--backend slang|glsl] [--shaders <spv-dir>]\n"
@@ -549,6 +555,9 @@ int main(int argc, char** argv) {
     }
     const std::string command = argv[1];
     std::vector<std::string> args(argv + 2, argv + argc);
+    if (command == "cache-viewer") {
+        return commandViewerCache(args);
+    }
     if (command == "probe-media") {
         return commandProbeMedia(args);
     }

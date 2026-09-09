@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace nemo {
 
@@ -24,6 +25,17 @@ inline void hashMix(std::uint64_t& hash, const void* data, std::size_t size) {
 // Field terminator: 0x1F cannot appear in decimal numbers and is length-
 // prefixed out of the way for arbitrary strings.
 inline constexpr unsigned char kHashFieldSeparator = 0x1F;
+
+// Canonical field: label:byte-count:value<sep>. Labels are fixed schema
+// names; values may contain arbitrary bytes without aliasing other fields.
+inline void appendCanonicalField(std::string& output, std::string_view label, std::string_view value) {
+    output += label;
+    output.push_back(':');
+    output += std::to_string(value.size());
+    output.push_back(':');
+    output += value;
+    output.push_back(static_cast<char>(kHashFieldSeparator));
+}
 
 // Text plus an explicit separator, so distinct field sequences cannot alias.
 inline void hashMixText(std::uint64_t& hash, const std::string& text) {

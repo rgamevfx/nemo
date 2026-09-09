@@ -93,6 +93,15 @@ using EffectLibrary = std::map<std::string, EffectProgram>;
 // with glslang (the seam the OCIO adapter already uses).
 [[nodiscard]] EffectLibrary glslEffectLibrary();
 
+// Computes the content-derived viewer identity for a request without
+// executing GPU work. Dependencies are walked in the same order as the
+// native evaluator, so a cache lookup can happen before any allocation or
+// dispatch. The returned key includes the effect-library implementation tag
+// and the document's viewer policy; callers append their concrete OCIO
+// program/config identity and encoding representation settings.
+[[nodiscard]] ResultKey queryViewerResultKey(const Document& document, EvaluationRequest request,
+                                             const EffectLibrary& effects);
+
 // One executed step's device-resident result. Shared ownership: a cache
 // entry (issue #9) and a returned evaluation can hold the same image.
 struct GpuNodeImage {

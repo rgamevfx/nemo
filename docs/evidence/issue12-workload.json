@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "issue12-4k-source-merge-1080p",
+  "color": {"workingSpace": "linear", "viewerTransform": "sRGB/rec709"},
+  "sources": {"src": {"path": "source.mp4"}},
+  "nodes": [
+    {"id": 1, "type": "source", "name": "source", "params": {"source": "src"}},
+    {"id": 2, "type": "constcolor", "name": "background", "params": {"color": "0 0 0 0"}},
+    {"id": 3, "type": "merge", "name": "composite"},
+    {"id": 4, "type": "output", "name": "result"}
+  ],
+  "edges": [
+    {"id": 1, "from": {"node": 1, "port": 0}, "to": {"node": 3, "port": 0}},
+    {"id": 2, "from": {"node": 2, "port": 0}, "to": {"node": 3, "port": 1}},
+    {"id": 3, "from": {"node": 3, "port": 0}, "to": {"node": 4, "port": 0}}
+  ]
+}

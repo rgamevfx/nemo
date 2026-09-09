@@ -30,8 +30,8 @@ GpuViewingTransform::GpuViewingTransform(gpu::Device& device, gpu::Allocator& al
                              nullptr, &luts_[i], program.textures[i].dimensions == 3});
 }
 
-std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& source,
-                                                          ColorInterpretation sourceColor) const {
+std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& source, ColorInterpretation sourceColor,
+                                                          uint64_t admissionTimeout_ns) const {
     if (sourceColor != ColorInterpretation::SceneLinear)
         throw gpu::GpuException(gpu::GpuError::InvalidRequest,
                                 "GPU viewing transform requires scene-linear input; display-referred input "
@@ -87,7 +87,7 @@ std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& sour
                                             VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                             VK_ACCESS_MEMORY_READ_BIT);
                 },
-                {pass->retain(), source.retain(), image.retain()});
+                {pass->retain(), source.retain(), image.retain()}, {}, admissionTimeout_ns);
     if (!completion)
         return std::nullopt;
     return GpuViewedImage{std::move(image), *completion};

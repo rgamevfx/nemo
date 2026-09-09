@@ -6,6 +6,7 @@ add_library(nemo_eval
     GpuExecutor.cpp
     SourceSession.cpp
     Viewer.cpp
+    ViewerCache.cpp
 )
 add_library(nemo::eval ALIAS nemo_eval)
 

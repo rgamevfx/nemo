@@ -1,8 +1,11 @@
 #include "nemo/media/VideoDecode.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -450,39 +453,106 @@ constexpr const char* kSupportedFormatNames =
     return rate.num != 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
 }
 
+struct MemoryReader {
+    std::shared_ptr<const std::vector<std::uint8_t>> bytes;
+    AVIOContext* io{nullptr};
+    std::size_t position{0};
+
+    explicit MemoryReader(std::shared_ptr<const std::vector<std::uint8_t>> data) : bytes(std::move(data)) {}
+    ~MemoryReader() { avio_context_free(&io); }
+
+    static int read(void* opaque, unsigned char* buffer, int bufferSize) {
+        auto& reader = *static_cast<MemoryReader*>(opaque);
+        if (buffer == nullptr || bufferSize <= 0)
+            return AVERROR(EINVAL);
+        if (reader.position >= reader.bytes->size())
+            return AVERROR_EOF;
+        const std::size_t available = reader.bytes->size() - reader.position;
+        const std::size_t amount = std::min(available, static_cast<std::size_t>(bufferSize));
+        std::memcpy(buffer, reader.bytes->data() + reader.position, amount);
+        reader.position += amount;
+        return static_cast<int>(amount);
+    }
+
+    static int64_t seek(void* opaque, int64_t offset, int whence) {
+        auto& reader = *static_cast<MemoryReader*>(opaque);
+        if ((whence & AVSEEK_SIZE) != 0)
+            return static_cast<int64_t>(reader.bytes->size());
+        whence &= ~AVSEEK_FORCE;
+        int64_t base = 0;
+        if (whence == SEEK_CUR)
+            base = static_cast<int64_t>(reader.position);
+        else if (whence == SEEK_END)
+            base = static_cast<int64_t>(reader.bytes->size());
+        else if (whence != SEEK_SET)
+            return -1;
+        if (offset > 0 && base > std::numeric_limits<int64_t>::max() - offset)
+            return -1;
+        if (offset < 0 && (offset == std::numeric_limits<int64_t>::min() || base < -offset))
+            return -1;
+        const int64_t target = base + offset;
+        if (target < 0 || static_cast<std::uint64_t>(target) > reader.bytes->size())
+            return -1;
+        reader.position = static_cast<std::size_t>(target);
+        return target;
+    }
+
+    void open(const std::string& name) {
+        constexpr int bufferSize = 32 * 1024;
+        auto* buffer = static_cast<unsigned char*>(av_malloc(bufferSize));
+        if (buffer == nullptr)
+            failStatus(name, "memory AVIO buffer allocation failed");
+        io = avio_alloc_context(buffer, bufferSize, 0, this, &MemoryReader::read, nullptr, &MemoryReader::seek);
+        if (io == nullptr) {
+            av_free(buffer);
+            failStatus(name, "memory AVIO context allocation failed");
+        }
+    }
+};
+
 // Owns common initialization without opening the codec: the native path must
 // attach its Vulkan device and format callback before openCodec().
 struct PreparedDecoder {
+    std::unique_ptr<MemoryReader> memory;
     FormatGuard format;
     CodecContextGuard codec;
     int streamIndex = -1;
     AVStream* stream = nullptr;             // Borrowed from format.
     const AVCodec* decoderCodec = nullptr;  // FFmpeg's static registry.
 
-    explicit PreparedDecoder(const std::string& path) {
-        const int openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
-        if (openStatus < 0) {
+    explicit PreparedDecoder(const std::string& path)
+        : PreparedDecoder(path, std::shared_ptr<const std::vector<std::uint8_t>>{}) {}
+
+    PreparedDecoder(const std::string& path, std::shared_ptr<const std::vector<std::uint8_t>> bytes)
+        : memory(bytes ? std::make_unique<MemoryReader>(std::move(bytes)) : nullptr) {
+        int openStatus = 0;
+        if (memory) {
+            format.context = avformat_alloc_context();
+            if (format.context == nullptr)
+                failStatus(path, "avformat_alloc_context failed");
+            memory->open(path);
+            format.context->pb = memory->io;
+            format.context->flags |= AVFMT_FLAG_CUSTOM_IO;
+            openStatus = avformat_open_input(&format.context, nullptr, nullptr, nullptr);
+        } else {
+            openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
+        }
+        if (openStatus < 0)
             failStatus(path, "avformat_open_input failed", openStatus);
-        }
-        if (avformat_find_stream_info(format.context, nullptr) < 0) {
+        if (avformat_find_stream_info(format.context, nullptr) < 0)
             failStatus(path, "avformat_find_stream_info failed");
-        }
         streamIndex = av_find_best_stream(format.context, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-        if (streamIndex < 0) {
+        if (streamIndex < 0)
             failStatus(path, "no video stream");
-        }
         stream = format.context->streams[streamIndex];
         decoderCodec = avcodec_find_decoder(stream->codecpar->codec_id);
-        if (decoderCodec == nullptr) {
+        if (decoderCodec == nullptr)
             failStatus(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
-        }
         codec.context = avcodec_alloc_context3(decoderCodec);
-        if (codec.context == nullptr) {
+        if (codec.context == nullptr)
             failStatus(path, "avcodec_alloc_context3 failed");
-        }
-        if (avcodec_parameters_to_context(codec.context, stream->codecpar) < 0) {
+        if (avcodec_parameters_to_context(codec.context, stream->codecpar) < 0)
             failStatus(path, "avcodec_parameters_to_context failed");
-        }
         codec.context->thread_count = 1;  // Deterministic decode for image assertions.
         codec.context->err_recognition = AV_EF_EXPLODE;
     }
@@ -512,6 +582,7 @@ struct PreparedDecoder {
 }  // namespace
 
 struct ClipDecoder::Impl {
+    std::unique_ptr<MemoryReader> memory;
     FormatGuard format;
     int streamIndex = -1;
     AVCodecContext* codecContext = nullptr;
@@ -527,6 +598,7 @@ struct ClipDecoder::Impl {
     ColorPolicy policy;
     ColorOverride overrides;
     bool opened = false;
+    bool viewerReplay = false;
     bool endOfStreamReached = false;
     int64_t decodedFrameCount = 0;
     int64_t framesDecodedHardware = 0;
@@ -552,15 +624,18 @@ struct ClipDecoder::Impl {
 
 ClipDecoder::~ClipDecoder() = default;
 
-std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                                               const std::string& path, const std::filesystem::path& convertSpirv,
-                                               const ColorPolicy& policy, const ColorOverride& overrides) {
+std::unique_ptr<ClipDecoder> ClipDecoder::openInternal(gpu::Instance& instance, gpu::Device& device,
+                                                       gpu::Allocator& allocator, const std::string& path,
+                                                       const std::filesystem::path& convertSpirv,
+                                                       const ColorPolicy& policy, const ColorOverride& overrides,
+                                                       bool viewerReplay,
+                                                       std::shared_ptr<const std::vector<std::uint8_t>> memoryBytes) {
     auto decoder = std::unique_ptr<ClipDecoder>(new ClipDecoder());
     auto impl = std::make_unique<Impl>();
     decoder->impl_ = std::move(impl);
     Impl& d = *decoder->impl_;
 
-    PreparedDecoder prepared(path);
+    PreparedDecoder prepared(path, std::move(memoryBytes));
     auto& codec = prepared.codec;
     AVStream* stream = prepared.stream;
 
@@ -568,6 +643,7 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
     // interpretation outside the explicit subset is a hard error for both
     // paths (no silent relabeling as scene-linear).
     d.color = resolveColor(stream->codecpar, path, policy, overrides);
+    d.viewerReplay = viewerReplay;
     d.policy = policy;
     d.overrides = overrides;
 
@@ -689,9 +765,16 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
                     auto* pool = reinterpret_cast<AVHWFramesContext*>(frames->data);
                     pool->sw_format = AV_PIX_FMT_NV12;
                     auto* vkPool = static_cast<AVVulkanFramesContext*>(pool->hwctx);
-                    vkPool->flags =
-                        static_cast<AVVkFrameFlags>(AV_VK_FRAME_FLAG_NONE | AV_VK_FRAME_FLAG_DISABLE_MULTIPLANE);
-                    vkPool->usage = static_cast<VkImageUsageFlagBits>(vkPool->usage | VK_IMAGE_USAGE_SAMPLED_BIT);
+                    vkPool->flags = static_cast<AVVkFrameFlags>(AV_VK_FRAME_FLAG_NONE);
+                    // The decoder surfaces are only consumed as transfer
+                    // sources by MediaInterop. Do not request sampled or
+                    // storage usage: FFmpeg derives its default image flags
+                    // from those bits and would add ALIAS/MUTABLE/EXTENDED,
+                    // which this Vulkan video format explicitly rejects.
+                    vkPool->usage = static_cast<VkImageUsageFlagBits>(VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+                                                                      VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+                                                                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+                    vkPool->img_flags = 0;
                     status = av_hwframe_ctx_init(frames);
                     if (status < 0) {
                         av_buffer_unref(&frames);
@@ -714,12 +797,36 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
     d.codecContext = std::exchange(codec.context, nullptr);
     d.format.context = std::exchange(prepared.format.context, nullptr);
     d.streamIndex = prepared.streamIndex;
+    d.memory = std::move(prepared.memory);
     d.device = &device;
     d.allocator = &allocator;
 
     d.queue = std::make_unique<gpu::SubmissionQueue>(device, device.graphics_family());
     d.opened = true;
     return decoder;
+}
+
+std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
+                                               const std::string& path, const std::filesystem::path& convertSpirv,
+                                               const ColorPolicy& policy, const ColorOverride& overrides) {
+    return openInternal(instance, device, allocator, path, convertSpirv, policy, overrides, false, {});
+}
+
+std::unique_ptr<ClipDecoder> ClipDecoder::openViewer(gpu::Instance& instance, gpu::Device& device,
+                                                     gpu::Allocator& allocator, const std::string& path,
+                                                     const std::filesystem::path& convertSpirv) {
+    return openInternal(instance, device, allocator, path, convertSpirv, ColorPolicy{}, ColorOverride{}, true, {});
+}
+std::unique_ptr<ClipDecoder> ClipDecoder::openViewerMemory(gpu::Instance& instance, gpu::Device& device,
+                                                           gpu::Allocator& allocator, const std::string& name,
+                                                           std::shared_ptr<const std::vector<std::uint8_t>> bytes,
+                                                           const std::filesystem::path& convertSpirv) {
+    if (!bytes || bytes->empty())
+        failStatus(name, "viewer memory chunk is empty");
+    if (bytes->size() > static_cast<std::size_t>(std::numeric_limits<int64_t>::max()))
+        failStatus(name, "viewer memory chunk exceeds addressable AVIO size");
+    return openInternal(instance, device, allocator, name, convertSpirv, ColorPolicy{}, ColorOverride{}, true,
+                        std::move(bytes));
 }
 
 const ClipInfo& ClipDecoder::info() const {
@@ -798,6 +905,8 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
         if (retainedFrame == nullptr)
             failStatus(impl.info.path, "av_frame_clone failed");
         foreign.owner = std::shared_ptr<AVFrame>(retainedFrame, [](AVFrame* retained) { av_frame_free(&retained); });
+        foreign.copyBeforeSampling = true;
+        foreign.sourceLinearization = !impl.viewerReplay;
         foreign.transfer = impl.color.transfer;
         foreign.matrix = impl.color.matrix;
         foreign.range = impl.color.range;
@@ -843,7 +952,7 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
         auto output = std::make_unique<gpu::Image>(
             impl.allocator->create_image(foreign.width, foreign.height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
                                          VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 2));
-        const auto completion = impl.interop->submitToRgba32f(foreign, *output);
+        const auto completion = impl.interop->submitToRgba32f(foreign, *output, timeout_ns);
         if (!completion)
             fail(impl.info.path, "vulkan", "GPU submission capacity exhausted");
 
@@ -882,7 +991,8 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
     // validated and converted per its DECLARED interpretation to the
     // scene-linear contract, then uploaded to device residency. The upload
     // is the capability-dependent transfer cost this path carries.
-    const CpuImage pixels = convertDecodedFrame(frame.frame, impl.color, impl.info.path, /*linearize=*/true);
+    const CpuImage pixels =
+        convertDecodedFrame(frame.frame, impl.color, impl.info.path, /*linearize=*/!impl.viewerReplay);
     auto output = std::make_unique<gpu::Image>(
         impl.allocator->create_image(static_cast<uint32_t>(frame.frame->width),
                                      static_cast<uint32_t>(frame.frame->height), 1, VK_FORMAT_R32G32B32A32_SFLOAT,
@@ -896,6 +1006,12 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
                       VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                       VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, timeout_ns);
     return output;
+}
+
+std::unique_ptr<gpu::Image> ClipDecoder::nextViewer(uint64_t timeout_ns) {
+    if (!impl_->viewerReplay)
+        failStatus(impl_->info.path, "viewer next requested from a source decoder");
+    return next(timeout_ns);
 }
 
 namespace {

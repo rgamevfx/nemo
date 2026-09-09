@@ -158,15 +158,9 @@ struct SamplerState {
 // the locals.
 void submitAndWaitRetained(SubmissionQueue& queue, const std::function<void(VkCommandBuffer)>& record,
                            SubmissionQueue::RetainedResources retained, uint64_t timeout_ns, const char* what) {
-    std::optional<SubmissionQueue::Completion> completion = queue.submit(record, retained);
-    if (!completion) {
-        queue.drain();
-        completion = queue.submit(record, std::move(retained));
-    }
-    if (!completion) {
-        throw GpuException(GpuError::SubmissionTimeout,
-                           std::string(what) + ": submission queue still full after drain");
-    }
+    const auto completion = queue.submit(record, std::move(retained), {}, timeout_ns);
+    if (!completion)
+        throw GpuException(GpuError::SubmissionTimeout, std::string(what) + ": submission admission unavailable");
     if (!queue.wait(*completion, timeout_ns)) {
         queue.drain();
         throw GpuException(GpuError::SubmissionTimeout,
@@ -553,11 +547,7 @@ void ComputePass::record(VkCommandBuffer cmd, uint32_t x, uint32_t y, uint32_t z
 void ComputePass::dispatch(uint32_t x, uint32_t y, uint32_t z, uint64_t timeout_ns) {
     auto& queue = impl_->device->submissions(impl_->device->graphics_family());
     const auto recordDispatch = [this, x, y, z](VkCommandBuffer cmd) { record(cmd, x, y, z); };
-    auto completion = queue.submit(recordDispatch, {retain()});
-    if (!completion) {
-        queue.drain();
-        completion = queue.submit(recordDispatch, {retain()});
-    }
+    auto completion = queue.submit(recordDispatch, {retain()}, {}, timeout_ns);
     if (!completion)
         throw GpuException(GpuError::InvalidRequest, "compute dispatch: submission capacity exhausted");
     if (!queue.wait(*completion, timeout_ns))
@@ -651,6 +641,41 @@ void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& im
         },
         {staging.retain(), image.retain()}, timeout_ns, "downloadImage");
     std::memcpy(data, staging.mapped(), bytes);
+}
+
+Image cropRgba32fImage(SubmissionQueue& queue, Allocator& allocator, const Image& source, uint32_t width,
+                       uint32_t height, uint64_t timeout_ns) {
+    if (source.format() != VK_FORMAT_R32G32B32A32_SFLOAT || source.dimensions() != 2 || width == 0 || height == 0 ||
+        width > source.extent().width || height > source.extent().height)
+        throw GpuException(GpuError::InvalidRequest, "RGBA32F crop is outside the source image");
+    auto cropped = allocator.create_image(width, height, 1, source.format(),
+                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                              VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                          2);
+    submitAndWaitRetained(
+        queue,
+        [&](VkCommandBuffer command) {
+            recordImageBarrier(command, source, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+                               VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+            recordImageBarrier(command, cropped, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                               VK_ACCESS_TRANSFER_WRITE_BIT);
+            VkImageCopy copy{};
+            copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            copy.dstSubresource = copy.srcSubresource;
+            copy.extent = {width, height, 1};
+            vkCmdCopyImage(command, source.handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cropped.handle(),
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+            recordImageBarrier(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                               VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                               VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT);
+            recordImageBarrier(command, cropped, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                               VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                               VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT);
+        },
+        {source.retain(), cropped.retain()}, timeout_ns, "cropRgba32fImage");
+    return cropped;
 }
 
 }  // namespace nemo::gpu

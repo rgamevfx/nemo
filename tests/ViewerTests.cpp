@@ -21,16 +21,19 @@
 #include "ScopedEnvironment.hpp"
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -292,6 +295,7 @@ private:
     config +=
         "        - !<RangeTransform> {min_in_value: 0.0, min_out_value: 0.0, max_in_value: 1.0, max_out_value: 1.0}\n";
     config += "displays:\n  sRGB:\n    - !<View> {name: rec709, colorspace: display_view}\n";
+    config += "    - !<View> {name: raw, colorspace: linear}\n";
 
     std::ofstream config_file(dir / "color.ocio");
     config_file << config;
@@ -408,6 +412,35 @@ void expectImagesClose(const CpuImage& expected, const CpuImage& actual, float t
             reinterpret_cast<const std::uint32_t*>(bytes.data()) + bytes.size() / 4};
 }
 
+struct CacheDirectory {
+    std::filesystem::path path;
+    CacheDirectory() {
+        path =
+            std::filesystem::temp_directory_path() / ("nemo-viewer-cache-" + std::to_string(::getpid()) + "-" +
+                                                      ::testing::UnitTest::GetInstance()->current_test_info()->name());
+        if (!std::filesystem::create_directory(path))
+            throw std::runtime_error("test cache directory already exists: " + path.string());
+    }
+    ~CacheDirectory() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
+    }
+    [[nodiscard]] eval::ViewerCacheOptions options() const {
+        eval::ViewerCacheOptions result;
+        result.directory = path;
+        result.encoding.codec = "libx264-cpu";
+        result.chunkFrames = 3;
+        return result;
+    }
+};
+
+CpuImage readViewerFrame(const eval::ViewerFrame& frame, const Bootstrap& boot) {
+    CpuImage pixels(frame.layout);
+    gpu::downloadImage(boot.device->submissions(boot.device->graphics_family()), *boot.allocator, *frame.image,
+                       pixels.data(), static_cast<std::size_t>(pixels.width()) * pixels.height() * 4 * sizeof(float),
+                       10'000'000'000ULL);
+    return pixels;
+}
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -654,7 +687,7 @@ TEST(Viewer, ViewerRenderAppliesTransformOnceAndMatchesCpuOcio) {
     // frame; the presentation path itself is verified by test 6.
     auto& queue = boot.device->submissions(boot.device->graphics_family());
     CpuImage gpuViewed(frame.layout.width, frame.layout.height);
-    gpu::downloadImage(queue, *boot.allocator, frame.image, gpuViewed.data(),
+    gpu::downloadImage(queue, *boot.allocator, *frame.image, gpuViewed.data(),
                        static_cast<std::size_t>(gpuViewed.width()) * static_cast<std::size_t>(gpuViewed.height()) * 4 *
                            sizeof(float),
                        10'000'000'000ULL);
@@ -667,7 +700,7 @@ TEST(Viewer, ViewerRenderAppliesTransformOnceAndMatchesCpuOcio) {
     const media::OcioGpuProgram program = media::buildViewingTransformGpu(configPath.string(), "linear", "sRGB/rec709");
     gpu::GpuViewingTransform transform(*boot.device, *boot.allocator, program);
     try {
-        (void)transform.submit(frame.image, ColorInterpretation::DisplayReferred);
+        (void)transform.submit(*frame.image, ColorInterpretation::DisplayReferred);
         ADD_FAILURE() << "expected double-transform rejection";
     } catch (const std::exception& error) {
         EXPECT_NE(std::string(error.what()).find("display"), std::string::npos) << error.what();
@@ -1054,5 +1087,454 @@ TEST(Viewer, CroppedSourceReductionPreservesFullImageCoordinates) {
         for (int channel = 0; channel < 3; ++channel)
             EXPECT_NEAR(image.pixel(x, 0)[channel], expected, 0.0001);
     }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    CacheDirectory directory;
+    std::vector<int> levels(31);
+    for (int i = 0; i < 31; ++i)
+        levels[i] = 16 + i * 7;
+    TaggedClip clip(AV_PIX_FMT_YUV444P, levels);
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    std::map<int, CpuImage> reference;
+    {
+        eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+        session.configureCache(directory.options());
+        for (int number : {10, 20, 30}) {
+            auto frame = session.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, number));
+            ASSERT_FALSE(frame.cacheHit);
+            reference.emplace(number, readViewerFrame(frame, boot));
+        }
+        session.flushCache();
+        EXPECT_EQ(session.cacheCounts().published, 3U);
+        EXPECT_EQ(session.cacheCounts().encodedFrames, 3U);
+        const auto paused = session.reuseCounts();
+        session.flushCache();  // Idle has no viewer requests to invent.
+        EXPECT_EQ(session.reuseCounts(), paused);
+    }
+    {
+        eval::ViewerSession replay(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+        replay.configureCache(directory.options());
+        const auto before = replay.reuseCounts();
+        for (int number : {30, 10, 20, 30}) {
+            const auto frame = replay.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, number));
+            ASSERT_TRUE(frame.cacheHit) << number;
+            expectImagesClose(reference.at(number), readViewerFrame(frame, boot), 0.035F,
+                              "display-referred compressed replay");
+        }
+        EXPECT_EQ(replay.reuseCounts(), before);
+        EXPECT_GT(replay.cacheCounts().decodedHotHits, 0U);
+        EXPECT_EQ(replay.cacheCounts().encodedFrames, 0U);
+        auto unvisited = replay.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 11));
+        EXPECT_FALSE(unvisited.cacheHit);
+        replay.flushCache();
+        EXPECT_EQ(replay.cacheCounts().published, 1U);
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, ViewEditsPreserveUpstreamReuseAndOnlyReplaceVisitedFrames) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    CacheDirectory directory;
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126, 126});
+    auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    CommandStack commands(composition.doc);
+    {
+        eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+        session.configureCache(directory.options());
+        for (int number : {0, 1})
+            (void)session.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, number));
+        session.flushCache();
+        auto policy = composition.doc.color;
+        policy.viewerTransform = "sRGB/raw";
+        commands.push(setColorPolicyCommand(policy));
+        const auto before = session.reuseCounts();
+        const auto request = requestFor(composition.doc, {0, 0, 64, 48}, 0);
+        const auto replacement = session.render(composition.doc, request);
+        EXPECT_FALSE(replacement.cacheHit);
+        EXPECT_EQ(session.reuseCounts().misses, before.misses);
+        EXPECT_GT(session.reuseCounts().hits, before.hits);
+        session.flushCache();
+        EXPECT_EQ(session.cacheCounts().published, 3U);  // No new-view frame 1 yet.
+        EXPECT_TRUE(session.render(composition.doc, request).cacheHit);
+
+        // Full-quality evaluation has its own scene-linear path, never the
+        // display cache. Independent source gray oracle is pinned in #21.
+        eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+        const auto effects = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
+        auto live = eval::evaluateGpu(composition.doc, request, effects, *boot.device, *boot.allocator,
+                                      10'000'000'000ULL, nullptr, &sources);
+        EXPECT_EQ(live.images.at(request.output)->layout.color, ColorInterpretation::SceneLinear);
+        EXPECT_NEAR(live.readBack(request.output, *boot.device, *boot.allocator).pixel(0, 0)[0], 0.261769F, 0.003F);
+
+        TaggedClip darker(AV_PIX_FMT_YUV444P, {60});
+        commands.push(setSourceCommand("plate", SourceReference{darker.path.string()}));
+        const auto edited = session.render(composition.doc, request);
+        EXPECT_FALSE(edited.cacheHit);
+        EXPECT_LT(readViewerFrame(edited, boot).pixel(0, 0)[0],
+                  readViewerFrame(replacement, boot).pixel(0, 0)[0] - 0.1F);
+        session.flushCache();
+        EXPECT_TRUE(session.render(composition.doc, request).cacheHit);
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, StaleRequestsAndFailedMuxesNeverBecomeReplayable) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    CacheDirectory directory;
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    const auto request = requestFor(composition.doc, {0, 0, 64, 48}, 0);
+    {
+        eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+        session.configureCache(directory.options());
+        session.supersedeCache(composition.doc.stateRevision(), 10);
+        (void)session.render(composition.doc, request, 10'000'000'000ULL, 9);
+        session.flushCache();
+        EXPECT_EQ(session.cacheCounts().staleRejected, 1U);
+        EXPECT_EQ(session.cacheCounts().published, 0U);
+    }
+    {
+        auto options = directory.options();
+        const media::EncodeFailure failure{media::EncodeFailure::Stage::Finalization, 1};
+        options.encoding.injectedFailure = &failure;
+        eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+        session.configureCache(options);
+        EXPECT_FALSE(session.render(composition.doc, request).cacheHit);
+        EXPECT_THROW(session.flushCache(), std::runtime_error);
+        EXPECT_EQ(session.cacheCounts().published, 0U);
+        EXPECT_EQ(session.cacheCounts().encodedFrames, 0U);
+    }
+    {
+        eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+        session.configureCache(directory.options());
+        EXPECT_FALSE(session.render(composition.doc, request).cacheHit);
+        session.flushCache();
+        EXPECT_TRUE(session.render(composition.doc, request).cacheHit);
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, QueueContentionWaitsInsteadOfLosingARequestedFrame) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126, 126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    (void)session.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+
+    std::future<eval::ViewerFrame> rendered;
+    // Models FFmpeg owning the shared native graphics queue. The future is
+    // declared first so unwinding releases the mutex before joining it.
+    std::unique_lock owner(boot.device->queueMutex(boot.device->graphics_family()));
+    rendered = std::async(std::launch::async, [&] {
+        return session.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 1), 5'000'000'000ULL);
+    });
+    EXPECT_EQ(rendered.wait_for(std::chrono::milliseconds(50)), std::future_status::timeout);
+    owner.unlock();
+    const auto frame = rendered.get();
+    auto reference = media::decodeClipSoftware(clip.path.string()).frames.back();
+    media::applyViewingTransformCpu(reference, configPath.string(), ColorPolicy{});
+
+    expectImagesClose(reference, readViewerFrame(frame, boot), 2e-5F, "queued native viewer output");
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, ActiveBatchConsumesAdmissionCapacity) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    const auto frame = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    CacheDirectory directory;
+    auto options = directory.options();
+    options.chunkFrames = 3;
+    options.maxPendingFrames = 4;
+    eval::ViewerCache cache(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    cache.configure(options);
+
+    struct Gate {
+        VkDevice device{};
+        VkSemaphore semaphore{};
+        ~Gate() {
+            if (semaphore)
+                vkDestroySemaphore(device, semaphore, nullptr);
+        }
+    };
+    auto gate = std::make_shared<Gate>();
+    gate->device = boot.device->handle();
+    VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO, nullptr, VK_SEMAPHORE_TYPE_TIMELINE,
+                                   0};
+    VkSemaphoreCreateInfo create{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &type, 0};
+    ASSERT_EQ(vkCreateSemaphore(gate->device, &create, nullptr, &gate->semaphore), VK_SUCCESS);
+    struct Release {
+        std::shared_ptr<Gate> gate;
+        bool released{false};
+        VkResult signal() {
+            if (released)
+                return VK_SUCCESS;
+            VkSemaphoreSignalInfo info{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, nullptr, gate->semaphore, 1};
+            const auto result = vkSignalSemaphore(gate->device, &info);
+            released = result == VK_SUCCESS;
+            return result;
+        }
+        ~Release() { (void)signal(); }
+    } release{gate};
+    auto& queue = boot.device->submissions(boot.device->graphics_family());
+    gpu::SubmissionQueue::TimelineSemaphores dependency;
+    dependency.wait = {gate->semaphore};
+    dependency.waitValues = {1};
+    ASSERT_TRUE(queue.submit([](VkCommandBuffer) {}, {gate}, dependency, 5'000'000'000ULL));
+    std::array<eval::ViewerCachePublication, 3> batch;
+    for (std::size_t index = 0; index < batch.size(); ++index) {
+        batch[index] = {.identity = "display-" + std::to_string(index),
+                        .chunkGroupKey = "display",
+                        .localTime = static_cast<std::int64_t>(index),
+                        .revision = 1,
+                        .generation = 1,
+                        .image = frame.image,
+                        .layout = frame.layout};
+    }
+    ASSERT_TRUE(cache.enqueueBatch(batch));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (cache.counts().activeFrames != 3 && cache.counts().errors == 0 &&
+           std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_EQ(cache.counts().activeFrames, 3U);
+    const auto dropped = cache.counts().admissionDropped;
+    ASSERT_TRUE(cache.enqueue(eval::ViewerCachePublication{.identity = "extra-1",
+                                                           .chunkGroupKey = "display",
+                                                           .localTime = 4,
+                                                           .revision = 1,
+                                                           .generation = 1,
+                                                           .image = frame.image,
+                                                           .layout = frame.layout}));
+    ASSERT_TRUE(cache.enqueue(eval::ViewerCachePublication{.identity = "extra-2",
+                                                           .chunkGroupKey = "display",
+                                                           .localTime = 5,
+                                                           .revision = 1,
+                                                           .generation = 1,
+                                                           .image = frame.image,
+                                                           .layout = frame.layout}));
+    EXPECT_GT(cache.counts().admissionDropped, dropped);
+    EXPECT_LE(cache.counts().activeFrames + cache.counts().pendingFrames, 4U);
+    ASSERT_EQ(release.signal(), VK_SUCCESS);
+    cache.flush();
+    EXPECT_FALSE(cache.lookup("extra-1", frame.layout, 5'000'000'000ULL).has_value());
+    EXPECT_TRUE(cache.lookup("extra-2", frame.layout, 5'000'000'000ULL).has_value());
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, SupersessionDuringEncodingRejectsTheCompletedWrite) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    auto frame = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    CacheDirectory directory;
+    eval::ViewerCache cache(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    cache.configure(directory.options());
+
+    struct Gate {
+        VkDevice device{};
+        VkSemaphore semaphore{};
+        ~Gate() {
+            if (semaphore)
+                vkDestroySemaphore(device, semaphore, nullptr);
+        }
+    };
+    auto gate = std::make_shared<Gate>();
+    gate->device = boot.device->handle();
+    VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO, nullptr, VK_SEMAPHORE_TYPE_TIMELINE,
+                                   0};
+    VkSemaphoreCreateInfo create{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &type, 0};
+    ASSERT_EQ(vkCreateSemaphore(gate->device, &create, nullptr, &gate->semaphore), VK_SUCCESS);
+    struct Release {
+        std::shared_ptr<Gate> gate;
+        bool released{};
+        VkResult signal() {
+            if (released)
+                return VK_SUCCESS;
+            VkSemaphoreSignalInfo signal{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, nullptr, gate->semaphore, 1};
+            const auto result = vkSignalSemaphore(gate->device, &signal);
+            released = result == VK_SUCCESS;
+            return result;
+        }
+        ~Release() { (void)signal(); }
+    } release{gate};  // Unblocks GPU work before cache teardown, even on failure.
+    auto& queue = boot.device->submissions(boot.device->graphics_family());
+    gpu::SubmissionQueue::TimelineSemaphores dependency;
+    dependency.wait = {gate->semaphore};
+    dependency.waitValues = {1};
+    ASSERT_TRUE(queue.submit([](VkCommandBuffer) {}, {gate}, dependency, 5'000'000'000ULL));
+    ASSERT_TRUE(cache.enqueue(eval::ViewerCachePublication{.identity = "frame",
+                                                           .chunkGroupKey = "display",
+                                                           .localTime = 0,
+                                                           .revision = 1,
+                                                           .generation = 1,
+                                                           .image = frame.image,
+                                                           .layout = frame.layout}));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (cache.counts().encodingFrames == 0 && cache.counts().errors == 0 &&
+           std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    const bool encodingStarted = cache.counts().encodingFrames == 1;
+    cache.supersede(2, 2);
+    ASSERT_EQ(release.signal(), VK_SUCCESS);
+    cache.flush();
+    EXPECT_TRUE(encodingStarted);
+    EXPECT_EQ(cache.counts().encodedFrames, 1U);
+    EXPECT_EQ(cache.counts().published, 0U);
+    EXPECT_EQ(cache.counts().staleRejected, 1U);
+    const bool postSupersessionLookupHit = cache.lookup("frame", frame.layout, 5'000'000'000ULL).has_value();
+    const auto after = cache.counts();
+    RecordProperty("actual_frame_count", std::to_string(after.encodedFrames));
+    RecordProperty("encodedFrames", std::to_string(after.encodedFrames));
+    RecordProperty("published", std::to_string(after.published));
+    RecordProperty("staleRejected", std::to_string(after.staleRejected));
+    RecordProperty("post_supersession_lookup_hit", postSupersessionLookupHit ? "true" : "false");
+    EXPECT_FALSE(postSupersessionLookupHit);
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, StalePredecessorRetainsEncodedOffsetAcrossPersistence) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126, 220});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    const auto first = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    const auto later = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 1));
+    const CpuImage expectedLater = readViewerFrame(later, boot);
+    CacheDirectory directory;
+    auto options = directory.options();
+    options.chunkFrames = 3;
+
+    struct Gate {
+        VkDevice device{};
+        VkSemaphore semaphore{};
+        ~Gate() {
+            if (semaphore)
+                vkDestroySemaphore(device, semaphore, nullptr);
+        }
+    };
+    auto gate = std::make_shared<Gate>();
+    gate->device = boot.device->handle();
+    VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO, nullptr, VK_SEMAPHORE_TYPE_TIMELINE,
+                                   0};
+    VkSemaphoreCreateInfo create{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &type, 0};
+    ASSERT_EQ(vkCreateSemaphore(gate->device, &create, nullptr, &gate->semaphore), VK_SUCCESS);
+    struct Release {
+        std::shared_ptr<Gate> gate;
+        bool released{false};
+        VkResult signal() {
+            if (released)
+                return VK_SUCCESS;
+            VkSemaphoreSignalInfo info{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, nullptr, gate->semaphore, 1};
+            const auto result = vkSignalSemaphore(gate->device, &info);
+            released = result == VK_SUCCESS;
+            return result;
+        }
+        ~Release() { (void)signal(); }
+    };
+
+    {
+        eval::ViewerCache cache(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+        cache.configure(options);
+        Release release{gate};
+        auto& queue = boot.device->submissions(boot.device->graphics_family());
+        gpu::SubmissionQueue::TimelineSemaphores dependency;
+        dependency.wait = {gate->semaphore};
+        dependency.waitValues = {1};
+        ASSERT_TRUE(queue.submit([](VkCommandBuffer) {}, {gate}, dependency, 5'000'000'000ULL));
+
+        std::array<eval::ViewerCachePublication, 2> batch{eval::ViewerCachePublication{.identity = "stale-predecessor",
+                                                                                       .chunkGroupKey = "display",
+                                                                                       .localTime = 0,
+                                                                                       .revision = 1,
+                                                                                       .generation = 1,
+                                                                                       .image = first.image,
+                                                                                       .layout = first.layout},
+                                                          eval::ViewerCachePublication{.identity = "survivor",
+                                                                                       .chunkGroupKey = "display",
+                                                                                       .localTime = 1,
+                                                                                       .revision = 1,
+                                                                                       .generation = 1,
+                                                                                       .image = later.image,
+                                                                                       .layout = later.layout}};
+        ASSERT_TRUE(cache.enqueueBatch(batch));
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (cache.counts().encodingFrames != batch.size() && cache.counts().errors == 0 &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ASSERT_EQ(cache.counts().encodingFrames, batch.size());
+
+        ASSERT_TRUE(cache.enqueue(eval::ViewerCachePublication{.identity = "stale-predecessor",
+                                                               .chunkGroupKey = "display",
+                                                               .localTime = 0,
+                                                               .revision = 1,
+                                                               .generation = 2,
+                                                               .image = first.image,
+                                                               .layout = first.layout}));
+        ASSERT_EQ(release.signal(), VK_SUCCESS);
+        cache.flush();
+
+        const auto replay = cache.lookup("survivor", later.layout, 5'000'000'000ULL);
+        ASSERT_TRUE(replay.has_value());
+        expectImagesClose(expectedLater, readViewerFrame(eval::ViewerFrame{replay->image, replay->layout}, boot),
+                          0.035F, "surviving frame after stale filtering");
+    }
+
+    {
+        eval::ViewerCache reopened(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+        reopened.configure(options);
+        const auto replay = reopened.lookup("survivor", later.layout, 5'000'000'000ULL);
+        ASSERT_TRUE(replay.has_value());
+        expectImagesClose(expectedLater, readViewerFrame(eval::ViewerFrame{replay->image, replay->layout}, boot),
+                          0.035F, "surviving frame after reopening");
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, OddSizedRegionsReplayAtTheirExactRequestedExtent) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    CacheDirectory directory;
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    session.configureCache(directory.options());
+    const auto request = requestFor(composition.doc, {1, 3, 31, 21}, 0);
+    const auto original = session.render(composition.doc, request);
+    session.flushCache();
+    const auto replay = session.render(composition.doc, request);
+    ASSERT_TRUE(replay.cacheHit);
+    EXPECT_EQ(replay.image->extent().width, 31U);
+    EXPECT_EQ(replay.image->extent().height, 21U);
+    expectImagesClose(readViewerFrame(original, boot), readViewerFrame(replay, boot), 0.035F,
+                      "odd-region display replay");
     expectValidationClean(*boot.instance);
 }

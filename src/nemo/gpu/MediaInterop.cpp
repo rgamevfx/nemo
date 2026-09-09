@@ -51,7 +51,7 @@ std::unique_ptr<MediaInterop> MediaInterop::create(Device& device, Allocator& al
 }
 
 void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns) {
-    const auto completion = submitToRgba32f(frame, output);
+    const auto completion = submitToRgba32f(frame, output, timeout_ns);
     if (!completion)
         fail("submission capacity exhausted");
     auto& queue = impl_->device->submissions(impl_->device->graphics_family());
@@ -66,7 +66,8 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
     }
 }
 
-std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(ForeignVideoFrame& frame, Image& output) {
+std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(ForeignVideoFrame& frame, Image& output,
+                                                                         uint64_t admissionTimeout_ns) {
     if (!frame.owner)
         fail("foreign frame requires retained ownership");
     const VkDevice vkDevice = impl_->device->handle();
@@ -88,15 +89,24 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
     if (frame.multiplane && frame.planeCount != 1) {
         fail("multiplane foreign frame must carry exactly one image");
     }
+    if (!frame.multiplane && frame.planeCount != 2) {
+        fail("per-plane foreign NV12 frame must carry exactly two images");
+    }
+    const uint32_t sourceCount = frame.multiplane ? 1u : frame.planeCount;
+    for (uint32_t plane = 0; plane < sourceCount; ++plane) {
+        if (frame.images[plane] == VK_NULL_HANDLE || frame.semaphores[plane] == VK_NULL_HANDLE)
+            fail("foreign frame plane " + std::to_string(plane) + " requires an image and timeline semaphore");
+    }
 
     // meta = (width, height, 0, 0) for the kernel's region guard; param0
     // carries the declared color interpretation: (transfer, range, matrix,
-    // 0). The kernel converts Y′CbCr(range/matrix) → R′G′B′ and inverts
-    // `transfer` into scene-linear Rec.709.
+    // 0). The kernel converts Y′CbCr(range/matrix) → R′G′B′ and applies the
+    // transfer inverse only when sourceLinearization is enabled.
     Buffer uniform =
         impl_->allocator->create_buffer(64, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryPreference::HostMapped);
     const std::uint32_t meta[4] = {frame.width, frame.height, 0, 0};
-    const float param0[4] = {static_cast<float>(frame.transfer), static_cast<float>(frame.range),
+    const auto transfer = frame.sourceLinearization ? frame.transfer : MediaTransfer::Linear;
+    const float param0[4] = {static_cast<float>(transfer), static_cast<float>(frame.range),
                              static_cast<float>(frame.matrix), 0.0F};
     std::memcpy(uniform.mapped(), meta, sizeof(meta));
     std::memcpy(static_cast<std::byte*>(uniform.mapped()) + 32, param0, sizeof(param0));
@@ -111,25 +121,47 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
                     vkDestroyImageView(device, view, nullptr);
         }
     };
-    auto owners = std::make_shared<PlaneViews>();
-    owners->device = vkDevice;
-    owners->frame = frame.owner;
-    auto& views = owners->views;
+
+    // Video decode surfaces are deliberately allocated without SAMPLED or
+    // MUTABLE capabilities. Copy those surfaces into normal application
+    // images in this same GPU submission, so the mediaConvert shader still
+    // samples R8/R8G8 views without a CPU round trip.
+    std::shared_ptr<PlaneViews> owners;
+    Image copiedPlanes[2];
     const VkFormat planeFormats[2] = {VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8_UNORM};
-    if (frame.multiplane) {
-        views[0] = createPlaneView(vkDevice, frame.images[0], planeFormats[0], VK_IMAGE_ASPECT_PLANE_0_BIT);
-        views[1] = createPlaneView(vkDevice, frame.images[0], planeFormats[1], VK_IMAGE_ASPECT_PLANE_1_BIT);
+    if (frame.copyBeforeSampling) {
+        const uint32_t chromaWidth = (frame.width + 1) / 2;
+        const uint32_t chromaHeight = (frame.height + 1) / 2;
+        copiedPlanes[0] =
+            impl_->allocator->create_image(frame.width, frame.height, 1, planeFormats[0],
+                                           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 2);
+        copiedPlanes[1] =
+            impl_->allocator->create_image(chromaWidth, chromaHeight, 1, planeFormats[1],
+                                           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 2);
     } else {
-        for (uint32_t plane = 0; plane < frame.planeCount; ++plane) {
-            views[plane] =
-                createPlaneView(vkDevice, frame.images[plane], frame.formats[plane], VK_IMAGE_ASPECT_COLOR_BIT);
+        owners = std::make_shared<PlaneViews>();
+        owners->device = vkDevice;
+        owners->frame = frame.owner;
+        auto& views = owners->views;
+        if (frame.multiplane) {
+            views[0] = createPlaneView(vkDevice, frame.images[0], planeFormats[0], VK_IMAGE_ASPECT_PLANE_0_BIT);
+            views[1] = createPlaneView(vkDevice, frame.images[0], planeFormats[1], VK_IMAGE_ASPECT_PLANE_1_BIT);
+        } else {
+            for (uint32_t plane = 0; plane < frame.planeCount; ++plane) {
+                views[plane] =
+                    createPlaneView(vkDevice, frame.images[plane], frame.formats[plane], VK_IMAGE_ASPECT_COLOR_BIT);
+            }
         }
     }
 
     std::vector<ComputeBinding> bindings = {
         {0, 0, DescriptorKind::UniformBuffer, &uniform},
-        {1, 0, DescriptorKind::CombinedImageSampler, nullptr, nullptr, false, views[0], owners},
-        {1, 1, DescriptorKind::CombinedImageSampler, nullptr, nullptr, false, views[1], owners},
+        frame.copyBeforeSampling ? ComputeBinding{1, 0, DescriptorKind::CombinedImageSampler, nullptr, &copiedPlanes[0]}
+                                 : ComputeBinding{1, 0, DescriptorKind::CombinedImageSampler, nullptr, nullptr, false,
+                                                  owners->views[0], owners},
+        frame.copyBeforeSampling ? ComputeBinding{1, 1, DescriptorKind::CombinedImageSampler, nullptr, &copiedPlanes[1]}
+                                 : ComputeBinding{1, 1, DescriptorKind::CombinedImageSampler, nullptr, nullptr, false,
+                                                  owners->views[1], owners},
         {2, 0, DescriptorKind::StorageImage, nullptr, &output},
     };
     auto pass = ComputePass::create(*impl_->device, impl_->spirv, bindings);
@@ -147,8 +179,9 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
         semaphores.signalValues.push_back(frame.waitValues[plane] + 1);
     }
 
+    const bool copyPlanes = frame.copyBeforeSampling;
     auto& queue = impl_->device->submissions(impl_->device->graphics_family());
-    const auto completion = queue.submit(
+    auto completion = queue.submit(
         [&](VkCommandBuffer cmd) {
             // Synchronization2 barriers: the producer stage bits (video
             // decode) exist only in the FlagBits2 form. Multiplane frames
@@ -159,10 +192,10 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
                     ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT)
                     : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT),
                 static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT)};
-            const uint32_t barrierCount = frame.multiplane ? 1u : frame.planeCount;
-            VkImageMemoryBarrier2 acquires[3] = {};
-            for (uint32_t plane = 0; plane < barrierCount; ++plane) {
-                VkImageMemoryBarrier2& barrier = acquires[plane];
+            VkImageMemoryBarrier2 acquires[5] = {};
+            uint32_t acquireCount = 0;
+            for (uint32_t plane = 0; plane < sourceCount; ++plane) {
+                VkImageMemoryBarrier2& barrier = acquires[acquireCount++];
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
                 // Chain the ALL_COMMANDS semaphore wait into the layout
                 // transition. NONE would let that transition race the
@@ -171,10 +204,12 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
                 // supported by this graphics queue family.
                 barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
                 barrier.srcAccessMask = VK_ACCESS_2_NONE;
-                barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-                barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+                barrier.dstStageMask =
+                    copyPlanes ? VK_PIPELINE_STAGE_2_TRANSFER_BIT : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                barrier.dstAccessMask = copyPlanes ? VK_ACCESS_2_TRANSFER_READ_BIT : VK_ACCESS_2_SHADER_READ_BIT;
                 barrier.oldLayout = frame.layouts[plane];
-                barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                barrier.newLayout =
+                    copyPlanes ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 // Concurrent-sharing frames (family IGNORED) need no
                 // ownership transfer; exclusive-sharing frames transfer
                 // decode -> graphics.
@@ -185,9 +220,27 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
                 barrier.image = frame.images[plane];
                 barrier.subresourceRange = {barrierAspects[plane], 0, 1, 0, 1};
             }
+
+            if (copyPlanes) {
+                for (uint32_t plane = 0; plane < 2; ++plane) {
+                    VkImageMemoryBarrier2& barrier = acquires[acquireCount++];
+                    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+                    barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+                    barrier.srcAccessMask = VK_ACCESS_2_NONE;
+                    barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrier.image = copiedPlanes[plane].handle();
+                    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                }
+            }
+
             // Fresh output images start UNDEFINED; transition to the
             // contract's GENERAL layout for the storage write.
-            VkImageMemoryBarrier2 outputAcquire{};
+            VkImageMemoryBarrier2& outputAcquire = acquires[acquireCount++];
             outputAcquire.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             outputAcquire.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
             outputAcquire.srcAccessMask = VK_ACCESS_2_NONE;
@@ -201,28 +254,58 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
             outputAcquire.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             VkDependencyInfo acquireInfo{};
             acquireInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            acquireInfo.imageMemoryBarrierCount = barrierCount + 1;
+            acquireInfo.imageMemoryBarrierCount = acquireCount;
             acquireInfo.pImageMemoryBarriers = acquires;
-            acquires[barrierCount] = outputAcquire;
             vkCmdPipelineBarrier2(cmd, &acquireInfo);
 
-            pass->record(cmd, (frame.width + 7) / 8, (frame.height + 7) / 8, 1);
+            if (copyPlanes) {
+                for (uint32_t plane = 0; plane < 2; ++plane) {
+                    VkImageCopy copy{};
+                    copy.srcSubresource.aspectMask =
+                        frame.multiplane ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_PLANE_0_BIT << plane)
+                                         : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT);
+                    copy.srcSubresource.layerCount = 1;
+                    copy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    copy.dstSubresource.layerCount = 1;
+                    copy.extent = {plane == 0 ? frame.width : (frame.width + 1) / 2,
+                                   plane == 0 ? frame.height : (frame.height + 1) / 2, 1};
+                    const VkImage source = frame.multiplane ? frame.images[0] : frame.images[plane];
+                    vkCmdCopyImage(cmd, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, copiedPlanes[plane].handle(),
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+                }
+            }
 
-            // Release back to the producer: restored layout/access and
-            // family ownership, so the decoder's next pass over the planes
-            // is properly ordered by the signaled timeline value.
-            VkImageMemoryBarrier2 releases[2] = {};
-            for (uint32_t plane = 0; plane < barrierCount; ++plane) {
-                VkImageMemoryBarrier2& barrier = releases[plane];
+            VkImageMemoryBarrier2 releases[4] = {};
+            uint32_t releaseCount = 0;
+            if (copyPlanes) {
+                for (uint32_t plane = 0; plane < 2; ++plane) {
+                    VkImageMemoryBarrier2& barrier = releases[releaseCount++];
+                    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+                    barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+                    barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                    barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+                    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrier.image = copiedPlanes[plane].handle();
+                    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                }
+            }
+            for (uint32_t plane = 0; plane < sourceCount; ++plane) {
+                VkImageMemoryBarrier2& barrier = releases[releaseCount++];
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-                barrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+                barrier.srcStageMask =
+                    copyPlanes ? VK_PIPELINE_STAGE_2_TRANSFER_BIT : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                barrier.srcAccessMask = copyPlanes ? VK_ACCESS_2_TRANSFER_READ_BIT : VK_ACCESS_2_SHADER_READ_BIT;
                 // Mirror image: the decode queue's next submission waits on
                 // the signaled timeline value, so the destination stage is
                 // NONE here (ownership hand-back only).
                 barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
                 barrier.dstAccessMask = VK_ACCESS_2_NONE;
-                barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                barrier.oldLayout =
+                    copyPlanes ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 barrier.newLayout = frame.layouts[plane];
                 barrier.srcQueueFamilyIndex = frame.queueFamilies[plane] == VK_QUEUE_FAMILY_IGNORED
                                                   ? VK_QUEUE_FAMILY_IGNORED
@@ -231,20 +314,39 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
                 barrier.image = frame.images[plane];
                 barrier.subresourceRange = {barrierAspects[plane], 0, 1, 0, 1};
             }
-            VkDependencyInfo releaseInfo{};
-            releaseInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            releaseInfo.imageMemoryBarrierCount = barrierCount;
-            releaseInfo.pImageMemoryBarriers = releases;
-            vkCmdPipelineBarrier2(cmd, &releaseInfo);
+            if (copyPlanes) {
+                VkDependencyInfo copyInfo{};
+                copyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                copyInfo.imageMemoryBarrierCount = releaseCount;
+                copyInfo.pImageMemoryBarriers = releases;
+                vkCmdPipelineBarrier2(cmd, &copyInfo);
+            }
+
+            pass->record(cmd, (frame.width + 7) / 8, (frame.height + 7) / 8, 1);
+
+            if (!copyPlanes) {
+                VkDependencyInfo releaseInfo{};
+                releaseInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                releaseInfo.imageMemoryBarrierCount = releaseCount;
+                releaseInfo.pImageMemoryBarriers = releases;
+                vkCmdPipelineBarrier2(cmd, &releaseInfo);
+            }
         },
-        {pass->retain()}, semaphores);
+        [&] {
+            SubmissionQueue::RetainedResources retained{pass->retain()};
+            if (copyPlanes)
+                retained.push_back(frame.owner);
+            return retained;
+        }(),
+        semaphores, admissionTimeout_ns);
     if (!completion)
         return std::nullopt;
-    for (uint32_t plane = 0; plane < (frame.multiplane ? 1u : frame.planeCount); ++plane) {
+    for (uint32_t plane = 0; plane < sourceCount; ++plane) {
         // The producer waits on the incremented value before reusing the
-        // plane; our last access was the shader read recorded below.
+        // plane; our last access was the transfer read or shader read
+        // recorded below.
         frame.waitValues[plane] += 1;
-        frame.accesses[plane] = VK_ACCESS_SHADER_READ_BIT;
+        frame.accesses[plane] = copyPlanes ? VK_ACCESS_TRANSFER_READ_BIT : VK_ACCESS_SHADER_READ_BIT;
         if (frame.queueFamilies[plane] != VK_QUEUE_FAMILY_IGNORED) {
             frame.queueFamilies[plane] = impl_->device->graphics_family();
         }

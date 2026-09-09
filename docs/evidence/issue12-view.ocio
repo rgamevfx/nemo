@@ -1,0 +1,21 @@
+ocio_profile_version: 2
+search_path: ""
+roles:
+  default: linear
+  scene_linear: linear
+colorspaces:
+  - !<ColorSpace>
+    name: linear
+    allocation: linear
+  - !<ColorSpace>
+    name: display_rec709
+    from_reference: !<GroupTransform>
+      children:
+        - !<ExponentWithLinearTransform> {gamma: 2.2222222222, offset: 0.099, direction: inverse}
+        - !<RangeTransform> {min_in_value: 0.0, min_out_value: 0.0, max_in_value: 1.0, max_out_value: 1.0}
+displays:
+  sRGB:
+    - !<View> {name: rec709, colorspace: display_rec709}
+    - !<View> {name: raw, colorspace: linear}
+active_displays: [sRGB]
+active_views: [rec709, raw]

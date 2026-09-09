@@ -112,8 +112,12 @@ public:
     // harvest or queue owner is busy (try-lock admission). The recording
     // callback and Vulkan driver calls run on this worker; submit never
     // waits for GPU completion. Throws on recording or Vulkan failure.
+    // Positive admissionTimeout_ns is for synchronous workers: wait for
+    // capacity/queue ownership without rerecording caller preparation or
+    // dropping retained owners. Zero preserves nonblocking admission.
+    // The timeout does not wait for execution; wait(completion, ...) does.
     std::optional<Completion> submit(const std::function<void(VkCommandBuffer)>& record, RetainedResources retained,
-                                     const TimelineSemaphores& semaphores = {});
+                                     const TimelineSemaphores& semaphores = {}, uint64_t admissionTimeout_ns = 0);
 
     // True when `completion` has completed — idempotently true forever
     // after; false while still in flight, or for an invalid identity (0 or
@@ -139,6 +143,9 @@ public:
                          uint64_t timeout_ns);
 
 private:
+    std::optional<Completion> trySubmit(const std::function<void(VkCommandBuffer)>& record, RetainedResources retained,
+                                        const TimelineSemaphores& semaphores);
+
     // One self-contained submission unit: its own command pool (pool host
     // access is externally synchronized, so no two recordings may ever
     // share one), primary command buffer, fence, and timestamp query pair.

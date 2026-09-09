@@ -186,7 +186,28 @@ SubmissionQueue::Slot* SubmissionQueue::findSubmitted(Completion completion) {
 
 std::optional<SubmissionQueue::Completion> SubmissionQueue::submit(const std::function<void(VkCommandBuffer)>& record,
                                                                    RetainedResources retained,
-                                                                   const TimelineSemaphores& semaphores) {
+                                                                   const TimelineSemaphores& semaphores,
+                                                                   uint64_t admissionTimeout_ns) {
+    if (admissionTimeout_ns == 0)
+        return trySubmit(record, std::move(retained), semaphores);
+    const auto start = Clock::now();
+    for (;;) {
+        // Preserve the original owners: an unsuccessful attempt may have
+        // reserved/recovered a slot before the FFmpeg queue-owner try-lock.
+        if (auto completion = trySubmit(record, retained, semaphores))
+            return completion;
+        const auto elapsed = elapsedNs(start);
+        if (elapsed >= admissionTimeout_ns)
+            throw GpuException(GpuError::SubmissionTimeout,
+                               "GPU submission admission timed out on queue family " + std::to_string(queue_family_));
+        std::this_thread::sleep_for(
+            std::chrono::nanoseconds(std::min<std::uint64_t>(admissionTimeout_ns - elapsed, 100'000)));
+    }
+}
+
+std::optional<SubmissionQueue::Completion>
+SubmissionQueue::trySubmit(const std::function<void(VkCommandBuffer)>& record, RetainedResources retained,
+                           const TimelineSemaphores& semaphores) {
     // Counts must match before passing the arrays to Vulkan. Waiting for
     // timeline value zero is valid and already satisfied.
     if (semaphores.wait.size() != semaphores.waitValues.size()) {

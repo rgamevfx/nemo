@@ -6,6 +6,7 @@
 // Scene-linear evaluator images and full-quality exports never enter this
 // interface.
 
+#include "nemo/eval/ViewerDestination.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
@@ -13,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -41,7 +43,8 @@ struct ViewerCacheOptions {
 
 // One display-only frame accepted by the asynchronous cache writer. The
 // chunkGroupKey controls storage batching; identity remains the exact
-// consumer-facing cache key.
+// consumer-facing cache key. Destination scopes freshness only; it is not
+// persisted in the consumer-facing identity.
 struct ViewerCachePublication {
     std::string identity;
     std::string chunkGroupKey;
@@ -50,6 +53,10 @@ struct ViewerCachePublication {
     std::uint64_t generation{0};
     std::shared_ptr<const gpu::Image> image;
     ImageLayout layout;
+    ViewerDestination destination{ViewerDestination::Interactive};
+    // Scheduler-owned freshness, checked by the writer through completion.
+    // Must be thread-safe and outlive the cache writer; never call this cache.
+    std::function<bool()> publicationGuard{};
 };
 
 struct ViewerCacheCounts {
@@ -107,10 +114,12 @@ public:
     // to the worker. Moves records; oversized groups are rejected.
     bool enqueueBatch(std::span<ViewerCachePublication> publications);
 
-    // Advances freshness without invalidating valid entries for other frame
-    // identities. Revision changes reject old-revision writes; a newer
-    // generation is applied per identity when its replacement is enqueued.
-    void supersede(std::uint64_t revision, std::uint64_t generation);
+    // Advances freshness for one destination. Revision changes reject
+    // old-revision writes in that destination; a newer generation is applied
+    // per identity when its replacement is enqueued. Existing callers use
+    // the interactive default.
+    void supersede(std::uint64_t revision, std::uint64_t generation,
+                   ViewerDestination destination = ViewerDestination::Interactive);
 
     // Returns the immutable representation settings used in cache identity.
     // The reference remains valid for the cache lifetime after configure().

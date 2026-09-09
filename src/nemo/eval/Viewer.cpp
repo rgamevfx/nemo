@@ -60,14 +60,16 @@ CacheCounts ViewerSession::reuseCounts() const {
 }
 
 void ViewerSession::configureCache(const ViewerCacheOptions& options) {
+    std::lock_guard freshnessLock(freshnessMutex_);
     std::lock_guard cacheLock(cacheMutex_);
     if (cache_)
         throw std::logic_error("viewer cache is already configured");
     auto cache = std::make_unique<ViewerCache>(instance_, device_, allocator_, replayShader_);
     cache->configure(options);
-    {
-        std::lock_guard freshnessLock(freshnessMutex_);
-        cache->supersede(latestRevision_, latestGeneration_);
+    for (const auto& [destination, generation] : latestGenerationByDestination_) {
+        const auto revision = latestRevisionByDestination_.find(destination);
+        cache->supersede(revision == latestRevisionByDestination_.end() ? 0 : revision->second, generation,
+                         destination);
     }
     cache_ = std::move(cache);
 }
@@ -85,15 +87,18 @@ ViewerCacheCounts ViewerSession::cacheCounts() const {
     return cache_->counts();
 }
 
-void ViewerSession::supersedeCache(std::uint64_t revision, std::uint64_t generation) {
-    std::lock_guard cacheLock(cacheMutex_);
+void ViewerSession::supersedeCache(std::uint64_t revision, std::uint64_t generation, ViewerDestination destination) {
+    // This short freshness section is safe from the UI thread. It never
+    // performs cache I/O, decode, or GPU waits; those remain worker-owned.
     std::lock_guard freshnessLock(freshnessMutex_);
-    if (generation >= latestGeneration_) {
-        latestRevision_ = revision;
-        latestGeneration_ = generation;
-        if (cache_)
-            cache_->supersede(revision, generation);
-    }
+    auto& currentGeneration = latestGenerationByDestination_[destination];
+    if (generation < currentGeneration)
+        return;
+    currentGeneration = generation;
+    latestRevisionByDestination_[destination] = revision;
+    std::lock_guard cacheLock(cacheMutex_);
+    if (cache_)
+        cache_->supersede(revision, generation, destination);
 }
 
 ViewerSession::ViewingState& ViewerSession::viewingStateFor(const ColorPolicy& policy) {
@@ -109,7 +114,8 @@ ViewerSession::ViewingState& ViewerSession::viewingStateFor(const ColorPolicy& p
 }
 
 ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequest& request, std::uint64_t timeout_ns,
-                                  std::uint64_t generation) {
+                                  std::uint64_t generation, ViewerDestination destination,
+                                  CachePublicationGuard publicationGuard) {
     // Worker-only contract; validate here so a malformed request fails on
     // the caller's thread with a precise reason before any GPU work.
     validateRequest(document, request);
@@ -117,11 +123,12 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     const auto revision = document.stateRevision();
     {
         std::lock_guard lock(freshnessMutex_);
+        auto& currentGeneration = latestGenerationByDestination_[destination];
         if (generation == 0)
-            generation = latestGeneration_ + 1;
-        if (generation >= latestGeneration_) {
-            latestRevision_ = revision;
-            latestGeneration_ = generation;
+            generation = currentGeneration + 1;
+        if (generation >= currentGeneration) {
+            latestRevisionByDestination_[destination] = revision;
+            currentGeneration = generation;
         }
     }
 
@@ -134,7 +141,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     expected.height = scaledDimension(request.region.height, request.samplingScale);
     expected.color = ColorInterpretation::DisplayReferred;
     if (cache_) {
-        cache_->supersede(revision, generation);
+        cache_->supersede(revision, generation, destination);
         const ResultKey key = queryViewerResultKey(document, request, effects_);
         identity = cacheIdentity(key, viewing.identity, cache_->optionsForIdentity());
         if (auto hit = cache_->lookup(*identity, expected, timeout_ns)) {
@@ -188,7 +195,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     frame.requestId = requestId;
     frame.cacheHit = false;
 
-    if (identity) {
+    if (identity && (!publicationGuard || publicationGuard())) {
         // Chunk grouping is a storage concern, not a synthetic evaluation
         // request. Each frame keeps its full effective identity in the index.
         auto chunkGroupKey =
@@ -199,7 +206,9 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
                                                .revision = revision,
                                                .generation = generation,
                                                .image = image,
-                                               .layout = frame.layout});
+                                               .layout = frame.layout,
+                                               .destination = destination,
+                                               .publicationGuard = std::move(publicationGuard)});
     }
     return frame;
 }

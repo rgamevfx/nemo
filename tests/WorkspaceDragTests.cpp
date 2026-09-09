@@ -283,6 +283,42 @@ TEST_F(WorkspaceDragTest, NestedPanelMenusSwitchTypeAndCloseViewer) {
     QTest::qWait(60);
     EXPECT_EQ(containing(snapshot(), other.toStdString()), nullptr);
 }
+TEST_F(WorkspaceDragTest, InteractiveGraphAndTimelineUseCommandsAndSharePlayhead) {
+    viewerController.openSource("/tmp/nemo-interactive-command-source.mkv");
+    QTest::qWait(30);
+    auto* name = item("graphAddName");
+    name->forceActiveFocus();
+    for (const char letter : std::string("extra"))
+        QTest::keyClick(window, letter);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphAddButton"));
+    QTest::qWait(30);
+    const auto containsExtra = [&] {
+        for (const auto& value : viewerController.graphNodes())
+            if (value.toMap().value("name").toString() == "extra")
+                return true;
+        return false;
+    };
+    ASSERT_TRUE(containsExtra());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphUndo"));
+    QTest::qWait(30);
+    EXPECT_FALSE(containsExtra());
+
+    auto* ruler = item("timelineRuler");
+    const auto quarter = ruler->mapToScene(QPointF(ruler->width() / 4, ruler->height() / 2)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, quarter);
+    QTest::qWait(30);
+    EXPECT_NEAR(viewerController.frame(), 60, 1);
+    EXPECT_EQ(item("graphPlayhead")->property("value").toInt(), viewerController.frame());
+    auto* slider = item("graphPlayhead");
+    slider->forceActiveFocus();
+    const auto before = viewerController.frame();
+    const auto previousPosition = item("timelinePlayhead")->x();
+    QTest::keyClick(window, Qt::Key_Right);
+    QTest::qWait(30);
+    EXPECT_GT(viewerController.frame(), before);
+    EXPECT_GT(item("timelinePlayhead")->x(), previousPosition);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {

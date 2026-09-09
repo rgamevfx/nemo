@@ -2,6 +2,7 @@
 
 #include "nemo/eval/Viewer.hpp"
 #include "nemo/eval/ViewerCache.hpp"
+#include "nemo/eval/ViewerScheduler.hpp"
 #include "nemo/gpu/ViewerPresentation.hpp"
 
 #include <QObject>
@@ -9,10 +10,16 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
+#include <filesystem>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <variant>
+#include <vector>
 
 class QQuickWindow;
 
@@ -37,9 +44,18 @@ struct ViewerFailure {
 };
 using ViewerWorkResult = std::variant<std::shared_ptr<const ViewerResult>, SourceProbeResult, ViewerFailure>;
 
-// GUI submits immutable snapshots; one worker owns the decoder/evaluator.
-// Both request and result mailboxes have one slot. Obsolete work may finish,
-// but cannot publish. Stop/join are shutdown-only, never source-load operations.
+struct ViewerRuntimeCounts {
+    std::uint64_t queued{};
+    std::uint64_t dropped{};
+    std::uint64_t staleRejected{};
+    std::uint64_t completed{};
+};
+
+// GUI submits immutable snapshots to the headless ViewerScheduler. The
+// worker owns decoder/evaluator/cache access and is the only thread allowed
+// to perform potentially blocking render, decode, presentation preparation,
+// or cache work. Cancellation only changes scheduler publication state: GPU
+// work already submitted may finish and retains its resources under #22.
 class ViewerRuntime final : public QObject {
     Q_OBJECT
 public:
@@ -48,9 +64,22 @@ public:
     void bootstrap(const std::vector<std::string>& extensions, const std::filesystem::path& shaders,
                    eval::ViewerCacheOptions cacheOptions);
     [[nodiscard]] QString attachToWindow(QQuickWindow* window);
-    void submit(Document document, EvaluationRequest request, std::uint64_t id);
-    void probe(Document document, std::string source, std::uint64_t id);
-    [[nodiscard]] std::optional<ViewerWorkResult> takeResult();
+
+    // The destination default preserves the existing single-viewer API.
+    bool submit(Document document, EvaluationRequest request, std::uint64_t id,
+                eval::ViewerDestination destination = eval::ViewerDestination::Interactive);
+    bool probe(Document document, std::string source, std::uint64_t id);
+    // `first` and `last` are inclusive local-time frames. The range is held
+    // as one lazy descriptor and produces cache publications only; it never
+    // replaces the interactive viewer result.
+    bool requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id);
+    // Nonblocking cancellation. `id` is a generation watermark: queued work
+    // is dropped immediately and in-flight work is rejected at publication.
+    void cancel(std::uint64_t id);
+    [[nodiscard]] ViewerRuntimeCounts counts() const;
+
+    [[nodiscard]] std::optional<ViewerWorkResult>
+    takeResult(eval::ViewerDestination destination = eval::ViewerDestination::Interactive);
     // Call before Qt window destruction; quiesce follows Qt teardown.
     void stopWorker();
     void quiesceForTeardown();
@@ -59,18 +88,14 @@ public:
 
 signals:
     void resultReady();
+    void rangeFailed(QString message, qulonglong requestId);
 
 private:
-    struct Pending {
-        Document document;
-        EvaluationRequest request;
-        std::string source;  // nonempty: probe rather than render
-        std::uint64_t id{};
-        std::chrono::steady_clock::time_point requestedAt{};
-    };
-    void enqueue(Pending pending);
+    using Pending = eval::ViewerScheduledRequest;
+
     void run(const std::filesystem::path& shaders);
-    void publish(ViewerWorkResult result, std::uint64_t id);
+    bool publish(ViewerWorkResult result, const Pending& pending);
+    void finishRange(const Pending& pending);
     void flushValidation();
 
     // Destroy Qt's adopting wrapper BEFORE its borrowed Vulkan instance.
@@ -82,15 +107,16 @@ private:
     std::unique_ptr<gpu::Allocator> allocator_;
     QVulkanInstance qtInstance_;
     bool filterLinear_{};
-    std::mutex mutex_;
+
+    mutable std::mutex mutex_;
     std::condition_variable ready_;
-    std::optional<Pending> pending_;
-    std::optional<ViewerWorkResult> result_;
-    std::uint64_t latestId_{};
-    std::uint64_t latestRevision_{};
+    eval::ViewerScheduler scheduler_;
+    struct Published {
+        Pending request;
+        ViewerWorkResult result;
+    };
+    std::map<eval::ViewerDestination, Published> results_;
     eval::ViewerCacheOptions cacheOptions_;
-    // Borrowed from run() under mutex_. Cleared before worker-side destruction.
-    eval::ViewerSession* session_{};
     bool stopping_{};
     std::thread worker_;
 };

@@ -89,6 +89,15 @@ Rectangle {
                         onValueModified: viewerPanel.controller.setFrame(value)
                         editable: true
                     }
+                    Slider {
+                        id: frameScrubber
+                        objectName: "viewerPlayhead"
+                        Layout.fillWidth: true
+                        from: 0
+                        to: Math.max(1, viewerPanel.controller.frameCount > 0 ? viewerPanel.controller.frameCount - 1 : 239)
+                        value: viewerPanel.controller.frame
+                        onMoved: viewerPanel.controller.setFrame(Math.round(value))
+                    }
                     ComboBox {
                         id: modeSelector
                         objectName: "viewerMode"
@@ -117,6 +126,12 @@ Rectangle {
                         onClicked: viewerPanel.controller.resetView()
                         ToolTip.visible: hovered
                         ToolTip.text: "Reset zoom to aspect fit and clear pan."
+                    }
+                    Button {
+                        objectName: "viewerCancel"
+                        text: "Cancel"
+                        enabled: viewerPanel.controller.pending || viewerPanel.controller.queued > 0
+                        onClicked: viewerPanel.controller.cancelRender()
                     }
                 }
             }
@@ -183,8 +198,8 @@ Rectangle {
                 anchors.margins: 4
                 wrapMode: Text.Wrap
                 elide: Text.ElideRight
-                text: viewerPanel.controller.error.length > 0 ? viewerPanel.controller.error : (viewerPanel.controller.status.length > 0 ? viewerPanel.controller.status : "no source loaded")
-                color: viewerPanel.controller.error.length > 0 ? "#f0b0b0" : "#8a8a8a"
+                text: "[" + viewerPanel.controller.renderState + "] " + (viewerPanel.controller.error.length > 0 ? viewerPanel.controller.error : (viewerPanel.controller.status.length > 0 ? viewerPanel.controller.status : "no source loaded"))
+                color: viewerPanel.controller.error.length > 0 ? "#f0b0b0" : viewerPanel.controller.outdated ? "#e7ba76" : "#8a8a8a"
                 font.pixelSize: 11
             }
         }

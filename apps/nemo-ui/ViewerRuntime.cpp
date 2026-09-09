@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <utility>
 
 namespace nemo::ui {
 ViewerRuntime::~ViewerRuntime() {
@@ -32,39 +33,102 @@ void ViewerRuntime::bootstrap(const std::vector<std::string>& extensions, const 
     worker_ = std::thread([this, shaders] { run(shaders); });
 }
 
-void ViewerRuntime::enqueue(Pending pending) {
+bool ViewerRuntime::submit(Document document, EvaluationRequest request, std::uint64_t id,
+                           eval::ViewerDestination destination) {
+    bool accepted = false;
     {
         std::lock_guard lock(mutex_);
-        if (stopping_)
-            return;
-        latestId_ = pending.id;
-        latestRevision_ = pending.document.stateRevision();
-        pending.requestedAt = std::chrono::steady_clock::now();
-        if (session_)
-            session_->supersedeCache(latestRevision_, latestId_);
-        pending_ = std::move(pending);
-        result_.reset();
+        if (!stopping_)
+            accepted = scheduler_.submit(std::move(document), std::move(request), id, destination);
+        // A fresh interactive submission replaces the old mailbox result. A
+        // cache-range submission uses its own destination and must not erase
+        // what is currently shown.
+        if (accepted)
+            results_.erase(destination);
     }
-    ready_.notify_one();
+    if (accepted)
+        ready_.notify_one();
+    return accepted;
 }
-void ViewerRuntime::submit(Document document, EvaluationRequest request, std::uint64_t id) {
-    enqueue({std::move(document), std::move(request), {}, id});
+
+bool ViewerRuntime::probe(Document document, std::string source, std::uint64_t id) {
+    bool accepted = false;
+    {
+        std::lock_guard lock(mutex_);
+        if (!stopping_)
+            accepted = scheduler_.probe(std::move(document), std::move(source), id);
+        if (accepted)
+            results_.erase(eval::ViewerDestination::Interactive);
+    }
+    if (accepted)
+        ready_.notify_one();
+    return accepted;
 }
-void ViewerRuntime::probe(Document document, std::string source, std::uint64_t id) {
-    enqueue({std::move(document), {}, std::move(source), id});
+
+bool ViewerRuntime::requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id) {
+    bool accepted = false;
+    {
+        std::lock_guard lock(mutex_);
+        if (!stopping_)
+            accepted = scheduler_.requestRange(std::move(document), std::move(request), first, last, id);
+    }
+    if (accepted)
+        ready_.notify_one();
+    return accepted;
 }
-std::optional<ViewerWorkResult> ViewerRuntime::takeResult() {
+
+void ViewerRuntime::cancel(std::uint64_t id) {
+    {
+        std::lock_guard lock(mutex_);
+        if (!stopping_)
+            scheduler_.cancel(id);
+        std::erase_if(results_, [this](const auto& entry) { return !scheduler_.isCurrent(entry.second.request); });
+    }
+    ready_.notify_all();
+}
+
+ViewerRuntimeCounts ViewerRuntime::counts() const {
     std::lock_guard lock(mutex_);
-    return std::exchange(result_, std::nullopt);
+    const eval::ViewerSchedulerCounts counts = scheduler_.counts();
+    return ViewerRuntimeCounts{counts.queued, counts.dropped, counts.staleRejected, counts.completed};
 }
-void ViewerRuntime::publish(ViewerWorkResult result, std::uint64_t id) {
+
+std::optional<ViewerWorkResult> ViewerRuntime::takeResult(eval::ViewerDestination destination) {
+    std::lock_guard lock(mutex_);
+    const auto found = results_.find(destination);
+    if (found == results_.end())
+        return std::nullopt;
+    auto result = std::move(found->second.result);
+    results_.erase(found);
+    return result;
+}
+
+bool ViewerRuntime::publish(ViewerWorkResult result, const Pending& pending) {
+    bool accepted = false;
     {
         std::lock_guard lock(mutex_);
-        if (stopping_ || (id != 0 && id != latestId_))
-            return;
-        result_ = std::move(result);
+        // complete() performs the destination-local identity check while the
+        // runtime lock is held, so cancel() cannot race a publication into the
+        // mailbox. A rejected result is dropped; GPU resource retirement is
+        // still solely the shared submission mechanism's responsibility.
+        if (!stopping_ && scheduler_.complete(pending, true)) {
+            results_.insert_or_assign(pending.destination, Published{pending, std::move(result)});
+            accepted = true;
+        } else if (stopping_) {
+            (void)scheduler_.complete(pending, false);
+        }
     }
-    emit resultReady();
+    if (accepted)
+        emit resultReady();
+    return accepted;
+}
+
+void ViewerRuntime::finishRange(const Pending& pending) {
+    std::lock_guard lock(mutex_);
+    // A range has no viewer mailbox result. `published=true` records terminal
+    // completion only when its destination identity is still current; stale
+    // range work is counted and discarded without touching presentation.
+    (void)scheduler_.complete(pending, true);
 }
 
 void ViewerRuntime::run(const std::filesystem::path& shaders) {
@@ -74,43 +138,62 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
         Pending pending;
         {
             std::unique_lock lock(mutex_);
-            ready_.wait(lock, [this] { return stopping_ || pending_.has_value(); });
+            ready_.wait(lock, [this] { return stopping_ || scheduler_.hasWork(); });
             if (stopping_)
                 break;
-            pending = std::move(*pending_);
-            pending_.reset();
+            auto next = scheduler_.take();
+            if (!next)
+                continue;
+            pending = std::move(*next);
         }
         try {
             if (!session) {
                 auto configured = std::make_unique<eval::ViewerSession>(*instance_, *device_, *allocator_, shaders);
                 configured->configureCache(cacheOptions_);
                 session = std::move(configured);
-                std::lock_guard lock(mutex_);
-                session_ = session.get();
-                session_->supersedeCache(latestRevision_, latestId_);
             }
-            if (!pending.source.empty()) {
-                publish(SourceProbeResult{session->probeSource(pending.document, pending.source), pending.id},
-                        pending.id);
+            if (pending.kind == eval::ViewerRequestKind::Probe) {
+                publish(SourceProbeResult{session->probeSource(*pending.document, pending.source), pending.id},
+                        pending);
             } else {
-                if (presentationShader.empty())
-                    presentationShader = gpu::loadSpirv(shaders / "viewerPresentation.spv");
-                auto frame = session->render(pending.document, pending.request, 10'000'000'000ULL, pending.id);
-                auto presentation = gpu::prepareViewerPresentation(
-                    *device_, *allocator_, *presentationDevice_, *frame.image, frame.layout.color, presentationShader);
-                auto result = std::make_shared<ViewerResult>(ViewerResult{std::move(presentation), frame.layout,
-                                                                          frame.request, pending.id, frame.revision,
-                                                                          frame.cacheHit, pending.requestedAt});
-                publish(std::shared_ptr<const ViewerResult>(std::move(result)), pending.id);
+                auto publicationGuard = [this, pending] { return scheduler_.isCacheCurrent(pending); };
+                auto frame = session->render(*pending.document, pending.request, 10'000'000'000ULL, pending.id,
+                                             pending.destination, std::move(publicationGuard));
+                if (pending.kind == eval::ViewerRequestKind::CacheRange) {
+                    finishRange(pending);
+                } else {
+                    bool current = false;
+                    {
+                        std::lock_guard lock(mutex_);
+                        current = !stopping_ && scheduler_.isCurrent(pending);
+                        if (!current)
+                            (void)scheduler_.complete(pending, false);
+                    }
+                    if (current) {
+                        if (presentationShader.empty())
+                            presentationShader = gpu::loadSpirv(shaders / "viewerPresentation.spv");
+                        auto presentation =
+                            gpu::prepareViewerPresentation(*device_, *allocator_, *presentationDevice_, *frame.image,
+                                                           frame.layout.color, presentationShader);
+                        auto result = std::make_shared<ViewerResult>(
+                            ViewerResult{std::move(presentation), frame.layout, frame.request, pending.id,
+                                         frame.revision, frame.cacheHit, pending.requestedAt});
+                        publish(std::shared_ptr<const ViewerResult>(std::move(result)), pending);
+                    }
+                }
             }
         } catch (const std::exception& error) {
-            publish(ViewerFailure{error.what(), pending.id}, pending.id);
+            if (pending.kind == eval::ViewerRequestKind::CacheRange) {
+                if (scheduler_.complete(pending, false))
+                    emit rangeFailed(QStringLiteral("Cache frame %1: %2")
+                                         .arg(pending.request.localTime)
+                                         .arg(QString::fromUtf8(error.what())),
+                                     pending.id);
+            } else {
+                publish(ViewerFailure{error.what(), pending.id}, pending);
+            }
         }
         flushValidation();
-    }
-    {
-        std::lock_guard lock(mutex_);
-        session_ = nullptr;
     }
 }
 
@@ -153,9 +236,10 @@ void ViewerRuntime::stopWorker() {
     {
         std::lock_guard lock(mutex_);
         stopping_ = true;
-        pending_.reset();
+        scheduler_.clear();
+        results_.clear();
     }
-    ready_.notify_one();
+    ready_.notify_all();
     if (worker_.joinable())
         worker_.join();
 }
@@ -179,7 +263,7 @@ void ViewerRuntime::quiesceForTeardown() {
     }
     {
         std::lock_guard lock(mutex_);
-        result_.reset();
+        results_.clear();
     }
     flushValidation();
 }

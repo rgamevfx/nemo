@@ -20,7 +20,7 @@ if(NEMO_BUILD_UI)
         VERSION 1.0
         RESOURCE_PREFIX /qt/qml
         QML_FILES qml/Main.qml qml/WorkspaceNode.qml qml/Panel.qml qml/DockDrag.qml qml/PanelDragHandler.qml
-                  qml/ViewerPanel.qml
+                  qml/ViewerPanel.qml qml/GraphPanel.qml qml/TimelinePanel.qml
     )
     target_link_libraries(nemo-ui PRIVATE nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)
     if(DEFINED NEMO_SLANG_SPV_DIR)

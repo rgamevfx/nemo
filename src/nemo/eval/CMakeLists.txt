@@ -7,6 +7,7 @@ add_library(nemo_eval
     SourceSession.cpp
     Viewer.cpp
     ViewerCache.cpp
+    ViewerScheduler.cpp
 )
 add_library(nemo::eval ALIAS nemo_eval)
 

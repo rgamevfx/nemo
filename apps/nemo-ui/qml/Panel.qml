@@ -2,11 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// A single workspace panel. The panel body is intentionally empty (no
-// placeholder text, banners or decorative indicators); only the compact header
-// controls are drawn. The type button opens a menu to switch panel type, split
-// the containing leaf, add a tab, or close the panel. The group button assigns
-// an A-E display group — saved metadata only, no live context routing yet.
+// A single workspace panel. The panel body dispatches to the native viewer,
+// authored graph, or source-timing timeline surface. The compact header keeps
+// workspace layout operations separate from document commands.
 Rectangle {
     id: panelRoot
 
@@ -175,17 +173,19 @@ Rectangle {
             }
         }
 
-        // Panel body. The viewer panel hosts the native Vulkan viewer; the
-        // nodegraph/timeline bodies stay intentionally empty (no placeholder
-        // text, banners, or decorative indicators).
+        // Panel body. Each processing surface reads the same controller and
+        // routes edits through its command invokables; only the viewer hosts
+        // native presentation.
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
             Loader {
                 anchors.fill: parent
-                active: panelRoot.panelType === "viewer"
-                source: "ViewerPanel.qml"
+                active: true
+                source: panelRoot.panelType === "viewer" ? "ViewerPanel.qml"
+                       : panelRoot.panelType === "nodegraph" ? "GraphPanel.qml"
+                       : panelRoot.panelType === "timeline" ? "TimelinePanel.qml" : ""
             }
         }
     }

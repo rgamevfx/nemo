@@ -82,12 +82,46 @@ document revision, result cache, or publication guard existed.
 
 ## Non-goals / deferred
 
-Asynchronous publication and cancellation (#13), automatic LRU/budget
-policy and disk eviction (#14), compressed viewer-cache representations
-(#12), viewer presentation (#11).
+Automatic LRU/budget policy and disk eviction (#14) remain separate.
+Compressed viewer-cache representations (#12) and viewer presentation
+(#11) implement their respective representation and ownership contracts.
+
+## Application scheduling integration (#13)
+
+`eval::ViewerScheduler` applies bounded admission and current-frame priority
+without Qt or GPU ownership. Requests retain immutable Document snapshots.
+Explicit ranges use one descriptor per destination and expand only when
+selected for execution; ordinary scrubbing never creates a range.
+
+Each destination has its own publication token. Superseding one viewer
+does not make another viewer's result stale. Cancellation changes eligibility,
+not GPU completion: #22 retains submitted resources through completion.
+`ViewerRuntime` performs decode, compilation, rendering, and presentation
+preparation on its worker, with destination-local result mailboxes.
+
+Publication and reusable history remain distinct. Moving the playhead rejects
+an obsolete viewer result but may preserve its already-requested cache history.
+The asynchronous cache writer checks scheduler eligibility before publishing;
+cancellation cannot be undone by later resubmitting the same revision.
+Neither scheduling nor publication freshness removes unrelated committed
+content-keyed representations.
+
+The graph and timeline panels use the same controller and CommandStack.
+The graph exposes node creation, connections, parameter editing, and output
+selection. Timeline source strips expose the existing persistent source
+offset/step mapping and shared playhead. They do not claim clip-occurrence
+move/trim support: that model is not yet present. Unknown source coverage is
+shown explicitly rather than inferred from the ruler's visible extent.
 
 ## Verification
 
 `tests/ReuseTests.cpp` (CPU, 12 scenarios: acceptance examples 1–6 of issue
 #9) and `Effect.GpuReuseAvoidsRecomputationAndPreservesResults` (native GPU
 path with Slang kernels) plus the full `ctest` matrix.
+
+`ctest --preset debug -R Interactive` covers bounded priority, immutable
+snapshots, destination isolation, cancellation with a real semaphore-gated
+GPU submission, command undo, and graph/timeline QML input. Native Wayland
+acceptance additionally exercises cached returns, edit-during-render, explicit
+range backlog, resizing, zoom, and workspace switching; machine-specific
+observations are recorded on issue #13.

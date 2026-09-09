@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -33,14 +35,21 @@ struct ViewerFrame {
 // the total request. Cache compression is always asynchronous.
 class ViewerSession {
 public:
+    using CachePublicationGuard = std::function<bool()>;
+
     ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
                   const std::filesystem::path& shaderDirectory);
     ~ViewerSession();
     ViewerSession(const ViewerSession&) = delete;
     ViewerSession& operator=(const ViewerSession&) = delete;
+    // The optional guard is checked before enqueue and by the asynchronous
+    // cache writer through publication. It must be thread-safe; captured
+    // owners must outlive the session/cache worker. An omitted guard preserves
+    // direct callers' revision/generation freshness contract.
     [[nodiscard]] ViewerFrame render(const Document& document, const EvaluationRequest& request,
-                                     std::uint64_t timeout_ns = 10'000'000'000ULL, std::uint64_t generation = 0);
-
+                                     std::uint64_t timeout_ns = 10'000'000'000ULL, std::uint64_t generation = 0,
+                                     ViewerDestination destination = ViewerDestination::Interactive,
+                                     CachePublicationGuard publicationGuard = {});
     // Configures persistent requested-only display cache storage. Setup is
     // worker-side and may allocate media resources; render remains live-first.
     void configureCache(const ViewerCacheOptions& options);
@@ -48,9 +57,11 @@ public:
     // admission reported an error.
     void flushCache();
     [[nodiscard]] ViewerCacheCounts cacheCounts() const;
-    // Thread-safe UI freshness signal. It never dereferences a Document and
-    // does not invalidate valid distinct frame representations.
-    void supersedeCache(std::uint64_t revision, std::uint64_t generation);
+    // Thread-safe UI freshness signal. It only advances freshness for the
+    // selected destination and does not invalidate valid distinct frame
+    // representations or other destinations.
+    void supersedeCache(std::uint64_t revision, std::uint64_t generation,
+                        ViewerDestination destination = ViewerDestination::Interactive);
 
     struct SourceProbe {
         media::ClipInfo info;
@@ -78,11 +89,11 @@ private:
     EffectLibrary effects_;
     ResultCache<GpuNodeImage> reuse_;
     std::map<std::pair<std::string, std::string>, ViewingState> viewing_;
+    std::map<ViewerDestination, std::uint64_t> latestRevisionByDestination_;
+    std::map<ViewerDestination, std::uint64_t> latestGenerationByDestination_;
     mutable std::mutex cacheMutex_;
     std::unique_ptr<ViewerCache> cache_;
     mutable std::mutex freshnessMutex_;
-    std::uint64_t latestRevision_{0};
-    std::uint64_t latestGeneration_{0};
     std::uint64_t nextRequestId_{1};
 };
 

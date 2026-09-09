@@ -176,7 +176,9 @@ struct ViewerCache::Impl {
     std::deque<Job> pending;
     std::map<std::string, DiskEntry> entries;
     std::map<std::filesystem::path, std::shared_ptr<DiskChunk>> chunks;
-    std::map<std::string, std::uint64_t> latestGenerationByIdentity;
+    std::map<std::pair<ViewerDestination, std::string>, std::uint64_t> latestGenerationByIdentity;
+    std::map<ViewerDestination, std::uint64_t> latestRevisionByDestination;
+    std::map<ViewerDestination, std::uint64_t> latestGenerationByDestination;
     std::map<std::string, DecodedHot> decodedHot;
     std::deque<std::string> decodedHotOrder;
     std::deque<std::filesystem::path> compressedHotOrder;
@@ -188,8 +190,6 @@ struct ViewerCache::Impl {
     bool configured{false};
     bool stopping{false};
     bool active{false};
-    std::uint64_t latestRevision{0};
-    std::uint64_t latestGeneration{0};
     std::uint64_t decodedInFlight{0};
     std::uint64_t reservedDiskBytes{0};
     std::uint64_t nextFileId{1};
@@ -303,14 +303,17 @@ struct ViewerCache::Impl {
     }
 
     [[nodiscard]] bool staleLocked(const Job& job) const {
-        if (job.revision != latestRevision)
+        if (job.publicationGuard && !job.publicationGuard())
             return true;
-        const auto it = latestGenerationByIdentity.find(job.identity);
-        return it != latestGenerationByIdentity.end() && job.generation < it->second;
+        const auto revision = latestRevisionByDestination.find(job.destination);
+        if (revision != latestRevisionByDestination.end() && job.revision != revision->second)
+            return true;
+        const auto identity = latestGenerationByIdentity.find(std::pair{job.destination, job.identity});
+        return identity != latestGenerationByIdentity.end() && job.generation < identity->second;
     }
 
     void retireGenerationLocked(const Job& job) {
-        const auto it = latestGenerationByIdentity.find(job.identity);
+        const auto it = latestGenerationByIdentity.find(std::pair{job.destination, job.identity});
         if (it != latestGenerationByIdentity.end() && it->second == job.generation)
             latestGenerationByIdentity.erase(it);
     }
@@ -816,6 +819,8 @@ void ViewerCache::configure(const ViewerCacheOptions& options) {
         impl_->entries.clear();
         impl_->chunks.clear();
         impl_->latestGenerationByIdentity.clear();
+        impl_->latestRevisionByDestination.clear();
+        impl_->latestGenerationByDestination.clear();
         impl_->count.diskBytes = 0;
         impl_->releaseWriterLock();
         throw;
@@ -1003,34 +1008,44 @@ bool ViewerCache::enqueueLocked(ViewerCachePublication publication) {
         return false;
     if (!impl_->configured || impl_->stopping)
         return false;
-    // Revision freshness is an equality token. Generation remains the
-    // monotonic ordering used to reject an older request after supersede.
-    if (publication.generation < impl_->latestGeneration) {
+    // Revision freshness is an equality token within this destination.
+    // Generation remains the monotonic ordering used to reject older
+    // publications. Other destinations retain their own valid work.
+    if (publication.publicationGuard && !publication.publicationGuard()) {
         ++impl_->count.staleRejected;
         return false;
     }
-    const auto currentIdentityGeneration = impl_->latestGenerationByIdentity.find(publication.identity);
+    const auto currentGeneration = impl_->latestGenerationByDestination.find(publication.destination);
+    if (currentGeneration != impl_->latestGenerationByDestination.end() &&
+        publication.generation < currentGeneration->second) {
+        ++impl_->count.staleRejected;
+        return false;
+    }
+    const auto currentIdentityGeneration =
+        impl_->latestGenerationByIdentity.find(std::pair{publication.destination, publication.identity});
     if (currentIdentityGeneration != impl_->latestGenerationByIdentity.end() &&
         publication.generation < currentIdentityGeneration->second) {
         ++impl_->count.staleRejected;
         return false;
     }
-    if (publication.generation >= impl_->latestGeneration) {
-        impl_->latestGeneration = publication.generation;
-        impl_->latestRevision = publication.revision;
+    if (currentGeneration == impl_->latestGenerationByDestination.end() ||
+        publication.generation >= currentGeneration->second) {
+        impl_->latestGenerationByDestination[publication.destination] = publication.generation;
+        impl_->latestRevisionByDestination[publication.destination] = publication.revision;
     }
 
     const bool alreadyIndexed = impl_->entries.contains(publication.identity);
     const bool alreadyPending =
-        std::any_of(impl_->pending.begin(), impl_->pending.end(),
-                    [&](const Impl::Job& pending) { return pending.identity == publication.identity; });
+        std::any_of(impl_->pending.begin(), impl_->pending.end(), [&](const Impl::Job& pending) {
+            return pending.identity == publication.identity && pending.destination == publication.destination;
+        });
     if (!alreadyIndexed && !alreadyPending && impl_->entries.size() >= impl_->options.maxMetadataEntries) {
         ++impl_->count.admissionRejected;
         impl_->count.lastError = "viewer cache metadata capacity reached";
         return false;
     }
     std::erase_if(impl_->pending, [&](const Impl::Job& pending) {
-        if (pending.identity != publication.identity)
+        if (pending.identity != publication.identity || pending.destination != publication.destination)
             return false;
         impl_->retireGenerationLocked(pending);
         return true;
@@ -1049,7 +1064,8 @@ bool ViewerCache::enqueueLocked(ViewerCachePublication publication) {
     }
     impl_->pending.push_back(std::move(publication));
     try {
-        impl_->latestGenerationByIdentity[impl_->pending.back().identity] = impl_->pending.back().generation;
+        const auto& pending = impl_->pending.back();
+        impl_->latestGenerationByIdentity[{pending.destination, pending.identity}] = pending.generation;
     } catch (...) {
         impl_->pending.pop_back();
         throw;
@@ -1061,12 +1077,13 @@ bool ViewerCache::enqueueLocked(ViewerCachePublication publication) {
     return true;
 }
 
-void ViewerCache::supersede(std::uint64_t revision, std::uint64_t generation) {
+void ViewerCache::supersede(std::uint64_t revision, std::uint64_t generation, ViewerDestination destination) {
     std::lock_guard lock(impl_->mutex);
-    if (generation < impl_->latestGeneration)
+    const auto current = impl_->latestGenerationByDestination.find(destination);
+    if (current != impl_->latestGenerationByDestination.end() && generation < current->second)
         return;
-    impl_->latestGeneration = generation;
-    impl_->latestRevision = revision;
+    impl_->latestGenerationByDestination[destination] = generation;
+    impl_->latestRevisionByDestination[destination] = revision;
 }
 
 const ViewerCacheOptions& ViewerCache::optionsForIdentity() const {

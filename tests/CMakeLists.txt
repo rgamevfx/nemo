@@ -77,6 +77,7 @@ if(NEMO_BUILD_GPU)
     endif()
     gtest_discover_tests(nemo_effect_tests)
     add_executable(nemo_viewer_tests ViewerTests.cpp)
+    target_sources(nemo_viewer_tests PRIVATE InteractiveSchedulerTests.cpp)
     target_link_libraries(nemo_viewer_tests PRIVATE nemo::eval nemo::media GTest::gtest_main)
     if(DEFINED NEMO_SLANG_SPV_DIR)
         target_compile_definitions(nemo_viewer_tests PRIVATE NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
@@ -93,6 +94,7 @@ if(NEMO_BUILD_UI)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2 Test)
     add_executable(nemo_workspace_ui_tests
         WorkspaceDragTests.cpp
+        InteractiveUiTests.cpp
         ../apps/nemo-ui/WorkspaceController.cpp
         ../apps/nemo-ui/WorkspaceController.hpp
         ../apps/nemo-ui/ViewerController.cpp

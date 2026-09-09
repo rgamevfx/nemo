@@ -4,16 +4,162 @@
 
 #include <QFileInfo>
 #include <QQuickWindow>
+#include <QVariantMap>
 #include <algorithm>
 #include <cmath>
 #include <limits>
-
+#include <utility>
 namespace nemo::ui {
 ViewerController::ViewerController(ViewerRuntime* runtime)
-    : runtime_(runtime), commands_(document_), presentationState_(std::make_unique<WindowPresentationState>()) {
+    : runtime_(runtime), commands_(document_), schedulerPoll_(this),
+      presentationState_(std::make_unique<WindowPresentationState>()) {
     connect(runtime_, &ViewerRuntime::resultReady, this, &ViewerController::receive, Qt::QueuedConnection);
+    connect(
+        runtime_, &ViewerRuntime::rangeFailed, this,
+        [this](const QString& message, qulonglong id) {
+            if (id != generation_)
+                return;
+            status_ = message;
+            emit statusChanged();
+        },
+        Qt::QueuedConnection);
+    schedulerPoll_.setInterval(200);
+    connect(&schedulerPoll_, &QTimer::timeout, this, &ViewerController::schedulerChanged);
+    schedulerPoll_.start();
 }
 ViewerController::~ViewerController() = default;
+
+QString ViewerController::renderState() const {
+    if (!error_.isEmpty())
+        return QStringLiteral("failed");
+    if (pending_)
+        return QStringLiteral("pending");
+    if (outdated_)
+        return QStringLiteral("outdated");
+    if (presentation_)
+        return QStringLiteral("current");
+    return QStringLiteral("idle");
+}
+
+QStringList ViewerController::outputNames() const {
+    QStringList result;
+    for (const auto& node : document_.graph.nodes()) {
+        if (node.type == "output")
+            result.push_back(QString::fromStdString(node.name));
+    }
+    return result;
+}
+
+QVariantList ViewerController::graphNodes() const {
+    QVariantList result;
+    for (const auto& node : document_.graph.nodes()) {
+        QVariantMap params;
+        for (const auto& [key, value] : node.params)
+            params.insert(QString::fromStdString(key), QString::fromStdString(value));
+        result.push_back(QVariantMap{{QStringLiteral("id"), QVariant::fromValue<qulonglong>(node.id)},
+                                     {QStringLiteral("type"), QString::fromStdString(node.type)},
+                                     {QStringLiteral("name"), QString::fromStdString(node.name)},
+                                     {QStringLiteral("params"), params}});
+    }
+    return result;
+}
+
+QVariantList ViewerController::graphEdges() const {
+    QVariantList result;
+    for (const auto& edge : document_.graph.edges()) {
+        result.push_back(QVariantMap{{QStringLiteral("id"), QVariant::fromValue<qulonglong>(edge.id)},
+                                     {QStringLiteral("fromNode"), QVariant::fromValue<qulonglong>(edge.from.node)},
+                                     {QStringLiteral("fromPort"), static_cast<int>(edge.from.port)},
+                                     {QStringLiteral("toNode"), QVariant::fromValue<qulonglong>(edge.to.node)},
+                                     {QStringLiteral("toPort"), static_cast<int>(edge.to.port)}});
+    }
+    return result;
+}
+
+void ViewerController::setOutputName(const QString& name) {
+    const auto trimmed = name.trimmed();
+    if (trimmed.isEmpty()) {
+        fail(QStringLiteral("viewer output name must not be empty"));
+        return;
+    }
+    const auto* node = document_.graph.nodeByName(trimmed.toStdString());
+    if (!node || node->type != "output") {
+        fail(QStringLiteral("viewer output '%1' is not an Output node").arg(trimmed));
+        return;
+    }
+    if (outputName_ == trimmed)
+        return;
+    outputName_ = trimmed;
+    emit outputChanged();
+    lastRequest_.reset();
+    refreshRequest();
+}
+
+QVariantList ViewerController::timelineClips() const {
+    QVariantList result;
+    for (const auto& [key, source] : document_.sources) {
+        const auto local = static_cast<std::int64_t>(frame_);
+        qlonglong sourceFrame = -1;
+        try {
+            sourceFrame = static_cast<qlonglong>(source.frameAt(local));
+        } catch (const std::exception&) {
+            // Keep the strip inspectable while an out-of-coverage mapping is
+            // being edited; evaluation reports the precise source error.
+        }
+        QVariantMap clip{{QStringLiteral("id"), QString::fromStdString(key)},
+                         {QStringLiteral("source"), QString::fromStdString(key)},
+                         {QStringLiteral("start"), 0},
+                         {QStringLiteral("end"), frameCount_},
+                         {QStringLiteral("offset"), QVariant::fromValue<qlonglong>(source.frameOffset)},
+                         {QStringLiteral("step"), QVariant::fromValue<qlonglong>(source.frameStep)},
+                         {QStringLiteral("sourceFrame"), QVariant::fromValue<qlonglong>(sourceFrame)}};
+        result.push_back(std::move(clip));
+    }
+    return result;
+}
+
+qulonglong ViewerController::queued() const {
+    return static_cast<qulonglong>(runtime_->counts().queued);
+}
+
+qulonglong ViewerController::dropped() const {
+    return static_cast<qulonglong>(runtime_->counts().dropped);
+}
+
+qulonglong ViewerController::staleRejected() const {
+    return static_cast<qulonglong>(runtime_->counts().staleRejected);
+}
+
+qulonglong ViewerController::completed() const {
+    return static_cast<qulonglong>(runtime_->counts().completed);
+}
+
+void ViewerController::documentChanged() {
+    error_.clear();
+    pending_ = false;
+    outdated_ = static_cast<bool>(presentation_);
+    const auto* selected = document_.graph.nodeByName(outputName_.toStdString());
+    if (!selected || selected->type != "output") {
+        const auto outputs = outputNames();
+        const QString replacement = outputs.isEmpty() ? QStringLiteral("result") : outputs.front();
+        if (replacement != outputName_) {
+            outputName_ = replacement;
+            emit outputChanged();
+        }
+    }
+    emit graphChanged();
+    emit timelineChanged();
+    emit historyChanged();
+    emit statusChanged();
+}
+
+void ViewerController::invalidateRequest() {
+    lastRequest_.reset();
+    pending_ = false;
+    outdated_ = static_cast<bool>(presentation_);
+    ++generation_;
+    runtime_->cancel(generation_);
+}
 
 void ViewerController::buildGraph(const SourceReference& reference) {
     if (!document_.sources.empty()) {
@@ -42,6 +188,184 @@ void ViewerController::buildGraph(const SourceReference& reference) {
                            },
                            [before](Document& document) { document = *before; }});
 }
+void ViewerController::addGraphNode(const QString& type, const QString& name) {
+    const auto trimmedName = name.trimmed();
+    if (trimmedName.isEmpty()) {
+        fail(QStringLiteral("graph node name must not be empty"));
+        return;
+    }
+    try {
+        commands_.push(addNodeCommand(type.toStdString(), trimmedName.toStdString()));
+        documentChanged();
+        invalidateRequest();
+        refreshRequest();
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
+void ViewerController::connectGraphNodes(qulonglong fromNode, int fromPort, qulonglong toNode, int toPort) {
+    if (fromPort < 0 || toPort < 0) {
+        fail(QStringLiteral("graph ports must be non-negative"));
+        return;
+    }
+    try {
+        commands_.push(connectCommand({static_cast<NodeId>(fromNode), static_cast<std::uint32_t>(fromPort)},
+                                      {static_cast<NodeId>(toNode), static_cast<std::uint32_t>(toPort)}));
+        documentChanged();
+        invalidateRequest();
+        refreshRequest();
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
+void ViewerController::setNodeParameter(const QString& nodeName, const QString& key, const QString& value) {
+    if (nodeName.trimmed().isEmpty() || key.trimmed().isEmpty()) {
+        fail(QStringLiteral("node parameter requires a node and key"));
+        return;
+    }
+    const auto* node = document_.graph.nodeByName(nodeName.toStdString());
+    if (node) {
+        const auto it = node->params.find(key.toStdString());
+        if (it != node->params.end() && it->second == value.toStdString())
+            return;
+    }
+    try {
+        commands_.push(setParamCommand(nodeName.toStdString(), key.toStdString(), value.toStdString()));
+        documentChanged();
+        invalidateRequest();
+        refreshRequest();
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
+void ViewerController::slipTimelineClip(const QString& source, int delta) {
+    const auto key = source.trimmed().toStdString();
+    const auto it = document_.sources.find(key);
+    if (it == document_.sources.end()) {
+        fail(QStringLiteral("timeline source '%1' is unavailable").arg(source));
+        return;
+    }
+    if (delta == 0)
+        return;
+    SourceReference replacement = it->second;
+    if ((delta > 0 && replacement.frameOffset > std::numeric_limits<std::int64_t>::max() - delta) ||
+        (delta < 0 && replacement.frameOffset < std::numeric_limits<std::int64_t>::min() - delta)) {
+        fail(QStringLiteral("timeline slip exceeds source timing range"));
+        return;
+    }
+    replacement.frameOffset += delta;
+    try {
+        // Slip changes the source local-time interval without moving the
+        // parent placement. SourceReference is the persistent timing mapping.
+        commands_.push(setSourceCommand(key, replacement));
+        documentChanged();
+        invalidateRequest();
+        refreshRequest();
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
+void ViewerController::retimeTimelineClip(const QString& source, int step) {
+    const auto key = source.trimmed().toStdString();
+    const auto it = document_.sources.find(key);
+    if (it == document_.sources.end()) {
+        fail(QStringLiteral("timeline source '%1' is unavailable").arg(source));
+        return;
+    }
+    if (step == 0) {
+        fail(QStringLiteral("timeline source frame step must not be zero"));
+        return;
+    }
+    SourceReference replacement = it->second;
+    if (replacement.frameStep == step)
+        return;
+    replacement.frameStep = step;
+    try {
+        // Retime is source timing: each composition frame advances `step`
+        // source frames before downstream graph processing.
+        commands_.push(setSourceCommand(key, replacement));
+        documentChanged();
+        invalidateRequest();
+        refreshRequest();
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
+bool ViewerController::undo() {
+    if (!commands_.canUndo())
+        return false;
+    try {
+        if (!commands_.undo())
+            return false;
+        documentChanged();
+        invalidateRequest();
+        refreshRequest();
+        return true;
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool ViewerController::redo() {
+    if (!commands_.canRedo())
+        return false;
+    try {
+        if (!commands_.redo())
+            return false;
+        documentChanged();
+        invalidateRequest();
+        refreshRequest();
+        return true;
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+void ViewerController::cancelRender() {
+    lastRequest_.reset();
+    ++generation_;
+    runtime_->cancel(generation_);
+    pending_ = false;
+    outdated_ = static_cast<bool>(presentation_);
+    status_ = presentation_ ? QStringLiteral("Cancelled; displayed frame is outdated")
+                            : QStringLiteral("Cancelled; no frame is displayed");
+    emit statusChanged();
+    emit schedulerChanged();
+}
+
+void ViewerController::requestRange(int first, int last) {
+    if (first > last) {
+        fail(QStringLiteral("cache range start must not exceed end"));
+        return;
+    }
+    if (!lastRequest_) {
+        fail(QStringLiteral("cache range requires a current viewer request"));
+        return;
+    }
+    if (frameCount_ > 0) {
+        first = std::clamp(first, 0, frameCount_ - 1);
+        last = std::clamp(last, 0, frameCount_ - 1);
+    } else {
+        first = std::max(0, first);
+        last = std::max(first, last);
+    }
+    if (!runtime_->requestRange(document_, *lastRequest_, first, last, generation_)) {
+        status_ = QStringLiteral("Cache range admission rejected; see scheduler drop count");
+        emit statusChanged();
+        emit schedulerChanged();
+        return;
+    }
+    status_ = QStringLiteral("Caching requested range %1–%2; viewer identity unchanged").arg(first).arg(last);
+    emit statusChanged();
+    emit schedulerChanged();
+}
 
 void ViewerController::openSource(const QString& path) {
     if (path.trimmed().isEmpty()) {
@@ -57,16 +381,9 @@ void ViewerController::openSource(const QString& path) {
             reference.revision = previous->second.revision + 1;
         }
         buildGraph(reference);
-        sourceSize_ = {};
-        presentation_.reset();
-        lastRequest_.reset();
-        frameCount_ = -1;
-        error_.clear();
-        status_ = QStringLiteral("Probing %1").arg(path);
-        emit sourceChanged();
-        emit frameArrived();
-        emit statusChanged();
-        runtime_->probe(document_, "src", ++generation_);
+        documentChanged();
+        invalidateRequest();
+        refreshRequest();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -76,6 +393,7 @@ void ViewerController::receive() {
     auto result = runtime_->takeResult();
     if (!result)
         return;
+    emit schedulerChanged();
     if (auto* failure = std::get_if<ViewerFailure>(&*result)) {
         if (failure->requestId == generation_ || failure->requestId == 0)
             fail(QString::fromStdString(failure->message));
@@ -83,6 +401,8 @@ void ViewerController::receive() {
         if (probe->requestId != generation_)
             return;
         const auto& info = probe->source.info;
+        probedSource_ = document_.sources.at("src");
+        pending_ = false;
         sourceSize_ = QSizeF(info.width, info.height);
         pixelAspect_ = info.pixelAspect;
         frameCount_ = static_cast<int>(std::min<std::int64_t>(info.frameCount, std::numeric_limits<int>::max()));
@@ -94,12 +414,15 @@ void ViewerController::receive() {
                 .arg(probe->source.decision.hardware ? QStringLiteral("Vulkan")
                                                      : QString::fromStdString(probe->source.decision.reason));
         emit sourceChanged();
+        emit timelineChanged();
         refreshRequest();
     } else {
         auto frame = std::get<std::shared_ptr<const ViewerResult>>(std::move(*result));
         if (frame->requestId != generation_ || frame->revision != document_.stateRevision())
             return;
         presentation_ = std::move(frame);
+        pending_ = false;
+        outdated_ = false;
         effectiveScale_ = presentation_->request.samplingScale;
         error_.clear();
         status_ = QStringLiteral("Displayed %1x%2, 1:%3, frame %4; %5; %6")
@@ -116,9 +439,36 @@ void ViewerController::receive() {
 }
 
 void ViewerController::refreshRequest() {
-    if (!hasSource() || viewport_.isEmpty())
-        return;
     try {
+        const auto source = document_.sources.find("src");
+        if (source == document_.sources.end()) {
+            sourceSize_ = {};
+            probedSource_ = {};
+            frameCount_ = -1;
+            presentation_.reset();
+            pending_ = false;
+            outdated_ = false;
+            status_ = QStringLiteral("No source");
+            emit sourceChanged();
+            emit frameArrived();
+            emit statusChanged();
+            return;
+        }
+        const auto& reference = source->second;
+        if (!hasSource() || reference.path != probedSource_.path || reference.revision != probedSource_.revision ||
+            reference.interpretation != probedSource_.interpretation) {
+            sourceSize_ = {};
+            frameCount_ = -1;
+            pending_ = true;
+            status_ = QStringLiteral("Probing %1").arg(QString::fromStdString(reference.path));
+            emit sourceChanged();
+            emit statusChanged();
+            if (!runtime_->probe(document_, "src", ++generation_))
+                fail(QStringLiteral("Source probe admission rejected"));
+            return;
+        }
+        if (viewport_.isEmpty())
+            return;
         const int width = static_cast<int>(sourceSize_.width());
         const int height = static_cast<int>(sourceSize_.height());
         const auto mode = mode_ == "full"      ? ViewerResolution::Full
@@ -126,7 +476,7 @@ void ViewerController::refreshRequest() {
                           : mode_ == "quarter" ? ViewerResolution::Quarter
                                                : ViewerResolution::Auto;
         EvaluationRequest request;
-        request.output = resolveOutput(document_, "result");
+        request.output = resolveOutput(document_, outputName_.toStdString());
         request.localTime = frame_;
         request.samplingScale =
             policy_.resolve(mode, width, height, pixelAspect_, viewport_.width(), viewport_.height(), zoom_);
@@ -149,11 +499,16 @@ void ViewerController::refreshRequest() {
             return;
         lastRequest_ = request;
         lastRevision_ = revision;
-        runtime_->submit(document_, request, ++generation_);
+        const auto id = ++generation_;
+        if (!runtime_->submit(document_, request, id))
+            throw std::runtime_error("Viewer request admission rejected");
+        pending_ = true;
+        outdated_ = static_cast<bool>(presentation_);
         error_.clear();
         status_ = presentation_ ? QStringLiteral("Pending 1:%1; previous frame is outdated").arg(request.samplingScale)
                                 : QStringLiteral("Rendering 1:%1").arg(request.samplingScale);
         emit statusChanged();
+        emit schedulerChanged();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -212,6 +567,7 @@ void ViewerController::setFrame(int value) {
         return;
     frame_ = value;
     emit frameChanged();
+    emit timelineChanged();
     refreshRequest();
 }
 void ViewerController::viewportChanged(QSizeF pixels) {
@@ -271,6 +627,8 @@ void ViewerController::setPrimaryViewerItem(ViewerItem* item) {
 }
 void ViewerController::fail(QString message) {
     error_ = std::move(message);
+    pending_ = false;
+    outdated_ = static_cast<bool>(presentation_);
     status_ = presentation_ ? QStringLiteral("Failed; displayed frame is outdated") : QStringLiteral("Failed");
     emit statusChanged();
 }

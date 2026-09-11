@@ -12,11 +12,13 @@
 
 namespace nemo {
 
-enum class PortKind { Color };
+enum class PortKind { Image, Mask, Media };
 
 struct PortSpec {
     PortKind kind;
     std::string name;
+
+    friend bool operator==(const PortSpec&, const PortSpec&) = default;
 };
 
 enum class ParameterType { Boolean, Integer, Float, Color, String };

@@ -1,11 +1,29 @@
 {
-  "schema": 1,
+  "schema": 2,
   "name": "sample",
-  "nodes": [
-    {"id": 1, "type": "testpattern", "name": "plate"},
-    {"id": 2, "type": "output", "name": "out"}
-  ],
-  "edges": [
-    {"id": 1, "from": {"node": 1, "port": 0}, "to": {"node": 2, "port": 0}}
+  "rootNetworkId": 1,
+  "nextNetworkId": 2,
+  "nextInstanceId": 1,
+  "instances": [],
+  "networks": [
+    {
+      "id": 1,
+      "name": "Root",
+      "defaultOutput": 2,
+      "nextNodeId": 3,
+      "nextEdgeId": 2,
+      "nextInterfacePortId": 1,
+      "inputs": [],
+      "outputs": [],
+      "inputConnections": [],
+      "outputConnections": [],
+      "nodes": [
+        {"id": 1, "type": "testpattern", "name": "plate"},
+        {"id": 2, "type": "output", "name": "out"}
+      ],
+      "edges": [
+        {"id": 1, "from": {"node": 1, "port": 0}, "to": {"node": 2, "port": 0}}
+      ]
+    }
   ]
 }

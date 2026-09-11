@@ -1,5 +1,6 @@
 #include "nemo/core/document/Serialization.hpp"
 
+#include <cmath>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -8,82 +9,415 @@
 namespace nemo {
 namespace {
 
-std::optional<std::uint64_t> optionalId(const nlohmann::json& entry, const char* field, const std::string& context) {
-    const auto it = entry.find(field);
-    if (it == entry.end())
-        return std::nullopt;
-    if (!it->is_number_unsigned() && (!it->is_number_integer() || it->get<std::int64_t>() < 0)) {
+std::uint64_t requiredId(const nlohmann::json& object, const char* field, const std::string& context) {
+    const auto it = object.find(field);
+    if (it == object.end() || (!it->is_number_unsigned() && (!it->is_number_integer() || it->get<std::int64_t>() < 0)))
         throw DeserializeError(context + ": '" + field + "' must be a nonnegative integer");
-    }
-    const auto id = it->get<std::uint64_t>();
-    if (id == 0 || id == std::numeric_limits<std::uint64_t>::max()) {
+    const auto value = it->get<std::uint64_t>();
+    if (value == 0 || value == std::numeric_limits<std::uint64_t>::max())
         throw DeserializeError(context + ": '" + field + "' must be nonzero and below the identity limit");
-    }
-    return id;
+    return value;
+}
+
+std::optional<std::uint64_t> optionalId(const nlohmann::json& object, const char* field, const std::string& context) {
+    if (!object.contains(field))
+        return std::nullopt;
+    return requiredId(object, field, context);
 }
 
 std::uint32_t port(const nlohmann::json& endpoint, const std::string& context) {
-    if (!endpoint.is_object() || !endpoint.contains("port")) {
-        throw DeserializeError(context + ": endpoint requires an integer 'port'");
-    }
-    const auto& value = endpoint.at("port");
-    if ((!value.is_number_unsigned() && (!value.is_number_integer() || value.get<std::int64_t>() < 0)) ||
-        (value.is_number_unsigned() && value.get<std::uint64_t>() > std::numeric_limits<std::uint32_t>::max()) ||
-        (!value.is_number_unsigned() && value.is_number_integer() &&
-         static_cast<std::uint64_t>(value.get<std::int64_t>()) > std::numeric_limits<std::uint32_t>::max())) {
-        throw DeserializeError(context + ": endpoint 'port' must be a nonnegative 32-bit integer");
-    }
-    return value.get<std::uint32_t>();
+    const auto it = endpoint.find("port");
+    if (it == endpoint.end() ||
+        (!it->is_number_unsigned() && (!it->is_number_integer() || it->get<std::int64_t>() < 0)) ||
+        it->get<std::uint64_t>() > std::numeric_limits<std::uint32_t>::max())
+        throw DeserializeError(context + ": 'port' must be an unsigned 32-bit integer");
+    return it->get<std::uint32_t>();
 }
 
-std::uint64_t requiredEndpointNode(const nlohmann::json& endpoint, const std::string& context) {
+std::uint64_t endpointNode(const nlohmann::json& endpoint, const std::string& context) {
     if (!endpoint.is_object())
-        throw DeserializeError(context + " endpoint must be an object");
-    const auto id = optionalId(endpoint, "node", context + " endpoint");
-    if (!id)
-        throw DeserializeError(context + " endpoint requires a nonzero integer 'node'");
-    return *id;
+        throw DeserializeError(context + " must be an object");
+    return requiredId(endpoint, "node", context);
 }
 
-std::optional<std::uint64_t> optionalWatermark(const nlohmann::json& json, const char* field) {
-    const auto it = json.find(field);
-    if (it == json.end())
+std::optional<std::uint64_t> watermark(const nlohmann::json& object, const char* field) {
+    if (!object.contains(field))
         return std::nullopt;
-    if (!it->is_number_unsigned() && (!it->is_number_integer() || it->get<std::int64_t>() < 0)) {
-        throw DeserializeError("document '" + std::string(field) + "' must be a nonnegative integer");
-    }
-    const auto value = it->get<std::uint64_t>();
-    if (value == 0) {
-        throw DeserializeError("document '" + std::string(field) + "' must be nonzero");
-    }
-    return value;
+    return requiredId(object, field, "document");
 }
+
+PortKind parseKind(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_string())
+        throw DeserializeError(context + ": port kind must be a string");
+    const auto kind = value.get<std::string>();
+    if (kind == "image")
+        return PortKind::Image;
+    if (kind == "mask")
+        return PortKind::Mask;
+    if (kind == "media")
+        return PortKind::Media;
+    throw DeserializeError(context + ": unknown port kind '" + kind + "'");
+}
+
+std::int64_t signedValue(const nlohmann::json& value, const std::string& context) {
+    if (value.is_number_unsigned()) {
+        if (value.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+            throw DeserializeError(context + " must be a signed 64-bit integer");
+        return static_cast<std::int64_t>(value.get<std::uint64_t>());
+    }
+    if (!value.is_number_integer())
+        throw DeserializeError(context + " must be a signed 64-bit integer");
+    return value.get<std::int64_t>();
+}
+
+std::uint64_t unsignedValue(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_number_unsigned() && (!value.is_number_integer() || value.get<std::int64_t>() < 0))
+        throw DeserializeError(context + " must be a nonnegative integer");
+    return value.get<std::uint64_t>();
+}
+
+const char* kindName(PortKind kind) {
+    switch (kind) {
+    case PortKind::Image:
+        return "image";
+    case PortKind::Mask:
+        return "mask";
+    case PortKind::Media:
+        return "media";
+    }
+    return "image";
+}
+
+LayoutPosition parseLayout(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object() || !value.contains("x") || !value.contains("y") || !value.at("x").is_number() ||
+        !value.at("y").is_number())
+        throw DeserializeError(context + ": layout must contain numeric x and y");
+    const double x = value.at("x").get<double>();
+    const double y = value.at("y").get<double>();
+    if (!std::isfinite(x) || !std::isfinite(y))
+        throw DeserializeError(context + ": layout coordinates must be finite");
+    return LayoutPosition{x, y};
+}
+
+nlohmann::json layoutJson(const LayoutPosition& layout) {
+    return {{"x", layout.x}, {"y", layout.y}};
+}
+
+std::vector<PortSpec> parsePorts(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_array())
+        throw DeserializeError(context + " must be an array");
+    std::vector<PortSpec> ports;
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        const auto& entry = value.at(index);
+        if (!entry.is_object() || !entry.contains("kind") || !entry.contains("name") || !entry.at("name").is_string())
+            throw DeserializeError(context + "[" + std::to_string(index) + "]: kind and string name are required");
+        ports.push_back(PortSpec{parseKind(entry.at("kind"), context), entry.at("name").get<std::string>()});
+    }
+    return ports;
+}
+
+void clearNetwork(Network& network) {
+    std::vector<NodeId> nodes;
+    for (const auto& node : network.graph().nodes())
+        nodes.push_back(node.id);
+    for (const auto id : nodes)
+        network.graph().removeNode(id);
+}
+
+void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& result) {
+    const std::string context = "network '" + network.name() + "'";
+    if (!entry.is_object())
+        throw DeserializeError(context + " must be an object");
+    if (entry.contains("name")) {
+        if (!entry.at("name").is_string())
+            throw DeserializeError(context + ": 'name' must be a string");
+        network.rename(entry.at("name").get<std::string>());
+    }
+    clearNetwork(network);
+    if (entry.contains("inputs")) {
+        if (!entry.at("inputs").is_array())
+            throw DeserializeError(context + ": 'inputs' must be an array");
+        for (std::size_t i = 0; i < entry.at("inputs").size(); ++i) {
+            const auto& p = entry.at("inputs").at(i);
+            if (!p.is_object() || !p.contains("id") || !p.contains("name") || !p.contains("kind") ||
+                !p.at("name").is_string())
+                throw DeserializeError(context + ": malformed input terminal");
+            if (p.contains("allowFanOut") && !p.at("allowFanOut").is_boolean())
+                throw DeserializeError(context + ": allowFanOut must be boolean");
+            const bool allowFanOut = p.value("allowFanOut", true);
+            (void)network.addInput(p.at("name").get<std::string>(), parseKind(p.at("kind"), context + " input"),
+                                   requiredId(p, "id", context + " input"), allowFanOut);
+        }
+    }
+    if (entry.contains("outputs")) {
+        if (!entry.at("outputs").is_array())
+            throw DeserializeError(context + ": 'outputs' must be an array");
+        for (std::size_t i = 0; i < entry.at("outputs").size(); ++i) {
+            const auto& p = entry.at("outputs").at(i);
+            if (!p.is_object() || !p.contains("id") || !p.contains("name") || !p.contains("kind") ||
+                !p.at("name").is_string())
+                throw DeserializeError(context + ": malformed output terminal");
+            if (p.contains("allowFanOut") && !p.at("allowFanOut").is_boolean())
+                throw DeserializeError(context + ": allowFanOut must be boolean");
+            const bool allowFanOut = p.value("allowFanOut", true);
+            (void)network.addOutput(p.at("name").get<std::string>(), parseKind(p.at("kind"), context + " output"),
+                                    requiredId(p, "id", context + " output"), allowFanOut);
+        }
+    }
+    const auto nodes = entry.find("nodes");
+    if (nodes != entry.end() && !nodes->is_array())
+        throw DeserializeError(context + ": 'nodes' must be an array");
+    const auto edges = entry.find("edges");
+    if (edges != entry.end() && !edges->is_array())
+        throw DeserializeError(context + ": 'edges' must be an array");
+    std::set<EdgeId> seenEdges;
+    std::set<NodeId> seenNodes;
+    std::set<NodeId> declaredNodes;
+    std::map<NodeId, NodeId> idMap;
+    const auto& nodeEntries = nodes == entry.end() ? nlohmann::json::array() : *nodes;
+    for (const auto& n : nodeEntries) {
+        if (n.is_object() && n.contains("id")) {
+            const auto id = requiredId(n, "id", context + " node");
+            if (!declaredNodes.insert(id).second)
+                throw DeserializeError("duplicate node id in file: " + std::to_string(id));
+        }
+    }
+    for (std::size_t i = 0; i < nodeEntries.size(); ++i) {
+        const auto& n = nodeEntries.at(i);
+        const std::string nc = context + " node " + std::to_string(i);
+        if (!n.is_object() || !n.contains("type") || !n.contains("name") || !n.at("type").is_string() ||
+            !n.at("name").is_string())
+            throw DeserializeError(nc + ": string 'type' and 'name' are required");
+        std::optional<NodeId> persistedId;
+        if (n.contains("id"))
+            persistedId = requiredId(n, "id", nc);
+        NodeId id = persistedId.value_or(1);
+        while (!persistedId && (seenNodes.contains(id) || declaredNodes.contains(id))) {
+            if (id == std::numeric_limits<NodeId>::max())
+                throw DeserializeError(nc + ": no available identity for legacy node");
+            ++id;
+        }
+        if (!seenNodes.insert(id).second)
+            throw DeserializeError("duplicate node id in file: " + std::to_string(id));
+        std::map<std::string, std::string> params;
+        if (n.contains("params")) {
+            if (!n.at("params").is_object())
+                throw DeserializeError(nc + ": 'params' must be an object");
+            for (auto it = n.at("params").begin(); it != n.at("params").end(); ++it) {
+                if (!it.value().is_string())
+                    throw DeserializeError(nc + ": parameter must be a string");
+                params[it.key()] = it.value().get<std::string>();
+            }
+        }
+        LayoutPosition layout;
+        if (n.contains("layout"))
+            layout = parseLayout(n.at("layout"), nc);
+        const auto definition = n.contains("definition") ? requiredId(n, "definition", nc) : kInvalidNetwork;
+        const auto instance = n.contains("instance") ? requiredId(n, "instance", nc) : kInvalidNetworkInstance;
+        try {
+            (void)network.graph().addNodeWithId(id, n.at("type").get<std::string>(), n.at("name").get<std::string>(),
+                                                std::move(params), layout, definition, instance);
+            if (n.contains("inputPorts") || n.contains("outputPorts")) {
+                if (!n.contains("inputPorts") || !n.contains("outputPorts"))
+                    throw DeserializeError(nc + ": both inputPorts and outputPorts are required");
+                network.graph().setPortContract(id, parsePorts(n.at("inputPorts"), nc + " inputPorts"),
+                                                parsePorts(n.at("outputPorts"), nc + " outputPorts"));
+            }
+        } catch (const GraphException& error) {
+            throw DeserializeError(nc + ": " + error.what());
+        }
+        idMap.emplace(persistedId.value_or(id), id);
+        if (!persistedId)
+            result.warnings.push_back(nc + " has no id; allocated a stable identity");
+        if (!network.graph().descriptor(n.at("type").get<std::string>()) && definition == kInvalidNetwork)
+            result.warnings.push_back("unknown node type '" + n.at("type").get<std::string>() + "' (node '" +
+                                      n.at("name").get<std::string>() + "'); retained as data, not evaluated");
+    }
+    const auto& edgeEntries = edges == entry.end() ? nlohmann::json::array() : *edges;
+    std::set<EdgeId> declaredEdges;
+    for (const auto& e : edgeEntries)
+        if (e.is_object() && e.contains("id"))
+            declaredEdges.insert(requiredId(e, "id", context + " edge"));
+    for (std::size_t i = 0; i < edgeEntries.size(); ++i) {
+        const auto& e = edgeEntries.at(i);
+        const std::string ec = context + " edge " + std::to_string(i);
+        if (!e.is_object() || !e.contains("from") || !e.contains("to"))
+            throw DeserializeError(ec + ": from and to are required");
+        const auto persistedId = optionalId(e, "id", ec);
+        EdgeId id = persistedId.value_or(network.graph().nextEdgeId());
+        while (!persistedId && (seenEdges.contains(id) || declaredEdges.contains(id))) {
+            if (id == std::numeric_limits<EdgeId>::max())
+                throw DeserializeError(ec + ": no available identity for legacy edge");
+            ++id;
+        }
+        if (!seenEdges.insert(id).second)
+            throw DeserializeError("duplicate edge id in file: " + std::to_string(id));
+        if (!persistedId)
+            result.warnings.push_back(ec + " has no id; allocated a stable identity");
+        const auto& from = e.at("from");
+        const auto& to = e.at("to");
+        const auto sourceFileId = endpointNode(from, ec + " from");
+        const auto destinationFileId = endpointNode(to, ec + " to");
+        const auto sourceIt = idMap.find(sourceFileId);
+        const auto destinationIt = idMap.find(destinationFileId);
+        if (sourceIt == idMap.end() || destinationIt == idMap.end()) {
+            result.warnings.push_back(ec + " references a node that is not present in the file; dropped");
+            continue;
+        }
+        PortRef source{sourceIt->second, port(from, ec + " from")};
+        PortRef destination{destinationIt->second, port(to, ec + " to")};
+        try {
+            (void)network.graph().connectWithId(id, source, destination);
+            if (e.contains("route")) {
+                if (!e.at("route").is_array())
+                    throw DeserializeError(ec + ": route must be an array");
+                std::vector<LayoutPosition> route;
+                for (std::size_t r = 0; r < e.at("route").size(); ++r)
+                    route.push_back(parseLayout(e.at("route").at(r), ec + " route"));
+                network.graph().setRoute(id, std::move(route));
+            }
+        } catch (const GraphException& error) {
+            result.warnings.push_back(ec + " rejected: " + error.what());
+        }
+    }
+    if (entry.contains("inputConnections")) {
+        if (!entry.at("inputConnections").is_array())
+            throw DeserializeError(context + ": inputConnections must be an array");
+        for (const auto& c : entry.at("inputConnections")) {
+            if (!c.is_object() || !c.contains("terminal") || !c.contains("node"))
+                throw DeserializeError(context + ": malformed input connection");
+            const auto t = requiredId(c, "terminal", context + " input connection");
+            const auto& node = c.at("node");
+            try {
+                network.connectInput(t, PortRef{endpointNode(node, context + " input connection"),
+                                                port(node, context + " input connection")});
+            } catch (const GraphException& error) {
+                throw DeserializeError(context + " input connection: " + std::string(error.what()));
+            }
+        }
+    }
+    if (entry.contains("outputConnections")) {
+        if (!entry.at("outputConnections").is_array())
+            throw DeserializeError(context + ": outputConnections must be an array");
+        for (const auto& c : entry.at("outputConnections")) {
+            if (!c.is_object() || !c.contains("terminal") || !c.contains("node"))
+                throw DeserializeError(context + ": malformed output connection");
+            const auto t = requiredId(c, "terminal", context + " output connection");
+            const auto& node = c.at("node");
+            try {
+                network.connectOutput(PortRef{endpointNode(node, context + " output connection"),
+                                              port(node, context + " output connection")},
+                                      t);
+            } catch (const GraphException& error) {
+                throw DeserializeError(context + " output connection: " + std::string(error.what()));
+            }
+        }
+    }
+    if (entry.contains("defaultOutput")) {
+        const auto selected = unsignedValue(entry.at("defaultOutput"), context + " defaultOutput");
+        if (selected != kInvalidNode) {
+            try {
+                network.setDefaultOutput(selected);
+            } catch (const GraphException& error) {
+                throw DeserializeError(context + ": " + std::string(error.what()));
+            }
+        }
+    }
+    network.restoreIdentityHighWatermarks(
+        watermark(entry, "nextNodeId").value_or(network.graph().nextNodeId()),
+        watermark(entry, "nextEdgeId").value_or(network.graph().nextEdgeId()),
+        watermark(entry, "nextInterfacePortId").value_or(network.nextInterfacePortId()));
+}
+
 }  // namespace
 
 nlohmann::json saveDocument(const Document& document) {
-    nlohmann::json nodes = nlohmann::json::array();
-    for (const auto& node : document.graph.nodes()) {
-        nodes.push_back({{"id", node.id}, {"type", node.type}, {"name", node.name}, {"params", node.params}});
+    nlohmann::json networks = nlohmann::json::array();
+    for (const auto& network : document.networks()) {
+        nlohmann::json nodes = nlohmann::json::array();
+        for (const auto& node : network.graph().nodes()) {
+            nlohmann::json value{{"id", node.id},
+                                 {"type", node.type},
+                                 {"name", node.name},
+                                 {"params", node.params},
+                                 {"layout", layoutJson(node.layout)}};
+            if (node.definition != kInvalidNetwork)
+                value["definition"] = node.definition;
+            if (node.instance != kInvalidNetworkInstance)
+                value["instance"] = node.instance;
+            if (node.hasPortContract) {
+                value["inputPorts"] = nlohmann::json::array();
+                for (const auto& p : node.inputPorts)
+                    value["inputPorts"].push_back({{"kind", kindName(p.kind)}, {"name", p.name}});
+                value["outputPorts"] = nlohmann::json::array();
+                for (const auto& p : node.outputPorts)
+                    value["outputPorts"].push_back({{"kind", kindName(p.kind)}, {"name", p.name}});
+            }
+            nodes.push_back(std::move(value));
+        }
+        nlohmann::json edges = nlohmann::json::array();
+        for (const auto& edge : network.graph().edges()) {
+            nlohmann::json value{{"id", edge.id},
+                                 {"from", {{"node", edge.from.node}, {"port", edge.from.port}}},
+                                 {"to", {{"node", edge.to.node}, {"port", edge.to.port}}}};
+            if (!edge.route.empty()) {
+                value["route"] = nlohmann::json::array();
+                for (const auto& p : edge.route)
+                    value["route"].push_back(layoutJson(p));
+            }
+            edges.push_back(std::move(value));
+        }
+        auto formal = [](const std::vector<FormalPort>& ports) {
+            nlohmann::json result = nlohmann::json::array();
+            for (const auto& p : ports)
+                result.push_back(
+                    {{"id", p.id}, {"name", p.name}, {"kind", kindName(p.kind)}, {"allowFanOut", p.allowFanOut}});
+            return result;
+        };
+        nlohmann::json value{{"id", network.id()},
+                             {"name", network.name()},
+                             {"defaultOutput", network.defaultOutput()},
+                             {"nextNodeId", network.graph().nextNodeId()},
+                             {"nextEdgeId", network.graph().nextEdgeId()},
+                             {"nextInterfacePortId", network.nextInterfacePortId()},
+                             {"inputs", formal(network.inputs())},
+                             {"outputs", formal(network.outputs())},
+                             {"nodes", nodes},
+                             {"edges", edges}};
+        value["inputConnections"] = nlohmann::json::array();
+        for (const auto& c : network.inputConnections())
+            value["inputConnections"].push_back(
+                {{"terminal", c.terminal}, {"node", {{"node", c.node.node}, {"port", c.node.port}}}});
+        value["outputConnections"] = nlohmann::json::array();
+        for (const auto& c : network.outputConnections())
+            value["outputConnections"].push_back(
+                {{"terminal", c.terminal}, {"node", {{"node", c.node.node}, {"port", c.node.port}}}});
+        networks.push_back(std::move(value));
     }
-    nlohmann::json edges = nlohmann::json::array();
-    for (const auto& edge : document.graph.edges()) {
-        edges.push_back({{"id", edge.id},
-                         {"from", {{"node", edge.from.node}, {"port", edge.from.port}}},
-                         {"to", {{"node", edge.to.node}, {"port", edge.to.port}}}});
-    }
-    // Persistent source media (issue #11): plain reference records only —
-    // path, time mapping, interpretation policy. No runtime/decoder state.
     nlohmann::json sources = nlohmann::json::object();
     for (const auto& [key, source] : document.sources) {
-        nlohmann::json entry{{"path", source.path},
-                             {"frameOffset", source.frameOffset},
-                             {"frameStep", source.frameStep}};
-        if (source.revision != 0)
-            entry["revision"] = source.revision;
-        if (!source.interpretation.empty()) {
-            entry["interpretation"] = source.interpretation;
-        }
-        sources[key] = std::move(entry);
+        sources[key] = {{"path", source.path},
+                        {"frameOffset", source.frameOffset},
+                        {"frameStep", source.frameStep},
+                        {"revision", source.revision},
+                        {"interpretation", source.interpretation}};
+    }
+    nlohmann::json instances = nlohmann::json::array();
+    for (const auto& instance : document.instances()) {
+        nlohmann::json instanceParams = nlohmann::json::object();
+        for (const auto& [target, values] : instance.params)
+            instanceParams[std::to_string(target)] = values;
+        nlohmann::json value{{"id", instance.id},
+                             {"parentNetwork", instance.parentNetwork},
+                             {"definition", instance.definition},
+                             {"node", instance.node},
+                             {"name", instance.name},
+                             {"params", std::move(instanceParams)}};
+        value["inputBindings"] = nlohmann::json::array();
+        for (const auto& [terminal, source] : instance.inputBindings)
+            value["inputBindings"].push_back(
+                {{"terminal", terminal}, {"node", {{"node", source.node}, {"port", source.port}}}});
+        instances.push_back(std::move(value));
     }
     return {{"schema", Document::kSchemaVersion},
             {"name", document.name},
@@ -91,234 +425,187 @@ nlohmann::json saveDocument(const Document& document) {
              {{"workingSpace", document.color.workingSpace},
               {"viewerTransform", document.color.viewerTransform},
               {"deliveryTransform", document.color.deliveryTransform}}},
-            {"sources", std::move(sources)},
-            {"nextNodeId", document.graph.nextNodeId()},
-            {"nextEdgeId", document.graph.nextEdgeId()},
-            {"nodes", nodes},
-            {"edges", edges}};
+            {"sources", sources},
+            {"rootNetworkId", document.rootNetworkId()},
+            {"nextNetworkId", document.nextNetworkId()},
+            {"nextInstanceId", document.nextInstanceId()},
+            {"networks", networks},
+            {"instances", instances}};
 }
 
 LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCatalog> catalog) {
-    if (!json.is_object()) {
+    if (!json.is_object())
         throw DeserializeError("document root is not an object");
-    }
-    if (!json.contains("schema") || !json.at("schema").is_number_integer()) {
+    if (!json.contains("schema") || !json.at("schema").is_number_integer())
         throw DeserializeError("document has no integer 'schema' field");
-    }
     const int schema = json.at("schema").get<int>();
-    if (schema > Document::kSchemaVersion) {
+    if (schema > Document::kSchemaVersion)
         throw DeserializeError("document schema " + std::to_string(schema) + " is newer than this build supports (" +
                                std::to_string(Document::kSchemaVersion) + ")");
-    }
-    // schema < kSchemaVersion migrates here, one step at a time, before load.
-
     LoadResult result{Document(std::move(catalog)), {}};
     result.document.name = json.value("name", std::string{});
-
-    // Color policy: default-constructed ColorPolicy is the documented default
-    // (spec section 5), so a document saved without the block loads with
-    // defaults. Individual fields fall back the same way, keeping older
-    // partial blocks loadable.
-    if (auto color = json.find("color"); color != json.end() && color->is_object()) {
-        result.document.color.workingSpace = color->value("workingSpace", result.document.color.workingSpace);
-        result.document.color.viewerTransform = color->value("viewerTransform", result.document.color.viewerTransform);
-        result.document.color.deliveryTransform =
-            color->value("deliveryTransform", result.document.color.deliveryTransform);
-    } else if (color != json.end()) {
-        result.warnings.push_back("document 'color' field is not an object; using default color policy");
+    if (auto color = json.find("color"); color != json.end()) {
+        if (!color->is_object()) {
+            result.warnings.push_back("document 'color' field is not an object; using default color policy");
+        } else {
+            result.document.color.workingSpace = color->value("workingSpace", result.document.color.workingSpace);
+            result.document.color.viewerTransform =
+                color->value("viewerTransform", result.document.color.viewerTransform);
+            result.document.color.deliveryTransform =
+                color->value("deliveryTransform", result.document.color.deliveryTransform);
+        }
     }
-
-    // Persistent sources (issue #11): plain reference records. A missing
-    // block loads with no sources; malformed entries are structural errors
-    // (silently dropping media would hide broken references), and an
-    // empty path is rejected the same way setSourceCommand rejects it.
-    if (auto sources = json.find("sources"); sources != json.end() && sources->is_object()) {
+    if (auto sources = json.find("sources"); sources != json.end()) {
+        if (!sources->is_object())
+            throw DeserializeError("document 'sources' field must be an object");
         for (auto it = sources->begin(); it != sources->end(); ++it) {
-            if (it.key().empty())
-                throw DeserializeError("source key must not be empty");
-            const nlohmann::json& entry = it.value();
-            if (!entry.is_object() || !entry.contains("path") || !entry.at("path").is_string()) {
-                throw DeserializeError("malformed source '" + it.key() + "': string 'path' is required");
-            }
+            if (!it.value().is_object() || !it.value().contains("path") || !it.value().at("path").is_string())
+                throw DeserializeError("malformed source '" + it.key() + "'");
             SourceReference source;
-            source.path = entry.at("path").get<std::string>();
-            if (source.path.empty()) {
+            const auto& e = it.value();
+            source.path = e.at("path").get<std::string>();
+            if (source.path.empty())
                 throw DeserializeError("source '" + it.key() + "' has an empty path");
-            }
-            if (entry.contains("revision")) {
-                const auto& revision = entry.at("revision");
-                if (!revision.is_number_unsigned() &&
-                    (!revision.is_number_integer() || revision.get<std::int64_t>() < 0))
-                    throw DeserializeError("source '" + it.key() + "': 'revision' must be a nonnegative integer");
-                source.revision = revision.get<std::uint64_t>();
-            }
-            if (entry.contains("frameOffset")) {
-                const auto& value = entry.at("frameOffset");
-                if (!value.is_number_integer() ||
-                    (value.is_number_unsigned() &&
-                     value.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
-                    throw DeserializeError("source '" + it.key() + "': 'frameOffset' must be a signed 64-bit integer");
-                source.frameOffset = entry.at("frameOffset").get<std::int64_t>();
-            }
-            if (entry.contains("frameStep")) {
-                const auto& value = entry.at("frameStep");
-                if (!value.is_number_integer() ||
-                    (value.is_number_unsigned() &&
-                     value.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())))
-                    throw DeserializeError("source '" + it.key() + "': 'frameStep' must be a signed 64-bit integer");
-                source.frameStep = entry.at("frameStep").get<std::int64_t>();
-                if (source.frameStep == 0) {
-                    throw DeserializeError("source '" + it.key() + "': 'frameStep' must not be zero");
-                }
-            }
-            if (auto interpretation = entry.find("interpretation");
-                interpretation != entry.end() && interpretation->is_object()) {
-                for (auto tag = interpretation->begin(); tag != interpretation->end(); ++tag) {
+            if (e.contains("frameOffset"))
+                source.frameOffset = signedValue(e.at("frameOffset"), "source frameOffset");
+            if (e.contains("frameStep"))
+                source.frameStep = signedValue(e.at("frameStep"), "source frameStep");
+            if (e.contains("revision"))
+                source.revision = unsignedValue(e.at("revision"), "source revision");
+            if (source.frameStep == 0)
+                throw DeserializeError("source '" + it.key() + "': frameStep must not be zero");
+            if (e.contains("interpretation")) {
+                if (!e.at("interpretation").is_object())
+                    throw DeserializeError("source interpretation must be an object");
+                for (auto tag = e.at("interpretation").begin(); tag != e.at("interpretation").end(); ++tag) {
                     if (!tag.value().is_string())
-                        throw DeserializeError("source '" + it.key() + "': interpretation '" + tag.key() +
-                                               "' must be a string");
+                        throw DeserializeError("source interpretation values must be strings");
                     source.interpretation[tag.key()] = tag.value().get<std::string>();
                 }
-            } else if (interpretation != entry.end()) {
-                throw DeserializeError("source '" + it.key() + "': 'interpretation' must be an object");
             }
             result.document.sources[it.key()] = std::move(source);
         }
-    } else if (sources != json.end()) {
-        throw DeserializeError("document 'sources' field must be an object");
     }
-
-    // Pass 1: nodes. Persisted IDs are restored verbatim; files from before
-    // IDs were required receive a generated identity and a migration warning.
-    const auto nodes = json.find("nodes");
-    if (nodes != json.end() && !nodes->is_array()) {
-        throw DeserializeError("document 'nodes' field must be an array");
-    }
-    const auto edges = json.find("edges");
-    if (edges != json.end() && !edges->is_array()) {
-        throw DeserializeError("document 'edges' field must be an array");
-    }
-    std::set<std::string> seenNames;
-    std::set<NodeId> seenNodeIds;
-    std::set<NodeId> declaredNodeIds;
-    std::map<NodeId, NodeId> idMap;
-    std::size_t nodeIndex = 0;
-    static const nlohmann::json emptyArray = nlohmann::json::array();
-    const auto& nodeEntries = nodes == json.end() ? emptyArray : *nodes;
-    std::size_t declarationIndex = 0;
-    for (const auto& entry : nodeEntries) {
-        const std::string context = "node " + std::to_string(declarationIndex++);
-        if (entry.is_object() && entry.contains("id")) {
-            const auto id = optionalId(entry, "id", context);
-            if (!declaredNodeIds.insert(*id).second) {
-                throw DeserializeError("duplicate node id in file: " + std::to_string(*id));
+    if (json.contains("networks")) {
+        const auto& entries = json.at("networks");
+        if (!entries.is_array() || entries.empty())
+            throw DeserializeError("document 'networks' must be a nonempty array");
+        const auto rootId = requiredId(json, "rootNetworkId", "document");
+        const auto initialRoot = result.document.rootNetworkId();
+        std::set<NetworkId> seen;
+        std::set<std::string> names;
+        for (const auto& entry : entries) {
+            const auto id = requiredId(entry, "id", "network");
+            if (!seen.insert(id).second)
+                throw DeserializeError("duplicate network id in file: " + std::to_string(id));
+            if (!entry.contains("name") || !entry.at("name").is_string())
+                throw DeserializeError("network name must be a string");
+            if (!names.insert(entry.at("name").get<std::string>()).second)
+                throw DeserializeError("duplicate network name in file");
+        }
+        if (!seen.contains(rootId))
+            throw DeserializeError("document networks do not contain root " + std::to_string(rootId));
+        std::string temporaryName = "__loading_root__";
+        while (names.contains(temporaryName))
+            temporaryName += '_';
+        result.document.network(initialRoot).rename(std::move(temporaryName));
+        for (const auto& entry : entries) {
+            const auto id = requiredId(entry, "id", "network");
+            if (id != initialRoot)
+                (void)result.document.addNetworkWithId(id, entry.at("name").get<std::string>());
+            loadNetwork(entry, result.document.network(id), result);
+        }
+        result.document.setRootNetworkId(rootId);
+        if (!seen.contains(initialRoot))
+            result.document.removeNetwork(initialRoot);
+    } else if (schema < 2) {
+        // Schema 1 used the root graph directly. Migrate it into the default root network.
+        nlohmann::json legacy{{"name", "Root"},
+                              {"nodes", json.value("nodes", nlohmann::json::array())},
+                              {"edges", json.value("edges", nlohmann::json::array())}};
+        if (json.contains("nextNodeId"))
+            legacy["nextNodeId"] = json.at("nextNodeId");
+        if (json.contains("nextEdgeId"))
+            legacy["nextEdgeId"] = json.at("nextEdgeId");
+        loadNetwork(legacy, result.document.network(result.document.rootNetworkId()), result);
+        for (const auto& node : result.document.network(result.document.rootNetworkId()).graph().nodes()) {
+            const auto* descriptor =
+                result.document.network(result.document.rootNetworkId()).graph().descriptor(node.type);
+            if (descriptor && descriptor->isOutput) {
+                result.document.network(result.document.rootNetworkId()).setDefaultOutput(node.id);
+                break;
             }
         }
+        result.warnings.push_back("legacy single-graph document migrated to the root network");
+    } else {
+        throw DeserializeError("schema 2 document has no 'networks' field");
     }
-    nodeIndex = 0;
-    for (const auto& entry : nodeEntries) {
-        const std::string context = "node " + std::to_string(nodeIndex++);
-        if (!entry.is_object() || !entry.contains("type") || !entry.contains("name") || !entry.at("type").is_string() ||
-            !entry.at("name").is_string()) {
-            throw DeserializeError(context + ": string 'type' and 'name' are required");
-        }
-        Node node;
-        node.type = entry.at("type").get<std::string>();
-        node.name = entry.at("name").get<std::string>();
-        if (!seenNames.insert(node.name).second) {
-            throw DeserializeError("duplicate node name in file: '" + node.name + "'");
-        }
-        if (entry.contains("params")) {
-            if (!entry.at("params").is_object()) {
-                throw DeserializeError(context + ": 'params' must be an object");
-            }
-            for (auto it = entry.at("params").begin(); it != entry.at("params").end(); ++it) {
-                if (!it.value().is_string()) {
-                    throw DeserializeError(context + ": parameter '" + it.key() + "' must be a string");
+    if (json.contains("instances")) {
+        if (!json.at("instances").is_array())
+            throw DeserializeError("document 'instances' field must be an array");
+        for (std::size_t i = 0; i < json.at("instances").size(); ++i) {
+            const auto& e = json.at("instances").at(i);
+            const std::string context = "instance " + std::to_string(i);
+            const auto id = requiredId(e, "id", context);
+            const auto parent = requiredId(e, "parentNetwork", context);
+            const auto definition = requiredId(e, "definition", context);
+            const auto node = requiredId(e, "node", context);
+            if (!e.contains("name") || !e.at("name").is_string())
+                throw DeserializeError(context + ": name is required");
+            std::map<InterfacePortId, PortRef> bindings;
+            if (e.contains("inputBindings")) {
+                if (!e.at("inputBindings").is_array())
+                    throw DeserializeError(context + ": inputBindings must be an array");
+                for (const auto& b : e.at("inputBindings")) {
+                    const auto terminal = requiredId(b, "terminal", context);
+                    const auto& ref = b.at("node");
+                    bindings.emplace(terminal, PortRef{endpointNode(ref, context), port(ref, context)});
                 }
-                node.params[it.key()] = it.value().get<std::string>();
             }
-        }
-        const auto persistedId = optionalId(entry, "id", context);
-        NodeId id = kInvalidNode;
-        if (persistedId) {
-            id = *persistedId;
-            if (!seenNodeIds.insert(id).second) {
-                throw DeserializeError("duplicate node id in file: " + std::to_string(id));
-            }
-        } else {
-            id = result.document.graph.nextNodeId();
-            while (declaredNodeIds.contains(id)) {
-                if (id == std::numeric_limits<NodeId>::max()) {
-                    throw DeserializeError(context + ": no available identity for legacy node");
+            std::map<NodeId, std::map<std::string, std::string>> params;
+            if (e.contains("params")) {
+                if (!e.at("params").is_object())
+                    throw DeserializeError(context + ": params must be an object");
+                for (auto p = e.at("params").begin(); p != e.at("params").end(); ++p) {
+                    NodeId target{};
+                    try {
+                        target = static_cast<NodeId>(std::stoull(p.key()));
+                    } catch (...) {
+                        throw DeserializeError(context + ": parameter target must be a node id");
+                    }
+                    if (target == kInvalidNode || target == std::numeric_limits<NodeId>::max() ||
+                        !p.value().is_object())
+                        throw DeserializeError(context + ": malformed parameter target");
+                    for (auto value = p.value().begin(); value != p.value().end(); ++value) {
+                        if (!value.value().is_string())
+                            throw DeserializeError(context + ": instance parameters must be strings");
+                        params[target][value.key()] = value.value().get<std::string>();
+                    }
                 }
-                ++id;
             }
-            result.warnings.push_back(context + " has no id; allocated a new identity for compatibility");
-        }
-        try {
-            id = result.document.graph.addNodeWithId(id, std::move(node.type), std::move(node.name),
-                                                     std::move(node.params));
-        } catch (const GraphException& error) {
-            throw DeserializeError(context + ": " + error.what());
-        }
-        // Legacy files used insertion-order identities, so map the generated
-        // identity as the endpoint key as well as the current node identity.
-        idMap.emplace(persistedId.value_or(id), id);
-        if (result.document.graph.descriptor(result.document.graph.node(id)->type) == nullptr) {
-            result.warnings.push_back("unknown node type '" + result.document.graph.node(id)->type + "' (node '" +
-                                      result.document.graph.node(id)->name + "'); retained as data, not evaluated");
+            try {
+                (void)result.document.addInstanceWithId(id, parent, definition, node, e.at("name").get<std::string>(),
+                                                        std::move(bindings), std::move(params));
+            } catch (const std::exception& error) {
+                throw DeserializeError(context + ": " + error.what());
+            }
         }
     }
-
-    std::set<EdgeId> seenEdgeIds;
-    std::size_t edgeIndex = 0;
-    const auto& edgeEntries = edges == json.end() ? emptyArray : *edges;
-    for (const auto& entry : edgeEntries) {
-        const std::string context = "edge " + std::to_string(edgeIndex++);
-        if (!entry.is_object() || !entry.contains("from") || !entry.contains("to")) {
-            throw DeserializeError(context + ": 'from' and 'to' are required");
-        }
-        const auto& fromEntry = entry.at("from");
-        const auto& toEntry = entry.at("to");
-        const auto fromFileId = requiredEndpointNode(fromEntry, context + " from");
-        const auto toFileId = requiredEndpointNode(toEntry, context + " to");
-        const auto fromIt = idMap.find(fromFileId);
-        const auto toIt = idMap.find(toFileId);
-        const auto from = fromIt == idMap.end()
-                              ? std::optional<PortRef>{}
-                              : std::optional<PortRef>{{fromIt->second, port(fromEntry, context + " from")}};
-        const auto to = toIt == idMap.end() ? std::optional<PortRef>{}
-                                            : std::optional<PortRef>{{toIt->second, port(toEntry, context + " to")}};
-        const auto persistedId = optionalId(entry, "id", context);
-        if (persistedId && !seenEdgeIds.insert(*persistedId).second) {
-            throw DeserializeError("duplicate edge id in file: " + std::to_string(*persistedId));
-        }
-        if (!from || !to) {
-            result.warnings.push_back(context + " references a node that is not present in the file; dropped");
-            continue;
-        }
-        if (auto problem = result.document.graph.validateEdge(*from, *to)) {
-            result.warnings.push_back("invalid edge in file: " + problem->message);
-            continue;
-        }
-        try {
-            if (persistedId) {
-                static_cast<void>(result.document.graph.connectWithId(*persistedId, *from, *to));
-            } else {
-                result.warnings.push_back(context + " has no id; allocated a new identity for compatibility");
-                static_cast<void>(result.document.graph.connect(*from, *to));
-            }
-        } catch (const GraphException& error) {
-
-            throw DeserializeError(context + ": " + error.what());
+    for (const auto& network : result.document.networks()) {
+        for (const auto& node : network.graph().nodes()) {
+            if (node.definition == kInvalidNetwork)
+                continue;
+            const auto* occurrence = result.document.instance(node.instance);
+            if (!occurrence || occurrence->parentNetwork != network.id() || occurrence->definition != node.definition ||
+                occurrence->node != node.id)
+                throw DeserializeError("network " + std::to_string(network.id()) + " node " + std::to_string(node.id) +
+                                       " references an invalid instance " + std::to_string(node.instance));
         }
     }
-
-    const auto nextNodeId = optionalWatermark(json, "nextNodeId");
-    const auto nextEdgeId = optionalWatermark(json, "nextEdgeId");
-    result.document.graph.restoreIdentityHighWatermarks(nextNodeId.value_or(result.document.graph.nextNodeId()),
-                                                        nextEdgeId.value_or(result.document.graph.nextEdgeId()));
+    result.document.synchronizeReferences();
+    result.document.restoreIdentityHighWatermarks(
+        watermark(json, "nextNetworkId").value_or(result.document.nextNetworkId()),
+        watermark(json, "nextInstanceId").value_or(result.document.nextInstanceId()));
     return result;
 }
 

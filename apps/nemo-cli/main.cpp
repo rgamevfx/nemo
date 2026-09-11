@@ -2,13 +2,14 @@
 //
 //   nemo-cli validate <project.json>          machine-readable JSON diagnostics
 //   nemo-cli evaluate <project.json> --out f.ppm [--frame N] [--width W --height H]
-//           [--output NAME]
+//           [--output NAME] [--network-id ID]
 //   nemo-cli render <project.json> --out f.ppm [--frame N] [--width W --height H]
 //
-// `evaluate` walks the document graph topologically and renders the Output
-// node from the CPU reference inventory (issue #1). It emits JSON
-// diagnostics on stdout and writes a Portable Pixmap (P6, binary); the PPM
-// bytes are the scene-linear reference values clamped to [0, 1] -- no
+// `evaluate` walks the selected document network topologically and renders its
+// Output node from the CPU reference inventory (issue #1). When omitted,
+// `--network-id` explicitly resolves to the document root network. It emits
+// JSON diagnostics on stdout and writes a Portable Pixmap (P6, binary); the
+// PPM bytes are the scene-linear reference values clamped to [0, 1] -- no
 // viewing transform is applied (spec section 8). `render` is the older
 // single-node pattern writer kept for the CI smoke test.
 #include "ProjectSessionCommand.hpp"
@@ -48,11 +49,21 @@
 #endif
 namespace {
 
+[[nodiscard]] nemo::NetworkId parseNetworkId(const std::string& text) {
+    if (text.empty() || text.find_first_of(" \t\r\n") != std::string::npos)
+        throw std::invalid_argument("--network-id: expected a nonzero decimal integer without whitespace");
+    nemo::NetworkId value = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (error != std::errc{} || end != text.data() + text.size() || value == nemo::kInvalidNetwork)
+        throw std::invalid_argument("--network-id: expected a nonzero network id");
+    return value;
+}
+
 int printUsage() {
     std::cerr << "usage:\n"
                  "  nemo-cli validate <project.json>\n"
                  "  nemo-cli evaluate <project.json> --out <file.ppm> [--frame N] "
-                 "[--width W] [--height H] [--output NAME]\n"
+                 "[--width W] [--height H] [--output NAME] [--network-id ID]\n"
                  "  nemo-cli render <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H]\n"
                  "  nemo-cli project-session <project.json>  JSON-lines edit/query session\n"
@@ -61,12 +72,12 @@ int printUsage() {
                  "          [--width W --height H] [--profile NAME] [--bit-depth N] [--bitrate-kbps N]\n"
 #ifdef NEMO_BUILD_GPU
                  "  nemo-cli cache-viewer <project.json> --cache-dir PATH --frames 1,2,3\n"
-                 "          [--replay forward|reverse|random] [--width W --height H --scale 1|2|4]\n"
+                 "          [--network-id ID] [--replay forward|reverse|random] [--width W --height H --scale 1|2|4]\n"
                  "          [--codec ID --chunk-frames N --bitrate-kbps N --shaders DIR]\n"
                  "          [--fidelity] [--stale-supersede]\n"
                  "          [--view-after DISPLAY/VIEW] [--edit-node NAME --edit-key KEY --edit-value VALUE]\n"
                  "  nemo-cli evaluate-gpu <project.json> --out <file.ppm> [--frame N] "
-                 "[--width W] [--height H] [--output NAME]\n"
+                 "[--width W] [--height H] [--output NAME] [--network-id ID]\n"
                  "          [--backend slang|glsl] [--shaders <spv-dir>]\n"
 #endif
                  "\n";
@@ -89,8 +100,10 @@ int commandValidate(const std::vector<std::string>& args) {
             report["warnings"] = loaded.warnings;
             nlohmann::json info;
             info["name"] = loaded.document.name;
-            info["nodes"] = loaded.document.graph.nodes().size();
-            info["edges"] = loaded.document.graph.edges().size();
+            const auto& rootGraph = loaded.document.network(loaded.document.rootNetworkId()).graph();
+            info["network"] = loaded.document.rootNetworkId();
+            info["nodes"] = rootGraph.nodes().size();
+            info["edges"] = rootGraph.edges().size();
             report["document"] = std::move(info);
         }
     } catch (const nemo::DeserializeError& e) {
@@ -213,6 +226,7 @@ int commandEvaluate(const std::vector<std::string>& args) {
     }
     std::string outPath;
     std::string outputName;
+    nemo::NetworkId network = nemo::kInvalidNetwork;
     int frame = 0;
     int width = 64;
     int height = 64;
@@ -233,6 +247,8 @@ int commandEvaluate(const std::vector<std::string>& args) {
             height = std::stoi(value);
         } else if (flag == "--output") {
             outputName = value;
+        } else if (flag == "--network-id") {
+            network = parseNetworkId(value);
         } else {
             std::cerr << "unknown flag " << flag << '\n';
             return 2;
@@ -253,7 +269,8 @@ int commandEvaluate(const std::vector<std::string>& args) {
             report["warnings"] = loaded.warnings;
 
             nemo::EvaluationRequest request;
-            request.output = nemo::resolveOutput(loaded.document, outputName);
+            request.network = network == nemo::kInvalidNetwork ? loaded.document.rootNetworkId() : network;
+            request.output = nemo::resolveOutput(loaded.document, request.network, outputName);
             request.localTime = frame;
             request.region = {0, 0, width, height};
             const nemo::CpuEvaluation evaluation = nemo::evaluateCpu(loaded.document, request);
@@ -265,6 +282,7 @@ int commandEvaluate(const std::vector<std::string>& args) {
                 writeCpuPpm(out, evaluation.image);
                 report["ok"] = true;
                 report["rendered"] = {{"path", std::filesystem::absolute(outPath).string()},
+                                      {"network", request.network},
                                       {"width", width},
                                       {"height", height},
                                       {"frame", frame}};
@@ -296,6 +314,7 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
     }
     std::string outPath;
     std::string outputName;
+    nemo::NetworkId network = nemo::kInvalidNetwork;
     std::string shaderDir;
     std::string backend = "slang";
     int frame = 0;
@@ -318,6 +337,8 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
             height = std::stoi(value);
         } else if (flag == "--output") {
             outputName = value;
+        } else if (flag == "--network-id") {
+            network = parseNetworkId(value);
         } else if (flag == "--shaders") {
             shaderDir = value;
         } else if (flag == "--backend") {
@@ -351,7 +372,8 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
             report["warnings"] = loaded.warnings;
 
             nemo::EvaluationRequest request;
-            request.output = nemo::resolveOutput(loaded.document, outputName);
+            request.network = network == nemo::kInvalidNetwork ? loaded.document.rootNetworkId() : network;
+            request.output = nemo::resolveOutput(loaded.document, request.network, outputName);
             request.localTime = frame;
             request.region = {0, 0, width, height};
 
@@ -391,6 +413,7 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
                     report["ok"] = true;
                     report["rendered"] = {
                         {"path", std::filesystem::absolute(outPath).string()},
+                        {"network", request.network},
                         {"width", width},
                         {"height", height},
                         {"frame", frame},
@@ -399,6 +422,7 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
                         {"precision", image.layout().precision == nemo::Precision::Float32 ? "float32" : "unknown"},
                         {"color", "scene-linear"}};
                     report["readback"] = {
+                        {"network", request.network},
                         {"node", request.output},
                         {"note", "diagnostic-only; the executor path itself performs no host readback"}};
                     report["evaluation"] = nemo::planToJson(evaluation.plan);

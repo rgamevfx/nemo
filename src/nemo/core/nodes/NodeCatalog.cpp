@@ -80,7 +80,7 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
     auto validatePorts = [&context](const std::vector<PortSpec>& ports, const char* direction) {
         std::set<std::string> names;
         for (const auto& port : ports) {
-            if (port.kind != PortKind::Color)
+            if (port.kind != PortKind::Image && port.kind != PortKind::Mask && port.kind != PortKind::Media)
                 throw std::invalid_argument(context + ": " + direction + " port has an invalid kind");
             if (port.name.empty())
                 throw std::invalid_argument(context + ": " + direction + " port name must not be empty");
@@ -167,7 +167,7 @@ NodeDescriptor constColorDescriptor() {
                           .group = "Generators",
                           .implementationVersion = 1,
                           .inputs = {},
-                          .outputs = {{PortKind::Color, "color"}},
+                          .outputs = {{PortKind::Image, "color"}},
                           .parameters = {{.name = "color", .type = ParameterType::Color, .defaultValue = "1 1 1 1"}},
                           .capabilities = allBuiltinCapabilities()};
 }
@@ -177,8 +177,8 @@ NodeDescriptor mergeDescriptor() {
                           .displayName = "Merge",
                           .group = "Compositing",
                           .implementationVersion = 1,
-                          .inputs = {{PortKind::Color, "A"}, {PortKind::Color, "B"}},
-                          .outputs = {{PortKind::Color, "out"}},
+                          .inputs = {{PortKind::Image, "A"}, {PortKind::Image, "B"}},
+                          .outputs = {{PortKind::Image, "out"}},
                           .parameters = {{.name = "operation",
                                           .type = ParameterType::String,
                                           .defaultValue = "over",
@@ -192,7 +192,7 @@ NodeDescriptor outputDescriptor() {
                           .group = "I/O",
                           .isOutput = true,
                           .implementationVersion = 1,
-                          .inputs = {{PortKind::Color, "color"}},
+                          .inputs = {{PortKind::Image, "color"}},
                           .outputs = {},
                           .parameters = {},
                           .capabilities = allBuiltinCapabilities()};
@@ -204,7 +204,7 @@ NodeDescriptor sourceDescriptor() {
                           .group = "Generators",
                           .implementationVersion = 1,
                           .inputs = {},
-                          .outputs = {{PortKind::Color, "color"}},
+                          .outputs = {{PortKind::Image, "color"}},
                           .parameters = {{.name = "source", .type = ParameterType::String, .defaultValue = ""}},
                           .capabilities = allBuiltinCapabilities(true)};
 }
@@ -215,7 +215,7 @@ NodeDescriptor testPatternDescriptor() {
                           .group = "Generators",
                           .implementationVersion = 2,
                           .inputs = {},
-                          .outputs = {{PortKind::Color, "color"}},
+                          .outputs = {{PortKind::Image, "color"}},
                           .parameters = {},
                           .capabilities = allBuiltinCapabilities(true)};
 }

@@ -3,68 +3,111 @@
 
 #include <algorithm>
 #include <limits>
+#include <set>
 #include <utility>
+
 namespace nemo {
 namespace {
+
 std::string describe(PortRef ref) {
     return "node " + std::to_string(ref.node) + " port " + std::to_string(ref.port);
 }
-}  // namespace
 
-Graph::Graph(std::shared_ptr<const NodeCatalog> catalog) : catalog_(std::move(catalog)) {
-    if (!catalog_) {
-        throw std::invalid_argument("graph catalog must not be null");
+const std::vector<PortSpec>& emptyPorts() {
+    static const std::vector<PortSpec> none;
+    return none;
+}
+
+const std::vector<Edge>& emptyEdges() {
+    static const std::vector<Edge> none;
+    return none;
+}
+
+void validatePortSpecs(const std::vector<PortSpec>& ports, const char* direction) {
+    std::set<std::string> names;
+    for (const auto& port : ports) {
+        if (port.kind != PortKind::Image && port.kind != PortKind::Mask && port.kind != PortKind::Media)
+            throw GraphException(GraphError::PortType, std::string(direction) + " port has an invalid kind");
+        if (port.name.empty())
+            throw GraphException(GraphError::InvalidName, std::string(direction) + " port name must not be empty");
+        if (!names.insert(port.name).second)
+            throw GraphException(GraphError::DuplicateName,
+                                 std::string(direction) + " port name '" + port.name + "' is duplicated");
     }
 }
 
+}  // namespace
+
+Graph::Graph(std::shared_ptr<const NodeCatalog> catalog) : catalog_(std::move(catalog)) {
+    if (!catalog_)
+        throw std::invalid_argument("graph catalog must not be null");
+}
+
 void Graph::restoreIdentityHighWatermarks(NodeId nextNodeId, EdgeId nextEdgeId) {
-    if (nextNodeId == kInvalidNode || nextEdgeId == kInvalidEdge) {
+    if (nextNodeId == kInvalidNode || nextEdgeId == kInvalidEdge)
         throw GraphException(GraphError::InvalidId, "identity high watermarks must be nonzero");
-    }
     nextNodeId_ = std::max(nextNodeId_, nextNodeId);
     nextEdgeId_ = std::max(nextEdgeId_, nextEdgeId);
 }
 
-const Node* Graph::findNode(NodeId id) const {
-    const auto it = std::find_if(nodes_.begin(), nodes_.end(), [id](const Node& n) { return n.id == id; });
+const NodeInstance* Graph::findNode(NodeId id) const {
+    const auto it = std::find_if(nodes_.begin(), nodes_.end(), [id](const NodeInstance& n) { return n.id == id; });
     return it == nodes_.end() ? nullptr : &*it;
 }
 
+void Graph::eraseIncomingEdge(const Edge& edge) noexcept {
+    const auto cacheIt = incomingCache_.find(edge.to.node);
+    if (cacheIt == incomingCache_.end())
+        return;
+    auto& incoming = cacheIt->second;
+    incoming.erase(
+        std::remove_if(incoming.begin(), incoming.end(), [&edge](const Edge& cached) { return cached.id == edge.id; }),
+        incoming.end());
+    if (incoming.empty())
+        incomingCache_.erase(cacheIt);
+}
+
 NodeId Graph::addNode(std::string type, std::string name) {
-    if (nextNodeId_ == kInvalidNode || nextNodeId_ == std::numeric_limits<NodeId>::max()) {
+    if (nextNodeId_ == kInvalidNode || nextNodeId_ == std::numeric_limits<NodeId>::max())
         throw GraphException(GraphError::InvalidId, "node identity space is exhausted");
-    }
     return addNodeWithId(nextNodeId_, std::move(type), std::move(name));
 }
 
-NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, std::map<std::string, std::string> params) {
-    if (id == kInvalidNode || id == std::numeric_limits<NodeId>::max()) {
+NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, std::map<std::string, std::string> params,
+                            LayoutPosition layout, NetworkId definition, NetworkInstanceId instance) {
+    if (id == kInvalidNode || id == std::numeric_limits<NodeId>::max())
         throw GraphException(GraphError::InvalidId, "node id must be a nonzero value below the identity limit");
-    }
-    if (findNode(id) != nullptr) {
+    if (findNode(id) != nullptr)
         throw GraphException(GraphError::DuplicateId,
                              "node id " + std::to_string(id) + " already exists in this graph");
-    }
-    if (nodeByName(name) != nullptr) {
+    if (name.empty())
+        throw GraphException(GraphError::InvalidName, "node name must not be empty");
+    if (nodeByName(name) != nullptr)
         throw GraphException(GraphError::DuplicateName, "node name '" + name + "' already exists in this graph");
-    }
-    nodes_.push_back(Node{.id = id, .type = std::move(type), .name = std::move(name), .params = std::move(params)});
+    if (definition == kInvalidNetwork && instance != kInvalidNetworkInstance)
+        throw GraphException(GraphError::InvalidInstance, "a node instance requires a network definition");
+    if (definition != kInvalidNetwork && instance == kInvalidNetworkInstance)
+        throw GraphException(GraphError::InvalidInstance, "a network definition requires a node instance identity");
+    nodes_.push_back(NodeInstance{.id = id,
+                                  .type = std::move(type),
+                                  .name = std::move(name),
+                                  .params = std::move(params),
+                                  .layout = layout,
+                                  .definition = definition,
+                                  .instance = instance});
     nextNodeId_ = std::max(nextNodeId_, static_cast<NodeId>(id + 1));
     ++revision_;
     return id;
 }
 
 void Graph::renameNode(NodeId id, std::string name) {
-    Node* node = const_cast<Node*>(findNode(id));
-    if (node == nullptr) {
+    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot rename unknown node " + std::to_string(id));
-    }
-    if (name.empty()) {
+    if (name.empty())
         throw GraphException(GraphError::InvalidName, "node name must not be empty");
-    }
-    if (const Node* existing = nodeByName(name); existing != nullptr && existing->id != id) {
+    if (const NodeInstance* existing = nodeByName(name); existing != nullptr && existing->id != id)
         throw GraphException(GraphError::DuplicateName, "node name '" + name + "' already exists in this graph");
-    }
     if (node->name == name)
         return;
     node->name = std::move(name);
@@ -72,44 +115,145 @@ void Graph::renameNode(NodeId id, std::string name) {
 }
 
 void Graph::removeNode(NodeId id) {
-    if (!findNode(id)) {
+    if (!findNode(id))
         throw GraphException(GraphError::UnknownNode, "cannot remove unknown node " + std::to_string(id));
+    for (const auto& edge : edges_) {
+        if (edge.from.node == id || edge.to.node == id)
+            eraseIncomingEdge(edge);
     }
     edges_.erase(std::remove_if(edges_.begin(), edges_.end(),
                                 [id](const Edge& e) { return e.from.node == id || e.to.node == id; }),
                  edges_.end());
-    nodes_.erase(std::remove_if(nodes_.begin(), nodes_.end(), [id](const Node& n) { return n.id == id; }),
+    reservedInputs_.erase(
+        std::remove_if(reservedInputs_.begin(), reservedInputs_.end(), [id](PortRef ref) { return ref.node == id; }),
+        reservedInputs_.end());
+    nodes_.erase(std::remove_if(nodes_.begin(), nodes_.end(), [id](const NodeInstance& n) { return n.id == id; }),
                  nodes_.end());
-    // Removing a source can change the incoming list of every destination.
-    incomingCache_.clear();
     ++revision_;
 }
 
-const Node* Graph::node(NodeId id) const {
+void Graph::setPortContract(NodeId id, std::vector<PortSpec> inputs, std::vector<PortSpec> outputs) {
+    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    if (node == nullptr)
+        throw GraphException(GraphError::UnknownNode,
+                             "cannot set a port contract on unknown node " + std::to_string(id));
+    validatePortSpecs(inputs, "input");
+    validatePortSpecs(outputs, "output");
+    // A contract change cannot invalidate authored wires. Validate all
+    // existing touching edges against the proposed contract before publishing.
+    for (const auto& edge : edges_) {
+        if (edge.from.node == id && edge.from.port >= outputs.size())
+            throw GraphException(GraphError::PortType, "port contract removes output endpoint " + describe(edge.from));
+        if (edge.to.node == id && edge.to.port >= inputs.size())
+            throw GraphException(GraphError::PortType, "port contract removes input endpoint " + describe(edge.to));
+        const auto& sourcePorts = edge.from.node == id ? outputs : outputPorts(edge.from.node);
+        const auto& destinationPorts = edge.to.node == id ? inputs : inputPorts(edge.to.node);
+        if (edge.from.port >= sourcePorts.size() || edge.to.port >= destinationPorts.size() ||
+            sourcePorts[edge.from.port].kind != destinationPorts[edge.to.port].kind)
+            throw GraphException(GraphError::PortType, "port contract would invalidate edge " +
+                                                           std::to_string(edge.id) + " (" + describe(edge.from) +
+                                                           " -> " + describe(edge.to) + ")");
+    }
+    node->inputPorts = std::move(inputs);
+    node->outputPorts = std::move(outputs);
+    node->hasPortContract = true;
+    ++revision_;
+}
+
+void Graph::reserveInput(PortRef destination) {
+    if (!findNode(destination.node))
+        throw GraphException(GraphError::UnknownNode, "cannot reserve input on unknown " + describe(destination));
+    if (std::find(reservedInputs_.begin(), reservedInputs_.end(), destination) != reservedInputs_.end())
+        throw GraphException(GraphError::PortOccupied, "input " + describe(destination) + " is already reserved");
+    if (std::find_if(edges_.begin(), edges_.end(),
+                     [destination](const Edge& edge) { return edge.to == destination; }) != edges_.end())
+        throw GraphException(GraphError::PortOccupied, "input " + describe(destination) + " is already occupied");
+    reservedInputs_.push_back(destination);
+    ++revision_;
+}
+
+void Graph::releaseInput(PortRef destination) {
+    const auto it = std::find(reservedInputs_.begin(), reservedInputs_.end(), destination);
+    if (it == reservedInputs_.end())
+        throw GraphException(GraphError::UnknownEdge, "input reservation does not exist for " + describe(destination));
+    reservedInputs_.erase(it);
+    ++revision_;
+}
+void Graph::clearInputReservations(NodeId node) {
+    const auto oldSize = reservedInputs_.size();
+    reservedInputs_.erase(std::remove_if(reservedInputs_.begin(), reservedInputs_.end(),
+                                         [node](PortRef ref) { return ref.node == node; }),
+                          reservedInputs_.end());
+    if (reservedInputs_.size() != oldSize)
+        ++revision_;
+}
+
+bool Graph::inputReserved(PortRef destination) const {
+    return std::find(reservedInputs_.begin(), reservedInputs_.end(), destination) != reservedInputs_.end();
+}
+
+void Graph::setLayout(NodeId id, LayoutPosition position) {
+    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    if (node == nullptr)
+        throw GraphException(GraphError::UnknownNode, "cannot position unknown node " + std::to_string(id));
+    if (node->layout == position)
+        return;
+    node->layout = position;
+    ++revision_;
+}
+
+const NodeInstance* Graph::node(NodeId id) const {
     return findNode(id);
 }
 
-const Node* Graph::nodeByName(const std::string& name) const {
-    const auto it = std::find_if(nodes_.begin(), nodes_.end(), [&name](const Node& n) { return n.name == name; });
+const NodeInstance* Graph::nodeByName(const std::string& name) const {
+    const auto it =
+        std::find_if(nodes_.begin(), nodes_.end(), [&name](const NodeInstance& n) { return n.name == name; });
     return it == nodes_.end() ? nullptr : &*it;
 }
 
+const std::vector<PortSpec>* Graph::declaredInputs(const NodeInstance& node) const {
+    if (node.hasPortContract)
+        return &node.inputPorts;
+    const NodeDescriptor* schema = catalog_->find(node.type);
+    return schema == nullptr ? nullptr : &schema->inputs;
+}
+
+const std::vector<PortSpec>* Graph::declaredOutputs(const NodeInstance& node) const {
+    if (node.hasPortContract)
+        return &node.outputPorts;
+    const NodeDescriptor* schema = catalog_->find(node.type);
+    return schema == nullptr ? nullptr : &schema->outputs;
+}
+
+const std::vector<PortSpec>& Graph::inputPorts(NodeId id) const {
+    const NodeInstance* node = findNode(id);
+    if (!node)
+        return emptyPorts();
+    const auto* ports = declaredInputs(*node);
+    return ports ? *ports : emptyPorts();
+}
+
+const std::vector<PortSpec>& Graph::outputPorts(NodeId id) const {
+    const NodeInstance* node = findNode(id);
+    if (!node)
+        return emptyPorts();
+    const auto* ports = declaredOutputs(*node);
+    return ports ? *ports : emptyPorts();
+}
+
 bool Graph::reachable(NodeId origin, NodeId target) const {
-    if (origin == target) {
+    if (origin == target)
         return true;
-    }
-    // Depth-first traversal over output edges of visited nodes.
     std::vector<NodeId> stack{origin};
     while (!stack.empty()) {
         const NodeId current = stack.back();
         stack.pop_back();
         for (const auto& edge : edges_) {
-            if (edge.from.node != current) {
+            if (edge.from.node != current)
                 continue;
-            }
-            if (edge.to.node == target) {
+            if (edge.to.node == target)
                 return true;
-            }
             stack.push_back(edge.to.node);
         }
     }
@@ -117,118 +261,368 @@ bool Graph::reachable(NodeId origin, NodeId target) const {
 }
 
 std::optional<GraphErrorDetails> Graph::validateEdge(PortRef from, PortRef to) const {
-    const Node* fromNode = findNode(from.node);
-    const Node* toNode = findNode(to.node);
-    if (!fromNode || !toNode) {
+    const NodeInstance* fromNode = findNode(from.node);
+    const NodeInstance* toNode = findNode(to.node);
+    if (!fromNode || !toNode)
         return GraphErrorDetails{GraphError::UnknownNode,
                                  "connect references an unknown node: " + describe(from) + " -> " + describe(to)};
-    }
-    // Typed ports come from the immutable schema catalog. Unknown persisted
-    // node types declare no ports and remain loadable recovery data.
-    const NodeDescriptor* fromInterface = catalog_->find(fromNode->type);
-    const NodeDescriptor* toInterface = catalog_->find(toNode->type);
-    if (fromInterface && static_cast<std::size_t>(from.port) >= fromInterface->outputs.size()) {
-        return GraphErrorDetails{GraphError::PortType,
-                                 "cannot connect from " + describe(from) + ": node '" + fromNode->name + "' of type '" +
-                                     fromNode->type + "' declares " + std::to_string(fromInterface->outputs.size()) +
-                                     " output port(s)"};
-    }
-    if (toInterface && static_cast<std::size_t>(to.port) >= toInterface->inputs.size()) {
+    if (toNode->instance != kInvalidNetworkInstance)
+        return GraphErrorDetails{GraphError::InvalidInstance, "nested instance input " + describe(to) +
+                                                                  " must be edited through its explicit binding"};
+
+    const auto* fromPorts = declaredOutputs(*fromNode);
+    const auto* toPorts = declaredInputs(*toNode);
+    if (!fromPorts)
+        return GraphErrorDetails{GraphError::PortType, "cannot connect from " + describe(from) + ": node '" +
+                                                           fromNode->name + "' of unknown type '" + fromNode->type +
+                                                           "' has no port contract"};
+    if (!toPorts)
         return GraphErrorDetails{GraphError::PortType, "cannot connect into " + describe(to) + ": node '" +
-                                                           toNode->name + "' of type '" + toNode->type + "' declares " +
-                                                           std::to_string(toInterface->inputs.size()) +
-                                                           " input port(s)"};
-    }
-    if (fromInterface && toInterface && fromInterface->outputs[from.port].kind != toInterface->inputs[to.port].kind) {
+                                                           toNode->name + "' of unknown type '" + toNode->type +
+                                                           "' has no port contract"};
+    if (static_cast<std::size_t>(from.port) >= fromPorts->size())
+        return GraphErrorDetails{GraphError::PortType, "cannot connect from " + describe(from) + ": node '" +
+                                                           fromNode->name + "' declares " +
+                                                           std::to_string(fromPorts->size()) + " output port(s)"};
+    if (static_cast<std::size_t>(to.port) >= toPorts->size())
+        return GraphErrorDetails{GraphError::PortType, "cannot connect into " + describe(to) + ": node '" +
+                                                           toNode->name + "' declares " +
+                                                           std::to_string(toPorts->size()) + " input port(s)"};
+    if ((*fromPorts)[from.port].kind != (*toPorts)[to.port].kind)
         return GraphErrorDetails{GraphError::PortType,
                                  "cannot connect " + describe(from) + " -> " + describe(to) + ": port kind " +
-                                     std::to_string(static_cast<int>(fromInterface->outputs[from.port].kind)) +
+                                     std::to_string(static_cast<int>((*fromPorts)[from.port].kind)) +
                                      " does not match port kind " +
-                                     std::to_string(static_cast<int>(toInterface->inputs[to.port].kind))};
-    }
+                                     std::to_string(static_cast<int>((*toPorts)[to.port].kind))};
     for (const auto& edge : edges_) {
-        if (edge.to == to) {
+        if (edge.to == to)
             return GraphErrorDetails{GraphError::PortOccupied, "input " + describe(to) + " is already fed by node " +
                                                                    std::to_string(edge.from.node)};
-        }
     }
-    if (reachable(to.node, from.node)) {
+    if (std::find(reservedInputs_.begin(), reservedInputs_.end(), to) != reservedInputs_.end())
+        return GraphErrorDetails{GraphError::PortOccupied,
+                                 "input " + describe(to) + " is reserved by a formal network terminal"};
+    if (reachable(to.node, from.node))
         return GraphErrorDetails{GraphError::Cycle, "connecting " + describe(from) + " -> " + describe(to) +
                                                         " would create a circular dependency through node " +
                                                         std::to_string(to.node)};
-    }
     return std::nullopt;
 }
 
 EdgeId Graph::connect(PortRef from, PortRef to) {
-    if (nextEdgeId_ == kInvalidEdge || nextEdgeId_ == std::numeric_limits<EdgeId>::max()) {
+    if (nextEdgeId_ == kInvalidEdge || nextEdgeId_ == std::numeric_limits<EdgeId>::max())
         throw GraphException(GraphError::InvalidId, "edge identity space is exhausted");
-    }
     return connectWithId(nextEdgeId_, from, to);
 }
 
 EdgeId Graph::connectWithId(EdgeId id, PortRef from, PortRef to) {
-    if (id == kInvalidEdge || id == std::numeric_limits<EdgeId>::max()) {
+    if (id == kInvalidEdge || id == std::numeric_limits<EdgeId>::max())
         throw GraphException(GraphError::InvalidId, "edge id must be a nonzero value below the identity limit");
-    }
-    if (std::find_if(edges_.begin(), edges_.end(), [id](const Edge& edge) { return edge.id == id; }) != edges_.end()) {
+    if (std::find_if(edges_.begin(), edges_.end(), [id](const Edge& edge) { return edge.id == id; }) != edges_.end())
         throw GraphException(GraphError::DuplicateId,
                              "edge id " + std::to_string(id) + " already exists in this graph");
-    }
-    if (const auto problem = validateEdge(from, to)) {
+    if (const auto problem = validateEdge(from, to))
         throw GraphException(problem->code, problem->message);
-    }
+
     edges_.push_back(Edge{.id = id, .from = from, .to = to});
+    bool inserted = false;
+    try {
+        auto [cacheIt, wasInserted] = incomingCache_.try_emplace(to.node);
+        inserted = wasInserted;
+        cacheIt->second.push_back(edges_.back());
+    } catch (...) {
+        if (inserted)
+            incomingCache_.erase(to.node);
+        edges_.pop_back();
+        throw;
+    }
     nextEdgeId_ = std::max(nextEdgeId_, static_cast<EdgeId>(id + 1));
-    incomingCache_.erase(to.node);
     ++revision_;
     return id;
 }
 
 void Graph::disconnect(EdgeId id) {
     const auto it = std::find_if(edges_.begin(), edges_.end(), [id](const Edge& e) { return e.id == id; });
-    if (it == edges_.end()) {
+    if (it == edges_.end())
         throw GraphException(GraphError::UnknownEdge, "cannot disconnect unknown edge " + std::to_string(id));
-    }
-    incomingCache_.erase(it->to.node);
+    eraseIncomingEdge(*it);
     edges_.erase(it);
     ++revision_;
 }
 
-void Graph::setParam(NodeId id, const std::string& key, const std::string& value) {
-    Node* node = const_cast<Node*>(findNode(id));
-    if (node == nullptr) {
-        throw GraphException(GraphError::UnknownNode, "cannot set a parameter on unknown node " + std::to_string(id));
+void Graph::setRoute(EdgeId id, std::vector<LayoutPosition> route) {
+    const auto it = std::find_if(edges_.begin(), edges_.end(), [id](const Edge& e) { return e.id == id; });
+    if (it == edges_.end())
+        throw GraphException(GraphError::UnknownEdge, "cannot route unknown edge " + std::to_string(id));
+    if (it->route == route)
+        return;
+    const auto cacheIt = incomingCache_.find(it->to.node);
+    if (cacheIt != incomingCache_.end()) {
+        const auto cached = std::find_if(cacheIt->second.begin(), cacheIt->second.end(),
+                                         [id](const Edge& edge) { return edge.id == id; });
+        if (cached != cacheIt->second.end())
+            cached->route = route;
     }
-    if (const auto problem = catalog_->validateParameter(node->type, key, value)) {
+    it->route = std::move(route);
+    ++revision_;
+}
+
+void Graph::setParam(NodeId id, const std::string& key, const std::string& value) {
+    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    if (node == nullptr)
+        throw GraphException(GraphError::UnknownNode, "cannot set a parameter on unknown node " + std::to_string(id));
+    if (const auto problem = catalog_->validateParameter(node->type, key, value))
         throw GraphException(GraphError::ParameterValue,
                              "node '" + node->name + "' parameter '" + key + "': " + *problem);
-    }
     node->params[key] = value;
     ++revision_;
 }
 
 void Graph::eraseParam(NodeId id, const std::string& key) {
-    Node* node = const_cast<Node*>(findNode(id));
-    if (node == nullptr) {
+    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot erase a parameter on unknown node " + std::to_string(id));
-    }
     node->params.erase(key);
     ++revision_;
 }
 
 const std::vector<Edge>& Graph::edgesInto(NodeId node) const {
-    auto it = incomingCache_.find(node);
-    if (it == incomingCache_.end()) {
-        std::vector<Edge> incoming;
-        for (const auto& edge : edges_) {
-            if (edge.to.node == node) {
-                incoming.push_back(edge);
-            }
-        }
-        it = incomingCache_.emplace(node, std::move(incoming)).first;
+    const auto it = incomingCache_.find(node);
+    return it == incomingCache_.end() ? emptyEdges() : it->second;
+}
+
+Network::Network(NetworkId id, std::string name, std::shared_ptr<const NodeCatalog> catalog)
+    : id_(id), name_(std::move(name)), graph_(std::move(catalog)) {
+    if (id_ == kInvalidNetwork)
+        throw GraphException(GraphError::InvalidNetwork, "network id must be nonzero");
+    if (name_.empty())
+        throw GraphException(GraphError::InvalidName, "network name must not be empty");
+    defaultOutput_ = graph_.addNode("output", "Output");
+}
+
+void Network::rename(std::string name) {
+    if (name.empty())
+        throw GraphException(GraphError::InvalidName, "network name must not be empty");
+    if (name_ == name)
+        return;
+    name_ = std::move(name);
+    ++revision_;
+}
+
+NodeId Network::defaultOutput() const {
+    const NodeInstance* selected = graph_.node(defaultOutput_);
+    const NodeDescriptor* descriptor = selected ? graph_.descriptor(selected->type) : nullptr;
+    return descriptor && descriptor->isOutput ? defaultOutput_ : kInvalidNode;
+}
+
+void Network::setDefaultOutput(NodeId output) {
+    const NodeInstance* node = graph_.node(output);
+    if (!node)
+        throw GraphException(GraphError::UnknownNode,
+                             "cannot select unknown default output node " + std::to_string(output));
+    const auto* descriptor = graph_.descriptor(node->type);
+    if (!descriptor || !descriptor->isOutput)
+        throw GraphException(GraphError::PortType,
+                             "default output must identify an Output node (node " + std::to_string(output) + ")");
+    if (defaultOutput_ == output)
+        return;
+    defaultOutput_ = output;
+    ++revision_;
+}
+
+const FormalPort* Network::findPort(const std::vector<FormalPort>& ports, InterfacePortId id) const {
+    const auto it = std::find_if(ports.begin(), ports.end(), [id](const FormalPort& port) { return port.id == id; });
+    return it == ports.end() ? nullptr : &*it;
+}
+
+const FormalPort* Network::findPort(const std::vector<FormalPort>& ports, std::string_view name) const {
+    const auto it =
+        std::find_if(ports.begin(), ports.end(), [name](const FormalPort& port) { return port.name == name; });
+    return it == ports.end() ? nullptr : &*it;
+}
+
+const FormalPort* Network::input(InterfacePortId id) const {
+    return findPort(inputs_, id);
+}
+const FormalPort* Network::output(InterfacePortId id) const {
+    return findPort(outputs_, id);
+}
+const FormalPort* Network::input(std::string_view name) const {
+    return findPort(inputs_, name);
+}
+InterfacePortId Network::addFormalPortImpl(PortDirection direction, std::string name, PortKind kind, InterfacePortId id,
+                                           bool allowFanOut) {
+    if (name.empty())
+        throw GraphException(GraphError::InvalidName, "formal port name must not be empty");
+    auto& ports = direction == PortDirection::Input ? inputs_ : outputs_;
+    if (findPort(ports, name) != nullptr)
+        throw GraphException(GraphError::DuplicateName,
+                             "formal port name '" + name + "' already exists in network '" + name_ + "'");
+    if (id == kInvalidInterfacePort) {
+        if (nextInterfacePortId_ == std::numeric_limits<InterfacePortId>::max())
+            throw GraphException(GraphError::InvalidId, "formal port identity space is exhausted");
+        id = nextInterfacePortId_;
     }
-    return it->second;
+    if (id == kInvalidInterfacePort || id == std::numeric_limits<InterfacePortId>::max() ||
+        findPort(inputs_, id) != nullptr || findPort(outputs_, id) != nullptr)
+        throw GraphException(GraphError::DuplicateId, "formal port id " + std::to_string(id) + " is already in use");
+    ports.push_back(FormalPort{.id = id, .kind = kind, .name = std::move(name), .allowFanOut = allowFanOut});
+    nextInterfacePortId_ = std::max(nextInterfacePortId_, static_cast<InterfacePortId>(id + 1));
+    ++revision_;
+    return id;
+}
+
+InterfacePortId Network::addInput(std::string name, PortKind kind, InterfacePortId id, bool allowFanOut) {
+    return addFormalPortImpl(PortDirection::Input, std::move(name), kind, id, allowFanOut);
+}
+
+InterfacePortId Network::addOutput(std::string name, PortKind kind, InterfacePortId id, bool allowFanOut) {
+    return addFormalPortImpl(PortDirection::Output, std::move(name), kind, id, allowFanOut);
+}
+
+InterfacePortId Network::addFormalPort(PortDirection direction, std::string name, PortKind kind, InterfacePortId id,
+                                       bool allowFanOut) {
+    return addFormalPortImpl(direction, std::move(name), kind, id, allowFanOut);
+}
+
+std::optional<GraphErrorDetails> Network::validateInputConnection(InterfacePortId input, PortRef destination) const {
+    const FormalPort* terminal = this->input(input);
+    if (!terminal)
+        return GraphErrorDetails{GraphError::PortType,
+                                 "network '" + name_ + "' has no formal input " + std::to_string(input)};
+    const NodeInstance* node = graph_.node(destination.node);
+    if (!node)
+        return GraphErrorDetails{GraphError::UnknownNode,
+                                 "formal input '" + terminal->name + "' targets unknown " + describe(destination)};
+    const auto& ports = graph_.inputPorts(destination.node);
+    if (static_cast<std::size_t>(destination.port) >= ports.size())
+        return GraphErrorDetails{GraphError::PortType, "formal input '" + terminal->name + "' targets " +
+                                                           describe(destination) + " outside its input contract"};
+    if (ports[destination.port].kind != terminal->kind)
+        return GraphErrorDetails{GraphError::PortType,
+                                 "formal input '" + terminal->name + "' (" +
+                                     std::to_string(static_cast<int>(terminal->kind)) + ") cannot feed " +
+                                     describe(destination) + " (" +
+                                     std::to_string(static_cast<int>(ports[destination.port].kind)) + ")"};
+    for (const auto& edge : graph_.edgesInto(destination.node)) {
+        if (edge.to == destination)
+            return GraphErrorDetails{GraphError::PortOccupied, "formal input '" + terminal->name +
+                                                                   "' cannot feed occupied " + describe(destination)};
+    }
+    for (const auto& connection : inputConnections_) {
+        if (connection.node == destination)
+            return GraphErrorDetails{GraphError::PortOccupied, "formal input '" + terminal->name +
+                                                                   "' cannot feed occupied " + describe(destination)};
+        if (connection.terminal == input && !terminal->allowFanOut)
+            return GraphErrorDetails{GraphError::PortOccupied,
+                                     "formal input '" + terminal->name + "' does not allow fan-out"};
+    }
+    return std::nullopt;
+}
+
+void Network::connectInput(InterfacePortId input, PortRef destination) {
+    syncTerminalConnections();
+    if (const auto problem = validateInputConnection(input, destination))
+        throw GraphException(problem->code, problem->message);
+    inputConnections_.push_back(TerminalConnection{.terminal = input, .node = destination});
+    try {
+        graph_.reserveInput(destination);
+    } catch (...) {
+        inputConnections_.pop_back();
+        throw;
+    }
+    ++revision_;
+}
+
+void Network::disconnectInput(InterfacePortId input, PortRef destination) {
+    syncTerminalConnections();
+    const auto it = std::find_if(inputConnections_.begin(), inputConnections_.end(),
+                                 [input, destination](const TerminalConnection& connection) {
+                                     return connection.terminal == input && connection.node == destination;
+                                 });
+    if (it == inputConnections_.end())
+        throw GraphException(GraphError::UnknownEdge, "formal input connection does not exist");
+    graph_.releaseInput(destination);
+    inputConnections_.erase(it);
+    ++revision_;
+}
+
+std::optional<GraphErrorDetails> Network::validateOutputConnection(PortRef source, InterfacePortId output) const {
+    const FormalPort* terminal = this->output(output);
+    if (!terminal)
+        return GraphErrorDetails{GraphError::PortType,
+                                 "network '" + name_ + "' has no formal output " + std::to_string(output)};
+    const NodeInstance* node = graph_.node(source.node);
+    if (!node)
+        return GraphErrorDetails{GraphError::UnknownNode,
+                                 "formal output '" + terminal->name + "' reads unknown " + describe(source)};
+    const auto& ports = graph_.outputPorts(source.node);
+    if (static_cast<std::size_t>(source.port) >= ports.size())
+        return GraphErrorDetails{GraphError::PortType, "formal output '" + terminal->name + "' reads " +
+                                                           describe(source) + " outside its output contract"};
+    if (ports[source.port].kind != terminal->kind)
+        return GraphErrorDetails{GraphError::PortType, "formal output '" + terminal->name + "' (" +
+                                                           std::to_string(static_cast<int>(terminal->kind)) +
+                                                           ") cannot read " + describe(source) + " (" +
+                                                           std::to_string(static_cast<int>(ports[source.port].kind)) +
+                                                           ")"};
+    if (std::find_if(outputConnections_.begin(), outputConnections_.end(),
+                     [output](const TerminalConnection& connection) { return connection.terminal == output; }) !=
+        outputConnections_.end())
+        return GraphErrorDetails{GraphError::PortOccupied,
+                                 "formal output '" + terminal->name + "' is already selected"};
+    return std::nullopt;
+}
+
+void Network::connectOutput(PortRef source, InterfacePortId output) {
+    syncTerminalConnections();
+    if (const auto problem = validateOutputConnection(source, output))
+        throw GraphException(problem->code, problem->message);
+    outputConnections_.push_back(TerminalConnection{.terminal = output, .node = source});
+    ++revision_;
+}
+
+void Network::disconnectOutput(InterfacePortId output) {
+    syncTerminalConnections();
+    const auto it =
+        std::find_if(outputConnections_.begin(), outputConnections_.end(),
+                     [output](const TerminalConnection& connection) { return connection.terminal == output; });
+    if (it == outputConnections_.end())
+        throw GraphException(GraphError::UnknownEdge, "formal output connection does not exist");
+    outputConnections_.erase(it);
+    ++revision_;
+}
+void Network::syncTerminalConnections() {
+    if (terminalSyncRevision_ == graph_.revision())
+        return;
+    inputConnections_.erase(std::remove_if(inputConnections_.begin(), inputConnections_.end(),
+                                           [this](const TerminalConnection& connection) {
+                                               return input(connection.terminal) == nullptr ||
+                                                      graph_.node(connection.node.node) == nullptr;
+                                           }),
+                            inputConnections_.end());
+    outputConnections_.erase(std::remove_if(outputConnections_.begin(), outputConnections_.end(),
+                                            [this](const TerminalConnection& connection) {
+                                                return output(connection.terminal) == nullptr ||
+                                                       graph_.node(connection.node.node) == nullptr;
+                                            }),
+                             outputConnections_.end());
+    terminalSyncRevision_ = graph_.revision();
+}
+
+const std::vector<TerminalConnection>& Network::inputConnections() const {
+    return inputConnections_;
+}
+
+const std::vector<TerminalConnection>& Network::outputConnections() const {
+    return outputConnections_;
+}
+
+void Network::restoreIdentityHighWatermarks(NodeId nextNodeId, EdgeId nextEdgeId, InterfacePortId nextInterfacePortId) {
+    graph_.restoreIdentityHighWatermarks(nextNodeId, nextEdgeId);
+    if (nextInterfacePortId == kInvalidInterfacePort)
+        throw GraphException(GraphError::InvalidId, "formal port identity watermark must be nonzero");
+    nextInterfacePortId_ = std::max(nextInterfacePortId_, nextInterfacePortId);
 }
 
 }  // namespace nemo

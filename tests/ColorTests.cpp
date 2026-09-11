@@ -40,6 +40,14 @@ using namespace nemo;
 
 namespace {
 
+Graph& rootGraph(Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
+const Graph& rootGraph(const Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
 // ---------------------------------------------------------------------------
 // OCIO config fixture
 // ---------------------------------------------------------------------------
@@ -210,7 +218,7 @@ void expectValidationClean(gpu::Instance& instance) {
 TEST(Color, PolicyRoundTrips) {
     Document doc;
     doc.name = "graded";
-    const NodeId plate = doc.graph.addNode("testpattern", "plate");
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
     EXPECT_NE(plate, kInvalidNode);
     doc.color.workingSpace = "ACEScg";
     doc.color.viewerTransform = "sRGB/Display P3";
@@ -225,7 +233,7 @@ TEST(Color, DefaultPolicyWhenAbsent) {
     // A document saved without the policy block (e.g. by an older build)
     // loads with the documented defaults and no warnings.
     Document doc;
-    const NodeId plate = doc.graph.addNode("testpattern", "plate");
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
     EXPECT_NE(plate, kInvalidNode);
     nlohmann::json saved = saveDocument(doc);
     ASSERT_TRUE(saved.contains("color"));
@@ -240,7 +248,7 @@ TEST(Color, DefaultPolicyWhenAbsent) {
 
 TEST(Color, PartialPolicyFallsBackFieldWise) {
     Document doc;
-    const NodeId plate = doc.graph.addNode("testpattern", "plate");
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
     EXPECT_NE(plate, kInvalidNode);
     nlohmann::json saved = saveDocument(doc);
     saved["color"] = {{"workingSpace", "ACEScg"}};
@@ -252,7 +260,7 @@ TEST(Color, PartialPolicyFallsBackFieldWise) {
 
 TEST(Color, NonObjectPolicyWarnsAndUsesDefaults) {
     Document doc;
-    const NodeId plate = doc.graph.addNode("testpattern", "plate");
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
     EXPECT_NE(plate, kInvalidNode);
     nlohmann::json saved = saveDocument(doc);
     saved["color"] = 42;

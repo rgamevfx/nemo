@@ -16,17 +16,17 @@ namespace nemo {
 // values are recorded into `effectiveParams` — the plan carries resolved
 // state, not authored guesses.
 
-[[nodiscard]] inline std::string describeNode(const Node& node) {
+[[nodiscard]] inline std::string describeNode(const NodeInstance& node) {
     std::ostringstream text;
     text << "node '" << node.name << "' (id " << node.id << ", type '" << node.type << "')";
     return std::move(text).str();
 }
 
-[[noreturn]] inline void failNode(const Node& node, const std::string& what) {
+[[noreturn]] inline void failNode(const NodeInstance& node, const std::string& what) {
     throw EvaluationException(describeNode(node) + ": " + what, node.id, node.name);
 }
 
-[[nodiscard]] inline const std::string& effectiveParameter(const NodeCatalog& catalog, const Node& node,
+[[nodiscard]] inline const std::string& effectiveParameter(const NodeCatalog& catalog, const NodeInstance& node,
                                                            std::map<std::string, std::string>& effectiveParams,
                                                            const char* key) {
     const auto authored = effectiveParams.find(key);
@@ -40,7 +40,7 @@ namespace nemo {
     return effectiveParams.emplace(key, *declared).first->second;
 }
 
-[[nodiscard]] inline std::array<float, 4> parseColor4(const NodeCatalog& catalog, const Node& node,
+[[nodiscard]] inline std::array<float, 4> parseColor4(const NodeCatalog& catalog, const NodeInstance& node,
                                                       std::map<std::string, std::string>& effectiveParams,
                                                       const char* key) {
     const auto& text = effectiveParameter(catalog, node, effectiveParams, key);

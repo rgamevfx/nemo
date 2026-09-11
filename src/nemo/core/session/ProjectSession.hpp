@@ -26,24 +26,46 @@ struct EditError {
     std::optional<GraphError> graphError;
 };
 
+struct ScopedNodeId {
+    NetworkId network{kInvalidNetwork};
+    NodeId id{kInvalidNode};
+
+    friend bool operator==(const ScopedNodeId&, const ScopedNodeId&) = default;
+};
+
+struct ScopedEdgeId {
+    NetworkId network{kInvalidNetwork};
+    EdgeId id{kInvalidEdge};
+
+    friend bool operator==(const ScopedEdgeId&, const ScopedEdgeId&) = default;
+};
+
 struct EditResult {
     bool committed{false};
     std::uint64_t revision{1};
     std::optional<EditError> error;
-    std::vector<NodeId> changedNodeIds;
-    std::vector<NodeId> createdNodeIds;
-    std::vector<EdgeId> changedEdgeIds;
-    std::vector<EdgeId> createdEdgeIds;
+    std::vector<ScopedNodeId> changedNodeIds;
+    std::vector<ScopedNodeId> createdNodeIds;
+    std::vector<ScopedEdgeId> changedEdgeIds;
+    std::vector<ScopedEdgeId> createdEdgeIds;
+    std::vector<NetworkId> changedNetworkIds;
+    std::vector<NetworkId> createdNetworkIds;
+    std::vector<NetworkInstanceId> changedInstanceIds;
+    std::vector<NetworkInstanceId> createdInstanceIds;
     std::vector<std::string> changedSourceIds;
     bool colorPolicyChanged{false};
 };
 
 struct ChangeEvent {
     std::uint64_t revision{1};
-    std::vector<NodeId> changedNodeIds;
-    std::vector<NodeId> createdNodeIds;
-    std::vector<EdgeId> changedEdgeIds;
-    std::vector<EdgeId> createdEdgeIds;
+    std::vector<ScopedNodeId> changedNodeIds;
+    std::vector<ScopedNodeId> createdNodeIds;
+    std::vector<ScopedEdgeId> changedEdgeIds;
+    std::vector<ScopedEdgeId> createdEdgeIds;
+    std::vector<NetworkId> changedNetworkIds;
+    std::vector<NetworkId> createdNetworkIds;
+    std::vector<NetworkInstanceId> changedInstanceIds;
+    std::vector<NetworkInstanceId> createdInstanceIds;
     std::vector<std::string> changedSourceIds;
     bool colorPolicyChanged{false};
 };
@@ -56,15 +78,22 @@ struct ChangeHistory {
 };
 
 struct NodeQueryResult {
+    NetworkId network{kInvalidNetwork};
     NodeId id{kInvalidNode};
     std::string type;
     std::string name;
 };
 
 struct ValueQueryResult {
+    NetworkId network{kInvalidNetwork};
     NodeId node{kInvalidNode};
     std::string key;
     std::string value;
+};
+
+struct EdgeQueryResult {
+    NetworkId network{kInvalidNetwork};
+    Edge edge;
 };
 
 struct SourceQueryResult {
@@ -123,14 +152,16 @@ public:
 
     [[nodiscard]] ChangeHistory changesSince(std::uint64_t revision) const;
     // Filters match label/type or parameter/source key substrings. Limits are
-    // clamped to 256; zero is empty. Cursor IDs/keys are exclusive. Re-query on
-    // a revision change instead of combining pages from different revisions.
-    [[nodiscard]] std::vector<NodeQueryResult> queryNodes(std::string_view filter = {}, std::size_t limit = 256,
-                                                          NodeId after = kInvalidNode) const;
-    [[nodiscard]] std::vector<ValueQueryResult> queryValues(NodeId node, std::string_view keyFilter = {},
-                                                            std::size_t limit = 256, std::string_view after = {}) const;
-    [[nodiscard]] std::vector<Edge> queryEdges(NodeId touching = kInvalidNode, std::size_t limit = 256,
-                                               EdgeId after = kInvalidEdge) const;
+    // clamped to 256; zero is empty. Cursor IDs/keys are exclusive. Every
+    // graph query requires an explicit network because node/edge IDs are
+    // local to that network.
+    [[nodiscard]] std::vector<NodeQueryResult> queryNodes(NetworkId network, std::string_view filter = {},
+                                                          std::size_t limit = 256, NodeId after = kInvalidNode) const;
+    [[nodiscard]] std::vector<ValueQueryResult> queryValues(NetworkId network, NodeId node,
+                                                            std::string_view keyFilter = {}, std::size_t limit = 256,
+                                                            std::string_view after = {}) const;
+    [[nodiscard]] std::vector<EdgeQueryResult> queryEdges(NetworkId network, NodeId touching = kInvalidNode,
+                                                          std::size_t limit = 256, EdgeId after = kInvalidEdge) const;
     [[nodiscard]] std::vector<SourceQueryResult> querySources(std::string_view filter = {}, std::size_t limit = 256,
                                                               std::string_view after = {}) const;
 

@@ -9,12 +9,21 @@ namespace nemo {
 namespace {
 constexpr std::size_t kRequestCapacity = 256;
 
-bool sameNode(const Node& left, const Node& right) {
-    return left.id == right.id && left.type == right.type && left.name == right.name && left.params == right.params;
+bool samePorts(const std::vector<PortSpec>& left, const std::vector<PortSpec>& right) {
+    if (left.size() != right.size())
+        return false;
+    return std::equal(left.begin(), left.end(), right.begin(),
+                      [](const PortSpec& a, const PortSpec& b) { return a.kind == b.kind && a.name == b.name; });
 }
 
+bool sameNode(const NodeInstance& left, const NodeInstance& right) {
+    return left.id == right.id && left.type == right.type && left.name == right.name && left.params == right.params &&
+           left.layout == right.layout && left.definition == right.definition && left.instance == right.instance &&
+           left.hasPortContract == right.hasPortContract && samePorts(left.inputPorts, right.inputPorts) &&
+           samePorts(left.outputPorts, right.outputPorts);
+}
 bool sameEdge(const Edge& left, const Edge& right) {
-    return left.id == right.id && left.from == right.from && left.to == right.to;
+    return left.id == right.id && left.from == right.from && left.to == right.to && left.route == right.route;
 }
 }  // namespace
 
@@ -88,6 +97,10 @@ EditResult ProjectSession::conflict(std::uint64_t expected) const {
                                      event.changedNodeIds.end());
         result.changedEdgeIds.insert(result.changedEdgeIds.end(), event.changedEdgeIds.begin(),
                                      event.changedEdgeIds.end());
+        result.changedNetworkIds.insert(result.changedNetworkIds.end(), event.changedNetworkIds.begin(),
+                                        event.changedNetworkIds.end());
+        result.changedInstanceIds.insert(result.changedInstanceIds.end(), event.changedInstanceIds.begin(),
+                                         event.changedInstanceIds.end());
         result.changedSourceIds.insert(result.changedSourceIds.end(), event.changedSourceIds.begin(),
                                        event.changedSourceIds.end());
         result.colorPolicyChanged |= event.colorPolicyChanged;
@@ -109,32 +122,92 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
     result.committed = true;
     result.revision = revision_ + 1;
 
-    for (const auto& node : before.graph.nodes()) {
-        const Node* current = after.graph.node(node.id);
-        if (!current || !sameNode(node, *current))
-            result.changedNodeIds.push_back(node.id);
-    }
-    for (const auto& node : after.graph.nodes()) {
-        const Node* previous = before.graph.node(node.id);
-        if (!previous) {
-            result.createdNodeIds.push_back(node.id);
-            result.changedNodeIds.push_back(node.id);
+    const auto findNetwork = [](const Document& document, NetworkId id) -> const Network* {
+        for (const auto& network : document.networks())
+            if (network.id() == id)
+                return &network;
+        return nullptr;
+    };
+    const auto addNetworkChange = [&result](NetworkId id) {
+        if (id != kInvalidNetwork)
+            result.changedNetworkIds.push_back(id);
+    };
+    const auto addNodeChange = [&result](NetworkId network, NodeId id) {
+        result.changedNodeIds.push_back(ScopedNodeId{network, id});
+    };
+    const auto addEdgeChange = [&result](NetworkId network, EdgeId id) {
+        result.changedEdgeIds.push_back(ScopedEdgeId{network, id});
+    };
+
+    for (const auto& beforeNetwork : before.networks()) {
+        const Network* current = findNetwork(after, beforeNetwork.id());
+        if (current == nullptr || current->name() != beforeNetwork.name() ||
+            current->defaultOutput() != beforeNetwork.defaultOutput() ||
+            current->revision() != beforeNetwork.revision()) {
+            addNetworkChange(beforeNetwork.id());
+        }
+        if (current == nullptr)
+            continue;
+        const auto& beforeGraph = beforeNetwork.graph();
+        const auto& afterGraph = current->graph();
+        for (const auto& node : beforeGraph.nodes()) {
+            const NodeInstance* twin = afterGraph.node(node.id);
+            if (twin == nullptr || !sameNode(node, *twin))
+                addNodeChange(beforeNetwork.id(), node.id);
+        }
+        for (const auto& node : afterGraph.nodes()) {
+            const NodeInstance* previous = beforeGraph.node(node.id);
+            if (previous == nullptr) {
+                result.createdNodeIds.push_back(ScopedNodeId{beforeNetwork.id(), node.id});
+                addNodeChange(beforeNetwork.id(), node.id);
+            }
+        }
+        for (const auto& edge : beforeGraph.edges()) {
+            const auto currentEdge = std::find_if(afterGraph.edges().begin(), afterGraph.edges().end(),
+                                                  [&](const Edge& candidate) { return candidate.id == edge.id; });
+            if (currentEdge == afterGraph.edges().end() || !sameEdge(edge, *currentEdge))
+                addEdgeChange(beforeNetwork.id(), edge.id);
+        }
+        for (const auto& edge : afterGraph.edges()) {
+            const auto previous = std::find_if(beforeGraph.edges().begin(), beforeGraph.edges().end(),
+                                               [&](const Edge& candidate) { return candidate.id == edge.id; });
+            if (previous == beforeGraph.edges().end()) {
+                result.createdEdgeIds.push_back(ScopedEdgeId{beforeNetwork.id(), edge.id});
+                addEdgeChange(beforeNetwork.id(), edge.id);
+            }
         }
     }
-    for (const auto& edge : before.graph.edges()) {
-        const auto current = std::find_if(after.graph.edges().begin(), after.graph.edges().end(),
-                                          [&](const Edge& candidate) { return candidate.id == edge.id; });
-        if (current == after.graph.edges().end() || !sameEdge(edge, *current))
-            result.changedEdgeIds.push_back(edge.id);
-    }
-    for (const auto& edge : after.graph.edges()) {
-        const auto previous = std::find_if(before.graph.edges().begin(), before.graph.edges().end(),
-                                           [&](const Edge& candidate) { return candidate.id == edge.id; });
-        if (previous == before.graph.edges().end()) {
-            result.createdEdgeIds.push_back(edge.id);
-            result.changedEdgeIds.push_back(edge.id);
+    for (const auto& afterNetwork : after.networks()) {
+        if (findNetwork(before, afterNetwork.id()) == nullptr) {
+            result.createdNetworkIds.push_back(afterNetwork.id());
+            addNetworkChange(afterNetwork.id());
+            for (const auto& node : afterNetwork.graph().nodes()) {
+                result.createdNodeIds.push_back(ScopedNodeId{afterNetwork.id(), node.id});
+                addNodeChange(afterNetwork.id(), node.id);
+            }
+            for (const auto& edge : afterNetwork.graph().edges()) {
+                result.createdEdgeIds.push_back(ScopedEdgeId{afterNetwork.id(), edge.id});
+                addEdgeChange(afterNetwork.id(), edge.id);
+            }
         }
     }
+    if (before.rootNetworkId() != after.rootNetworkId()) {
+        addNetworkChange(before.rootNetworkId());
+        addNetworkChange(after.rootNetworkId());
+    }
+
+    for (const auto& instance : before.instances()) {
+        const NetworkInstance* current = after.instance(instance.id);
+        if (current == nullptr || *current != instance)
+            result.changedInstanceIds.push_back(instance.id);
+    }
+    for (const auto& instance : after.instances()) {
+        if (before.instance(instance.id) == nullptr) {
+            result.createdInstanceIds.push_back(instance.id);
+            result.changedInstanceIds.push_back(instance.id);
+        }
+    }
+
     for (const auto& [id, source] : before.sources) {
         const auto current = after.sources.find(id);
         if (current == after.sources.end() || current->second != source)
@@ -145,10 +218,10 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
             result.changedSourceIds.push_back(id);
     result.colorPolicyChanged = before.color != after.color;
 
-    // Complete all allocation before CommandStack's noexcept publication.
-    // If either bounded journal append fails, roll back the other append.
-    ChangeEvent event{result.revision,       result.changedNodeIds,   result.createdNodeIds,    result.changedEdgeIds,
-                      result.createdEdgeIds, result.changedSourceIds, result.colorPolicyChanged};
+    ChangeEvent event{result.revision,          result.changedNodeIds,     result.createdNodeIds,
+                      result.changedEdgeIds,    result.createdEdgeIds,     result.changedNetworkIds,
+                      result.createdNetworkIds, result.changedInstanceIds, result.createdInstanceIds,
+                      result.changedSourceIds,  result.colorPolicyChanged};
     if (!requestId.empty())
         requests_.push_back(RequestRecord{requestId, result});
     try {
@@ -204,7 +277,9 @@ EditResult ProjectSession::execute(Operation operation, Command* command, const 
         }
     } catch (const GraphException& error) {
         auto rejected = failure(error.what(), error.errorCode() == GraphError::UnknownNode ||
-                                                      error.errorCode() == GraphError::UnknownEdge
+                                                      error.errorCode() == GraphError::UnknownEdge ||
+                                                      error.errorCode() == GraphError::UnknownNetwork ||
+                                                      error.errorCode() == GraphError::UnknownInstance
                                                   ? EditErrorCode::MissingObject
                                                   : EditErrorCode::InvalidArgument);
         rejected.error->graphError = error.errorCode();
@@ -231,30 +306,18 @@ EditResult ProjectSession::redo(EditOptions options) {
     return execute(Operation::Redo, nullptr, options);
 }
 
-ChangeHistory ProjectSession::changesSince(std::uint64_t revision) const {
-    ChangeHistory result;
-    result.currentRevision = revision_;
-    result.oldestRevision = events_.empty() ? revision_ : events_.front().revision;
-    result.resyncRequired =
-        revision > revision_ || (events_.empty() ? revision < revision_ : revision < events_.front().revision - 1);
-    for (const auto& event : events_) {
-        if (event.revision > revision)
-            result.events.push_back(event);
-    }
-    return result;
-}
-
-std::vector<NodeQueryResult> ProjectSession::queryNodes(std::string_view filter, std::size_t limit,
+std::vector<NodeQueryResult> ProjectSession::queryNodes(NetworkId network, std::string_view filter, std::size_t limit,
                                                         NodeId after) const {
     limit = std::min<std::size_t>(limit, 256);
-    std::vector<const Node*> selected;
-    for (const auto& node : document_.graph.nodes()) {
+    const auto& graph = document_.network(network).graph();
+    std::vector<const NodeInstance*> selected;
+    for (const auto& node : graph.nodes()) {
         if (limit == 0 || node.id <= after ||
             (!filter.empty() && node.name.find(filter) == std::string::npos &&
              node.type.find(filter) == std::string::npos))
             continue;
         const auto where = std::lower_bound(selected.begin(), selected.end(), node.id,
-                                            [](const Node* value, NodeId id) { return value->id < id; });
+                                            [](const NodeInstance* value, NodeId id) { return value->id < id; });
         if (where == selected.end() && selected.size() == limit)
             continue;
         selected.insert(where, &node);
@@ -264,43 +327,56 @@ std::vector<NodeQueryResult> ProjectSession::queryNodes(std::string_view filter,
     std::vector<NodeQueryResult> result;
     result.reserve(selected.size());
     for (const auto* node : selected)
-        result.push_back(NodeQueryResult{node->id, node->type, node->name});
+        result.push_back(NodeQueryResult{network, node->id, node->type, node->name});
     return result;
 }
 
-std::vector<ValueQueryResult> ProjectSession::queryValues(NodeId nodeId, std::string_view keyFilter, std::size_t limit,
-                                                          std::string_view after) const {
+std::vector<ValueQueryResult> ProjectSession::queryValues(NetworkId network, NodeId nodeId, std::string_view keyFilter,
+                                                          std::size_t limit, std::string_view after) const {
     limit = std::min<std::size_t>(limit, 256);
     std::vector<ValueQueryResult> result;
     if (limit == 0)
         return result;
-    const Node* node = document_.graph.node(nodeId);
+    const NodeInstance* node = document_.network(network).graph().node(nodeId);
     if (!node)
         return result;
     for (const auto& [key, value] : node->params) {
         if ((!after.empty() && key <= after) || (!keyFilter.empty() && key.find(keyFilter) == std::string::npos))
             continue;
-        result.push_back(ValueQueryResult{nodeId, key, value});
+        result.push_back(ValueQueryResult{network, nodeId, key, value});
         if (result.size() == limit)
             break;
     }
     return result;
 }
 
-std::vector<Edge> ProjectSession::queryEdges(NodeId touching, std::size_t limit, EdgeId after) const {
+std::vector<EdgeQueryResult> ProjectSession::queryEdges(NetworkId network, NodeId touching, std::size_t limit,
+                                                        EdgeId after) const {
     limit = std::min<std::size_t>(limit, 256);
-    std::vector<Edge> result;
-    for (const auto& edge : document_.graph.edges()) {
+    std::vector<EdgeQueryResult> result;
+    for (const auto& edge : document_.network(network).graph().edges()) {
         if (limit == 0 || edge.id <= after ||
             (touching != kInvalidNode && edge.from.node != touching && edge.to.node != touching))
             continue;
         const auto where = std::lower_bound(result.begin(), result.end(), edge.id,
-                                            [](const Edge& value, EdgeId id) { return value.id < id; });
+                                            [](const EdgeQueryResult& value, EdgeId id) { return value.edge.id < id; });
         if (where == result.end() && result.size() == limit)
             continue;
-        result.insert(where, edge);
+        result.insert(where, EdgeQueryResult{network, edge});
         if (result.size() > limit)
             result.pop_back();
+    }
+    return result;
+}
+ChangeHistory ProjectSession::changesSince(std::uint64_t revision) const {
+    ChangeHistory result;
+    result.currentRevision = revision_;
+    result.oldestRevision = events_.empty() ? revision_ : events_.front().revision;
+    result.resyncRequired =
+        revision > revision_ || (events_.empty() ? revision < revision_ : revision < events_.front().revision - 1);
+    for (const auto& event : events_) {
+        if (event.revision > revision)
+            result.events.push_back(event);
     }
     return result;
 }

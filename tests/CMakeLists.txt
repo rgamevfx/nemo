@@ -8,6 +8,8 @@ add_executable(nemo_core_tests
     CommandTests.cpp
     CatalogTests.cpp
     PersistenceTests.cpp
+    GraphTests.cpp
+    NetworkTests.cpp
     ViewerModelTests.cpp
 )
 target_link_libraries(nemo_core_tests PRIVATE nemo::core GTest::gtest_main)

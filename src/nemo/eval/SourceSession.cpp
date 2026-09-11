@@ -9,7 +9,7 @@ namespace nemo::eval {
 
 namespace {
 
-[[noreturn]] void failSource(const Node& node, const std::string& what) {
+[[noreturn]] void failSource(const NodeInstance& node, const std::string& what) {
     throw EvaluationException(describeNode(node) + ": " + what, node.id, node.name);
 }
 
@@ -83,7 +83,7 @@ SourceSession::Probe SourceSession::probe(const Document& document, const std::s
     return Probe{decoder->info(), decoder->decision()};
 }
 
-SourceSession::DecoderState SourceSession::openState(const Document& document, const Node& node,
+SourceSession::DecoderState SourceSession::openState(const Document& document, const NodeInstance& node,
                                                      const SourceReference& reference) const {
     auto decoder =
         media::ClipDecoder::open(instance_, device_, allocator_, reference.path, mediaConvertSpirv_, document.color,
@@ -102,7 +102,8 @@ void SourceSession::cachePut(const std::pair<std::string, std::int64_t>& cacheKe
     frameOrder_.push_back(cacheKey);
 }
 
-SourceSession::DecodedFrame SourceSession::acquire(const Document& document, const Node& node, std::int64_t localTime,
+SourceSession::DecodedFrame SourceSession::acquire(const Document& document, NetworkId network,
+                                                   const NodeInstance& node, std::int64_t localTime,
                                                    std::uint64_t timeout_ns) {
     const auto sourceParam = node.params.find("source");
     if (sourceParam == node.params.end()) {
@@ -136,7 +137,9 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
     // Reuse the core's canonical dependency identity, normalized to a full
     // source frame. Path/interpretation/working-space edits must not hit an
     // old decoder merely because the persistent source key is unchanged.
-    const auto runtimeKey = nodeResultKey(document, node, {}, EvaluationRequest{}).canonical;
+    EvaluationRequest keyRequest;
+    keyRequest.network = network;
+    const auto runtimeKey = nodeResultKey(document, node, {}, keyRequest).canonical;
 
     const std::pair<std::string, std::int64_t> cacheKey{runtimeKey, frame};
 

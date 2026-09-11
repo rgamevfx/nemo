@@ -41,6 +41,13 @@
 using namespace nemo;
 
 namespace {
+Graph& rootGraph(Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
+const Graph& rootGraph(const Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
 
 enum class BootstrapOutcome { Created, NoDevice, Failed };
 struct Bootstrap {
@@ -130,25 +137,26 @@ struct Composition {
 [[nodiscard]] Composition makeComposition() {
     Composition composition;
     Document& doc = composition.doc;
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
     doc.name = "gpu-effect-composition";
-    const NodeId plate = doc.graph.addNode("testpattern", "plate");
-    composition.tint = doc.graph.addNode("constcolor", "tint");
-    doc.graph.setParam(composition.tint, "color", "0.5 8 -1 0.25");
-    const NodeId over = doc.graph.addNode("merge", "over");
-    composition.output = doc.graph.addNode("output", "result");
-    (void)doc.graph.connect({plate, 0}, {over, 0});
-    (void)doc.graph.connect({composition.tint, 0}, {over, 1});
-    (void)doc.graph.connect({over, 0}, {composition.output, 0});
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
+    composition.tint = rootGraph(doc).addNode("constcolor", "tint");
+    rootGraph(doc).setParam(composition.tint, "color", "0.5 8 -1 0.25");
+    const NodeId over = rootGraph(doc).addNode("merge", "over");
+    composition.output = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({plate, 0}, {over, 0});
+    (void)rootGraph(doc).connect({composition.tint, 0}, {over, 1});
+    (void)rootGraph(doc).connect({over, 0}, {composition.output, 0});
     return composition;
 }
 
 [[nodiscard]] CpuImage evaluateCpuImage(const Document& doc, const EvaluationRequest& request) {
     return evaluateCpu(doc, request).image;
 }
-
 [[nodiscard]] EvaluationRequest requestFor(const Document& doc, Region region, std::int64_t frame) {
     EvaluationRequest request;
-    request.output = resolveOutput(doc);
+    request.network = doc.rootNetworkId();
+    request.output = resolveOutput(doc, request.network);
     request.localTime = frame;
     request.region = region;
     request.fullWidth = region.x + region.width;
@@ -191,11 +199,12 @@ TEST(Effect, ConstcolorIsBitExact) {
     NEMO_SKIP_UNLESS_SLANG(boot);
 
     Document doc;
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
     doc.name = "exact-const";
-    const NodeId color = doc.graph.addNode("constcolor", "color");
-    doc.graph.setParam(color, "color", "4 -2 2.5 0.125");
-    const NodeId out = doc.graph.addNode("output", "result");
-    (void)doc.graph.connect({color, 0}, {out, 0});
+    const NodeId color = rootGraph(doc).addNode("constcolor", "color");
+    rootGraph(doc).setParam(color, "color", "4 -2 2.5 0.125");
+    const NodeId out = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({color, 0}, {out, 0});
     const EvaluationRequest request = requestFor(doc, {0, 0, 9, 7}, 0);
 
     const CpuImage cpuImage = evaluateCpuImage(doc, request);
@@ -270,7 +279,7 @@ TEST(Effect, MultiNodeGpuCompositionMatchesCpuReference) {
 
     // A contributing input change must change the GPU output.
     Document changed = composition.doc;
-    changed.graph.setParam(composition.tint, "color", "0.5 8 -1 1.0");
+    rootGraph(changed).setParam(composition.tint, "color", "0.5 8 -1 1.0");
     eval::GpuEvaluation changedEval = evaluateGpu(changed, request, slang, *boot.device, *boot.allocator);
     const CpuImage changedImage = changedEval.readBack(request.output, *boot.device, *boot.allocator);
     EXPECT_GT(gpuEval.plan.result.contentHash, 0u);
@@ -408,20 +417,21 @@ TEST(Effect, DependentChainSynchronizesWithoutIntermediateReadback) {
     // plate ── over1(A) ── over2(A) ── out
     // tint1 ──↗          tint2 ──↗
     Document doc;
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
     doc.name = "dependent-chain";
-    const NodeId plate = doc.graph.addNode("testpattern", "plate");
-    const NodeId tint1 = doc.graph.addNode("constcolor", "tint1");
-    doc.graph.setParam(tint1, "color", "1 0.5 0.25 0.5");
-    const NodeId tint2 = doc.graph.addNode("constcolor", "tint2");
-    doc.graph.setParam(tint2, "color", "0.25 0.5 2 0.75");
-    const NodeId over1 = doc.graph.addNode("merge", "over1");
-    const NodeId over2 = doc.graph.addNode("merge", "over2");
-    const NodeId out = doc.graph.addNode("output", "result");
-    (void)doc.graph.connect({plate, 0}, {over1, 0});
-    (void)doc.graph.connect({tint1, 0}, {over1, 1});
-    (void)doc.graph.connect({over1, 0}, {over2, 0});
-    (void)doc.graph.connect({tint2, 0}, {over2, 1});
-    (void)doc.graph.connect({over2, 0}, {out, 0});
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
+    const NodeId tint1 = rootGraph(doc).addNode("constcolor", "tint1");
+    rootGraph(doc).setParam(tint1, "color", "1 0.5 0.25 0.5");
+    const NodeId tint2 = rootGraph(doc).addNode("constcolor", "tint2");
+    rootGraph(doc).setParam(tint2, "color", "0.25 0.5 2 0.75");
+    const NodeId over1 = rootGraph(doc).addNode("merge", "over1");
+    const NodeId over2 = rootGraph(doc).addNode("merge", "over2");
+    const NodeId out = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({plate, 0}, {over1, 0});
+    (void)rootGraph(doc).connect({tint1, 0}, {over1, 1});
+    (void)rootGraph(doc).connect({over1, 0}, {over2, 0});
+    (void)rootGraph(doc).connect({tint2, 0}, {over2, 1});
+    (void)rootGraph(doc).connect({over2, 0}, {out, 0});
 
     const EvaluationRequest request = requestFor(doc, {0, 0, 40, 25}, 7);
     const CpuEvaluation cpu = evaluateCpu(doc, request);

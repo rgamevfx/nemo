@@ -8,11 +8,23 @@
 namespace {
 using namespace nemo;
 using namespace nemo::eval;
+Graph& rootGraph(Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
+const Graph& rootGraph(const Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+EvaluationRequest scopedRequest() {
+    EvaluationRequest request;
+    request.network = NetworkId{1};
+    return request;
+}
 
 TEST(Interactive, FullQueueReportsBackpressureWithoutDroppingAnotherViewer) {
     ViewerScheduler scheduler(1);
-    ASSERT_TRUE(scheduler.submit({}, {}, 1));
-    EXPECT_FALSE(scheduler.submit({}, {}, 1, static_cast<ViewerDestination>(2)));
+    ASSERT_TRUE(scheduler.submit({}, scopedRequest(), 1));
+    EXPECT_FALSE(scheduler.submit({}, scopedRequest(), 1, static_cast<ViewerDestination>(2)));
     EXPECT_EQ(scheduler.counts().queued, 1u);
     EXPECT_EQ(scheduler.counts().dropped, 1u);
     const auto accepted = scheduler.take();
@@ -23,10 +35,11 @@ TEST(Interactive, FullQueueReportsBackpressureWithoutDroppingAnotherViewer) {
 
 TEST(Interactive, CacheHistorySurvivesScrubButCancellationCannotBeResurrected) {
     ViewerScheduler scheduler;
-    ASSERT_TRUE(scheduler.submit({}, {}, 1));
+    ASSERT_TRUE(scheduler.submit({}, scopedRequest(), 1));
     const auto first = scheduler.take();
     ASSERT_TRUE(first);
     EvaluationRequest next;
+    next.network = NetworkId{1};
     next.localTime = 1;
     ASSERT_TRUE(scheduler.submit({}, next, 2));
     EXPECT_FALSE(scheduler.isCurrent(*first));
@@ -37,7 +50,7 @@ TEST(Interactive, CacheHistorySurvivesScrubButCancellationCannotBeResurrected) {
     ASSERT_TRUE(newer);
     EXPECT_TRUE(scheduler.isCacheCurrent(*newer));
     scheduler.cancel(3);
-    ASSERT_TRUE(scheduler.submit({}, {}, 3));
+    ASSERT_TRUE(scheduler.submit({}, scopedRequest(), 3));
     EXPECT_FALSE(scheduler.isCacheCurrent(*first));
     const auto resumed = scheduler.take();
     ASSERT_TRUE(resumed);
@@ -48,6 +61,7 @@ TEST(Interactive, CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken) {
     ViewerScheduler scheduler;
     Document document;
     EvaluationRequest request;
+    request.network = document.rootNetworkId();
     ASSERT_TRUE(scheduler.requestRange(document, request, 10, 12, 1));
     request.localTime = 42;
     ASSERT_TRUE(scheduler.submit(document, request, 1));
@@ -70,9 +84,10 @@ TEST(Interactive, SupersedingOneViewerPreservesOtherDestinationAndSnapshot) {
     ViewerScheduler scheduler(2);
     Document document;
     CommandStack commands(document);
-    const NodeId color = document.graph.addNode("constcolor", "color");
-    commands.push(setParamCommand(color, "color", "0.1 0.2 0.3 1"));
+    const NodeId color = rootGraph(document).addNode("constcolor", "color");
+    commands.push(setParamCommand(document.rootNetworkId(), color, "color", "0.1 0.2 0.3 1"));
     EvaluationRequest request;
+    request.network = document.rootNetworkId();
     const auto otherViewer = static_cast<ViewerDestination>(2);
     ASSERT_TRUE(scheduler.submit(document, request, 1));
     const auto old = scheduler.take();
@@ -80,14 +95,14 @@ TEST(Interactive, SupersedingOneViewerPreservesOtherDestinationAndSnapshot) {
     ASSERT_TRUE(scheduler.submit(document, request, 1, otherViewer));
     const auto other = scheduler.take();
     ASSERT_TRUE(other);
-    commands.push(setParamCommand(color, "color", "0.7 0.8 0.9 1"));
+    commands.push(setParamCommand(document.rootNetworkId(), color, "color", "0.7 0.8 0.9 1"));
     ASSERT_TRUE(scheduler.submit(document, request, 2));
-    EXPECT_EQ(old->document->graph.nodeByName("color")->params.at("color"), "0.1 0.2 0.3 1");
+    EXPECT_EQ(rootGraph(*old->document).nodeByName("color")->params.at("color"), "0.1 0.2 0.3 1");
     EXPECT_FALSE(scheduler.complete(*old, true));
     EXPECT_TRUE(scheduler.complete(*other, true));
     const auto current = scheduler.take();
     ASSERT_TRUE(current);
-    EXPECT_EQ(current->document->graph.nodeByName("color")->params.at("color"), "0.7 0.8 0.9 1");
+    EXPECT_EQ(rootGraph(*current->document).nodeByName("color")->params.at("color"), "0.7 0.8 0.9 1");
     EXPECT_TRUE(scheduler.complete(*current, true));
     EXPECT_EQ(scheduler.counts().staleRejected, 1u);
 }
@@ -96,6 +111,7 @@ TEST(Interactive, CancellationRejectsInflightAndSupersededBacklogIsCounted) {
     ViewerScheduler scheduler;
     Document document;
     EvaluationRequest request;
+    request.network = document.rootNetworkId();
     ASSERT_TRUE(scheduler.requestRange(document, request, 0, 999999, 1));
     const auto inflight = scheduler.take();
     ASSERT_TRUE(inflight);
@@ -115,7 +131,7 @@ TEST(Interactive, CancellationRejectsInflightAndSupersededBacklogIsCounted) {
 TEST(Interactive, RangeAtLastRepresentableFrameTerminatesWithoutWrapping) {
     ViewerScheduler scheduler;
     const int last = std::numeric_limits<int>::max();
-    ASSERT_TRUE(scheduler.requestRange({}, {}, last, last, 1));
+    ASSERT_TRUE(scheduler.requestRange({}, scopedRequest(), last, last, 1));
     const auto frame = scheduler.take();
     ASSERT_TRUE(frame);
     EXPECT_EQ(frame->request.localTime, last);
@@ -168,7 +184,7 @@ TEST(Interactive, CancelledSubmissionRetainsResourcesUntilActualGpuCompletion) {
     create.pNext = &type;
     gpu::checkVulkan(vkCreateSemaphore(device->handle(), &create, nullptr, &gate.semaphore), "interactive gate");
     ViewerScheduler scheduler;
-    ASSERT_TRUE(scheduler.submit({}, {}, 1));
+    ASSERT_TRUE(scheduler.submit({}, scopedRequest(), 1));
     const auto request = scheduler.take();
     ASSERT_TRUE(request);
     auto retained = std::make_shared<int>(42);

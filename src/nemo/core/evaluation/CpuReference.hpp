@@ -1,8 +1,10 @@
 #pragma once
 
+#include <limits>
 #include <map>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "nemo/core/document/Document.hpp"
@@ -35,15 +37,47 @@ struct CpuEvaluation {
     CpuImage image;
 };
 
-// Resolves the request's output node: the named output, or the unique
-// Output node when `outputName` is empty. Throws EvaluationException when
-// no Output node exists ("no Output node" appears in the message), when the
-// named node is missing or is not an Output node, or when several Output
-// nodes exist without a name to disambiguate.
-[[nodiscard]] NodeId resolveOutput(const Document& document, const std::string& outputName = {});
+inline constexpr std::uint32_t kEvaluationWholeNode = std::numeric_limits<std::uint32_t>::max();
+
+struct EvaluationNodeId {
+    NetworkId network{kInvalidNetwork};
+    NetworkInstanceId instance{kInvalidNetworkInstance};
+    NodeId node{kInvalidNode};
+    std::uint32_t outputPort{kEvaluationWholeNode};
+    // Persistent instance IDs identify definitions, while this path
+    // disambiguates the same nested definition reached through multiple
+    // outer occurrences.
+    std::vector<NetworkInstanceId> path{};
+
+    friend bool operator==(const EvaluationNodeId&, const EvaluationNodeId&) = default;
+    friend bool operator<(const EvaluationNodeId& left, const EvaluationNodeId& right) {
+        return std::tie(left.path, left.network, left.instance, left.node, left.outputPort) <
+               std::tie(right.path, right.network, right.instance, right.node, right.outputPort);
+    }
+};
+
+struct ExpandedNode {
+    EvaluationNodeId id;
+    const NodeInstance* node{};
+    std::vector<EvaluationNodeId> inputs;
+    std::optional<EvaluationNodeId> alias;
+};
+
+// Expands a scoped request into one dependency-first plan. Network instances
+// are represented by alias steps whose source is the selected formal output;
+// formal inputs resolve to the instance's parent bindings. No persistent graph
+// is copied or mutated.
+[[nodiscard]] std::vector<ExpandedNode> expandDependencies(const Document& document, NetworkId network, NodeId output);
+
+// Resolves the request's output node in `network`: a named output, or the
+// network's designated default output. Throws EvaluationException when no
+// Output node exists, the named node is missing/not an Output, or no default
+// can disambiguate multiple outputs.
+[[nodiscard]] NodeId resolveOutput(const Document& document, NetworkId network, const std::string& outputName = {});
 
 // Shared dependency-first schedule consumed by CPU and native executors.
-[[nodiscard]] std::vector<const Node*> scheduleDependencies(const Document& document, NodeId output);
+[[nodiscard]] std::vector<const NodeInstance*> scheduleDependencies(const Document& document, NetworkId network,
+                                                                    NodeId output);
 
 // External seam for real source media (issue #11). The persistent Document
 // carries only source references; the decoded frames live behind this
@@ -87,12 +121,9 @@ public:
 void validateRequest(const Document& document, const EvaluationRequest& request);
 
 // Resolves `node`'s inputs in declared port order against `evaluated` (the
-// image identities already produced). Fills `step.inputs` and
-// `step.inputImages`; returns the producing node ids in port order. Throws
-// EvaluationException when a port is unconnected or its producer was not
-// evaluated. Shared by the CPU reference and the native GPU executor so
-// both record identical plan input state.
-std::vector<NodeId> resolveStepInputs(const Document& document, const Node& node,
+// image identities already produced) within `network`. Fills `step.inputs`
+// and `step.inputImages`; returns producer node ids in port order.
+std::vector<NodeId> resolveStepInputs(const Document& document, NetworkId network, const NodeInstance& node,
                                       const std::map<NodeId, ImageIdentity>& evaluated, PlanStep& step);
 
 }  // namespace nemo

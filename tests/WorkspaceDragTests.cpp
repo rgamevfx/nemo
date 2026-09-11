@@ -38,6 +38,13 @@ const Json* containing(const Json& node, const std::string& id) {
     }
     return nullptr;
 }
+nemo::Graph& rootGraph(nemo::Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
+const nemo::Graph& rootGraph(const nemo::Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
 
 QQuickItem* visual(QQuickItem* root, const QString& name) {
     if (root->objectName() == name) {
@@ -342,19 +349,26 @@ TEST_F(WorkspaceDragTest, RenamedNodeEditsReachBothPanelsAndUndoByIdentity) {
                     .submit(nemo::Command{"restore sparse identity",
                                           [](nemo::Document& document) {
                                               static_cast<void>(
-                                                  document.graph.addNodeWithId(highId, "testpattern", "source"));
+                                                  rootGraph(document).addNodeWithId(highId, "testpattern", "source"));
                                           }},
                             {projectSession.revision()})
                     .committed);
     nemo::ui::ViewerRuntime secondRuntime;
     nemo::ui::ViewerController second(&secondRuntime, projectSession);
-    const auto id = projectSession.document().graph.nodeByName("source")->id;
+    const auto id = rootGraph(projectSession.document()).nodeByName("source")->id;
     const auto renamed =
-        projectSession.submit(nemo::renameNodeCommand(id, "renamed"), {projectSession.revision(), "rename-source"});
+        projectSession.submit(nemo::renameNodeCommand(projectSession.document().rootNetworkId(), id, "renamed"),
+                              {projectSession.revision(), "rename-source"});
     ASSERT_TRUE(renamed.committed);
     viewerController.addGraphNode("testpattern", "source");
     QTest::qWait(30);
-    item("graphParameterNode")->setProperty("currentIndex", 0);
+    const auto nodes = viewerController.graphNodes();
+    int selected = -1;
+    for (int index = 0; index < nodes.size(); ++index)
+        if (nodes[index].toMap().value("id").toString() == QString::number(id))
+            selected = index;
+    ASSERT_GE(selected, 0);
+    item("graphParameterNode")->setProperty("currentIndex", selected);
     for (const auto& field : {std::pair{"graphParameterKey", "note"}, std::pair{"graphParameterValue", "shared"}}) {
         item(field.first)->forceActiveFocus();
         for (const char letter : std::string(field.second))
@@ -363,15 +377,15 @@ TEST_F(WorkspaceDragTest, RenamedNodeEditsReachBothPanelsAndUndoByIdentity) {
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphParameterApply"));
     QTest::qWait(30);
     ASSERT_TRUE(viewerController.error().isEmpty()) << viewerController.error().toStdString();
-    ASSERT_TRUE(projectSession.document().graph.node(id)->params.contains("note"));
-    ASSERT_EQ(projectSession.document().graph.node(id)->params.at("note"), "shared");
+    ASSERT_TRUE(rootGraph(projectSession.document()).node(id)->params.contains("note"));
+    ASSERT_EQ(rootGraph(projectSession.document()).node(id)->params.at("note"), "shared");
     EXPECT_EQ(viewerController.graphNodes(), second.graphNodes());
-    EXPECT_EQ(projectSession.document().graph.nodeByName("source")->params.count("note"), 0u);
+    EXPECT_EQ(rootGraph(projectSession.document()).nodeByName("source")->params.count("note"), 0u);
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphUndo"));
     QTest::qWait(30);
-    EXPECT_EQ(projectSession.document().graph.node(id)->params.count("note"), 0u);
+    EXPECT_EQ(rootGraph(projectSession.document()).node(id)->params.count("note"), 0u);
     EXPECT_EQ(viewerController.graphNodes(), second.graphNodes());
-    EXPECT_EQ(projectSession.document().graph.node(id)->name, "renamed");
+    EXPECT_EQ(rootGraph(projectSession.document()).node(id)->name, "renamed");
 }
 
 }  // namespace

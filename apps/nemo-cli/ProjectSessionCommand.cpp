@@ -30,26 +30,39 @@ template <typename T>
     return static_cast<T>(value);
 }
 
+[[nodiscard]] nemo::NetworkId networkIdAt(const Json& object) {
+    const auto network = unsignedValue<nemo::NetworkId>(object, "network_id");
+    if (network == nemo::kInvalidNetwork)
+        throw std::invalid_argument("network_id must be nonzero");
+    return network;
+}
+
 [[nodiscard]] nemo::NodeId nodeIdAt(const Json& command, const char* idKey) {
     return unsignedValue<nemo::NodeId>(command, idKey);
 }
 
 [[nodiscard]] nemo::Command makeCommand(const nemo::ProjectSession& session, const Json& command) {
     const std::string op = command.at("op").get<std::string>();
-    if (op == "add-node")
-        return nemo::addNodeCommand(command.at("type").get<std::string>(), command.at("name").get<std::string>());
+    if (op == "add-node") {
+        return nemo::addNodeCommand(networkIdAt(command), command.at("type").get<std::string>(),
+                                    command.at("name").get<std::string>());
+    }
     if (op == "set-param") {
+        const nemo::NetworkId network = networkIdAt(command);
         const nemo::NodeId id = nodeIdAt(command, "node_id");
-        return nemo::setParamCommand(id, command.at("key").get<std::string>(), command.at("value").get<std::string>());
+        return nemo::setParamCommand(network, id, command.at("key").get<std::string>(),
+                                     command.at("value").get<std::string>());
     }
     if (op == "rename-node") {
+        const nemo::NetworkId network = networkIdAt(command);
         const nemo::NodeId id = nodeIdAt(command, "node_id");
-        return nemo::renameNodeCommand(id, command.at("name").get<std::string>());
+        return nemo::renameNodeCommand(network, id, command.at("name").get<std::string>());
     }
     if (op == "connect") {
+        const nemo::NetworkId network = networkIdAt(command);
         const nemo::NodeId from = nodeIdAt(command, "from_node_id");
         const nemo::NodeId to = nodeIdAt(command, "to_node_id");
-        return nemo::connectCommand({from, unsignedValue<std::uint32_t>(command, "from_port")},
+        return nemo::connectCommand(network, {from, unsignedValue<std::uint32_t>(command, "from_port")},
                                     {to, unsignedValue<std::uint32_t>(command, "to_port")});
     }
     if (op == "transaction") {
@@ -92,10 +105,20 @@ template <typename T>
     throw std::logic_error("unrecognized edit error code");
 }
 
-void putIds(Json& target, const char* key, const auto& ids) {
+void putNodeIds(Json& target, const char* key, const std::vector<nemo::ScopedNodeId>& ids) {
     target[key] = Json::array();
     for (const auto& id : ids)
-        target[key].push_back(id);
+        target[key].push_back(Json{{"network", id.network}, {"id", id.id}});
+}
+
+void putEdgeIds(Json& target, const char* key, const std::vector<nemo::ScopedEdgeId>& ids) {
+    target[key] = Json::array();
+    for (const auto& id : ids)
+        target[key].push_back(Json{{"network", id.network}, {"id", id.id}});
+}
+
+void putNetworkIds(Json& target, const char* key, const std::vector<nemo::NetworkId>& ids) {
+    target[key] = ids;
 }
 
 [[nodiscard]] Json editResultJson(const nemo::EditResult& result) {
@@ -104,16 +127,21 @@ void putIds(Json& target, const char* key, const auto& ids) {
         output["error"] = Json{{"code", errorCode(result.error->code)}, {"message", result.error->message}};
     else if (!result.committed)
         output["error"] = Json{{"code", "edit_rejected"}, {"message", "edit was rejected"}};
-    putIds(output, "changed_node_ids", result.changedNodeIds);
-    putIds(output, "created_node_ids", result.createdNodeIds);
-    putIds(output, "changed_edge_ids", result.changedEdgeIds);
-    putIds(output, "created_edge_ids", result.createdEdgeIds);
-    putIds(output, "changed_source_ids", result.changedSourceIds);
+    putNodeIds(output, "changed_node_ids", result.changedNodeIds);
+    putNodeIds(output, "created_node_ids", result.createdNodeIds);
+    putEdgeIds(output, "changed_edge_ids", result.changedEdgeIds);
+    putEdgeIds(output, "created_edge_ids", result.createdEdgeIds);
+    putNetworkIds(output, "changed_network_ids", result.changedNetworkIds);
+    putNetworkIds(output, "created_network_ids", result.createdNetworkIds);
+    output["changed_instance_ids"] = result.changedInstanceIds;
+    output["created_instance_ids"] = result.createdInstanceIds;
+    output["changed_source_ids"] = result.changedSourceIds;
     output["color_policy_changed"] = result.colorPolicyChanged;
     return output;
 }
 
 [[nodiscard]] Json query(const nemo::ProjectSession& session, const Json& request) {
+    const nemo::NetworkId network = networkIdAt(request);
     const std::string filter = request.value("filter", std::string{});
     const std::string type = request.value("type", std::string{});
     const std::string name = request.value("name", std::string{});
@@ -126,7 +154,7 @@ void putIds(Json& target, const char* key, const auto& ids) {
     const auto keyAfter = request.value("key_after", std::string{});
     Json nodes = Json::array();
     while (nodes.size() < limit) {
-        const auto page = session.queryNodes(filter, limit - nodes.size(), nodeAfter);
+        const auto page = session.queryNodes(network, filter, limit - nodes.size(), nodeAfter);
         if (page.empty())
             break;
         for (const auto& node : page) {
@@ -135,21 +163,25 @@ void putIds(Json& target, const char* key, const auto& ids) {
                 (!name.empty() && node.name != name))
                 continue;
             Json params = Json::object();
-            for (const auto& value : session.queryValues(node.id, keyFilter, limit, keyAfter))
+            for (const auto& value : session.queryValues(network, node.id, keyFilter, limit, keyAfter))
                 params[value.key] = value.value;
-            nodes.push_back(
-                Json{{"id", node.id}, {"type", node.type}, {"name", node.name}, {"params", std::move(params)}});
+            nodes.push_back(Json{{"network", node.network},
+                                 {"id", node.id},
+                                 {"type", node.type},
+                                 {"name", node.name},
+                                 {"params", std::move(params)}});
         }
     }
     Json edges = Json::array();
     auto nextEdge = edgeAfter;
-    for (const auto& edge : session.queryEdges(touching, limit, edgeAfter)) {
-        edges.push_back(Json{{"id", edge.id},
-                             {"from_node_id", edge.from.node},
-                             {"from_port", edge.from.port},
-                             {"to_node_id", edge.to.node},
-                             {"to_port", edge.to.port}});
-        nextEdge = edge.id;
+    for (const auto& result : session.queryEdges(network, touching, limit, edgeAfter)) {
+        edges.push_back(Json{{"network", result.network},
+                             {"id", result.edge.id},
+                             {"from_node_id", result.edge.from.node},
+                             {"from_port", result.edge.from.port},
+                             {"to_node_id", result.edge.to.node},
+                             {"to_port", result.edge.to.port}});
+        nextEdge = result.edge.id;
     }
     Json sources = Json::array();
     for (const auto& source : session.querySources(request.value("source_filter", std::string{}), limit,
@@ -158,15 +190,17 @@ void putIds(Json& target, const char* key, const auto& ids) {
                                {"path", source.reference.path},
                                {"frame_offset", source.reference.frameOffset},
                                {"frame_step", source.reference.frameStep}});
-    return Json{{"revision", session.revision()}, {"nodes", std::move(nodes)},    {"edges", std::move(edges)},
-                {"sources", std::move(sources)},  {"next_node_after", nodeAfter}, {"next_edge_after", nextEdge}};
+    return Json{{"revision", session.revision()}, {"network", network},
+                {"nodes", std::move(nodes)},      {"edges", std::move(edges)},
+                {"sources", std::move(sources)},  {"next_node_after", nodeAfter},
+                {"next_edge_after", nextEdge}};
 }
 
 }  // namespace
-
 int commandProjectSession(const std::vector<std::string>& args) {
     if (args.size() != 1) {
-        std::cerr << "usage: nemo-cli project-session <project.json>\n";
+        std::cerr << "usage: nemo-cli project-session <project.json> "
+                     "(graph queries and edits require network_id)\n";
         return 2;
     }
     try {
@@ -190,14 +224,20 @@ int commandProjectSession(const std::vector<std::string>& args) {
                 } else if (op == "changes") {
                     const auto history = session.changesSince(unsignedValue<std::uint64_t>(request, "since"));
                     Json events = Json::array();
-                    for (const auto& event : history.events)
-                        events.push_back(Json{{"revision", event.revision},
-                                              {"changed_node_ids", event.changedNodeIds},
-                                              {"changed_edge_ids", event.changedEdgeIds},
-                                              {"created_node_ids", event.createdNodeIds},
-                                              {"created_edge_ids", event.createdEdgeIds},
-                                              {"changed_source_ids", event.changedSourceIds},
-                                              {"color_policy_changed", event.colorPolicyChanged}});
+                    for (const auto& event : history.events) {
+                        Json encoded{{"revision", event.revision},
+                                     {"changed_source_ids", event.changedSourceIds},
+                                     {"color_policy_changed", event.colorPolicyChanged}};
+                        putNodeIds(encoded, "changed_node_ids", event.changedNodeIds);
+                        putNodeIds(encoded, "created_node_ids", event.createdNodeIds);
+                        putEdgeIds(encoded, "changed_edge_ids", event.changedEdgeIds);
+                        putEdgeIds(encoded, "created_edge_ids", event.createdEdgeIds);
+                        putNetworkIds(encoded, "changed_network_ids", event.changedNetworkIds);
+                        putNetworkIds(encoded, "created_network_ids", event.createdNetworkIds);
+                        encoded["changed_instance_ids"] = event.changedInstanceIds;
+                        encoded["created_instance_ids"] = event.createdInstanceIds;
+                        events.push_back(std::move(encoded));
+                    }
                     response = Json{{"revision", history.currentRevision},
                                     {"resync_required", history.resyncRequired},
                                     {"events", std::move(events)}};

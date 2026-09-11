@@ -155,8 +155,9 @@ project container or recovery format (#32/#35).
 Queries return bounded, filtered value copies, ordered by stable node/edge
 ID or source/parameter key. Limits are clamped to 256; exclusive cursors
 allow pagination. Clients must not combine pages across revisions.
-`changesSince(revision)` reports changed node/edge/source IDs and color policy
-changes; an expired, unavailable, or future event cursor requires resync.
+`changesSince(revision)` reports network-scoped node/edge IDs, network and
+instance changes, source IDs, and color policy changes; an expired,
+unavailable, or future event cursor requires resync.
 Notifications are synchronous, owner-thread-only, nonblocking callbacks;
 subscriptions must not outlive their session. Edits during a command or
 notification are rejected.
@@ -168,29 +169,66 @@ Failures are not retained; a restarted session has no retry history.
 Reusing an ID means retrying the original operation, not a different payload.
 File writes and render jobs remain outside document history.
 
-Viewer targets retain `NodeId`; names are labels. QML transports IDs as
-decimal strings to preserve the entire 64-bit range instead of rounding
-through JavaScript numbers.
+Evaluation requests address `(NetworkId, NodeId)`; names are labels. QML
+transports node IDs as decimal strings to preserve the entire 64-bit range
+instead of rounding through JavaScript numbers. The current viewer retains
+its node selection within the explicit root network; independent panel
+network routing remains separate work.
 
 The desktop-free consumer `nemo-cli project-session <project.json>` accepts
 JSON-lines on stdin and emits one JSON result per line. It keeps one session
 alive across requests and does not write the input project. For example:
 
 ```json
-{"op":"query","limit":16}
-{"op":"transaction","expected_revision":1,"request_id":"gesture-a","commands":[{"op":"rename-node","node_id":1,"name":"plate"},{"op":"set-param","node_id":1,"key":"note","value":"authored"}]}
+{"op":"query","network_id":1,"limit":16}
+{"op":"transaction","expected_revision":1,"request_id":"gesture-a","commands":[{"op":"rename-node","network_id":1,"node_id":1,"name":"plate"},{"op":"set-param","network_id":1,"node_id":1,"key":"note","value":"authored"}]}
 {"op":"changes","since":1}
 {"op":"undo","expected_revision":2,"request_id":"undo-a"}
 ```
 
 Edits require `expected_revision`; `request_id` is optional. Commands include
 `add-node`, `set-param`, `rename-node`, `connect`, `transaction`, `undo`, and
-`redo`. Mutation addresses use `node_id`, `from_node_id`, and `to_node_id`;
-ports use `from_port` and `to_port`. Query filters include `filter`, `type`,
+`redo`. Graph queries and child graph edits require `network_id`; mutation
+addresses additionally use `node_id`, `from_node_id`, and `to_node_id`.
+Ports use `from_port` and `to_port`. Query filters include `filter`, `type`,
 `name`, `node_id`, `key_filter`, and `source_filter`; paging uses `node_after`,
 `edge_after`, `key_after`, and `source_after`. Query results identify the
 current revision; rejected edits distinguish revision conflicts, missing
 objects, invalid arguments, unavailable operations, and reentrant mutation.
+
+## Typed composition-network integration (#45)
+
+The Document owns named definitions by `NetworkId`, an explicit root, and
+document-scoped network instances. Each definition owns its graph once.
+Node/edge/interface IDs are local to that definition; names and layout do
+not identify objects. New definitions create an Output automatically.
+Consumers select its default Output or explicitly request another Output;
+deleting the selected node leaves an incomplete, saveable network rather
+than silently selecting another result.
+
+Formal terminals have stable IDs, names, and Image/Mask/Media types.
+`bindInstanceInput` authors parent input bindings by formal port ID;
+ordinary graph connections into an instance are rejected so there is no
+second authoritative binding. Instance parameter overrides address a node
+in the shared definition and a parameter key. Values retain the existing
+string representation until typed-value work (#51). These records own no
+evaluator, decoder, Qt, GPU, or plugin-runtime object.
+
+`expandDependencies` resolves only dependencies of the requested output,
+including lazy formal inputs. Nested outputs become routing aliases, not
+effect kernels. Expanded identities include the occurrence path so two
+outer uses of the same nested definition cannot collide. CPU and GPU share
+dependency/parameter metadata, not pixel implementations. Content keys still
+permit reuse across equivalent occurrences; publication freshness remains
+separate. `evaluate` and `evaluate-gpu` accept `--network-id`; omitting it
+selects the document's explicit root.
+
+All reconciliation occurs on the mutable command candidate before
+publication, or during schema restoration. Const snapshot queries never
+repair persistent state or allocate incoming-edge caches. Graph adjacency
+is maintained during edits. Schema 2 records the scoped model and supports
+schema-1 migration; this is not approval of a project-file container,
+open/save workflow, or recovery policy (#32/#35).
 
 ## Verification
 

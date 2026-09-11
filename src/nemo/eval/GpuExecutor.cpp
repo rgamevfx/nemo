@@ -23,7 +23,7 @@ using gpu::ComputePass;
 using gpu::DescriptorKind;
 using gpu::SubmissionQueue;
 
-[[noreturn]] void failEffect(const Node& node, const EffectProgram& program, const std::string& what) {
+[[noreturn]] void failEffect(const NodeInstance& node, const EffectProgram& program, const std::string& what) {
     std::ostringstream text;
     text << describeNode(node) << ": effect '" << node.type << "' failed: " << what;
     if (!program.sourcePath.empty()) {
@@ -73,7 +73,7 @@ void afterWriteBeforeRead(VkCommandBuffer command, const gpu::Image& image) {
 // `sourceFrame` supplies the decoded full-resolution frame for `source`
 // nodes (issue #11): it binds as set 1 input 0 and its dimensions feed the
 // fill kernel through param0.
-std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const Node& node, const EvaluationRequest& request,
+std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest& request,
                                 const EffectProgram& program, std::map<std::string, std::string>& effectiveParams,
                                 EffectUniforms& uniforms, std::vector<ComputeBinding>& bindings,
                                 gpu::Buffer& uniformBuffer, gpu::Allocator& allocator,
@@ -191,34 +191,40 @@ EffectLibrary glslEffectLibrary() {
 
 ResultKey queryViewerResultKey(const Document& document, EvaluationRequest request, const EffectLibrary& effects) {
     validateRequest(document, request);
-    const auto order = scheduleDependencies(document, request.output);
+    const auto order = expandDependencies(document, request.network, request.output);
     const KeyContext context{fingerprintEffectLibrary(effects)};
-    std::map<NodeId, ResultKey> keys;
-    std::map<NodeId, ImageIdentity> identities;
+    std::map<EvaluationNodeId, ResultKey> keys;
     ImageIdentity placeholder;
     placeholder.layout.width = scaledDimension(request.region.width, request.samplingScale);
     placeholder.layout.height = scaledDimension(request.region.height, request.samplingScale);
     placeholder.layout.color = ColorInterpretation::SceneLinear;
     placeholder.residency = Residency::GpuDevice;
 
-    for (const Node* node : order) {
-        if (effects.find(node->type) == effects.end()) {
-            throw EvaluationException(describeNode(*node) + ": no effect package in the supplied effect library "
-                                                            "(viewer key query cannot prove a cache hit)");
+    for (const ExpandedNode& expandedNode : order) {
+        if (!expandedNode.alias && effects.find(expandedNode.node->type) == effects.end()) {
+            throw EvaluationException(describeNode(*expandedNode.node) +
+                                      ": no effect package in the supplied effect library "
+                                      "(viewer key query cannot prove a cache hit)");
         }
-        PlanStep step;
-        step.node = node->id;
-        step.type = node->type;
-        step.name = node->name;
-        const auto producers = resolveStepInputs(document, *node, identities, step);
-        std::vector<std::uint64_t> inputKeyHashes;
-        inputKeyHashes.reserve(producers.size());
-        for (const NodeId producer : producers)
-            inputKeyHashes.push_back(keys.at(producer).hash);
-        keys.emplace(node->id, nodeResultKey(document, *node, inputKeyHashes, request, context));
-        identities.emplace(node->id, placeholder);
+        NodeInstance effectiveNode = *expandedNode.node;
+        if (expandedNode.id.instance != kInvalidNetworkInstance) {
+            const auto* occurrence = document.instance(expandedNode.id.instance);
+            if (occurrence == nullptr)
+                throw EvaluationException("evaluation references missing network instance");
+            if (const auto overrides = occurrence->params.find(effectiveNode.id); overrides != occurrence->params.end())
+                for (const auto& [key, value] : overrides->second)
+                    effectiveNode.params[key] = value;
+        }
+        EvaluationRequest scopedRequest = request;
+        scopedRequest.network = expandedNode.id.network;
+        std::vector<std::uint64_t> inputHashes;
+        for (const auto& producer : expandedNode.inputs)
+            inputHashes.push_back(keys.at(producer).hash);
+        const auto key = nodeResultKey(document, effectiveNode, inputHashes, scopedRequest, context);
+        keys.emplace(expandedNode.id, key);
     }
-    return viewerResultKey(keys.at(request.output), document.color);
+    const EvaluationNodeId outputKey{request.network, kInvalidNetworkInstance, request.output, kEvaluationWholeNode};
+    return viewerResultKey(keys.at(outputKey), document.color);
 }
 
 CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocator& allocator,
@@ -267,33 +273,28 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                                 "(shaderStorageImageRead/WriteWithoutFormat); native effect execution requires it");
     }
 
-    const std::vector<const Node*> order = scheduleDependencies(document, request.output);
+    const std::vector<ExpandedNode> order = expandDependencies(document, request.network, request.output);
     auto& queue = device.submissions(device.graphics_family());
     // Shader compilation is preparation work on the calling worker; native
     // Slang packages are precompiled. No GPU wait occurs until the complete
-    // graph has been recorded into one submission.
+    // expanded graph has been recorded into one submission.
     std::map<std::string, std::vector<std::uint32_t>> compiled;
-    // Reuse (issue #9): the ticket captures revision + generation for the
-    // publication guard; the library fingerprint keeps front ends (Slang vs
-    // GLSL) from sharing reuse keys.
     const EvaluationTicket ticket = reuse != nullptr ? reuse->beginTicket(document) : EvaluationTicket{};
     const KeyContext keyContext{fingerprintEffectLibrary(effects)};
-    std::map<NodeId, ResultKey> keys;
+    std::map<EvaluationNodeId, ResultKey> keys;
 
     GpuEvaluation evaluation;
     struct Dispatch {
         std::unique_ptr<ComputePass> pass;
         std::shared_ptr<const GpuNodeImage> output;
         std::vector<const gpu::Image*> inputs;
-        // Decoded source frame this dispatch reads (issue #11); retained
-        // with the submission so a bounded session cache eviction or a
-        // dropped evaluation can never free it before GPU completion.
         std::shared_ptr<const gpu::Image> externalInput;
     };
     std::vector<Dispatch> dispatches;
     gpu::SubmissionQueue::RetainedResources retained;
     evaluation.plan.request = request;
-    std::map<NodeId, ImageIdentity> identities;
+    std::map<EvaluationNodeId, ImageIdentity> identities;
+    std::map<EvaluationNodeId, std::shared_ptr<const GpuNodeImage>> scopedImages;
     const int scale = request.samplingScale;
     const int imageWidth = (request.region.width + scale - 1) / scale;
     const int imageHeight = (request.region.height + scale - 1) / scale;
@@ -304,153 +305,156 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         return l;
     }();
 
-    for (const Node* node : order) {
-        const auto programIt = effects.find(node->type);
+    for (const ExpandedNode& expandedNode : order) {
+        const NodeInstance& node = *expandedNode.node;
+        const NodeInstance* effectiveNode = &node;
+        std::optional<NodeInstance> overriddenNode;
+        if (expandedNode.id.instance != kInvalidNetworkInstance) {
+            const auto* occurrence = document.instance(expandedNode.id.instance);
+            if (occurrence == nullptr)
+                throw EvaluationException("evaluation references missing network instance");
+            if (const auto overrides = occurrence->params.find(node.id); overrides != occurrence->params.end()) {
+                overriddenNode = node;
+                for (const auto& [key, value] : overrides->second)
+                    overriddenNode->params[key] = value;
+                effectiveNode = &*overriddenNode;
+            }
+        }
+        EvaluationRequest scopedRequest = request;
+        scopedRequest.network = expandedNode.id.network;
+        PlanStep step;
+        step.network = expandedNode.id.network;
+        step.instance = expandedNode.id.instance;
+        step.node = node.id;
+        step.outputPort = expandedNode.id.outputPort;
+        step.path = expandedNode.id.path;
+        step.type = node.type;
+        step.name = node.name;
+        step.effectiveParams = effectiveNode->params;
+
+        std::vector<std::uint64_t> inputKeyHashes;
+        inputKeyHashes.reserve(expandedNode.inputs.size());
+        std::vector<const gpu::Image*> inputs;
+        inputs.reserve(expandedNode.inputs.size());
+        for (const EvaluationNodeId& producer : expandedNode.inputs) {
+            inputKeyHashes.push_back(keys.at(producer).hash);
+            step.inputs.push_back(producer.node);
+            step.scopedInputs.push_back(ScopedPlanInput{producer.network, producer.instance, producer.node,
+                                                        producer.outputPort, producer.path});
+            step.inputImages.push_back(identities.at(producer));
+            inputs.push_back(&scopedImages.at(producer)->image);
+        }
+        const ResultKey key = nodeResultKey(document, *effectiveNode, inputKeyHashes, scopedRequest, keyContext);
+        keys.emplace(expandedNode.id, key);
+
+        if (reuse != nullptr) {
+            if (const auto hit = reuse->find(key);
+                hit && hit->identity.layout.width == imageWidth && hit->identity.layout.height == imageHeight) {
+                step.produced = hit->identity;
+                step.cacheReused = true;
+                scopedImages.emplace(expandedNode.id, hit->image);
+                identities.emplace(expandedNode.id, step.produced);
+                if (expandedNode.id.network == request.network && expandedNode.id.instance == kInvalidNetworkInstance)
+                    evaluation.images.emplace(node.id, hit->image);
+                evaluation.plan.steps.push_back(std::move(step));
+                continue;
+            }
+        }
+        if (expandedNode.alias) {
+            const auto aliased = scopedImages.at(*expandedNode.alias);
+            step.produced = identities.at(*expandedNode.alias);
+            scopedImages.emplace(expandedNode.id, aliased);
+            identities.emplace(expandedNode.id, step.produced);
+            if (expandedNode.id.network == request.network && expandedNode.id.instance == kInvalidNetworkInstance)
+                evaluation.images.emplace(node.id, aliased);
+            evaluation.plan.steps.push_back(std::move(step));
+            continue;
+        }
+
+        const auto programIt = effects.find(node.type);
         if (programIt == effects.end()) {
-            const std::string availability = document.graph.descriptor(node->type) != nullptr
-                                                 ? "declared node type is unavailable to the GPU executor"
-                                                 : "unknown node type";
-            failEffect(*node, EffectProgram{},
+            const std::string availability =
+                document.network(scopedRequest.network).graph().descriptor(node.type) != nullptr
+                    ? "declared node type is unavailable to the GPU executor"
+                    : "unknown node type";
+            failEffect(*effectiveNode, EffectProgram{},
                        availability + " (no effect package in the supplied effect library; no silent substitution)");
         }
         const EffectProgram& program = programIt->second;
-
-        PlanStep step;
-        step.node = node->id;
-        step.type = node->type;
-        step.name = node->name;
-        step.effectiveParams = node->params;
-
-        // Real-media source (issue #11): resolve the document reference and
-        // its time mapping through the session layer — the executor owns no
-        // decode state. The mapped frame and reference key travel as plan
-        // evidence (effectiveParams); Document::sources itself never holds
-        // runtime objects.
         std::shared_ptr<const gpu::Image> sourceFrame;
-        if (node->type == "source") {
-            if (sources == nullptr) {
-                failEffect(*node, program,
-                           "real-media source node evaluated without a SourceSession "
-                           "(no silent decode fallback)");
-            }
-            const auto sourceParam = node->params.find("source");
-            if (sourceParam == node->params.end()) {
-                failEffect(*node, program, "parameter 'source' (the document source key) is required");
-            }
-            step.effectiveParams.emplace("source", sourceParam->second);
+        if (node.type == "source") {
+            if (sources == nullptr)
+                failEffect(*effectiveNode, program, "real-media source node evaluated without a SourceSession");
+            const auto sourceParam = effectiveNode->params.find("source");
+            if (sourceParam == effectiveNode->params.end())
+                failEffect(*effectiveNode, program, "parameter 'source' (the document source key) is required");
             const SourceSession::DecodedFrame decoded =
-                sources->acquire(document, *node, request.localTime, timeout_ns.value_or(10'000'000'000ULL));
+                sources->acquire(document, scopedRequest.network, *effectiveNode, scopedRequest.localTime,
+                                 timeout_ns.value_or(10'000'000'000ULL));
             sourceFrame = std::move(decoded.image);
             step.effectiveParams.emplace("frame", std::to_string(decoded.frame));
         }
 
-        const std::vector<NodeId> producers = resolveStepInputs(document, *node, identities, step);
-
-        // Reuse identity (issue #9): effective state including the effective
-        // input results' keys in port order, under the library fingerprint.
-        std::vector<std::uint64_t> inputKeyHashes;
-        inputKeyHashes.reserve(producers.size());
-        for (const NodeId producer : producers) {
-            inputKeyHashes.push_back(keys.at(producer).hash);
-        }
-        const ResultKey key = nodeResultKey(document, *node, inputKeyHashes, request, keyContext);
-        keys.emplace(node->id, key);
-
-        if (reuse != nullptr) {
-            if (const std::optional<ResultCache<GpuNodeImage>::Entry> hit = reuse->find(key)) {
-                // Reused in place: no dispatch, no allocation. The cached
-                // image keeps its GENERAL layout invariant, so downstream
-                // reads are identical to a freshly written result. The
-                // identity must also match THIS representation's raster —
-                // the key carries samplingScale, so a mismatch would be a
-                // key contract bug; serving it would be wrong (issue #11).
-                if (hit->identity.layout.width == imageWidth && hit->identity.layout.height == imageHeight) {
-                    step.produced = hit->identity;
-                    step.cacheReused = true;
-                    identities.emplace(node->id, step.produced);
-                    evaluation.images.emplace(node->id, hit->image);
-                    evaluation.plan.steps.push_back(std::move(step));
-                    continue;
-                }
-            }
-        }
-
-        // Inputs in port order: GPU-resident results of earlier steps (or
-        // reused device-resident cache results, issue #9).
-        std::vector<const gpu::Image*> inputs;
-        for (const NodeId producer : producers) {
-            const auto found = evaluation.images.find(producer);
-            if (found == evaluation.images.end()) {
-                failEffect(*node, program, "input image for port was not produced by an earlier step");
-            }
-            inputs.push_back(&found->second->image);
-        }
-
-        // Compile/binding failures identify the node and the available
-        // shader source location (spec section 10.4).
-        const std::vector<std::uint32_t>* spirv = &program.spirv;
-        if (!program.glsl.empty()) {
-            auto cached = compiled.find(node->type);
+        const std::vector<std::uint32_t>* spirv = &programIt->second.spirv;
+        if (!programIt->second.glsl.empty()) {
+            auto cached = compiled.find(node.type);
             if (cached == compiled.end()) {
                 try {
-                    cached = compiled.emplace(node->type, gpu::compileGlslToSpirv(program.glsl)).first;
+                    cached = compiled.emplace(node.type, gpu::compileGlslToSpirv(programIt->second.glsl)).first;
                 } catch (const gpu::CompileException& error) {
-                    failEffect(*node, program, std::string("shader compile failed: ") + error.what());
+                    failEffect(*effectiveNode, programIt->second,
+                               std::string("shader compile failed: ") + error.what());
                 }
             }
             spirv = &cached->second;
         }
-
         EffectUniforms uniforms{};
         std::vector<ComputeBinding> bindings;
         gpu::Buffer uniformBuffer;
-        const std::uint32_t inputCount =
-            prepareEffectStep(document.graph.catalog(), *node, request, program, step.effectiveParams, uniforms,
-                              bindings, uniformBuffer, allocator, sourceFrame ? &*sourceFrame : nullptr);
-        if (inputCount != inputs.size()) {
-            failEffect(*node, program,
+        const std::uint32_t inputCount = prepareEffectStep(
+            document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest, program,
+            step.effectiveParams, uniforms, bindings, uniformBuffer, allocator, sourceFrame ? &*sourceFrame : nullptr);
+        if (inputCount != inputs.size())
+            failEffect(*effectiveNode, program,
                        "effect declares " + std::to_string(inputCount) + " inputs but the plan wires " +
                            std::to_string(inputs.size()));
-        }
-        for (std::uint32_t i = 0; i < inputCount; ++i) {
+        for (std::uint32_t i = 0; i < inputCount; ++i)
             bindings.push_back({1, i, DescriptorKind::StorageImage, nullptr, inputs[i], false});
-        }
 
         auto resident = std::make_shared<GpuNodeImage>();
         resident->layout = layout;
         try {
-            resident->image = createEffectImage(allocator, request);
+            resident->image = createEffectImage(allocator, scopedRequest);
         } catch (const gpu::GpuException& error) {
-            failEffect(*node, program, std::string("output image allocation failed: ") + error.what());
+            failEffect(*effectiveNode, program, std::string("output image allocation failed: ") + error.what());
         }
-
         bindings.push_back({2, 0, DescriptorKind::StorageImage, nullptr, &resident->image, false});
-
         std::unique_ptr<ComputePass> pass;
         try {
             pass = ComputePass::create(device, *spirv, bindings);
         } catch (const gpu::GpuException& error) {
-            failEffect(*node, program, std::string("pipeline creation failed: ") + error.what());
+            failEffect(*effectiveNode, program, std::string("pipeline creation failed: ") + error.what());
         }
         retained.push_back(pass->retain());
         dispatches.push_back({std::move(pass), resident, std::move(inputs), std::move(sourceFrame)});
-        if (dispatches.back().externalInput) {
-            // Completion-owned retention (issue #22 mechanism): the decoded
-            // frame's allocation and handle survive until the fence
-            // signals, independently of the bounded session cache.
+        if (dispatches.back().externalInput)
             retained.push_back(dispatches.back().externalInput);
-        }
 
-        step.produced.contentHash = 0;  // established by declared readback only
+        step.produced.contentHash = 0;
         step.produced.layout = layout;
         step.produced.residency = Residency::GpuDevice;
-        identities.emplace(node->id, step.produced);
-        evaluation.images.emplace(node->id, std::move(resident));
+        identities.emplace(expandedNode.id, step.produced);
+        scopedImages.emplace(expandedNode.id, resident);
+        if (expandedNode.id.network == request.network && expandedNode.id.instance == kInvalidNetworkInstance)
+            evaluation.images.emplace(node.id, resident);
         evaluation.plan.steps.push_back(std::move(step));
     }
 
-    evaluation.plan.result = identities.at(request.output);
-    evaluation.keys = std::move(keys);
+    const EvaluationNodeId outputKey{request.network, kInvalidNetworkInstance, request.output, kEvaluationWholeNode};
+    evaluation.plan.result = identities.at(outputKey);
+    for (const auto& [id, key] : keys)
+        if (id.network == request.network && id.instance == kInvalidNetworkInstance)
+            evaluation.keys.emplace(id.node, key);
     if (!dispatches.empty()) {
         const auto completion = queue.submit(
             [&](VkCommandBuffer command) {
@@ -477,9 +481,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
     // leaves publication to its consumer after checking completion/freshness.
     if (reuse != nullptr && timeout_ns) {
         for (const auto& step : evaluation.plan.steps) {
-            if (!step.cacheReused)
-                reuse->publish(document, ticket, evaluation.keys.at(step.node), evaluation.images.at(step.node),
-                               step.produced);
+            if (!step.cacheReused) {
+                const EvaluationNodeId id{step.network, step.instance, step.node, step.outputPort, step.path};
+                reuse->publish(document, ticket, keys.at(id), scopedImages.at(id), step.produced);
+            }
         }
     }
     return evaluation;

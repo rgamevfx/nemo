@@ -69,15 +69,13 @@ public:
     SourceSession(const SourceSession&) = delete;
     SourceSession& operator=(const SourceSession&) = delete;
 
-    // Resolves `node`'s `source` parameter against document.sources, maps
-    // frame = frameOffset + localTime*frameStep (rejecting overflow and
-    // negative frames), parses the reference's interpretation map strictly
-    // into a ColorOverride, and returns the decoded frame for the mapped
-    // frame — cached across representations and evaluation re-entry. All
-    // failures are EvaluationException naming the node (decode errors
-    // propagate as MediaDecodeError naming clip/format/reason).
-    [[nodiscard]] DecodedFrame acquire(const Document& document, const Node& node, std::int64_t localTime,
-                                       std::uint64_t timeout_ns);
+    // Resolves `node`'s `source` parameter against document.sources within
+    // the explicit network scope, maps frame = frameOffset + localTime*frameStep
+    // (rejecting overflow and negative frames), parses the reference's
+    // interpretation map strictly into a ColorOverride, and returns the
+    // decoded frame for the mapped frame.
+    [[nodiscard]] DecodedFrame acquire(const Document& document, NetworkId network, const NodeInstance& node,
+                                       std::int64_t localTime, std::uint64_t timeout_ns);
 
     // Decode-path evidence for `key`'s reference without touching session
     // decode state: opens a transient decoder and reports its ClipInfo plus
@@ -107,7 +105,7 @@ private:
         std::int64_t nextFrame{0};
     };
 
-    [[nodiscard]] DecoderState openState(const Document& document, const Node& node,
+    [[nodiscard]] DecoderState openState(const Document& document, const NodeInstance& node,
                                          const SourceReference& reference) const;
 
     // Inserts a decoded frame into the bounded least-recently-used cache.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -65,7 +66,7 @@ ImageIdentity identityOf(const CpuImage& image, Residency residency) {
 // consumed, so the plan records resolved state, not authored guesses.
 // ---------------------------------------------------------------------------
 
-void evalTestpattern(const Node& /*node*/, const EvaluationRequest& request,
+void evalTestpattern(const NodeInstance& /*node*/, const EvaluationRequest& request,
                      std::map<std::string, std::string>& /*effectiveParams*/, CpuImage& out) {
     // Deterministic reference pattern: horizontal red gradient, vertical
     // green gradient, and a blue bar whose position tracks local time. Any
@@ -94,7 +95,7 @@ void evalTestpattern(const Node& /*node*/, const EvaluationRequest& request,
     }
 }
 
-void evalConstcolor(const NodeCatalog& catalog, const Node& node, const EvaluationRequest& /*request*/,
+void evalConstcolor(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest& /*request*/,
                     std::map<std::string, std::string>& effectiveParams, CpuImage& out) {
     const std::array<float, 4> color = parseColor4(catalog, node, effectiveParams, "color");
     for (int y = 0; y < out.height(); ++y) {
@@ -104,7 +105,7 @@ void evalConstcolor(const NodeCatalog& catalog, const Node& node, const Evaluati
     }
 }
 
-void evalMerge(const NodeCatalog& catalog, const Node& node, const EvaluationRequest&,
+void evalMerge(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest&,
                std::map<std::string, std::string>& effectiveParams, const std::vector<const CpuImage*>& inputs,
                CpuImage& out) {
     const std::string& operation = effectiveParameter(catalog, node, effectiveParams, "operation");
@@ -129,7 +130,7 @@ void evalMerge(const NodeCatalog& catalog, const Node& node, const EvaluationReq
     }
 }
 
-void evalOutput(const Node&, const EvaluationRequest&, std::map<std::string, std::string>&,
+void evalOutput(const NodeInstance&, const EvaluationRequest&, std::map<std::string, std::string>&,
                 const std::vector<const CpuImage*>& inputs, CpuImage& out) {
     for (int y = 0; y < out.height(); ++y) {
         for (int x = 0; x < out.width(); ++x) {
@@ -142,7 +143,7 @@ void evalOutput(const Node&, const EvaluationRequest&, std::map<std::string, std
 // pixels come from the provider. There is NO synthetic fallback: an
 // unresolved or unprovided source is an explicit evaluation error that
 // identifies the node.
-void evalSource(const Document& document, const Node& node, const EvaluationRequest& request,
+void evalSource(const Document& document, const NodeInstance& node, const EvaluationRequest& request,
                 std::map<std::string, std::string>& effectiveParams, CpuImage& out, SourceProvider* provider) {
     const auto keyIt = node.params.find("source");
     if (keyIt == node.params.end() || keyIt->second.empty()) {
@@ -194,23 +195,140 @@ void evalSource(const Document& document, const Node& node, const EvaluationRequ
     }
 }
 
-const Node* findNode(const Document& document, NodeId id) {
-    return document.graph.node(id);
+const NodeInstance* findNode(const Document& document, NetworkId networkId, NodeId id) {
+    return document.network(networkId).graph().node(id);
 }
 }  // namespace
+std::vector<ExpandedNode> expandDependencies(const Document& document, NetworkId rootNetwork, NodeId output) {
+    struct Scope {
+        NetworkId network{kInvalidNetwork};
+        NetworkInstanceId instance{kInvalidNetworkInstance};
+        std::vector<NetworkInstanceId> path;
+        const Scope* parent{};
+        std::map<InterfacePortId, PortRef> externalBindings;
+    };
+    std::vector<ExpandedNode> expanded;
+    std::map<EvaluationNodeId, std::size_t> emitted;
+    std::set<EvaluationNodeId> active;
+
+    std::function<EvaluationNodeId(const Scope&, NodeId, std::uint32_t)> visit;
+    visit = [&](const Scope& scope, NodeId nodeId, std::uint32_t outputPort) -> EvaluationNodeId {
+        const NodeInstance* node = document.network(scope.network).graph().node(nodeId);
+        if (node == nullptr)
+            throw EvaluationException("network " + std::to_string(scope.network) + " has no node " +
+                                      std::to_string(nodeId));
+        const bool nested = node->definition != kInvalidNetwork;
+        const EvaluationNodeId key{scope.network, scope.instance, nodeId, nested ? outputPort : kEvaluationWholeNode,
+                                   scope.path};
+        if (const auto found = emitted.find(key); found != emitted.end())
+            return key;
+        if (!active.insert(key).second)
+            throw EvaluationException("nested evaluation cycle reaches node " + std::to_string(nodeId));
+
+        const Network& network = document.network(scope.network);
+        const Graph& graph = network.graph();
+        std::vector<EvaluationNodeId> inputs;
+        if (!nested) {
+            const auto& ports = graph.inputPorts(nodeId);
+            inputs.reserve(ports.size());
+            for (std::uint32_t port = 0; port < ports.size(); ++port) {
+                const Edge* edge = nullptr;
+                for (const auto& candidate : graph.edgesInto(nodeId)) {
+                    if (candidate.to.port == port) {
+                        edge = &candidate;
+                        break;
+                    }
+                }
+                if (edge != nullptr) {
+                    inputs.push_back(visit(scope, edge->from.node, edge->from.port));
+                    continue;
+                }
+                const auto terminal = std::find_if(network.inputConnections().begin(), network.inputConnections().end(),
+                                                   [nodeId, port](const TerminalConnection& connection) {
+                                                       return connection.node == PortRef{nodeId, port};
+                                                   });
+                if (terminal == network.inputConnections().end()) {
+                    std::ostringstream message;
+                    message << "input port " << port << " ('" << ports[port].name << "') on node '" << node->name
+                            << "' is not connected";
+                    throw EvaluationException(message.str(), node->id, node->name);
+                }
+                if (scope.parent == nullptr) {
+                    throw EvaluationException("formal input '" + network.input(terminal->terminal)->name +
+                                              "' has no instance binding for node '" + node->name + "'");
+                }
+                const auto external = scope.externalBindings.find(terminal->terminal);
+                if (external == scope.externalBindings.end()) {
+                    throw EvaluationException("formal input '" + network.input(terminal->terminal)->name +
+                                              "' has no instance binding for node '" + node->name + "'");
+                }
+                inputs.push_back(visit(*scope.parent, external->second.node, external->second.port));
+            }
+        }
+
+        std::optional<EvaluationNodeId> alias;
+        if (nested) {
+            const NetworkInstance* occurrence = document.instance(node->instance);
+            if (occurrence == nullptr || occurrence->parentNetwork != scope.network ||
+                occurrence->definition != node->definition) {
+                throw EvaluationException("network instance node '" + node->name + "' has an invalid binding");
+            }
+            const Network& definition = document.network(occurrence->definition);
+            Scope child{occurrence->definition, occurrence->id, scope.path, &scope, {}};
+            child.path.push_back(occurrence->id);
+            for (std::size_t index = 0; index < definition.inputs().size(); ++index) {
+                const auto& formal = definition.inputs()[index];
+                const auto edge = std::find_if(graph.edgesInto(nodeId).begin(), graph.edgesInto(nodeId).end(),
+                                               [index](const Edge& candidate) { return candidate.to.port == index; });
+                if (edge != graph.edgesInto(nodeId).end()) {
+                    child.externalBindings.emplace(formal.id, edge->from);
+                    continue;
+                }
+                const auto binding = occurrence->inputBindings.find(formal.id);
+                if (binding != occurrence->inputBindings.end())
+                    child.externalBindings.emplace(formal.id, binding->second);
+            }
+            const auto& outputs = definition.outputs();
+            const std::size_t selected = outputPort == kEvaluationWholeNode ? 0 : static_cast<std::size_t>(outputPort);
+            if (selected >= outputs.size()) {
+                throw EvaluationException("network instance node '" + node->name +
+                                          "' selects an unknown formal output port");
+            }
+            const auto connection =
+                std::find_if(definition.outputConnections().begin(), definition.outputConnections().end(),
+                             [&outputs, selected](const TerminalConnection& candidate) {
+                                 return candidate.terminal == outputs[selected].id;
+                             });
+            if (connection == definition.outputConnections().end()) {
+                throw EvaluationException("formal output '" + outputs[selected].name + "' has no internal producer");
+            }
+            alias = visit(child, connection->node.node, connection->node.port);
+            inputs.push_back(*alias);
+        }
+
+        active.erase(key);
+        emitted.emplace(key, expanded.size());
+        expanded.push_back(ExpandedNode{key, node, std::move(inputs), std::move(alias)});
+        return key;
+    };
+
+    visit(Scope{rootNetwork, kInvalidNetworkInstance, {}, nullptr, {}}, output, kEvaluationWholeNode);
+    return expanded;
+}
 
 // Collects the required dependency set of `output` (spec section 10.3:
 // schedule only required dependencies), then orders it dependencies-first.
 // Graph::connect rejects cycles, so a simple in-degree pass terminates.
 // Shared by the CPU reference and the native GPU effect executor (issue
 // #8): both consume the same scheduled plan.
-std::vector<const Node*> scheduleDependencies(const Document& document, NodeId output) {
+std::vector<const NodeInstance*> scheduleDependencies(const Document& document, NetworkId networkId, NodeId output) {
+    const auto& graph = document.network(networkId).graph();
     std::set<NodeId> required{output};
     std::vector<NodeId> stack{output};
     while (!stack.empty()) {
         const NodeId current = stack.back();
         stack.pop_back();
-        for (const auto& edge : document.graph.edgesInto(current)) {
+        for (const auto& edge : graph.edgesInto(current)) {
             if (required.insert(edge.from.node).second) {
                 stack.push_back(edge.from.node);
             }
@@ -220,15 +338,14 @@ std::vector<const Node*> scheduleDependencies(const Document& document, NodeId o
     std::map<NodeId, std::size_t> pendingInputs;
     for (const NodeId id : required) {
         std::size_t count = 0;
-        for (const auto& edge : document.graph.edgesInto(id)) {
+        for (const auto& edge : graph.edgesInto(id)) {
             if (required.contains(edge.from.node)) {
                 ++count;
             }
         }
         pendingInputs.emplace(id, count);
     }
-
-    std::vector<const Node*> order;
+    std::vector<const NodeInstance*> order;
     std::vector<NodeId> ready;
     for (const auto& [id, count] : pendingInputs) {
         if (count == 0) {
@@ -237,9 +354,8 @@ std::vector<const Node*> scheduleDependencies(const Document& document, NodeId o
     }
     while (!ready.empty()) {
         const NodeId id = ready.back();
-        ready.pop_back();
-        order.push_back(findNode(document, id));
-        for (const auto& edge : document.graph.edges()) {
+        order.push_back(findNode(document, networkId, id));
+        for (const auto& edge : graph.edges()) {
             if (edge.from.node != id || !required.contains(edge.to.node)) {
                 continue;
             }
@@ -252,45 +368,58 @@ std::vector<const Node*> scheduleDependencies(const Document& document, NodeId o
     return order;
 }
 
-NodeId resolveOutput(const Document& document, const std::string& outputName) {
-    std::vector<const Node*> outputs;
-    for (const auto& node : document.graph.nodes()) {
-        const auto* schema = document.graph.descriptor(node.type);
-        if (schema != nullptr && schema->isOutput)
-            outputs.push_back(&node);
-    }
+NodeId resolveOutput(const Document& document, NetworkId networkId, const std::string& outputName) {
+    const auto& network = document.network(networkId);
+    const auto& graph = network.graph();
     if (!outputName.empty()) {
-        const Node* named = document.graph.nodeByName(outputName);
+        const NodeInstance* named = graph.nodeByName(outputName);
         if (named == nullptr) {
-            throw EvaluationException("no node named '" + outputName + "' in document '" + document.name + "'");
+            throw EvaluationException("no node named '" + outputName + "' in network '" + network.name() +
+                                      "' of document '" + document.name + "'");
         }
-        const auto* schema = document.graph.descriptor(named->type);
+        const auto* schema = graph.descriptor(named->type);
         if (schema == nullptr || !schema->isOutput) {
             throw EvaluationException(describeNode(*named) + ": --output must name an Output node");
         }
         return named->id;
     }
+
+    const NodeId defaultOutput = network.defaultOutput();
+    if (defaultOutput != kInvalidNode) {
+        const NodeInstance* named = graph.node(defaultOutput);
+        const auto* schema = named != nullptr ? graph.descriptor(named->type) : nullptr;
+        if (named != nullptr && schema != nullptr && schema->isOutput)
+            return named->id;
+    }
+
+    std::vector<const NodeInstance*> outputs;
+    for (const auto& node : graph.nodes()) {
+        const auto* schema = graph.descriptor(node.type);
+        if (schema != nullptr && schema->isOutput)
+            outputs.push_back(&node);
+    }
     if (outputs.empty()) {
-        throw EvaluationException("document '" + document.name +
+        throw EvaluationException("network '" + network.name() + "' in document '" + document.name +
                                   "' has no Output node: add an output node for evaluation to produce an image");
     }
     if (outputs.size() > 1) {
         std::ostringstream names;
-        for (std::size_t i = 0; i < outputs.size(); ++i) {
+        for (std::size_t i = 0; i < outputs.size(); ++i)
             names << (i == 0 ? "" : ", ") << "'" << outputs[i]->name << "' (id " << outputs[i]->id << ")";
-        }
-        throw EvaluationException("document '" + document.name + "' has multiple Output nodes (" +
-                                  std::move(names).str() + "); disambiguate with --output");
+        throw EvaluationException("network '" + network.name() + "' in document '" + document.name +
+                                  "' has multiple Output nodes (" + std::move(names).str() +
+                                  "); disambiguate with --output");
     }
     return outputs.front()->id;
 }
-
 // Shared request validation for both executors (CPU reference and native
 // GPU, issues #8/#11): executor support (currently Full/RGBA), region
 // bounds, output identity, and every declared capability of every scheduled
 // dependency. Unsupported metadata is an explicit error, never a silent
 // approximation or executor substitution.
 void validateRequest(const Document& document, const EvaluationRequest& request) {
+    if (request.network == kInvalidNetwork)
+        throw EvaluationException("evaluation request must identify a network");
     // These are executor limitations, not schema declarations. A future
     // executor may advertise more modes/channels, but this CPU/GPU pair
     // currently implements only the full-quality RGBA contract.
@@ -317,11 +446,13 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
     if (request.region.x > request.imageWidth() - request.region.width ||
         request.region.y > request.imageHeight() - request.region.height)
         throw EvaluationException("requested region lies outside the full-resolution image domain");
-    const Node* output = findNode(document, request.output);
+    const NodeInstance* output = findNode(document, request.network, request.output);
     if (output == nullptr) {
-        throw EvaluationException("request output node " + std::to_string(request.output) + " does not exist");
+        throw EvaluationException("request output node " + std::to_string(request.output) +
+                                  " does not exist in network " + std::to_string(request.network));
     }
-    const auto* outputSchema = document.graph.descriptor(output->type);
+    const auto& graph = document.network(request.network).graph();
+    const auto* outputSchema = graph.descriptor(output->type);
     if (outputSchema == nullptr || !outputSchema->isOutput) {
         failNode(*output, "evaluation request must target an Output node");
     }
@@ -329,38 +460,41 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
     const bool wholeImage = request.region.x == 0 && request.region.y == 0 &&
                             request.region.width == request.imageWidth() &&
                             request.region.height == request.imageHeight();
-    // A request is valid only when every scheduled dependency advertises the
-    // requested metadata. The executor checks above remain separate: a
-    // descriptor can be registered and discoverable without supplying a CPU
-    // or GPU implementation.
-    for (const Node* node : scheduleDependencies(document, request.output)) {
-        const auto* schema = document.graph.descriptor(node->type);
+    // A request is valid only when every expanded dependency advertises the
+    // requested metadata. Nested network instances are routing aliases, not
+    // executable node types; their definition's expanded nodes are checked.
+    for (const ExpandedNode& expandedNode : expandDependencies(document, request.network, request.output)) {
+        const NodeInstance& node = *expandedNode.node;
+        if (node.definition != kInvalidNetwork)
+            continue;
+        const auto& scopedGraph = document.network(expandedNode.id.network).graph();
+        const auto* schema = scopedGraph.descriptor(node.type);
         if (schema == nullptr) {
             // Unknown persisted types remain recoverable. Preserve the
             // existing explicit scale failure for such a type, while its
             // executor-specific failure handles a full-resolution request.
             if (request.samplingScale != 1)
-                failNode(*node, "sampling scale " + std::to_string(request.samplingScale) +
-                                    " cannot be validated because the node type has no descriptor");
+                failNode(node, "sampling scale " + std::to_string(request.samplingScale) +
+                                   " cannot be validated because the node type has no descriptor");
             continue;
         }
         const auto& capabilities = schema->capabilities;
         if (std::find(capabilities.qualityModes.begin(), capabilities.qualityModes.end(), request.quality) ==
             capabilities.qualityModes.end()) {
-            failNode(*node, std::string("quality '") + qualityName(request.quality) +
-                                "' is not declared by node type '" + node->type + "'");
+            failNode(node, std::string("quality '") + qualityName(request.quality) +
+                               "' is not declared by node type '" + node.type + "'");
         }
         if (std::find(capabilities.channels.begin(), capabilities.channels.end(), request.channels) ==
             capabilities.channels.end()) {
-            failNode(*node, "channels '" + request.channels + "' are not declared by node type '" + node->type + "'");
+            failNode(node, "channels '" + request.channels + "' are not declared by node type '" + node.type + "'");
         }
         if (std::find(capabilities.samplingScales.begin(), capabilities.samplingScales.end(), request.samplingScale) ==
             capabilities.samplingScales.end()) {
-            failNode(*node, "sampling scale " + std::to_string(request.samplingScale) +
-                                " is not declared by node type '" + node->type + "'");
+            failNode(node, "sampling scale " + std::to_string(request.samplingScale) +
+                               " is not declared by node type '" + node.type + "'");
         }
         if (!capabilities.supportsRegion && !wholeImage) {
-            failNode(*node, "does not support region-of-interest requests");
+            failNode(node, "does not support region-of-interest requests");
         }
     }
     // Apply the executor's narrower implementation contract only after the
@@ -376,13 +510,14 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
     }
 }
 
-std::vector<NodeId> resolveStepInputs(const Document& document, const Node& node,
+std::vector<NodeId> resolveStepInputs(const Document& document, NetworkId network, const NodeInstance& node,
                                       const std::map<NodeId, ImageIdentity>& evaluated, PlanStep& step) {
-    const auto& inPorts = document.graph.inputPortsFor(node.type);
+    const auto& graph = document.network(network).graph();
+    const auto& inPorts = graph.inputPortsFor(node.type);
     std::vector<NodeId> producers;
     for (std::uint32_t port = 0; port < inPorts.size(); ++port) {
         const Edge* edge = nullptr;
-        for (const auto& candidate : document.graph.edgesInto(node.id)) {
+        for (const auto& candidate : graph.edgesInto(node.id)) {
             if (candidate.to.port == port) {
                 edge = &candidate;
                 break;
@@ -404,41 +539,58 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                           SourceProvider* sources) {
     validateRequest(document, request);
 
-    const std::vector<const Node*> order = scheduleDependencies(document, request.output);
+    const std::vector<ExpandedNode> order = expandDependencies(document, request.network, request.output);
     // Publication freshness (issue #9): capture revision + generation at
     // request start; computed results publish only while both hold.
     const EvaluationTicket ticket = reuse != nullptr ? reuse->beginTicket(document) : EvaluationTicket{};
 
-    // Execute dependencies-first; each step's image identity feeds the plan.
-    // Results live in the cache (or locally when no cache is given) as
-    // shared ownership so a downstream step can read an image the cache
-    // also retains.
-    std::map<NodeId, std::shared_ptr<const CpuImage>> images;
-    std::map<NodeId, ImageIdentity> identities;
-    std::map<NodeId, ResultKey> keys;
+    std::map<EvaluationNodeId, std::shared_ptr<const CpuImage>> images;
+    std::map<EvaluationNodeId, ImageIdentity> identities;
+    std::map<EvaluationNodeId, ResultKey> keys;
     EvaluationPlan plan;
     plan.request = request;
 
-    for (const Node* node : order) {
+    for (const ExpandedNode& expandedNode : order) {
+        const NodeInstance& node = *expandedNode.node;
         PlanStep step;
-        step.node = node->id;
-        step.type = node->type;
-        step.name = node->name;
-        step.effectiveParams = node->params;
-
-        // Resolve inputs in declared port order; every required dependency
-        // must be connected and already evaluated.
-        const std::vector<NodeId> producers = resolveStepInputs(document, *node, identities, step);
-
-        // Reuse identity: effective state, including the effective input
-        // results' keys in port order (spec section 10.3).
-        std::vector<std::uint64_t> inputKeyHashes;
-        inputKeyHashes.reserve(producers.size());
-        for (const NodeId producer : producers) {
-            inputKeyHashes.push_back(keys.at(producer).hash);
+        step.network = expandedNode.id.network;
+        step.instance = expandedNode.id.instance;
+        step.node = node.id;
+        step.outputPort = expandedNode.id.outputPort;
+        step.path = expandedNode.id.path;
+        step.type = node.type;
+        step.name = node.name;
+        const NodeInstance* effectiveNode = &node;
+        std::optional<NodeInstance> overriddenNode;
+        if (expandedNode.id.instance != kInvalidNetworkInstance) {
+            const NetworkInstance* occurrence = document.instance(expandedNode.id.instance);
+            if (occurrence == nullptr)
+                throw EvaluationException("evaluation references missing network instance");
+            if (const auto overrides = occurrence->params.find(node.id); overrides != occurrence->params.end()) {
+                overriddenNode = node;
+                for (const auto& [key, value] : overrides->second)
+                    overriddenNode->params[key] = value;
+                effectiveNode = &*overriddenNode;
+            }
         }
-        const ResultKey key = nodeResultKey(document, *node, inputKeyHashes, request);
-        keys.emplace(node->id, key);
+        step.effectiveParams = effectiveNode->params;
+        EvaluationRequest scopedRequest = request;
+        scopedRequest.network = expandedNode.id.network;
+
+        std::vector<std::uint64_t> inputKeyHashes;
+        inputKeyHashes.reserve(expandedNode.inputs.size());
+        for (const EvaluationNodeId& producer : expandedNode.inputs) {
+            const auto key = keys.find(producer);
+            if (key == keys.end())
+                throw EvaluationException("expanded evaluation plan has an unresolved input dependency");
+            inputKeyHashes.push_back(key->second.hash);
+            step.inputs.push_back(producer.node);
+            step.inputImages.push_back(identities.at(producer));
+            step.scopedInputs.push_back(ScopedPlanInput{producer.network, producer.instance, producer.node,
+                                                        producer.outputPort, producer.path});
+        }
+        const ResultKey key = nodeResultKey(document, *effectiveNode, inputKeyHashes, scopedRequest);
+        keys.emplace(expandedNode.id, key);
 
         std::shared_ptr<const CpuImage> image;
         if (reuse != nullptr) {
@@ -448,50 +600,54 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                 step.cacheReused = true;
             }
         }
-
-        if (!image) {
-            auto fresh = std::make_shared<CpuImage>(scaledDimension(request.region.width, request.samplingScale),
-                                                    scaledDimension(request.region.height, request.samplingScale));
-            std::vector<const CpuImage*> inputs;
-            inputs.reserve(producers.size());
-            for (const NodeId producer : producers) {
-                inputs.push_back(images.at(producer).get());
-            }
-
-            if (node->type == "testpattern") {
-                evalTestpattern(*node, request, step.effectiveParams, *fresh);
-            } else if (node->type == "source") {
-                evalSource(document, *node, request, step.effectiveParams, *fresh, sources);
-            } else if (node->type == "constcolor") {
-                evalConstcolor(document.graph.catalog(), *node, request, step.effectiveParams, *fresh);
-            } else if (node->type == "merge") {
-                evalMerge(document.graph.catalog(), *node, request, step.effectiveParams, inputs, *fresh);
-            } else if (node->type == "output") {
-                evalOutput(*node, request, step.effectiveParams, inputs, *fresh);
-            } else if (document.graph.descriptor(node->type) != nullptr) {
-                failNode(*node, "declared node type has no CPU reference implementation (executor unavailable)");
-            } else {
-                failNode(*node, "unknown node type has no CPU reference implementation");
-            }
-
-            step.produced = identityOf(*fresh, Residency::HostCpuReference);
-            image = fresh;
-            if (reuse != nullptr) {
-                reuse->publish(document, ticket, key, fresh, step.produced);
-            }
+        if (!image && expandedNode.alias) {
+            image = images.at(*expandedNode.alias);
+            step.produced = identities.at(*expandedNode.alias);
         }
 
-        identities.emplace(node->id, step.produced);
-        images.emplace(node->id, std::move(image));
+        if (!image) {
+            auto fresh =
+                std::make_shared<CpuImage>(scaledDimension(scopedRequest.region.width, scopedRequest.samplingScale),
+                                           scaledDimension(scopedRequest.region.height, scopedRequest.samplingScale));
+            std::vector<const CpuImage*> inputs;
+            inputs.reserve(expandedNode.inputs.size());
+            for (const EvaluationNodeId& producer : expandedNode.inputs)
+                inputs.push_back(images.at(producer).get());
+
+            if (node.type == "testpattern") {
+                evalTestpattern(*effectiveNode, scopedRequest, step.effectiveParams, *fresh);
+            } else if (node.type == "source") {
+                evalSource(document, *effectiveNode, scopedRequest, step.effectiveParams, *fresh, sources);
+            } else if (node.type == "constcolor") {
+                evalConstcolor(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
+                               step.effectiveParams, *fresh);
+            } else if (node.type == "merge") {
+                evalMerge(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
+                          step.effectiveParams, inputs, *fresh);
+            } else if (node.type == "output") {
+                evalOutput(*effectiveNode, scopedRequest, step.effectiveParams, inputs, *fresh);
+            } else if (document.network(scopedRequest.network).graph().descriptor(node.type) != nullptr) {
+                failNode(*effectiveNode,
+                         "declared node type has no CPU reference implementation (executor unavailable)");
+            } else {
+                failNode(*effectiveNode, "unknown node type has no CPU reference implementation");
+            }
+            step.produced = identityOf(*fresh, Residency::HostCpuReference);
+            image = fresh;
+            if (reuse != nullptr)
+                reuse->publish(document, ticket, key, fresh, step.produced);
+        }
+
+        identities.emplace(expandedNode.id, step.produced);
+        images.emplace(expandedNode.id, std::move(image));
         plan.steps.push_back(std::move(step));
     }
 
-    plan.result = identities.at(request.output);
+    const EvaluationNodeId outputKey{request.network, kInvalidNetworkInstance, request.output, kEvaluationWholeNode};
+    plan.result = identities.at(outputKey);
     CpuEvaluation evaluation;
     evaluation.plan = std::move(plan);
-    // The CPU reference is a correctness reference (ADR-0004); when reuse
-    // is active the output image is shared with the cache and copied out.
-    evaluation.image = *images.at(request.output);
+    evaluation.image = *images.at(outputKey);
     return evaluation;
 }
 

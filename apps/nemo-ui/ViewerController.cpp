@@ -27,6 +27,18 @@ const char* parameterTypeName(nemo::ParameterType type) {
     }
     return "string";
 }
+
+const char* portKindName(nemo::PortKind kind) {
+    switch (kind) {
+    case nemo::PortKind::Image:
+        return "image";
+    case nemo::PortKind::Mask:
+        return "mask";
+    case nemo::PortKind::Media:
+        return "media";
+    }
+    return "image";
+}
 }  // namespace
 ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session)
     : runtime_(runtime), session_(session), schedulerPoll_(this),
@@ -72,10 +84,11 @@ QString ViewerController::renderState() const {
 
 QStringList ViewerController::outputNames() const {
     QStringList result;
+    const auto network = session_.document().rootNetworkId();
     for (NodeId after = kInvalidNode;;) {
-        const auto page = session_.queryNodes({}, 256, after);
+        const auto page = session_.queryNodes(network, {}, 256, after);
         for (const auto& node : page) {
-            const auto* descriptor = session_.document().graph.descriptor(node.type);
+            const auto* descriptor = session_.document().network(network).graph().descriptor(node.type);
             if (descriptor && descriptor->isOutput)
                 result.push_back(QString::fromStdString(node.name));
         }
@@ -88,12 +101,13 @@ QStringList ViewerController::outputNames() const {
 
 QVariantList ViewerController::graphNodes() const {
     QVariantList result;
+    const auto network = session_.document().rootNetworkId();
     for (NodeId after = kInvalidNode;;) {
-        const auto page = session_.queryNodes({}, 256, after);
+        const auto page = session_.queryNodes(network, {}, 256, after);
         for (const auto& node : page) {
             QVariantMap params;
             for (std::string keyAfter;;) {
-                const auto values = session_.queryValues(node.id, {}, 256, keyAfter);
+                const auto values = session_.queryValues(network, node.id, {}, 256, keyAfter);
                 for (const auto& value : values)
                     params.insert(QString::fromStdString(value.key), QString::fromStdString(value.value));
                 if (values.size() < 256)
@@ -114,32 +128,34 @@ QVariantList ViewerController::graphNodes() const {
 
 QVariantList ViewerController::graphEdges() const {
     QVariantList result;
+    const auto network = session_.document().rootNetworkId();
     for (EdgeId after = kInvalidEdge;;) {
-        const auto page = session_.queryEdges(kInvalidNode, 256, after);
+        const auto page = session_.queryEdges(network, kInvalidNode, 256, after);
         for (const auto& edge : page)
-            result.push_back(QVariantMap{{QStringLiteral("id"), QString::number(edge.id)},
-                                         {QStringLiteral("fromNode"), QString::number(edge.from.node)},
-                                         {QStringLiteral("fromPort"), static_cast<int>(edge.from.port)},
-                                         {QStringLiteral("toNode"), QString::number(edge.to.node)},
-                                         {QStringLiteral("toPort"), static_cast<int>(edge.to.port)}});
+            result.push_back(QVariantMap{{QStringLiteral("id"), QString::number(edge.edge.id)},
+                                         {QStringLiteral("fromNode"), QString::number(edge.edge.from.node)},
+                                         {QStringLiteral("fromPort"), static_cast<int>(edge.edge.from.port)},
+                                         {QStringLiteral("toNode"), QString::number(edge.edge.to.node)},
+                                         {QStringLiteral("toPort"), static_cast<int>(edge.edge.to.port)}});
         if (page.size() < 256)
             break;
-        after = page.back().id;
+        after = page.back().edge.id;
     }
     return result;
 }
 
 QVariantList ViewerController::nodeCatalog() const {
     QVariantList result;
-    for (const auto& descriptor : session_.document().graph.catalog().descriptors()) {
+    for (const auto& descriptor :
+         session_.document().network(session_.document().rootNetworkId()).graph().catalog().descriptors()) {
         QVariantList inputs;
         for (const auto& port : descriptor.inputs)
             inputs.push_back(QVariantMap{{QStringLiteral("name"), QString::fromStdString(port.name)},
-                                         {QStringLiteral("kind"), QStringLiteral("color")}});
+                                         {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))}});
         QVariantList outputs;
         for (const auto& port : descriptor.outputs)
             outputs.push_back(QVariantMap{{QStringLiteral("name"), QString::fromStdString(port.name)},
-                                          {QStringLiteral("kind"), QStringLiteral("color")}});
+                                          {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))}});
         QVariantList parameters;
         for (const auto& parameter : descriptor.parameters) {
             QVariantMap value{{QStringLiteral("name"), QString::fromStdString(parameter.name)},
@@ -182,8 +198,9 @@ void ViewerController::setOutputName(const QString& name) {
         fail(QStringLiteral("viewer output name must not be empty"));
         return;
     }
-    const auto* node = session_.document().graph.nodeByName(trimmed.toStdString());
-    const auto* descriptor = node ? session_.document().graph.descriptor(node->type) : nullptr;
+    const auto network = session_.document().rootNetworkId();
+    const auto* node = session_.document().network(network).graph().nodeByName(trimmed.toStdString());
+    const auto* descriptor = node ? session_.document().network(network).graph().descriptor(node->type) : nullptr;
     if (!descriptor || !descriptor->isOutput) {
         fail(QStringLiteral("viewer output '%1' is not an Output node").arg(trimmed));
         return;
@@ -253,13 +270,14 @@ void ViewerController::documentChanged() {
     error_.clear();
     pending_ = false;
     outdated_ = static_cast<bool>(presentation_);
-    const auto* selected = session_.document().graph.node(outputNode_);
-    const auto* descriptor = selected ? session_.document().graph.descriptor(selected->type) : nullptr;
+    const auto network = session_.document().rootNetworkId();
+    const auto& graph = session_.document().network(network).graph();
+    const auto* selected = graph.node(outputNode_);
+    const auto* descriptor = selected ? graph.descriptor(selected->type) : nullptr;
     if (!descriptor || !descriptor->isOutput) {
         const auto outputs = outputNames();
         const QString replacement = outputs.isEmpty() ? QStringLiteral("result") : outputs.front();
-        const auto* replacementNode =
-            outputs.isEmpty() ? nullptr : session_.document().graph.nodeByName(replacement.toStdString());
+        const auto* replacementNode = outputs.isEmpty() ? nullptr : graph.nodeByName(replacement.toStdString());
         const NodeId replacementId = replacementNode ? replacementNode->id : kInvalidNode;
         if (replacement != outputName_ || replacementId != outputNode_) {
             outputName_ = replacement;
@@ -309,26 +327,30 @@ bool ViewerController::applyEdit(const nemo::EditResult& result) {
 
 void ViewerController::buildGraph(const SourceReference& reference) {
     try {
+        const auto network = session_.document().rootNetworkId();
         if (!session_.document().sources.empty()) {
             applyEdit(session_.submit(setSourceCommand("src", reference), editOptions()));
             return;
         }
         const auto result =
             session_.submit(Command{"open source",
-                                    [reference](Document& document) {
+                                    [reference, network](Document& document) {
                                         const auto source = std::make_shared<NodeId>();
                                         const auto background = std::make_shared<NodeId>();
                                         const auto merge = std::make_shared<NodeId>();
-                                        const auto output = std::make_shared<NodeId>();
-                                        addNodeCommand("source", "source", source).apply(document);
-                                        addNodeCommand("constcolor", "background", background).apply(document);
-                                        addNodeCommand("merge", "composite", merge).apply(document);
-                                        addNodeCommand("output", "result", output).apply(document);
-                                        setParamCommand(*source, "source", "src").apply(document);
-                                        setParamCommand(*background, "color", "0 0 0 0").apply(document);
-                                        connectCommand({*source, 0}, {*merge, 0}).apply(document);
-                                        connectCommand({*background, 0}, {*merge, 1}).apply(document);
-                                        connectCommand({*merge, 0}, {*output, 0}).apply(document);
+                                        const auto output =
+                                            std::make_shared<NodeId>(document.network(network).defaultOutput());
+                                        addNodeCommand(network, "source", "source", source).apply(document);
+                                        addNodeCommand(network, "constcolor", "background", background).apply(document);
+                                        addNodeCommand(network, "merge", "composite", merge).apply(document);
+                                        if (*output == kInvalidNode)
+                                            addNodeCommand(network, "output", "result", output).apply(document);
+                                        setParamCommand(network, *source, "source", "src").apply(document);
+                                        setParamCommand(network, *background, "color", "0 0 0 0").apply(document);
+                                        connectCommand(network, {*source, 0}, {*merge, 0}).apply(document);
+                                        connectCommand(network, {*background, 0}, {*merge, 1}).apply(document);
+                                        connectCommand(network, {*merge, 0}, {*output, 0}).apply(document);
+                                        setDefaultOutputCommand(network, *output).apply(document);
                                         setSourceCommand("src", reference).apply(document);
                                     }},
                             editOptions());
@@ -345,7 +367,9 @@ void ViewerController::addGraphNode(const QString& type, const QString& name) {
         return;
     }
     try {
-        applyEdit(session_.submit(addNodeCommand(type.toStdString(), trimmedName.toStdString()), editOptions()));
+        applyEdit(session_.submit(
+            addNodeCommand(session_.document().rootNetworkId(), type.toStdString(), trimmedName.toStdString()),
+            editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -364,7 +388,8 @@ void ViewerController::connectGraphNodes(const QVariant& fromValue, int fromPort
         return;
     }
     try {
-        applyEdit(session_.submit(connectCommand({static_cast<NodeId>(fromNode), static_cast<std::uint32_t>(fromPort)},
+        applyEdit(session_.submit(connectCommand(session_.document().rootNetworkId(),
+                                                 {static_cast<NodeId>(fromNode), static_cast<std::uint32_t>(fromPort)},
                                                  {static_cast<NodeId>(toNode), static_cast<std::uint32_t>(toPort)}),
                                   editOptions()));
     } catch (const std::exception& error) {
@@ -380,7 +405,9 @@ void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString
         fail(QStringLiteral("node parameter requires a node ID and key"));
         return;
     }
-    const auto* node = session_.document().graph.node(static_cast<NodeId>(nodeId));
+    const auto network = session_.document().rootNetworkId();
+    const auto& graph = session_.document().network(network).graph();
+    const auto* node = graph.node(static_cast<NodeId>(nodeId));
     if (!node) {
         fail(QStringLiteral("node parameter target does not exist"));
         return;
@@ -389,8 +416,9 @@ void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString
     if (it != node->params.end() && it->second == value.toStdString())
         return;
     try {
-        applyEdit(session_.submit(setParamCommand(static_cast<NodeId>(nodeId), key.toStdString(), value.toStdString()),
-                                  editOptions()));
+        applyEdit(session_.submit(
+            setParamCommand(network, static_cast<NodeId>(nodeId), key.toStdString(), value.toStdString()),
+            editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -616,6 +644,7 @@ void ViewerController::refreshRequest() {
                           : mode_ == "quarter" ? ViewerResolution::Quarter
                                                : ViewerResolution::Auto;
         EvaluationRequest request;
+        request.network = document.rootNetworkId();
         request.output = outputNode_;
         request.localTime = frame_;
         request.samplingScale =

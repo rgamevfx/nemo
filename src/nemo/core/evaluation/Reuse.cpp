@@ -11,8 +11,8 @@ namespace {
 
 // Length-prefixed params records: count, then per record keyLen:key +
 // valueLen:value. Injective over the whole map regardless of content.
-[[nodiscard]] std::string canonicalParams(const Node& node) {
-    // Node::params is a std::map, so iteration is already canonical.
+[[nodiscard]] std::string canonicalParams(const NodeInstance& node) {
+    // NodeInstance::params is a std::map, so iteration is already canonical.
     std::string canonical = std::to_string(node.params.size());
     canonical.push_back(':');
     for (const auto& [key, value] : node.params) {
@@ -31,7 +31,7 @@ namespace {
 // interpretation policy), length-prefixed and injective. A source edit
 // therefore invalidates only this node and its dependents, while the rest
 // of the graph keeps its reuse identity.
-[[nodiscard]] std::string canonicalSource(const Document& document, const Node& node) {
+[[nodiscard]] std::string canonicalSource(const Document& document, const NodeInstance& node) {
     const auto paramIt = node.params.find("source");
     std::string out;
     const std::string key = paramIt != node.params.end() ? paramIt->second : std::string{};
@@ -58,10 +58,10 @@ namespace {
 
 }  // namespace
 
-ResultKey nodeResultKey(const Document& document, const Node& node, const std::vector<std::uint64_t>& inputKeyHashes,
-                        const EvaluationRequest& request, const KeyContext& context) {
-    // Canonical form, every string field length-prefixed:
-    //   impl|type|params|inputs|source|time|region|scale|channels|quality|working|tag
+ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
+                        const std::vector<std::uint64_t>& inputKeyHashes, const EvaluationRequest& request,
+                        const KeyContext& context) {
+    //   network|impl|type|params|inputs|source|time|region|scale|channels|quality|working|tag
     // Input identity enters through the inputs' key hashes in port order,
     // so a change anywhere upstream changes every downstream key while
     // unrelated branches keep theirs (spec section 10.3: reuse follows
@@ -77,9 +77,12 @@ ResultKey nodeResultKey(const Document& document, const Node& node, const std::v
     // request); region stays full-resolution so scale and ROI are
     // distinguishable in the identity.
     std::string canonical;
-    canonical.reserve(96 + node.params.size() * 24);
-    appendCanonicalField(canonical, "impl",
-                         std::to_string(document.graph.catalog().implementationVersion(node.type).value_or(1)));
+    canonical.reserve(112 + node.params.size() * 24);
+    appendCanonicalField(canonical, "network", std::to_string(request.network));
+    appendCanonicalField(
+        canonical, "impl",
+        std::to_string(
+            document.network(request.network).graph().catalog().implementationVersion(node.type).value_or(1)));
     appendCanonicalField(canonical, "type", node.type);
     appendCanonicalField(canonical, "params", canonicalParams(node));
     canonical += "inputs:";

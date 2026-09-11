@@ -59,6 +59,7 @@ struct CacheCommandOptions {
     int scale = 1;
     int chunkFrames = 12;
     int bitrateKbps = 8000;
+    nemo::NetworkId network{nemo::kInvalidNetwork};
     bool staleSupersede = false;
     bool fidelity = false;
     std::string viewAfter;
@@ -73,6 +74,16 @@ struct CacheCommandOptions {
     if (error != std::errc{} || end != text.data() + text.size())
         throw std::invalid_argument(option + ": invalid integer '" + text + "'");
     return value;
+}
+
+[[nodiscard]] nemo::NetworkId parseNetworkId(const std::string& text, const std::string& option) {
+    if (text.empty() || text.find_first_of(" \t\r\n") != std::string::npos)
+        throw std::invalid_argument(option + ": expected a nonzero decimal integer without whitespace");
+    std::uint64_t value = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (error != std::errc{} || end != text.data() + text.size() || value == nemo::kInvalidNetwork)
+        throw std::invalid_argument(option + ": expected a nonzero network id");
+    return static_cast<nemo::NetworkId>(value);
 }
 
 [[nodiscard]] int parsePositiveInt(const std::string& text, const std::string& option,
@@ -116,6 +127,8 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
         if (value.empty())
             throw std::invalid_argument(flag + ": empty path");
         options.cacheDirectory = value;
+    } else if (flag == "--network-id") {
+        options.network = parseNetworkId(value, flag);
     } else if (flag == "--frames") {
         options.requestedFrames = parseFrames(value);
     } else if (flag == "--width") {
@@ -266,10 +279,15 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
                 {"encode", encodeStatsJson(counts.encode)}};
 }
 
+[[nodiscard]] nemo::NetworkId selectedNetwork(const nemo::Document& document, const CacheCommandOptions& options) {
+    return options.network == nemo::kInvalidNetwork ? document.rootNetworkId() : options.network;
+}
+
 [[nodiscard]] nemo::EvaluationRequest makeRequest(const nemo::Document& document, const CacheCommandOptions& options,
                                                   std::int64_t frame) {
     nemo::EvaluationRequest request;
-    request.output = nemo::resolveOutput(document, options.outputName);
+    request.network = selectedNetwork(document, options);
+    request.output = nemo::resolveOutput(document, request.network, options.outputName);
     request.localTime = frame;
     request.region = {0, 0, options.width, options.height};
     request.fullWidth = options.width;
@@ -337,17 +355,14 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
                           {"cache_after", cacheCountsJson(session.cacheCounts())},
                           {"ok", ok}});
     };
-    if (!options.viewAfter.empty()) {
-        auto policy = projectSession.snapshot().color;
-        policy.viewerTransform = options.viewAfter;
-        probe("view_change", nemo::setColorPolicyCommand(policy), true);
-    }
     if (options.edit.requested()) {
-        const auto* node = original.graph.nodeByName(options.edit.node);
+        const auto network = selectedNetwork(original, options);
+        const auto& graph = original.network(network).graph();
+        const auto* node = graph.nodeByName(options.edit.node);
         if (!node)
             throw std::runtime_error("invalidation probe: unknown node '" + options.edit.node + "'");
-        probe("upstream_parameter_change", nemo::setParamCommand(node->id, options.edit.key, options.edit.value),
-              false);
+        probe("upstream_parameter_change",
+              nemo::setParamCommand(network, node->id, options.edit.key, options.edit.value), false);
     }
     return probes;
 }
@@ -455,8 +470,8 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
     cacheOptions.maxPendingFrames = 12;
     cacheOptions.maxDecodedFrames = 2;
     const auto uniqueRequested = uniqueSortedFrames(options.requestedFrames);
-    report["request"] = {{"frames", options.requestedFrames},
-                         {"unique_frames", uniqueRequested},
+    report["request"] = {{"network", selectedNetwork(loaded.document, options)},
+                         {"frames", options.requestedFrames},
                          {"requested_count", options.requestedFrames.size()},
                          {"unique_requested_count", uniqueRequested.size()},
                          {"full_width", options.width},

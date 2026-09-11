@@ -63,6 +63,13 @@ extern "C" {
 #include "nemo/media/ViewingTransform.hpp"
 
 using namespace nemo;
+Graph& rootGraph(Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
+const Graph& rootGraph(const Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
 
 namespace {
 
@@ -334,28 +341,29 @@ struct SourceComposition {
     SourceComposition composition;
     Document& doc = composition.doc;
     doc.name = "viewer-source-composition";
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
     CommandStack stack(doc);
     stack.push(setSourceCommand(key, reference));
-    const NodeId plate = doc.graph.addNode("source", "plate");
-    doc.graph.setParam(plate, "source", key);  // fixture/setup writes are sanctioned
+    const NodeId plate = rootGraph(doc).addNode("source", "plate");
+    rootGraph(doc).setParam(plate, "source", key);  // fixture/setup writes are sanctioned
     if (withTint) {
-        const NodeId tint = doc.graph.addNode("constcolor", "tint");
-        doc.graph.setParam(tint, "color", "1.0 0.5 0.25 0.25");
-        composition.over = doc.graph.addNode("merge", "over");
-        (void)doc.graph.connect({plate, 0}, {composition.over, 0});
-        (void)doc.graph.connect({tint, 0}, {composition.over, 1});
-        composition.output = doc.graph.addNode("output", "result");
-        (void)doc.graph.connect({composition.over, 0}, {composition.output, 0});
+        const NodeId tint = rootGraph(doc).addNode("constcolor", "tint");
+        rootGraph(doc).setParam(tint, "color", "1.0 0.5 0.25 0.25");
+        composition.over = rootGraph(doc).addNode("merge", "over");
+        (void)rootGraph(doc).connect({plate, 0}, {composition.over, 0});
+        (void)rootGraph(doc).connect({tint, 0}, {composition.over, 1});
+        composition.output = rootGraph(doc).addNode("output", "result");
+        (void)rootGraph(doc).connect({composition.over, 0}, {composition.output, 0});
     } else {
-        composition.output = doc.graph.addNode("output", "result");
-        (void)doc.graph.connect({plate, 0}, {composition.output, 0});
+        composition.output = rootGraph(doc).addNode("output", "result");
+        (void)rootGraph(doc).connect({plate, 0}, {composition.output, 0});
     }
     return composition;
 }
-
 [[nodiscard]] EvaluationRequest requestFor(const Document& doc, Region region, std::int64_t frame, int scale = 1) {
     EvaluationRequest request;
-    request.output = resolveOutput(doc);
+    request.network = doc.rootNetworkId();
+    request.output = resolveOutput(doc, request.network);
     request.localTime = frame;
     request.region = region;
     request.samplingScale = scale;
@@ -583,7 +591,7 @@ TEST(Viewer, SourceTimeMappingAndBackwardsReEntry) {
     // available keys as evidence.
     try {
         Document missing = composition.doc;
-        missing.graph.setParam(missing.graph.nodeByName("plate")->id, "source", "missing");
+        rootGraph(missing).setParam(rootGraph(missing).nodeByName("plate")->id, "source", "missing");
         (void)evaluateGpu(missing, requestFor(missing, {0, 0, 64, 48}, 0), slang, *boot.device, *boot.allocator,
                           10'000'000'000ULL, nullptr, &sources);
         ADD_FAILURE() << "expected unknown-key EvaluationException";
@@ -620,10 +628,11 @@ TEST(Viewer, SamplingScaleProducesConsistentRepresentations) {
     NEMO_SKIP_UNLESS_SLANG(boot);
 
     Document doc;
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
     doc.name = "viewer-scale";
-    const NodeId pattern = doc.graph.addNode("testpattern", "pattern");
-    const NodeId out = doc.graph.addNode("output", "result");
-    (void)doc.graph.connect({pattern, 0}, {out, 0});
+    const NodeId pattern = rootGraph(doc).addNode("testpattern", "pattern");
+    const NodeId out = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({pattern, 0}, {out, 0});
     const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
 
     auto full = evaluateGpu(doc, requestFor(doc, {0, 0, 8, 8}, 0, 1), slang, *boot.device, *boot.allocator);
@@ -937,8 +946,8 @@ TEST(Viewer, SourceRetentionUnderDelayedCompletion) {
     std::weak_ptr<const void> sourceAllocation;
     {
         // Decode before blocking execution: decode owns synchronous upload.
-        auto decoded =
-            sources->acquire(composition.doc, *composition.doc.graph.nodeByName("plate"), 0, 10'000'000'000ULL);
+        auto decoded = sources->acquire(composition.doc, composition.doc.rootNetworkId(),
+                                        *rootGraph(composition.doc).nodeByName("plate"), 0, 10'000'000'000ULL);
         sourceAllocation = decoded.image->retain();
     }
     struct Gate {

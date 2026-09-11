@@ -62,10 +62,9 @@ struct KeyContext {
     std::uint64_t implementationTag{0};
 };
 
-// The reuse key of `node`'s result under `request`. `inputKeyHashes` are the
-// key hashes of the node's effective inputs in declared port order (empty
-// for source nodes).
-[[nodiscard]] ResultKey nodeResultKey(const Document& document, const Node& node,
+// the key hashes of the node's effective inputs in declared port order (empty
+// for source nodes). The request's network scope is part of the identity.
+[[nodiscard]] ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
                                       const std::vector<std::uint64_t>& inputKeyHashes,
                                       const EvaluationRequest& request, const KeyContext& context = {});
 

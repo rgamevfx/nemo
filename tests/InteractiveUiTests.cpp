@@ -13,6 +13,18 @@
 
 #include <gtest/gtest.h>
 
+nemo::Graph& rootGraph(nemo::Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
+const nemo::Graph& rootGraph(const nemo::Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+nemo::Document emptyDocument() {
+    nemo::Document document;
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
+    return document;
+}
 namespace {
 
 QVariantMap namedNode(const nemo::ui::ViewerController& controller, const QString& name) {
@@ -28,7 +40,7 @@ QVariantMap namedNode(const nemo::ui::ViewerController& controller, const QStrin
 // and its explicitly composed ProjectSession, exactly as QML does.
 TEST(Interactive, GraphCommandsUndoAndRejectOccupiedConnectionsAtomically) {
     nemo::ui::ViewerRuntime runtime;
-    nemo::ProjectSession session;
+    nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     controller.setNodeParameter(namedNode(controller, "background").value("id").toULongLong(), "color",
@@ -48,7 +60,7 @@ TEST(Interactive, GraphCommandsUndoAndRejectOccupiedConnectionsAtomically) {
 
 TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
     nemo::ui::ViewerRuntime runtime;
-    nemo::ProjectSession session;
+    nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     const auto before = controller.graphEdges();
@@ -67,7 +79,7 @@ TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
 
 TEST(Interactive, TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently) {
     nemo::ui::ViewerRuntime runtime;
-    nemo::ProjectSession session;
+    nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     controller.setFrame(3);
@@ -88,7 +100,7 @@ TEST(Interactive, TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently) {
 
 TEST(Interactive, UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata) {
     nemo::ui::ViewerRuntime runtime;
-    nemo::ProjectSession session;
+    nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     ASSERT_TRUE(controller.pending());
@@ -110,27 +122,32 @@ TEST(Interactive, OutputSelectionUsesCatalogDeclaration) {
                              .displayName = "Fixture Output",
                              .group = "I/O",
                              .isOutput = true,
-                             .inputs = {{nemo::PortKind::Color, "color"}},
+                             .inputs = {{nemo::PortKind::Image, "color"}},
                              .capabilities = nemo::NodeCapabilities{.samplingScales = {1},
                                                                     .qualityModes = {nemo::Quality::Full},
                                                                     .channels = {"RGBA"}}}});
-    nemo::ProjectSession session{nemo::Document{std::move(catalog)}};
+    nemo::Document document{std::move(catalog)};
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
+    nemo::ProjectSession session{std::move(document)};
     nemo::ui::ViewerRuntime runtime;
     nemo::ui::ViewerController controller(&runtime, session);
 
-    static_cast<void>(session.submit(nemo::addNodeCommand("fixture.output", "declared"),
-                                     nemo::EditOptions{.expectedRevision = session.revision()}));
+    static_cast<void>(
+        session.submit(nemo::addNodeCommand(session.document().rootNetworkId(), "fixture.output", "declared"),
+                       nemo::EditOptions{.expectedRevision = session.revision()}));
     ASSERT_EQ(controller.outputNames(), (QStringList{"declared"}));
     controller.setOutputName("declared");
     EXPECT_EQ(controller.outputName(), "declared");
-    const nemo::NodeId declared = session.document().graph.nodeByName("declared")->id;
-    const auto renamed = session.submit(nemo::renameNodeCommand(declared, "renamed"),
-                                        nemo::EditOptions{.expectedRevision = session.revision()});
+    const nemo::NodeId declared = rootGraph(session.document()).nodeByName("declared")->id;
+    const auto renamed =
+        session.submit(nemo::renameNodeCommand(session.document().rootNetworkId(), declared, "renamed"),
+                       nemo::EditOptions{.expectedRevision = session.revision()});
     ASSERT_TRUE(renamed.committed);
     EXPECT_EQ(controller.outputName(), "renamed");
     EXPECT_EQ(namedNode(controller, "renamed").value("id").toULongLong(), static_cast<qulonglong>(declared));
-    const auto parameter = session.submit(nemo::setParamCommand(declared, "marker", "stable"),
-                                          nemo::EditOptions{.expectedRevision = session.revision()});
+    const auto parameter =
+        session.submit(nemo::setParamCommand(session.document().rootNetworkId(), declared, "marker", "stable"),
+                       nemo::EditOptions{.expectedRevision = session.revision()});
     ASSERT_TRUE(parameter.committed);
     EXPECT_EQ(namedNode(controller, "renamed").value("params").toMap().value("marker").toString(), "stable");
     EXPECT_TRUE(controller.error().isEmpty());
@@ -139,7 +156,7 @@ TEST(Interactive, OutputSelectionUsesCatalogDeclaration) {
 TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
     nemo::ui::ViewerRuntime firstRuntime;
     nemo::ui::ViewerRuntime secondRuntime;
-    nemo::ProjectSession session;
+    nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController first(&firstRuntime, session);
     QSignalSpy firstGraph(&first, &nemo::ui::ViewerController::graphChanged);
     QSignalSpy firstTimeline(&first, &nemo::ui::ViewerController::timelineChanged);
@@ -192,8 +209,9 @@ TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
         secondHistory.clear();
         firstCatalog.clear();
         secondCatalog.clear();
-        static_cast<void>(session.submit(nemo::addNodeCommand("testpattern", "direct"),
-                                         nemo::EditOptions{.expectedRevision = session.revision()}));
+        static_cast<void>(
+            session.submit(nemo::addNodeCommand(session.document().rootNetworkId(), "testpattern", "direct"),
+                           nemo::EditOptions{.expectedRevision = session.revision()}));
         EXPECT_EQ(firstGraph.count(), 1);
         EXPECT_EQ(secondGraph.count(), 1);
         EXPECT_EQ(firstTimeline.count(), 1);
@@ -228,16 +246,20 @@ TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
     const auto config = std::filesystem::path(NEMO_UI_QML_DIR).parent_path().parent_path().parent_path() /
                         "docs/evidence/issue12-view.ocio";
     const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
-    nemo::ProjectSession session;
+    nemo::ProjectSession session{emptyDocument()};
     auto color = std::make_shared<nemo::NodeId>();
     auto output = std::make_shared<nemo::NodeId>();
-    static_cast<void>(session.submit(nemo::addNodeCommand("constcolor", "color", color),
-                                     nemo::EditOptions{.expectedRevision = session.revision()}));
-    static_cast<void>(session.submit(nemo::addNodeCommand("output", "result", output),
-                                     nemo::EditOptions{.expectedRevision = session.revision()}));
-    static_cast<void>(session.submit(nemo::connectCommand({*color, 0}, {*output, 0}),
-                                     nemo::EditOptions{.expectedRevision = session.revision()}));
+    static_cast<void>(
+        session.submit(nemo::addNodeCommand(session.document().rootNetworkId(), "constcolor", "color", color),
+                       nemo::EditOptions{.expectedRevision = session.revision()}));
+    static_cast<void>(
+        session.submit(nemo::addNodeCommand(session.document().rootNetworkId(), "output", "result", output),
+                       nemo::EditOptions{.expectedRevision = session.revision()}));
+    static_cast<void>(
+        session.submit(nemo::connectCommand(session.document().rootNetworkId(), {*color, 0}, {*output, 0}),
+                       nemo::EditOptions{.expectedRevision = session.revision()}));
     nemo::EvaluationRequest request;
+    request.network = session.document().rootNetworkId();
     request.output = *output;
     request.region = {0, 0, 64, 48};
     nemo::eval::ViewerCacheOptions options;

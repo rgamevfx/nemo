@@ -177,7 +177,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
 
     const GpuNodeImage& composition = *evaluation.images.at(request.output);
     if (composition.layout.color != ColorInterpretation::SceneLinear) {
-        const Node* node = document.graph.node(request.output);
+        const NodeInstance* node = document.network(request.network).graph().node(request.output);
         throw EvaluationException(
             describeNode(*node) + ": produced a " +
                 std::string(composition.layout.color == ColorInterpretation::DisplayReferred ? "display-referred"

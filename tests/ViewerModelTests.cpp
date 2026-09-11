@@ -22,6 +22,13 @@
 
 namespace nemo {
 namespace {
+Graph& rootGraph(Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
+const Graph& rootGraph(const Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures.
@@ -38,24 +45,26 @@ SourceReference plateSource() {
 // Graph: constcolor (A) and source (B) merged over into the output.
 Document overGraph(const std::string& sourceKey = "plate") {
     Document document;
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
     document.name = "viewer-model";
-    const NodeId color = document.graph.addNode("constcolor", "bg");
-    document.graph.setParam(color, "color", "0.1 0.2 0.3 1");
-    const NodeId source = document.graph.addNode("source", "plateNode");
-    document.graph.setParam(source, "source", sourceKey);
-    const NodeId merge = document.graph.addNode("merge", "over");
-    const NodeId output = document.graph.addNode("output", "view");
-    static_cast<void>(document.graph.connect(PortRef{color, 0}, PortRef{merge, 0}));
-    static_cast<void>(document.graph.connect(PortRef{source, 0}, PortRef{merge, 1}));
-    static_cast<void>(document.graph.connect(PortRef{merge, 0}, PortRef{output, 0}));
+    const NodeId color = rootGraph(document).addNode("constcolor", "bg");
+    rootGraph(document).setParam(color, "color", "0.1 0.2 0.3 1");
+    const NodeId source = rootGraph(document).addNode("source", "plateNode");
+    rootGraph(document).setParam(source, "source", sourceKey);
+    const NodeId merge = rootGraph(document).addNode("merge", "over");
+    const NodeId output = rootGraph(document).addNode("output", "view");
+    static_cast<void>(rootGraph(document).connect(PortRef{color, 0}, PortRef{merge, 0}));
+    static_cast<void>(rootGraph(document).connect(PortRef{source, 0}, PortRef{merge, 1}));
+    static_cast<void>(rootGraph(document).connect(PortRef{merge, 0}, PortRef{output, 0}));
     return document;
 }
 
 Document patternGraph() {
     Document pattern;
-    const NodeId node = pattern.graph.addNode("testpattern", "pattern");
-    const NodeId output = pattern.graph.addNode("output", "view");
-    static_cast<void>(pattern.graph.connect(PortRef{node, 0}, PortRef{output, 0}));
+    rootGraph(pattern).removeNode(rootGraph(pattern).nodeByName("Output")->id);
+    const NodeId node = rootGraph(pattern).addNode("testpattern", "pattern");
+    const NodeId output = rootGraph(pattern).addNode("output", "view");
+    static_cast<void>(rootGraph(pattern).connect(PortRef{node, 0}, PortRef{output, 0}));
     return pattern;
 }
 
@@ -89,8 +98,9 @@ public:
     int lastScale{0};
 };
 
-EvaluationRequest fullRequest(NodeId output, std::int64_t localTime = 0) {
+EvaluationRequest fullRequest(const Document& document, NodeId output, std::int64_t localTime = 0) {
     EvaluationRequest request;
+    request.network = document.rootNetworkId();
     request.output = output;
     request.localTime = localTime;
     request.region = {0, 0, 16, 16};
@@ -221,12 +231,13 @@ TEST(SourceSerialization, MalformedSourceEntriesAreStructuralErrors) {
 
 TEST(SourceNode, DeclaresTypedPorts) {
     Document document;
-    const NodeId source = document.graph.addNode("source", "plateNode");
-    const NodeId output = document.graph.addNode("output", "view");
-    const auto edge = document.graph.connect(PortRef{source, 0}, PortRef{output, 0});
-    EXPECT_EQ(document.graph.edgesInto(output).front().id, edge);
-    EXPECT_THROW(document.graph.connect(PortRef{output, 0}, PortRef{source, 0}), GraphException);
-    EXPECT_EQ(document.graph.edgesInto(output).front().id, edge);
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
+    const NodeId source = rootGraph(document).addNode("source", "plateNode");
+    const NodeId output = rootGraph(document).addNode("output", "view");
+    const auto edge = rootGraph(document).connect(PortRef{source, 0}, PortRef{output, 0});
+    EXPECT_EQ(rootGraph(document).edgesInto(output).front().id, edge);
+    EXPECT_THROW(rootGraph(document).connect(PortRef{output, 0}, PortRef{source, 0}), GraphException);
+    EXPECT_EQ(rootGraph(document).edgesInto(output).front().id, edge);
 }
 
 TEST(SourceTimeMapping, OffsetPlusLocalTimesStep) {
@@ -265,13 +276,14 @@ TEST(SourceTimeMapping, RejectsOverflowRatherThanWrapping) {
 
 TEST(SourceEvaluation, MissingSourceParameterIsANodeIdentifyingError) {
     Document document;
-    const NodeId source = document.graph.addNode("source", "plateNode");
-    const NodeId output = document.graph.addNode("output", "view");
-    document.graph.connect(PortRef{source, 0}, PortRef{output, 0});
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
+    const NodeId source = rootGraph(document).addNode("source", "plateNode");
+    const NodeId output = rootGraph(document).addNode("output", "view");
+    rootGraph(document).connect(PortRef{source, 0}, PortRef{output, 0});
 
     FakeSourceProvider provider;
     try {
-        evaluateCpu(document, fullRequest(output), nullptr, &provider);
+        evaluateCpu(document, fullRequest(document, output), nullptr, &provider);
         FAIL() << "expected evaluation to reject the unkeyed source node";
     } catch (const EvaluationException& error) {
         EXPECT_NE(std::string(error.what()).find("'source' parameter"), std::string::npos);
@@ -285,7 +297,8 @@ TEST(SourceEvaluation, UnknownSourceKeyIsAnUnresolvedSourceError) {
 
     FakeSourceProvider provider;
     try {
-        evaluateCpu(document, fullRequest(resolveOutput(document)), nullptr, &provider);
+        evaluateCpu(document, fullRequest(document, resolveOutput(document, document.rootNetworkId())), nullptr,
+                    &provider);
         FAIL() << "expected evaluation to reject the unresolved source";
     } catch (const EvaluationException& error) {
         EXPECT_NE(std::string(error.what()).find("unresolved source 'missing'"), std::string::npos);
@@ -299,7 +312,7 @@ TEST(SourceEvaluation, WithoutProviderRealSourceIsRejectedExplicitly) {
     document.sources["plate"] = plateSource();
 
     try {
-        evaluateCpu(document, fullRequest(resolveOutput(document)));
+        evaluateCpu(document, fullRequest(document, resolveOutput(document, document.rootNetworkId())));
         FAIL() << "expected evaluation to reject real media without a provider";
     } catch (const EvaluationException& error) {
         const std::string message = error.what();
@@ -318,7 +331,8 @@ TEST(SourceEvaluation, ProviderServesMappedFramesAndPlanRecordsEffectiveState) {
     document.sources["plate"] = reference;
 
     FakeSourceProvider provider;
-    const CpuEvaluation evaluation = evaluateCpu(document, fullRequest(resolveOutput(document), 3), nullptr, &provider);
+    const CpuEvaluation evaluation = evaluateCpu(
+        document, fullRequest(document, resolveOutput(document, document.rootNetworkId()), 3), nullptr, &provider);
 
     EXPECT_EQ(provider.lastPath, "media/plate.exr");
     EXPECT_EQ(provider.lastFrame, 106);  // 100 + 3*2
@@ -357,7 +371,8 @@ TEST(SourceEvaluation, ProviderRasterMustCoverTheRequestedRaster) {
     };
     WrongSizeProvider provider;
     try {
-        evaluateCpu(document, fullRequest(resolveOutput(document)), nullptr, &provider);
+        evaluateCpu(document, fullRequest(document, resolveOutput(document, document.rootNetworkId())), nullptr,
+                    &provider);
         FAIL() << "expected the undersized decode to be rejected";
     } catch (const EvaluationException& error) {
         EXPECT_NE(std::string(error.what()).find("does not cover the requested raster"), std::string::npos);
@@ -376,7 +391,8 @@ TEST(SourceEvaluation, ProviderFailureIdentifiesNodeAndReason) {
     };
     FailingProvider provider;
     try {
-        evaluateCpu(document, fullRequest(resolveOutput(document), 2), nullptr, &provider);
+        evaluateCpu(document, fullRequest(document, resolveOutput(document, document.rootNetworkId()), 2), nullptr,
+                    &provider);
         FAIL() << "expected the failing decode to be rejected";
     } catch (const EvaluationException& error) {
         const std::string message = error.what();
@@ -393,10 +409,10 @@ TEST(SourceIdentity, SourceEditChangesSourceAndDependentKeysOnly) {
     Document document = overGraph();
     document.sources["plate"] = plateSource();
 
-    const Node* sourceNode = document.graph.nodeByName("plateNode");
-    const Node* colorNode = document.graph.nodeByName("bg");
+    const NodeInstance* sourceNode = rootGraph(document).nodeByName("plateNode");
+    const NodeInstance* colorNode = rootGraph(document).nodeByName("bg");
     const std::vector<std::uint64_t> noInputs;
-    const EvaluationRequest request = fullRequest(resolveOutput(document));
+    const EvaluationRequest request = fullRequest(document, resolveOutput(document, document.rootNetworkId()));
     const ResultKey sourceBefore = nodeResultKey(document, *sourceNode, noInputs, request);
     const ResultKey colorBefore = nodeResultKey(document, *colorNode, noInputs, request);
 
@@ -413,9 +429,9 @@ TEST(SourceIdentity, SourceEditInvalidatesOnlyDependentCacheEntries) {
     document.sources["plate"] = plateSource();
     ResultCache<CpuImage> cache;
     FakeSourceProvider provider;
-    const NodeId output = resolveOutput(document);
+    const NodeId output = resolveOutput(document, document.rootNetworkId());
 
-    (void)evaluateCpu(document, fullRequest(output), &cache, &provider);
+    (void)evaluateCpu(document, fullRequest(document, output), &cache, &provider);
 
     // Source content changes: the constcolor branch keeps its entry,
     // everything downstream of the source recomputes.
@@ -423,7 +439,7 @@ TEST(SourceIdentity, SourceEditInvalidatesOnlyDependentCacheEntries) {
     changed.path = "media/plate_v2.exr";
     CommandStack stack(document);
     stack.push(setSourceCommand("plate", changed));
-    const CpuEvaluation second = evaluateCpu(document, fullRequest(output), &cache, &provider);
+    const CpuEvaluation second = evaluateCpu(document, fullRequest(document, output), &cache, &provider);
     int reusedConstcolor = 0;
     int recomputedSource = 0;
     for (const PlanStep& step : second.plan.steps) {
@@ -440,7 +456,7 @@ TEST(SourceIdentity, SourceEditInvalidatesOnlyDependentCacheEntries) {
     // Restoring the previous source state re-serves the original source
     // result from the cache: identity is content, not history.
     EXPECT_TRUE(stack.undo());
-    const CpuEvaluation third = evaluateCpu(document, fullRequest(output), &cache, &provider);
+    const CpuEvaluation third = evaluateCpu(document, fullRequest(document, output), &cache, &provider);
     for (const PlanStep& step : third.plan.steps) {
         if (step.type == "source") {
             EXPECT_TRUE(step.cacheReused);
@@ -455,7 +471,7 @@ TEST(SourceIdentity, SourceEditInvalidatesOnlyDependentCacheEntries) {
 TEST(RequestValidation, RejectsUndeclaredSamplingScales) {
     Document document = overGraph();
     document.sources["plate"] = plateSource();
-    const EvaluationRequest request = fullRequest(resolveOutput(document));
+    const EvaluationRequest request = fullRequest(document, resolveOutput(document, document.rootNetworkId()));
 
     EvaluationRequest scale3 = request;
     scale3.samplingScale = 3;
@@ -467,12 +483,15 @@ TEST(RequestValidation, RejectsUndeclaredSamplingScales) {
 }
 
 TEST(RequestValidation, UnsupportedReductionIsExplicitPerNode) {
-    Document document;
-    const NodeId custom = document.graph.addNode("custom", "plugin");
-    const NodeId output = document.graph.addNode("output", "view");
-    document.graph.connect(PortRef{custom, 0}, PortRef{output, 0});
+    NodeDescriptor descriptor = *builtinNodeCatalog().find("constcolor");
+    descriptor.type = "custom";
+    descriptor.capabilities.samplingScales = {1};
+    Document document(std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{descriptor}));
+    const NodeId custom = rootGraph(document).addNode("custom", "plugin");
+    const NodeId output = document.network(document.rootNetworkId()).defaultOutput();
+    rootGraph(document).connect(PortRef{custom, 0}, PortRef{output, 0});
 
-    EvaluationRequest request = fullRequest(output);
+    EvaluationRequest request = fullRequest(document, output);
     request.samplingScale = 2;
     try {
         validateRequest(document, request);
@@ -491,9 +510,9 @@ TEST(ScaleAwareRaster, DimensionsCeilAndStayFullResAnchored) {
 
 TEST(ScaleAwareRaster, ReducedPatternSubsamplesTheFullResolutionPattern) {
     const Document pattern = patternGraph();
-    const NodeId output = resolveOutput(pattern);
+    const NodeId output = resolveOutput(pattern, pattern.rootNetworkId());
 
-    EvaluationRequest full = fullRequest(output);
+    EvaluationRequest full = fullRequest(pattern, output);
     full.region = {0, 0, 64, 64};
     const CpuEvaluation scale1 = evaluateCpu(pattern, full);
 
@@ -515,9 +534,9 @@ TEST(ScaleAwareRaster, ReducedPatternSubsamplesTheFullResolutionPattern) {
 
 TEST(ScaleAwareRaster, RegionLimitedRequestsPreserveFullResolutionCoordinates) {
     const Document pattern = patternGraph();
-    const NodeId output = resolveOutput(pattern);
+    const NodeId output = resolveOutput(pattern, pattern.rootNetworkId());
 
-    EvaluationRequest full = fullRequest(output);
+    EvaluationRequest full = fullRequest(pattern, output);
     full.region = {0, 0, 64, 64};
     full.fullWidth = 64;
     full.fullHeight = 64;
@@ -549,10 +568,10 @@ TEST(ScaleAwareRaster, RegionLimitedRequestsPreserveFullResolutionCoordinates) {
 
 TEST(RequestIdentity, ScaleAndRegionAreDistinctIdentityComponents) {
     const Document document = overGraph();
-    const Node* sourceNode = document.graph.nodeByName("plateNode");
+    const NodeInstance* sourceNode = rootGraph(document).nodeByName("plateNode");
     const std::vector<std::uint64_t> noInputs;
 
-    EvaluationRequest base = fullRequest(resolveOutput(document));
+    EvaluationRequest base = fullRequest(document, resolveOutput(document, document.rootNetworkId()));
     const ResultKey fullScale = nodeResultKey(document, *sourceNode, noInputs, base);
 
     // Same region, different scale: distinct identities (a scale-2 result
@@ -669,13 +688,14 @@ TEST(SourceTimeMapping, ReverseAndNegativeLocalTimeRemainSigned) {
 
 TEST(SourceCommand, GraphHistoryPreservesConnectionsAcrossRepeatedRedo) {
     Document document;
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
     CommandStack commands(document);
     auto source = std::make_shared<NodeId>();
     auto output = std::make_shared<NodeId>();
-    commands.push(addNodeCommand("constcolor", "color", source));
-    commands.push(addNodeCommand("output", "view", output));
-    commands.push(connectCommand({*source, 0}, {*output, 0}));
-    commands.push(setParamCommand(*source, "color", "0.1 0.2 0.3 1"));
+    commands.push(addNodeCommand(document.rootNetworkId(), "constcolor", "color", source));
+    commands.push(addNodeCommand(document.rootNetworkId(), "output", "view", output));
+    commands.push(connectCommand(document.rootNetworkId(), {*source, 0}, {*output, 0}));
+    commands.push(setParamCommand(document.rootNetworkId(), *source, "color", "0.1 0.2 0.3 1"));
     const auto saved = saveDocument(document);
     for (int cycle = 0; cycle < 2; ++cycle) {
         ASSERT_TRUE(commands.undo());
@@ -687,7 +707,7 @@ TEST(SourceCommand, GraphHistoryPreservesConnectionsAcrossRepeatedRedo) {
         ASSERT_TRUE(commands.redo());
         ASSERT_TRUE(commands.redo());
         EXPECT_EQ(saveDocument(document), saved);
-        const auto image = evaluateCpu(document, fullRequest(*output)).image;
+        const auto image = evaluateCpu(document, fullRequest(document, *output)).image;
         EXPECT_EQ(image.pixel(0, 0), (std::array<float, 4>{0.1F, 0.2F, 0.3F, 1}));
     }
 }

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <map>
-#include <string>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -54,15 +54,28 @@ struct ImageIdentity {
     return json;
 }
 
+struct ScopedPlanInput {
+    NetworkId network{kInvalidNetwork};
+    NetworkInstanceId instance{kInvalidNetworkInstance};
+    NodeId node{kInvalidNode};
+    std::uint32_t outputPort{std::numeric_limits<std::uint32_t>::max()};
+    std::vector<NetworkInstanceId> path;
+};
+
 // One scheduled node: its identity, effective parameter/input state, the
 // images it consumes, and the image identity it produces. Inputs are in
 // declared port order; the dependency set of a step is exactly `inputs`.
 struct PlanStep {
+    NetworkId network{kInvalidNetwork};
+    NetworkInstanceId instance{kInvalidNetworkInstance};
     NodeId node{kInvalidNode};
+    std::uint32_t outputPort{std::numeric_limits<std::uint32_t>::max()};
+    std::vector<NetworkInstanceId> path;
     std::string type;
     std::string name;
     std::map<std::string, std::string> effectiveParams;
     std::vector<NodeId> inputs;
+    std::vector<ScopedPlanInput> scopedInputs;
     std::vector<ImageIdentity> inputImages;
     ImageIdentity produced;
     // True when this step's result was reused from the evaluator result
@@ -84,8 +97,19 @@ struct EvaluationPlan {
     nlohmann::json steps = nlohmann::json::array();
     for (const auto& step : plan.steps) {
         nlohmann::json json;
+        json["instance"] = step.instance;
+        json["outputPort"] = step.outputPort;
+        json["network"] = step.network;
         json["node"] = step.node;
-        json["type"] = step.type;
+        json["path"] = step.path;
+        nlohmann::json scopedInputs = nlohmann::json::array();
+        for (const auto& input : step.scopedInputs)
+            scopedInputs.push_back({{"network", input.network},
+                                    {"instance", input.instance},
+                                    {"node", input.node},
+                                    {"outputPort", input.outputPort},
+                                    {"path", input.path}});
+        json["scopedInputs"] = std::move(scopedInputs);
         json["name"] = step.name;
         json["effectiveParams"] = step.effectiveParams;
         json["inputs"] = step.inputs;
@@ -99,7 +123,8 @@ struct EvaluationPlan {
         steps.push_back(std::move(json));
     }
     nlohmann::json json;
-    json["request"] = {{"output", plan.request.output},
+    json["request"] = {{"network", plan.request.network},
+                       {"output", plan.request.output},
                        {"localTime", plan.request.localTime},
                        {"region",
                         {{"x", plan.request.region.x},

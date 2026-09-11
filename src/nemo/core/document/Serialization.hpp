@@ -10,11 +10,11 @@
 
 namespace nemo {
 
-// Versioned JSON persistence (schema version rides in the file). Node and
-// edge identities plus allocator high watermarks are persisted verbatim.
-// Loading retains unknown node types and authored parameters, and reports
-// unavailable node implementations as warnings instead of dropping data
-// (spec section 10.7).
+// Versioned JSON persistence for the document's network definitions and
+// instances. Network-local node/edge/interface identities, typed terminals,
+// authored layouts/routes, bindings, and allocator high watermarks round-trip
+// verbatim. Unknown node types remain inspectable data and are reported as
+// warnings rather than silently dropped.
 struct LoadResult {
     Document document;
     std::vector<std::string> warnings;

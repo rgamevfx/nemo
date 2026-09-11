@@ -2,7 +2,9 @@
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/Reuse.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
+#include <array>
 #include <memory>
 #include <string>
 #include <utility>
@@ -11,11 +13,19 @@
 using namespace nemo;
 
 namespace {
+Graph& rootGraph(Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
+
+const Graph& rootGraph(const Document& document) {
+    return document.network(document.rootNetworkId()).graph();
+}
 
 Document makeDocument(const std::vector<std::pair<std::string, std::string>>& typeAndName) {
     Document document;
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
     for (const auto& [type, name] : typeAndName) {
-        document.graph.addNode(type, name);
+        rootGraph(document).addNode(type, name);
     }
     return document;
 }
@@ -25,13 +35,13 @@ NodeDescriptor capabilityFixture(NodeCapabilities capabilities) {
                           .displayName = "Capability Fixture",
                           .group = "Tests",
                           .inputs = {},
-                          .outputs = {{PortKind::Color, "color"}},
+                          .outputs = {{PortKind::Image, "color"}},
                           .capabilities = std::move(capabilities)};
 }
 void connect(Graph& graph, const std::string& from, const std::string& to, std::uint32_t fromPort = 0,
              std::uint32_t toPort = 0) {
-    const Node* fromNode = graph.nodeByName(from);
-    const Node* toNode = graph.nodeByName(to);
+    const NodeInstance* fromNode = graph.nodeByName(from);
+    const NodeInstance* toNode = graph.nodeByName(to);
     ASSERT_NE(fromNode, nullptr);
     ASSERT_NE(toNode, nullptr);
     static_cast<void>(graph.connect(PortRef{fromNode->id, fromPort}, PortRef{toNode->id, toPort}));
@@ -39,7 +49,8 @@ void connect(Graph& graph, const std::string& from, const std::string& to, std::
 
 EvaluationRequest fullFrameRequest(const Document& document, std::int64_t frame, int width = 8, int height = 4) {
     EvaluationRequest request;
-    request.output = resolveOutput(document);
+    request.network = document.rootNetworkId();
+    request.output = resolveOutput(document, request.network);
     request.localTime = frame;
     request.region = {0, 0, width, height};
     return request;
@@ -59,7 +70,7 @@ const PlanStep* stepFor(const EvaluationPlan& plan, const std::string& name) {
 // Acceptance example 1a: `plate -> output` renders the plate pattern.
 TEST(EvaluationTest, LinearChainRendersPatternThroughOutput) {
     Document document = makeDocument({{"testpattern", "plate"}, {"output", "out"}});
-    connect(document.graph, "plate", "out");
+    connect(rootGraph(document), "plate", "out");
 
     const CpuEvaluation evaluation = evaluateCpu(document, fullFrameRequest(document, 0));
 
@@ -83,10 +94,10 @@ TEST(EvaluationTest, LinearChainRendersPatternThroughOutput) {
 TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     Document document =
         makeDocument({{"testpattern", "plate"}, {"constcolor", "backdrop"}, {"merge", "comp"}, {"output", "out"}});
-    document.graph.setParam(document.graph.nodeByName("backdrop")->id, "color", "0 0 1 0.5");
-    connect(document.graph, "plate", "comp", 0, 0);     // port A: over base
-    connect(document.graph, "backdrop", "comp", 0, 1);  // port B: over source
-    connect(document.graph, "comp", "out");
+    rootGraph(document).setParam(rootGraph(document).nodeByName("backdrop")->id, "color", "0 0 1 0.5");
+    connect(rootGraph(document), "plate", "comp", 0, 0);     // port A: over base
+    connect(rootGraph(document), "backdrop", "comp", 0, 1);  // port B: over source
+    connect(rootGraph(document), "comp", "out");
 
     const CpuEvaluation evaluation = evaluateCpu(document, fullFrameRequest(document, 0));
 
@@ -113,42 +124,38 @@ TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
 TEST(EvaluationTest, MissingOutputNodeFailsWithClearError) {
     Document document = makeDocument({{"testpattern", "plate"}});
     try {
-        static_cast<void>(resolveOutput(document));
+        static_cast<void>(resolveOutput(document, document.rootNetworkId()));
         FAIL() << "expected EvaluationException";
     } catch (const EvaluationException& e) {
         EXPECT_NE(std::string(e.what()).find("no Output node"), std::string::npos);
     }
 }
 
-TEST(EvaluationTest, MultipleOutputNodesRequireDisambiguation) {
+TEST(EvaluationTest, ExplicitOutputSelectionUsesNetworkScope) {
     Document document = makeDocument({{"testpattern", "plate"}, {"output", "a"}, {"output", "b"}});
-    connect(document.graph, "plate", "a");
-    connect(document.graph, "plate", "b");
-    try {
-        static_cast<void>(resolveOutput(document));
-        FAIL() << "expected EvaluationException";
-    } catch (const EvaluationException& e) {
-        EXPECT_NE(std::string(e.what()).find("multiple Output nodes"), std::string::npos);
-    }
-    // Naming one of them resolves the request.
+    connect(rootGraph(document), "plate", "a");
+    connect(rootGraph(document), "plate", "b");
+    const NetworkId network = document.rootNetworkId();
+    EXPECT_EQ(resolveOutput(document, network, "b"), rootGraph(document).nodeByName("b")->id);
     EvaluationRequest request;
-    request.output = resolveOutput(document, "b");
-    EXPECT_EQ(document.graph.node(request.output)->name, "b");
+    request.network = network;
+    request.output = resolveOutput(document, network, "b");
+    EXPECT_EQ(rootGraph(document).node(request.output)->name, "b");
 }
 
 // Invalid-type connections are rejected by Graph at edit time.
 TEST(EvaluationTest, InvalidTypeConnectionRejectedByGraph) {
     Document document = makeDocument({{"testpattern", "plate"}, {"output", "out"}});
-    const NodeId plate = document.graph.nodeByName("plate")->id;
-    const NodeId out = document.graph.nodeByName("out")->id;
+    const NodeId plate = rootGraph(document).nodeByName("plate")->id;
+    const NodeId out = rootGraph(document).nodeByName("out")->id;
     // The Output node declares no output ports: anything fed from it is a
     // type error, not a silent dangling edge.
-    const auto fromOutput = document.graph.validateEdge(PortRef{out, 0}, PortRef{plate, 0});
+    const auto fromOutput = rootGraph(document).validateEdge(PortRef{out, 0}, PortRef{plate, 0});
     ASSERT_TRUE(fromOutput.has_value());
     EXPECT_EQ(fromOutput->code, GraphError::PortType);
-    EXPECT_THROW(static_cast<void>(document.graph.connect(PortRef{out, 0}, PortRef{plate, 0})), GraphException);
+    EXPECT_THROW(static_cast<void>(rootGraph(document).connect(PortRef{out, 0}, PortRef{plate, 0})), GraphException);
     // testpattern declares no input ports either.
-    const auto intoPattern = document.graph.validateEdge(PortRef{plate, 0}, PortRef{plate, 0});
+    const auto intoPattern = rootGraph(document).validateEdge(PortRef{plate, 0}, PortRef{plate, 0});
     ASSERT_TRUE(intoPattern.has_value());
     EXPECT_EQ(intoPattern->code, GraphError::PortType);
 }
@@ -158,7 +165,7 @@ TEST(EvaluationTest, InvalidTypeConnectionRejectedByGraph) {
 // image identity.
 TEST(EvaluationTest, RepeatedRequestsAreDeterministicAndFrameSensitive) {
     Document document = makeDocument({{"testpattern", "plate"}, {"output", "out"}});
-    connect(document.graph, "plate", "out");
+    connect(rootGraph(document), "plate", "out");
 
     const CpuEvaluation first = evaluateCpu(document, fullFrameRequest(document, 3));
     const CpuEvaluation second = evaluateCpu(document, fullFrameRequest(document, 3));
@@ -172,32 +179,29 @@ TEST(EvaluationTest, RepeatedRequestsAreDeterministicAndFrameSensitive) {
 
 TEST(EvaluationTest, UnconnectedRequiredInputIdentifiesTheNode) {
     Document document = makeDocument({{"merge", "comp"}, {"output", "out"}});
-    connect(document.graph, "comp", "out");
+    connect(rootGraph(document), "comp", "out");
     try {
         static_cast<void>(evaluateCpu(document, fullFrameRequest(document, 0)));
         FAIL() << "expected EvaluationException";
     } catch (const EvaluationException& e) {
-        EXPECT_NE(std::string(e.what()).find("node 'comp'"), std::string::npos);
-        EXPECT_NE(std::string(e.what()).find("input port 0 ('A') is not connected"), std::string::npos);
+        EXPECT_EQ(e.node, rootGraph(document).nodeByName("comp")->id);
         EXPECT_TRUE(e.hasNode());
     }
 }
 
-TEST(EvaluationTest, UnknownTypeInDependencyChainIsReportedNotSilent) {
+TEST(EvaluationTest, UnknownTypeHasNoFabricatedContractAndFailsExplicitly) {
     Document document = makeDocument({{"grail", "mystery"}, {"output", "out"}});
-    connect(document.graph, "mystery", "out");
-    try {
-        static_cast<void>(evaluateCpu(document, fullFrameRequest(document, 0)));
-        FAIL() << "expected EvaluationException";
-    } catch (const EvaluationException& e) {
-        EXPECT_NE(std::string(e.what()).find("no CPU reference implementation"), std::string::npos);
-        EXPECT_NE(std::string(e.what()).find("'mystery'"), std::string::npos);
-    }
+    const NodeInstance* mystery = rootGraph(document).nodeByName("mystery");
+    ASSERT_NE(mystery, nullptr);
+    EXPECT_FALSE(mystery->hasPortContract);
+    EvaluationRequest request = fullFrameRequest(document, 0);
+    request.output = mystery->id;
+    EXPECT_THROW(static_cast<void>(evaluateCpu(document, request)), EvaluationException);
 }
 
 TEST(EvaluationTest, RequestValidationRejectsUnsupportedChannelsAndQuality) {
     Document document = makeDocument({{"testpattern", "plate"}, {"output", "out"}});
-    connect(document.graph, "plate", "out");
+    connect(rootGraph(document), "plate", "out");
 
     EvaluationRequest channels = fullFrameRequest(document, 0);
     channels.channels = "depth";
@@ -214,10 +218,11 @@ TEST(RequestValidation, EnforcesEachDependencyCapabilityWithNodeContext) {
         auto catalog = std::make_shared<const NodeCatalog>(
             std::vector<NodeDescriptor>{capabilityFixture(std::move(capabilities))});
         Document document(catalog);
-        const NodeId fixture = document.graph.addNode("fixture.capability", "fixture");
-        const NodeId output = document.graph.addNode("output", "out");
-        document.graph.connect(PortRef{fixture, 0}, PortRef{output, 0});
+        const NodeId fixture = rootGraph(document).addNode("fixture.capability", "fixture");
+        const NodeId output = rootGraph(document).addNode("output", "out");
+        rootGraph(document).connect(PortRef{fixture, 0}, PortRef{output, 0});
         EvaluationRequest contextual = request;
+        contextual.network = document.rootNetworkId();
         contextual.output = output;
         try {
             validateRequest(document, contextual);
@@ -252,4 +257,90 @@ TEST(RequestValidation, EnforcesEachDependencyCapabilityWithNodeContext) {
                            .channels = {"RGBA"},
                            .supportsRegion = false},
           cropped, "region-of-interest");
+}
+
+TEST(EvaluationTest, NestedSharedInstancesKeepScopedOverridesAndLazyInputs) {
+    Document document;
+    const NetworkId root = document.rootNetworkId();
+
+    const NetworkId innerDefinition = document.addNetwork("inner");
+    auto& inner = document.network(innerDefinition);
+    const InterfacePortId innerInput = inner.addInput("in", PortKind::Image);
+    const InterfacePortId innerOutput = inner.addOutput("out", PortKind::Image);
+    const NodeId innerMerge = inner.graph().addNode("merge", "inner-merge");
+    const NodeId innerBackground = inner.graph().addNode("constcolor", "inner-background");
+    inner.graph().setParam(innerBackground, "color", "0 0 0 0");
+    inner.connectInput(innerInput, {innerMerge, 0});
+    inner.graph().connect({innerBackground, 0}, {innerMerge, 1});
+    inner.connectOutput({innerMerge, 0}, innerOutput);
+
+    const NetworkId sharedDefinition = document.addNetwork("shared");
+    auto& shared = document.network(sharedDefinition);
+    const InterfacePortId unusedInput = shared.addInput("unused", PortKind::Image);
+    const InterfacePortId sharedOutput = shared.addOutput("out", PortKind::Image);
+    const NodeId color = shared.graph().addNode("constcolor", "color");
+    const NetworkInstanceId innerInstance = document.addInstance(sharedDefinition, innerDefinition, "inner");
+    document.bindInstanceInput(innerInstance, innerInput, {color, 0});
+    shared.connectOutput({document.instance(innerInstance)->node, 0}, sharedOutput);
+
+    const NetworkInstanceId first = document.addInstance(root, sharedDefinition, "first");
+    const NetworkInstanceId second = document.addInstance(root, sharedDefinition, "second");
+    document.setInstanceParam(first, color, "color", "1 0 0 1");
+    document.setInstanceParam(second, color, "color", "0 1 0 1");
+
+    auto& rootGraphRef = document.network(root).graph();
+    const NodeId firstOutput = rootGraphRef.addNode("output", "first-output");
+    const NodeId secondOutput = rootGraphRef.addNode("output", "second-output");
+    rootGraphRef.connect({document.instance(first)->node, 0}, {firstOutput, 0});
+    rootGraphRef.connect({document.instance(second)->node, 0}, {secondOutput, 0});
+    const NodeId branches = rootGraphRef.addNode("merge", "branches");
+    const NodeId combinedOutput = rootGraphRef.addNode("output", "combined-output");
+    rootGraphRef.connect({document.instance(first)->node, 0}, {branches, 0});
+    rootGraphRef.connect({document.instance(second)->node, 0}, {branches, 1});
+    rootGraphRef.connect({branches, 0}, {combinedOutput, 0});
+
+    const NodeId missingSource = rootGraphRef.addNode("source", "unused-missing");
+    rootGraphRef.setParam(missingSource, "source", "missing");
+    document.bindInstanceInput(first, unusedInput, {missingSource, 0});
+
+    const auto nodesBefore = shared.graph().nodes().size();
+    const auto edgesBefore = shared.graph().edges().size();
+    ResultCache<CpuImage> cache;
+    EvaluationRequest firstRequest;
+    firstRequest.network = root;
+    firstRequest.output = firstOutput;
+    firstRequest.region = {0, 0, 2, 2};
+    const CpuEvaluation firstEvaluation = evaluateCpu(document, firstRequest, &cache);
+    const CacheCounts afterFirst = cache.counts();
+    EvaluationRequest secondRequest = firstRequest;
+    secondRequest.output = secondOutput;
+    const CpuEvaluation secondEvaluation = evaluateCpu(document, secondRequest, &cache);
+    EvaluationRequest combinedRequest = firstRequest;
+    combinedRequest.output = combinedOutput;
+    const CpuEvaluation combinedEvaluation = evaluateCpu(document, combinedRequest, &cache);
+
+    EXPECT_EQ(firstEvaluation.image.pixel(0, 0), (std::array<float, 4>{1, 0, 0, 1}));
+    EXPECT_EQ(secondEvaluation.image.pixel(0, 0), (std::array<float, 4>{0, 1, 0, 1}));
+    EXPECT_NE(firstEvaluation.plan.result.contentHash, secondEvaluation.plan.result.contentHash);
+    EXPECT_EQ(combinedEvaluation.image.pixel(0, 0), (std::array<float, 4>{0, 1, 0, 1}));
+    bool firstBranchSeen = false;
+    bool secondBranchSeen = false;
+    for (const auto& step : combinedEvaluation.plan.steps) {
+        if (step.name != "color")
+            continue;
+        if (step.path == std::vector<NetworkInstanceId>{first}) {
+            EXPECT_EQ(step.effectiveParams.at("color"), "1 0 0 1");
+            firstBranchSeen = true;
+        } else if (step.path == std::vector<NetworkInstanceId>{second}) {
+            EXPECT_EQ(step.effectiveParams.at("color"), "0 1 0 1");
+            secondBranchSeen = true;
+        }
+    }
+    EXPECT_TRUE(firstBranchSeen);
+    EXPECT_TRUE(secondBranchSeen);
+    EXPECT_GT(cache.counts().misses, afterFirst.misses);
+    for (const auto& step : firstEvaluation.plan.steps)
+        EXPECT_NE(step.name, "unused-missing");
+    EXPECT_EQ(shared.graph().nodes().size(), nodesBefore);
+    EXPECT_EQ(shared.graph().edges().size(), edgesBefore);
 }

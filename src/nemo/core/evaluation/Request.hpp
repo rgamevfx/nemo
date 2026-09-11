@@ -53,11 +53,12 @@ inline constexpr int kSamplingScales[] = {1, 2, 4};
     return (dimension + scale - 1) / scale;
 }
 
-// An evaluation request identifies an output, local time, required
-// region/channels, and quality (spec section 10.3). Local time is
-// composition-local: parent-scope time mapping happens through Timing before
-// a request is formed, so evaluation never depends on panel selection.
+// An evaluation request identifies the network scope as well as its output,
+// local time, required region/channels, and quality (spec section 10.3).
+// NetworkId defaults invalid so callers must choose the intended network
+// before evaluation; output ids are local to that network.
 struct EvaluationRequest {
+    NetworkId network{kInvalidNetwork};
     NodeId output{kInvalidNode};
     std::int64_t localTime{0};
     Region region;

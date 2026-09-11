@@ -40,12 +40,23 @@
             "displayName": "Debug + TSan",
             "inherits": "debug",
             "cacheVariables": { "NEMO_SANITIZER": "thread" }
+        },
+        {
+            "name": "headless",
+            "displayName": "Headless core/session/catalog",
+            "inherits": "debug",
+            "cacheVariables": {
+                "NEMO_BUILD_UI": "OFF",
+                "NEMO_BUILD_GPU": "OFF",
+                "NEMO_BUILD_CLI": "OFF"
+            }
         }
     ],
     "buildPresets": [
         { "name": "debug", "configurePreset": "debug" },
         { "name": "release", "configurePreset": "release" },
         { "name": "asan", "configurePreset": "asan" },
+        { "name": "headless", "configurePreset": "headless" },
         { "name": "tsan", "configurePreset": "tsan" }
     ],
     "testPresets": [
@@ -73,6 +84,12 @@
         {
             "name": "tsan",
             "configurePreset": "tsan",
+            "output": { "outputOnFailure": true },
+            "execution": { "jobs": 0 }
+        },
+        {
+            "name": "headless",
+            "configurePreset": "headless",
             "output": { "outputOnFailure": true },
             "execution": { "jobs": 0 }
         }

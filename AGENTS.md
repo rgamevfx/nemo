@@ -151,6 +151,10 @@ on the actual running UI.
 
 ## Agent skills
 
+### Ownership and contribution context
+
+For ownership paths, extension entry points, dependency direction, or contribution review/licensing gates, read `docs/agents/ownership.md` first.
+
 ### Rendering & media context
 
 For rendering, media decode/encode, GPU execution, viewer cache, or

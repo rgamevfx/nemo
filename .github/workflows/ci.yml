@@ -67,3 +67,49 @@ jobs:
           build/${{ matrix.preset }}/apps/nemo-cli/nemo-cli validate /tmp/sample.json
           build/${{ matrix.preset }}/apps/nemo-cli/nemo-cli render /tmp/sample.json --out /tmp/frame.ppm --frame 3 --width 64 --height 64
           [ "$(stat -c%s /tmp/frame.ppm)" -gt 4000 ]
+
+  headless-core:
+    name: headless core/session/catalog
+    runs-on: ubuntu-24.04
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      CC: gcc-13
+      CXX: g++-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-13
+
+      - name: Bootstrap vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitURL: https://github.com/microsoft/vcpkg.git
+          vcpkgGitCommitId: 04a9d8e5212d01ee1dd9478eadd9caade4f8b0d4
+
+      - name: Configure headless ownership path
+        run: cmake --preset headless
+
+      - name: Build core ownership surface
+        run: cmake --build --preset headless --target nemo_core_tests
+
+      - name: Run session/catalog ownership tests
+        run: build/headless/tests/nemo_core_tests --gtest_filter='CatalogTest.*:ProjectSessionTest.*:CommandStackTest.*'
+
+      - name: Verify dependency checker rejects forbidden edge
+        shell: bash
+        run: |
+          set +e
+          cmake -S . -B build/dependency-negative -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DNEMO_BUILD_TESTS=ON -DNEMO_BUILD_GPU=OFF -DNEMO_BUILD_UI=OFF \
+            -DNEMO_BUILD_CLI=OFF -DNEMO_TEST_FORBIDDEN_DEPENDENCY=ON \
+            > /tmp/nemo-dependency-negative.log 2>&1
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -Fq "Nemo dependency direction violation" /tmp/nemo-dependency-negative.log
+          grep -Fq "'nemo_core'" /tmp/nemo-dependency-negative.log
+          grep -Fq "'nemo::workspace'" /tmp/nemo-dependency-negative.log

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Launch Nemo
+Comment=Launch the existing Nemo development build
+Exec=/home/rgame/dev/Nemo_Dev2/launch.cmd
+Path=/home/rgame/dev/Nemo_Dev2
+Icon=applications-graphics
+Terminal=false
+StartupNotify=true
+Categories=Graphics;

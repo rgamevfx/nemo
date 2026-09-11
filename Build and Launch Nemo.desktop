@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Build and Launch Nemo
+Comment=Build the current Nemo source and launch it
+Exec=/usr/bin/env NEMO_PAUSE_ON_ERROR=1 /home/rgame/dev/Nemo_Dev2/run.sh
+Path=/home/rgame/dev/Nemo_Dev2
+Icon=applications-development
+Terminal=true
+StartupNotify=true
+Categories=Graphics;

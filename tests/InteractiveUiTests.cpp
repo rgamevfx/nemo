@@ -39,12 +39,12 @@ QVariantMap namedNode(const nemo::ui::ViewerController& controller, const QStrin
 // No decoder is needed for command semantics: the unstarted runtime accepts
 // immutable probe snapshots, but all observed edits use the real controller
 // and its explicitly composed ProjectSession, exactly as QML does.
-TEST(Interactive, GraphCommandsUndoAndRejectOccupiedConnectionsAtomically) {
+TEST(Interactive, GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
-    controller.setNodeParameter(namedNode(controller, "background").value("id").toULongLong(), "color",
+    controller.setNodeParameter(namedNode(controller, "background").value("id").toString(), "color",
                                 QVariantList{QVariant{0.2}, QVariant{0.3}, QVariant{0.4}, QVariant{1.0}});
     const auto color = namedNode(controller, "background").value("params").toMap().value("color").toList();
     ASSERT_EQ(color.size(), 4);
@@ -60,18 +60,99 @@ TEST(Interactive, GraphCommandsUndoAndRejectOccupiedConnectionsAtomically) {
     EXPECT_FLOAT_EQ(resetColor.at(2).toFloat(), 0.0F);
     EXPECT_FLOAT_EQ(resetColor.at(3).toFloat(), 0.0F);
 
-    const auto edges = controller.graphEdges();
-    controller.connectGraphNodes(namedNode(controller, "background").value("id").toULongLong(), 0,
-                                 namedNode(controller, "composite").value("id").toULongLong(), 0);
-    EXPECT_FALSE(controller.error().isEmpty());
-    EXPECT_EQ(controller.graphEdges(), edges);
-    ASSERT_TRUE(controller.redo()) << "A rejected connection must not destroy the redo branch";
-    const auto redoColor = namedNode(controller, "background").value("params").toMap().value("color").toList();
-    ASSERT_EQ(redoColor.size(), 4);
-    EXPECT_FLOAT_EQ(redoColor.at(0).toFloat(), 0.2F);
-    EXPECT_FLOAT_EQ(redoColor.at(1).toFloat(), 0.3F);
-    EXPECT_FLOAT_EQ(redoColor.at(2).toFloat(), 0.4F);
-    EXPECT_FLOAT_EQ(redoColor.at(3).toFloat(), 1.0F);
+    const auto originalEdges = controller.graphEdges();
+    ASSERT_TRUE(controller.connectOrReplaceGraph(QString::number(session.document().rootNetworkId()),
+                                                 namedNode(controller, "background").value("id").toString(), 0,
+                                                 namedNode(controller, "composite").value("id").toString(), 0));
+    EXPECT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    EXPECT_NE(controller.graphEdges(), originalEdges);
+    ASSERT_TRUE(controller.undo());
+    EXPECT_EQ(controller.graphEdges(), originalEdges);
+    ASSERT_TRUE(controller.redo());
+    EXPECT_NE(controller.graphEdges(), originalEdges);
+}
+
+TEST(Interactive, GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto snapshot = controller.graphSnapshot(scope);
+    EXPECT_TRUE(snapshot.value("available").toBool());
+    EXPECT_EQ(snapshot.value("networkId").toString(), scope);
+    EXPECT_FALSE(controller.graphSnapshot("999999").value("available").toBool());
+    const auto sourceId = controller.createGraphNode(scope, "source", "stableSource", 120.5, 240.25, {}, {});
+    const auto outputId = controller.createGraphNode(scope, "output", "stableOutput", 420.0, 240.25, {}, {});
+    ASSERT_FALSE(sourceId.isEmpty());
+    ASSERT_FALSE(outputId.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, sourceId, 0, outputId, 0));
+
+    const auto source = namedNode(controller, "stableSource");
+    ASSERT_EQ(source.value("id").toString(), sourceId);
+    EXPECT_DOUBLE_EQ(source.value("x").toDouble(), 120.5);
+    EXPECT_DOUBLE_EQ(source.value("y").toDouble(), 240.25);
+
+    ASSERT_EQ(controller.graphEdges().size(), 1);
+    const auto edge = controller.graphEdges().first().toMap();
+    const auto edgeId = edge.value("id").toString();
+    ASSERT_TRUE(controller.commitGraphRoute(
+        scope, edgeId, QVariantList{QVariantMap{{"x", 260.0}, {"y", 180.0}}, QVariantMap{{"x", 320.0}, {"y", 300.0}}}));
+    ASSERT_TRUE(
+        controller.commitGraphMove(scope, QVariantList{QVariantMap{{"id", sourceId}, {"x", 140.0}, {"y", 260.0}}}));
+    EXPECT_EQ(namedNode(controller, "stableSource").value("id").toString(), sourceId);
+    ASSERT_TRUE(controller.undo());
+    EXPECT_DOUBLE_EQ(namedNode(controller, "stableSource").value("x").toDouble(), 120.5);
+}
+
+TEST(Interactive, GraphScopeEditsDoNotFallBackToRoot) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto root = controller.rootNetworkId();
+    const auto rootBefore = controller.graphSnapshot(root);
+    const auto created = std::make_shared<nemo::NetworkId>();
+    ASSERT_TRUE(session
+                    .submit(nemo::addNetworkCommand("other", created),
+                            nemo::EditOptions{.expectedRevision = session.revision()})
+                    .committed);
+    const auto other = QString::number(*created);
+    const auto otherBefore = controller.graphSnapshot(other);
+    const auto node = controller.createGraphNode(other, "constcolor", "Scoped", -40, 60, {}, {});
+    ASSERT_FALSE(node.isEmpty());
+    EXPECT_EQ(controller.graphSnapshot(root), rootBefore);
+    EXPECT_NE(controller.graphSnapshot(other), otherBefore);
+    ASSERT_TRUE(controller.undo());
+    EXPECT_EQ(controller.graphSnapshot(other), otherBefore);
+    const auto revision = session.revision();
+    EXPECT_TRUE(controller.createGraphNode("999999", "constcolor", "Invalid", 0, 0, {}, {}).isEmpty());
+    EXPECT_EQ(session.revision(), revision);
+    EXPECT_EQ(controller.graphSnapshot(root), rootBefore);
+}
+TEST(Interactive, DisconnectedProcessingNodeDropsOntoWireAtomically) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto sourceId = controller.createGraphNode(scope, "source", "wireSource", 0.0, 0.0, {}, {});
+    const auto outputId = controller.createGraphNode(scope, "output", "wireOutput", 300.0, 0.0, {}, {});
+    const auto mergeId = controller.createGraphNode(scope, "merge", "wireMerge", 140.0, 120.0, {}, {});
+    ASSERT_FALSE(sourceId.isEmpty());
+    ASSERT_FALSE(outputId.isEmpty());
+    ASSERT_FALSE(mergeId.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, sourceId, 0, outputId, 0));
+    ASSERT_EQ(controller.graphEdges().size(), 1);
+    const auto originalEdge = controller.graphEdges().first().toMap();
+    ASSERT_TRUE(
+        controller.insertExistingGraphNodeOnEdge(scope, mergeId, originalEdge.value("id").toString(), 140.0, 0.0));
+    ASSERT_EQ(controller.graphEdges().size(), 2);
+    const auto inserted = namedNode(controller, "wireMerge");
+    EXPECT_DOUBLE_EQ(inserted.value("x").toDouble(), 140.0);
+    EXPECT_DOUBLE_EQ(inserted.value("y").toDouble(), 0.0);
+    EXPECT_EQ(controller.graphEdges().first().toMap().value("fromNode").toString(), sourceId);
+    EXPECT_EQ(controller.graphEdges().last().toMap().value("toNode").toString(), outputId);
+    ASSERT_TRUE(controller.undo());
+    EXPECT_EQ(controller.graphEdges().size(), 1);
+    EXPECT_TRUE(namedNode(controller, "wireMerge").value("id").toString() == mergeId);
 }
 
 TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
@@ -80,11 +161,12 @@ TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
     nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     const auto before = controller.graphEdges();
-    controller.addGraphNode("output", "independentOutput");
+    const auto scope = QString::number(session.document().rootNetworkId());
+    ASSERT_FALSE(controller.createGraphNode(scope, "output", "independentOutput", 0.0, 0.0, {}, {}).isEmpty());
     const auto output = namedNode(controller, "independentOutput");
     ASSERT_FALSE(output.isEmpty());
-    controller.connectGraphNodes(namedNode(controller, "source").value("id").toULongLong(), 0,
-                                 output.value("id").toULongLong(), 0);
+    EXPECT_TRUE(
+        controller.connectOrReplaceGraph(scope, namedNode(controller, "source").value("id"), 0, output.value("id"), 0));
     ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
     ASSERT_TRUE(controller.undo());
     EXPECT_EQ(controller.graphEdges(), before);

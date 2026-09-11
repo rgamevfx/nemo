@@ -38,6 +38,7 @@ class ViewerController final : public QObject {
     Q_PROPERTY(QRectF presentedRegion READ presentedRegion NOTIFY frameArrived)
     Q_PROPERTY(QString outputName READ outputName WRITE setOutputName NOTIFY outputChanged)
     Q_PROPERTY(QStringList outputNames READ outputNames NOTIFY graphChanged)
+    Q_PROPERTY(QString rootNetworkId READ rootNetworkId NOTIFY graphChanged)
     Q_PROPERTY(QVariantList graphNodes READ graphNodes NOTIFY graphChanged)
     Q_PROPERTY(QVariantList graphEdges READ graphEdges NOTIFY graphChanged)
     Q_PROPERTY(QVariantList nodeCatalog READ nodeCatalog NOTIFY catalogChanged)
@@ -63,9 +64,28 @@ public:
     Q_INVOKABLE void setPan(QPointF pan);
     Q_INVOKABLE void resetView();
     Q_INVOKABLE void setFrame(int frame);
-    // Graph/timeline surfaces use these validated command entry points.
-    Q_INVOKABLE void addGraphNode(const QString& type, const QString& name);
-    Q_INVOKABLE void connectGraphNodes(const QVariant& fromNode, int fromPort, const QVariant& toNode, int toPort);
+    // Graph editing is command-owned. IDs cross the QML boundary as decimal
+    // strings so JavaScript never rounds a 64-bit identity.
+    Q_INVOKABLE QString createGraphNode(const QString& networkId, const QString& type, const QString& name, double x,
+                                        double y, const QVariant& anchorId, const QVariantList& shiftedNodes);
+    Q_INVOKABLE QString insertGraphNode(const QString& networkId, const QVariant& edgeId, const QString& type,
+                                        const QString& name, double x, double y);
+    Q_INVOKABLE bool insertExistingGraphNodeOnEdge(const QString& networkId, const QVariant& nodeId,
+                                                   const QVariant& edgeId, double x, double y);
+    Q_INVOKABLE bool deleteGraphNodes(const QString& networkId, const QVariantList& nodeIds);
+    Q_INVOKABLE bool connectOrReplaceGraph(const QString& networkId, const QVariant& fromNode, int fromPort,
+                                           const QVariant& toNode, int toPort);
+    Q_INVOKABLE bool rewireGraphEdge(const QString& networkId, const QVariant& edgeId, const QVariant& fromNode,
+                                     int fromPort, const QVariant& toNode, int toPort);
+    Q_INVOKABLE bool disconnectGraphEdge(const QString& networkId, const QVariant& edgeId);
+    Q_INVOKABLE bool commitGraphMove(const QString& networkId, const QVariantList& positions);
+    Q_INVOKABLE bool commitGraphRoute(const QString& networkId, const QVariant& edgeId, const QVariantList& points);
+    Q_INVOKABLE bool insertGraphRoutePoint(const QString& networkId, const QVariant& edgeId, int index, double x,
+                                           double y);
+    Q_INVOKABLE bool moveGraphRoutePoint(const QString& networkId, const QVariant& edgeId, int index, double x,
+                                         double y);
+    Q_INVOKABLE bool removeGraphRoutePoint(const QString& networkId, const QVariant& edgeId, int index);
+    // Parameter entry points remain command-backed and are used by the inspector.
     Q_INVOKABLE void setNodeParameter(const QVariant& nodeId, const QString& key, const QVariant& value);
     // Explicit text-entry adapter; parsing remains catalog-owned and avoids
     // converting signed 64-bit values through JavaScript Number.
@@ -102,6 +122,8 @@ public:
     [[nodiscard]] int effectiveScale() const { return effectiveScale_; }
     [[nodiscard]] QString outputName() const { return outputName_; }
     [[nodiscard]] QStringList outputNames() const;
+    [[nodiscard]] QString rootNetworkId() const;
+    Q_INVOKABLE QVariantMap graphSnapshot(const QString& networkId) const;
     [[nodiscard]] QVariantList graphNodes() const;
     [[nodiscard]] QVariantList graphEdges() const;
     [[nodiscard]] QVariantList nodeCatalog() const;
@@ -148,12 +170,13 @@ private:
     void documentChanged();
     void buildGraph(const SourceReference& reference);
     void refreshRequest();
+    void invalidateRequest();
+    void pollScheduler();
     void receive();
     void fail(QString message);
     bool applyEdit(const nemo::EditResult& result);
+    void clearError();
     [[nodiscard]] nemo::EditOptions editOptions() const;
-    void invalidateRequest();
-    void pollScheduler();
     ViewerRuntime* runtime_;
     nemo::ProjectSession& session_;
     SourceReference probedSource_;

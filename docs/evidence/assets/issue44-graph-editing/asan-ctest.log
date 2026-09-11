@@ -1,0 +1,85 @@
+[HANDLER_OUTPUT] 
+Test project /home/rgame/dev/Nemo_Dev2/build/asan
+
+      Start 319: WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks
+      Start 322: WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress
+ 1/39 Test #322: WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress ...........................   Passed    7.18 sec
+      Start 320: WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets
+ 2/39 Test #319: WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks ............................   Passed    7.22 sec
+      Start 321: WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease
+ 3/39 Test #320: WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets ............................   Passed    1.32 sec
+      Start 324: WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy
+ 4/39 Test #321: WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease ..............   Passed    1.43 sec
+      Start 323: WorkspaceDragTest.GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText
+ 5/39 Test #324: WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy ...............   Passed    1.33 sec
+      Start 318: WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer
+ 6/39 Test #323: WorkspaceDragTest.GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText ......   Passed    1.32 sec
+      Start 351: PanelContextUiTest.FollowActiveTracksPointerActivatedPanel
+ 7/39 Test #351: PanelContextUiTest.FollowActiveTracksPointerActivatedPanel ...............................   Passed    1.02 sec
+      Start 350: PanelContextUiTest.BindingAndRoleMenusExposePresentationChoices
+ 8/39 Test #318: WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer ...............................   Passed    1.27 sec
+      Start 325: WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance
+ 9/39 Test #350: PanelContextUiTest.BindingAndRoleMenusExposePresentationChoices ..........................   Passed    1.15 sec
+      Start 352: PanelContextUiTest.GroupClocksAreIsolatedAndPinnedContextStaysFixed
+10/39 Test #325: WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance .........................   Passed    1.22 sec
+      Start 317: WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges
+11/39 Test #352: PanelContextUiTest.GroupClocksAreIsolatedAndPinnedContextStaysFixed ......................   Passed    1.05 sec
+      Start 331: Interactive.GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds
+12/39 Test #331: Interactive.GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds ...............   Passed    0.22 sec
+      Start 332: Interactive.GraphScopeEditsDoNotFallBackToRoot
+13/39 Test #332: Interactive.GraphScopeEditsDoNotFallBackToRoot ...........................................   Passed    0.20 sec
+      Start 330: Interactive.GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically
+14/39 Test #330: Interactive.GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically .....................   Passed    0.21 sec
+      Start 314: WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct
+15/39 Test #317: WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges ....................   Passed    2.12 sec
+      Start 315: WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures
+16/39 Test #314: WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct .......................   Passed    1.42 sec
+      Start 316: WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits
+17/39 Test #315: WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures ............................   Passed    1.67 sec
+      Start  51: CommandStackTest.RoutePointCommandsAndLayoutBatchAreAtomic
+18/39 Test  #51: CommandStackTest.RoutePointCommandsAndLayoutBatchAreAtomic ...............................   Passed    0.11 sec
+      Start  55: CommandStackTest.CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch
+19/39 Test  #55: CommandStackTest.CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch .............   Passed    0.09 sec
+      Start  56: CommandStackTest.RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic
+20/39 Test  #56: CommandStackTest.RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic ............   Passed    0.09 sec
+      Start  53: CommandStackTest.ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode
+21/39 Test  #53: CommandStackTest.ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode ...   Passed    0.10 sec
+      Start  52: CommandStackTest.GraphDeletionProtectsFormalOutputTerminal
+22/39 Test  #52: CommandStackTest.GraphDeletionProtectsFormalOutputTerminal ...............................   Passed    0.09 sec
+      Start  48: CommandStackTest.GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt
+23/39 Test  #48: CommandStackTest.GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt ..............   Passed    0.10 sec
+      Start  50: CommandStackTest.InsertNodeOnEdgePreservesDestinationAndOutputFanOut
+24/39 Test #316: WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits .........................   Passed    1.46 sec
+      Start  54: CommandStackTest.CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically
+25/39 Test  #54: CommandStackTest.CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically ..............   Passed    0.10 sec
+      Start  49: CommandStackTest.OccupiedInputReplacementPreservesMergeFanOutAndUndo
+26/39 Test  #50: CommandStackTest.InsertNodeOnEdgePreservesDestinationAndOutputFanOut .....................   Passed    0.11 sec
+      Start 334: Interactive.GraphCreationUndoPreservesExistingConnections
+27/39 Test  #49: CommandStackTest.OccupiedInputReplacementPreservesMergeFanOutAndUndo .....................   Passed    0.10 sec
+      Start  45: CommandStackTest.TypedParameterBatchResetAndUndoRedoAreAtomic
+28/39 Test  #45: CommandStackTest.TypedParameterBatchResetAndUndoRedoAreAtomic ............................   Passed    0.09 sec
+      Start  46: CommandStackTest.InvalidTypedBatchLeavesDocumentAndHistoryUntouched
+29/39 Test #334: Interactive.GraphCreationUndoPreservesExistingConnections ................................   Passed    0.27 sec
+      Start  47: CommandStackTest.InstanceParameterBatchRequiresDefinitionNetworkScope
+30/39 Test  #46: CommandStackTest.InvalidTypedBatchLeavesDocumentAndHistoryUntouched ......................   Passed    0.09 sec
+      Start  44: CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks
+31/39 Test  #44: CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks ......   Passed    0.07 sec
+      Start  41: CommandStackTest.FailedTransactionIsAtomic
+32/39 Test  #47: CommandStackTest.InstanceParameterBatchRequiresDefinitionNetworkScope ....................   Passed    0.08 sec
+      Start  42: CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity
+33/39 Test  #41: CommandStackTest.FailedTransactionIsAtomic ...............................................   Passed    0.07 sec
+      Start  38: CommandStackTest.UndoRestoresAndRedoReapplies
+34/39 Test  #42: CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity ......................   Passed    0.08 sec
+      Start  40: CommandStackTest.FailingApplyLeavesDocumentUntouched
+35/39 Test  #38: CommandStackTest.UndoRestoresAndRedoReapplies ............................................   Passed    0.07 sec
+      Start  37: CommandStackTest.PushAppliesImmediately
+36/39 Test  #40: CommandStackTest.FailingApplyLeavesDocumentUntouched .....................................   Passed    0.08 sec
+      Start  39: CommandStackTest.NewCommandDropsRedoBranch
+37/39 Test  #37: CommandStackTest.PushAppliesImmediately ..................................................   Passed    0.08 sec
+      Start  43: CommandStackTest.HistoryBoundedByCapacity
+38/39 Test  #39: CommandStackTest.NewCommandDropsRedoBranch ...............................................   Passed    0.08 sec
+39/39 Test  #43: CommandStackTest.HistoryBoundedByCapacity ................................................   Passed    0.06 sec
+
+100% tests passed, 0 tests failed out of 39
+
+Total Test time (real) =  17.46 sec

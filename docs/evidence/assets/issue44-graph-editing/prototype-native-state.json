@@ -1,0 +1,363 @@
+{
+  "nodes": [
+    {
+      "id": "plateA",
+      "name": "Plate_A",
+      "type": "Read",
+      "x": 55,
+      "y": 30,
+      "params": [
+        {
+          "key": "colorspace",
+          "label": "Color space",
+          "kind": "choice",
+          "value": "Rec.709",
+          "options": [
+            "Rec.709",
+            "Linear",
+            "sRGB"
+          ],
+          "section": "Source"
+        },
+        {
+          "key": "first",
+          "label": "First frame",
+          "kind": "number",
+          "value": 1001,
+          "min": 1,
+          "max": 2000,
+          "step": 1,
+          "section": "Timing"
+        },
+        {
+          "key": "last",
+          "label": "Last frame",
+          "kind": "number",
+          "value": 1240,
+          "min": 1,
+          "max": 2000,
+          "step": 1,
+          "section": "Timing"
+        }
+      ]
+    },
+    {
+      "id": "plateB",
+      "name": "Plate_B",
+      "type": "Read",
+      "x": 335,
+      "y": 30,
+      "params": [
+        {
+          "key": "colorspace",
+          "label": "Color space",
+          "kind": "choice",
+          "value": "Rec.709",
+          "options": [
+            "Rec.709",
+            "Linear",
+            "sRGB"
+          ],
+          "section": "Source"
+        },
+        {
+          "key": "first",
+          "label": "First frame",
+          "kind": "number",
+          "value": 1001,
+          "min": 1,
+          "max": 2000,
+          "step": 1,
+          "section": "Timing"
+        },
+        {
+          "key": "last",
+          "label": "Last frame",
+          "kind": "number",
+          "value": 1240,
+          "min": 1,
+          "max": 2000,
+          "step": 1,
+          "section": "Timing"
+        }
+      ]
+    },
+    {
+      "id": "color1",
+      "name": "ColorCorrect1",
+      "type": "ColorCorrect",
+      "x": 55,
+      "y": 125,
+      "params": [
+        {
+          "key": "exposure",
+          "label": "Exposure",
+          "kind": "number",
+          "value": -0.18,
+          "min": -3,
+          "max": 3,
+          "step": 0.01,
+          "section": "Primary"
+        },
+        {
+          "key": "contrast",
+          "label": "Contrast",
+          "kind": "number",
+          "value": 1,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "section": "Primary"
+        },
+        {
+          "key": "saturation",
+          "label": "Saturation",
+          "kind": "number",
+          "value": 0.82,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "section": "Primary"
+        },
+        {
+          "key": "pivot",
+          "label": "Pivot",
+          "kind": "number",
+          "value": 0.18,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "section": "Primary"
+        },
+        {
+          "key": "channels",
+          "label": "Channels",
+          "kind": "choice",
+          "value": "RGB",
+          "options": [
+            "RGB",
+            "RGBA",
+            "R",
+            "G",
+            "B"
+          ],
+          "section": "Range"
+        },
+        {
+          "key": "clampBlack",
+          "label": "Clamp black",
+          "kind": "toggle",
+          "value": false,
+          "section": "Range"
+        },
+        {
+          "key": "clampWhite",
+          "label": "Clamp white",
+          "kind": "toggle",
+          "value": false,
+          "section": "Range"
+        }
+      ]
+    },
+    {
+      "id": "transform1",
+      "name": "Transform1",
+      "type": "Transform",
+      "x": 335,
+      "y": 125,
+      "params": [
+        {
+          "key": "translateX",
+          "label": "Translate X",
+          "kind": "number",
+          "value": -6,
+          "min": -200,
+          "max": 200,
+          "step": 1,
+          "section": "Transform"
+        },
+        {
+          "key": "translateY",
+          "label": "Translate Y",
+          "kind": "number",
+          "value": 0,
+          "min": -200,
+          "max": 200,
+          "step": 1,
+          "section": "Transform"
+        },
+        {
+          "key": "scale",
+          "label": "Scale",
+          "kind": "number",
+          "value": 1.042,
+          "min": 0.1,
+          "max": 3,
+          "step": 0.001,
+          "section": "Transform"
+        },
+        {
+          "key": "rotate",
+          "label": "Rotate",
+          "kind": "number",
+          "value": 0,
+          "min": -180,
+          "max": 180,
+          "step": 0.1,
+          "section": "Transform"
+        },
+        {
+          "key": "filter",
+          "label": "Filter",
+          "kind": "choice",
+          "value": "Cubic",
+          "options": [
+            "Cubic",
+            "Linear",
+            "Nearest"
+          ],
+          "section": "Sampling"
+        }
+      ]
+    },
+    {
+      "id": "merge1",
+      "name": "Merge1",
+      "type": "Merge",
+      "x": 195,
+      "y": 245,
+      "params": [
+        {
+          "key": "operation",
+          "label": "Operation",
+          "kind": "choice",
+          "value": "Over",
+          "options": [
+            "Over",
+            "Plus",
+            "Multiply",
+            "Screen"
+          ],
+          "section": "Composite"
+        },
+        {
+          "key": "mix",
+          "label": "Mix",
+          "kind": "number",
+          "value": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "section": "Composite"
+        },
+        {
+          "key": "channels",
+          "label": "Channels",
+          "kind": "choice",
+          "value": "RGBA",
+          "options": [
+            "RGBA",
+            "RGB",
+            "Alpha"
+          ],
+          "section": "Composite"
+        },
+        {
+          "key": "clamp",
+          "label": "Clamp output",
+          "kind": "toggle",
+          "value": false,
+          "section": "Composite"
+        },
+        {
+          "key": "mask",
+          "label": "Enable mask",
+          "kind": "toggle",
+          "value": false,
+          "section": "Mask"
+        },
+        {
+          "key": "invert",
+          "label": "Invert",
+          "kind": "toggle",
+          "value": false,
+          "section": "Mask"
+        },
+        {
+          "key": "feather",
+          "label": "Feather",
+          "kind": "number",
+          "value": 0,
+          "min": 0,
+          "max": 100,
+          "step": 0.1,
+          "section": "Mask"
+        }
+      ]
+    },
+    {
+      "id": "viewer1",
+      "name": "Viewer1",
+      "type": "Viewer",
+      "x": 195,
+      "y": 340,
+      "params": [
+        {
+          "key": "channels",
+          "label": "Channels",
+          "kind": "choice",
+          "value": "RGBA",
+          "options": [
+            "RGBA",
+            "RGB",
+            "Alpha"
+          ],
+          "section": "Display"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "plateA",
+      "to": "color1",
+      "input": 0,
+      "output": 0
+    },
+    {
+      "from": "plateB",
+      "to": "transform1",
+      "input": 0,
+      "output": 0
+    },
+    {
+      "from": "color1",
+      "to": "merge1",
+      "input": 0,
+      "output": 0
+    },
+    {
+      "from": "transform1",
+      "to": "merge1",
+      "input": 1,
+      "output": 0
+    },
+    {
+      "from": "merge1",
+      "to": "viewer1",
+      "input": 0,
+      "output": 0
+    }
+  ],
+  "zoom": 1.5621301775147929,
+  "nodeWidth": 112,
+  "nodeHeight": 28,
+  "theme": {
+    "accent": "#3485f6",
+    "border": "#30343a",
+    "muted": "#979ea8",
+    "panel": "#1e2023",
+    "node": "#2a2e33",
+    "fontSize": 11
+  }
+}

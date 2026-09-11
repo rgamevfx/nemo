@@ -1,0 +1,120 @@
+{
+  "issue": 44,
+  "reference": "docs/evidence/issue25-prototype-acceptance-v1.md",
+  "reference_archive_sha256": "0027b39f6ba20fc2168f83215f8ba036fcc408284e6b3a2702a21c2c37b8e57e",
+  "accepted_production_base": "b75c637 (#59 presentation and #41 routing)",
+  "source_sha256": {
+    "apps/nemo-ui/GraphItem.cpp": "9a561f2be4471e025405c380318e9482187e5c7fad890cf2e60a473ab2d627ee",
+    "apps/nemo-ui/GraphItem.hpp": "c6f21d7d52f5f61e24bf41b9732032d937b3d4a931f94eb01927e8d42f877ae5",
+    "apps/nemo-ui/ViewerController.cpp": "2d1c46f34a3d4ad6f408858f122974096d25cb437b1eaf52bff721562c6ddd43",
+    "apps/nemo-ui/ViewerController.hpp": "ec30f6d5ca03de1088b5079de7c5e81ec79fdf192ae4d2f8c0677a23ba73edfb",
+    "apps/nemo-ui/qml/GraphPanel.qml": "75ebfb3738b0cb3db1b0ffe7130bdb71d5a54f8663852ae3fe5ceea56ab2ac20",
+    "apps/nemo-ui/qml/WorkspaceNode.qml": "9e2740bfdd7f8fa47b4f7ab08eb0d367111093610cd747778912d6e596461dd6",
+    "src/nemo/core/document/Document.cpp": "46f8128a1179e97e9e072fe003a984e19149fa80965c098a040940d76cd6a8bb",
+    "src/nemo/core/document/Document.hpp": "ebb07e8213f1c644a2fb55b89600b847aa20787837b84344d71d274210dfd8d3",
+    "src/nemo/core/nodes/NodeCatalog.cpp": "8ad64b2fa10422e3970ead21b760dfb4217da6cb09a3cafc9e40e8c4cf9e9dbd",
+    "tests/CommandTests.cpp": "b101907a801500c0445a5bd2e5026397fc318e5f377ba38c424c396116896b7b",
+    "tests/InteractiveUiTests.cpp": "f32d698be04b367755a05a16de155d7b70d0b39632e7464abe6d3266d69248cc",
+    "tests/WorkspaceDragTests.cpp": "5be68fd84645683074efa190510450b5b16d2dc8e4c976889b712fbabf74fe01"
+  },
+  "capture_revision_note": "Native gestures/captures precede only removal of uncalled renderer hit-query entry points; rendering and gesture behavior unchanged by cleanup. Final binaries and tests rebuilt afterward.",
+  "environment": {
+    "platform": "native Linux Wayland / COSMIC",
+    "qt": "6.4.2",
+    "gpu": "NVIDIA GeForce GTX 1070",
+    "driver": "580.173.02",
+    "dpr": 1,
+    "production_rendering": "Vulkan QSG, actual nemo-ui executable",
+    "prototype_rendering": "Qt Quick software, live QML byte-matched to immutable archive"
+  },
+  "surfaces": {
+    "full": [
+      1274,
+      687
+    ],
+    "narrow": [
+      960,
+      687
+    ],
+    "node_scene_dimensions": [
+      112,
+      28
+    ],
+    "matched_zoom": 1.5621301775147929
+  },
+  "launch": [
+    "OCIO=docs/evidence/issue12-view.ocio QT_QPA_PLATFORM=wayland XDG_CONFIG_HOME=/tmp/nemo44-native-config build/debug/apps/nemo-ui/nemo-ui --source docs/evidence/assets/issue59-production-cutover/source-640x360-bt709.mkv --viewer-cache-dir /tmp/nemo44-native-cache"
+  ],
+  "scenario_setup": "Read-only temporary observation bridge queried production snapshots and injected Qt window pointer/keyboard events. Initial comparison node positions authored through commitGraphMove: source (55,30), background (335,30), composite (195,245), Output (195,340). Non-graph panels closed through existing WorkspaceController; Frame all at matching viewport. Instrumentation removed after smoke.",
+  "input_limit": "Qt-injected input on the real Wayland/Vulkan app is NOT a compositor/OS-level pointer acceptance pass. /dev/uinput is root:root 0660; no permitted virtual-pointer protocol/tool was available. Owner physical-pointer/feel review remains required.",
+  "capture_method": "QQuickWindow::grabWindow on native windows; production-compositor-narrow.png independently captured with cosmic-screenshot and cropped to (368,183)-(1328,870), excluding unrelated desktop pixels.",
+  "checks": [
+    {
+      "check": "real-source-frame-displayed",
+      "passed": true,
+      "status": "Displayed 640x360, 1:1, frame 0; compressed cache; 640x360 ffv1; decode selection: libavcodec build has no Vulkan hwaccel for this codec",
+      "error": ""
+    },
+    {
+      "check": "node-drag-preview-and-Escape-preserve-document",
+      "passed": true
+    },
+    {
+      "check": "Tab-Enter-immediate-selected-insertion-and-single-undo",
+      "passed": true,
+      "position": [
+        55,
+        125
+      ]
+    },
+    {
+      "check": "Alt-reroute-pipe-preview-cancel-and-Shift-disconnect-undo-retain-route",
+      "passed": true
+    },
+    {
+      "check": "empty-visibleRect-clears-native-node-wire-label-geometry",
+      "capture": "production-empty-clip.png",
+      "status": "visually confirmed: only grid/chrome remain",
+      "passed": true
+    },
+    {
+      "check": "remembered-canvas-click-not-hover-creates-centered-disconnected-node-then-Delete",
+      "passed": true,
+      "position": {
+        "x": 431.8560606060606,
+        "y": 93.45833333333334
+      }
+    }
+  ],
+  "comparisons": {
+    "files": [
+      "comparison-graph-full-pair.png",
+      "comparison-graph-full-overlay.png",
+      "comparison-graph-full-diff.png",
+      "comparison-graph-narrow-pair.png",
+      "comparison-graph-narrow-overlay.png",
+      "comparison-graph-narrow-diff.png"
+    ],
+    "interpretation": "Reference left, production right. Real production catalog/topology differs: four source/background/composite/Output nodes versus prototype Read/ColorCorrect/Transform/Merge/Viewer fixture. Missing native effects belong to #34; no fake effects or mask ports were added. Accepted workspace tabs differ. Software/Vulkan rasterization differences remain visible for owner review; these images are evidence, not automated parity approval."
+  },
+  "verification": {
+    "debug": "cmake --build --preset debug -j 2; ctest --preset debug -j 4 (352/352)",
+    "release": "cmake --build --preset release -j 2; ctest --preset release -j 4 (352/352)",
+    "asan": "cmake --build --preset asan -j 2; ctest --preset asan -j 2 -R CommandStackTest|Interactive.Graph|WorkspaceDragTest|PanelContextUiTest (39/39)"
+  },
+  "remaining_review": [
+    "Owner API/image/interaction approval; issue remains open",
+    "Compositor/OS-level physical pointer pass",
+    "Actual Parameters inspector remains #46; #44 provides double-click dispatch with sender network scope",
+    "Subnet collapse/navigation and owned-subnet lifetime remain #49; #44 provides scoped graph queries/edits"
+  ],
+  "warnings": [
+    "Existing Qt qmldir scanner diagnostics",
+    "Existing minizip-ng mktemp linker warning"
+  ],
+  "no_claims": [
+    "No Windows or mixed-DPR run",
+    "No TSan run",
+    "227 mapped reference entries are not 227 production tests or independently attested passes"
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "nodes": [
+    {
+      "category": "I/O",
+      "deletable": false,
+      "group": "I/O",
+      "id": "1",
+      "inputs": [
+        {
+          "index": 0,
+          "kind": "image",
+          "name": "color"
+        }
+      ],
+      "name": "Output",
+      "outputs": [],
+      "params": {},
+      "type": "output",
+      "x": 195,
+      "y": 340
+    },
+    {
+      "category": "I/O",
+      "deletable": true,
+      "group": "I/O",
+      "id": "2",
+      "inputs": [],
+      "name": "source",
+      "outputs": [
+        {
+          "index": 0,
+          "kind": "image",
+          "name": "color"
+        }
+      ],
+      "params": {
+        "source": "src"
+      },
+      "type": "source",
+      "x": 55,
+      "y": 30
+    },
+    {
+      "category": "Generators",
+      "deletable": true,
+      "group": "Generators",
+      "id": "3",
+      "inputs": [],
+      "name": "background",
+      "outputs": [
+        {
+          "index": 0,
+          "kind": "image",
+          "name": "color"
+        }
+      ],
+      "params": {
+        "color": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "type": "constcolor",
+      "x": 335,
+      "y": 30
+    },
+    {
+      "category": "Compositing",
+      "deletable": true,
+      "group": "Compositing",
+      "id": "4",
+      "inputs": [
+        {
+          "index": 0,
+          "kind": "image",
+          "name": "A"
+        },
+        {
+          "index": 1,
+          "kind": "image",
+          "name": "B"
+        }
+      ],
+      "name": "composite",
+      "outputs": [
+        {
+          "index": 0,
+          "kind": "image",
+          "name": "out"
+        }
+      ],
+      "params": {
+        "operation": "over"
+      },
+      "type": "merge",
+      "x": 195,
+      "y": 245
+    }
+  ],
+  "edges": [
+    {
+      "fromNode": "2",
+      "fromPort": 0,
+      "id": "1",
+      "route": [
+        {
+          "x": 171.71200585221968,
+          "y": 151.56987715136052
+        }
+      ],
+      "toNode": "4",
+      "toPort": 0
+    },
+    {
+      "fromNode": "3",
+      "fromPort": 0,
+      "id": "2",
+      "route": [],
+      "toNode": "4",
+      "toPort": 1
+    },
+    {
+      "fromNode": "4",
+      "fromPort": 0,
+      "id": "3",
+      "route": [],
+      "toNode": "1",
+      "toPort": 0
+    }
+  ],
+  "selection": [],
+  "zoom": 1.5621301775147929
+}

@@ -324,6 +324,145 @@ TEST_F(WorkspaceDragTest, CatalogMenuCreatesRealNodesAndTimelineSeeks) {
     EXPECT_GT(viewerController.frame(), quarterFrame);
 }
 
+TEST_F(WorkspaceDragTest, GraphDragPreviewCancellationAndGroupOffsets) {
+    const auto network = viewerController.rootNetworkId();
+    const auto a = viewerController.createGraphNode(network, "constcolor", "A", 40, 40, {}, {});
+    const auto b = viewerController.createGraphNode(network, "constcolor", "B", 220, 40, {}, {});
+    ASSERT_FALSE(a.isEmpty());
+    ASSERT_FALSE(b.isEmpty());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto point = [&](const QString& id) { return graph->mapToScene(graph->nodeRect(id).center()).toPoint(); };
+    const auto before = viewerController.graphNodes();
+    const auto revision = projectSession.revision();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(a));
+    EXPECT_EQ(projectSession.revision(), revision);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, point(a));
+    QTest::mouseMove(window, point(a) + QPoint(27, 19), 20);
+    EXPECT_EQ(viewerController.graphNodes(), before) << "Drag is presentation-only until release";
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::mouseRelease(window, Qt::LeftButton);
+    QTest::qWait(20);
+    EXPECT_EQ(viewerController.graphNodes(), before);
+    EXPECT_EQ(projectSession.revision(), revision);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(a));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::ShiftModifier, point(b));
+    const auto offset = graph->nodeRect(b).topLeft() - graph->nodeRect(a).topLeft();
+    const auto from = point(a);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, from);
+    QTest::mouseMove(window, from + QPoint(31, 23), 20);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, from + QPoint(31, 23));
+    QTest::qWait(30);
+    EXPECT_NE(viewerController.graphNodes(), before);
+    EXPECT_EQ(graph->nodeRect(b).topLeft() - graph->nodeRect(a).topLeft(), offset);
+    ASSERT_TRUE(viewerController.undo());
+    EXPECT_EQ(viewerController.graphNodes(), before) << "One undo restores the entire group";
+}
+
+TEST_F(WorkspaceDragTest, GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease) {
+    const auto network = viewerController.rootNetworkId();
+    const auto a = viewerController.createGraphNode(network, "constcolor", "A", 40, 0, {}, {});
+    const auto b = viewerController.createGraphNode(network, "merge", "B", 40, 240, {}, {});
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, a, 0, b, 0));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto edge = viewerController.graphEdges().first().toMap();
+    const auto edgeId = edge.value("id").toString();
+    const auto start = graph->portPosition(a, 0, true);
+    const auto end = graph->portPosition(b, 0, false);
+    const auto pipe = graph->mapToScene((start + end) / 2).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::AltModifier, pipe);
+    QTest::qWait(30);
+    const auto routed = viewerController.graphEdges();
+    ASSERT_EQ(routed.first().toMap().value("route").toList().size(), 1);
+    const auto body = graph->mapToScene(start * 0.7 + end * 0.3).toPoint();
+    auto* surface = item("graphCanvasSurface");
+    const auto empty = surface->mapToScene(QPointF(surface->width() - 15, surface->height() - 15)).toPoint();
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, body);
+    QTest::mouseMove(window, empty, 20);
+    EXPECT_EQ(viewerController.graphEdges(), routed);
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, empty);
+    EXPECT_EQ(viewerController.graphEdges(), routed);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, body);
+    QTest::mouseMove(window, empty, 20);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, empty);
+    QTest::qWait(30);
+    EXPECT_TRUE(viewerController.graphEdges().isEmpty());
+    ASSERT_TRUE(viewerController.undo());
+    EXPECT_EQ(viewerController.graphEdges(), routed);
+    EXPECT_EQ(viewerController.graphEdges().first().toMap().value("id").toString(), edgeId);
+}
+
+TEST_F(WorkspaceDragTest, GraphPipePullLocksSourceOrDestinationOnPress) {
+    const auto network = viewerController.rootNetworkId();
+    const auto a = viewerController.createGraphNode(network, "constcolor", "A", 40, 0, {}, {});
+    const auto b = viewerController.createGraphNode(network, "merge", "B", 40, 240, {}, {});
+    const auto c = viewerController.createGraphNode(network, "constcolor", "C", 240, 0, {}, {});
+    const auto d = viewerController.createGraphNode(network, "merge", "D", 240, 240, {}, {});
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, a, 0, b, 0));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(30);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto body =
+        graph->mapToScene((graph->portPosition(a, 0, true) + graph->portPosition(b, 0, false)) / 2).toPoint();
+    const auto sourceDrop = graph->mapToScene(graph->portPosition(c, 0, true)).toPoint();
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, body);
+    QTest::mouseMove(window, sourceDrop, 20);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, sourceDrop);
+    QTest::qWait(20);
+    ASSERT_EQ(viewerController.graphEdges().size(), 1);
+    EXPECT_EQ(viewerController.graphEdges().first().toMap().value("fromNode").toString(), c);
+    EXPECT_EQ(viewerController.graphEdges().first().toMap().value("toNode").toString(), b);
+    ASSERT_TRUE(viewerController.undo());
+    QTest::qWait(20);
+    const auto destinationDrop = graph->mapToScene(graph->portPosition(d, 0, false)).toPoint();
+    QTest::mousePress(window, Qt::LeftButton, Qt::ShiftModifier, body);
+    QTest::mouseMove(window, destinationDrop, 20);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, destinationDrop);
+    QTest::qWait(20);
+    ASSERT_EQ(viewerController.graphEdges().size(), 1);
+    EXPECT_EQ(viewerController.graphEdges().first().toMap().value("fromNode").toString(), a);
+    EXPECT_EQ(viewerController.graphEdges().first().toMap().value("toNode").toString(), d);
+}
+
+TEST_F(WorkspaceDragTest, GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText) {
+    const auto network = viewerController.rootNetworkId();
+    const auto a = viewerController.createGraphNode(network, "constcolor", "Selected", 40, 40, {}, {});
+    ASSERT_FALSE(a.isEmpty());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(30);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, graph->mapToScene(graph->nodeRect(a).center()).toPoint());
+    const auto before = viewerController.graphNodes();
+    QTest::keyClick(window, Qt::Key_Tab);
+    QTest::qWait(30);
+    auto* field = item("graphSearchField");
+    field->setProperty("text", "Merge");
+    QTest::keyClick(window, Qt::Key_Home);
+    QTest::keyClick(window, Qt::Key_Delete);
+    EXPECT_EQ(viewerController.graphNodes(), before) << "Delete in search edits text, not selected nodes";
+    field->setProperty("text", "Merge");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    ASSERT_EQ(viewerController.graphNodes().size(), before.size() + 1);
+    const auto created = viewerController.graphNodes().last().toMap();
+    EXPECT_EQ(created.value("type").toString(), "merge");
+    ASSERT_EQ(viewerController.graphEdges().size(), 1);
+    const auto edge = viewerController.graphEdges().first().toMap();
+    EXPECT_EQ(edge.value("fromNode").toString(), a);
+    EXPECT_EQ(edge.value("toNode").toString(), created.value("id").toString());
+    ASSERT_TRUE(viewerController.undo());
+    EXPECT_EQ(viewerController.graphNodes(), before);
+    EXPECT_TRUE(viewerController.graphEdges().isEmpty());
+}
+
 TEST_F(WorkspaceDragTest, CreatingWorkspaceThroughDialogActivatesAnIndependentCopy) {
     const auto original = controller.activeWorkspaceId();
     controller.setGroup(source, QStringLiteral("D"));

@@ -1,0 +1,2843 @@
+{
+  "reference": "issue25-prototype-reference-v1",
+  "production_baseline": "b75c637 (#59/#41 accepted)",
+  "entries": [
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/implementation[0]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/implementation[1]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/implementation[2]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/implementation[3]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/move",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/connect",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/reconnect",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/disconnect",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/cancel",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/insert",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/inspect",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[13]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[14]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[15]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[17]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[22]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[23]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[24]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[25]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[26]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[27]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[28]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/controls/pipes",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/controls/dots",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/controls/snapping",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[13]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[14]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[15]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[17]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[22]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[23]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[24]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and definition/instance lifetime (#49)",
+      "verification": "Owning hierarchy ticket tests; #44 instance removal must preserve shared definitions",
+      "note": "Prototype owns child graph contexts; production uses explicit reusable definitions/instances. Owned-subnet lifecycle is #49, not deleting shared definitions in #44."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[25]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[26]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[27]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[28]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[29]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[30]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[31]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[32]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[33]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[34]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[35]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[36]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/creation",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/selected",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/unselected",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/fallback",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/delete",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/dependent_state",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[0]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[1]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[2]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[3]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[4]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[5]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[6]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[7]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[8]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[9]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[10]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[13]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[14]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[15]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[17]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[22]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[23]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[24]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[25]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[26]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[27]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[28]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[29]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[30]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[31]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[32]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/left_drag",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/shift_left_drag",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/drop",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/cancel",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/hover",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/retained",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[13]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[14]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[15]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[17]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[22]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[23]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[24]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[25]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[26]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[27]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[28]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[29]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[30]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[31]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[32]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[33]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[34]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[35]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[36]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[37]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[38]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[39]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[40]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[41]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[42]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[43]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[44]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[0]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[1]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[2]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[3]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[4]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[5]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/navigation",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/selection",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/ports",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/masks",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/collapse",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/subnet_navigation",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "production_owner": "Hierarchy commands and graph scope navigation",
+      "verification": "Owning downstream ticket native scenario; preserve #44 dispatch/scope contract",
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/cancellation",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/existing_workflows",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "workflow-session.json:/verified[0]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/verified[1]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "production_owner": "Parameters presentation (#46)",
+      "verification": "Owning inspector native scenario; #44 stable-target double-click dispatch",
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/verified[2]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "production_owner": "Parameters presentation (#46)",
+      "verification": "Owning inspector native scenario; #44 stable-target double-click dispatch",
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/verified[3]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "production_owner": "Parameters presentation (#46)",
+      "verification": "Owning inspector native scenario; #44 stable-target double-click dispatch",
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/verified[5]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/verified[6]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/verified[7]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/verified[8]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[0]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[1]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "production_owner": "Parameters presentation (#46)",
+      "verification": "Owning inspector native scenario; #44 stable-target double-click dispatch",
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[2]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "production_owner": "Parameters presentation (#46)",
+      "verification": "Owning inspector native scenario; #44 stable-target double-click dispatch",
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[3]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "production_owner": "Parameters presentation (#46)",
+      "verification": "Owning inspector native scenario; #44 stable-target double-click dispatch",
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[5]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[6]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "production_owner": "GraphPanel/GraphItem \u2192 ViewerController \u2192 ProjectSession/Document commands",
+      "verification": "Native reference scenario plus resulting snapshot/history; render-thread snapshot/empty-clip check for drawing",
+      "note": "Implement and verify on production graph."
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstddef>
 #include <limits>
 #include <memory>
 #include <set>
@@ -838,12 +839,86 @@ Command setLayoutCommand(NetworkId network, NodeId nodeId, LayoutPosition positi
                        document.network(network).graph().setLayout(nodeId, position);
                    }};
 }
+Command setLayoutsCommand(NetworkId network, std::vector<LayoutEdit> edits) {
+    if (edits.empty())
+        throw std::invalid_argument("layout batch must contain at least one edit");
+    return Command{"position nodes", [network, edits = std::move(edits)](Document& document) {
+                       auto& graph = document.network(network).graph();
+                       std::set<NodeId> seen;
+                       for (const auto& edit : edits) {
+                           if (!seen.insert(edit.node).second)
+                               throw GraphException(GraphError::DuplicateId, "layout batch targets node " +
+                                                                                 std::to_string(edit.node) +
+                                                                                 " more than once");
+                           if (!graph.node(edit.node))
+                               throw GraphException(GraphError::UnknownNode,
+                                                    "layout batch targets unknown node " + std::to_string(edit.node));
+                       }
+                       for (const auto& edit : edits)
+                           graph.setLayout(edit.node, edit.position);
+                   }};
+}
 
 Command setRouteCommand(NetworkId network, EdgeId edgeId, std::vector<LayoutPosition> route) {
     return Command{"route edge " + std::to_string(edgeId),
                    [network, edgeId, route = std::move(route)](Document& document) {
                        document.network(network).graph().setRoute(edgeId, route);
                    }};
+}
+
+Command insertRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t index, LayoutPosition position) {
+    return Command{"insert route point on edge " + std::to_string(edgeId),
+                   [network, edgeId, index, position](Document& document) {
+                       auto& graph = document.network(network).graph();
+                       const auto edge = std::find_if(graph.edges().begin(), graph.edges().end(),
+                                                      [edgeId](const Edge& value) { return value.id == edgeId; });
+                       if (edge == graph.edges().end())
+                           throw GraphException(GraphError::UnknownEdge,
+                                                "cannot insert route point on unknown edge " + std::to_string(edgeId));
+                       if (index > edge->route.size())
+                           throw GraphException(GraphError::InvalidId, "route point index " + std::to_string(index) +
+                                                                           " is outside edge " +
+                                                                           std::to_string(edgeId) + " route");
+                       auto route = edge->route;
+                       route.insert(route.begin() + static_cast<std::ptrdiff_t>(index), position);
+                       graph.setRoute(edgeId, std::move(route));
+                   }};
+}
+
+Command moveRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t index, LayoutPosition position) {
+    return Command{
+        "move route point on edge " + std::to_string(edgeId), [network, edgeId, index, position](Document& document) {
+            auto& graph = document.network(network).graph();
+            const auto edge = std::find_if(graph.edges().begin(), graph.edges().end(),
+                                           [edgeId](const Edge& value) { return value.id == edgeId; });
+            if (edge == graph.edges().end())
+                throw GraphException(GraphError::UnknownEdge,
+                                     "cannot move route point on unknown edge " + std::to_string(edgeId));
+            if (index >= edge->route.size())
+                throw GraphException(GraphError::InvalidId, "route point index " + std::to_string(index) +
+                                                                " is not present on edge " + std::to_string(edgeId));
+            auto route = edge->route;
+            route[index] = position;
+            graph.setRoute(edgeId, std::move(route));
+        }};
+}
+
+Command removeRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t index) {
+    return Command{
+        "remove route point on edge " + std::to_string(edgeId), [network, edgeId, index](Document& document) {
+            auto& graph = document.network(network).graph();
+            const auto edge = std::find_if(graph.edges().begin(), graph.edges().end(),
+                                           [edgeId](const Edge& value) { return value.id == edgeId; });
+            if (edge == graph.edges().end())
+                throw GraphException(GraphError::UnknownEdge,
+                                     "cannot remove route point on unknown edge " + std::to_string(edgeId));
+            if (index >= edge->route.size())
+                throw GraphException(GraphError::InvalidId, "route point index " + std::to_string(index) +
+                                                                " is not present on edge " + std::to_string(edgeId));
+            auto route = edge->route;
+            route.erase(route.begin() + static_cast<std::ptrdiff_t>(index));
+            graph.setRoute(edgeId, std::move(route));
+        }};
 }
 
 Command setDefaultOutputCommand(NetworkId network, NodeId output) {
@@ -863,13 +938,64 @@ Command connectOutputCommand(NetworkId network, PortRef source, InterfacePortId 
                    }};
 }
 
-Command addNodeCommand(NetworkId network, std::string type, std::string name, std::shared_ptr<NodeId> createdId) {
-    return Command{"add node '" + name + "'",
-                   [network, type = std::move(type), name = std::move(name), createdId](Document& document) {
-                       const NodeId id = document.network(network).graph().addNode(type, name);
-                       if (createdId)
-                           *createdId = id;
-                   }};
+Command addNodeCommand(NetworkId network, std::string type, std::string name, std::shared_ptr<NodeId> createdId,
+                       LayoutPosition position, NodeId anchor, std::vector<LayoutEdit> shiftedNodes) {
+    return Command{
+        "add node '" + name + "'", [network, type = std::move(type), name = std::move(name), createdId, position,
+                                    anchor, shiftedNodes = std::move(shiftedNodes)](Document& document) {
+            auto& graph = document.network(network).graph();
+
+            // Validate all supplied layout edits before changing the candidate.
+            // The command stack already applies against a private document copy,
+            // but this also keeps direct command application failure-atomic.
+            std::set<NodeId> shifted;
+            for (const auto& edit : shiftedNodes) {
+                if (!shifted.insert(edit.node).second)
+                    throw GraphException(GraphError::DuplicateId, "node layout batch targets node " +
+                                                                      std::to_string(edit.node) + " more than once");
+                if (!graph.node(edit.node))
+                    throw GraphException(GraphError::UnknownNode,
+                                         "node layout batch targets unknown node " + std::to_string(edit.node));
+            }
+
+            Graph candidate = graph;
+            const NodeId inserted = candidate.addNodeWithId(candidate.nextNodeId(), type, name, {}, position);
+
+            // Selected creation is deliberately tolerant of stale or
+            // incompatible anchors: QML may have rendered against an older
+            // snapshot, so such a request remains a valid disconnected node.
+            if (anchor != kInvalidNode && candidate.node(anchor) != nullptr &&
+                !candidate.inputPorts(inserted).empty() && !candidate.outputPorts(anchor).empty()) {
+                const PortRef anchorOutput{anchor, 0};
+                const PortRef insertedInput{inserted, 0};
+                if (!candidate.validateEdge(anchorOutput, insertedInput)) {
+                    Graph routed = candidate;
+                    std::vector<Edge> fanout;
+                    for (const auto& edge : routed.edges())
+                        if (edge.from == anchorOutput)
+                            fanout.push_back(edge);
+
+                    if (!routed.outputPorts(inserted).empty()) {
+                        for (const auto& edge : fanout)
+                            routed.disconnect(edge.id);
+                        static_cast<void>(routed.connect(anchorOutput, insertedInput));
+                        for (const auto& edge : fanout)
+                            static_cast<void>(routed.connect(PortRef{inserted, 0}, edge.to));
+                    } else {
+                        // A sink is a branch: keep every existing fanout and
+                        // add only the anchor-to-sink edge.
+                        static_cast<void>(routed.connect(anchorOutput, insertedInput));
+                    }
+                    candidate = std::move(routed);
+                }
+            }
+
+            for (const auto& edit : shiftedNodes)
+                candidate.setLayout(edit.node, edit.position);
+            graph = std::move(candidate);
+            if (createdId)
+                *createdId = inserted;
+        }};
 }
 
 Command connectCommand(NetworkId network, PortRef from, PortRef to, std::shared_ptr<EdgeId> createdId) {
@@ -881,6 +1007,160 @@ Command connectCommand(NetworkId network, PortRef from, PortRef to, std::shared_
                    }};
 }
 
+Command removeNodeCommand(NetworkId network, NodeId nodeId) {
+    return Command{"remove node " + std::to_string(nodeId), [network, nodeId](Document& document) {
+                       auto& scoped = document.network(network);
+                       auto& graph = scoped.graph();
+                       const auto* node = graph.node(nodeId);
+                       if (!node)
+                           throw GraphException(GraphError::UnknownNode, "cannot remove unknown node " +
+                                                                             std::to_string(nodeId) + " from network " +
+                                                                             std::to_string(network));
+                       if (scoped.defaultOutput() == nodeId)
+                           throw GraphException(GraphError::InvalidNetwork,
+                                                "cannot remove formal output terminal node " + std::to_string(nodeId));
+
+                       const NetworkInstanceId instanceId = node->instance;
+                       auto channels = document.animationChannels();
+                       const bool removesAnimation =
+                           std::erase_if(channels, [network, nodeId, instanceId](const AnimationChannel& channel) {
+                               return (channel.address.network == network && channel.address.node == nodeId) ||
+                                      (instanceId != kInvalidNetworkInstance && channel.address.instance == instanceId);
+                           }) != 0;
+                       // Validate and publish animation cleanup first. Graph
+                       // removal is non-throwing after the node lookup above,
+                       // keeping direct command application atomic on failure.
+                       if (removesAnimation)
+                           document.restoreAnimationChannels(std::move(channels), document.nextAnimationChannelId(),
+                                                             document.nextKeyframeId());
+                       if (instanceId != kInvalidNetworkInstance)
+                           document.removeInstance(instanceId);
+                       else
+                           graph.removeNode(nodeId);
+                   }};
+}
+
+Command disconnectCommand(NetworkId network, EdgeId edgeId) {
+    return Command{"disconnect edge " + std::to_string(edgeId),
+                   [network, edgeId](Document& document) { document.network(network).graph().disconnect(edgeId); }};
+}
+
+Command replaceInputCommand(NetworkId network, PortRef from, PortRef to, std::shared_ptr<EdgeId> createdId) {
+    return Command{"replace input node " + std::to_string(to.node) + " port " + std::to_string(to.port),
+                   [network, from, to, createdId](Document& document) {
+                       auto& graph = document.network(network).graph();
+                       const auto existing = std::find_if(graph.edges().begin(), graph.edges().end(),
+                                                          [to](const Edge& edge) { return edge.to == to; });
+                       if (existing == graph.edges().end())
+                           throw GraphException(GraphError::UnknownEdge, "cannot replace unoccupied input node " +
+                                                                             std::to_string(to.node) + " port " +
+                                                                             std::to_string(to.port));
+
+                       // Validate the complete replacement before changing the live
+                       // candidate, so direct command application is atomic too.
+                       Graph trial = graph;
+                       trial.disconnect(existing->id);
+                       static_cast<void>(trial.connect(from, to));
+                       graph.disconnect(existing->id);
+                       const EdgeId replacement = graph.connect(from, to);
+                       if (createdId)
+                           *createdId = replacement;
+                   }};
+}
+Command rewireGraphEdgeCommand(NetworkId network, EdgeId edgeId, PortRef from, PortRef to) {
+    return Command{"rewire edge " + std::to_string(edgeId), [network, edgeId, from, to](Document& document) {
+                       auto& graph = document.network(network).graph();
+                       const auto existing = std::find_if(graph.edges().begin(), graph.edges().end(),
+                                                          [edgeId](const Edge& edge) { return edge.id == edgeId; });
+                       if (existing == graph.edges().end())
+                           throw GraphException(GraphError::UnknownEdge,
+                                                "cannot rewire unknown edge " + std::to_string(edgeId));
+
+                       // Identical endpoints are intentionally a true no-op:
+                       // in particular, retain the edge identity and authored
+                       // route points.
+                       if (existing->from == from && existing->to == to)
+                           return;
+
+                       Graph candidate = graph;
+                       candidate.disconnect(edgeId);
+                       const auto occupied = std::find_if(candidate.edges().begin(), candidate.edges().end(),
+                                                          [to](const Edge& edge) { return edge.to == to; });
+                       if (occupied != candidate.edges().end())
+                           candidate.disconnect(occupied->id);
+                       static_cast<void>(candidate.connect(from, to));
+                       graph = std::move(candidate);
+                   }};
+}
+
+Command insertNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, std::string type, std::string name,
+                                LayoutPosition position, std::shared_ptr<NodeId> createdNode,
+                                std::shared_ptr<EdgeId> upstreamEdge, std::shared_ptr<EdgeId> downstreamEdge) {
+    return Command{"insert node '" + name + "' on edge " + std::to_string(edgeId),
+                   [network, edgeId, type = std::move(type), name = std::move(name), position, createdNode,
+                    upstreamEdge, downstreamEdge](Document& document) {
+                       auto& graph = document.network(network).graph();
+                       const auto existing = std::find_if(graph.edges().begin(), graph.edges().end(),
+                                                          [edgeId](const Edge& edge) { return edge.id == edgeId; });
+                       if (existing == graph.edges().end())
+                           throw GraphException(GraphError::UnknownEdge,
+                                                "cannot insert on unknown edge " + std::to_string(edgeId));
+                       const Edge original = *existing;
+
+                       // Exercise all catalog, endpoint, cycle, name and identity
+                       // validation against an isolated graph before publication.
+                       Graph trial = graph;
+                       trial.disconnect(edgeId);
+                       const NodeId trialNode = trial.addNodeWithId(trial.nextNodeId(), type, name, {}, position);
+                       const EdgeId trialUpstream = trial.connect(original.from, PortRef{trialNode, 0});
+                       const EdgeId trialDownstream = trial.connect(PortRef{trialNode, 0}, original.to);
+
+                       const NodeId inserted = graph.addNodeWithId(trialNode, type, name, {}, position);
+                       graph.disconnect(edgeId);
+                       const EdgeId actualUpstream = graph.connect(original.from, PortRef{inserted, 0});
+                       const EdgeId actualDownstream = graph.connect(PortRef{inserted, 0}, original.to);
+                       (void)trialUpstream;
+                       (void)trialDownstream;
+                       if (createdNode)
+                           *createdNode = inserted;
+                       if (upstreamEdge)
+                           *upstreamEdge = actualUpstream;
+                       if (downstreamEdge)
+                           *downstreamEdge = actualDownstream;
+                   }};
+}
+Command insertExistingNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, NodeId nodeId, LayoutPosition position) {
+    return Command{
+        "insert existing node " + std::to_string(nodeId) + " on edge " + std::to_string(edgeId),
+        [network, edgeId, nodeId, position](Document& document) {
+            auto& graph = document.network(network).graph();
+            const auto edge = std::find_if(graph.edges().begin(), graph.edges().end(),
+                                           [edgeId](const Edge& value) { return value.id == edgeId; });
+            if (edge == graph.edges().end())
+                throw GraphException(GraphError::UnknownEdge, "cannot insert existing node " + std::to_string(nodeId) +
+                                                                  " on unknown edge " + std::to_string(edgeId));
+            if (!graph.node(nodeId))
+                throw GraphException(GraphError::UnknownNode, "cannot insert unknown node " + std::to_string(nodeId) +
+                                                                  " on edge " + std::to_string(edgeId));
+            const bool connected = std::any_of(graph.edges().begin(), graph.edges().end(), [nodeId](const Edge& value) {
+                return value.from.node == nodeId || value.to.node == nodeId;
+            });
+            if (connected)
+                throw GraphException(GraphError::PortOccupied, "cannot insert node " + std::to_string(nodeId) +
+                                                                   " because it already has an incident edge");
+            if (graph.inputPorts(nodeId).empty() || graph.outputPorts(nodeId).empty())
+                throw GraphException(GraphError::PortType, "node " + std::to_string(nodeId) +
+                                                               " must have primary input port 0 and output port 0");
+
+            const Edge original = *edge;
+            Graph candidate = graph;
+            candidate.setLayout(nodeId, position);
+            candidate.disconnect(edgeId);
+            static_cast<void>(candidate.connect(original.from, PortRef{nodeId, 0}));
+            static_cast<void>(candidate.connect(PortRef{nodeId, 0}, original.to));
+            graph = std::move(candidate);
+        }};
+}
 Command addNetworkCommand(std::string name, std::shared_ptr<NetworkId> createdId) {
     return Command{"add network '" + name + "'", [name = std::move(name), createdId](Document& document) {
                        const NetworkId id = document.addNetwork(name);

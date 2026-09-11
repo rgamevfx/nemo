@@ -288,7 +288,7 @@ NodeDescriptor outputDescriptor() {
 NodeDescriptor sourceDescriptor() {
     return NodeDescriptor{.type = "source",
                           .displayName = "Source",
-                          .group = "Generators",
+                          .group = "I/O",
                           .implementationVersion = 1,
                           .inputs = {},
                           .outputs = {{PortKind::Image, "color"}},

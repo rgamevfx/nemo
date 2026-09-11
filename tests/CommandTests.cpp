@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <gtest/gtest.h>
 
 #include <array>
 #include <barrier>
 #include <thread>
 
+#include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
@@ -578,4 +580,255 @@ TEST(ProjectSessionTest, SharedWorkerSnapshotsRemainImmutableAcrossOwnerEdits) {
     EXPECT_TRUE(unchanged[1]);
     EXPECT_EQ(rootGraph(session.document()).node(id)->name, "renamed");
     EXPECT_NE(session.document().stateRevision(), expected);
+}
+
+TEST(CommandStackTest, GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& graph = rootGraph(document);
+    const NodeId animated = graph.addNode("constcolor", "animated");
+    const NodeId merge = graph.addNode("merge", "merge");
+    const NodeId output = graph.addNode("output", "delivery");
+    const EdgeId first = graph.connect({animated, 0}, {merge, 0});
+    const EdgeId second = graph.connect({merge, 0}, {output, 0});
+    graph.setRoute(first, {{3.0, 4.0}});
+    document.restoreAnimationChannels(
+        {{7, ParameterAddress{network, animated, "color"}, {{9, 0.0, ColorValue{{1.0F, 0.0F, 0.0F, 1.0F}}}}}}, 8, 10);
+    const Document before = document;
+
+    CommandStack history(document);
+    history.push(removeNodeCommand(network, animated));
+    EXPECT_EQ(rootGraph(document).node(animated), nullptr);
+    ASSERT_EQ(rootGraph(document).edges().size(), 1u);
+    EXPECT_EQ(rootGraph(document).edges().front().id, second);
+    EXPECT_TRUE(document.animationChannels().empty());
+    ASSERT_TRUE(history.undo());
+    EXPECT_NE(rootGraph(document).node(animated), nullptr);
+    ASSERT_EQ(rootGraph(document).edges().size(), before.network(network).graph().edges().size());
+    EXPECT_EQ(rootGraph(document).edges()[0].id, first);
+    EXPECT_EQ(rootGraph(document).edges()[0].route, (std::vector<LayoutPosition>{{3.0, 4.0}}));
+    EXPECT_EQ(rootGraph(document).edges()[1].id, second);
+    ASSERT_EQ(document.animationChannels().size(), 1u);
+    EXPECT_EQ(document.animationChannels().front().id, 7u);
+}
+
+TEST(CommandStackTest, OccupiedInputReplacementPreservesMergeFanOutAndUndo) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& initial = rootGraph(document);
+    const NodeId first = initial.addNode("testpattern", "first");
+    const NodeId second = initial.addNode("testpattern", "second");
+    const NodeId merge = initial.addNode("merge", "merge");
+    const EdgeId old = initial.connect({first, 0}, {merge, 0});
+    const EdgeId fanout = initial.connect({second, 0}, {merge, 1});
+    initial.setRoute(old, {{1.0, 2.0}});
+    CommandStack history(document);
+
+    history.push(replaceInputCommand(network, {second, 0}, {merge, 0}));
+    ASSERT_EQ(rootGraph(document).edges().size(), 2u);
+    const auto replacement = std::find_if(
+        rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
+        [second, merge](const Edge& edge) { return edge.from == PortRef(second, 0) && edge.to == PortRef(merge, 0); });
+    ASSERT_NE(replacement, rootGraph(document).edges().end());
+    EXPECT_TRUE(std::find_if(rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
+                             [fanout](const Edge& edge) { return edge.id == fanout; }) !=
+                rootGraph(document).edges().end());
+    EXPECT_TRUE(replacement->route.empty());
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(rootGraph(document).edges().size(), 2u);
+    EXPECT_TRUE(std::find_if(rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
+                             [old](const Edge& edge) { return edge.id == old && edge.route.size() == 1; }) !=
+                rootGraph(document).edges().end());
+}
+
+TEST(CommandStackTest, InsertNodeOnEdgePreservesDestinationAndOutputFanOut) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& initial = rootGraph(document);
+    const NodeId source = initial.addNode("testpattern", "source");
+    const NodeId merge = initial.addNode("merge", "merge");
+    const NodeId output = initial.addNode("output", "delivery");
+    const EdgeId original = initial.connect({source, 0}, {merge, 0});
+    const EdgeId fanout = initial.connect({source, 0}, {output, 0});
+    initial.setRoute(original, {{4.0, 5.0}});
+    auto inserted = std::make_shared<NodeId>();
+    CommandStack history(document);
+
+    history.push(insertNodeOnEdgeCommand(network, original, "merge", "inserted", {20.0, 30.0}, inserted));
+    ASSERT_NE(rootGraph(document).node(*inserted), nullptr);
+    EXPECT_EQ(rootGraph(document).node(*inserted)->layout, (LayoutPosition{20.0, 30.0}));
+    ASSERT_EQ(rootGraph(document).edges().size(), 3u);
+    EXPECT_TRUE(std::find_if(rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
+                             [fanout, source, output](const Edge& edge) {
+                                 return edge.id == fanout && edge.from == PortRef(source, 0) &&
+                                        edge.to == PortRef(output, 0);
+                             }) != rootGraph(document).edges().end());
+    EXPECT_TRUE(std::find_if(rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
+                             [inserted, merge](const Edge& edge) {
+                                 return edge.from == PortRef(*inserted, 0) && edge.to == PortRef(merge, 0);
+                             }) != rootGraph(document).edges().end());
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(rootGraph(document).node(*inserted), nullptr);
+    ASSERT_EQ(rootGraph(document).edges().size(), 2u);
+    EXPECT_TRUE(std::find_if(rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
+                             [original](const Edge& edge) {
+                                 return edge.id == original && edge.route == std::vector<LayoutPosition>{{4.0, 5.0}};
+                             }) != rootGraph(document).edges().end());
+}
+
+TEST(CommandStackTest, RoutePointCommandsAndLayoutBatchAreAtomic) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& initial = rootGraph(document);
+    const NodeId source = initial.addNode("testpattern", "source");
+    const NodeId output = initial.addNode("output", "delivery");
+    const EdgeId edge = initial.connect({source, 0}, {output, 0});
+    initial.setRoute(edge, {{1.0, 1.0}, {2.0, 2.0}});
+    CommandStack history(document);
+
+    history.push(insertRoutePointCommand(network, edge, 1, {1.5, 1.5}));
+    history.push(moveRoutePointCommand(network, edge, 0, {0.0, 0.0}));
+    history.push(removeRoutePointCommand(network, edge, 1));
+    EXPECT_EQ(rootGraph(document).edges().front().route, (std::vector<LayoutPosition>{{0.0, 0.0}, {2.0, 2.0}}));
+    EXPECT_THROW(history.push(moveRoutePointCommand(network, edge, 9, {0.0, 0.0})), GraphException);
+
+    const auto revision = document.stateRevision();
+    EXPECT_THROW(history.push(setLayoutsCommand(network, {{source, {10.0, 20.0}}, {999, {0.0, 0.0}}})), GraphException);
+    EXPECT_EQ(document.stateRevision(), revision);
+    EXPECT_EQ(rootGraph(document).node(source)->layout, (LayoutPosition{}));
+    history.push(setLayoutsCommand(network, {{source, {10.0, 20.0}}, {output, {30.0, 40.0}}}));
+    EXPECT_EQ(rootGraph(document).node(source)->layout, (LayoutPosition{10.0, 20.0}));
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(rootGraph(document).node(source)->layout, (LayoutPosition{}));
+}
+
+TEST(CommandStackTest, GraphDeletionProtectsFormalOutputTerminal) {
+    Document document;
+    const NetworkId network = document.rootNetworkId();
+    const NodeId output = rootGraph(document).nodeByName("Output")->id;
+    const auto before = document.stateRevision();
+    CommandStack history(document);
+    try {
+        history.push(removeNodeCommand(network, output));
+        FAIL() << "expected formal output terminal rejection";
+    } catch (const GraphException& error) {
+        EXPECT_EQ(error.errorCode(), GraphError::InvalidNetwork);
+        EXPECT_NE(std::string(error.what()).find(std::to_string(output)), std::string::npos);
+    }
+    EXPECT_EQ(document.stateRevision(), before);
+    EXPECT_NE(rootGraph(document).node(output), nullptr);
+    EXPECT_EQ(history.depth(), 0u);
+}
+
+TEST(CommandStackTest, ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& initial = rootGraph(document);
+    const NodeId source = initial.addNode("testpattern", "source");
+    const NodeId processing = initial.addNode("merge", "processing");
+    const NodeId output = initial.addNode("output", "delivery");
+    const EdgeId original = initial.connect({source, 0}, {output, 0});
+    initial.setRoute(original, {{7.0, 8.0}});
+    CommandStack history(document);
+
+    history.push(insertExistingNodeOnEdgeCommand(network, original, processing, {50.0, 60.0}));
+    ASSERT_NE(rootGraph(document).node(processing), nullptr);
+    EXPECT_EQ(rootGraph(document).node(processing)->layout, (LayoutPosition{50.0, 60.0}));
+    ASSERT_EQ(rootGraph(document).edges().size(), 2u);
+    EXPECT_TRUE(std::find_if(rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
+                             [processing, output](const Edge& edge) {
+                                 return edge.from == PortRef(processing, 0) && edge.to == PortRef(output, 0);
+                             }) != rootGraph(document).edges().end());
+    ASSERT_TRUE(history.undo());
+    ASSERT_EQ(rootGraph(document).edges().size(), 1u);
+    EXPECT_EQ(rootGraph(document).edges().front().id, original);
+    EXPECT_EQ(rootGraph(document).edges().front().route, (std::vector<LayoutPosition>{{7.0, 8.0}}));
+
+    const NodeId busy = rootGraph(document).addNode("merge", "busy");
+    const NodeId secondOutput = rootGraph(document).addNode("output", "second-delivery");
+    rootGraph(document).connect({busy, 0}, {secondOutput, 0});
+    const auto before = document.stateRevision();
+    EXPECT_THROW(history.push(insertExistingNodeOnEdgeCommand(network, original, busy, {1.0, 2.0})), GraphException);
+    EXPECT_EQ(document.stateRevision(), before);
+    EXPECT_EQ(rootGraph(document).edges().front().id, original);
+    EXPECT_EQ(rootGraph(document).node(busy)->layout, (LayoutPosition{}));
+}
+TEST(CommandStackTest, CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& graph = rootGraph(document);
+    const NodeId source = graph.addNode("testpattern", "source");
+    const NodeId branch = graph.addNode("merge", "branch");
+    const NodeId output = graph.addNode("output", "output");
+    graph.connect({source, 0}, {branch, 0});
+    graph.connect({source, 0}, {output, 0});
+
+    auto created = std::make_shared<NodeId>();
+    CommandStack history(document);
+    history.push(
+        addNodeCommand(network, "merge", "inserted", created, {25.0, 35.0}, source, {{output, {100.0, 200.0}}}));
+    const auto& insertedGraph = rootGraph(document);
+    ASSERT_NE(insertedGraph.node(*created), nullptr);
+    EXPECT_EQ(insertedGraph.node(*created)->layout, (LayoutPosition{25.0, 35.0}));
+    EXPECT_EQ(insertedGraph.node(output)->layout, (LayoutPosition{100.0, 200.0}));
+    ASSERT_EQ(insertedGraph.edges().size(), 3u);
+    EXPECT_NE(std::find_if(insertedGraph.edges().begin(), insertedGraph.edges().end(),
+                           [source, created](const Edge& edge) {
+                               return edge.from == PortRef{source, 0} && edge.to == PortRef{*created, 0};
+                           }),
+              insertedGraph.edges().end());
+    EXPECT_EQ(std::count_if(insertedGraph.edges().begin(), insertedGraph.edges().end(),
+                            [created](const Edge& edge) { return edge.from.node == *created; }),
+              2);
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(rootGraph(document).nodes().size(), 3u);
+    EXPECT_EQ(rootGraph(document).edges().size(), 2u);
+    EXPECT_EQ(rootGraph(document).node(output)->layout, LayoutPosition{});
+}
+
+TEST(CommandStackTest, CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& graph = rootGraph(document);
+    const NodeId source = graph.addNode("testpattern", "source");
+    const NodeId output = graph.addNode("output", "output");
+    graph.connect({source, 0}, {output, 0});
+    const auto beforeNodes = graph.nodes().size();
+    const auto beforeEdges = graph.edges().size();
+    CommandStack history(document);
+    EXPECT_THROW(history.push(addNodeCommand(network, "output", "bad", {}, {}, source, {{999, {1.0, 2.0}}})),
+                 GraphException);
+    EXPECT_EQ(graph.nodes().size(), beforeNodes);
+    EXPECT_EQ(graph.edges().size(), beforeEdges);
+
+    auto sink = std::make_shared<NodeId>();
+    history.push(addNodeCommand(network, "output", "sink", sink, {10.0, 20.0}, source));
+    ASSERT_EQ(rootGraph(document).edges().size(), 2u);
+    EXPECT_EQ(std::count_if(rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
+                            [source](const Edge& edge) { return edge.from.node == source; }),
+              2);
+}
+
+TEST(CommandStackTest, RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& graph = rootGraph(document);
+    const NodeId first = graph.addNode("testpattern", "first");
+    const NodeId second = graph.addNode("testpattern", "second");
+    const NodeId output = graph.addNode("output", "output");
+    const EdgeId edge = graph.connect({first, 0}, {output, 0});
+    graph.setRoute(edge, {{4.0, 5.0}});
+    CommandStack history(document);
+    history.push(rewireGraphEdgeCommand(network, edge, {first, 0}, {output, 0}));
+    ASSERT_EQ(rootGraph(document).edges().size(), 1u);
+    EXPECT_EQ(rootGraph(document).edges().front().id, edge);
+    EXPECT_EQ(rootGraph(document).edges().front().route, (std::vector<LayoutPosition>{{4.0, 5.0}}));
+
+    history.push(rewireGraphEdgeCommand(network, edge, {second, 0}, {output, 0}));
+    ASSERT_EQ(rootGraph(document).edges().size(), 1u);
+    EXPECT_EQ(rootGraph(document).edges().front().from, (PortRef{second, 0}));
+    EXPECT_TRUE(rootGraph(document).edges().front().route.empty());
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(rootGraph(document).edges().front().id, edge);
+    EXPECT_EQ(rootGraph(document).edges().front().route, (std::vector<LayoutPosition>{{4.0, 5.0}}));
 }

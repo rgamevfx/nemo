@@ -178,6 +178,7 @@ Item {
             readonly property var theme: rootNode.theme
             readonly property var contextRouter: rootNode.contextRouter
             readonly property string nodeId: node ? node.id : ""
+            readonly property string activePanelId: activePanel ? activePanel.id : ""
             readonly property int panelCount: node.panels ? node.panels.length : 0
             readonly property Item tabStrip: leaf.panelCount > 1 ? tabRow : null
             readonly property var tabButtons: tabItems
@@ -209,9 +210,9 @@ Item {
                 registerContextPanels()
             }
             onNodeChanged: registerContextPanels()
-            onActivePanelChanged: {
-                if (contextRouter && activePanel)
-                    contextRouter.setActivePanel(activePanel.id)
+            onActivePanelIdChanged: {
+                if (contextRouter && activePanelId.length)
+                    contextRouter.setActivePanel(activePanelId)
             }
             Component.onCompleted: {
                 registerCurrentLeaf()

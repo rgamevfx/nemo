@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -158,14 +159,33 @@ struct ParameterEdit {
     std::optional<ParameterValue> value;
 };
 
-Command addNodeCommand(NetworkId network, std::string type, std::string name, std::shared_ptr<NodeId> createdId = {});
+struct LayoutEdit {
+    NodeId node{kInvalidNode};
+    LayoutPosition position{};
+};
+
+Command addNodeCommand(NetworkId network, std::string type, std::string name, std::shared_ptr<NodeId> createdId = {},
+                       LayoutPosition position = {}, NodeId anchor = kInvalidNode,
+                       std::vector<LayoutEdit> shiftedNodes = {});
+Command removeNodeCommand(NetworkId network, NodeId nodeId);
 Command connectCommand(NetworkId network, PortRef from, PortRef to, std::shared_ptr<EdgeId> createdId = {});
+Command disconnectCommand(NetworkId network, EdgeId edgeId);
+Command replaceInputCommand(NetworkId network, PortRef from, PortRef to, std::shared_ptr<EdgeId> createdId = {});
+Command rewireGraphEdgeCommand(NetworkId network, EdgeId edgeId, PortRef from, PortRef to);
+Command insertNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, std::string type, std::string name,
+                                LayoutPosition position = {}, std::shared_ptr<NodeId> createdNode = {},
+                                std::shared_ptr<EdgeId> upstreamEdge = {}, std::shared_ptr<EdgeId> downstreamEdge = {});
+Command insertExistingNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, NodeId nodeId, LayoutPosition position);
 Command setParamCommand(NetworkId network, NodeId nodeId, std::string key, ParameterValue value);
 Command resetParamCommand(NetworkId network, NodeId nodeId, std::string key);
 Command setParametersCommand(std::vector<ParameterEdit> edits);
 Command renameNodeCommand(NetworkId network, NodeId nodeId, std::string name);
 Command setLayoutCommand(NetworkId network, NodeId nodeId, LayoutPosition position);
+Command setLayoutsCommand(NetworkId network, std::vector<LayoutEdit> edits);
 Command setRouteCommand(NetworkId network, EdgeId edgeId, std::vector<LayoutPosition> route);
+Command insertRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t index, LayoutPosition position);
+Command moveRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t index, LayoutPosition position);
+Command removeRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t index);
 Command setDefaultOutputCommand(NetworkId network, NodeId output);
 Command connectInputCommand(NetworkId network, InterfacePortId input, PortRef destination);
 Command connectOutputCommand(NetworkId network, PortRef source, InterfacePortId output);

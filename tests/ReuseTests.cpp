@@ -11,12 +11,14 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <utility>
 #include <vector>
 
+#include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
@@ -229,6 +231,44 @@ TEST(ReuseTest, TimeVariantsCoexistWithoutBlanketDeletion) {
     const CacheCounts afterRevisit = cache.counts();
     EXPECT_EQ(afterRevisit.hits - afterTwoFrames.hits, 2u);
     EXPECT_EQ(afterRevisit.misses, afterTwoFrames.misses);
+}
+
+TEST(ReuseTest, AnimatedEffectiveValuesReuseAcrossHistoryRevisions) {
+    Document doc =
+        makeDocument({{"testpattern", "plate"}, {"constcolor", "animated"}, {"merge", "comp"}, {"output", "out"}});
+    const NodeId animated = rootGraph(doc).nodeByName("animated")->id;
+    rootGraph(doc).setParam(animated, "color", ColorValue{{0.0F, 0.0F, 0.0F, 1.0F}});
+    connect(rootGraph(doc), "plate", "comp", 0, 0);
+    connect(rootGraph(doc), "animated", "comp", 0, 1);
+    connect(rootGraph(doc), "comp", "out");
+    const ParameterAddress address{doc.rootNetworkId(), animated, "color", kInvalidNetworkInstance};
+    CommandStack stack(doc);
+    stack.push(setKeyframesCommand({
+        KeyframeEdit{address, Keyframe{0, 0.0, ColorValue{{1.0F, 0.0F, 0.0F, 1.0F}}}},
+        KeyframeEdit{address, Keyframe{0, 2.0, ColorValue{{0.0F, 0.0F, 1.0F, 1.0F}}}},
+    }));
+
+    const EvaluationRequest request = requestFor(doc, "out", 1);
+    ResultCache<CpuImage> cache;
+    const CpuEvaluation original = evaluateCpu(doc, request, &cache);
+    const CacheCounts afterOriginal = cache.counts();
+
+    stack.push(setKeyframesCommand({KeyframeEdit{address, Keyframe{0, 2.0, ColorValue{{0.0F, 1.0F, 0.0F, 1.0F}}}}}));
+    const CpuEvaluation changed = evaluateCpu(doc, request, &cache);
+    const CacheCounts afterChanged = cache.counts();
+    EXPECT_EQ(changed.image.pixel(0, 0), (std::array<float, 4>{0.5F, 0.5F, 0.0F, 1.0F}));
+    EXPECT_EQ(afterChanged.misses - afterOriginal.misses, 3u);
+    EXPECT_EQ(afterChanged.hits - afterOriginal.hits, 1u);  // unrelated plate stays reusable
+
+    // Restore the old effective value through a new history entry. The
+    // content-derived key matches the original request, so every node reuses.
+    stack.push(setKeyframesCommand({KeyframeEdit{address, Keyframe{0, 2.0, ColorValue{{0.0F, 0.0F, 1.0F, 1.0F}}}}}));
+    const CacheCounts beforeRestore = cache.counts();
+    const CpuEvaluation restored = evaluateCpu(doc, request, &cache);
+    const CacheCounts afterRestore = cache.counts();
+    EXPECT_EQ(restored.image.pixel(0, 0), original.image.pixel(0, 0));
+    EXPECT_EQ(afterRestore.hits - beforeRestore.hits, 4u);
+    EXPECT_EQ(afterRestore.misses, beforeRestore.misses);
 }
 
 // Acceptance example 3 (representation part): region variants are distinct

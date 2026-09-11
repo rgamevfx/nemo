@@ -5,6 +5,7 @@
 #include <limits>
 #include <variant>
 
+#include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Serialization.hpp"
 
 using namespace nemo;
@@ -36,6 +37,21 @@ Document sampleDocument() {
     network.graph().connect({plate, 0}, {comp, 0});
     network.graph().connect({comp, 0}, {output, 0});
     network.setDefaultOutput(output);
+    return document;
+}
+
+Document animatedDocument() {
+    Document document;
+    const auto node = root(document).graph().addNode("constcolor", "animated");
+    const ParameterAddress address{document.rootNetworkId(), node, "color"};
+    Keyframe first{0, 0.25, ColorValue{{-2.F, 4.F, 8.F, 1.F}}};
+    first.interpolation = KeyInterpolation::Bezier;
+    first.tangentMode = TangentMode::Broken;
+    first.inSlope = {-0.25, 0.5, 0, 0};
+    first.outSlope = {0.75, -0.5, 0, 0};
+    Keyframe last{0, 10.75, ColorValue{{6.F, -4.F, 2.F, 1.F}}};
+    last.interpolation = KeyInterpolation::Hold;
+    setKeyframesCommand({{address, first}, {address, last}}).apply(document);
     return document;
 }
 
@@ -109,6 +125,9 @@ TEST(PersistenceTest, TypedInstanceOverridesRoundTrip) {
 TEST(PersistenceTest, LegacyKnownParameterTextMigratesThroughCatalog) {
     nlohmann::json legacy = saveDocument(sampleDocument());
     legacy["schema"] = 2;
+    legacy.erase("animationChannels");
+    legacy.erase("nextAnimationChannelId");
+    legacy.erase("nextKeyframeId");
     auto& nodes = legacy["networks"].at(0)["nodes"];
     auto node = std::find_if(nodes.begin(), nodes.end(),
                              [](const auto& entry) { return entry.value("name", std::string{}) == "plate"; });
@@ -127,6 +146,9 @@ TEST(PersistenceTest, LegacyKnownParameterTextMigratesThroughCatalog) {
 TEST(PersistenceTest, ParameterMigrationFailuresIdentifyLocation) {
     nlohmann::json legacy = saveDocument(sampleDocument());
     legacy["schema"] = 2;
+    legacy.erase("animationChannels");
+    legacy.erase("nextAnimationChannelId");
+    legacy.erase("nextKeyframeId");
     auto& legacyNodes = legacy["networks"].at(0)["nodes"];
     auto legacyNode = std::find_if(legacyNodes.begin(), legacyNodes.end(),
                                    [](const auto& entry) { return entry.value("name", std::string{}) == "plate"; });
@@ -333,4 +355,84 @@ TEST(PersistenceTest, MissingInstanceRecordIsRejectedWithNodeRelationship) {
     auto malformed = saveDocument(original);
     malformed["instances"] = nlohmann::json::array();
     EXPECT_THROW(loadDocument(malformed), DeserializeError);
+}
+
+TEST(PersistenceTest, AnimationRoundTripPreservesCurvesAndScopedInstanceOverrides) {
+    auto original = animatedDocument();
+    const auto definition = original.addNetwork("shared-animation");
+    const auto node = original.network(definition).graph().addNode("constcolor", "color");
+    const auto instance = original.addInstance(original.rootNetworkId(), definition, "occurrence");
+    const ParameterAddress occurrence{definition, node, "color", instance};
+    setKeyframesCommand({{occurrence, Keyframe{0, 3.5, ColorValue{{0.25F, 0.5F, 0.75F, 1.F}}}}}).apply(original);
+    const auto encoded = saveDocument(original);
+    const auto loaded = loadDocument(encoded);
+    EXPECT_EQ(loaded.document.animationChannels(), original.animationChannels());
+    EXPECT_EQ(saveDocument(loaded.document), encoded);
+    const auto address = original.animationChannels().front().address;
+    EXPECT_EQ(animatedParameterValue(loaded.document, address, 5.25), animatedParameterValue(original, address, 5.25));
+    EXPECT_EQ(animatedParameterValue(loaded.document, occurrence, 3.5),
+              (ParameterValue{ColorValue{{0.25F, 0.5F, 0.75F, 1.F}}}));
+}
+
+TEST(PersistenceTest, AnimationRetiredIdentitiesSurviveSaveLoadAndCannotBeReused) {
+    auto document = animatedDocument();
+    const auto oldChannel = document.animationChannels().front();
+    removeKeyframesCommand({{oldChannel.id, oldChannel.keys[0].id}, {oldChannel.id, oldChannel.keys[1].id}})
+        .apply(document);
+    auto loaded = loadDocument(saveDocument(document)).document;
+    setKeyframesCommand({{oldChannel.address, Keyframe{0, 1, ColorValue{{0, 0, 0, 1}}}}}).apply(loaded);
+    ASSERT_EQ(loaded.animationChannels().size(), 1U);
+    EXPECT_GT(loaded.animationChannels().front().id, oldChannel.id);
+    EXPECT_GT(loaded.animationChannels().front().keys.front().id, oldChannel.keys.back().id);
+}
+
+TEST(PersistenceTest, SchemaThreeMigratesWithoutInventingAnimation) {
+    auto encoded = saveDocument(sampleDocument());
+    encoded["schema"] = 3;
+    encoded.erase("animationChannels");
+    encoded.erase("nextAnimationChannelId");
+    encoded.erase("nextKeyframeId");
+    const auto loaded = loadDocument(encoded);
+    EXPECT_TRUE(loaded.document.animationChannels().empty());
+    EXPECT_EQ(root(loaded.document).graph().nodeByName("plate")->params.at("future"),
+              ParameterValue{std::string{"1.5"}});
+}
+
+TEST(PersistenceTest, AnimationRejectsConflictingIdentitiesTimesAndAddresses) {
+    const auto encoded = saveDocument(animatedDocument());
+    auto duplicateTime = encoded;
+    duplicateTime["animationChannels"][0]["keys"][1]["time"] = duplicateTime["animationChannels"][0]["keys"][0]["time"];
+    EXPECT_THROW(loadDocument(duplicateTime), DeserializeError);
+    auto duplicateKey = encoded;
+    duplicateKey["animationChannels"][0]["keys"][1]["id"] = duplicateKey["animationChannels"][0]["keys"][0]["id"];
+    EXPECT_THROW(loadDocument(duplicateKey), DeserializeError);
+    auto duplicateAddress = encoded;
+    auto channel = duplicateAddress["animationChannels"][0];
+    channel["id"] = 100;
+    channel["keys"][0]["id"] = 100;
+    channel["keys"][1]["id"] = 101;
+    duplicateAddress["animationChannels"].push_back(channel);
+    EXPECT_THROW(loadDocument(duplicateAddress), DeserializeError);
+    auto missingNode = encoded;
+    missingNode["animationChannels"][0]["address"]["node"] = 100;
+    EXPECT_THROW(loadDocument(missingNode), DeserializeError);
+}
+
+TEST(PersistenceTest, AnimationRejectsMalformedValuesAndTangentsInsteadOfDroppingChannels) {
+    const auto encoded = saveDocument(animatedDocument());
+    auto nonfinite = encoded;
+    nonfinite["animationChannels"][0]["keys"][0]["time"] = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(loadDocument(nonfinite), DeserializeError);
+    auto slopes = encoded;
+    slopes["animationChannels"][0]["keys"][0]["tangentMode"] = "smooth";
+    EXPECT_THROW(loadDocument(slopes), DeserializeError);
+    auto type = encoded;
+    type["animationChannels"][0]["keys"][0]["value"] = {{"type", "boolean"}, {"value", true}};
+    EXPECT_THROW(loadDocument(type), DeserializeError);
+    auto interpolation = encoded;
+    interpolation["animationChannels"][0]["keys"][0]["interpolation"] = "unsupported";
+    EXPECT_THROW(loadDocument(interpolation), DeserializeError);
+    auto unavailable = encoded;
+    unavailable["animationChannels"][0]["address"]["key"] = "missing-parameter";
+    EXPECT_THROW(loadDocument(unavailable), DeserializeError);
 }

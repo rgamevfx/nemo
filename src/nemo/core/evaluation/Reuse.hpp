@@ -6,19 +6,19 @@
 // Reuse identity is content-derived, never history-derived:
 //
 //   * A node result's ResultKey covers the implementation version, node
-//     type, the node's authored parameter state, the ResultKeys of its
-//     effective inputs in port order, and the request's mapped local time,
-//     region, channels, quality, plus the working-space color
-//     interpretation. Keys are computed before execution, so authored
-//     state is what is hashed: executor-injected defaults are a
-//     deterministic function of the implementation version (recorded into
-//     effectiveParams at execution). A node with an explicit default value
-//     and one relying on the default therefore get different keys —
-//     conservative: this can only miss reuse, never serve a wrong result.
+//     type, its effective parameter state at the requested local time, the
+//     ResultKeys of its effective inputs in port order, and the request's
+//     mapped local time, region, channels, quality, plus the working-space
+//     color interpretation. Keys are computed before execution from a local
+//     resolved-parameter snapshot: static/default values and authored
+//     animation are included, while the Document itself is never mutated.
+//     A node with an explicit default value and one relying on the default
+//     therefore get different keys — conservative: this can only miss reuse,
+//     never serve a wrong result.
 //   * Sharing is by effective state, so shared VFX with different grades
-//     reuse the shared upstream results, structurally identical
-//     occurrences share results, and different representations (time,
-//     region, quality) coexist as distinct keys.
+//     reuse the shared upstream results, structurally identical occurrences
+//     share results, and different representations (time, region, quality)
+//     coexist as distinct keys.
 //
 // Viewer and delivery transform state is deliberately excluded from
 // scene-linear keys (ADR-0004: viewing transforms are downstream of the

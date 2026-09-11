@@ -1,16 +1,16 @@
 #pragma once
 
-#include <array>
-#include <map>
-#include <sstream>
-#include <string>
-#include <utility>
-#include <variant>
-
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
+#include <array>
+#include <map>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <variant>
 
 namespace nemo {
 
@@ -50,6 +50,47 @@ namespace nemo {
         failNode(node, std::string("parameter '") + key + "' must be a color, got '" + parameterValueText(value) + "'");
     }
     return color->value;
+}
+
+// Resolves one expanded occurrence's static overrides and request-local
+// animation without copying nodes that have neither. The returned pointer is
+// valid while `localNode` remains in scope. This metadata seam is shared by
+// the CPU evaluator, GPU executor, and viewer-key query; it never mutates the
+// captured Document snapshot.
+[[nodiscard]] inline const NodeInstance* resolveEffectiveNode(const Document& document,
+                                                              const ExpandedNode& expandedNode,
+                                                              std::optional<NodeInstance>& localNode, double time) {
+    const NodeInstance& authoredNode = *expandedNode.node;
+    const NodeInstance* effectiveNode = &authoredNode;
+    if (expandedNode.id.instance != kInvalidNetworkInstance) {
+        const NetworkInstance* occurrence = document.instance(expandedNode.id.instance);
+        if (occurrence == nullptr)
+            throw EvaluationException("evaluation references missing network instance");
+        if (const auto overrides = occurrence->params.find(authoredNode.id); overrides != occurrence->params.end()) {
+            localNode = authoredNode;
+            for (const auto& [key, value] : overrides->second)
+                localNode->params[key] = value;
+            effectiveNode = &*localNode;
+        }
+    }
+
+    bool hasAnimation = false;
+    for (const auto& channel : document.animationChannels()) {
+        if (channel.address.network == expandedNode.id.network && channel.address.node == authoredNode.id &&
+            (channel.address.instance == kInvalidNetworkInstance ||
+             channel.address.instance == expandedNode.id.instance)) {
+            hasAnimation = true;
+            break;
+        }
+    }
+    if (hasAnimation) {
+        if (!localNode)
+            localNode = *effectiveNode;
+        applyAnimationParameters(document, expandedNode.id.network, authoredNode.id, expandedNode.id.instance, time,
+                                 localNode->params);
+        effectiveNode = &*localNode;
+    }
+    return effectiveNode;
 }
 
 }  // namespace nemo

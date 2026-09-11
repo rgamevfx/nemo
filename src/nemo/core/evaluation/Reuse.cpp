@@ -64,12 +64,13 @@ namespace {
 ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
                         const std::vector<std::uint64_t>& inputKeyHashes, const EvaluationRequest& request,
                         const KeyContext& context) {
-    //   network|impl|type|params|inputs|source|time|region|scale|channels|quality|working|tag
+    //   network|impl|type|effectiveParams|inputs|source|time|region|scale|
+    //   channels|quality|working|tag
     // Input identity enters through the inputs' key hashes in port order,
     // so a change anywhere upstream changes every downstream key while
     // unrelated branches keep theirs (spec section 10.3: reuse follows
-    // effective dependencies). Number fields (time, region, scale, input
-    // hashes) are decimal and self-delimiting.
+    // effective dependencies). `node` is a request-local resolved copy when
+    // evaluating animation; no document revision is part of this identity.
     //
     // Source nodes additionally carry the persistent source reference in
     // the canonical form: a Document::sources edit changes the key of the

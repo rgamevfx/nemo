@@ -213,21 +213,15 @@ ResultKey queryViewerResultKey(const Document& document, EvaluationRequest reque
                                       ": no effect package in the supplied effect library "
                                       "(viewer key query cannot prove a cache hit)");
         }
-        NodeInstance effectiveNode = *expandedNode.node;
-        if (expandedNode.id.instance != kInvalidNetworkInstance) {
-            const auto* occurrence = document.instance(expandedNode.id.instance);
-            if (occurrence == nullptr)
-                throw EvaluationException("evaluation references missing network instance");
-            if (const auto overrides = occurrence->params.find(effectiveNode.id); overrides != occurrence->params.end())
-                for (const auto& [key, value] : overrides->second)
-                    effectiveNode.params[key] = value;
-        }
+        std::optional<NodeInstance> resolvedNode;
+        const NodeInstance* effectiveNode =
+            resolveEffectiveNode(document, expandedNode, resolvedNode, static_cast<double>(request.localTime));
         EvaluationRequest scopedRequest = request;
         scopedRequest.network = expandedNode.id.network;
         std::vector<std::uint64_t> inputHashes;
         for (const auto& producer : expandedNode.inputs)
             inputHashes.push_back(keys.at(producer).hash);
-        const auto key = nodeResultKey(document, effectiveNode, inputHashes, scopedRequest, context);
+        const auto key = nodeResultKey(document, *effectiveNode, inputHashes, scopedRequest, context);
         keys.emplace(expandedNode.id, key);
     }
     const EvaluationNodeId outputKey{request.network, kInvalidNetworkInstance, request.output, kEvaluationWholeNode};
@@ -314,19 +308,9 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
     for (const ExpandedNode& expandedNode : order) {
         const NodeInstance& node = *expandedNode.node;
-        const NodeInstance* effectiveNode = &node;
-        std::optional<NodeInstance> overriddenNode;
-        if (expandedNode.id.instance != kInvalidNetworkInstance) {
-            const auto* occurrence = document.instance(expandedNode.id.instance);
-            if (occurrence == nullptr)
-                throw EvaluationException("evaluation references missing network instance");
-            if (const auto overrides = occurrence->params.find(node.id); overrides != occurrence->params.end()) {
-                overriddenNode = node;
-                for (const auto& [key, value] : overrides->second)
-                    overriddenNode->params[key] = value;
-                effectiveNode = &*overriddenNode;
-            }
-        }
+        std::optional<NodeInstance> resolvedNode;
+        const NodeInstance* effectiveNode =
+            resolveEffectiveNode(document, expandedNode, resolvedNode, static_cast<double>(request.localTime));
         EvaluationRequest scopedRequest = request;
         scopedRequest.network = expandedNode.id.network;
         PlanStep step;
@@ -378,10 +362,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             continue;
         }
 
-        const auto programIt = effects.find(node.type);
+        const auto programIt = effects.find(effectiveNode->type);
         if (programIt == effects.end()) {
             const std::string availability =
-                document.network(scopedRequest.network).graph().descriptor(node.type) != nullptr
+                document.network(scopedRequest.network).graph().descriptor(effectiveNode->type) != nullptr
                     ? "declared node type is unavailable to the GPU executor"
                     : "unknown node type";
             failEffect(*effectiveNode, EffectProgram{},
@@ -389,7 +373,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         }
         const EffectProgram& program = programIt->second;
         std::shared_ptr<const gpu::Image> sourceFrame;
-        if (node.type == "source") {
+        if (effectiveNode->type == "source") {
             if (sources == nullptr)
                 failEffect(*effectiveNode, program, "real-media source node evaluated without a SourceSession");
             const auto sourceParam = effectiveNode->params.find("source");
@@ -404,10 +388,11 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
         const std::vector<std::uint32_t>* spirv = &programIt->second.spirv;
         if (!programIt->second.glsl.empty()) {
-            auto cached = compiled.find(node.type);
+            auto cached = compiled.find(effectiveNode->type);
             if (cached == compiled.end()) {
                 try {
-                    cached = compiled.emplace(node.type, gpu::compileGlslToSpirv(programIt->second.glsl)).first;
+                    cached =
+                        compiled.emplace(effectiveNode->type, gpu::compileGlslToSpirv(programIt->second.glsl)).first;
                 } catch (const gpu::CompileException& error) {
                     failEffect(*effectiveNode, programIt->second,
                                std::string("shader compile failed: ") + error.what());

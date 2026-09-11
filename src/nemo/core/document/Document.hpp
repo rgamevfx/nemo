@@ -11,8 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "nemo/core/document/Animation.hpp"
 #include "nemo/core/document/Graph.hpp"
-
 namespace nemo {
 
 // Persistent color policy names only; runtime OCIO objects belong to
@@ -39,8 +39,7 @@ struct SourceReference {
 // instances reference definitions and never copy their topology. No Qt,
 // Vulkan, evaluator, decoder, or plugin-runtime object may appear here.
 struct Document {
-    static inline constexpr int kSchemaVersion = 3;
-
+    static inline constexpr int kSchemaVersion = 4;
     Document();
     explicit Document(std::shared_ptr<const NodeCatalog> catalog);
 
@@ -77,6 +76,16 @@ struct Document {
     // prepared after a delete/undo or a branch edit.
     void preserveIdentityHighWatermarksFrom(const Document& source);
     [[nodiscard]] std::uint64_t stateRevision() const;
+    [[nodiscard]] const std::vector<AnimationChannel>& animationChannels() const { return animationChannels_; }
+    [[nodiscard]] const AnimationChannel* animationChannel(AnimationChannelId id) const;
+    [[nodiscard]] const AnimationChannel* animationChannel(const ParameterAddress& address) const;
+    [[nodiscard]] AnimationChannelId nextAnimationChannelId() const { return nextAnimationChannelId_; }
+    [[nodiscard]] KeyframeId nextKeyframeId() const { return nextKeyframeId_; }
+    // Serialization is the only intended caller. It validates the complete
+    // restored set and never lowers identity watermarks.
+    void restoreAnimationChannels(std::vector<AnimationChannel> channels, AnimationChannelId nextChannelId,
+                                  KeyframeId nextKeyId);
+
     // Reconciles occurrence-local terminal contracts after a shared
     // definition edit and removes references to intentionally deleted nodes.
     // Call this on the owner thread before publishing a snapshot.
@@ -84,19 +93,22 @@ struct Document {
 
 private:
     friend class CommandStack;
-    [[nodiscard]] Network* findNetwork(NetworkId id);
-    [[nodiscard]] const Network* findNetwork(NetworkId id) const;
-    [[nodiscard]] NetworkInstance* findInstanceMutable(NetworkInstanceId id);
-    [[nodiscard]] bool networkDependsOn(NetworkId candidate, NetworkId target) const;
-    [[nodiscard]] bool instanceBindingDependsOn(NetworkInstanceId origin, NetworkInstanceId target) const;
     struct NetworkWatermarks {
         NodeId nextNodeId{1};
         EdgeId nextEdgeId{1};
         InterfacePortId nextInterfacePortId{1};
     };
+    [[nodiscard]] Network* findNetwork(NetworkId id);
+    [[nodiscard]] const Network* findNetwork(NetworkId id) const;
+    [[nodiscard]] NetworkInstance* findInstanceMutable(NetworkInstanceId id);
+    [[nodiscard]] bool networkDependsOn(NetworkId candidate, NetworkId target) const;
+    [[nodiscard]] bool instanceBindingDependsOn(NetworkInstanceId origin, NetworkInstanceId target) const;
     std::shared_ptr<const NodeCatalog> catalog_;
     std::vector<Network> networks_;
     std::vector<NetworkInstance> instances_;
+    std::vector<AnimationChannel> animationChannels_;
+    AnimationChannelId nextAnimationChannelId_{1};
+    KeyframeId nextKeyframeId_{1};
     std::map<NetworkId, NetworkWatermarks> retiredNetworkWatermarks_;
     NetworkId rootNetworkId_{kInvalidNetwork};
     NetworkId nextNetworkId_{1};
@@ -134,14 +146,6 @@ private:
 // All graph command factories require an explicit network scope. This keeps
 // accidental single-graph edits impossible and makes command history records
 // unambiguous when node/edge identities are local to a network.
-struct ParameterAddress {
-    NetworkId network{kInvalidNetwork};
-    NodeId node{kInvalidNode};
-    std::string key;
-    NetworkInstanceId instance{kInvalidNetworkInstance};
-
-    friend bool operator==(const ParameterAddress&, const ParameterAddress&) = default;
-};
 
 struct ParameterEdit {
     ParameterAddress address;

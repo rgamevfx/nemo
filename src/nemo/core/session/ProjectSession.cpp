@@ -1,6 +1,9 @@
 #include "nemo/core/session/ProjectSession.hpp"
 
+#include "nemo/core/commands/AnimationCommands.hpp"
+
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -24,6 +27,52 @@ bool sameNode(const NodeInstance& left, const NodeInstance& right) {
 }
 bool sameEdge(const Edge& left, const Edge& right) {
     return left.id == right.id && left.from == right.from && left.to == right.to && left.route == right.route;
+}
+bool isDiscreteValue(const ParameterValue& value) {
+    return std::holds_alternative<bool>(value) || std::holds_alternative<std::int64_t>(value) ||
+           std::holds_alternative<std::string>(value) || std::holds_alternative<ChoiceValue>(value);
+}
+
+Keyframe keyframeForEdit(const Document& document, const Document* priorSnapshot, const ParameterEdit& edit,
+                         double time) {
+    Keyframe key;
+    key.time = time;
+    key.value = *edit.value;
+    if (const auto* channel = document.animationChannel(edit.address)) {
+        const auto found = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                        [time](const Keyframe& candidate) { return candidate.time == time; });
+        if (found != channel->keys.end()) {
+            key = *found;
+            key.value = *edit.value;
+            return key;
+        }
+    }
+    if (priorSnapshot != nullptr) {
+        if (const auto* channel = priorSnapshot->animationChannel(edit.address)) {
+            const auto found = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                            [time](const Keyframe& candidate) { return candidate.time == time; });
+            if (found != channel->keys.end()) {
+                key = *found;
+                key.id = kInvalidKeyframe;
+                key.value = *edit.value;
+                return key;
+            }
+        }
+    }
+    key.interpolation = isDiscreteValue(*edit.value) ? KeyInterpolation::Hold : KeyInterpolation::Linear;
+    return key;
+}
+
+std::vector<KeyframeEdit> makeKeyframeEdits(const Document& document, const Document* priorSnapshot, double time,
+                                            const std::vector<ParameterEdit>& edits) {
+    std::vector<KeyframeEdit> result;
+    result.reserve(edits.size());
+    for (const auto& edit : edits) {
+        if (!edit.value)
+            throw std::invalid_argument("keyed parameter edits cannot reset a parameter");
+        result.push_back(KeyframeEdit{edit.address, keyframeForEdit(document, priorSnapshot, edit, time)});
+    }
+    return result;
 }
 }  // namespace
 
@@ -103,6 +152,11 @@ EditResult ProjectSession::conflict(std::uint64_t expected) const {
                                          event.changedInstanceIds.end());
         result.changedSourceIds.insert(result.changedSourceIds.end(), event.changedSourceIds.begin(),
                                        event.changedSourceIds.end());
+        result.changedAnimationChannelIds.insert(result.changedAnimationChannelIds.end(),
+                                                 event.changedAnimationChannelIds.begin(),
+                                                 event.changedAnimationChannelIds.end());
+        result.changedAnimationKeyIds.insert(result.changedAnimationKeyIds.end(), event.changedAnimationKeyIds.begin(),
+                                             event.changedAnimationKeyIds.end());
         result.colorPolicyChanged |= event.colorPolicyChanged;
     }
     return result;
@@ -216,12 +270,64 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
     for (const auto& [id, source] : after.sources)
         if (!before.sources.contains(id))
             result.changedSourceIds.push_back(id);
+
+    const auto addAnimationChange = [&](const AnimationChannel& channel) {
+        result.changedAnimationChannelIds.push_back(channel.id);
+        const ScopedNodeId node{channel.address.network, channel.address.node};
+        if (std::find(result.changedNodeIds.begin(), result.changedNodeIds.end(), node) == result.changedNodeIds.end())
+            result.changedNodeIds.push_back(node);
+        addNetworkChange(channel.address.network);
+        if (channel.address.instance != kInvalidNetworkInstance &&
+            std::find(result.changedInstanceIds.begin(), result.changedInstanceIds.end(), channel.address.instance) ==
+                result.changedInstanceIds.end())
+            result.changedInstanceIds.push_back(channel.address.instance);
+    };
+    for (const auto& channel : before.animationChannels()) {
+        const auto* current = after.animationChannel(channel.id);
+        if (current == nullptr || *current != channel)
+            addAnimationChange(channel);
+        if (current == nullptr)
+            for (const auto& key : channel.keys)
+                result.changedAnimationKeyIds.push_back(KeyframeRef{channel.id, key.id});
+        else {
+            for (const auto& key : channel.keys) {
+                const auto prior = std::find_if(current->keys.begin(), current->keys.end(),
+                                                [&](const Keyframe& value) { return value.id == key.id; });
+                if (prior == current->keys.end() || *prior != key)
+                    result.changedAnimationKeyIds.push_back(KeyframeRef{channel.id, key.id});
+            }
+        }
+    }
+    for (const auto& channel : after.animationChannels()) {
+        const auto* previous = before.animationChannel(channel.id);
+        if (previous == nullptr) {
+            addAnimationChange(channel);
+            for (const auto& key : channel.keys)
+                result.changedAnimationKeyIds.push_back(KeyframeRef{channel.id, key.id});
+        } else {
+            for (const auto& key : channel.keys) {
+                const auto prior = std::find_if(previous->keys.begin(), previous->keys.end(),
+                                                [&](const Keyframe& value) { return value.id == key.id; });
+                if (prior == previous->keys.end())
+                    result.changedAnimationKeyIds.push_back(KeyframeRef{channel.id, key.id});
+            }
+        }
+    }
     result.colorPolicyChanged = before.color != after.color;
 
-    ChangeEvent event{result.revision,          result.changedNodeIds,     result.createdNodeIds,
-                      result.changedEdgeIds,    result.createdEdgeIds,     result.changedNetworkIds,
-                      result.createdNetworkIds, result.changedInstanceIds, result.createdInstanceIds,
-                      result.changedSourceIds,  result.colorPolicyChanged};
+    ChangeEvent event{result.revision,
+                      result.changedNodeIds,
+                      result.createdNodeIds,
+                      result.changedEdgeIds,
+                      result.createdEdgeIds,
+                      result.changedNetworkIds,
+                      result.createdNetworkIds,
+                      result.changedInstanceIds,
+                      result.createdInstanceIds,
+                      result.changedSourceIds,
+                      result.changedAnimationChannelIds,
+                      result.changedAnimationKeyIds,
+                      result.colorPolicyChanged};
     if (!requestId.empty())
         requests_.push_back(RequestRecord{requestId, result});
     try {
@@ -335,11 +441,13 @@ ParameterGestureResult ProjectSession::previewFailure(const GraphException& erro
     return result;
 }
 
-ParameterGestureResult ProjectSession::previewFailure(const std::exception& error) const {
-    return gestureFailure(error.what());
-}
-
-ParameterGestureResult ProjectSession::beginParameterGesture(std::vector<ParameterEdit> edits, EditOptions options) {
+ParameterGestureResult ProjectSession::beginParameterGestureInternal(std::vector<ParameterEdit> edits,
+                                                                     EditOptions options,
+                                                                     std::optional<double> keyedTime) {
+    if (keyedTime && !std::isfinite(*keyedTime))
+        return gestureFailure("keyed parameter gesture time must be finite");
+    if (edits.empty())
+        return gestureFailure("parameter batch must contain at least one edit");
     if (mutating_ || notifying_)
         return gestureFailure("project session mutation is not allowed during an edit or notification",
                               EditErrorCode::ReentrantMutation);
@@ -351,14 +459,30 @@ ParameterGestureResult ProjectSession::beginParameterGesture(std::vector<Paramet
         return gestureFailure("a parameter gesture is already active", EditErrorCode::Unavailable);
     if (nextGestureToken_ == std::numeric_limits<ParameterGestureToken>::max())
         return gestureFailure("parameter gesture token space exhausted", EditErrorCode::Unavailable);
-
+    if (keyedTime) {
+        for (const auto& edit : edits)
+            if (!edit.value)
+                return gestureFailure("keyed parameter edits cannot reset a parameter");
+    }
     try {
         auto snapshot = std::make_shared<Document>(document_);
-        Command preview = setParametersCommand(edits);
-        preview.apply(*snapshot);
+        if (keyedTime) {
+            auto keyEdits = makeKeyframeEdits(document_, nullptr, *keyedTime, edits);
+            Command preview = setKeyframesCommand(std::move(keyEdits));
+            preview.apply(*snapshot);
+        } else {
+            Command preview = setParametersCommand(edits);
+            preview.apply(*snapshot);
+        }
         snapshot->synchronizeReferences();
         const auto token = nextGestureToken_++;
-        gesture_.emplace(ParameterGestureState{token, options.expectedRevision, snapshot, std::move(edits)});
+        ParameterGestureState state{token,
+                                    options.expectedRevision,
+                                    snapshot,
+                                    std::move(edits),
+                                    keyedTime.has_value(),
+                                    keyedTime.value_or(0.0)};
+        gesture_.emplace(std::move(state));
         return makeGesturePreview(token, options.expectedRevision, std::move(snapshot));
     } catch (const GraphException& error) {
         return previewFailure(error);
@@ -367,6 +491,19 @@ ParameterGestureResult ProjectSession::beginParameterGesture(std::vector<Paramet
     } catch (...) {
         return gestureFailure("parameter gesture preview failed with an unknown error");
     }
+}
+
+ParameterGestureResult ProjectSession::beginKeyedParameterGesture(double time, std::vector<ParameterEdit> edits,
+                                                                  EditOptions options) {
+    return beginParameterGestureInternal(std::move(edits), std::move(options), time);
+}
+
+ParameterGestureResult ProjectSession::beginParameterGesture(std::vector<ParameterEdit> edits, EditOptions options) {
+    return beginParameterGestureInternal(std::move(edits), std::move(options), std::nullopt);
+}
+
+ParameterGestureResult ProjectSession::previewFailure(const std::exception& error) const {
+    return gestureFailure(error.what());
 }
 
 ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureToken token,
@@ -384,6 +521,8 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
     try {
         std::vector<ParameterEdit> merged = gesture_->edits;
         for (const auto& edit : edits) {
+            if (gesture_->keyed && !edit.value)
+                throw std::invalid_argument("keyed parameter edits cannot reset a parameter");
             const auto existing = std::find_if(merged.begin(), merged.end(), [&](const ParameterEdit& previous) {
                 return previous.address == edit.address;
             });
@@ -393,8 +532,14 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
                 existing->value = edit.value;
         }
         auto snapshot = std::make_shared<Document>(document_);
-        Command preview = setParametersCommand(merged);
-        preview.apply(*snapshot);
+        if (gesture_->keyed) {
+            auto keyEdits = makeKeyframeEdits(document_, gesture_->snapshot.get(), gesture_->time, merged);
+            Command preview = setKeyframesCommand(std::move(keyEdits));
+            preview.apply(*snapshot);
+        } else {
+            Command preview = setParametersCommand(merged);
+            preview.apply(*snapshot);
+        }
         snapshot->synchronizeReferences();
         gesture_->edits = std::move(merged);
         gesture_->snapshot = snapshot;
@@ -406,6 +551,13 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
     } catch (...) {
         return gestureFailure("parameter gesture preview failed with an unknown error");
     }
+}
+
+ParameterGestureResult ProjectSession::updateKeyedParameterGesture(ParameterGestureToken token,
+                                                                   std::vector<ParameterEdit> edits) {
+    if (!gesture_ || !gesture_->keyed)
+        return gestureFailure("unknown keyed parameter gesture token", EditErrorCode::Unavailable);
+    return updateParameterGesture(token, std::move(edits));
 }
 
 EditResult ProjectSession::commitParameterGesture(ParameterGestureToken token, EditOptions options) {
@@ -421,7 +573,12 @@ EditResult ProjectSession::commitParameterGesture(ParameterGestureToken token, E
 
     Command command;
     try {
-        command = setParametersCommand(gesture_->edits);
+        if (gesture_->keyed) {
+            auto keyEdits = makeKeyframeEdits(document_, gesture_->snapshot.get(), gesture_->time, gesture_->edits);
+            command = setKeyframesCommand(std::move(keyEdits));
+        } else {
+            command = setParametersCommand(gesture_->edits);
+        }
     } catch (const std::exception& error) {
         return failure(error.what());
     }
@@ -529,6 +686,46 @@ std::vector<EdgeQueryResult> ProjectSession::queryEdges(NetworkId network, NodeI
     }
     return result;
 }
+std::vector<AnimationChannelQueryResult> ProjectSession::queryAnimationChannels(std::size_t limit,
+                                                                                AnimationChannelId after) const {
+    limit = std::min<std::size_t>(limit, 256);
+    std::vector<AnimationChannelQueryResult> result;
+    if (limit == 0)
+        return result;
+    for (const auto& channel : document_.animationChannels()) {
+        if (channel.id <= after)
+            continue;
+        result.push_back(AnimationChannelQueryResult{channel.id, channel.address, channel.keys.size()});
+        if (result.size() == limit)
+            break;
+    }
+    return result;
+}
+
+std::vector<AnimationKeyQueryResult> ProjectSession::queryAnimationKeys(AnimationChannelId channelId, std::size_t limit,
+                                                                        KeyframeId after) const {
+    limit = std::min<std::size_t>(limit, 256);
+    std::vector<AnimationKeyQueryResult> result;
+    if (limit == 0)
+        return result;
+    const auto* channel = document_.animationChannel(channelId);
+    if (channel == nullptr)
+        return result;
+    for (const auto& key : channel->keys) {
+        if (key.id <= after)
+            continue;
+        const auto where =
+            std::lower_bound(result.begin(), result.end(), key.id,
+                             [](const AnimationKeyQueryResult& value, KeyframeId id) { return value.key.id < id; });
+        if (where == result.end() && result.size() == limit)
+            continue;
+        result.insert(where, AnimationKeyQueryResult{channelId, key});
+        if (result.size() > limit)
+            result.pop_back();
+    }
+    return result;
+}
+
 ChangeHistory ProjectSession::changesSince(std::uint64_t revision) const {
     ChangeHistory result;
     result.currentRevision = revision_;

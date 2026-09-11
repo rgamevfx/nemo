@@ -2,6 +2,7 @@
 
 #include "nemo/core/document/ParameterValueJson.hpp"
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <set>
@@ -153,6 +154,115 @@ nlohmann::json parameterValuesJson(const ParameterValues& params) {
     for (const auto& [key, value] : params)
         result[key] = parameterValueToJson(value);
     return result;
+}
+
+const char* interpolationName(KeyInterpolation value) {
+    switch (value) {
+    case KeyInterpolation::Hold:
+        return "hold";
+    case KeyInterpolation::Linear:
+        return "linear";
+    case KeyInterpolation::Bezier:
+        return "bezier";
+    }
+    throw std::logic_error("invalid animation interpolation");
+}
+
+double animationNumber(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_number())
+        throw DeserializeError(context + " must be numeric");
+    const auto number = value.get<double>();
+    if (!std::isfinite(number))
+        throw DeserializeError(context + " must be finite");
+    return number;
+}
+
+std::array<double, 4> animationSlopes(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_array() || value.size() != 4)
+        throw DeserializeError(context + " must contain four slope components");
+    std::array<double, 4> slopes;
+    for (std::size_t i = 0; i < slopes.size(); ++i)
+        slopes[i] = animationNumber(value.at(i), context + "[" + std::to_string(i) + "]");
+    return slopes;
+}
+
+void loadAnimation(const nlohmann::json& json, Document& document, int schema) {
+    if (schema < 4) {
+        if (json.contains("animationChannels") || json.contains("nextAnimationChannelId") ||
+            json.contains("nextKeyframeId"))
+            throw DeserializeError("animation data requires document schema 4");
+        return;
+    }
+    std::vector<AnimationChannel> channels;
+    if (json.contains("animationChannels")) {
+        const auto& entries = json.at("animationChannels");
+        if (!entries.is_array())
+            throw DeserializeError("document animationChannels must be an array");
+        channels.reserve(entries.size());
+        for (std::size_t index = 0; index < entries.size(); ++index) {
+            const std::string context = "animationChannels[" + std::to_string(index) + "]";
+            try {
+                const auto& entry = entries.at(index);
+                AnimationChannel channel;
+                channel.id = requiredId(entry, "id", context);
+                const auto& address = entry.at("address");
+                channel.address.network = requiredId(address, "network", context + " address");
+                channel.address.node = requiredId(address, "node", context + " address");
+                channel.address.key = address.at("key").get<std::string>();
+                if (address.contains("instance"))
+                    channel.address.instance = requiredId(address, "instance", context + " address");
+                const auto& keys = entry.at("keys");
+                if (!keys.is_array())
+                    throw DeserializeError("keys must be an array");
+                channel.keys.reserve(keys.size());
+                for (const auto& value : keys) {
+                    Keyframe key;
+                    key.id = requiredId(value, "id", context + " key");
+                    const auto keyContext = context + " key " + std::to_string(key.id);
+                    key.time = animationNumber(value.at("time"), keyContext + " time");
+                    key.value = parameterValueFromJson(value.at("value"));
+                    const auto interpolation = value.at("interpolation").get<std::string>();
+                    if (interpolation == "hold")
+                        key.interpolation = KeyInterpolation::Hold;
+                    else if (interpolation == "linear")
+                        key.interpolation = KeyInterpolation::Linear;
+                    else if (interpolation == "bezier")
+                        key.interpolation = KeyInterpolation::Bezier;
+                    else
+                        throw DeserializeError(keyContext + ": unknown interpolation '" + interpolation + "'");
+                    const auto mode = value.at("tangentMode").get<std::string>();
+                    if (mode == "smooth")
+                        key.tangentMode = TangentMode::Smooth;
+                    else if (mode == "broken")
+                        key.tangentMode = TangentMode::Broken;
+                    else
+                        throw DeserializeError(keyContext + ": unknown tangent mode '" + mode + "'");
+                    key.inSlope = animationSlopes(value.at("inSlope"), keyContext + " incoming tangent");
+                    key.outSlope = animationSlopes(value.at("outSlope"), keyContext + " outgoing tangent");
+                    channel.keys.push_back(std::move(key));
+                }
+                channels.push_back(std::move(channel));
+            } catch (const std::exception& error) {
+                throw DeserializeError(context + ": " + error.what());
+            }
+        }
+    }
+    const auto nextId = [&](const char* field) {
+        if (!json.contains(field))
+            return std::uint64_t{1};
+        const auto value = unsignedValue(json.at(field), field);
+        if (value == 0)
+            throw DeserializeError(std::string(field) + " must be nonzero");
+        return value;
+    };
+    try {
+        // Restore validates the entire set, including catalog/address/type,
+        // identities, collisions and tangents, before installing any channels.
+        document.restoreAnimationChannels(std::move(channels), nextId("nextAnimationChannelId"),
+                                          nextId("nextKeyframeId"));
+    } catch (const std::exception& error) {
+        throw DeserializeError("document animation: " + std::string(error.what()));
+    }
 }
 
 void clearNetwork(Network& network) {
@@ -453,6 +563,24 @@ nlohmann::json saveDocument(const Document& document) {
                 {{"terminal", terminal}, {"node", {{"node", source.node}, {"port", source.port}}}});
         instances.push_back(std::move(value));
     }
+    nlohmann::json animation = nlohmann::json::array();
+    for (const auto& channel : document.animationChannels()) {
+        nlohmann::json address{{"network", channel.address.network},
+                               {"node", channel.address.node},
+                               {"key", channel.address.key}};
+        if (channel.address.instance != kInvalidNetworkInstance)
+            address["instance"] = channel.address.instance;
+        nlohmann::json keys = nlohmann::json::array();
+        for (const auto& key : channel.keys)
+            keys.push_back({{"id", key.id},
+                            {"time", key.time},
+                            {"value", parameterValueToJson(key.value)},
+                            {"interpolation", interpolationName(key.interpolation)},
+                            {"tangentMode", key.tangentMode == TangentMode::Smooth ? "smooth" : "broken"},
+                            {"inSlope", key.inSlope},
+                            {"outSlope", key.outSlope}});
+        animation.push_back({{"id", channel.id}, {"address", std::move(address)}, {"keys", std::move(keys)}});
+    }
     return {{"schema", Document::kSchemaVersion},
             {"name", document.name},
             {"color",
@@ -464,7 +592,10 @@ nlohmann::json saveDocument(const Document& document) {
             {"nextNetworkId", document.nextNetworkId()},
             {"nextInstanceId", document.nextInstanceId()},
             {"networks", networks},
-            {"instances", instances}};
+            {"instances", instances},
+            {"animationChannels", std::move(animation)},
+            {"nextAnimationChannelId", document.nextAnimationChannelId()},
+            {"nextKeyframeId", document.nextKeyframeId()}};
 }
 
 LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCatalog> catalog) {
@@ -647,6 +778,7 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                                        " references an invalid instance " + std::to_string(node.instance));
         }
     }
+    loadAnimation(json, result.document, schema);
     result.document.synchronizeReferences();
     result.document.restoreIdentityHighWatermarks(
         watermark(json, "nextNetworkId").value_or(result.document.nextNetworkId()),

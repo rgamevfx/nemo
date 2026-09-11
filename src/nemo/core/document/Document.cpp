@@ -41,6 +41,24 @@ void hashPortRef(std::uint64_t& hash, PortRef ref) {
     hashMixWord(hash, ref.node);
     hashMixWord(hash, ref.port);
 }
+void hashParameterAddress(std::uint64_t& hash, const ParameterAddress& address) {
+    hashMixWord(hash, address.network);
+    hashMixWord(hash, address.node);
+    hashMixText(hash, address.key);
+    hashMixWord(hash, address.instance);
+}
+
+void hashAnimationKey(std::uint64_t& hash, const Keyframe& key) {
+    hashMixWord(hash, key.id);
+    hashMixWord(hash, std::bit_cast<std::uint64_t>(key.time));
+    hashMixText(hash, canonicalParameterValue(key.value));
+    hashMixWord(hash, static_cast<std::uint64_t>(key.interpolation));
+    hashMixWord(hash, static_cast<std::uint64_t>(key.tangentMode));
+    for (const double slope : key.inSlope)
+        hashMixWord(hash, std::bit_cast<std::uint64_t>(slope));
+    for (const double slope : key.outSlope)
+        hashMixWord(hash, std::bit_cast<std::uint64_t>(slope));
+}
 std::string describePortRef(PortRef ref) {
     return "node " + std::to_string(ref.node) + " port " + std::to_string(ref.port);
 }
@@ -523,6 +541,24 @@ void Document::synchronizeReferences() {
             ++binding;
         }
     }
+    animationChannels_.erase(
+        std::remove_if(animationChannels_.begin(), animationChannels_.end(),
+                       [&](const AnimationChannel& channel) {
+                           const auto& address = channel.address;
+                           const Network* network = findNetwork(address.network);
+                           if (!network)
+                               return true;
+                           const NodeInstance* node = network->graph().node(address.node);
+                           if (!node || network->graph().catalog().parameterSpec(node->type, address.key) == nullptr)
+                               return true;
+                           if (address.instance != kInvalidNetworkInstance) {
+                               const NetworkInstance* occurrence = instance(address.instance);
+                               if (!occurrence || occurrence->definition != address.network)
+                                   return true;
+                           }
+                           return false;
+                       }),
+        animationChannels_.end());
 }
 
 void Document::restoreIdentityHighWatermarks(NetworkId nextNetworkId, NetworkInstanceId nextInstanceId) {
@@ -554,6 +590,8 @@ void Document::preserveIdentityHighWatermarksFrom(const Document& source) {
             mutableNetwork->restoreIdentityHighWatermarks(retired->second.nextNodeId, retired->second.nextEdgeId,
                                                           retired->second.nextInterfacePortId);
     }
+    nextAnimationChannelId_ = std::max(nextAnimationChannelId_, source.nextAnimationChannelId_);
+    nextKeyframeId_ = std::max(nextKeyframeId_, source.nextKeyframeId_);
 }
 
 std::uint64_t Document::stateRevision() const {
@@ -658,6 +696,16 @@ std::uint64_t Document::stateRevision() const {
         hashMixWord(hash, static_cast<std::uint64_t>(value.params.size()));
     }
     hashMixWord(hash, static_cast<std::uint64_t>(instances_.size()));
+    hashMixWord(hash, nextAnimationChannelId_);
+    hashMixWord(hash, nextKeyframeId_);
+    for (const auto& channel : animationChannels_) {
+        hashMixWord(hash, channel.id);
+        hashParameterAddress(hash, channel.address);
+        for (const auto& key : channel.keys)
+            hashAnimationKey(hash, key);
+        hashMixWord(hash, static_cast<std::uint64_t>(channel.keys.size()));
+    }
+    hashMixWord(hash, static_cast<std::uint64_t>(animationChannels_.size()));
     return hash;
 }
 

@@ -1,0 +1,169 @@
+{
+  "issue": 48,
+  "branch": "issue/48-parameter-animation",
+  "base": "e0b2086",
+  "status": "Implemented and verified; publication tracked in GitHub issue 48; public API review required before merge",
+  "changes": [
+    "Document-owned typed animation channels and globally stable channel/key identities, with monotonic history/persistence watermarks",
+    "Actual-unit Hold/Linear/unweighted Bezier evaluation, constant endpoint extrapolation, Smooth/Broken tangent invariants, shape-preserving insertion",
+    "Atomic create/update/remove/move/exact edits; final-state time swaps, collision and alias rejection; shared session keyed gesture lifecycle",
+    "Bounded stable-ID channel/key queries and scoped change records; node deletion cleanup with undo identity restoration",
+    "Schema 4 channel/key serialization, schema 1/2/3 migration, whole-set validation and explicit unavailable-catalog animation errors",
+    "CPU/GPU/viewer-key metadata resolution with definition/instance precedence; masked curves are not evaluated; no static-graph node copy regression"
+  ],
+  "verification": {
+    "debug": {
+      "build": "cmake --build --preset debug -j 3",
+      "tests": "ctest --preset debug",
+      "passed": 303,
+      "failed": 0,
+      "test_seconds": 47.92
+    },
+    "release": {
+      "build": "cmake --build --preset release -j 3",
+      "tests": "ctest --preset release -R 'AnimationTest|NetworkTest|GraphTest|PersistenceTest|EvaluationTest|RequestValidation|ReuseTest|ProjectSessionTest|CommandStackTest|CatalogTest|SourceEvaluation|SourceCommand|Effect'",
+      "passed": 139,
+      "failed": 0,
+      "test_seconds": 16.17
+    },
+    "asan_ubsan": {
+      "build": "cmake --build --preset asan --target nemo_core_tests -j 2",
+      "tests": "ctest --preset asan -R 'AnimationTest|NetworkTest|GraphTest|PersistenceTest|EvaluationTest|RequestValidation|ReuseTest|ProjectSessionTest|CommandStackTest|CatalogTest|SourceEvaluation|SourceCommand'",
+      "passed": 127,
+      "failed": 0,
+      "test_seconds": 7.43
+    },
+    "tsan": {
+      "build": "setarch x86_64 -R cmake --build --preset tsan --target nemo_core_tests -j 2",
+      "tests": "setarch x86_64 -R ctest --preset tsan -R 'AnimationTest|NetworkTest|GraphTest|PersistenceTest|EvaluationTest|RequestValidation|ReuseTest|ProjectSessionTest|CommandStackTest|CatalogTest|SourceEvaluation|SourceCommand'",
+      "passed": 127,
+      "failed": 0,
+      "test_seconds": 5.96,
+      "scope": "Core model/evaluation, existing GPU/UI-disabled preset; process-local ASLR workaround, no host sysctl changes"
+    },
+    "driver": {
+      "build": "c++ -std=c++20 -I src -I build/debug/vcpkg_installed/x64-linux/include /tmp/nemo-issue48-smoke.cpp build/debug/src/nemo/libnemo_core.a -pthread -o /tmp/nemo-issue48-smoke",
+      "run": "/tmp/nemo-issue48-smoke /tmp/nemo-issue48-project.json",
+      "ok": true,
+      "query_frames": [
+        -10,
+        0,
+        5,
+        10,
+        20
+      ],
+      "midpoint_before_commit": [
+        0.5,
+        0,
+        6,
+        1
+      ],
+      "committed_frame": 5,
+      "committed_pixel": [
+        0.699999988079071,
+        0,
+        6,
+        1
+      ],
+      "immutable_old_snapshot_red": 0.5,
+      "redo_key_ids_in_time_order": [
+        1,
+        3,
+        2
+      ],
+      "schema": 4,
+      "checks": [
+        "Queries leave authored key list unchanged",
+        "Private drag preview does not alter published CPU rendering",
+        "One commit/undo/redo preserves values and stable identities",
+        "Old immutable snapshot remains old after commit",
+        "Saved and reloaded schema-4 project renders the committed value"
+      ]
+    },
+    "headless_native": [
+      {
+        "command": "build/debug/apps/nemo-cli/nemo-cli evaluate /tmp/nemo-issue48-project.json --out /tmp/nemo-issue48-debug-evaluate.ppm --frame 5 --width 4 --height 4",
+        "ok": true,
+        "sha256": "b014f7b21e0f606eeade94b6da98ca76361cb817685171ed182ce65e3e29177a",
+        "device": null,
+        "effective_color": [
+          0.699999988079071,
+          0.0,
+          6.0,
+          1.0
+        ]
+      },
+      {
+        "command": "build/debug/apps/nemo-cli/nemo-cli evaluate-gpu /tmp/nemo-issue48-project.json --out /tmp/nemo-issue48-debug-evaluate-gpu.ppm --frame 5 --width 4 --height 4",
+        "ok": true,
+        "sha256": "b014f7b21e0f606eeade94b6da98ca76361cb817685171ed182ce65e3e29177a",
+        "device": "NVIDIA GeForce GTX 1070",
+        "effective_color": [
+          0.699999988079071,
+          0.0,
+          6.0,
+          1.0
+        ]
+      },
+      {
+        "command": "build/release/apps/nemo-cli/nemo-cli evaluate /tmp/nemo-issue48-project.json --out /tmp/nemo-issue48-release-evaluate.ppm --frame 5 --width 4 --height 4",
+        "ok": true,
+        "sha256": "b014f7b21e0f606eeade94b6da98ca76361cb817685171ed182ce65e3e29177a",
+        "device": null,
+        "effective_color": [
+          0.699999988079071,
+          0.0,
+          6.0,
+          1.0
+        ]
+      },
+      {
+        "command": "build/release/apps/nemo-cli/nemo-cli evaluate-gpu /tmp/nemo-issue48-project.json --out /tmp/nemo-issue48-release-evaluate-gpu.ppm --frame 5 --width 4 --height 4",
+        "ok": true,
+        "sha256": "b014f7b21e0f606eeade94b6da98ca76361cb817685171ed182ce65e3e29177a",
+        "device": "NVIDIA GeForce GTX 1070",
+        "effective_color": [
+          0.699999988079071,
+          0.0,
+          6.0,
+          1.0
+        ]
+      }
+    ],
+    "image_inspection": {
+      "size": [
+        4,
+        4
+      ],
+      "rgb_pixel": [
+        179,
+        0,
+        255
+      ],
+      "sha256": "b014f7b21e0f606eeade94b6da98ca76361cb817685171ed182ce65e3e29177a",
+      "scope": "New diagnostic scene-linear PPM, clamped only at PPM export; debug/release CPU/GPU byte-identical; no golden baseline rewritten"
+    },
+    "regression": "NestedAnimationUsesDefinitionThenInstancePrecedence failed with interpolation overflow before masked-curve fix and passes afterward; unused definition curves cannot break valid instance animation",
+    "formatting": "clang-format -i and --dry-run --Werror succeeded on changed C++ files",
+    "static_analysis": {
+      "command": "clang-tidy -p build/debug --extra-arg=--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 src/nemo/core/document/Animation.cpp src/nemo/core/commands/AnimationCommands.cpp --quiet",
+      "exit_code": 0,
+      "result": "Completed with readability, complexity, enum-size and existing-header advisories; not warning-clean. Initial run needed explicit GCC header discovery; no warnings suppressed or source workaround added."
+    },
+    "build_warning": "Existing third-party minizip-ng linker warning about mktemp remains."
+  },
+  "acceptance": {
+    "1": "Linear/actual-unit scalar/vector/color, Hold choice/toggle, nonlinear Bezier, endpoint/query invariants in AnimationTest plus native driver",
+    "2": "Exact batch time swaps/value/slopes/interpolation/tangent mode, conflicting targets, smooth-slope rejection, grouped collision/move and one-undo behavior",
+    "3": "Keyed gesture APIs update an existing key or create at captured frame; grouped updates, immutable previews, cancel, stale revision and stable redo IDs tested. Inspector gesture wiring belongs to issue 46.",
+    "4": "Node deletion prunes channel/key queries and publishes stable deleted identities; undo restores them. Catalog-owned parameters remain after static reset; explicit key removal unkeys without deleting the parameter schema. Playhead/viewport/selection are not Document state.",
+    "5": "CPU/GPU and viewer-key paths resolve committed animation; dependency-local reuse and instance isolation tests pass; driver retains old snapshot while committed rendering changes."
+  },
+  "limitations": [
+    "Linux validation only; no Windows execution claim",
+    "No new animation-panel or inspector UI implemented; those are issues 50 and 46",
+    "Animation targeting unavailable catalog nodes/parameters currently fails load explicitly; unknown nonanimated fields remain retained",
+    "Public-interface/schema review required before merge; no new dependency or node type"
+  ],
+  "documentation": "docs/decisions/0007-evaluator-reuse-invalidation.md, Parameter animation integration (#48)"
+}

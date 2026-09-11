@@ -568,19 +568,9 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         step.path = expandedNode.id.path;
         step.type = node.type;
         step.name = node.name;
-        const NodeInstance* effectiveNode = &node;
-        std::optional<NodeInstance> overriddenNode;
-        if (expandedNode.id.instance != kInvalidNetworkInstance) {
-            const NetworkInstance* occurrence = document.instance(expandedNode.id.instance);
-            if (occurrence == nullptr)
-                throw EvaluationException("evaluation references missing network instance");
-            if (const auto overrides = occurrence->params.find(node.id); overrides != occurrence->params.end()) {
-                overriddenNode = node;
-                for (const auto& [key, value] : overrides->second)
-                    overriddenNode->params[key] = value;
-                effectiveNode = &*overriddenNode;
-            }
-        }
+        std::optional<NodeInstance> resolvedNode;
+        const NodeInstance* effectiveNode =
+            resolveEffectiveNode(document, expandedNode, resolvedNode, static_cast<double>(request.localTime));
         step.effectiveParams = effectiveNode->params;
         EvaluationRequest scopedRequest = request;
         scopedRequest.network = expandedNode.id.network;
@@ -597,6 +587,10 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
             step.scopedInputs.push_back(ScopedPlanInput{producer.network, producer.instance, producer.node,
                                                         producer.outputPort, producer.path});
         }
+        // Hash exactly the parameter map execution consumes. In particular,
+        // animated values must affect this node's identity and all dependent
+        // identities, while equal effective values remain reusable across
+        // unrelated history revisions.
         const ResultKey key = nodeResultKey(document, *effectiveNode, inputKeyHashes, scopedRequest);
         keys.emplace(expandedNode.id, key);
 
@@ -622,19 +616,19 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
             for (const EvaluationNodeId& producer : expandedNode.inputs)
                 inputs.push_back(images.at(producer).get());
 
-            if (node.type == "testpattern") {
+            if (effectiveNode->type == "testpattern") {
                 evalTestpattern(*effectiveNode, scopedRequest, step.effectiveParams, *fresh);
-            } else if (node.type == "source") {
+            } else if (effectiveNode->type == "source") {
                 evalSource(document, *effectiveNode, scopedRequest, step.effectiveParams, *fresh, sources);
-            } else if (node.type == "constcolor") {
+            } else if (effectiveNode->type == "constcolor") {
                 evalConstcolor(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
                                step.effectiveParams, *fresh);
-            } else if (node.type == "merge") {
+            } else if (effectiveNode->type == "merge") {
                 evalMerge(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
                           step.effectiveParams, inputs, *fresh);
-            } else if (node.type == "output") {
+            } else if (effectiveNode->type == "output") {
                 evalOutput(*effectiveNode, scopedRequest, step.effectiveParams, inputs, *fresh);
-            } else if (document.network(scopedRequest.network).graph().descriptor(node.type) != nullptr) {
+            } else if (document.network(scopedRequest.network).graph().descriptor(effectiveNode->type) != nullptr) {
                 failNode(*effectiveNode,
                          "declared node type has no CPU reference implementation (executor unavailable)");
             } else {

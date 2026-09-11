@@ -41,6 +41,17 @@ struct ScopedEdgeId {
     friend bool operator==(const ScopedEdgeId&, const ScopedEdgeId&) = default;
 };
 
+struct AnimationChannelQueryResult {
+    AnimationChannelId id{kInvalidAnimationChannel};
+    ParameterAddress address;
+    std::size_t keyCount{};
+};
+
+struct AnimationKeyQueryResult {
+    AnimationChannelId channel{kInvalidAnimationChannel};
+    Keyframe key;
+};
+
 struct EditResult {
     bool committed{false};
     std::uint64_t revision{1};
@@ -54,6 +65,8 @@ struct EditResult {
     std::vector<NetworkInstanceId> changedInstanceIds;
     std::vector<NetworkInstanceId> createdInstanceIds;
     std::vector<std::string> changedSourceIds;
+    std::vector<AnimationChannelId> changedAnimationChannelIds;
+    std::vector<KeyframeRef> changedAnimationKeyIds;
     bool colorPolicyChanged{false};
 };
 
@@ -68,6 +81,8 @@ struct ChangeEvent {
     std::vector<NetworkInstanceId> changedInstanceIds;
     std::vector<NetworkInstanceId> createdInstanceIds;
     std::vector<std::string> changedSourceIds;
+    std::vector<AnimationChannelId> changedAnimationChannelIds;
+    std::vector<KeyframeRef> changedAnimationKeyIds;
     bool colorPolicyChanged{false};
 };
 
@@ -162,6 +177,16 @@ public:
     // transient snapshot. The published document, revision, event journal,
     // request deduplication and undo history are untouched until commit.
     [[nodiscard]] ParameterGestureResult beginParameterGesture(std::vector<ParameterEdit> edits, EditOptions options);
+    // Keyed gestures share the parameter gesture token, transient snapshot,
+    // commit/cancel lifecycle, and one history entry.
+    [[nodiscard]] ParameterGestureResult beginKeyedParameterGesture(double time, std::vector<ParameterEdit> edits,
+                                                                    EditOptions options);
+    [[nodiscard]] ParameterGestureResult updateKeyedParameterGesture(ParameterGestureToken token,
+                                                                     std::vector<ParameterEdit> edits);
+    [[nodiscard]] std::vector<AnimationChannelQueryResult>
+    queryAnimationChannels(std::size_t limit = 256, AnimationChannelId after = kInvalidAnimationChannel) const;
+    [[nodiscard]] std::vector<AnimationKeyQueryResult>
+    queryAnimationKeys(AnimationChannelId channel, std::size_t limit = 256, KeyframeId after = kInvalidKeyframe) const;
     [[nodiscard]] ParameterGestureResult updateParameterGesture(ParameterGestureToken token,
                                                                 std::vector<ParameterEdit> edits);
     [[nodiscard]] EditResult commitParameterGesture(ParameterGestureToken token, EditOptions options);
@@ -199,13 +224,17 @@ private:
                                                             std::shared_ptr<const Document> snapshot) const;
     [[nodiscard]] ParameterGestureResult previewFailure(const std::exception& error) const;
     [[nodiscard]] ParameterGestureResult previewFailure(const GraphException& error) const;
+    [[nodiscard]] ParameterGestureResult beginParameterGestureInternal(std::vector<ParameterEdit> edits,
+                                                                       EditOptions options,
+                                                                       std::optional<double> keyedTime);
     struct ParameterGestureState {
         ParameterGestureToken token{};
         std::uint64_t expectedRevision{};
         std::shared_ptr<const Document> snapshot;
         std::vector<ParameterEdit> edits;
+        bool keyed{false};
+        double time{};
     };
-
     void unsubscribe(std::uint64_t id) noexcept;
     void notifyObservers() noexcept;
     enum class Operation { Submit, Undo, Redo };

@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/eval/EffectShaders.hpp"
@@ -568,6 +569,27 @@ TEST(Effect, GpuReuseAvoidsRecomputationAndPreservesResults) {
     const CacheCounts afterTimeChange = cache.counts();
     EXPECT_EQ(afterTimeChange.misses - afterSecond.misses, 4u);
     EXPECT_EQ(afterTimeChange.hits, afterSecond.hits);
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, AnimatedParametersReachNativeGpuExecution) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    Composition composition = makeComposition();
+    const ParameterAddress address{composition.doc.rootNetworkId(), composition.tint, "color", kInvalidNetworkInstance};
+    CommandStack stack(composition.doc);
+    stack.push(setKeyframesCommand({
+        KeyframeEdit{address, Keyframe{0, 0.0, ColorValue{{1.0F, 0.0F, 0.0F, 1.0F}}}},
+        KeyframeEdit{address, Keyframe{0, 2.0, ColorValue{{0.0F, 0.0F, 1.0F, 1.0F}}}},
+    }));
+
+    const EvaluationRequest request = requestFor(composition.doc, {0, 0, 16, 16}, 1);
+    const CpuEvaluation cpu = evaluateCpu(composition.doc, request);
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::GpuEvaluation gpu = evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator);
+    const CpuImage gpuImage = gpu.readBack(request.output, *boot.device, *boot.allocator);
+    expectImagesClose(cpu.image, gpuImage, kTolerance, "animated CPU vs native GPU");
     expectValidationClean(*boot.instance);
 }
 

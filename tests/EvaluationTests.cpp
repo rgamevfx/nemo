@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
@@ -177,6 +178,91 @@ TEST(EvaluationTest, RepeatedRequestsAreDeterministicAndFrameSensitive) {
     EXPECT_EQ(planToJson(first.plan), planToJson(second.plan));
 }
 
+TEST(EvaluationTest, AnimatedParametersReachCpuPlanAndPixelsWithoutMutatingDocument) {
+    Document document = makeDocument({{"constcolor", "animated"}, {"output", "out"}});
+    const NodeId animated = rootGraph(document).nodeByName("animated")->id;
+    rootGraph(document).setParam(animated, "color", ColorValue{{0.0F, 0.0F, 0.0F, 1.0F}});
+    connect(rootGraph(document), "animated", "out");
+
+    const ParameterAddress address{document.rootNetworkId(), animated, "color", kInvalidNetworkInstance};
+    CommandStack stack(document);
+    stack.push(setKeyframesCommand({
+        KeyframeEdit{address, Keyframe{0, 0.0, ColorValue{{1.0F, 0.0F, 0.0F, 1.0F}}}},
+        KeyframeEdit{address, Keyframe{0, 2.0, ColorValue{{0.0F, 0.0F, 1.0F, 1.0F}}}},
+    }));
+
+    const EvaluationRequest request = fullFrameRequest(document, 1);
+    const CpuEvaluation evaluation = evaluateCpu(document, request);
+    const PlanStep* step = stepFor(evaluation.plan, "animated");
+    ASSERT_NE(step, nullptr);
+    EXPECT_EQ(std::get<ColorValue>(step->effectiveParams.at("color")).value,
+              (std::array<float, 4>{0.5F, 0.0F, 0.5F, 1.0F}));
+    EXPECT_EQ(evaluation.image.pixel(0, 0), (std::array<float, 4>{0.5F, 0.0F, 0.5F, 1.0F}));
+    EXPECT_EQ(std::get<ColorValue>(rootGraph(document).node(animated)->params.at("color")).value,
+              (std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F}));
+}
+
+TEST(EvaluationTest, NestedAnimationUsesDefinitionThenInstancePrecedence) {
+    Document document;
+    const NetworkId root = document.rootNetworkId();
+    document.network(root).graph().removeNode(document.network(root).graph().nodeByName("Output")->id);
+    const NetworkId definitionId = document.addNetwork("animated-definition");
+    Network& definition = document.network(definitionId);
+    const NodeId color = definition.graph().addNode("constcolor", "color");
+    definition.graph().setParam(color, "color", ColorValue{{0.0F, 0.0F, 0.0F, 1.0F}});
+    const InterfacePortId outputPort = definition.addOutput("out", PortKind::Image);
+    definition.connectOutput({color, 0}, outputPort);
+
+    const NetworkInstanceId occurrence = document.addInstance(root, definitionId, "occurrence");
+    const NodeId output = document.network(root).graph().addNode("output", "out");
+    document.network(root).graph().connect({document.instance(occurrence)->node, 0}, {output, 0});
+
+    const ParameterAddress definitionAddress{definitionId, color, "color", kInvalidNetworkInstance};
+    CommandStack stack(document);
+    stack.push(setKeyframesCommand({
+        KeyframeEdit{definitionAddress, Keyframe{0, 0.0, ColorValue{{1.0F, 0.0F, 0.0F, 1.0F}}}},
+        KeyframeEdit{definitionAddress, Keyframe{0, 2.0, ColorValue{{0.0F, 0.0F, 1.0F, 1.0F}}}},
+    }));
+
+    const ParameterAddress instanceAddress{definitionId, color, "color", occurrence};
+    EXPECT_EQ(animatedParameterValue(document, instanceAddress, 1.0),
+              (ParameterValue{ColorValue{{0.5F, 0.0F, 0.5F, 1.0F}}}));
+
+    const EvaluationRequest request = fullFrameRequest(document, 1);
+    const CpuEvaluation definitionAnimation = evaluateCpu(document, request);
+    EXPECT_EQ(definitionAnimation.image.pixel(0, 0), (std::array<float, 4>{0.5F, 0.0F, 0.5F, 1.0F}));
+
+    stack.push(setInstanceParamCommand(occurrence, color, "color", ColorValue{{0.25F, 0.25F, 0.25F, 1.0F}}));
+    EXPECT_EQ(animatedParameterValue(document, instanceAddress, 1.0),
+              (ParameterValue{ColorValue{{0.25F, 0.25F, 0.25F, 1.0F}}}));
+    EXPECT_EQ(evaluateCpu(document, request).image.pixel(0, 0), (std::array<float, 4>{0.25F, 0.25F, 0.25F, 1.0F}));
+
+    stack.push(
+        setKeyframesCommand({KeyframeEdit{instanceAddress, Keyframe{0, 0.0, ColorValue{{0.0F, 1.0F, 0.0F, 1.0F}}}},
+                             KeyframeEdit{instanceAddress, Keyframe{0, 2.0, ColorValue{{0.0F, 1.0F, 0.0F, 1.0F}}}}}));
+    const CpuEvaluation instanceAnimation = evaluateCpu(document, request);
+    EXPECT_EQ(instanceAnimation.image.pixel(0, 0), (std::array<float, 4>{0.0F, 1.0F, 0.0F, 1.0F}));
+
+    const auto sibling = document.addInstance(root, definitionId, "sibling");
+    const auto siblingOutput = document.network(root).graph().addNode("output", "sibling-out");
+    document.network(root).graph().connect({document.instance(sibling)->node, 0}, {siblingOutput, 0});
+    EvaluationRequest siblingRequest = request;
+    siblingRequest.output = siblingOutput;
+    EXPECT_EQ(evaluateCpu(document, siblingRequest).image.pixel(0, 0), (std::array<float, 4>{0.5F, 0.0F, 0.5F, 1.0F}));
+
+    // An instance channel masks definition animation even if evaluating that
+    // unused curve would overflow the parameter representation.
+    stack.push(resetInstanceParamCommand(occurrence, color, "color"));
+    auto maskedKey = document.animationChannel(definitionAddress)->keys.front();
+    maskedKey.interpolation = KeyInterpolation::Bezier;
+    maskedKey.tangentMode = TangentMode::Broken;
+    maskedKey.outSlope[0] = 1e40;
+    stack.push(setKeyframesCommand({{definitionAddress, maskedKey}}));
+    EXPECT_EQ(animatedParameterValue(document, instanceAddress, 1.0),
+              (ParameterValue{ColorValue{{0.0F, 1.0F, 0.0F, 1.0F}}}));
+    EXPECT_EQ(evaluateCpu(document, request).image.pixel(0, 0), (std::array<float, 4>{0.0F, 1.0F, 0.0F, 1.0F}));
+    EXPECT_THROW(static_cast<void>(evaluateCpu(document, siblingRequest)), GraphException);
+}
 TEST(EvaluationTest, UnconnectedRequiredInputIdentifiesTheNode) {
     Document document = makeDocument({{"merge", "comp"}, {"output", "out"}});
     connect(rootGraph(document), "comp", "out");

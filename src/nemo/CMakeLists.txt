@@ -3,8 +3,10 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_library(nemo_core
     core/document/ParameterValue.cpp
     core/document/ParameterValueJson.cpp
+    core/document/Animation.cpp
     core/document/Graph.cpp
     core/document/Document.cpp
+    core/commands/AnimationCommands.cpp
     core/document/Serialization.cpp
     core/session/ProjectSession.cpp
     core/nodes/NodeCatalog.cpp

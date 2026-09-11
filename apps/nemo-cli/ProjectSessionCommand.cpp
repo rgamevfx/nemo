@@ -189,6 +189,12 @@ void putNetworkIds(Json& target, const char* key, const std::vector<nemo::Networ
     target[key] = ids;
 }
 
+void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::KeyframeRef>& ids) {
+    target[key] = Json::array();
+    for (const auto& id : ids)
+        target[key].push_back(Json{{"channel", id.channel}, {"key", id.key}});
+}
+
 [[nodiscard]] Json editResultJson(const nemo::EditResult& result) {
     Json output{{"committed", result.committed}, {"revision", result.revision}};
     if (result.error)
@@ -204,6 +210,8 @@ void putNetworkIds(Json& target, const char* key, const std::vector<nemo::Networ
     output["changed_instance_ids"] = result.changedInstanceIds;
     output["created_instance_ids"] = result.createdInstanceIds;
     output["changed_source_ids"] = result.changedSourceIds;
+    output["changed_animation_channel_ids"] = result.changedAnimationChannelIds;
+    putAnimationKeyIds(output, "changed_animation_key_ids", result.changedAnimationKeyIds);
     output["color_policy_changed"] = result.colorPolicyChanged;
     return output;
 }
@@ -369,6 +377,8 @@ int commandProjectSession(const std::vector<std::string>& args) {
                         putNetworkIds(encoded, "created_network_ids", event.createdNetworkIds);
                         encoded["changed_instance_ids"] = event.changedInstanceIds;
                         encoded["created_instance_ids"] = event.createdInstanceIds;
+                        encoded["changed_animation_channel_ids"] = event.changedAnimationChannelIds;
+                        putAnimationKeyIds(encoded, "changed_animation_key_ids", event.changedAnimationKeyIds);
                         events.push_back(std::move(encoded));
                     }
                     response = Json{{"revision", history.currentRevision},

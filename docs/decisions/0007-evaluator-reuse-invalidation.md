@@ -226,9 +226,9 @@ selects the document's explicit root.
 All reconciliation occurs on the mutable command candidate before
 publication, or during schema restoration. Const snapshot queries never
 repair persistent state or allocate incoming-edge caches. Graph adjacency
-is maintained during edits. Schema 3 records the scoped model and typed
-values, with schema-1/2 migration; this is not approval of a project-file
-container, open/save workflow, or recovery policy (#32/#35).
+is maintained during edits. Schema 4 records the scoped model, typed
+values, and animation channels, with schema-1/2/3 migration; this is not
+approval of a project-file container, open/save workflow, or recovery policy (#32/#35).
 
 ## Typed parameter integration (#51)
 
@@ -246,7 +246,7 @@ text. Type-tagged canonical values enter dependency identity; pixel math
 and CPU/GPU reference independence are unchanged. Defaults are resolved
 from the active catalog, including when queries return unauthored values.
 
-Schema 3 and CLI transport encode each value as `{"type": "...", "value": ...}`.
+Schema 3 and later, and CLI transport, encode each value as `{"type": "...", "value": ...}`.
 Tags are `boolean`, `integer`, `float`, `string`, `choice`, `vector2`,
 `vector3`, and `color`. For example, a color is
 `{"type":"color","value":[0.25,0.5,0.75,1]}`. Schema-1/2 strings pass through
@@ -274,6 +274,54 @@ The CLI exposes `begin-parameter-gesture`, `update-parameter-gesture`,
 `edits`, update/commit/cancel use `token`, and begin/commit require
 `expected_revision`. Successful previews/cancellation report `ok: true`
 and `committed: false`, not a document change.
+
+## Parameter animation integration (#48)
+
+`Document` owns animation channels addressed by `{network, node, key, instance}`.
+Each channel and key has a stable document-wide identity; allocator watermarks
+survive deletion, undo, and serialization. Channels store typed key values,
+finite subframe times, outgoing Hold/Linear/Bezier interpolation, Smooth/Broken
+tangent mode, and unweighted incoming/outgoing slopes in actual value units per
+frame. Scalar/vector/color channels interpolate continuously; boolean, integer,
+choice, and string channels require Hold. Endpoint extrapolation is constant.
+Smooth tangents require equal incoming/outgoing slopes; unused components are zero.
+
+`setKeyframesCommand` edits all supplied key fields atomically. Zero IDs upsert
+by the original channel/time; nonzero IDs must identify existing keys.
+Conflicting targets, final-time collisions, invalid types, and tangent violations
+reject the whole batch without history. Group moves and exact time swaps validate
+their final state, not intermediate positions. `insertKeyframeCommand` samples the
+curve and its derivative to preserve unweighted Bezier segments; insertion outside
+the key range preserves constant extrapolation. Removing the last key removes its
+channel. Static parameter reset does not implicitly remove animation.
+
+Keyed parameter gestures share the existing session token, immutable preview,
+revision checks, commit/cancel lifecycle, and document history. Their frame is
+captured at begin; updating an existing key preserves its interpolation/tangents.
+Adding a key allocates the same identities in the preview and eventual commit.
+No preview changes the published document or triggers a current render. Current
+time, selection, curve visibility, and panel framing remain presentation state.
+Channel/key queries are bounded and paginated by stable identity rather than
+mutable time order. Change records identify affected channels/keys and scoped
+nodes/networks/instances so clients can discard deleted references; undo restores
+the original identities.
+
+Effective values resolve in order: definition static/default, definition animation,
+instance static override, instance animation. CPU execution, GPU execution, and
+viewer-key queries share only this metadata resolution, never pixel kernels.
+Only nodes with effective overrides/animation need a local node copy. Content
+keys use frame-resolved values, so key edits invalidate affected dependencies,
+not every cached branch. Immutable snapshot and asynchronous publication rules
+remain unchanged.
+
+Schema 4 adds `animationChannels`, `nextAnimationChannelId`, and `nextKeyframeId`.
+Keys retain tagged parameter values and explicit interpolation/tangent metadata;
+schemas 1–3 migrate without invented animation. Restoration validates the entire
+set before installation. Animation targeting an unavailable catalog node/parameter
+currently fails load explicitly rather than being silently dropped or rendered
+with invented semantics; historical unknown **nonanimated** fields remain retained.
+This is an explicit limitation pending unavailable-extension recovery, not a
+selection of the final project container. Public API review remains required.
 
 ## Verification
 

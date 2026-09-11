@@ -5,6 +5,44 @@ specification is `docs/composition_network_vfx_nle_spec_v2.md` — read the
 sections relevant to your task. Architecture decisions live in
 `docs/decisions/` (ADRs); do not contradict them without updating them.
 
+## Development contract — start here
+
+**Recreate the approved prototype's appearance and demonstrated interactions
+through clean production architecture.** The prototype defines the experience,
+not production state ownership. Features extend established systems; they do
+not independently redesign graph behavior, inspectors, or shared chrome.
+
+Before implementation:
+
+1. Read [roadmap #24](https://github.com/rgamevfx/nemo/issues/24), check the
+   task's live ownership/blockers, and claim the task.
+2. Read `docs/agents/ownership.md` and classify the work as a **prototype port**,
+   **system extension**, or **new design** (classify mixed work by slice).
+3. Complete the **pre-edit contract** in `docs/agents/issue-tracker.md` on the
+   task. Identify existing owners/callers, protected accepted behavior, exact
+   reference sources, and verification before changing application code.
+
+For UI/interaction work, read `docs/evidence/issue25-prototype-acceptance-v1.md`,
+its current coverage entries, and the actual archived source/session evidence
+for each affected behavior. Start from accepted production components; port
+missing behavior rather than reconstructing it from ticket prose. Preserve
+prototype geometry, styling, gestures and state transitions. Copying prototype
+`StudioModel` or other fixture state into production is not a port.
+
+For effects and other system extensions, use the existing contribution entry
+point. A new effect supplies schema and execution, not new graph gestures or
+per-effect inspector plumbing. Missing shared capabilities belong to their
+owning prerequisite task; an agent must identify that gap rather than bypass it.
+
+For new design or a conflict between prototype and production requirements,
+record the exact gap and obtain narrow owner approval before implementing the
+affected slice. Agents choose implementation details within these boundaries,
+not new product behavior. Delegated work carries the same contract.
+
+Verify each completed UI behavior against its reference before expanding the
+implementation. Production correctness and prototype conformance are separate
+review gates; builds/tests alone cannot establish visual or interaction parity.
+
 ## What this project is
 
 A unified VFX compositor and NLE: node-based compositing (Nuke-like
@@ -126,6 +164,9 @@ on the actual running UI.
    explicit human review in the PR description.
 6. Spec conformance checked for touched behavior; ADR added for any
    architectural decision.
+7. The task's pre-edit contract is accounted for: production correctness and,
+   where applicable, matched prototype-conformance evidence are recorded.
+   Unapproved deviations and unmet acceptance criteria remain open.
 
 ## Working conventions
 
@@ -133,13 +174,9 @@ on the actual running UI.
 - Issues specify: outcome, scope, non-goals, acceptance examples, verification
   commands. PRs report: what changed, test evidence, limitations, and image
   diffs where relevant.
-- **Start every project-work session at the
-  [development roadmap](https://github.com/rgamevfx/nemo/issues/24).**
-  It is the single entry point for all current planning, implementation,
-  bug fixes, prototype work, and documentation changes.
-- Before starting, identify the relevant task linked from the roadmap, check
-  its blockers and assignee, and claim it. Link newly requested work there;
-  create a task issue when it needs its own scope or acceptance criteria.
+- Follow the Development contract above for every task, including fixes and
+  documentation work. Link newly requested work from #24; create a task issue
+  when it needs its own scope or acceptance criteria.
 - On starting, blocking, or finishing work, update the task and the roadmap's
   current status/next action as appropriate. Record decisions, changes,
   verification evidence, and remaining gaps in the task; keep the roadmap
@@ -153,7 +190,7 @@ on the actual running UI.
 
 ### Ownership and contribution context
 
-For ownership paths, extension entry points, dependency direction, or contribution review/licensing gates, read `docs/agents/ownership.md` first.
+Read `docs/agents/ownership.md` before implementation; use its contribution entry points to locate the existing owner and distinguish implemented capabilities from pending prerequisites.
 
 ### Rendering & media context
 

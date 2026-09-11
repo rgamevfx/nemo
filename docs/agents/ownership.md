@@ -7,6 +7,28 @@ workflow for issues and pull requests remains [`issue-tracker.md`](issue-tracker
 Do not create a parallel registry or instruction hierarchy when a responsibility
 already has an owner below.
 
+## Choose the contribution path before editing
+
+The root `AGENTS.md` Development contract is mandatory for every task.
+Record its pre-edit contract using [`issue-tracker.md`](issue-tracker.md).
+
+| Task class | Start from | Change boundary |
+| --- | --- | --- |
+| Prototype port | Accepted production component plus current archived prototype source/behavior entries | Port the missing observable behavior through production queries/commands; retain the accepted shell and adjacent interactions |
+| System extension | Existing catalog, command, evaluator, persistence or panel contribution entry point below | Supply data/behavior through that contract; shared UI remains unchanged unless an explicitly scoped prerequisite extends it |
+| New design | Narrow owner decision linked from the task | Implement only the approved observable decisions; reuse existing host controls and ownership |
+
+The immutable [prototype inventory](../evidence/issue25-prototype-acceptance-v1.md)
+defines visual/interaction authority and supersession. The accepted production
+baseline is the integration starting point, not permission to ignore prototype
+details still assigned to later tasks. Spec/ADRs define production ownership;
+prototype fixture models are reference behavior, not production architecture.
+
+Baseline #40/#59 supplies the shared shell and existing panel presentation;
+#41 supplies accepted routing semantics. Functional ports #44/#46/#50/#47/#43
+extend those owners. Read the live owning issue to distinguish implemented
+capabilities from planned ones before using an extension path.
+
 ## Target graph and dependency direction
 
 These are the public CMake target names and their direct interfaces as currently
@@ -108,9 +130,65 @@ node/effect is a coordinated change to the existing catalog and executor seams:
    is not approval.
 
 Current examples/use sites: `constColorDescriptor()` plus the `constcolor`
-CPU/GPU paths, and `ViewerController::addGraphNode()` calling
-`addNodeCommand(...)`. Unknown declared types fail explicitly when an executor
-has no implementation; do not silently substitute another effect.
+CPU/GPU paths, and catalog-backed graph creation submitting `addNodeCommand(...)`.
+Unknown declared types fail explicitly when an executor has no implementation;
+do not silently substitute another effect.
+
+#### Parameter and inspector boundary
+
+`ParameterSpec` in `NodeCatalog.hpp` owns name, type, typed default, optional
+numeric min/max and choice values. `ParameterValue.hpp` defines Boolean,
+Integer, Float, Choice, Vector2, Vector3, Color and String values; serialization
+and shared parameter commands own conversion/validation, not QML. Use those
+definitions rather than maintaining a second parameter-type table.
+
+**Typed values are implemented; the generic Parameters inspector is not yet
+delivered.** [#46](https://github.com/rgamevfx/nemo/issues/46) owns reusable
+schema-to-control rendering, inspector cards/pinning/scrolling/keying and the
+custom-editor hosting interface. Its delivery must document which schema types
+and metadata select which host controls, unavailable-editor behavior and the
+stable query/gesture contract. [#37](https://github.com/rgamevfx/nemo/issues/37)
+then supplies ColorWarp's custom editor through that host. A schema field or
+editor selector not present in the current catalog is an API change, not an
+assumed existing capability.
+
+For a new Glow-like effect, add schema plus real CPU/GPU execution through the
+steps above. The graph catalog discovers it and #46's generic inspector consumes
+its schema. The effect task does not change graph selection/wiring, inspector
+card layout, theme or docking, and does not add effect-name switches to QML.
+Until #46 lands, verify values/execution through shared commands and headless
+evaluation; do not claim ordinary inspector support or build a private editor
+to bypass that prerequisite. Backend effect implementation need not wait for
+#46; integrated inspector acceptance must use the real host.
+
+### Extend graph editing
+
+`ViewerController::graphSnapshot(networkId)` is the panel query seam. It returns
+availability plus nodes/edges with decimal-string identities, typed indexed ports,
+authored positions and routes. Graph mutation methods take the network identity
+explicitly; an unavailable scope never falls back to editing the root. Root
+`graphNodes`/`graphEdges` properties remain read-only root queries, not panel scope.
+
+`GraphPanel.qml` owns the single gesture state machine and transient previews.
+It computes prototype placement/snapping; `createGraphNode` submits the anchor,
+new position and downstream layout batch together. `addNodeCommand` owns atomic
+creation/fan-out insertion; `rewireGraphEdgeCommand` owns endpoint replacement,
+including an occupied destination. Route/layout/deletion use the same
+`ProjectSession` history. A completed gesture is one commit; canceled previews
+do not submit document edits.
+
+`GraphItem` parses plain GUI-thread records and presentation colors. Render-thread
+code consumes those records only; hit and paint geometry share the decorated
+local port positions. UI selection/view/click anchors live in panel-state
+`graphSelections`/`graphViews` keyed by network, while authored node positions and
+routes live in Document. Saving that presentation metadata must not reactivate
+an unrelated panel; workspace activation follows panel identity, not map changes.
+
+Effect additions use the catalog entry point above, including the category
+metadata that drives shared colors and search. They do not extend this gesture
+machine. #46 consumes graph double-click inspector requests with the sender's
+network scope; #49 owns hierarchy navigation/collapse and owned-subnet lifecycle.
+Neither responsibility is simulated inside the graph editor.
 
 ### Add a panel
 
@@ -158,14 +236,10 @@ window. Qt-injected `QTest` clicks and temporary `Qt.Tool` capture windows bypas
 the failing coordinate boundary. The [physical-pointer evidence](../evidence/assets/issue59-native-pointer/session.json)
 records the 3/30-pixel failure and zero-offset correction.
 
-For presentation changes, start from the immutable
-[prototype source/evidence baseline](../evidence/issue25-prototype-acceptance-v1.md),
-port the actual shared pattern, and retain matched native images and gesture
-evidence. The prototype is the precise design contract; owner approval is
-required for deviations. [#40](https://github.com/rgamevfx/nemo/issues/40) owns
-the shared shell/library; [#59](https://github.com/rgamevfx/nemo/issues/59) owns
-existing panel-content cutover. Shell evidence does not establish panel-content
-or complete-workflow parity.
+For presentation changes, follow the root Development contract and the
+pre-edit/reference mapping and intermediate evidence gates in
+[`issue-tracker.md`](issue-tracker.md). Shell evidence does not establish
+panel-content or complete-workflow parity.
 
 The #59 cutover removes temporary viewer-path, graph-edit-form and timeline-cache
 toolbars rather than keeping them behind compatibility menus. The prototype
@@ -187,7 +261,7 @@ revision, undo/redo, notifications, and automation remain identical. Wire a
 headless operation only through `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()`;
 use the existing `transactionCommand` for an atomic multi-edit. The concrete
 existing example is `addNodeCommand(...)` used by both `makeCommand()` and
-`ViewerController::addGraphNode()`.
+the catalog-backed graph creation controller.
 
 ## Verification and review gates
 

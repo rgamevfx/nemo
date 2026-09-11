@@ -2,6 +2,63 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+## Pre-edit contract
+
+Before application edits, record this compact contract in the owning issue.
+Reuse existing issue sections where sufficient; a start comment may supply
+the missing source-to-production mapping. A claim alone does not pass this gate.
+
+| Field | Required content |
+| --- | --- |
+| Work class | **Prototype port**, **system extension**, or **new design**; classify mixed work by slice |
+| Authority | Approved prototype/current coverage entries for observable UI; spec/ADRs for production ownership; linked owner decision for new design |
+| Existing owner | Accepted production component and concrete extension entry point/callers; distinguish accepted code from unreviewed worktree changes |
+| Change boundary | What is missing and will change; accepted behavior and adjacent systems that remain unchanged |
+| Proof | Per-behavior production check and, for UI, reference scenario/capture and matched native interaction evidence |
+
+For every affected prototype behavior, map the current coverage entry and
+archived source function/handler to the production owner and observable check.
+Account for all entries assigned to the ticket; shared entries name the other
+owning ticket rather than silently narrowing acceptance. Read supersession
+records before using older screenshots or gesture descriptions. Reference
+paths and entry IDs belong in the ticket even when a generated spec omits paths.
+
+For a system extension, identify supported schema/execution/host contracts
+and demonstrate that discovery and presentation consume them. A missing
+capability is a prerequisite gap: record it on its owning ticket and add a
+native/body dependency only when delivery actually depends on it. Independent
+backend work does not wait for unrelated UI work.
+
+For new design, list the unresolved observable decisions. Obtain narrow owner
+approval for the affected slice; implementation may continue on independent
+specified slices. Do not treat a generated spec, assignment, or passing tests
+as design approval.
+
+## Implementation and review gates
+
+Implement one complete observable behavior at a time. For a prototype port,
+exercise its reference scenario and compare the native result before extending
+the next behavior. Capture relevant hover, selection, focus, cancellation,
+disabled and narrow-layout states, not just idle appearance. Use matched
+viewport, DPR, theme, fonts and panel arrangement; identify content/platform
+differences separately from design deviations. Preserve actual application
+input-path verification described in `ownership.md`.
+
+Record two review findings separately:
+
+- **Production correctness:** commands/history, persistence, ownership,
+  evaluation and failure invariants relevant to the task.
+- **Prototype conformance:** each mapped UI behavior and appearance, with
+  retained reference/production evidence and explicit owner-approved exceptions.
+  Backend-only tasks state why this gate is not applicable.
+
+An unexplained mismatch is unfinished work. Fix it before widening the change;
+owner approval is needed to change the contract, not for every faithful slice.
+On completion, update the existing contribution guide if the extension path
+changed, so the next feature uses the same owner rather than a parallel path.
+Documentation-only workflow work records link/contract verification instead
+of claiming runtime evidence.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.

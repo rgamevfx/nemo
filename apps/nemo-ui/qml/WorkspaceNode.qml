@@ -19,13 +19,16 @@ Item {
     // The router is a GUI-thread presentation service supplied by Main's
     // context. `typeof` keeps the workspace layout harness usable on its own.
     property var contextRouter: typeof panelContextRouter !== "undefined" ? panelContextRouter : null
+    readonly property int paneMinimumWidth: theme ? theme.minimumPaneWidth : 280
+    readonly property int paneMinimumHeight: theme ? theme.minimumPaneHeight : 140
+    readonly property int splitHandleSize: theme ? theme.splitHandleSize : 8
 
     readonly property bool isValid: node !== undefined && node !== null
                                     && node.kind !== undefined && node.kind !== ""
 
     readonly property bool isSplit: isValid && node.kind === "split"
-    readonly property real minimumPaneWidth: isSplit && inner.item ? inner.item.minimumPaneWidth : 120
-    readonly property real minimumPaneHeight: isSplit && inner.item ? inner.item.minimumPaneHeight : 80
+    readonly property real minimumPaneWidth: isSplit && inner.item ? inner.item.minimumPaneWidth : paneMinimumWidth
+    readonly property real minimumPaneHeight: isSplit && inner.item ? inner.item.minimumPaneHeight : paneMinimumHeight
 
     Loader {
         id: inner
@@ -43,10 +46,10 @@ Item {
             orientation: rootNode.node.orientation === "vertical" ? Qt.Vertical : Qt.Horizontal
             property bool wasResizing: false
             readonly property real minimumPaneWidth: orientation === Qt.Horizontal
-                ? firstNode.SplitView.minimumWidth + secondNode.SplitView.minimumWidth + 4
+                ? firstNode.SplitView.minimumWidth + secondNode.SplitView.minimumWidth + rootNode.splitHandleSize
                 : Math.max(firstNode.SplitView.minimumWidth, secondNode.SplitView.minimumWidth)
             readonly property real minimumPaneHeight: orientation === Qt.Vertical
-                ? firstNode.SplitView.minimumHeight + secondNode.SplitView.minimumHeight + 4
+                ? firstNode.SplitView.minimumHeight + secondNode.SplitView.minimumHeight + rootNode.splitHandleSize
                 : Math.max(firstNode.SplitView.minimumHeight, secondNode.SplitView.minimumHeight)
 
             // Re-derive pane sizes whenever the underlying node map changes
@@ -56,12 +59,19 @@ Item {
             onBoundNodeChanged: splitView.applyRatio()
 
             handle: Rectangle {
-                implicitWidth: 4
-                implicitHeight: 4
-                color: SplitHandle.pressed
-                       ? (rootNode.theme ? rootNode.theme.accent : "#4a6fa5")
-                       : (SplitHandle.hovered ? (rootNode.theme ? rootNode.theme.border : "#464646")
-                                               : (rootNode.theme ? rootNode.theme.border : "#383838"))
+                id: splitHandle
+                implicitWidth: rootNode.splitHandleSize
+                implicitHeight: rootNode.splitHandleSize
+                color: rootNode.theme ? rootNode.theme.background : "#181a1d"
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    radius: 1
+                    color: splitHandle.SplitHandle.pressed
+                           ? (rootNode.theme ? rootNode.theme.accent : "#3485f6")
+                           : (rootNode.theme ? rootNode.theme.hover : "#343940")
+                    visible: splitHandle.SplitHandle.hovered || splitHandle.SplitHandle.pressed
+                }
             }
 
             Loader {
@@ -74,8 +84,8 @@ Item {
                     item.theme = Qt.binding(function() { return rootNode.theme })
                     item.contextRouter = Qt.binding(function() { return rootNode.contextRouter })
                 }
-                SplitView.minimumWidth: item ? item.minimumPaneWidth : 120
-                SplitView.minimumHeight: item ? item.minimumPaneHeight : 80
+                SplitView.minimumWidth: item ? item.minimumPaneWidth : rootNode.paneMinimumWidth
+                SplitView.minimumHeight: item ? item.minimumPaneHeight : rootNode.paneMinimumHeight
             }
             Loader {
                 id: secondNode
@@ -87,10 +97,9 @@ Item {
                     item.theme = Qt.binding(function() { return rootNode.theme })
                     item.contextRouter = Qt.binding(function() { return rootNode.contextRouter })
                 }
-                SplitView.minimumWidth: item ? item.minimumPaneWidth : 120
-                SplitView.minimumHeight: item ? item.minimumPaneHeight : 80
+                SplitView.minimumWidth: item ? item.minimumPaneWidth : rootNode.paneMinimumWidth
+                SplitView.minimumHeight: item ? item.minimumPaneHeight : rootNode.paneMinimumHeight
             }
-
             // Derive the pane sizes from the saved ratio. Only called when the
             // split view is not being dragged, so the drag keeps its local
             // geometry; a window resize still restores the ratio because the
@@ -99,19 +108,23 @@ Item {
                 if (splitView.resizing)
                     return
                 var ratio = typeof rootNode.node.ratio === "number" ? rootNode.node.ratio : 0.5
-                var handle = 4
+                var handle = rootNode.splitHandleSize
                 if (splitView.orientation === Qt.Horizontal) {
                     var w = splitView.width - handle
                     if (w <= 0)
                         return
-                    firstNode.SplitView.preferredWidth = ratio * w
-                    secondNode.SplitView.preferredWidth = (1 - ratio) * w
+                    var firstWidth = Math.max(firstNode.SplitView.minimumWidth,
+                                              Math.min(ratio * w, w - secondNode.SplitView.minimumWidth))
+                    firstNode.SplitView.preferredWidth = firstWidth
+                    secondNode.SplitView.preferredWidth = w - firstWidth
                 } else {
                     var h = splitView.height - handle
                     if (h <= 0)
                         return
-                    firstNode.SplitView.preferredHeight = ratio * h
-                    secondNode.SplitView.preferredHeight = (1 - ratio) * h
+                    var firstHeight = Math.max(firstNode.SplitView.minimumHeight,
+                                               Math.min(ratio * h, h - secondNode.SplitView.minimumHeight))
+                    firstNode.SplitView.preferredHeight = firstHeight
+                    secondNode.SplitView.preferredHeight = h - firstHeight
                 }
             }
 
@@ -154,10 +167,10 @@ Item {
         Rectangle {
             id: leaf
             anchors.fill: parent
-            color: rootNode.theme ? rootNode.theme.panel : "#2b2b2b"
+            color: "transparent"
             objectName: "leaf_" + leaf.nodeId
-            readonly property real minimumPaneWidth: 120
-            readonly property real minimumPaneHeight: 80
+            readonly property real minimumPaneWidth: rootNode.paneMinimumWidth
+            readonly property real minimumPaneHeight: rootNode.paneMinimumHeight
 
             readonly property var node: rootNode.node
             readonly property var workspace: rootNode.workspace
@@ -241,7 +254,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: leaf.panelCount > 1 ? 26 : 0
                     visible: leaf.panelCount > 1
-                    color: leaf.theme ? leaf.theme.tabs : "#262626"
+                    color: leaf.theme ? leaf.theme.header : "#262626"
                     RowLayout {
                         id: tabRow
                         anchors.fill: parent
@@ -258,7 +271,7 @@ Item {
                                     text: leaf.panelTitle(modelData.type)
                                     color: modelData.id === leaf.node.active
                                            ? (leaf.theme ? leaf.theme.text : "#eaeaea")
-                                           : (leaf.theme ? leaf.theme.mutedText : "#8a8a8a")
+                                           : (leaf.theme ? leaf.theme.muted : "#8a8a8a")
                                     font.pixelSize: 11
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
@@ -267,7 +280,7 @@ Item {
                                 background: Rectangle {
                                     radius: 3
                                     color: modelData.id === leaf.node.active
-                                           ? (leaf.theme ? leaf.theme.header : "#3f3f3f")
+                                           ? (leaf.theme ? leaf.theme.raised : "#3f3f3f")
                                            : "transparent"
                                 }
                                 onClicked: leaf.workspace.activate(leaf.node.id, modelData.id)

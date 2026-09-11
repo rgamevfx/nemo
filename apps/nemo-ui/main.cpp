@@ -198,7 +198,7 @@ int main(int argc, char* argv[]) {
     // loaded; the shared shell never switches on panel type.
     workspace.registerPanelType(QStringLiteral("viewer"), QStringLiteral("Viewer"), QStringLiteral("ViewerPanel.qml"),
                                 QString());
-    workspace.registerPanelType(QStringLiteral("nodegraph"), QStringLiteral("Nodegraph"),
+    workspace.registerPanelType(QStringLiteral("nodegraph"), QStringLiteral("Node graph"),
                                 QStringLiteral("GraphPanel.qml"), QString());
     workspace.registerPanelType(QStringLiteral("timeline"), QStringLiteral("Timeline"),
                                 QStringLiteral("TimelinePanel.qml"), QString());

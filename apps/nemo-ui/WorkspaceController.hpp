@@ -57,10 +57,12 @@ public:
     Q_INVOKABLE QString duplicateWorkspace(const QString& id, const QString& name);
     Q_INVOKABLE bool closeWorkspace(const QString& id);
     Q_INVOKABLE bool switchWorkspace(const QString& id);
+    Q_INVOKABLE bool moveWorkspace(const QString& id, int offset);
 
     Q_INVOKABLE bool setAppearancePreset(const QString& preset);
     Q_INVOKABLE bool setAccentOverride(const QString& color);
     Q_INVOKABLE bool setCategoryColor(const QString& category, const QString& color);
+    Q_INVOKABLE void resetCategoryColors();
     Q_INVOKABLE void resetAppearance();
 
     Q_INVOKABLE bool save();

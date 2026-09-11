@@ -1,0 +1,883 @@
+{
+  "schema": 1,
+  "issue": 40,
+  "recorded_at_utc": "2026-09-11T15:20:12.483177+00:00",
+  "branch": "issue/40-prototype-exact-shell",
+  "base_commit": "32c393b125eadaac525df58e97367329eadb8984",
+  "implementation_state": "Working tree implementation; not committed or pushed by this session. Owner native-image/interaction and public-interface review pending.",
+  "scope": "Shared application chrome, appearance controls, panel headers/tabs, splitter/docking geometry and workspace state. Not panel-content cutover or complete application parity (#59 and later tickets).",
+  "source_sha256": {
+    "apps/nemo-ui/CMakeLists.txt": "0e2172c34ae8ab1311a3542bc28eb23d8de30190f4420816584dd9df1a747739",
+    "apps/nemo-ui/WorkspaceController.hpp": "faf9c10b75bc579fe9cae06ec33be55d52e706207c424b24aca305e3cf28d1d7",
+    "apps/nemo-ui/WorkspaceController.cpp": "63a9ec8ef7342a21385b0d43a6601bdc3cb5b2501ada88942d8bfdf97ee067b7",
+    "apps/nemo-ui/main.cpp": "d53321b9b219696eb37344ee87c51740230ae731edd8430c9824b8002d726651",
+    "apps/nemo-ui/qml/Main.qml": "ffff0370b78dabde8ddc4466175b16dff95b06d15386f7ca3303d890a17f18bb",
+    "apps/nemo-ui/qml/Panel.qml": "f850263d292348cfba8c9c007553fdb625df52e1b9452f7e7c13cb922d630c2e",
+    "apps/nemo-ui/qml/WorkspaceNode.qml": "2f3bf11aca60250de842d2b08e58f5c3cacb8876aee6ca4c4d175c914add20cd",
+    "apps/nemo-ui/qml/DockDrag.qml": "9eb0780a0dfe4fd5623ffd5fafd7e7a66998a5e4543ee46d17e050af892dba8b",
+    "apps/nemo-ui/qml/Theme.qml": "81c449a99eb26e46c053e2e2632e6047295560eae83aa90dbf03b0da5087b5a7",
+    "apps/nemo-ui/qml/ChromeButton.qml": "233baa297bc8c613e730db88240f0fa83d322f4332ee4c929b7f94f63ef38342",
+    "apps/nemo-ui/qml/StudioComboBox.qml": "246a255d84b27836e8e516aea3c8a3fb621adceea330dc706411489e6a51e503",
+    "apps/nemo-ui/qml/UnavailablePanel.qml": "dbd4c9085e76d7e6c8b3514f4e480b3d21132954f1fc24c6cc5adf608f68f04f",
+    "tests/WorkspaceDragTests.cpp": "414fd35be120b921ae954f1f5f6a81c782c125a1f192c3fb48f28e2b7a59ed96",
+    "docs/agents/ownership.md": "5c19dc11b92655e677cd40551c1517ceab1e0007fcaed5b2d2f500f26e8679c4"
+  },
+  "prototype_baseline": {
+    "inventory": "docs/evidence/issue25-prototype-acceptance-v1.md",
+    "manifest": "docs/evidence/assets/issue25-prototype-reference-manifest.json",
+    "head": "76071624aebd6577ca613a9d3322f535fd80f399",
+    "current_nonbackup_qml_matches": [
+      {
+        "path": "apps/nemo-ui/qml/AnimationHeaderTools.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/AnimationPanel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/DockDrag.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/FrameRuler.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/GraphPanel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/Main.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/MediaBinPanel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/MediaCatalog.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/Panel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/PanelDragHandler.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/ParametersPanel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/StudioComboBox.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/StudioModel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/Theme.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/TimelineHeaderTools.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/TimelineModel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/TimelinePanel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/TransportButton.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/ViewerPanel.qml",
+        "matches_baseline": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/WorkspaceNode.qml",
+        "matches_baseline": true
+      }
+    ],
+    "immutable_reference_captures": [
+      "workspace-comp.png",
+      "workspace-narrow.png",
+      "workspace-paper.png",
+      "compact-docking-rearranged.png",
+      "compact-viewer-docking.png",
+      "node-category-settings.png"
+    ]
+  },
+  "native_environment": {
+    "platform": "Qt Wayland on COSMIC",
+    "renderer": "Production Vulkan startup/attach path",
+    "qt_version": "6.4.2",
+    "requested_font": "Inter",
+    "resolved_font": "NotoSans-Regular.ttf: \"Noto Sans\" \"Regular\"",
+    "device_pixel_ratio": 1,
+    "viewports": [
+      [
+        1568,
+        926
+      ],
+      [
+        1274,
+        640
+      ],
+      [
+        960,
+        640
+      ]
+    ],
+    "capture": "QQuickWindow::grabWindow in actual production executable via temporary LD_PRELOAD Qt driver; not a gallery/test substitute. Native QTest mouse/key input; text-field fixture strings assigned to TextField.text before native Return/focus-change acceptance. Driver removed after verification.",
+    "window_management": "Temporary Qt.Tool window flag on both native reference and production windows allowed exact viewport sizing under COSMIC tiling. Captured dimensions checked after compositor resize. Production default flags/lifecycle unchanged.",
+    "settings_isolation": "XDG_CONFIG_HOME=/tmp/nemo40-final-config; separate /tmp/nemo40-invalid-config for corrupt-workspace scenario; normal user workspace file untouched."
+  },
+  "launch_commands": [
+    "QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY=wayland-1 DISPLAY=:1 XDG_CONFIG_HOME=/tmp/nemo40-final-config LD_PRELOAD=/tmp/nemo40-driver.so NEMO_DRIVER_SOCKET=/tmp/nemo40.sock build/debug/apps/nemo-ui/nemo-ui",
+    "QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY=wayland-1 DISPLAY=:1 LD_PRELOAD=/tmp/nemo40-driver.so NEMO_DRIVER_SOCKET=/tmp/nemo40-prototype.sock /home/rgame/dev/Nemo_UI_Prototype/build/viewer-prototype/nemo-viewer-prototype"
+  ],
+  "manual_replay": [
+    "Launch build/debug/apps/nemo-ui/nemo-ui with an isolated XDG_CONFIG_HOME and native Wayland environment.",
+    "Use tab context menu Rename; + creates current-layout copy and activates it; name four real workspace copies Project/Edit/Image/Comp for matched shared top-bar comparison.",
+    "Exercise inactive-tab Move left/right, Duplicate and Close; active identity follows the prototype behavior.",
+    "Open Appearance: compare all three themes, edit valid/invalid accent/category fields, verify independent resets and focus/dropdown states.",
+    "At 1568x926,1274x640,960x640 exercise header/title drag: center tabs; edge tiles; Escape does not mutate layout; drag splitters; check compact context badge choices.",
+    "Close/reopen: verify layout, workspace IDs/order, bindings and appearance persist. Reset Layout must preserve named tabs, other workspace layouts and appearance.",
+    "In a separate isolated config, write malformed workspace JSON before launch. Verify visible restore error, preserved file on failed close, save-failure dialog, and explicit Reset Layout recovery."
+  ],
+  "native_checks": [
+    {
+      "check": "Rename active workspace through context menu",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Create and activate copied workspace Edit",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Create and activate copied workspace Image",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Create and activate copied workspace Comp",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Move inactive workspace without changing active identity",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Duplicate inactive workspace selects new copy",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Close active copy returns to existing workspace",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Theme selector changes production appearance to Paper",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Accent field commits valid color",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Category field commits valid color",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Category reset preserves theme and accent",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Invalid accent edit leaves valid setting intact",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Accent reset preserves selected theme",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Theme selector switches Paper to Slate",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Theme selector restores Graphite",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Narrow shell control remains accessible: themeSettingsButton",
+      "passed": true,
+      "details": {
+        "x": 76.046875,
+        "y": 7,
+        "width": 30,
+        "height": 28,
+        "visible": true,
+        "text": ""
+      }
+    },
+    {
+      "check": "Narrow shell control remains accessible: addWorkspaceButton",
+      "passed": true,
+      "details": {
+        "x": 604.1484375,
+        "y": 7,
+        "width": 28,
+        "height": 28,
+        "visible": true,
+        "text": "+"
+      }
+    },
+    {
+      "check": "Narrow shell control remains accessible: workspaceOptionsButton",
+      "passed": true,
+      "details": {
+        "x": 914.5625,
+        "y": 7,
+        "width": 33.4375,
+        "height": 28,
+        "visible": true,
+        "text": "\u2026"
+      }
+    },
+    {
+      "check": "Narrow shell control remains accessible: workspaceTab_workspace-1",
+      "passed": true,
+      "details": {
+        "x": 327.8515625,
+        "y": 6,
+        "width": 70.15625,
+        "height": 36,
+        "visible": true,
+        "text": ""
+      }
+    },
+    {
+      "check": "Narrow shell control remains accessible: workspaceTab_workspace-2",
+      "passed": true,
+      "details": {
+        "x": 401.0078125,
+        "y": 6,
+        "width": 64,
+        "height": 36,
+        "visible": true,
+        "text": ""
+      }
+    },
+    {
+      "check": "Narrow shell control remains accessible: workspaceTab_workspace-3",
+      "passed": true,
+      "details": {
+        "x": 468.0078125,
+        "y": 6,
+        "width": 66.140625,
+        "height": 36,
+        "visible": true,
+        "text": ""
+      }
+    },
+    {
+      "check": "Narrow shell control remains accessible: workspaceTab_workspace-4",
+      "passed": true,
+      "details": {
+        "x": 537.1484375,
+        "y": 6,
+        "width": 64,
+        "height": 36,
+        "visible": true,
+        "text": ""
+      }
+    },
+    {
+      "check": "Blank shared header starts drag without mutating layout",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Escape cancels native docking with no layout mutation",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Native center drop tabs both panel instances",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Edge preview offered for usable target",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Native title edge drop separates panels",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Compact badge still selects Follow Active",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Compact badge still selects named link group",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Compact badge still pins context",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Native splitter gesture persists changed ratio",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Native close and reopen restores layout, IDs, order, context and appearance",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Final shared selector Paper",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Final shared selector Slate",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Final shared selector Graphite",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Native Reset Layout preserves named tabs, active workspace and theme",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Unreadable workspace reports native recovery error",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Close failure opens save recovery dialog",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Unreadable workspace file preserved after failed close",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Explicit native reset recovers unreadable workspace",
+      "passed": true,
+      "details": null
+    },
+    {
+      "check": "Recovered workspace saves valid JSON",
+      "passed": true,
+      "details": null
+    }
+  ],
+  "pixel_comparisons": [
+    {
+      "surface": "appearance-content",
+      "reference": "prototype-appearance.png",
+      "production": "production-appearance.png",
+      "box": [
+        88,
+        48,
+        416,
+        478
+      ],
+      "mean_absolute_rgb": [
+        0.00023397617697107204,
+        0.00031196823596142936,
+        0.00026942711287577994
+      ],
+      "max_channel_difference": 1,
+      "differing_pixels": 113,
+      "pixel_count": 141040
+    },
+    {
+      "surface": "topbar-narrow",
+      "reference": "prototype-narrow.png",
+      "production": "production-narrow.png",
+      "box": [
+        0,
+        0,
+        960,
+        42
+      ],
+      "mean_absolute_rgb": [
+        0.0002728174603174603,
+        2.48015873015873e-05,
+        0.0001240079365079365
+      ],
+      "max_channel_difference": 1,
+      "differing_pixels": 16,
+      "pixel_count": 40320
+    },
+    {
+      "surface": "topbar-full",
+      "reference": "prototype-comp.png",
+      "production": "production-full.png",
+      "box": [
+        0,
+        0,
+        1568,
+        42
+      ],
+      "mean_absolute_rgb": [
+        0.00019740038872691933,
+        1.5184645286686102e-05,
+        0.00012147716229348882
+      ],
+      "max_channel_difference": 1,
+      "differing_pixels": 21,
+      "pixel_count": 65856
+    },
+    {
+      "surface": "topbar-paper",
+      "reference": "prototype-paper.png",
+      "production": "production-paper.png",
+      "box": [
+        0,
+        0,
+        1568,
+        42
+      ],
+      "mean_absolute_rgb": [
+        9.110787172011662e-05,
+        1.5184645286686102e-05,
+        7.592322643343052e-05
+      ],
+      "max_channel_difference": 1,
+      "differing_pixels": 12,
+      "pixel_count": 65856
+    },
+    {
+      "surface": "topbar-slate",
+      "reference": "prototype-slate.png",
+      "production": "production-slate.png",
+      "box": [
+        0,
+        0,
+        1568,
+        42
+      ],
+      "mean_absolute_rgb": [
+        0.00021258503401360543,
+        1.5184645286686102e-05,
+        0.00010629251700680272
+      ],
+      "max_channel_difference": 1,
+      "differing_pixels": 21,
+      "pixel_count": 65856
+    }
+  ],
+  "pixel_interpretation": "Only listed shared-surface rectangles compared. Maximum observed difference 1/255 per RGB channel on sparse pixels is recorded rasterization variation, not a changed design baseline or agent-granted approval. Panel bodies differ and are explicitly excluded from #40 pixel claims.",
+  "verification": [
+    {
+      "command": "cmake --build --preset debug -j 3",
+      "result": "passed"
+    },
+    {
+      "command": "ctest --preset debug",
+      "result": "335/335 passed",
+      "seconds": 62.07
+    },
+    {
+      "command": "cmake --build --preset release -j 2 && ctest --preset release",
+      "result": "build passed;335/335 passed",
+      "test_seconds": 40.79
+    },
+    {
+      "command": "cmake --build --preset asan --target nemo_workspace_ui_tests -j 2 && build/asan/tests/nemo_workspace_ui_tests",
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt"
+      },
+      "result": "31/31 passed; ASan+UBSan; no unsuppressed sanitizer reports"
+    },
+    {
+      "command": "clang-format -i apps/nemo-ui/WorkspaceController.hpp apps/nemo-ui/WorkspaceController.cpp apps/nemo-ui/main.cpp tests/WorkspaceDragTests.cpp",
+      "result": "completed"
+    }
+  ],
+  "fixed_regressions": [
+    "Copied workspace did not activate through naming dialog.",
+    "Header spacer omission spread the context badge across the header.",
+    "Dock preview used old 4px splitter and120x80 minimums while layout used prototype8px/280x140.",
+    "Extreme saved split ratio could place a pane outside the available viewport; geometry now clamps without rewriting saved ratio.",
+    "Hydration wrote context state back during QML root evaluation; coalesced read-only registration removes reentrant bindings.",
+    "Reset Layout discarded all workspace presets and appearance; now resets active layout only.",
+    "Successful panel registration/settings edits dismissed an unrecovered restore error; error preservation is centralized until explicit reset."
+  ],
+  "limitations": [
+    "Owner appearance/interaction and public-interface approval is not granted; #40 remains open.",
+    "#59 owns existing graph/viewer/timeline body replacement, compact viewer body/header-tools integration and usable whole-app cutover; #43/#44/#46/#47/#50/#54 retain later feature obligations.",
+    "Existing panel bodies retain legacy layouts/colors and can clip at narrow sizes; no claim that #40 alone makes the whole application prototype-complete.",
+    "Production-only recovery dialog has no prototype image counterpart; existing recovery behavior retained and captured for owner review.",
+    "No Windows-native or full sanitizer-suite/TSan run claimed; no threading contract changed.",
+    "Builds emit existing Qt qmlimportscanner missing QtQml qmldir notices and minizip-ng mktemp linker warning; no new project compiler warning reported."
+  ],
+  "artifacts": [
+    {
+      "file": "appearance-content-overlay.png",
+      "sha256": "2d3150eb3b765241123b4fd3bbf0de5d3acce9a74e09411976aaa5caa2b434a5",
+      "bytes": 24928,
+      "pixel_size": [
+        328,
+        430
+      ]
+    },
+    {
+      "file": "appearance-content-pair.png",
+      "sha256": "aff73e9f9827ff33996e390b1f3a469c563e79ca49574492885cb3f2624c6022",
+      "bytes": 27862,
+      "pixel_size": [
+        656,
+        430
+      ]
+    },
+    {
+      "file": "before-full.png",
+      "sha256": "ef3efdf291efb98d302b285121907e29b99fdf80cca8233416df1444216da274",
+      "bytes": 118818,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "debug-LastTest.log",
+      "sha256": "9c04b96b3a149309132dd54177ef5619cabfb43cea24da24bc0eb59d007b4a3e",
+      "bytes": 542141
+    },
+    {
+      "file": "production-appearance.png",
+      "sha256": "93313abeed79c4b988094143f908ced67c29dbf61f91518c67519137aa09f8e7",
+      "bytes": 127334,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "production-dock-preview.png",
+      "sha256": "b70f9a23c879d62093ebfc2185cb4e4afac2482064366f18c5a5af2779f0f75a",
+      "bytes": 86131,
+      "pixel_size": [
+        1274,
+        640
+      ]
+    },
+    {
+      "file": "production-docking-rearranged.png",
+      "sha256": "dfb8689da2a2b4b92363e0000596318d26a8bd2be2b57e75120fe1f355822518",
+      "bytes": 85166,
+      "pixel_size": [
+        1274,
+        640
+      ]
+    },
+    {
+      "file": "production-field-focus.png",
+      "sha256": "a23be3e815b055d9edacd122a1135f0ddb8886c076c9fb0b9f66e0577d51a948",
+      "bytes": 129290,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "production-full.png",
+      "sha256": "00a29e9afcdf472cf29ba9328cdf20eaa7ca0c192a21fb927a07ccc749c8e1e6",
+      "bytes": 104252,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "production-narrow.png",
+      "sha256": "c2c91cf9f3f1651ac9b8ede71c2e4d34e9f426a765c8ceacf7029b9681e3a2c0",
+      "bytes": 74501,
+      "pixel_size": [
+        960,
+        640
+      ]
+    },
+    {
+      "file": "production-paper.png",
+      "sha256": "7525bb58aa6260b0a87910c25b884f52f45d1ba60c970a9c1334a455839b66ee",
+      "bytes": 108939,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "production-recovery-error.png",
+      "sha256": "7f54f18fb61778eb48fa31dd95b08da737d8982b877b911c1002fd357ea09476",
+      "bytes": 89402,
+      "pixel_size": [
+        960,
+        640
+      ]
+    },
+    {
+      "file": "production-save-error-dialog.png",
+      "sha256": "dd006d0f591677a20f7f4501fbdd2d84774562a192b760cbdf82b053b18d3f2d",
+      "bytes": 114718,
+      "pixel_size": [
+        960,
+        640
+      ]
+    },
+    {
+      "file": "production-slate.png",
+      "sha256": "ab398b0d3838afa85966482b6de3d434a04a3c13d1021e2f9084f9ea95fdf36c",
+      "bytes": 104633,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "production-tabbed.png",
+      "sha256": "b174e7f71fb2e247d6e26ba83a21913c16de556bb490207192612d20b7dcee26",
+      "bytes": 60680,
+      "pixel_size": [
+        1274,
+        640
+      ]
+    },
+    {
+      "file": "production-theme-menu.png",
+      "sha256": "62f28b1439330cf168ab21c36842fcc45c4773e86dda9dc23a3b52c6dfa53e87",
+      "bytes": 130855,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "production-workspace-menu.png",
+      "sha256": "38385f9649ce1620dfaf277a3a9ee06ae031fab38964a8671ac39b296ae5b49f",
+      "bytes": 109156,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "prototype-appearance.png",
+      "sha256": "da381abe3aaf11fddb59fd8be082e2cf63ef15bbc0502db0a77b3b8608ec6a52",
+      "bytes": 174615,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "prototype-comp.png",
+      "sha256": "99bbf23550631ddadddda32e982a06807e350365741b092a1f746c09dddd5053",
+      "bytes": 157104,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "prototype-narrow.png",
+      "sha256": "79d5d08327da89fa031fcf13c72d88c158cd0fea134efbba2364ec9dcad14632",
+      "bytes": 92142,
+      "pixel_size": [
+        960,
+        640
+      ]
+    },
+    {
+      "file": "prototype-paper.png",
+      "sha256": "79e43d225c204d1d936e892c69d2a66c38220a04ecfd04cf5cc12cf959190893",
+      "bytes": 158864,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "prototype-slate.png",
+      "sha256": "30bb052b6e36fdc83605cb0d362c216d956ff6f9a0e8b0c1e08e4891edb2daa1",
+      "bytes": 157101,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "reference-compact-docking-rearranged.png",
+      "sha256": "0563cc220a838c2ecd8ae6c5c66c23af46c255a9c5ac6e41ca59a03f9f2d6d05",
+      "bytes": 47864,
+      "pixel_size": [
+        1274,
+        640
+      ]
+    },
+    {
+      "file": "reference-compact-viewer-docking.png",
+      "sha256": "96a661e7cab65bcf1b8f9cdd93df9e39eaf620b5473b7f7e3d217d4f70126018",
+      "bytes": 60002,
+      "pixel_size": [
+        1274,
+        640
+      ]
+    },
+    {
+      "file": "reference-node-category-settings.png",
+      "sha256": "61982e12113c0ae3d48bb044ed8bb345175b040af9f170ae1e16263286e775c5",
+      "bytes": 58187,
+      "pixel_size": [
+        1274,
+        687
+      ]
+    },
+    {
+      "file": "reference-workspace-comp.png",
+      "sha256": "8b107ae1aaaebe3d77a89fadd455c83d0bb2c3848b97dfba8e4eece9425c7b0e",
+      "bytes": 119431,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "reference-workspace-narrow.png",
+      "sha256": "90c3db7226bc9b2bd5fd379583902cee4a24252b7013faafd38d8b841d60f9d1",
+      "bytes": 115612,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "reference-workspace-paper.png",
+      "sha256": "e76e489590f1e64612172c992756ec37d05746c1936701cdfa12f952d90772d8",
+      "bytes": 116312,
+      "pixel_size": [
+        1568,
+        926
+      ]
+    },
+    {
+      "file": "release-LastTest.log",
+      "sha256": "96b6071f390f9038fb0f4d201fc515e0c640fc33ae83c96f77a6f4d0a4d3bef3",
+      "bytes": 543391
+    },
+    {
+      "file": "topbar-full-overlay.png",
+      "sha256": "839d87e2b85c0b70ff01f2fe081244f9f029b93c9234bf4823ad69d66ae60ab6",
+      "bytes": 5493,
+      "pixel_size": [
+        1568,
+        42
+      ]
+    },
+    {
+      "file": "topbar-full-pair.png",
+      "sha256": "bd98e770961faff529ea189106eda9f3cd0631b95616d74c4f00bfe1bcbe517c",
+      "bytes": 6169,
+      "pixel_size": [
+        3136,
+        42
+      ]
+    },
+    {
+      "file": "topbar-narrow-overlay.png",
+      "sha256": "5b11934d109fef5a127df4ecb5cd281728a918cabe93d676305c08f023288c34",
+      "bytes": 5309,
+      "pixel_size": [
+        960,
+        42
+      ]
+    },
+    {
+      "file": "topbar-narrow-pair.png",
+      "sha256": "e419c092f3b280e8e45b9030f9fa08b99cf146cd73abc1ba032fcb41f4d35fcb",
+      "bytes": 5853,
+      "pixel_size": [
+        1920,
+        42
+      ]
+    },
+    {
+      "file": "topbar-paper-overlay.png",
+      "sha256": "806e2c10f8a043f4e6fee438baf4b65e127cb801041d46dc1b7200337cfa4b2a",
+      "bytes": 5427,
+      "pixel_size": [
+        1568,
+        42
+      ]
+    },
+    {
+      "file": "topbar-paper-pair.png",
+      "sha256": "6f4f8c2d8e3a2bfc264e47112ed7c076baec659b9af7372685ab336b43bce4ec",
+      "bytes": 6099,
+      "pixel_size": [
+        3136,
+        42
+      ]
+    },
+    {
+      "file": "topbar-slate-overlay.png",
+      "sha256": "4b8cf1da95a15d32a77c5c86c17b171df90fabd849c4cf0d3d980c47541a5832",
+      "bytes": 5482,
+      "pixel_size": [
+        1568,
+        42
+      ]
+    },
+    {
+      "file": "topbar-slate-pair.png",
+      "sha256": "7dbb015a86e974a44723bedd581b2e108ae86874e7fede71fb23c26556861194",
+      "bytes": 6158,
+      "pixel_size": [
+        3136,
+        42
+      ]
+    }
+  ]
+}

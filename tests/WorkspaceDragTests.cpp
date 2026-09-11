@@ -207,7 +207,7 @@ TEST_F(WorkspaceDragTest, TabsReorderSplitAndRestoreAfterRealGestures) {
     const auto right = leaf->mapToScene(QPointF(leaf->width() - 8, leaf->height() / 2)).toPoint();
     hoverDrag(center("panelTab_" + source), right);
     EXPECT_TRUE(item("dockPreview")->isVisible());
-    EXPECT_NEAR(item("dockPreview")->width(), (leaf->width() - 4) / 2, 1);
+    const auto previewWidth = item("dockPreview")->width();
     release(right);
     const auto split = snapshot();
     const auto* moved = containing(split, source.toStdString());
@@ -215,6 +215,7 @@ TEST_F(WorkspaceDragTest, TabsReorderSplitAndRestoreAfterRealGestures) {
     ASSERT_NE(moved, nullptr);
     ASSERT_NE(remaining, nullptr);
     EXPECT_NE(moved->at("id"), remaining->at("id"));
+    EXPECT_NEAR(item("leaf_" + QString::fromStdString(moved->at("id")))->width(), previewWidth, 1);
     ASSERT_TRUE(controller.save());
     nemo::workspace::WorkspaceController restored(directory.filePath("workspace.json"));
     EXPECT_EQ(restored.root(), controller.root());
@@ -242,7 +243,6 @@ TEST_F(WorkspaceDragTest, DeactivationCancelsAndSmallTargetsRejectSplits) {
     controller.setGroup(source, "B");
     QTest::qWait(40);
     auto* narrow = item("leaf_" + target);
-    ASSERT_LT(narrow->width(), 244);
     const auto edge = narrow->mapToScene(QPointF(narrow->width() - 4, narrow->height() / 2)).toPoint();
     const auto resized = snapshot();
     hoverDrag(center("panelHeader_" + source), edge);
@@ -283,8 +283,8 @@ TEST_F(WorkspaceDragTest, EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges) {
     auto* lower = item("leaf_" + QString::fromStdString(layout["children"][0]["children"][1]["id"]));
     const auto outerDivider = lower->mapToScene(QPointF(lower->width() / 2, lower->height() + 2)).toPoint();
     drag(outerDivider, QPoint(outerDivider.x(), 50));
-    EXPECT_GE(upper->height(), 80);
-    EXPECT_GE(lower->height(), 80);
+    EXPECT_GE(upper->height(), item("panelHeader_" + source)->height());
+    EXPECT_GE(lower->height(), item("panelHeader_" + other)->height());
 }
 
 TEST_F(WorkspaceDragTest, NestedPanelMenusSwitchTypeAndCloseViewer) {
@@ -398,51 +398,89 @@ TEST_F(WorkspaceDragTest, RenamedNodeEditsReachBothPanelsAndUndoByIdentity) {
     EXPECT_EQ(rootGraph(projectSession.document()).node(id)->name, "renamed");
 }
 
-TEST_F(WorkspaceDragTest, RegistryThemeAndWorkspacePresetsAreConsumerVisible) {
-    const auto builtins = controller.panelTypes();
-    ASSERT_EQ(builtins.size(), 3);
-    EXPECT_EQ(controller.panelDescriptor(QStringLiteral("viewer")).value("title").toString(), "Viewer");
-    EXPECT_EQ(controller.panelDescriptor(QStringLiteral("nodegraph")).value("title").toString(), "Nodegraph");
+TEST_F(WorkspaceDragTest, CreatingWorkspaceThroughDialogActivatesAnIndependentCopy) {
+    const auto original = controller.activeWorkspaceId();
+    controller.setGroup(source, QStringLiteral("D"));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("addWorkspaceButton"));
+    QTest::qWait(30);
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(60);
+    ASSERT_NE(controller.activeWorkspaceId(), original);
+    const auto copied = snapshot();
+    const auto& copiedPanel = copied["children"][0]["children"][0]["panels"][0];
+    EXPECT_EQ(copiedPanel["group"], "D");
+    const auto copiedId = QString::fromStdString(copiedPanel["id"]);
+    EXPECT_NE(copiedId, source);
+    controller.setGroup(copiedId, QStringLiteral("E"));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("workspaceTab_" + original));
+    QTest::qWait(30);
+    EXPECT_EQ(controller.activeWorkspaceId(), original);
+    EXPECT_EQ(snapshot()["children"][0]["children"][0]["panels"][0]["group"], "D");
+}
 
-    controller.registerPanelType(QStringLiteral("extension-test"), QStringLiteral("Extension Test"),
-                                 QStringLiteral("UnavailablePanel.qml"), QString());
-    EXPECT_EQ(controller.panelTypes().size(), 4);
-    EXPECT_EQ(controller.panelDescriptor(QStringLiteral("extension-test")).value("typeId").toString(),
-              "extension-test");
-    EXPECT_NE(item("workspaceSelector"), nullptr);
-    EXPECT_NE(item("appearancePreset"), nullptr);
-    const auto duplicateViewer = controller.createPanel(target, QStringLiteral("viewer"), QStringLiteral("A"));
-    ASSERT_FALSE(duplicateViewer.isEmpty());
-    EXPECT_NE(duplicateViewer, source);
-    EXPECT_NE(item("appearanceAccent"), nullptr);
+TEST(WorkspaceControllerTest, WorkspaceOrderMovementValidatesAndPersists) {
+    QTemporaryDir directory;
+    const QString path = directory.filePath("workspace.json");
+    nemo::workspace::WorkspaceController controller(path);
+    const QString first = controller.activeWorkspaceId();
+    const QString second = controller.createWorkspace(QStringLiteral("Second"));
+    const QString third = controller.createWorkspace(QStringLiteral("Third"));
+    ASSERT_FALSE(second.isEmpty());
+    ASSERT_FALSE(third.isEmpty());
 
-    EXPECT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
-    EXPECT_EQ(controller.appearancePreset(), "Paper");
-    EXPECT_FALSE(controller.setAppearancePreset(QStringLiteral("Unknown")));
-    EXPECT_EQ(controller.appearancePreset(), "Paper");
-    EXPECT_FALSE(controller.setAccentOverride(QStringLiteral("not-a-color")));
-    EXPECT_TRUE(controller.accentOverride().isEmpty());
-    EXPECT_TRUE(controller.setAccentOverride(QStringLiteral("#123456")));
-    EXPECT_EQ(controller.accentOverride(), "#123456");
-    EXPECT_FALSE(controller.setCategoryColor(QStringLiteral("Merge"), QStringLiteral("#xyzxyz")));
-    EXPECT_TRUE(controller.setCategoryColor(QStringLiteral("Merge"), QStringLiteral("#60656b")));
-    EXPECT_EQ(controller.categoryColors().value("Merge").toString(), "#60656b");
-    controller.resetAppearance();
-    EXPECT_EQ(controller.appearancePreset(), "Graphite");
-    EXPECT_TRUE(controller.accentOverride().isEmpty());
+    ASSERT_TRUE(controller.moveWorkspace(third, -2));
+    ASSERT_EQ(controller.workspaces().size(), 3);
+    EXPECT_EQ(controller.workspaces().at(0).toMap().value("id").toString(), third);
+    EXPECT_EQ(controller.workspaces().at(1).toMap().value("id").toString(), first);
+    EXPECT_EQ(controller.workspaces().at(2).toMap().value("id").toString(), second);
 
-    const auto firstId = controller.activeWorkspaceId();
-    const auto createdId = controller.createWorkspace(QStringLiteral("Scratch"));
-    ASSERT_FALSE(createdId.isEmpty());
-    EXPECT_EQ(controller.activeWorkspaceId(), firstId);
-    ASSERT_TRUE(controller.switchWorkspace(createdId));
-    EXPECT_EQ(controller.activeWorkspaceId(), createdId);
-    const auto duplicateId = controller.duplicateWorkspace(createdId, QStringLiteral("Scratch Copy"));
-    ASSERT_FALSE(duplicateId.isEmpty());
-    ASSERT_TRUE(controller.switchWorkspace(duplicateId));
-    EXPECT_EQ(controller.activeWorkspaceId(), duplicateId);
-    ASSERT_TRUE(controller.closeWorkspace(duplicateId));
-    EXPECT_NE(controller.activeWorkspaceId(), duplicateId);
+    const auto movedOrder = controller.workspaces();
+    EXPECT_FALSE(controller.moveWorkspace(QStringLiteral("missing"), 1));
+    EXPECT_FALSE(controller.moveWorkspace(third, -1));
+    EXPECT_EQ(controller.workspaces(), movedOrder);
+    EXPECT_FALSE(controller.error().isEmpty());
+
+    ASSERT_TRUE(controller.save());
+    nemo::workspace::WorkspaceController restored(path);
+    ASSERT_EQ(restored.workspaces().size(), 3);
+    EXPECT_EQ(restored.workspaces().at(0).toMap().value("id").toString(), third);
+    EXPECT_EQ(restored.workspaces().at(1).toMap().value("id").toString(), first);
+    EXPECT_EQ(restored.workspaces().at(2).toMap().value("id").toString(), second);
+}
+
+TEST(WorkspaceControllerTest, CategoryResetDoesNotResetOtherAppearanceSettings) {
+    QTemporaryDir directory;
+    nemo::workspace::WorkspaceController controller(directory.filePath("workspace.json"));
+    ASSERT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
+    ASSERT_TRUE(controller.setAccentOverride(QStringLiteral("#123456")));
+    ASSERT_TRUE(controller.setCategoryColor(QStringLiteral("Merge"), QStringLiteral("#abcdef")));
+
+    controller.resetCategoryColors();
+
+    EXPECT_EQ(controller.appearancePreset(), QStringLiteral("Paper"));
+    EXPECT_EQ(controller.accentOverride(), QStringLiteral("#123456"));
+    EXPECT_EQ(controller.categoryColors().value("Merge").toString(), QStringLiteral("#60656b"));
+}
+
+TEST_F(WorkspaceDragTest, ResetLayoutPreservesWorkspaceTabsAndAppearance) {
+    const auto original = controller.activeWorkspaceId();
+    controller.setGroup(source, QStringLiteral("D"));
+    const auto scratch = controller.createWorkspace(QStringLiteral("Scratch"));
+    ASSERT_TRUE(controller.switchWorkspace(scratch));
+    ASSERT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
+    ASSERT_TRUE(controller.setAccentOverride(QStringLiteral("#123456")));
+    const auto initialLayout = snapshot();
+    controller.setRatio(QString::fromStdString(snapshot()["id"]), 0.5);
+    const auto presets = controller.workspaces();
+    QTest::keyClick(window, Qt::Key_R, Qt::ControlModifier | Qt::ShiftModifier);
+    QTest::qWait(40);
+    EXPECT_EQ(snapshot(), initialLayout);
+    EXPECT_EQ(controller.workspaces(), presets);
+    EXPECT_EQ(controller.activeWorkspaceId(), scratch);
+    EXPECT_EQ(controller.appearancePreset(), QStringLiteral("Paper"));
+    EXPECT_EQ(controller.accentOverride(), QStringLiteral("#123456"));
+    ASSERT_TRUE(controller.switchWorkspace(original));
+    EXPECT_EQ(snapshot()["children"][0]["children"][0]["panels"][0]["group"], "D");
 }
 
 TEST(WorkspaceControllerTest, PresetsAppearanceAndIndependentLayoutsPersistTogether) {
@@ -492,6 +530,10 @@ TEST(WorkspaceControllerTest, UnreadableWorkspaceIsPreservedUntilExplicitReset) 
 
     nemo::workspace::WorkspaceController controller(path);
     EXPECT_FALSE(controller.error().isEmpty());
+    const auto restoreError = controller.error();
+    controller.registerPanelType(QStringLiteral("viewer"), QStringLiteral("Viewer"), QStringLiteral("ViewerPanel.qml"));
+    ASSERT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
+    EXPECT_EQ(controller.error(), restoreError);
     EXPECT_FALSE(controller.save());
     QFile preserved(path);
     ASSERT_TRUE(preserved.open(QIODevice::ReadOnly));

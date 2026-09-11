@@ -134,6 +134,10 @@ QVariantMap WorkspaceController::categoryColors() const {
 }
 
 void WorkspaceController::setError(QString message) {
+    // Successful registration/settings edits do not recover a failed restore.
+    // Keep its diagnostic visible until the user explicitly resets the layout.
+    if (message.isEmpty() && preserveUnreadableFile_)
+        return;
     if (error_ != message) {
         error_ = std::move(message);
         emit errorChanged();
@@ -143,9 +147,7 @@ void WorkspaceController::setError(QString message) {
 void WorkspaceController::change(const std::function<void()>& operation, bool notify) {
     try {
         operation();
-        if (!preserveUnreadableFile_) {
-            setError({});
-        }
+        setError({});
         if (notify) {
             emit rootChanged();
         }
@@ -177,9 +179,7 @@ QString WorkspaceController::createPanel(const QString& leafId, const QString& t
             throw std::runtime_error("createPanel: unregistered panel type '" + typeId.toStdString() + "'");
         }
         const auto id = workspace_.createPanel(leafId.toStdString(), typeId.toStdString(), group.toStdString());
-        if (!preserveUnreadableFile_) {
-            setError({});
-        }
+        setError({});
         emit rootChanged();
         return QString::fromStdString(id);
     } catch (const std::exception& exception) {
@@ -199,9 +199,7 @@ QVariantMap WorkspaceController::panelState(const QString& panelId) const {
 void WorkspaceController::setPanelState(const QString& panelId, const QVariantMap& state) {
     try {
         workspace_.setPanelState(panelId.toStdString(), variantMapToJson(state));
-        if (!preserveUnreadableFile_) {
-            setError({});
-        }
+        setError({});
         emit rootChanged();
     } catch (const std::exception& exception) {
         setError(QString::fromUtf8(exception.what()));
@@ -264,9 +262,7 @@ bool WorkspaceController::movePanel(const QString& panelId, const QString& leafI
         const bool changed = workspace_.movePanel(
             panelId.toStdString(),
             {leafId.toStdString(), position, position == Placement::Tabs ? static_cast<std::size_t>(tabIndex) : 0});
-        if (!preserveUnreadableFile_) {
-            setError({});
-        }
+        setError({});
         if (changed) {
             emit rootChanged();
         }
@@ -398,6 +394,35 @@ bool WorkspaceController::switchWorkspace(const QString& id) {
     emit rootChanged();
     return true;
 }
+bool WorkspaceController::moveWorkspace(const QString& id, int offset) {
+    const int index = workspaceIndex(id);
+    if (index < 0) {
+        setError(QStringLiteral("moveWorkspace: unknown workspace '%1'").arg(id));
+        return false;
+    }
+    if (offset == 0) {
+        return true;
+    }
+
+    const auto destination = static_cast<long long>(index) + static_cast<long long>(offset);
+    if (destination < 0 || destination >= static_cast<long long>(presets_.size())) {
+        setError(QStringLiteral("moveWorkspace: offset %1 moves workspace '%2' outside the available order")
+                     .arg(offset)
+                     .arg(id));
+        return false;
+    }
+
+    auto first = presets_.begin() + index;
+    auto last = presets_.begin() + static_cast<int>(destination);
+    if (destination > index) {
+        std::rotate(first, first + 1, last + 1);
+    } else {
+        std::rotate(last, first, first + 1);
+    }
+    setError({});
+    emit workspacesChanged();
+    return true;
+}
 
 bool WorkspaceController::validPreset(const QString& value) {
     return value == QStringLiteral("Graphite") || value == QStringLiteral("Slate") || value == QStringLiteral("Paper");
@@ -443,6 +468,12 @@ bool WorkspaceController::setCategoryColor(const QString& category, const QStrin
     setError({});
     emit appearanceChanged();
     return true;
+}
+
+void WorkspaceController::resetCategoryColors() {
+    categoryColors_ = defaultCategoryColors();
+    setError({});
+    emit appearanceChanged();
 }
 
 void WorkspaceController::resetAppearance() {
@@ -595,14 +626,9 @@ bool WorkspaceController::save() {
 
 void WorkspaceController::reset() {
     workspace_ = Workspace{};
-    presets_.clear();
-    presets_.push_back({QStringLiteral("workspace-1"), QStringLiteral("Default"), workspace_});
-    activeWorkspaceId_ = presets_.front().id;
-    resetAppearance();
+    snapshotActiveWorkspace();
     preserveUnreadableFile_ = false;
     setError({});
-    emit workspacesChanged();
-    emit activeWorkspaceIdChanged();
     emit rootChanged();
 }
 

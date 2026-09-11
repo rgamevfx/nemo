@@ -8,28 +8,36 @@ ApplicationWindow {
     id: window
     objectName: "mainWindow"
 
-    width: 1280
-    height: 800
-    minimumWidth: Math.max(900, rootNode.minimumPaneWidth)
-    minimumHeight: Math.max(600, rootNode.minimumPaneHeight)
+    width: 1568
+    height: 926
+    minimumWidth: Math.max(960, rootNode.minimumPaneWidth + 16)
+    minimumHeight: Math.max(640, rootNode.minimumPaneHeight + 56)
+    // main.cpp validates the Vulkan surface before showing this window.
     visible: false
+    title: "Nemo"
+    color: appTheme.background
+    font.family: "Inter"
+    font.pixelSize: appTheme.fontSize
 
     readonly property var controller: workspace
     property bool closeOverride: false
 
     Theme {
-        id: theme
+        id: appTheme
         workspace: window.controller
     }
 
-    palette.window: theme.window
-    palette.windowText: theme.text
-    palette.base: theme.surface
-    palette.text: theme.text
-    palette.button: theme.header
-    palette.buttonText: theme.text
-    palette.highlight: theme.accent
-    palette.highlightedText: theme.accentText
+    palette.window: appTheme.panel
+    palette.windowText: appTheme.text
+    palette.base: appTheme.field
+    palette.text: appTheme.text
+    palette.button: appTheme.raised
+    palette.buttonText: appTheme.text
+    palette.highlight: appTheme.accent
+    palette.highlightedText: "#ffffff"
+    palette.mid: appTheme.border
+    palette.dark: appTheme.border
+    palette.light: appTheme.raised
 
     onActiveChanged: {
         if (!active)
@@ -41,180 +49,436 @@ ApplicationWindow {
         onActivated: window.controller.reset()
     }
 
+    function workspaceIndex(id) {
+        var entries = window.controller ? window.controller.workspaces : []
+        for (var i = 0; i < entries.length; ++i) {
+            if (entries[i].id === id)
+                return i
+        }
+        return -1
+    }
+
+    function workspaceNameFor(id) {
+        var index = workspaceIndex(id)
+        return index >= 0 ? window.controller.workspaces[index].name : "Workspace"
+    }
+
     Rectangle {
         id: topBar
         objectName: "workspaceChrome"
-        anchors {
-            top: parent.top
-            left: parent.left
-            right: parent.right
-        }
         height: 42
-        color: theme.header
-        border.color: theme.border
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        color: appTheme.background
 
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: 4
-            spacing: 4
+        Row {
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 12
 
-            Label {
-                text: "Workspace"
-                color: theme.text
-                Layout.preferredWidth: 80
+            Text {
+                text: "Nemo"
+                color: appTheme.text
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+                height: 28
+                verticalAlignment: Text.AlignVCenter
             }
-            ComboBox {
-                id: workspaceSelector
-                objectName: "workspaceSelector"
-                Layout.preferredWidth: 160
-                model: window.controller ? window.controller.workspaces : []
-                textRole: "name"
-                valueRole: "id"
-                currentIndex: {
-                    if (!window.controller)
-                        return -1
-                    for (var i = 0; i < model.length; ++i)
-                        if (model[i].id === window.controller.activeWorkspaceId)
-                            return i
-                    return -1
+
+            ChromeButton {
+                id: themeSettingsButton
+                objectName: "themeSettingsButton"
+                theme: appTheme
+                width: 30
+                Accessible.name: "Appearance settings"
+                onClicked: appearance.open()
+                contentItem: Canvas {
+                    id: settingsGlyph
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.reset()
+                        ctx.strokeStyle = appTheme.muted
+                        ctx.lineWidth = 1.2
+                        var cx = width / 2
+                        var cy = height / 2
+                        ctx.beginPath()
+                        ctx.arc(cx, cy, 4, 0, Math.PI * 2)
+                        ctx.stroke()
+                        for (var i = 0; i < 8; ++i) {
+                            var angle = i * Math.PI / 4
+                            ctx.beginPath()
+                            ctx.moveTo(cx + 5 * Math.cos(angle), cy + 5 * Math.sin(angle))
+                            ctx.lineTo(cx + 7 * Math.cos(angle), cy + 7 * Math.sin(angle))
+                            ctx.stroke()
+                        }
+                    }
+                    Connections {
+                        target: appTheme
+                        function onPresetChanged() {
+                            settingsGlyph.requestPaint()
+                        }
+                    }
                 }
-                onActivated: window.controller.switchWorkspace(currentValue)
-                Accessible.name: "Active workspace preset"
             }
-            TextField {
-                id: workspaceName
-                objectName: "workspaceNameInput"
-                Layout.preferredWidth: 140
-                placeholderText: "Preset name"
-                selectByMouse: true
+        }
+
+        Row {
+            id: tabsRow
+            anchors.centerIn: parent
+            height: parent.height
+            spacing: 3
+
+            Flickable {
+                id: workspaceFlickable
+                width: Math.min(workspaceTabs.width, Math.max(280, window.width - 420))
+                height: parent.height
+                contentWidth: workspaceTabs.width
+                contentHeight: height
+                clip: true
+                flickableDirection: Flickable.HorizontalFlick
+
+                Row {
+                    id: workspaceTabs
+                    height: parent.height
+                    spacing: 3
+
+                    Repeater {
+                        model: window.controller ? window.controller.workspaces : []
+                        delegate: Button {
+                            id: workspaceTab
+                            required property var modelData
+                            required property int index
+                            objectName: "workspaceTab_" + modelData.id
+                            width: Math.max(64, label.implicitWidth + 30)
+                            height: 36
+                            y: 6
+                            padding: 0
+                            onClicked: {
+                                dockDrag.cancelDrag()
+                                window.controller.switchWorkspace(workspaceTab.modelData.id)
+                            }
+                            contentItem: Text {
+                                id: label
+                                text: workspaceTab.modelData.name
+                                color: window.controller.activeWorkspaceId === workspaceTab.modelData.id
+                                       ? appTheme.text : appTheme.muted
+                                font.pixelSize: 12
+                                font.weight: window.controller.activeWorkspaceId === workspaceTab.modelData.id
+                                              ? Font.Medium : Font.Normal
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 6
+                                color: window.controller.activeWorkspaceId === workspaceTab.modelData.id
+                                       ? appTheme.header : workspaceTab.hovered ? appTheme.panel : "transparent"
+                                Rectangle {
+                                    anchors.bottom: parent.bottom
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: parent.width - 18
+                                    height: 2
+                                    radius: 1
+                                    color: appTheme.accent
+                                    visible: window.controller.activeWorkspaceId === workspaceTab.modelData.id
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.RightButton
+                                onClicked: {
+                                    workspaceMenu.targetWorkspaceId = workspaceTab.modelData.id
+                                    workspaceMenu.popup()
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            Button {
-                objectName: "workspaceCreate"
-                text: "New"
-                Layout.preferredWidth: 60
+
+            ChromeButton {
+                id: addWorkspaceButton
+                objectName: "addWorkspaceButton"
+                theme: appTheme
+                anchors.verticalCenter: parent.verticalCenter
+                width: 28
+                text: "+"
+                font.pixelSize: 17
+                Accessible.name: "Create workspace from current layout"
                 onClicked: {
-                    window.controller.createWorkspace(workspaceName.text.trim())
-                    workspaceName.clear()
+                    nameDialog.renaming = false
+                    nameDialog.targetWorkspaceId = window.controller.activeWorkspaceId
+                    workspaceName.text = "Workspace " + (window.controller.workspaces.length + 1)
+                    nameDialog.open()
                 }
             }
-            Button {
-                objectName: "workspaceRename"
-                text: "Rename"
-                Layout.preferredWidth: 90
-                onClicked: window.controller.renameWorkspace(window.controller.activeWorkspaceId,
-                                                               workspaceName.text.trim())
-            }
-            Button {
-                objectName: "workspaceDuplicate"
-                text: "Duplicate"
-                Layout.preferredWidth: 105
-                onClicked: {
-                    window.controller.duplicateWorkspace(window.controller.activeWorkspaceId,
-                                                          workspaceName.text.trim())
-                    workspaceName.clear()
-                }
-            }
-            Button {
-                objectName: "workspaceClose"
-                text: "Close"
-                Layout.preferredWidth: 60
-                onClicked: window.controller.closeWorkspace(window.controller.activeWorkspaceId)
-            }
+        }
 
-            Rectangle {
-                Layout.preferredWidth: 1
-                Layout.fillHeight: true
-                color: theme.border
+        ChromeButton {
+            id: workspaceOptionsButton
+            objectName: "workspaceOptionsButton"
+            theme: appTheme
+            anchors.right: parent.right
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            text: "…"
+            font.pixelSize: 17
+            Accessible.name: "Workspace options"
+            onClicked: {
+                workspaceMenu.targetWorkspaceId = window.controller.activeWorkspaceId
+                workspaceMenu.popup()
             }
-            ComboBox {
-                id: appearancePreset
-                objectName: "appearancePreset"
-                Layout.preferredWidth: 120
-                model: ["Graphite", "Slate", "Paper"]
-                currentIndex: Math.max(0, model.indexOf(window.controller.appearancePreset))
-                onActivated: window.controller.setAppearancePreset(currentText)
-                Accessible.name: "Appearance preset"
-            }
-            TextField {
-                id: accentInput
-                objectName: "appearanceAccent"
-                Layout.preferredWidth: 110
-                placeholderText: "#RRGGBB accent"
-                text: window.controller.accentOverride
-                selectByMouse: true
-            }
-            Button {
-                objectName: "appearanceApplyAccent"
-                text: "Accent"
-                Layout.preferredWidth: 70
-                onClicked: window.controller.setAccentOverride(accentInput.text.trim())
-            }
-            Button {
-                objectName: "appearanceCategoriesToggle"
-                text: "Categories"
-                Layout.preferredWidth: 105
-                onClicked: categoryControls.visible = !categoryControls.visible
-                Accessible.name: "Category color settings"
-            }
-            Button {
-                objectName: "appearanceReset"
-                Layout.preferredWidth: 70
-                text: "Reset"
-                onClicked: window.controller.resetAppearance()
-            }
-            Rectangle {
-                Layout.preferredWidth: 1
-                Layout.fillHeight: true
-                color: theme.border
-            }
-            Item { Layout.fillWidth: true }
         }
     }
 
-    // Category overrides are compact, native controls kept in the application
-    // chrome. They remain presentation settings and are not project data.
-    Row {
-        id: categoryControls
-        objectName: "appearanceCategories"
-        anchors {
-            top: topBar.bottom
-            left: parent.left
-            right: parent.right
-        }
-        height: 32
-        spacing: 4
-        visible: false
-        property var categories: ["Merge", "Filter", "IO", "Color", "Distort", "Utility"]
-        Repeater {
-            model: categoryControls.categories
-            delegate: TextField {
-                objectName: "appearanceCategory_" + modelData
-                placeholderText: modelData + " #RRGGBB"
-                text: window.controller.categoryColors[modelData] || ""
-                onEditingFinished: window.controller.setCategoryColor(modelData, text.trim())
+    Menu {
+        id: workspaceMenu
+        objectName: "workspaceMenu"
+        property string targetWorkspaceId: ""
+
+        MenuItem {
+            text: "Rename workspace"
+            onTriggered: {
+                nameDialog.renaming = true
+                nameDialog.targetWorkspaceId = workspaceMenu.targetWorkspaceId
+                workspaceName.text = window.workspaceNameFor(workspaceMenu.targetWorkspaceId)
+                nameDialog.open()
             }
+        }
+        MenuItem {
+            text: "Duplicate workspace"
+            onTriggered: {
+                nameDialog.renaming = false
+                nameDialog.targetWorkspaceId = workspaceMenu.targetWorkspaceId
+                workspaceName.text = window.workspaceNameFor(workspaceMenu.targetWorkspaceId) + " copy"
+                nameDialog.open()
+            }
+        }
+        MenuSeparator {
+        }
+        MenuItem {
+            text: "Move left"
+            enabled: window.workspaceIndex(workspaceMenu.targetWorkspaceId) > 0
+            onTriggered: window.controller.moveWorkspace(workspaceMenu.targetWorkspaceId, -1)
+        }
+        MenuItem {
+            text: "Move right"
+            enabled: {
+                var index = window.workspaceIndex(workspaceMenu.targetWorkspaceId)
+                return index >= 0 && index < window.controller.workspaces.length - 1
+            }
+            onTriggered: window.controller.moveWorkspace(workspaceMenu.targetWorkspaceId, 1)
+        }
+        MenuSeparator {
+        }
+        MenuItem {
+            text: "Close workspace"
+            enabled: window.controller.workspaces.length > 1
+            onTriggered: window.controller.closeWorkspace(workspaceMenu.targetWorkspaceId)
         }
     }
 
-    Rectangle {
-        id: errorBanner
-        anchors {
-            left: parent.left
-            right: parent.right
-            bottom: parent.bottom
+    Dialog {
+        id: nameDialog
+        objectName: "workspaceNameDialog"
+        property bool renaming: false
+        property string targetWorkspaceId: ""
+        anchors.centerIn: parent
+        width: 310
+        title: renaming ? "Rename workspace" : "New workspace"
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onOpened: {
+            workspaceName.forceActiveFocus()
+            workspaceName.selectAll()
         }
-        height: workspace.error.length > 0 ? 24 : 0
-        visible: workspace.error.length > 0
-        color: theme.errorSurface
-        Text {
-            anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-            text: workspace.error
-            color: theme.errorText
-            font.pixelSize: 12
+        onAccepted: {
+            if (renaming) {
+                window.controller.renameWorkspace(targetWorkspaceId, workspaceName.text)
+            } else {
+                var created = window.controller.duplicateWorkspace(targetWorkspaceId,
+                                                                   workspaceName.text.trim() || "Workspace")
+                if (created.length)
+                    window.controller.switchWorkspace(created)
+            }
+        }
+
+        TextField {
+            id: workspaceName
+            objectName: "workspaceNameField"
+            width: parent.width
+            selectByMouse: true
+            Accessible.name: "Workspace name"
+            onAccepted: nameDialog.accept()
+        }
+    }
+
+    Popup {
+        id: appearance
+        objectName: "appearancePopup"
+        x: 80
+        y: 40
+        width: 344
+        padding: 16
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            color: appTheme.header
+            radius: appTheme.radius
+            border.color: appTheme.border
+        }
+        contentItem: ColumnLayout {
+            spacing: 12
+
+            Text {
+                text: "Appearance"
+                color: appTheme.text
+                font.pixelSize: 12
+                font.weight: Font.Medium
+            }
+
+            RowLayout {
+                Text {
+                    text: "Theme"
+                    color: appTheme.muted
+                    font.pixelSize: appTheme.fontSize
+                    Layout.fillWidth: true
+                }
+                StudioComboBox {
+                    id: themePresetMenu
+                    objectName: "themePresetMenu"
+                    theme: appTheme
+                    model: ["Graphite", "Slate", "Paper"]
+                    currentIndex: Math.max(0, model.indexOf(window.controller.appearancePreset))
+                    implicitWidth: 142
+                    implicitHeight: 28
+                    onActivated: window.controller.setAppearancePreset(currentText)
+                }
+            }
+
+            RowLayout {
+                Text {
+                    text: "Accent"
+                    color: appTheme.muted
+                    font.pixelSize: appTheme.fontSize
+                    Layout.fillWidth: true
+                }
+                Rectangle {
+                    width: 18
+                    height: 18
+                    radius: 9
+                    color: appTheme.accent
+                }
+                TextField {
+                    id: accentField
+                    objectName: "accentColorField"
+                    text: appTheme.accent.toString()
+                    implicitWidth: 112
+                    implicitHeight: 28
+                    selectByMouse: true
+                    Accessible.name: "Accent color"
+                    validator: RegularExpressionValidator {
+                        regularExpression: /#[0-9a-fA-F]{6}/
+                    }
+                    onEditingFinished: {
+                        if (acceptableInput)
+                            window.controller.setAccentOverride(text)
+                        text = appTheme.accent.toString()
+                    }
+                    Connections {
+                        target: window.controller
+                        function onAppearanceChanged() {
+                            accentField.text = appTheme.accent.toString()
+                        }
+                    }
+                }
+            }
+
+            ChromeButton {
+                objectName: "resetAccentButton"
+                theme: appTheme
+                text: "Reset accent"
+                onClicked: {
+                    window.controller.setAccentOverride("")
+                    accentField.text = appTheme.accent.toString()
+                }
+            }
+
+            Text {
+                text: "Node category colors"
+                color: appTheme.muted
+                font.pixelSize: appTheme.fontSize
+            }
+
+            ScrollView {
+                id: categoryScroll
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(300, categoryColumn.implicitHeight)
+                clip: true
+
+                ColumnLayout {
+                    id: categoryColumn
+                    width: categoryScroll.availableWidth
+                    spacing: 6
+
+                    Repeater {
+                        model: ["Color", "Distort", "Filter", "Utility", "Merge", "IO"]
+                        delegate: RowLayout {
+                            id: categoryRow
+                            required property string modelData
+                            property string categoryId: modelData
+                            Layout.fillWidth: true
+                            spacing: 7
+
+                            Text {
+                                text: categoryRow.categoryId === "IO" ? "I/O" : categoryRow.categoryId
+                                color: appTheme.text
+                                font.pixelSize: appTheme.fontSize
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+                            Rectangle {
+                                width: 18
+                                height: 18
+                                radius: appTheme.smallRadius
+                                color: appTheme.nodeCategoryColor(categoryRow.categoryId)
+                                border.color: appTheme.border
+                            }
+                            TextField {
+                                id: categoryField
+                                objectName: "categoryColorField_" + categoryRow.categoryId
+                                text: appTheme.nodeCategoryColor(categoryRow.categoryId)
+                                implicitWidth: 112
+                                implicitHeight: 28
+                                selectByMouse: true
+                                Accessible.name: categoryRow.categoryId + " node category color"
+                                validator: RegularExpressionValidator {
+                                    regularExpression: /#[0-9a-fA-F]{6}/
+                                }
+                                onEditingFinished: {
+                                    if (acceptableInput)
+                                        window.controller.setCategoryColor(categoryRow.categoryId, text)
+                                    text = appTheme.nodeCategoryColor(categoryRow.categoryId)
+                                }
+                                Connections {
+                                    target: window.controller
+                                    function onAppearanceChanged() {
+                                        categoryField.text = appTheme.nodeCategoryColor(categoryRow.categoryId)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ChromeButton {
+                objectName: "resetNodeCategoryColorsButton"
+                theme: appTheme
+                text: "Reset node category colors"
+                Layout.fillWidth: true
+                onClicked: window.controller.resetCategoryColors()
+            }
         }
     }
 
@@ -224,21 +488,43 @@ ApplicationWindow {
         anchors.fill: parent
         z: 10
         workspace: window.controller
-        theme: theme
+        theme: appTheme
     }
 
     WorkspaceNode {
         id: rootNode
         anchors {
-            top: categoryControls.visible ? categoryControls.bottom : topBar.bottom
+            top: topBar.bottom
             left: parent.left
             right: parent.right
             bottom: errorBanner.top
+            margins: 8
+            topMargin: 2
         }
         node: workspace.root
         workspace: window.controller
         drag: dockDrag
-        theme: theme
+        theme: appTheme
+    }
+
+    Rectangle {
+        id: errorBanner
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: workspace.error.length > 0 ? 24 : 0
+        visible: height > 0
+        color: appTheme.errorSurface
+        Text {
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            text: workspace.error
+            color: appTheme.errorText
+            font.pixelSize: appTheme.fontSize
+        }
     }
 
     Shortcut {
@@ -271,22 +557,22 @@ ApplicationWindow {
             Text {
                 Layout.fillWidth: true
                 text: "The workspace layout could not be saved."
-                color: theme.text
+                color: appTheme.text
                 wrapMode: Text.Wrap
             }
             Text {
                 Layout.fillWidth: true
                 text: workspace.error
-                color: theme.errorText
+                color: appTheme.errorText
                 wrapMode: Text.Wrap
             }
         }
 
         footer: RowLayout {
             spacing: 8
-            Button { text: "Retry"; onClicked: retryOrClose() }
-            Button { text: "Exit Without Saving"; onClicked: forceClose() }
-            Button { text: "Cancel"; onClicked: saveErrorDialog.close() }
+            ChromeButton { theme: appTheme; text: "Retry"; onClicked: retryOrClose() }
+            ChromeButton { theme: appTheme; text: "Exit Without Saving"; onClicked: forceClose() }
+            ChromeButton { theme: appTheme; text: "Cancel"; onClicked: saveErrorDialog.close() }
         }
     }
 

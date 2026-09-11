@@ -53,6 +53,9 @@ Rectangle {
                                              : "Group " + panelGroup
 
     color: theme ? theme.panel : "#2b2b2b"
+    radius: theme ? theme.radius : 7
+    border.color: theme ? theme.border : "#30343a"
+    clip: true
 
     function bindingModeFromState() {
         var value = panelState && panelState.linkMode ? panelState.linkMode : "group"
@@ -68,16 +71,10 @@ Rectangle {
     function syncRouter() {
         if (!contextRouter || !panelId.length)
             return
-        var expectedMode = bindingModeFromState()
-        var current = contextRouter.contextFor(panelId)
-        if (!current || !current.mode)
-            contextRouter.registerPanel(panelId, panelGroup, expectedMode)
-        else {
-            if (current.mode !== expectedMode)
-                contextRouter.setLinkMode(panelId, expectedMode)
-            if (current.group !== panelGroup)
-                contextRouter.setGroup(panelId, panelGroup)
-        }
+        // Hydrate from saved state without writing back while QML is reading
+        // the workspace root. Only user binding actions persist a change.
+        contextRouter.registerPanel(panelId, panelGroup, bindingModeFromState())
+        contextRevision++
     }
 
     function setBindingMode(mode, group) {
@@ -108,18 +105,16 @@ Rectangle {
             item.workspace = panelRoot.workspace
     }
 
-    onPanelIdChanged: {
-        if (contextRouter && panelId.length > 0)
-            contextRouter.registerPanel(panelId, panelGroup, bindingModeFromState())
-    }
-    onPanelGroupChanged: syncRouter()
-    onPanelStateChanged: syncRouter()
+    // Coalesce dependent ID/group/state bindings before hydrating the router.
+    onPanelIdChanged: Qt.callLater(syncRouter)
+    onPanelGroupChanged: Qt.callLater(syncRouter)
+    onPanelStateChanged: Qt.callLater(syncRouter)
     onVisibleChanged: {
         if (visible && contextRouter && panelId.length > 0)
             contextRouter.setActivePanel(panelId)
     }
     Component.onCompleted: {
-        syncRouter()
+        Qt.callLater(syncRouter)
         if (contextRouter && panelId.length > 0 && visible)
             contextRouter.setActivePanel(panelId)
     }
@@ -139,17 +134,22 @@ Rectangle {
             panelRoot.contextRevision++
         }
     }
-
     ColumnLayout {
         anchors.fill: parent
+        anchors.margins: 1
         spacing: 0
 
         Rectangle {
             id: header
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: bodyLoader.item
+                                     && bodyLoader.item.headerPreferredHeight !== undefined
+                                     ? Math.max(bodyLoader.item.headerPreferredHeight,
+                                                headerTools.item ? headerTools.item.implicitHeight + 4 : 0)
+                                     : 36
             color: panelRoot.theme ? panelRoot.theme.header : "#333333"
             objectName: "panelHeader_" + panelRoot.panelId
+ 
 
             PanelDragHandler {
                 panelId: panelRoot.panelId
@@ -170,7 +170,23 @@ Rectangle {
                     implicitWidth: contentItem.implicitWidth + 16
                     implicitHeight: 24
                     font.pixelSize: 12
+                    Layout.maximumWidth: Math.max(0, header.width - bindingButton.implicitWidth
+                                                  - (headerTools.visible ? headerTools.implicitWidth : 0) - 8)
                     text: panelRoot.title
+                    background: Rectangle {
+                        radius: panelRoot.theme ? panelRoot.theme.smallRadius : 4
+                        color: typeButton.hovered
+                               ? (panelRoot.theme ? panelRoot.theme.hover : "#343940")
+                               : "transparent"
+                    }
+                    contentItem: Text {
+                        text: typeButton.text
+                        color: panelRoot.theme ? panelRoot.theme.text : "#dce0e6"
+                        font.pixelSize: 12
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
                     onClicked: typeMenu.open()
                     Accessible.name: "Panel type. Opens the panel menu."
                     objectName: "panelType_" + panelRoot.panelId
@@ -223,10 +239,23 @@ Rectangle {
                     id: bindingButton
                     flat: true
                     padding: 6
-                    implicitWidth: 30
+                    implicitWidth: 26
                     implicitHeight: 24
                     font.pixelSize: 12
                     text: panelRoot.bindingBadge
+                    background: Rectangle {
+                        radius: panelRoot.theme ? panelRoot.theme.smallRadius : 4
+                        color: bindingButton.hovered
+                               ? (panelRoot.theme ? panelRoot.theme.hover : "#343940")
+                               : "transparent"
+                    }
+                    contentItem: Text {
+                        text: bindingButton.text
+                        color: panelRoot.theme ? panelRoot.theme.muted : "#979ea8"
+                        font.pixelSize: 10
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     onClicked: bindingMenu.open()
                     Accessible.name: "Panel context binding. Opens Follow Active, group, and Pinned choices."
                     objectName: "panelBinding_" + panelRoot.panelId
@@ -269,15 +298,6 @@ Rectangle {
                             onTriggered: panelRoot.setBindingMode("pinned")
                         }
                     }
-                }
-
-                Text {
-                    objectName: "panelBindingState_" + panelRoot.panelId
-                    text: panelRoot.bindingSummary
-                    color: panelRoot.theme ? panelRoot.theme.mutedText : "#a0a0a0"
-                    font.pixelSize: 10
-                    elide: Text.ElideRight
-                    Layout.maximumWidth: 110
                 }
 
                 Item {

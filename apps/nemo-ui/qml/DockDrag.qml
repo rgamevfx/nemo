@@ -20,9 +20,9 @@ Item {
     property real sceneX: 0
     property real sceneY: 0
     property int generation: 0
-    readonly property int minPaneWidth: 120
-    readonly property int minPaneHeight: 80
-    readonly property int handleSize: 4
+    readonly property int minPaneWidth: theme ? theme.minimumPaneWidth : 280
+    readonly property int minPaneHeight: theme ? theme.minimumPaneHeight : 140
+    readonly property int handleSize: theme ? theme.splitHandleSize : 8
 
     Connections {
         target: dockDrag.workspace
@@ -180,8 +180,8 @@ Item {
         id: dockPreview
         objectName: "dockPreview"
         visible: dockDrag.active && dockDrag.targetValid && !dockDrag.tabInsertion
-        color: theme ? theme.accent : "#304a6fa5"
-        opacity: 0.38
+        color: theme ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.18)
+                     : "#304a6fa5"
         border.color: theme ? theme.accent : "#7a9cc9"
         border.width: 1
     }
@@ -201,8 +201,8 @@ Item {
         y: Math.max(4, Math.min(pointer.y + 18, dockDrag.height - height - 4))
         width: label.implicitWidth + 12
         height: 22
-        color: theme ? theme.header : "#333333"
-        border.color: theme ? theme.border : "#606060"
+        color: theme ? theme.raised : "#282c31"
+        border.color: theme ? theme.border : "#30343a"
         radius: 3
         Text {
             id: label

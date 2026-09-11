@@ -21,7 +21,7 @@ Rectangle {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Panel unavailable; the saved layout was preserved."
-            color: unavailable.theme ? unavailable.theme.mutedText : "#999999"
+            color: unavailable.theme ? unavailable.theme.muted : "#999999"
             font.pixelSize: 12
         }
     }

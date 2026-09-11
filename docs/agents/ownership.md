@@ -124,6 +124,32 @@ through `panelState`/`setPanelState`; it is not `Document` state. Do not add
 panel switches to the shared shell or make workspace a core/evaluation
 dependency.
 
+### Extend shared UI presentation
+
+The existing `Nemo` QML module owns the shared UI library alongside its panels:
+`Theme.qml` derives read-only tokens from `WorkspaceController`; `ChromeButton.qml`
+and `StudioComboBox.qml` require an explicit `theme`. Appearance defaults,
+validation, independent accent/category resets and persistence stay in the
+controller. `Main.qml` composes workspace navigation and settings; `Panel.qml`
+owns headers, context badges and descriptor-provided header tools. A panel may
+expose `headerPreferredHeight` for compact chrome. Keep panel-specific composition
+with its panel rather than adding panel-type switches or a second UI system.
+
+`Theme.qml` also owns pane minimums and splitter size, consumed by both
+`WorkspaceNode.qml` and `DockDrag.qml`: drop previews must predict the resulting
+geometry and reject splits that cannot fit usable panes. Saved ratios are
+clamped to available geometry without changing the saved preference on resize.
+Main remains hidden until the native host attaches its Vulkan presentation device.
+
+For presentation changes, start from the immutable
+[prototype source/evidence baseline](../evidence/issue25-prototype-acceptance-v1.md),
+port the actual shared pattern, and retain matched native images and gesture
+evidence. The prototype is the precise design contract; owner approval is
+required for deviations. [#40](https://github.com/rgamevfx/nemo/issues/40) owns
+the shared shell/library; [#59](https://github.com/rgamevfx/nemo/issues/59) owns
+existing panel-content cutover. Shell evidence does not establish panel-content
+or complete-workflow parity.
+
 ### Add a command
 
 Put a validated command factory beside its owner: graph/document factories are

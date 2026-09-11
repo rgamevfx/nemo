@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "issue": 41,
+  "recorded_at_utc": "2026-09-11T17:50:56Z",
+  "baseline_commit": "5a6440b2a3464261e18dad355fcc92a455c43b66",
+  "review_fix_commit": "ec6eb64",
+  "environment": {
+    "platform": "native Wayland / COSMIC",
+    "qt": "6.4.2",
+    "gpu": "NVIDIA GeForce GTX 1070",
+    "driver": "580.173.02",
+    "screen": [1560, 878],
+    "dpr": 1,
+    "application": "actual packaged build/debug/apps/nemo-ui/nemo-ui",
+    "normal_window": true
+  },
+  "physical_input": {
+    "method": "Temporary Linux evdev UInput absolute mouse device sent presses through kernel/libinput/compositor/wl_pointer. No QTest injection or Qt.Tool window was used.",
+    "source": "docs/evidence/assets/issue59-production-cutover/source-640x360-bt709.mkv",
+    "ocio": "docs/evidence/issue12-view.ocio",
+    "observations": [
+      "Group A exposed graph network:1, timeline source:src, and media src targets only after the explicit startup source-open completed.",
+      "Switching the viewer role from Graph to Media changed the selected target to src without loading or replacing the already rendered source.",
+      "Assigning the graph panel to B, setting the left viewer to Follow Active, and physically clicking the graph made the viewer report No media source and hide group A's prior image.",
+      "Physically clicking the group-A timeline restored the Follow Active viewer's src target and image.",
+      "Replacing the graph panel with a second viewer produced independent visible contexts: the Follow Active viewer displayed src while the B viewer showed No node graph target and no borrowed image.",
+      "Pinning the B viewer retained its unavailable snapshot while clicking the group-A timeline changed only the Follow Active viewer."
+    ]
+  },
+  "captures": {
+    "role-targets.png": "9c02b28429be95c19866fcf03ab4f6c4739e04236a535281c70ad7b88eebc4d9",
+    "follow-empty-group.png": "e060a8d1db30e1df1953145e0eebade22676666fe3f2324ee6effb6a88e16a39",
+    "follow-source-group.png": "082e7d7cd79ffe9c02e1d2b0b4cb7242116718f27041d07877a112518b042881",
+    "two-viewers.png": "5135fc7e51dbd88e35c819638c4e1aad78da4778b3e45d76d4cecc35a870060d",
+    "pinned-viewer.png": "3a25efad5cdfe3c9dcdc926adbf2e44c45c113c89ecf5826e9bbefd974809246"
+  },
+  "verification": {
+    "focused_debug": "12/12 PanelContextRouter and PanelContextUiTest tests passed",
+    "debug": "336/336 passed",
+    "release": "336/336 passed",
+    "asan_ubsan": "12/12 affected routing/UI tests passed with ASAN_OPTIONS=detect_leaks=0"
+  },
+  "limitations": [
+    "Physical input was exercised on the reproducing COSMIC Wayland DPR=1 host; no Windows or mixed-DPI run is claimed.",
+    "The retained captures prove visible target isolation and interaction results, not simultaneous independent scheduler destinations; issue #47 owns that runtime gate.",
+    "A hard process stop did not preserve the temporary panel-type replacement, so native restart did not exercise pinned restoration. The persisted pinned target/clock snapshot is covered by a workspace save/reload behavior test."
+  ]
+}

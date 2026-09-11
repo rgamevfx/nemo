@@ -14,6 +14,10 @@ import Nemo
 Rectangle {
     id: viewerPanel
 
+    // Set by the shared Panel shell for every restored instance.
+    property string panelId: ""
+    property string panelGroup: "A"
+    property var panelState: ({})
     readonly property var controller: viewerController
     readonly property bool hasImage: controller.hasSource && controller.sourceSize.width > 0
     readonly property real sourceWidth: hasImage ? controller.sourceSize.width : 0

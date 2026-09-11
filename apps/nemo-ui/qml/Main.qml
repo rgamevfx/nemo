@@ -2,47 +2,200 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Minimal tiled workspace shell. `workspace` is the WorkspaceController
-// context object: it provides `root` (the recursive root node map),
-// `error`, and the mutating invokables split/setRatio/setPanelType/
-// setGroup/activate/addTab/closePanel/save/reset.
+// Main owns application chrome; WorkspaceController owns presentation state,
+// presets, appearance settings, and persistence.
 ApplicationWindow {
     id: window
+    objectName: "mainWindow"
 
     width: 1280
     height: 800
     minimumWidth: Math.max(900, rootNode.minimumPaneWidth)
     minimumHeight: Math.max(600, rootNode.minimumPaneHeight)
-    // The viewer controller attaches the app-owned Vulkan device and shows
-    // the window once presentation support is verified (attachWindow in
-    // main.cpp). Starting invisible avoids initializing the scene graph with
-    // an uncontrolled graphics device.
     visible: false
-    palette.window: "#1e1e1e"
-    palette.windowText: "#d0d0d0"
-    palette.base: "#242424"
-    palette.text: "#d0d0d0"
-    palette.button: "#333333"
-    palette.buttonText: "#d0d0d0"
-    palette.highlight: "#4a6fa5"
-    palette.highlightedText: "#ffffff"
-    readonly property var controller: workspace
 
-    // When true, a rejected close (after failed save) is allowed through.
+    readonly property var controller: workspace
     property bool closeOverride: false
+
+    Theme {
+        id: theme
+        workspace: window.controller
+    }
+
+    palette.window: theme.window
+    palette.windowText: theme.text
+    palette.base: theme.surface
+    palette.text: theme.text
+    palette.button: theme.header
+    palette.buttonText: theme.text
+    palette.highlight: theme.accent
+    palette.highlightedText: theme.accentText
 
     onActiveChanged: {
         if (!active)
             dockDrag.cancelDrag()
     }
 
-
     Shortcut {
         sequence: "Ctrl+Shift+R"
         onActivated: window.controller.reset()
     }
 
-    // Actual error only: hidden when no error is present (no persistent noise).
+    Rectangle {
+        id: topBar
+        objectName: "workspaceChrome"
+        anchors {
+            top: parent.top
+            left: parent.left
+            right: parent.right
+        }
+        height: 42
+        color: theme.header
+        border.color: theme.border
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: 4
+            spacing: 4
+
+            Label {
+                text: "Workspace"
+                color: theme.text
+                Layout.preferredWidth: 80
+            }
+            ComboBox {
+                id: workspaceSelector
+                objectName: "workspaceSelector"
+                Layout.preferredWidth: 160
+                model: window.controller ? window.controller.workspaces : []
+                textRole: "name"
+                valueRole: "id"
+                currentIndex: {
+                    if (!window.controller)
+                        return -1
+                    for (var i = 0; i < model.length; ++i)
+                        if (model[i].id === window.controller.activeWorkspaceId)
+                            return i
+                    return -1
+                }
+                onActivated: window.controller.switchWorkspace(currentValue)
+                Accessible.name: "Active workspace preset"
+            }
+            TextField {
+                id: workspaceName
+                objectName: "workspaceNameInput"
+                Layout.preferredWidth: 140
+                placeholderText: "Preset name"
+                selectByMouse: true
+            }
+            Button {
+                objectName: "workspaceCreate"
+                text: "New"
+                Layout.preferredWidth: 60
+                onClicked: {
+                    window.controller.createWorkspace(workspaceName.text.trim())
+                    workspaceName.clear()
+                }
+            }
+            Button {
+                objectName: "workspaceRename"
+                text: "Rename"
+                Layout.preferredWidth: 90
+                onClicked: window.controller.renameWorkspace(window.controller.activeWorkspaceId,
+                                                               workspaceName.text.trim())
+            }
+            Button {
+                objectName: "workspaceDuplicate"
+                text: "Duplicate"
+                Layout.preferredWidth: 105
+                onClicked: {
+                    window.controller.duplicateWorkspace(window.controller.activeWorkspaceId,
+                                                          workspaceName.text.trim())
+                    workspaceName.clear()
+                }
+            }
+            Button {
+                objectName: "workspaceClose"
+                text: "Close"
+                Layout.preferredWidth: 60
+                onClicked: window.controller.closeWorkspace(window.controller.activeWorkspaceId)
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.fillHeight: true
+                color: theme.border
+            }
+            ComboBox {
+                id: appearancePreset
+                objectName: "appearancePreset"
+                Layout.preferredWidth: 120
+                model: ["Graphite", "Slate", "Paper"]
+                currentIndex: Math.max(0, model.indexOf(window.controller.appearancePreset))
+                onActivated: window.controller.setAppearancePreset(currentText)
+                Accessible.name: "Appearance preset"
+            }
+            TextField {
+                id: accentInput
+                objectName: "appearanceAccent"
+                Layout.preferredWidth: 110
+                placeholderText: "#RRGGBB accent"
+                text: window.controller.accentOverride
+                selectByMouse: true
+            }
+            Button {
+                objectName: "appearanceApplyAccent"
+                text: "Accent"
+                Layout.preferredWidth: 70
+                onClicked: window.controller.setAccentOverride(accentInput.text.trim())
+            }
+            Button {
+                objectName: "appearanceCategoriesToggle"
+                text: "Categories"
+                Layout.preferredWidth: 105
+                onClicked: categoryControls.visible = !categoryControls.visible
+                Accessible.name: "Category color settings"
+            }
+            Button {
+                objectName: "appearanceReset"
+                Layout.preferredWidth: 70
+                text: "Reset"
+                onClicked: window.controller.resetAppearance()
+            }
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.fillHeight: true
+                color: theme.border
+            }
+            Item { Layout.fillWidth: true }
+        }
+    }
+
+    // Category overrides are compact, native controls kept in the application
+    // chrome. They remain presentation settings and are not project data.
+    Row {
+        id: categoryControls
+        objectName: "appearanceCategories"
+        anchors {
+            top: topBar.bottom
+            left: parent.left
+            right: parent.right
+        }
+        height: 32
+        spacing: 4
+        visible: false
+        property var categories: ["Merge", "Filter", "IO", "Color", "Distort", "Utility"]
+        Repeater {
+            model: categoryControls.categories
+            delegate: TextField {
+                objectName: "appearanceCategory_" + modelData
+                placeholderText: modelData + " #RRGGBB"
+                text: window.controller.categoryColors[modelData] || ""
+                onEditingFinished: window.controller.setCategoryColor(modelData, text.trim())
+            }
+        }
+    }
+
     Rectangle {
         id: errorBanner
         anchors {
@@ -52,7 +205,7 @@ ApplicationWindow {
         }
         height: workspace.error.length > 0 ? 24 : 0
         visible: workspace.error.length > 0
-        color: "#5a2b2b"
+        color: theme.errorSurface
         Text {
             anchors.fill: parent
             anchors.leftMargin: 8
@@ -60,32 +213,24 @@ ApplicationWindow {
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
             text: workspace.error
-            color: "#f0d0d0"
+            color: theme.errorText
             font.pixelSize: 12
         }
     }
 
-    // Workspace drag/drop coordinator. Declared before the tree so the leaves
-    // can register as soon as they are created. It is a transparent overlay
-    // (only its preview/label children are visible while a drag is active) and
-    // never handles pointer events itself.
     DockDrag {
         id: dockDrag
         objectName: "dockDrag"
         anchors.fill: parent
         z: 10
         workspace: window.controller
+        theme: theme
     }
 
-    // The recursive workspace tree. It is a persistent node whose `node`
-    // binding follows `workspace.root`; the model emits rootChanged on every
-    // mutating operation except setRatio, so a handle drag never rebuilds the
-    // tree (only local geometry changes while dragging) while other operations
-    // refresh the layout from the current model.
     WorkspaceNode {
         id: rootNode
         anchors {
-            top: parent.top
+            top: categoryControls.visible ? categoryControls.bottom : topBar.bottom
             left: parent.left
             right: parent.right
             bottom: errorBanner.top
@@ -93,9 +238,9 @@ ApplicationWindow {
         node: workspace.root
         workspace: window.controller
         drag: dockDrag
+        theme: theme
     }
 
-    // Cancel an in-progress drag on Escape; a no-op otherwise.
     Shortcut {
         sequence: "Esc"
         context: Qt.ApplicationShortcut
@@ -107,7 +252,6 @@ ApplicationWindow {
         if (window.closeOverride)
             return
         if (!workspace.save()) {
-            // Block the close and surface the real error with an escape hatch.
             close.accepted = false
             saveErrorDialog.open()
         }
@@ -127,20 +271,19 @@ ApplicationWindow {
             Text {
                 Layout.fillWidth: true
                 text: "The workspace layout could not be saved."
-                color: "#d0d0d0"
+                color: theme.text
                 wrapMode: Text.Wrap
             }
             Text {
                 Layout.fillWidth: true
                 text: workspace.error
-                color: "#f0b0b0"
+                color: theme.errorText
                 wrapMode: Text.Wrap
             }
         }
 
         footer: RowLayout {
             spacing: 8
-            layoutDirection: Qt.LeftToRight
             Button { text: "Retry"; onClicked: retryOrClose() }
             Button { text: "Exit Without Saving"; onClicked: forceClose() }
             Button { text: "Cancel"; onClicked: saveErrorDialog.close() }

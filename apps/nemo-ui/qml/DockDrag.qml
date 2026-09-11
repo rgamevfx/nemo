@@ -6,6 +6,7 @@ Item {
     id: dockDrag
     objectName: "dockDrag"
     property var workspace
+    property var theme
     property bool active: false
     property string sourcePanelId: ""
     property string sourceLeafId: ""
@@ -40,10 +41,8 @@ Item {
     }
 
     function displayType(type) {
-        if (type === "viewer") return "Viewer"
-        if (type === "nodegraph") return "Nodegraph"
-        if (type === "timeline") return "Timeline"
-        return type
+        var descriptor = workspace ? workspace.panelDescriptor(type) : ({})
+        return descriptor && descriptor.title ? descriptor.title : type
     }
 
     function beginDrag(panelId, leafId, type) {
@@ -181,8 +180,9 @@ Item {
         id: dockPreview
         objectName: "dockPreview"
         visible: dockDrag.active && dockDrag.targetValid && !dockDrag.tabInsertion
-        color: "#304a6fa5"
-        border.color: "#7a9cc9"
+        color: theme ? theme.accent : "#304a6fa5"
+        opacity: 0.38
+        border.color: theme ? theme.accent : "#7a9cc9"
         border.width: 1
     }
     Rectangle {
@@ -190,7 +190,7 @@ Item {
         objectName: "tabLine"
         visible: dockDrag.active && dockDrag.targetValid && dockDrag.tabInsertion
         width: 2
-        color: "#7a9cc9"
+        color: theme ? theme.accent : "#7a9cc9"
     }
     Rectangle {
         id: dockLabel
@@ -201,14 +201,14 @@ Item {
         y: Math.max(4, Math.min(pointer.y + 18, dockDrag.height - height - 4))
         width: label.implicitWidth + 12
         height: 22
-        color: "#333333"
-        border.color: "#606060"
+        color: theme ? theme.header : "#333333"
+        border.color: theme ? theme.border : "#606060"
         radius: 3
         Text {
             id: label
             anchors.centerIn: parent
             text: dockDrag.displayType(dockDrag.sourceType)
-            color: "#e0e0e0"
+            color: theme ? theme.text : "#e0e0e0"
             font.pixelSize: 11
         }
     }

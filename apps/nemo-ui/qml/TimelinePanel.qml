@@ -10,6 +10,9 @@ import Nemo
 Pane {
     id: timelinePanel
     objectName: "timelinePanel"
+    property string panelId: ""
+    property string panelGroup: "A"
+    property var panelState: ({})
     padding: 0
     font.pixelSize: 12
     background: Rectangle { color: "#202020" }

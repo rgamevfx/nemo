@@ -199,8 +199,8 @@ TEST(WorkspaceTest, MalformedNodeThrows) {
                           {"active", "missing"},
                           {"panels", nlohmann::json::array({{{"id", "p"}, {"type", "viewer"}, {"group", "A"}}})}})),
                  std::exception);
-    // Invalid panel type.
-    EXPECT_THROW((void)Workspace::fromJson(doc(tabs("leaf", "p", "scopes", "A"))), std::exception);
+    // Unknown non-empty types are recoverable extension metadata; empty types are malformed.
+    EXPECT_THROW((void)Workspace::fromJson(doc(tabs("leaf", "p", "", "A"))), std::exception);
     // Invalid group.
     EXPECT_THROW((void)Workspace::fromJson(doc(tabs("leaf", "p", "viewer", "Z"))), std::exception);
     // Unknown kind.
@@ -380,13 +380,13 @@ TEST(WorkspaceTest, InvalidOperationsDoNotModifyState) {
     // setRatio out of bounds.
     EXPECT_THROW(ws.setRatio(topSplit, 0.0), std::exception);
     EXPECT_THROW(ws.setRatio(topSplit, 1.0), std::exception);
-    // Invalid panel type / group.
-    EXPECT_THROW(ws.setPanelType(viewerPanel, "scopes"), std::exception);
+    // Empty panel types remain invalid; unknown non-empty types are recoverable.
+    EXPECT_THROW(ws.setPanelType(viewerPanel, ""), std::exception);
     EXPECT_THROW(ws.setGroup(viewerPanel, "Z"), std::exception);
     // Activate a panel that is not in the leaf.
     EXPECT_THROW(ws.activate(viewerLeaf, nodegraphPanel), std::exception);
-    // addTab with invalid type / on a split node.
-    EXPECT_THROW(ws.addTab(viewerLeaf, "scopes"), std::exception);
+    // addTab with an empty type / on a split node.
+    EXPECT_THROW(ws.addTab(viewerLeaf, ""), std::exception);
     EXPECT_THROW(ws.addTab(topSplit, "viewer"), std::exception);
 
     EXPECT_EQ(ws.toJson(), before);
@@ -688,13 +688,13 @@ TEST(WorkspaceTest, MovePanelInvalidRejectedNoPartialState) {
     const std::string viewerPanel = root.at("children").at(0).at("children").at(0).at("panels").at(0).at("id");
     const std::string nodegraphLeaf = root.at("children").at(0).at("children").at(1).at("id");
 
-    EXPECT_THROW(ws.movePanel("missing", MoveDestination{viewerLeaf, Placement::Tabs, 0}), std::exception);
-    EXPECT_THROW(ws.movePanel(viewerPanel, MoveDestination{"missing", Placement::Tabs, 0}), std::exception);
+    EXPECT_THROW((void)ws.movePanel("missing", MoveDestination{viewerLeaf, Placement::Tabs, 0}), std::exception);
+    EXPECT_THROW((void)ws.movePanel(viewerPanel, MoveDestination{"missing", Placement::Tabs, 0}), std::exception);
     // Target is a split node, not a tabs leaf.
-    EXPECT_THROW(ws.movePanel(viewerPanel, MoveDestination{topSplit, Placement::Tabs, 0}), std::exception);
+    EXPECT_THROW((void)ws.movePanel(viewerPanel, MoveDestination{topSplit, Placement::Tabs, 0}), std::exception);
     // tabIndex outside the pre-move 0..size range.
-    EXPECT_THROW(ws.movePanel(viewerPanel, MoveDestination{nodegraphLeaf, Placement::Tabs, 99}), std::exception);
-    EXPECT_THROW(ws.movePanel(viewerPanel, MoveDestination{nodegraphLeaf, static_cast<Placement>(99), 0}),
+    EXPECT_THROW((void)ws.movePanel(viewerPanel, MoveDestination{nodegraphLeaf, Placement::Tabs, 99}), std::exception);
+    EXPECT_THROW((void)ws.movePanel(viewerPanel, MoveDestination{nodegraphLeaf, static_cast<Placement>(99), 0}),
                  std::exception);
     EXPECT_EQ(ws.toJson(), before);
 }
@@ -719,7 +719,7 @@ TEST(WorkspaceTest, MovePanelDepthBoundRejected) {
                                                    {{"id", "src-p2"}, {"type", "viewer"}, {"group", "A"}}})}}})}}}};
     Workspace ws = Workspace::fromJson(doc);
     const nlohmann::json before = ws.toJson();
-    EXPECT_THROW(ws.movePanel("src-p1", MoveDestination{"target", Placement::Left, 0}), std::exception);
+    EXPECT_THROW((void)ws.movePanel("src-p1", MoveDestination{"target", Placement::Left, 0}), std::exception);
     EXPECT_EQ(ws.toJson(), before);
 }
 
@@ -813,4 +813,31 @@ TEST(WorkspaceTest, MovePanelMultipleMovesReload) {
     const nlohmann::json doc = ws.toJson();
     const Workspace loaded = Workspace::fromJson(doc);
     EXPECT_EQ(loaded.toJson(), doc);
+}
+
+TEST(WorkspaceTest, UnknownPanelTypeAndMetadataRoundTripForRecovery) {
+    const nlohmann::json layout = {{"version", 1},
+                                   {"root",
+                                    {{"id", "leaf"},
+                                     {"kind", "tabs"},
+                                     {"active", "extension-panel"},
+                                     {"panels", nlohmann::json::array({{{"id", "extension-panel"},
+                                                                        {"type", "com.example.extension"},
+                                                                        {"group", "C"},
+                                                                        {"extensionVersion", 7},
+                                                                        {"instanceMetadata", {{"mode", "demo"}}},
+                                                                        {"state", {{"zoom", 1.25}}}}})}}}};
+
+    const Workspace restored = Workspace::fromJson(layout);
+    EXPECT_EQ(restored.toJson(), layout);
+}
+
+TEST(WorkspaceTest, DuplicateRemapsEveryIdentityAndPreservesPanelState) {
+    Workspace workspace;
+    const auto original = workspace.toJson();
+    const auto duplicate = workspace.duplicateWithFreshIds().toJson();
+
+    EXPECT_NE(duplicate.at("root").at("id"), original.at("root").at("id"));
+    EXPECT_EQ(Workspace::fromJson(duplicate).toJson(), duplicate);
+    EXPECT_EQ(duplicate.at("root").at("children").size(), original.at("root").at("children").size());
 }

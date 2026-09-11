@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <set>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
 namespace nemo::workspace {
@@ -14,10 +16,6 @@ constexpr int kMaxDepth = 64;
 
 bool validOrientation(const std::string& s) {
     return s == "horizontal" || s == "vertical";
-}
-
-bool validPanelType(const std::string& s) {
-    return s == "viewer" || s == "nodegraph" || s == "timeline";
 }
 
 bool validGroup(const std::string& s) {
@@ -47,8 +45,8 @@ Panel parsePanel(const nlohmann::json& j, std::set<std::string>& ids) {
         throw std::runtime_error("workspace: panel '" + panel.id + "' has no string 'type'");
     }
     panel.type = j.at("type").get<std::string>();
-    if (!validPanelType(panel.type)) {
-        throw std::runtime_error("workspace: panel '" + panel.id + "' has invalid type '" + panel.type + "'");
+    if (panel.type.empty()) {
+        throw std::runtime_error("workspace: panel '" + panel.id + "' type must not be empty");
     }
     if (!j.contains("group") || !j.at("group").is_string()) {
         throw std::runtime_error("workspace: panel '" + panel.id + "' has no string 'group'");
@@ -56,6 +54,16 @@ Panel parsePanel(const nlohmann::json& j, std::set<std::string>& ids) {
     panel.group = j.at("group").get<std::string>();
     if (!validGroup(panel.group)) {
         throw std::runtime_error("workspace: panel '" + panel.id + "' has invalid group '" + panel.group + "'");
+    }
+
+    panel.metadata = nlohmann::json::object();
+    for (const auto& [key, value] : j.items()) {
+        if (key != "id" && key != "type" && key != "group" && key != "state") {
+            panel.metadata[key] = value;
+        }
+    }
+    if (j.contains("state")) {
+        panel.state = j.at("state");
     }
     return panel;
 }
@@ -128,23 +136,32 @@ Node parseNode(const nlohmann::json& j, int depth, std::set<std::string>& ids) {
     return node;
 }
 
+nlohmann::json panelToJson(const Panel& panel) {
+    nlohmann::json json = panel.metadata.is_object() ? panel.metadata : nlohmann::json::object();
+    json["id"] = panel.id;
+    json["type"] = panel.type;
+    json["group"] = panel.group;
+    if (panel.state.has_value()) {
+        json["state"] = *panel.state;
+    }
+    return json;
+}
+
 nlohmann::json nodeToJson(const Node& node) {
     if (node.kind == "split") {
-        nlohmann::json j = {
-            {"id", node.id},
-            {"kind", "split"},
-            {"orientation", node.orientation},
-            {"ratio", node.ratio},
-            {"children", nlohmann::json::array()},
-        };
+        nlohmann::json json = {{"id", node.id},
+                               {"kind", "split"},
+                               {"orientation", node.orientation},
+                               {"ratio", node.ratio},
+                               {"children", nlohmann::json::array()}};
         for (const auto& child : node.children) {
-            j["children"].push_back(nodeToJson(child));
+            json["children"].push_back(nodeToJson(child));
         }
-        return j;
+        return json;
     }
     nlohmann::json panels = nlohmann::json::array();
     for (const auto& panel : node.panels) {
-        panels.push_back({{"id", panel.id}, {"type", panel.type}, {"group", panel.group}});
+        panels.push_back(panelToJson(panel));
     }
     return {{"id", node.id}, {"kind", "tabs"}, {"active", node.active}, {"panels", panels}};
 }
@@ -155,8 +172,22 @@ Node* findNode(Node& node, const std::string& id) {
     }
     if (node.kind == "split") {
         for (auto& child : node.children) {
-            if (Node* r = findNode(child, id)) {
-                return r;
+            if (Node* result = findNode(child, id)) {
+                return result;
+            }
+        }
+    }
+    return nullptr;
+}
+
+const Node* findNode(const Node& node, const std::string& id) {
+    if (node.id == id) {
+        return &node;
+    }
+    if (node.kind == "split") {
+        for (const auto& child : node.children) {
+            if (const Node* result = findNode(child, id)) {
+                return result;
             }
         }
     }
@@ -173,8 +204,25 @@ Panel* findPanel(Node& node, const std::string& panelId) {
         return nullptr;
     }
     for (auto& child : node.children) {
-        if (Panel* r = findPanel(child, panelId)) {
-            return r;
+        if (Panel* result = findPanel(child, panelId)) {
+            return result;
+        }
+    }
+    return nullptr;
+}
+
+const Panel* findPanel(const Node& node, const std::string& panelId) {
+    if (node.kind == "tabs") {
+        for (const auto& panel : node.panels) {
+            if (panel.id == panelId) {
+                return &panel;
+            }
+        }
+        return nullptr;
+    }
+    for (const auto& child : node.children) {
+        if (const Panel* result = findPanel(child, panelId)) {
+            return result;
         }
     }
     return nullptr;
@@ -190,15 +238,13 @@ Node* findLeafContaining(Node& node, const std::string& panelId) {
         return nullptr;
     }
     for (auto& child : node.children) {
-        if (Node* r = findLeafContaining(child, panelId)) {
-            return r;
+        if (Node* result = findLeafContaining(child, panelId)) {
+            return result;
         }
     }
     return nullptr;
 }
 
-// Returns the split node whose children directly contain nodeId, or nullptr
-// when nodeId is the root (which has no parent).
 Node* findParentSplit(Node& node, const std::string& nodeId) {
     if (node.kind != "split") {
         return nullptr;
@@ -208,17 +254,14 @@ Node* findParentSplit(Node& node, const std::string& nodeId) {
             return &node;
         }
         if (child.kind == "split") {
-            if (Node* r = findParentSplit(child, nodeId)) {
-                return r;
+            if (Node* result = findParentSplit(child, nodeId)) {
+                return result;
             }
         }
     }
     return nullptr;
 }
 
-// Returns the sibling of nodeId within its parent split, or nullptr when
-// nodeId is the root. Collapsing an emptied leaf promotes exactly this
-// sibling subtree.
 Node* findSibling(Node& node, const std::string& nodeId) {
     Node* parent = findParentSplit(node, nodeId);
     if (!parent) {
@@ -240,11 +283,11 @@ void collapseEmpty(Node& node) {
         collapseEmpty(child);
     }
     node.children.erase(std::remove_if(node.children.begin(), node.children.end(),
-                                       [](const Node& c) { return c.kind == "tabs" && c.panels.empty(); }),
+                                       [](const Node& child) { return child.kind == "tabs" && child.panels.empty(); }),
                         node.children.end());
     if (node.children.size() == 1) {
-        Node child = std::move(node.children.front());
-        node = std::move(child);
+        Node replacement = std::move(node.children.front());
+        node = std::move(replacement);
     }
 }
 
@@ -274,28 +317,42 @@ int nodeDepth(const Node& node, const std::string& id, int depth) {
     return -1;
 }
 
+void remapIds(Node& node, std::function<std::string(const char*)> newId,
+              std::unordered_map<std::string, std::string>& ids) {
+    const std::string oldNodeId = node.id;
+    node.id = newId("node");
+    ids.emplace(oldNodeId, node.id);
+    if (node.kind == "split") {
+        for (auto& child : node.children) {
+            remapIds(child, newId, ids);
+        }
+        return;
+    }
+    const std::string oldActive = node.active;
+    for (auto& panel : node.panels) {
+        const std::string oldPanelId = panel.id;
+        panel.id = newId("panel");
+        ids.emplace(oldPanelId, panel.id);
+    }
+    node.active = ids.at(oldActive);
+}
+
 }  // namespace
 
 Workspace::Workspace() {
-    Panel viewer;
-    viewer.id = newId("panel");
-    viewer.type = "viewer";
-    viewer.group = "A";
+    Panel viewer{newId("panel"), "viewer", "A", nlohmann::json::object(), std::nullopt};
     Node viewerLeaf;
     viewerLeaf.kind = "tabs";
     viewerLeaf.id = newId("leaf");
-    viewerLeaf.panels.push_back(viewer);
     viewerLeaf.active = viewer.id;
+    viewerLeaf.panels.push_back(std::move(viewer));
 
-    Panel nodegraph;
-    nodegraph.id = newId("panel");
-    nodegraph.type = "nodegraph";
-    nodegraph.group = "A";
+    Panel nodegraph{newId("panel"), "nodegraph", "A", nlohmann::json::object(), std::nullopt};
     Node nodegraphLeaf;
     nodegraphLeaf.kind = "tabs";
     nodegraphLeaf.id = newId("leaf");
-    nodegraphLeaf.panels.push_back(nodegraph);
     nodegraphLeaf.active = nodegraph.id;
+    nodegraphLeaf.panels.push_back(std::move(nodegraph));
 
     Node topSplit;
     topSplit.kind = "split";
@@ -305,15 +362,12 @@ Workspace::Workspace() {
     topSplit.children.push_back(std::move(viewerLeaf));
     topSplit.children.push_back(std::move(nodegraphLeaf));
 
-    Panel timeline;
-    timeline.id = newId("panel");
-    timeline.type = "timeline";
-    timeline.group = "A";
+    Panel timeline{newId("panel"), "timeline", "A", nlohmann::json::object(), std::nullopt};
     Node timelineLeaf;
     timelineLeaf.kind = "tabs";
     timelineLeaf.id = newId("leaf");
-    timelineLeaf.panels.push_back(timeline);
     timelineLeaf.active = timeline.id;
+    timelineLeaf.panels.push_back(std::move(timeline));
 
     root_.kind = "split";
     root_.orientation = "vertical";
@@ -330,9 +384,6 @@ Workspace Workspace::fromJson(const nlohmann::json& json) {
     if (!json.contains("version") || !json.at("version").is_number_integer()) {
         throw std::runtime_error("workspace: 'version' must be an integer");
     }
-    // Compare the JSON value directly rather than converting to int first:
-    // converting a value that exceeds int range (e.g. 2^32 + 1) would
-    // truncate and could pass a version check it must reject.
     if (json.at("version") != Workspace::kVersion) {
         throw std::runtime_error("workspace: unsupported version " + json.at("version").dump());
     }
@@ -340,35 +391,40 @@ Workspace Workspace::fromJson(const nlohmann::json& json) {
         throw std::runtime_error("workspace: missing 'root'");
     }
 
-    Workspace ws;
+    Workspace workspace;
     std::set<std::string> ids;
-    ws.root_ = parseNode(json.at("root"), 0, ids);
-    ws.usedIds_.insert(ids.begin(), ids.end());
-
-    // Advance the id counter past any numeric-suffixed id we just loaded so
-    // freshly generated ids stay predictable; the used set is the hard
-    // uniqueness guarantee regardless of the loaded id format.
+    workspace.root_ = parseNode(json.at("root"), 0, ids);
+    workspace.usedIds_.insert(ids.begin(), ids.end());
     std::uint64_t maxSuffix = 0;
-    for (const auto& id : ws.usedIds_) {
+    for (const auto& id : workspace.usedIds_) {
         std::size_t start = id.size();
         while (start > 0 && std::isdigit(static_cast<unsigned char>(id[start - 1]))) {
             --start;
         }
         if (start < id.size()) {
             try {
-                const auto value = static_cast<std::uint64_t>(std::stoull(id.substr(start)));
-                maxSuffix = std::max(maxSuffix, value);
+                maxSuffix = std::max(maxSuffix, static_cast<std::uint64_t>(std::stoull(id.substr(start))));
             } catch (...) {
-                // Non-numeric suffix; ignored.
             }
         }
     }
-    ws.nextId_ = maxSuffix + 1;
-    return ws;
+    workspace.nextId_ = maxSuffix + 1;
+    return workspace;
 }
 
 nlohmann::json Workspace::toJson() const {
     return {{"version", Workspace::kVersion}, {"root", nodeToJson(root_)}};
+}
+
+Workspace Workspace::duplicateWithFreshIds() const {
+    Workspace duplicate;
+    duplicate.root_ = root_;
+    duplicate.usedIds_.clear();
+    duplicate.nextId_ = 1;
+    std::unordered_map<std::string, std::string> ids;
+    const auto allocate = [&duplicate](const char* prefix) { return duplicate.newId(prefix); };
+    remapIds(duplicate.root_, allocate, ids);
+    return duplicate;
 }
 
 void Workspace::split(const std::string& leafId, const std::string& orientation) {
@@ -382,24 +438,15 @@ void Workspace::split(const std::string& leafId, const std::string& orientation)
     if (leaf->kind != "tabs") {
         throw std::runtime_error("split: node '" + leafId + "' is not a tabs leaf");
     }
-    // Splitting pushes the original leaf and the new leaf one level down, so
-    // mirror the parser depth bound (kMaxDepth) to keep generated layouts
-    // reloadable.
-    const int depth = nodeDepth(root_, leafId, 0);
-    if (depth + 1 > kMaxDepth) {
+    if (nodeDepth(root_, leafId, 0) + 1 > kMaxDepth) {
         throw std::runtime_error("split: would exceed maximum nesting depth");
     }
-
-    Panel p;
-    p.id = newId("panel");
-    p.type = "viewer";
-    p.group = "A";
-
+    Panel panel{newId("panel"), "viewer", "A", nlohmann::json::object(), std::nullopt};
     Node newLeaf;
     newLeaf.kind = "tabs";
     newLeaf.id = newId("leaf");
-    newLeaf.panels.push_back(p);
-    newLeaf.active = p.id;
+    newLeaf.active = panel.id;
+    newLeaf.panels.push_back(std::move(panel));
 
     Node split;
     split.kind = "split";
@@ -408,7 +455,6 @@ void Workspace::split(const std::string& leafId, const std::string& orientation)
     split.id = newId("split");
     split.children.push_back(std::move(*leaf));
     split.children.push_back(std::move(newLeaf));
-
     *leaf = std::move(split);
     collapseEmpty(root_);
 }
@@ -428,8 +474,8 @@ void Workspace::setRatio(const std::string& splitId, double ratio) {
 }
 
 void Workspace::setPanelType(const std::string& panelId, const std::string& type) {
-    if (!validPanelType(type)) {
-        throw std::runtime_error("setPanelType: invalid type '" + type + "'");
+    if (type.empty()) {
+        throw std::runtime_error("setPanelType: type must not be empty");
     }
     Panel* panel = findPanel(root_, panelId);
     if (!panel) {
@@ -457,13 +503,8 @@ void Workspace::activate(const std::string& leafId, const std::string& panelId) 
     if (leaf->kind != "tabs") {
         throw std::runtime_error("activate: node '" + leafId + "' is not a tabs leaf");
     }
-    bool found = false;
-    for (const auto& panel : leaf->panels) {
-        if (panel.id == panelId) {
-            found = true;
-            break;
-        }
-    }
+    const bool found =
+        std::any_of(leaf->panels.begin(), leaf->panels.end(), [&](const Panel& panel) { return panel.id == panelId; });
     if (!found) {
         throw std::runtime_error("activate: panel '" + panelId + "' is not in leaf '" + leafId + "'");
     }
@@ -471,22 +512,45 @@ void Workspace::activate(const std::string& leafId, const std::string& panelId) 
 }
 
 void Workspace::addTab(const std::string& leafId, const std::string& type) {
-    if (!validPanelType(type)) {
-        throw std::runtime_error("addTab: invalid type '" + type + "'");
+    static_cast<void>(createPanel(leafId, type, "A"));
+}
+
+std::string Workspace::createPanel(const std::string& leafId, const std::string& type, const std::string& group) {
+    if (type.empty()) {
+        throw std::runtime_error("createPanel: type must not be empty");
+    }
+    if (!validGroup(group)) {
+        throw std::runtime_error("createPanel: invalid group '" + group + "'");
     }
     Node* leaf = findNode(root_, leafId);
     if (!leaf) {
-        throw std::runtime_error("addTab: no node with id '" + leafId + "'");
+        throw std::runtime_error("createPanel: no node with id '" + leafId + "'");
     }
     if (leaf->kind != "tabs") {
-        throw std::runtime_error("addTab: node '" + leafId + "' is not a tabs leaf");
+        throw std::runtime_error("createPanel: node '" + leafId + "' is not a tabs leaf");
     }
-    Panel p;
-    p.id = newId("panel");
-    p.type = type;
-    p.group = "A";
-    leaf->panels.push_back(p);
-    leaf->active = p.id;
+    Panel panel{newId("panel"), type, group, nlohmann::json::object(), std::nullopt};
+    const std::string id = panel.id;
+    leaf->panels.push_back(std::move(panel));
+    leaf->active = id;
+    return id;
+}
+
+void Workspace::setPanelState(const std::string& panelId, const nlohmann::json& state) {
+    Panel* panel = findPanel(root_, panelId);
+    if (!panel) {
+        throw std::runtime_error("setPanelState: no panel with id '" + panelId + "'");
+    }
+    nlohmann::json next = state;
+    panel->state = std::move(next);
+}
+
+nlohmann::json Workspace::panelState(const std::string& panelId) const {
+    const Panel* panel = findPanel(root_, panelId);
+    if (!panel) {
+        throw std::runtime_error("panelState: no panel with id '" + panelId + "'");
+    }
+    return panel->state.value_or(nlohmann::json::object());
 }
 
 void Workspace::closePanel(const std::string& panelId) {
@@ -494,12 +558,11 @@ void Workspace::closePanel(const std::string& panelId) {
     if (!leaf) {
         throw std::runtime_error("closePanel: no panel with id '" + panelId + "'");
     }
-    // Only closing the last remaining panel of the whole workspace is
-    // rejected. An emptied leaf is removed and its parent split collapses.
     if (countPanels(root_) <= 1) {
         throw std::runtime_error("closePanel: cannot close the last panel of the workspace");
     }
-    auto it = std::find_if(leaf->panels.begin(), leaf->panels.end(), [&](const Panel& p) { return p.id == panelId; });
+    auto it =
+        std::find_if(leaf->panels.begin(), leaf->panels.end(), [&](const Panel& panel) { return panel.id == panelId; });
     usedIds_.erase(panelId);
     leaf->panels.erase(it);
     if (leaf->active == panelId && !leaf->panels.empty()) {
@@ -530,62 +593,41 @@ bool Workspace::movePanel(const std::string& panelId, const MoveDestination& des
     if (tgtLeaf->kind != "tabs") {
         throw std::runtime_error("movePanel: node '" + dest.leafId + "' is not a tabs leaf");
     }
-
-    const bool sameLeaf = (srcLeaf->id == tgtLeaf->id);
-
-    // Validate the tab index for tab drops (edge placements ignore it).
-    if (dest.placement == Placement::Tabs) {
-        if (dest.tabIndex > tgtLeaf->panels.size()) {
-            throw std::runtime_error("movePanel: tab insertion index " + std::to_string(dest.tabIndex) +
-                                     " out of range for leaf '" + dest.leafId + "'");
-        }
+    const bool sameLeaf = srcLeaf->id == tgtLeaf->id;
+    if (dest.placement == Placement::Tabs && dest.tabIndex > tgtLeaf->panels.size()) {
+        throw std::runtime_error("movePanel: tab insertion index " + std::to_string(dest.tabIndex) +
+                                 " out of range for leaf '" + dest.leafId + "'");
     }
-
-    // A sole panel dropped onto its own tile cannot go anywhere: reject as a
-    // no-op rather than splitting a leaf by draining its only content.
     if (sameLeaf && srcLeaf->panels.size() == 1) {
         return false;
     }
-
-    // Edge drops create a split at the target leaf, pushing its children one
-    // level deeper. The emptied source leaf may collapse first and promote the
-    // sibling subtree, which can move the target leaf up one level; account
-    // for that so we only reject genuinely too-deep layouts.
     if (dest.placement != Placement::Tabs) {
-        int tgtDepth = nodeDepth(root_, dest.leafId, 0);
+        int targetDepth = nodeDepth(root_, dest.leafId, 0);
         if (!sameLeaf && srcLeaf->panels.size() == 1) {
-            if (Node* sibling = findSibling(root_, srcLeaf->id)) {
-                if (findNode(*sibling, dest.leafId)) {
-                    --tgtDepth;
-                }
+            if (Node* sibling = findSibling(root_, srcLeaf->id); sibling && findNode(*sibling, dest.leafId)) {
+                --targetDepth;
             }
         }
-        if (tgtDepth + 1 > kMaxDepth) {
+        if (targetDepth + 1 > kMaxDepth) {
             throw std::runtime_error("movePanel: would exceed maximum nesting depth");
         }
     }
 
-    // Same-leaf tab drop: reorder. Inserting the panel is done after removing
-    // it, so shift the insertion point toward the front when the source slot
-    // was ahead of the gap.
     if (sameLeaf && dest.placement == Placement::Tabs) {
         auto it = std::find_if(srcLeaf->panels.begin(), srcLeaf->panels.end(),
-                               [&](const Panel& p) { return p.id == panelId; });
-        const std::size_t srcIndex = static_cast<std::size_t>(it - srcLeaf->panels.begin());
-        const std::size_t insert = (dest.tabIndex > srcIndex) ? dest.tabIndex - 1 : dest.tabIndex;
-        if (insert == srcIndex) {
+                               [&](const Panel& panel) { return panel.id == panelId; });
+        const std::size_t sourceIndex = static_cast<std::size_t>(it - srcLeaf->panels.begin());
+        const std::size_t insertion = dest.tabIndex > sourceIndex ? dest.tabIndex - 1 : dest.tabIndex;
+        if (insertion == sourceIndex) {
             return false;
         }
-        std::string active = panelId;
         Panel panel = std::move(*it);
         srcLeaf->panels.erase(it);
-        srcLeaf->panels.insert(srcLeaf->panels.begin() + insert, std::move(panel));
-        srcLeaf->active.swap(active);
+        srcLeaf->panels.insert(srcLeaf->panels.begin() + insertion, std::move(panel));
+        srcLeaf->active = panelId;
         return true;
     }
 
-    // Prepare allocations before extracting anything. The commit below uses
-    // only moves into reserved storage, so a failed allocation cannot lose a panel.
     std::string targetActive = panelId;
     std::string sourceActive = srcLeaf->active;
     if (sourceActive == panelId && srcLeaf->panels.size() > 1) {
@@ -598,40 +640,39 @@ bool Workspace::movePanel(const std::string& panelId, const MoveDestination& des
     } else {
         panelLeaf.kind = "tabs";
         panelLeaf.id = newId("leaf");
-        panelLeaf.panels.reserve(1);
         panelLeaf.active = panelId;
+        panelLeaf.panels.reserve(1);
         split.kind = "split";
         split.orientation =
-            (dest.placement == Placement::Left || dest.placement == Placement::Right) ? "horizontal" : "vertical";
+            dest.placement == Placement::Left || dest.placement == Placement::Right ? "horizontal" : "vertical";
         split.id = newId("split");
         split.children.reserve(2);
     }
 
-    auto it =
-        std::find_if(srcLeaf->panels.begin(), srcLeaf->panels.end(), [&](const Panel& p) { return p.id == panelId; });
+    auto it = std::find_if(srcLeaf->panels.begin(), srcLeaf->panels.end(),
+                           [&](const Panel& panel) { return panel.id == panelId; });
     Panel panel = std::move(*it);
     srcLeaf->panels.erase(it);
-    srcLeaf->active.swap(sourceActive);
+    srcLeaf->active = sourceActive;
     if (srcLeaf->panels.empty()) {
         collapseEmpty(root_);
     }
 
-    Node* tgt = findNode(root_, dest.leafId);
+    Node* target = findNode(root_, dest.leafId);
     if (dest.placement == Placement::Tabs) {
-        tgt->panels.insert(tgt->panels.begin() + dest.tabIndex, std::move(panel));
-        tgt->active.swap(targetActive);
+        target->panels.insert(target->panels.begin() + dest.tabIndex, std::move(panel));
+        target->active = targetActive;
         return true;
     }
-
     panelLeaf.panels.push_back(std::move(panel));
     if (dest.placement == Placement::Left || dest.placement == Placement::Top) {
         split.children.push_back(std::move(panelLeaf));
-        split.children.push_back(std::move(*tgt));
+        split.children.push_back(std::move(*target));
     } else {
-        split.children.push_back(std::move(*tgt));
+        split.children.push_back(std::move(*target));
         split.children.push_back(std::move(panelLeaf));
     }
-    *tgt = std::move(split);
+    *target = std::move(split);
     return true;
 }
 

@@ -15,6 +15,7 @@ Item {
     property var node
     property var workspace
     property var drag            // the DockDrag coordinator
+    property var theme
 
     readonly property bool isValid: node !== undefined && node !== null
                                     && node.kind !== undefined && node.kind !== ""
@@ -53,8 +54,10 @@ Item {
             handle: Rectangle {
                 implicitWidth: 4
                 implicitHeight: 4
-                color: SplitHandle.pressed ? "#4a6fa5"
-                     : (SplitHandle.hovered ? "#464646" : "#383838")
+                color: SplitHandle.pressed
+                       ? (rootNode.theme ? rootNode.theme.accent : "#4a6fa5")
+                       : (SplitHandle.hovered ? (rootNode.theme ? rootNode.theme.border : "#464646")
+                                               : (rootNode.theme ? rootNode.theme.border : "#383838"))
             }
 
             Loader {
@@ -64,6 +67,7 @@ Item {
                     item.node = Qt.binding(function() { return rootNode.node.children[0] })
                     item.workspace = Qt.binding(function() { return rootNode.workspace })
                     item.drag = Qt.binding(function() { return rootNode.drag })
+                    item.theme = Qt.binding(function() { return rootNode.theme })
                 }
                 SplitView.minimumWidth: item ? item.minimumPaneWidth : 120
                 SplitView.minimumHeight: item ? item.minimumPaneHeight : 80
@@ -75,6 +79,7 @@ Item {
                     item.node = Qt.binding(function() { return rootNode.node.children[1] })
                     item.workspace = Qt.binding(function() { return rootNode.workspace })
                     item.drag = Qt.binding(function() { return rootNode.drag })
+                    item.theme = Qt.binding(function() { return rootNode.theme })
                 }
                 SplitView.minimumWidth: item ? item.minimumPaneWidth : 120
                 SplitView.minimumHeight: item ? item.minimumPaneHeight : 80
@@ -143,7 +148,7 @@ Item {
         Rectangle {
             id: leaf
             anchors.fill: parent
-            color: "#2b2b2b"
+            color: rootNode.theme ? rootNode.theme.panel : "#2b2b2b"
             objectName: "leaf_" + leaf.nodeId
             readonly property real minimumPaneWidth: 120
             readonly property real minimumPaneHeight: 80
@@ -151,6 +156,7 @@ Item {
             readonly property var node: rootNode.node
             readonly property var workspace: rootNode.workspace
             readonly property var drag: rootNode.drag
+            readonly property var theme: rootNode.theme
             readonly property string nodeId: node ? node.id : ""
             readonly property int panelCount: node.panels ? node.panels.length : 0
             readonly property Item tabStrip: leaf.panelCount > 1 ? tabRow : null
@@ -189,11 +195,9 @@ Item {
                 result
             }
 
-            function displayType(t) {
-                if (t === "viewer") return "Viewer"
-                if (t === "nodegraph") return "Nodegraph"
-                if (t === "timeline") return "Timeline"
-                return t
+            function panelTitle(typeId) {
+                var descriptor = leaf.workspace ? leaf.workspace.panelDescriptor(typeId) : ({})
+                return descriptor && descriptor.title ? descriptor.title : typeId
             }
 
             ColumnLayout {
@@ -205,7 +209,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: leaf.panelCount > 1 ? 26 : 0
                     visible: leaf.panelCount > 1
-                    color: "#262626"
+                    color: leaf.theme ? leaf.theme.tabs : "#262626"
                     RowLayout {
                         id: tabRow
                         anchors.fill: parent
@@ -219,8 +223,10 @@ Item {
                                 flat: true
                                 objectName: "panelTab_" + modelData.id
                                 contentItem: Text {
-                                    text: leaf.displayType(modelData.type)
-                                    color: modelData.id === leaf.node.active ? "#eaeaea" : "#8a8a8a"
+                                    text: leaf.panelTitle(modelData.type)
+                                    color: modelData.id === leaf.node.active
+                                           ? (leaf.theme ? leaf.theme.text : "#eaeaea")
+                                           : (leaf.theme ? leaf.theme.mutedText : "#8a8a8a")
                                     font.pixelSize: 11
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
@@ -228,10 +234,12 @@ Item {
                                 }
                                 background: Rectangle {
                                     radius: 3
-                                    color: modelData.id === leaf.node.active ? "#3f3f3f" : "transparent"
+                                    color: modelData.id === leaf.node.active
+                                           ? (leaf.theme ? leaf.theme.header : "#3f3f3f")
+                                           : "transparent"
                                 }
                                 onClicked: leaf.workspace.activate(leaf.node.id, modelData.id)
-                                Accessible.name: "Panel tab for " + leaf.displayType(modelData.type)
+                                Accessible.name: "Panel tab for " + leaf.panelTitle(modelData.type)
                                 implicitHeight: 22
                                 padding: 8
 
@@ -253,6 +261,7 @@ Item {
                     leafId: leaf.node.id
                     workspace: leaf.workspace
                     drag: leaf.drag
+                    theme: leaf.theme
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                 }

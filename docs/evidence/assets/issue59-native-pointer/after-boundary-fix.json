@@ -1,0 +1,24 @@
+{
+  "dpr": 1,
+  "height": 720,
+  "lastPress": {
+    "deltaX": 0,
+    "deltaY": 0,
+    "globalX": 1198.484375,
+    "globalY": 63,
+    "qtX": 1198.484375,
+    "qtY": 63,
+    "rawX": 1198.484375,
+    "rawY": 63
+  },
+  "marginBottom": 0,
+  "marginLeft": 0,
+  "marginRight": 0,
+  "marginTop": 0,
+  "rawSerial": 3,
+  "rawX": 1198.484375,
+  "rawY": 63,
+  "screenHeight": 1080,
+  "screenWidth": 1920,
+  "width": 1280
+}

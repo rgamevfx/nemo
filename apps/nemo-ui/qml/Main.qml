@@ -21,6 +21,8 @@ ApplicationWindow {
 
     readonly property var controller: workspace
     property bool closeOverride: false
+    property bool frameless: false
+    flags: Qt.Window | (frameless ? Qt.FramelessWindowHint : 0)
 
     Theme {
         id: appTheme
@@ -71,6 +73,13 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         color: appTheme.background
+
+        MouseArea {
+            objectName: "windowMoveArea"
+            anchors.fill: parent
+            enabled: window.frameless
+            onPressed: window.startSystemMove()
+        }
 
         Row {
             anchors.left: parent.left
@@ -230,6 +239,28 @@ ApplicationWindow {
                 workspaceMenu.popup()
             }
         }
+    }
+
+    // Replace the native move/resize hit regions removed with invisible CSD.
+    // The four-pixel grips fit inside the existing eight-pixel workspace inset.
+    component WindowResizeArea: MouseArea {
+        required property int edges
+        enabled: window.frameless
+        onPressed: window.startSystemResize(edges)
+    }
+
+    Item {
+        anchors.fill: parent
+        z: 100
+        visible: window.frameless
+        WindowResizeArea { x: 0; y: 8; width: 4; height: parent.height - 16; edges: Qt.LeftEdge; cursorShape: Qt.SizeHorCursor }
+        WindowResizeArea { x: parent.width - width; y: 8; width: 4; height: parent.height - 16; edges: Qt.RightEdge; cursorShape: Qt.SizeHorCursor }
+        WindowResizeArea { x: 8; y: 0; width: parent.width - 16; height: 4; edges: Qt.TopEdge; cursorShape: Qt.SizeVerCursor }
+        WindowResizeArea { x: 8; y: parent.height - height; width: parent.width - 16; height: 4; edges: Qt.BottomEdge; cursorShape: Qt.SizeVerCursor }
+        WindowResizeArea { x: 0; y: 0; width: 8; height: 8; edges: Qt.TopEdge | Qt.LeftEdge; cursorShape: Qt.SizeFDiagCursor }
+        WindowResizeArea { x: parent.width - width; y: 0; width: 8; height: 8; edges: Qt.TopEdge | Qt.RightEdge; cursorShape: Qt.SizeBDiagCursor }
+        WindowResizeArea { x: 0; y: parent.height - height; width: 8; height: 8; edges: Qt.BottomEdge | Qt.LeftEdge; cursorShape: Qt.SizeBDiagCursor }
+        WindowResizeArea { x: parent.width - width; y: parent.height - height; width: 8; height: 8; edges: Qt.BottomEdge | Qt.RightEdge; cursorShape: Qt.SizeFDiagCursor }
     }
 
     Menu {

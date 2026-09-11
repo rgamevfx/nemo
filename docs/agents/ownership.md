@@ -146,6 +146,18 @@ geometry and reject splits that cannot fit usable panes. Saved ratios are
 clamped to available geometry without changing the saved preference on resize.
 Main remains hidden until the native host attaches its Vulkan presentation device.
 
+For native Wayland/Vulkan windows, `main.cpp` supplies the frameless policy as an
+initial QML property. Qt 6.4's Vulkan path does not composite its client decoration,
+but decorated input still subtracts those margins. `Main.qml` owns system move
+and edge-resize requests through `startSystemMove`/`startSystemResize`; establish
+the policy before native creation. `Window.flags` has no QML change notification
+in this Qt version, so it is not a reactive policy source.
+
+Native pointer acceptance must use compositor/OS-level input on the normal app
+window. Qt-injected `QTest` clicks and temporary `Qt.Tool` capture windows bypass
+the failing coordinate boundary. The [physical-pointer evidence](../evidence/assets/issue59-native-pointer/session.json)
+records the 3/30-pixel failure and zero-offset correction.
+
 For presentation changes, start from the immutable
 [prototype source/evidence baseline](../evidence/issue25-prototype-acceptance-v1.md),
 port the actual shared pattern, and retain matched native images and gesture

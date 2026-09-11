@@ -1,0 +1,36 @@
+{
+  "window_move": {
+    "passed": true,
+    "before": [
+      320,
+      135
+    ],
+    "after": [
+      380,
+      175
+    ]
+  },
+  "window_resize": {
+    "passed": true,
+    "before_width": 1280,
+    "after_width": 1360
+  },
+  "topbar_click": {
+    "passed": true,
+    "event": {
+      "deltaX": 0,
+      "deltaY": 0,
+      "globalX": 91.03515625,
+      "globalY": 20.98828125,
+      "qtX": 91.03515625,
+      "qtY": 20.98828125,
+      "rawX": 91.03515625,
+      "rawY": 20.98828125
+    }
+  },
+  "panel_docking": {
+    "passed": true,
+    "viewer_leaf": "leaf-4",
+    "graph_leaf": "leaf-4"
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "schema": 1,
+  "issue": 59,
+  "recorded_at_utc": "2026-09-11T17:17:49.287909+00:00",
+  "base_commit": "1142091",
+  "owner_report": "Visible buttons activated only when clicking below the cursor target. User report was ground truth.",
+  "root_cause": "Qt 6.4.2 Wayland selected Bradient client-decoration margins (3,30,3,3). The Vulkan window did not composite those decorations; its content pixels started at surface origin. Native pointer dispatch nevertheless subtracted the margins, sending clicks 3px left and 30px above their visible targets.",
+  "fix": [
+    "main.cpp supplies a Wayland-only frameless initial property before QML/native window creation. Windows/XCB retain ordinary window flags.",
+    "Main.qml uses that policy for window flags and delegates blank-chrome dragging and four-pixel edge/corner grips to QWindow startSystemMove/startSystemResize. No pointer offsets or per-control compensations.",
+    "Policy is passed as an initial QML property, rather than observing Window.flags: Qt 6.4 flags has no QML change notification."
+  ],
+  "source_sha256": {
+    "apps/nemo-ui/main.cpp": "b94b72abd5601576339c684895825e88748c6114f26238d261b4d91d8b98dd6c",
+    "apps/nemo-ui/qml/Main.qml": "4803e0eac2c139e17412ad24df4072d88aca45372a7e28d38f8f215de27cc7a1",
+    "docs/agents/ownership.md": "de6673bb0c14fb1734531086363e734925d37e90c39a13f5662857fce8cad5bd"
+  },
+  "environment": {
+    "Qt": "6.4.2",
+    "platform": "native Wayland / COSMIC",
+    "screen": [
+      1920,
+      1080
+    ],
+    "dpr": 1,
+    "gpu": "NVIDIA GeForce GTX 1070",
+    "driver": "580.173.02",
+    "application": "actual packaged build/debug/apps/nemo-ui/nemo-ui",
+    "normal_window": true,
+    "Qt_Tool_override": false
+  },
+  "feedback_loop": {
+    "command": "python3 /tmp/nemo-pointer-loop.py",
+    "duration_seconds": 1.4,
+    "method": "Temporary Linux evdev /dev/uinput absolute mouse device sends through kernel/libinput/compositor/wl_pointer. A read-only LD_PRELOAD probe observes raw wl_pointer positions and delivered QMouseEvent positions. The compositor-visible Tools button center is clicked, and actual Tools opening is asserted. No QTest mouse injection or forced Qt.Tool flags.",
+    "before_exit": 1,
+    "before_button_opened": false,
+    "before": {
+      "dpr": 1,
+      "height": 687,
+      "lastPress": {
+        "deltaX": 3,
+        "deltaY": 30,
+        "globalX": 1189.48046875,
+        "globalY": 33,
+        "qtX": 1189.48046875,
+        "qtY": 33,
+        "rawX": 1192.48046875,
+        "rawY": 63
+      },
+      "marginBottom": 3,
+      "marginLeft": 3,
+      "marginRight": 3,
+      "marginTop": 30,
+      "rawSerial": 7,
+      "rawX": 1192.48046875,
+      "rawY": 63,
+      "screenHeight": 1080,
+      "screenWidth": 1920,
+      "width": 1274
+    },
+    "after_exit": 0,
+    "after": {
+      "button": {
+        "enabled": true,
+        "height": 24,
+        "visible": true,
+        "width": 49,
+        "x": 1254,
+        "y": 51
+      },
+      "event": {
+        "deltaX": 0,
+        "deltaY": 0,
+        "globalX": 1278.46484375,
+        "globalY": 62.99609375,
+        "qtX": 1278.46484375,
+        "qtY": 62.99609375,
+        "rawX": 1278.46484375,
+        "rawY": 62.99609375
+      },
+      "frame_margins": {
+        "marginBottom": 0,
+        "marginLeft": 0,
+        "marginRight": 0,
+        "marginTop": 0
+      },
+      "native_surface_origin": [
+        380,
+        175
+      ],
+      "opened_at_visible_button_center": true
+    },
+    "isolation": "Changing only per-window decoration policy eliminated the offset; subsequent QML additions preserved OS move/resize. Same physical loop passed again after actual native window move and resize.",
+    "regression_test_limit": "Headless/QTest-injected UI tests bypass this exact failing seam. This is a real OS-level smoke regression on the reproducing host, not a portable CI unit test. Temporary instrumentation/reproducer removed after capture; native input acceptance must continue to exercise this boundary."
+  },
+  "physical_gestures": {
+    "window_move": {
+      "passed": true,
+      "before": [
+        320,
+        135
+      ],
+      "after": [
+        380,
+        175
+      ]
+    },
+    "window_resize": {
+      "passed": true,
+      "before_width": 1280,
+      "after_width": 1360
+    },
+    "topbar_click": {
+      "passed": true,
+      "event": {
+        "deltaX": 0,
+        "deltaY": 0,
+        "globalX": 91.03515625,
+        "globalY": 20.98828125,
+        "qtX": 91.03515625,
+        "qtY": 20.98828125,
+        "rawX": 91.03515625,
+        "rawY": 20.98828125
+      }
+    },
+    "panel_docking": {
+      "passed": true,
+      "viewer_leaf": "leaf-4",
+      "graph_leaf": "leaf-4"
+    }
+  },
+  "compositor_captures": {
+    "before": "compositor-before.png",
+    "after": "compositor-after.png",
+    "method": "cosmic-screenshot --interactive=false --modal=false --notify=false; cropped to the Nemo surface only. Unrelated desktop pixels were not retained. Client capture of the physically opened appearance popup is also retained."
+  },
+  "verification": {
+    "debug": "333/333 passed",
+    "release": "333/333 passed",
+    "asan_ubsan": "29/29 affected UI/controller/router tests passed, ASAN_OPTIONS=detect_leaks=0",
+    "logs": {
+      "debug-ctest.log": "10a39c3dca9539d93ca9627e62a3fa13c5fefa4ca2c68cad5d7084804d2051fd",
+      "release-ctest.log": "dd113a49654913def219dcb7948cafc356124889020178549b10fc25df40eb2a",
+      "asan-ui.log": "2161e6c8096ebeadd03f22511f00d6e3b77b5991da3f28d5efca266febbf33bd"
+    }
+  },
+  "commands": [
+    "cmake --build --preset debug --target nemo-ui -j 4",
+    "cmake --build --preset release --target nemo-ui -j 4",
+    "ctest --preset debug --output-on-failure",
+    "ctest --preset release --output-on-failure",
+    "ASAN_OPTIONS=detect_leaks=0 build/asan/tests/nemo_workspace_ui_tests",
+    "QT_QPA_PLATFORM=wayland XDG_CONFIG_HOME=/tmp/nemo59-pointer-config OCIO=\"$PWD/docs/evidence/issue12-view.ocio\" LD_PRELOAD=/tmp/nemo-pointer-probe.so NEMO_POINTER_SOCKET=/tmp/nemo-pointer.sock build/debug/apps/nemo-ui/nemo-ui --source \"$PWD/docs/evidence/assets/issue59-production-cutover/source-640x360-bt709.mkv\" --viewer-cache-dir /tmp/nemo59-review-cache",
+    "python3 /tmp/nemo-pointer-loop.py"
+  ],
+  "primary_sources": [
+    "https://raw.githubusercontent.com/qt/qtwayland/v6.4.2/src/client/qwaylandwindow.cpp",
+    "https://raw.githubusercontent.com/qt/qtwayland/v6.4.2/src/client/qwaylandinputdevice.cpp",
+    "https://raw.githubusercontent.com/qt/qtwayland/v6.4.2/src/client/qwaylandvulkanwindow.cpp",
+    "https://raw.githubusercontent.com/qt/qtwayland/v6.4.2/src/client/qwaylandshmbackingstore.cpp",
+    "https://raw.githubusercontent.com/qt/qtwayland/v6.4.2/src/plugins/decorations/bradient/main.cpp",
+    "https://raw.githubusercontent.com/qt/qtwayland/v6.4.2/src/plugins/shellintegration/xdg-shell/qwaylandxdgshell.cpp"
+  ],
+  "limitations": [
+    "Physical run scoped to the reproducing COSMIC Wayland DPR=1 host. No Windows/mixed-DPI physical input run claimed.",
+    "Existing vendor warnings (Qt qmldir scanner and minizip-ng mktemp linker warning) unchanged.",
+    "This fixes the reported pointer defect; owner appearance/interaction approval of #59 is still pending."
+  ]
+}

@@ -208,6 +208,10 @@ int main(int argc, char* argv[]) {
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &panelContextRouter);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
+        // Wayland Vulkan renders our QML chrome, not Qt's client decorations.
+        // Set the window policy before creation so input and pixels share an origin.
+        engine.setInitialProperties(
+            {{QStringLiteral("frameless"), QGuiApplication::platformName() == QStringLiteral("wayland")}});
         engine.load(QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/Main.qml")));
         if (engine.rootObjects().isEmpty()) {
             return 1;

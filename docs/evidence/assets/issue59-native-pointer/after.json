@@ -1,0 +1,31 @@
+{
+  "button": {
+    "enabled": true,
+    "height": 24,
+    "visible": true,
+    "width": 49,
+    "x": 1254,
+    "y": 51
+  },
+  "event": {
+    "deltaX": 0,
+    "deltaY": 0,
+    "globalX": 1278.46484375,
+    "globalY": 62.99609375,
+    "qtX": 1278.46484375,
+    "qtY": 62.99609375,
+    "rawX": 1278.46484375,
+    "rawY": 62.99609375
+  },
+  "frame_margins": {
+    "marginBottom": 0,
+    "marginLeft": 0,
+    "marginRight": 0,
+    "marginTop": 0
+  },
+  "native_surface_origin": [
+    380,
+    175
+  ],
+  "opened_at_visible_button_center": true
+}

@@ -1,0 +1,88 @@
+[==========] Running 29 tests from 5 test suites.
+[----------] Global test environment set-up.
+[----------] 8 tests from WorkspaceDragTest
+[ RUN      ] WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct
+[       OK ] WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct (806 ms)
+[ RUN      ] WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures
+[       OK ] WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures (593 ms)
+[ RUN      ] WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits
+[       OK ] WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits (496 ms)
+[ RUN      ] WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges
+[       OK ] WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges (1110 ms)
+[ RUN      ] WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer
+[       OK ] WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer (559 ms)
+[ RUN      ] WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks
+[       OK ] WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks (594 ms)
+[ RUN      ] WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy
+[       OK ] WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy (506 ms)
+[ RUN      ] WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance
+[       OK ] WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance (403 ms)
+[----------] 8 tests from WorkspaceDragTest (5070 ms total)
+
+[----------] 4 tests from WorkspaceControllerTest
+[ RUN      ] WorkspaceControllerTest.WorkspaceOrderMovementValidatesAndPersists
+[       OK ] WorkspaceControllerTest.WorkspaceOrderMovementValidatesAndPersists (18 ms)
+[ RUN      ] WorkspaceControllerTest.CategoryResetDoesNotResetOtherAppearanceSettings
+[       OK ] WorkspaceControllerTest.CategoryResetDoesNotResetOtherAppearanceSettings (0 ms)
+[ RUN      ] WorkspaceControllerTest.PresetsAppearanceAndIndependentLayoutsPersistTogether
+[       OK ] WorkspaceControllerTest.PresetsAppearanceAndIndependentLayoutsPersistTogether (20 ms)
+[ RUN      ] WorkspaceControllerTest.UnreadableWorkspaceIsPreservedUntilExplicitReset
+[       OK ] WorkspaceControllerTest.UnreadableWorkspaceIsPreservedUntilExplicitReset (6 ms)
+[----------] 4 tests from WorkspaceControllerTest (46 ms total)
+
+[----------] 8 tests from Interactive
+[ RUN      ] Interactive.GraphCommandsUndoAndRejectOccupiedConnectionsAtomically
+[       OK ] Interactive.GraphCommandsUndoAndRejectOccupiedConnectionsAtomically (4 ms)
+[ RUN      ] Interactive.GraphCreationUndoPreservesExistingConnections
+[       OK ] Interactive.GraphCreationUndoPreservesExistingConnections (3 ms)
+[ RUN      ] Interactive.TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently
+[       OK ] Interactive.TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently (2 ms)
+[ RUN      ] Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata
+[       OK ] Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata (1 ms)
+[ RUN      ] Interactive.OutputSelectionUsesCatalogDeclaration
+[       OK ] Interactive.OutputSelectionUsesCatalogDeclaration (1 ms)
+[ RUN      ] Interactive.PresentationConsumersShareSessionHistoryAndLifetime
+[       OK ] Interactive.PresentationConsumersShareSessionHistoryAndLifetime (1 ms)
+[ RUN      ] Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically
+[       OK ] Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically (1 ms)
+[ RUN      ] Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure
+[libx264 @ 0x519000a59b80] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x519000a59b80] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x519000a59b80] frame I:1     Avg QP: 0.00  size:   698
+[libx264 @ 0x519000a59b80] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x519000a59b80] final ratefactor: -29.49
+[libx264 @ 0x519000a59b80] 8x8 transform intra:0.0%
+[libx264 @ 0x519000a59b80] coded y,uvDC,uvAC intra: 0.0% 0.0% 0.0%
+[libx264 @ 0x519000a59b80] i16 v,h,dc,p: 67%  0% 33%  0%
+[libx264 @ 0x519000a59b80] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x519000a59b80] kb/s:134.02
+[       OK ] Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure (21979 ms)
+[----------] 8 tests from Interactive (21996 ms total)
+
+[----------] 7 tests from PanelContextRouter
+[ RUN      ] PanelContextRouter.RejectsInvalidValuesWithoutChangingBinding
+[       OK ] PanelContextRouter.RejectsInvalidValuesWithoutChangingBinding (0 ms)
+[ RUN      ] PanelContextRouter.GroupClocksAreIndependentAndNotifyOnlyAffectedPanels
+[       OK ] PanelContextRouter.GroupClocksAreIndependentAndNotifyOnlyAffectedPanels (0 ms)
+[ RUN      ] PanelContextRouter.PinnedSnapshotDoesNotBorrowLaterGroupUpdates
+[       OK ] PanelContextRouter.PinnedSnapshotDoesNotBorrowLaterGroupUpdates (0 ms)
+[ RUN      ] PanelContextRouter.FollowReportsUnavailableWithoutActivePanel
+[       OK ] PanelContextRouter.FollowReportsUnavailableWithoutActivePanel (0 ms)
+[ RUN      ] PanelContextRouter.FollowActiveSwitchesResolvedGroupWithoutChangingItsOwnBinding
+[       OK ] PanelContextRouter.FollowActiveSwitchesResolvedGroupWithoutChangingItsOwnBinding (0 ms)
+[ RUN      ] PanelContextRouter.ViewerRoleSelectsTargetWithoutRepurposingGroupContext
+[       OK ] PanelContextRouter.ViewerRoleSelectsTargetWithoutRepurposingGroupContext (0 ms)
+[ RUN      ] PanelContextRouter.MediaAvailabilityAndMarksFollowTheDocumentCatalog
+[       OK ] PanelContextRouter.MediaAvailabilityAndMarksFollowTheDocumentCatalog (1 ms)
+[----------] 7 tests from PanelContextRouter (5 ms total)
+
+[----------] 2 tests from PanelContextUiTest
+[ RUN      ] PanelContextUiTest.BindingAndRoleMenusExposePresentationChoices
+[       OK ] PanelContextUiTest.BindingAndRoleMenusExposePresentationChoices (416 ms)
+[ RUN      ] PanelContextUiTest.GroupClocksAreIsolatedAndPinnedContextStaysFixed
+[       OK ] PanelContextUiTest.GroupClocksAreIsolatedAndPinnedContextStaysFixed (319 ms)
+[----------] 2 tests from PanelContextUiTest (736 ms total)
+
+[----------] Global test environment tear-down
+[==========] 29 tests from 5 test suites ran. (27855 ms total)
+[  PASSED  ] 29 tests.

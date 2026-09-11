@@ -302,6 +302,146 @@ EditResult ProjectSession::undo(EditOptions options) {
     return execute(Operation::Undo, nullptr, options);
 }
 
+ParameterGestureResult ProjectSession::gestureFailure(std::string message, EditErrorCode code) const {
+    ParameterGestureResult result;
+    result.result = failure(std::move(message), code);
+    return result;
+}
+
+ParameterGestureResult ProjectSession::gestureFailure(const EditResult& result) const {
+    ParameterGestureResult gesture;
+    gesture.result = result;
+    return gesture;
+}
+
+ParameterGestureResult ProjectSession::makeGesturePreview(ParameterGestureToken token, std::uint64_t expectedRevision,
+                                                          std::shared_ptr<const Document> snapshot) const {
+    ParameterGestureResult result;
+    result.result.revision = revision_;
+    result.token = token;
+    result.expectedRevision = expectedRevision;
+    result.snapshot = std::move(snapshot);
+    return result;
+}
+
+ParameterGestureResult ProjectSession::previewFailure(const GraphException& error) const {
+    const auto code = error.errorCode() == GraphError::UnknownNode || error.errorCode() == GraphError::UnknownEdge ||
+                              error.errorCode() == GraphError::UnknownNetwork ||
+                              error.errorCode() == GraphError::UnknownInstance
+                          ? EditErrorCode::MissingObject
+                          : EditErrorCode::InvalidArgument;
+    auto result = gestureFailure(error.what(), code);
+    result.result.error->graphError = error.errorCode();
+    return result;
+}
+
+ParameterGestureResult ProjectSession::previewFailure(const std::exception& error) const {
+    return gestureFailure(error.what());
+}
+
+ParameterGestureResult ProjectSession::beginParameterGesture(std::vector<ParameterEdit> edits, EditOptions options) {
+    if (mutating_ || notifying_)
+        return gestureFailure("project session mutation is not allowed during an edit or notification",
+                              EditErrorCode::ReentrantMutation);
+    if (options.requestId.size() > 256)
+        return gestureFailure("request identity exceeds the 256-byte session limit");
+    if (options.expectedRevision != revision_)
+        return gestureFailure(conflict(options.expectedRevision));
+    if (gesture_)
+        return gestureFailure("a parameter gesture is already active", EditErrorCode::Unavailable);
+    if (nextGestureToken_ == std::numeric_limits<ParameterGestureToken>::max())
+        return gestureFailure("parameter gesture token space exhausted", EditErrorCode::Unavailable);
+
+    try {
+        auto snapshot = std::make_shared<Document>(document_);
+        Command preview = setParametersCommand(edits);
+        preview.apply(*snapshot);
+        snapshot->synchronizeReferences();
+        const auto token = nextGestureToken_++;
+        gesture_.emplace(ParameterGestureState{token, options.expectedRevision, snapshot, std::move(edits)});
+        return makeGesturePreview(token, options.expectedRevision, std::move(snapshot));
+    } catch (const GraphException& error) {
+        return previewFailure(error);
+    } catch (const std::exception& error) {
+        return previewFailure(error);
+    } catch (...) {
+        return gestureFailure("parameter gesture preview failed with an unknown error");
+    }
+}
+
+ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureToken token,
+                                                              std::vector<ParameterEdit> edits) {
+    if (mutating_ || notifying_)
+        return gestureFailure("project session mutation is not allowed during an edit or notification",
+                              EditErrorCode::ReentrantMutation);
+    if (!gesture_ || gesture_->token != token)
+        return gestureFailure("unknown parameter gesture token", EditErrorCode::Unavailable);
+    if (gesture_->expectedRevision != revision_)
+        return gestureFailure(conflict(gesture_->expectedRevision));
+    if (edits.empty())
+        return gestureFailure("parameter batch must contain at least one edit");
+
+    try {
+        std::vector<ParameterEdit> merged = gesture_->edits;
+        for (const auto& edit : edits) {
+            const auto existing = std::find_if(merged.begin(), merged.end(), [&](const ParameterEdit& previous) {
+                return previous.address == edit.address;
+            });
+            if (existing == merged.end())
+                merged.push_back(edit);
+            else
+                existing->value = edit.value;
+        }
+        auto snapshot = std::make_shared<Document>(document_);
+        Command preview = setParametersCommand(merged);
+        preview.apply(*snapshot);
+        snapshot->synchronizeReferences();
+        gesture_->edits = std::move(merged);
+        gesture_->snapshot = snapshot;
+        return makeGesturePreview(gesture_->token, gesture_->expectedRevision, std::move(snapshot));
+    } catch (const GraphException& error) {
+        return previewFailure(error);
+    } catch (const std::exception& error) {
+        return previewFailure(error);
+    } catch (...) {
+        return gestureFailure("parameter gesture preview failed with an unknown error");
+    }
+}
+
+EditResult ProjectSession::commitParameterGesture(ParameterGestureToken token, EditOptions options) {
+    if (mutating_ || notifying_)
+        return failure("project session mutation is not allowed during an edit or notification",
+                       EditErrorCode::ReentrantMutation);
+    if (!gesture_ || gesture_->token != token)
+        return failure("unknown parameter gesture token", EditErrorCode::Unavailable);
+    if (gesture_->expectedRevision != revision_)
+        return conflict(gesture_->expectedRevision);
+    if (options.expectedRevision != gesture_->expectedRevision)
+        return conflict(options.expectedRevision);
+
+    Command command;
+    try {
+        command = setParametersCommand(gesture_->edits);
+    } catch (const std::exception& error) {
+        return failure(error.what());
+    }
+    auto result = execute(Operation::Submit, &command, options);
+    if (result.committed)
+        gesture_.reset();
+    return result;
+}
+
+EditResult ProjectSession::cancelParameterGesture(ParameterGestureToken token) {
+    if (mutating_ || notifying_)
+        return failure("project session mutation is not allowed during an edit or notification",
+                       EditErrorCode::ReentrantMutation);
+    if (!gesture_ || gesture_->token != token)
+        return failure("unknown parameter gesture token", EditErrorCode::Unavailable);
+    gesture_.reset();
+    EditResult result;
+    result.revision = revision_;
+    return result;
+}
 EditResult ProjectSession::redo(EditOptions options) {
     return execute(Operation::Redo, nullptr, options);
 }
@@ -337,13 +477,34 @@ std::vector<ValueQueryResult> ProjectSession::queryValues(NetworkId network, Nod
     std::vector<ValueQueryResult> result;
     if (limit == 0)
         return result;
-    const NodeInstance* node = document_.network(network).graph().node(nodeId);
+    const auto& graph = document_.network(network).graph();
+    const NodeInstance* node = graph.node(nodeId);
     if (!node)
         return result;
-    for (const auto& [key, value] : node->params) {
-        if ((!after.empty() && key <= after) || (!keyFilter.empty() && key.find(keyFilter) == std::string::npos))
+
+    struct EffectiveValue {
+        std::string_view key;
+        const ParameterValue* value;
+    };
+    std::vector<EffectiveValue> effective;
+    effective.reserve(node->params.size());
+    for (const auto& [key, value] : node->params)
+        effective.push_back(EffectiveValue{key, &value});
+    if (const auto* descriptor = graph.catalog().find(node->type)) {
+        for (const auto& spec : descriptor->parameters) {
+            if (node->params.contains(spec.name))
+                continue;
+            if (const auto* value = graph.catalog().parameterDefault(node->type, spec.name))
+                effective.push_back(EffectiveValue{spec.name, value});
+        }
+    }
+    std::sort(effective.begin(), effective.end(),
+              [](const EffectiveValue& left, const EffectiveValue& right) { return left.key < right.key; });
+    for (const auto& entry : effective) {
+        if ((!after.empty() && entry.key <= after) ||
+            (!keyFilter.empty() && entry.key.find(keyFilter) == std::string_view::npos))
             continue;
-        result.push_back(ValueQueryResult{network, nodeId, key, value});
+        result.push_back(ValueQueryResult{network, nodeId, std::string(entry.key), *entry.value});
         if (result.size() == limit)
             break;
     }

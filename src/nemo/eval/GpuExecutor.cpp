@@ -68,13 +68,13 @@ void afterWriteBeforeRead(VkCommandBuffer command, const gpu::Image& image) {
 // parameters into `effectiveParams` — plan state, not authored guesses),
 // uploads it, binds set 0, and returns the port-ordered input count the
 // effect declares. The type dispatch mirrors the CPU reference inventory
-// (CpuReference.cpp); the per-type param parsing is shared with it via
-// parseColor4 so both executors resolve identical effective state.
+// (CpuReference.cpp); values are already typed at the document boundary, so
+// execution never reparses parameter text.
 // `sourceFrame` supplies the decoded full-resolution frame for `source`
 // nodes (issue #11): it binds as set 1 input 0 and its dimensions feed the
 // fill kernel through param0.
 std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest& request,
-                                const EffectProgram& program, std::map<std::string, std::string>& effectiveParams,
+                                const EffectProgram& program, ParameterValues& effectiveParams,
                                 EffectUniforms& uniforms, std::vector<ComputeBinding>& bindings,
                                 gpu::Buffer& uniformBuffer, gpu::Allocator& allocator,
                                 const gpu::Image* sourceFrame = nullptr) {
@@ -101,14 +101,15 @@ std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const NodeInstance& 
         const VkExtent3D extent = sourceFrame->extent();
         uniforms.param0[0] = static_cast<float>(extent.width);
         uniforms.param0[1] = static_cast<float>(extent.height);
-        effectiveParams.emplace("sourceDimensions", std::to_string(extent.width) + "x" + std::to_string(extent.height));
+        effectiveParams.emplace("sourceDimensions",
+                                std::string(std::to_string(extent.width) + "x" + std::to_string(extent.height)));
         inputs = 0;
         // The decoded frame is the declared set 1 input of the source fill.
         bindings.push_back({1, 0, DescriptorKind::StorageImage, nullptr, sourceFrame, false});
     } else if (node.type == "testpattern" || node.type == "output") {
         inputs = node.type == "output" ? 1u : 0u;
     } else if (node.type == "constcolor") {
-        const std::array<float, 4> color = parseColor4(catalog, node, effectiveParams, "color");
+        const std::array<float, 4> color = effectiveColor4(catalog, node, effectiveParams, "color");
         for (int c = 0; c < 4; ++c) {
             uniforms.param0[c] = color[c];
         }
@@ -117,7 +118,13 @@ std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const NodeInstance& 
         // Identical operation bookkeeping as the CPU reference: 'over' is
         // the only implemented operation; anything else is a declared
         // limitation, never a silent substitution.
-        const std::string& operation = effectiveParameter(catalog, node, effectiveParams, "operation");
+        const auto& operationValue = effectiveParameter(catalog, node, effectiveParams, "operation");
+        const auto* operationChoice = std::get_if<ChoiceValue>(&operationValue);
+        if (operationChoice == nullptr) {
+            failEffect(node, program,
+                       "parameter 'operation' must be a choice, got '" + parameterValueText(operationValue) + "'");
+        }
+        const std::string& operation = operationChoice->value;
         if (operation != "over") {
             failEffect(node, program,
                        "unsupported merge operation '" + operation + "' (this inventory implements 'over' only)");
@@ -392,7 +399,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                 sources->acquire(document, scopedRequest.network, *effectiveNode, scopedRequest.localTime,
                                  timeout_ns.value_or(10'000'000'000ULL));
             sourceFrame = std::move(decoded.image);
-            step.effectiveParams.emplace("frame", std::to_string(decoded.frame));
+            step.effectiveParams.emplace("frame", decoded.frame);
         }
 
         const std::vector<std::uint32_t>* spirv = &programIt->second.spirv;

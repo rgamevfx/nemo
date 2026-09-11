@@ -2,6 +2,7 @@
 #include "nemo/gpu/Error.hpp"
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/gpu/Submit.hpp"
+#include <array>
 #include <gtest/gtest.h>
 #include <limits>
 
@@ -85,7 +86,7 @@ TEST(Interactive, SupersedingOneViewerPreservesOtherDestinationAndSnapshot) {
     Document document;
     CommandStack commands(document);
     const NodeId color = rootGraph(document).addNode("constcolor", "color");
-    commands.push(setParamCommand(document.rootNetworkId(), color, "color", "0.1 0.2 0.3 1"));
+    commands.push(setParamCommand(document.rootNetworkId(), color, "color", ColorValue{{0.1F, 0.2F, 0.3F, 1.0F}}));
     EvaluationRequest request;
     request.network = document.rootNetworkId();
     const auto otherViewer = static_cast<ViewerDestination>(2);
@@ -95,14 +96,16 @@ TEST(Interactive, SupersedingOneViewerPreservesOtherDestinationAndSnapshot) {
     ASSERT_TRUE(scheduler.submit(document, request, 1, otherViewer));
     const auto other = scheduler.take();
     ASSERT_TRUE(other);
-    commands.push(setParamCommand(document.rootNetworkId(), color, "color", "0.7 0.8 0.9 1"));
+    commands.push(setParamCommand(document.rootNetworkId(), color, "color", ColorValue{{0.7F, 0.8F, 0.9F, 1.0F}}));
     ASSERT_TRUE(scheduler.submit(document, request, 2));
-    EXPECT_EQ(rootGraph(*old->document).nodeByName("color")->params.at("color"), "0.1 0.2 0.3 1");
+    EXPECT_EQ(std::get<ColorValue>(rootGraph(*old->document).nodeByName("color")->params.at("color")).value,
+              (std::array<float, 4>{0.1F, 0.2F, 0.3F, 1.0F}));
     EXPECT_FALSE(scheduler.complete(*old, true));
     EXPECT_TRUE(scheduler.complete(*other, true));
     const auto current = scheduler.take();
     ASSERT_TRUE(current);
-    EXPECT_EQ(rootGraph(*current->document).nodeByName("color")->params.at("color"), "0.7 0.8 0.9 1");
+    EXPECT_EQ(std::get<ColorValue>(rootGraph(*current->document).nodeByName("color")->params.at("color")).value,
+              (std::array<float, 4>{0.7F, 0.8F, 0.9F, 1.0F}));
     EXPECT_TRUE(scheduler.complete(*current, true));
     EXPECT_EQ(scheduler.counts().staleRejected, 1u);
 }

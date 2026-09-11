@@ -345,10 +345,10 @@ struct SourceComposition {
     CommandStack stack(doc);
     stack.push(setSourceCommand(key, reference));
     const NodeId plate = rootGraph(doc).addNode("source", "plate");
-    rootGraph(doc).setParam(plate, "source", key);  // fixture/setup writes are sanctioned
+    rootGraph(doc).setParam(plate, "source", std::string(key));  // fixture/setup writes are sanctioned
     if (withTint) {
         const NodeId tint = rootGraph(doc).addNode("constcolor", "tint");
-        rootGraph(doc).setParam(tint, "color", "1.0 0.5 0.25 0.25");
+        rootGraph(doc).setParam(tint, "color", ColorValue{{1.0F, 0.5F, 0.25F, 0.25F}});
         composition.over = rootGraph(doc).addNode("merge", "over");
         (void)rootGraph(doc).connect({plate, 0}, {composition.over, 0});
         (void)rootGraph(doc).connect({tint, 0}, {composition.over, 1});
@@ -492,8 +492,8 @@ TEST(Viewer, SourceFlowsThroughSharedPlanWithKnownGrayOracle) {
     for (const auto& step : evaluation.plan.steps) {
         if (step.type == "source") {
             sawSource = true;
-            EXPECT_EQ(step.effectiveParams.at("source"), "plate");
-            EXPECT_EQ(step.effectiveParams.at("frame"), "0");
+            EXPECT_EQ(std::get<std::string>(step.effectiveParams.at("source")), "plate");
+            EXPECT_EQ(std::get<std::int64_t>(step.effectiveParams.at("frame")), 0);
             EXPECT_EQ(step.produced.residency, Residency::GpuDevice);
         }
     }
@@ -591,7 +591,7 @@ TEST(Viewer, SourceTimeMappingAndBackwardsReEntry) {
     // available keys as evidence.
     try {
         Document missing = composition.doc;
-        rootGraph(missing).setParam(rootGraph(missing).nodeByName("plate")->id, "source", "missing");
+        rootGraph(missing).setParam(rootGraph(missing).nodeByName("plate")->id, "source", std::string("missing"));
         (void)evaluateGpu(missing, requestFor(missing, {0, 0, 64, 48}, 0), slang, *boot.device, *boot.allocator,
                           10'000'000'000ULL, nullptr, &sources);
         ADD_FAILURE() << "expected unknown-key EvaluationException";

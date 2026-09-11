@@ -14,6 +14,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "nemo/core/document/ParameterValueJson.hpp"
 #include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
@@ -41,6 +42,58 @@ template <typename T>
     return unsignedValue<nemo::NodeId>(command, idKey);
 }
 
+[[nodiscard]] const char* parameterTypeName(nemo::ParameterType type) {
+    switch (type) {
+    case nemo::ParameterType::Boolean:
+        return "boolean";
+    case nemo::ParameterType::Integer:
+        return "integer";
+    case nemo::ParameterType::Float:
+        return "float";
+    case nemo::ParameterType::Choice:
+        return "choice";
+    case nemo::ParameterType::Vector2:
+        return "vector2";
+    case nemo::ParameterType::Vector3:
+        return "vector3";
+    case nemo::ParameterType::Color:
+        return "color";
+    case nemo::ParameterType::String:
+        return "string";
+    }
+    throw std::logic_error("unrecognized parameter type");
+}
+
+[[nodiscard]] nemo::ParameterEdit parameterEditAt(const Json& edit) {
+    if (!edit.is_object())
+        throw std::invalid_argument("parameter edit must be an object");
+    nemo::ParameterEdit result;
+    result.address.network = networkIdAt(edit);
+    result.address.node = nodeIdAt(edit, "node_id");
+    result.address.key = edit.at("key").get<std::string>();
+    if (result.address.key.empty())
+        throw std::invalid_argument("parameter edit key must not be empty");
+    if (edit.contains("instance_id")) {
+        result.address.instance = unsignedValue<nemo::NetworkInstanceId>(edit, "instance_id");
+        if (result.address.instance == nemo::kInvalidNetworkInstance)
+            throw std::invalid_argument("instance_id must be nonzero");
+    }
+    if (edit.contains("value") && !edit.at("value").is_null())
+        result.value = nemo::parameterValueFromJson(edit.at("value"));
+    return result;
+}
+
+[[nodiscard]] std::vector<nemo::ParameterEdit> parameterEditsAt(const Json& request) {
+    const auto& edits = request.at("edits");
+    if (!edits.is_array() || edits.empty())
+        throw std::invalid_argument("parameter edits require a nonempty edits array");
+    std::vector<nemo::ParameterEdit> result;
+    result.reserve(edits.size());
+    for (const auto& edit : edits)
+        result.push_back(parameterEditAt(edit));
+    return result;
+}
+
 [[nodiscard]] nemo::Command makeCommand(const nemo::ProjectSession& session, const Json& command) {
     const std::string op = command.at("op").get<std::string>();
     if (op == "add-node") {
@@ -48,10 +101,25 @@ template <typename T>
                                     command.at("name").get<std::string>());
     }
     if (op == "set-param") {
-        const nemo::NetworkId network = networkIdAt(command);
-        const nemo::NodeId id = nodeIdAt(command, "node_id");
-        return nemo::setParamCommand(network, id, command.at("key").get<std::string>(),
-                                     command.at("value").get<std::string>());
+        return nemo::setParamCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
+                                     command.at("key").get<std::string>(),
+                                     nemo::parameterValueFromJson(command.at("value")));
+    }
+    if (op == "set-instance-param") {
+        return nemo::setInstanceParamCommand(unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"),
+                                             nodeIdAt(command, "node_id"), command.at("key").get<std::string>(),
+                                             nemo::parameterValueFromJson(command.at("value")));
+    }
+    if (op == "reset-param") {
+        return nemo::resetParamCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
+                                       command.at("key").get<std::string>());
+    }
+    if (op == "reset-instance-param") {
+        return nemo::resetInstanceParamCommand(unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"),
+                                               nodeIdAt(command, "node_id"), command.at("key").get<std::string>());
+    }
+    if (op == "set-parameters") {
+        return nemo::setParametersCommand(parameterEditsAt(command));
     }
     if (op == "rename-node") {
         const nemo::NetworkId network = networkIdAt(command);
@@ -140,6 +208,26 @@ void putNetworkIds(Json& target, const char* key, const std::vector<nemo::Networ
     return output;
 }
 
+[[nodiscard]] Json gestureResultJson(const nemo::ParameterGestureResult& result) {
+    Json output = editResultJson(result.result);
+    output["token"] = result.token;
+    output["expected_revision"] = result.expectedRevision;
+    if (!result.result.error)
+        output.erase("error");
+    if (result.snapshot)
+        output["preview"] = nemo::saveDocument(*result.snapshot);
+    output["preview_only"] = true;
+    return output;
+}
+
+[[nodiscard]] Json gestureCancelResultJson(const nemo::EditResult& result) {
+    Json output = editResultJson(result);
+    if (!result.error)
+        output.erase("error");
+    output["preview_only"] = true;
+    return output;
+}
+
 [[nodiscard]] Json query(const nemo::ProjectSession& session, const Json& request) {
     const nemo::NetworkId network = networkIdAt(request);
     const std::string filter = request.value("filter", std::string{});
@@ -164,7 +252,7 @@ void putNetworkIds(Json& target, const char* key, const std::vector<nemo::Networ
                 continue;
             Json params = Json::object();
             for (const auto& value : session.queryValues(network, node.id, keyFilter, limit, keyAfter))
-                params[value.key] = value.value;
+                params[value.key] = nemo::parameterValueToJson(value.value);
             nodes.push_back(Json{{"network", node.network},
                                  {"id", node.id},
                                  {"type", node.type},
@@ -196,6 +284,49 @@ void putNetworkIds(Json& target, const char* key, const std::vector<nemo::Networ
                 {"next_edge_after", nextEdge}};
 }
 
+[[nodiscard]] Json catalog(const nemo::ProjectSession& session) {
+    const auto& graph = session.document().network(session.document().rootNetworkId()).graph();
+    Json descriptors = Json::array();
+    for (const auto& descriptor : graph.catalog().descriptors()) {
+        Json inputs = Json::array();
+        for (const auto& port : descriptor.inputs)
+            inputs.push_back(Json{{"name", port.name},
+                                  {"kind", port.kind == nemo::PortKind::Image  ? "image"
+                                           : port.kind == nemo::PortKind::Mask ? "mask"
+                                                                               : "media"}});
+        Json outputs = Json::array();
+        for (const auto& port : descriptor.outputs)
+            outputs.push_back(Json{{"name", port.name},
+                                   {"kind", port.kind == nemo::PortKind::Image  ? "image"
+                                            : port.kind == nemo::PortKind::Mask ? "mask"
+                                                                                : "media"}});
+        Json parameters = Json::array();
+        for (const auto& parameter : descriptor.parameters) {
+            Json value{{"name", parameter.name},
+                       {"type", parameterTypeName(parameter.type)},
+                       {"default_value", nemo::parameterValueToJson(parameter.defaultValue)},
+                       {"choices", parameter.choices}};
+            if (parameter.minimum)
+                value["minimum"] = *parameter.minimum;
+            if (parameter.maximum)
+                value["maximum"] = *parameter.maximum;
+            parameters.push_back(std::move(value));
+        }
+        descriptors.push_back(Json{{"type", descriptor.type},
+                                   {"display_name", descriptor.displayName},
+                                   {"group", descriptor.group},
+                                   {"is_output", descriptor.isOutput},
+                                   {"version", descriptor.implementationVersion},
+                                   {"inputs", std::move(inputs)},
+                                   {"outputs", std::move(outputs)},
+                                   {"parameters", std::move(parameters)},
+                                   {"sampling_scales", descriptor.capabilities.samplingScales},
+                                   {"channels", descriptor.capabilities.channels},
+                                   {"temporal", descriptor.capabilities.temporal}});
+    }
+    return Json{{"revision", session.revision()}, {"descriptors", std::move(descriptors)}};
+}
+
 }  // namespace
 int commandProjectSession(const std::vector<std::string>& args) {
     if (args.size() != 1) {
@@ -221,6 +352,8 @@ int commandProjectSession(const std::vector<std::string>& args) {
                 Json response;
                 if (op == "query") {
                     response = query(session, request);
+                } else if (op == "catalog") {
+                    response = catalog(session);
                 } else if (op == "changes") {
                     const auto history = session.changesSince(unsignedValue<std::uint64_t>(request, "since"));
                     Json events = Json::array();
@@ -241,6 +374,18 @@ int commandProjectSession(const std::vector<std::string>& args) {
                     response = Json{{"revision", history.currentRevision},
                                     {"resync_required", history.resyncRequired},
                                     {"events", std::move(events)}};
+                } else if (op == "begin-parameter-gesture") {
+                    response = gestureResultJson(
+                        session.beginParameterGesture(parameterEditsAt(request), editOptions(request)));
+                } else if (op == "update-parameter-gesture") {
+                    response = gestureResultJson(session.updateParameterGesture(
+                        unsignedValue<nemo::ParameterGestureToken>(request, "token"), parameterEditsAt(request)));
+                } else if (op == "commit-parameter-gesture") {
+                    response = editResultJson(session.commitParameterGesture(
+                        unsignedValue<nemo::ParameterGestureToken>(request, "token"), editOptions(request)));
+                } else if (op == "cancel-parameter-gesture") {
+                    response = gestureCancelResultJson(
+                        session.cancelParameterGesture(unsignedValue<nemo::ParameterGestureToken>(request, "token")));
                 } else if (op == "undo") {
                     response = editResultJson(session.undo(editOptions(request)));
                 } else if (op == "redo") {
@@ -248,7 +393,9 @@ int commandProjectSession(const std::vector<std::string>& args) {
                 } else {
                     response = editResultJson(session.submit(makeCommand(session, request), editOptions(request)));
                 }
-                response["ok"] = !response.contains("committed") || response.at("committed").get<bool>();
+                response["ok"] = response.contains("preview_only")
+                                     ? !response.contains("error")
+                                     : (!response.contains("committed") || response.at("committed").get<bool>());
                 std::cout << response.dump() << '\n' << std::flush;
             } catch (const std::exception& error) {
                 std::cout << Json{{"ok", false},

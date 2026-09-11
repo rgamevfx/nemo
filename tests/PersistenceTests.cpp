@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <limits>
+#include <variant>
 
 #include "nemo/core/document/Serialization.hpp"
 
@@ -26,7 +29,7 @@ Document sampleDocument() {
     document.name = "sample";
     auto& network = root(document);
     const NodeId plate = network.graph().addNode("testpattern", "plate");
-    network.graph().setParam(plate, "future", "1.5");
+    network.graph().setParam(plate, "future", ParameterValue{std::string{"1.5"}});
     const NodeId comp = network.graph().addNode("merge", "comp");
     const NodeId output = network.graph().nodeByName("Output")->id;
     network.graph().renameNode(output, "out");
@@ -61,6 +64,94 @@ TEST(PersistenceTest, SaveLoadRoundTripPreservesStructure) {
     const auto& intoOutput = loadedNetwork.graph().edgesInto(output.node);
     ASSERT_EQ(intoOutput.size(), 1u);
     EXPECT_EQ(loadedNetwork.graph().node(intoOutput.front().from.node)->name, "comp");
+}
+
+TEST(PersistenceTest, TypedParametersUseTaggedSchemaAndRoundTrip) {
+    Document original;
+    auto& network = root(original);
+    const NodeId node = network.graph().addNode("constcolor", "grade");
+    const ColorValue color{std::array<float, 4>{0.1F, 0.2F, 0.3F, 1.0F}};
+    network.graph().setParam(node, "color", ParameterValue{color});
+
+    const nlohmann::json saved = saveDocument(original);
+    EXPECT_EQ(saved.at("schema"), Document::kSchemaVersion);
+    const auto& nodes = saved.at("networks").at(0).at("nodes");
+    const auto gradeIt = std::find_if(nodes.begin(), nodes.end(),
+                                      [](const auto& entry) { return entry.value("name", std::string{}) == "grade"; });
+    ASSERT_NE(gradeIt, nodes.end());
+    EXPECT_EQ(gradeIt->at("params").at("color").at("type"), "color");
+    EXPECT_EQ(gradeIt->at("params").at("color").at("value"), nlohmann::json::array({0.1F, 0.2F, 0.3F, 1.0F}));
+
+    const LoadResult loaded = loadDocument(saved);
+    ASSERT_TRUE(loaded.warnings.empty());
+    const auto* restored = root(loaded.document).graph().nodeByName("grade");
+    ASSERT_NE(restored, nullptr);
+    ASSERT_TRUE(std::holds_alternative<ColorValue>(restored->params.at("color")));
+    EXPECT_EQ(std::get<ColorValue>(restored->params.at("color")), color);
+}
+
+TEST(PersistenceTest, TypedInstanceOverridesRoundTrip) {
+    Document original;
+    const NetworkId definition = original.addNetwork("shared");
+    auto& shared = original.network(definition);
+    const NodeId target = shared.graph().addNode("constcolor", "grade");
+    const NetworkInstanceId instance = original.addInstance(original.rootNetworkId(), definition, "use-shared");
+    const ColorValue color{std::array<float, 4>{0.4F, 0.5F, 0.6F, 1.0F}};
+    original.setInstanceParam(instance, target, "color", ParameterValue{color});
+
+    const LoadResult loaded = loadDocument(saveDocument(original));
+    const auto* restored = loaded.document.instance(instance);
+    ASSERT_NE(restored, nullptr);
+    ASSERT_TRUE(std::holds_alternative<ColorValue>(restored->params.at(target).at("color")));
+    EXPECT_EQ(std::get<ColorValue>(restored->params.at(target).at("color")), color);
+}
+
+TEST(PersistenceTest, LegacyKnownParameterTextMigratesThroughCatalog) {
+    nlohmann::json legacy = saveDocument(sampleDocument());
+    legacy["schema"] = 2;
+    auto& nodes = legacy["networks"].at(0)["nodes"];
+    auto node = std::find_if(nodes.begin(), nodes.end(),
+                             [](const auto& entry) { return entry.value("name", std::string{}) == "plate"; });
+    ASSERT_NE(node, nodes.end());
+    node->at("type") = "constcolor";
+    node->at("params") = {{"color", "0.1 0.2 0.3 1"}};
+
+    const LoadResult loaded = loadDocument(legacy);
+    const auto* restored = root(loaded.document).graph().nodeByName("plate");
+    ASSERT_NE(restored, nullptr);
+    ASSERT_TRUE(std::holds_alternative<ColorValue>(restored->params.at("color")));
+    EXPECT_EQ(std::get<ColorValue>(restored->params.at("color")),
+              (ColorValue{std::array<float, 4>{0.1F, 0.2F, 0.3F, 1.0F}}));
+}
+
+TEST(PersistenceTest, ParameterMigrationFailuresIdentifyLocation) {
+    nlohmann::json legacy = saveDocument(sampleDocument());
+    legacy["schema"] = 2;
+    auto& legacyNodes = legacy["networks"].at(0)["nodes"];
+    auto legacyNode = std::find_if(legacyNodes.begin(), legacyNodes.end(),
+                                   [](const auto& entry) { return entry.value("name", std::string{}) == "plate"; });
+    ASSERT_NE(legacyNode, legacyNodes.end());
+    legacyNode->at("type") = "constcolor";
+    legacyNode->at("params") = {{"color", "not-a-color"}};
+
+    try {
+        (void)loadDocument(legacy);
+        FAIL() << "invalid legacy parameter should be rejected";
+    } catch (const DeserializeError& error) {
+        const std::string message = error.what();
+        EXPECT_NE(message.find("network"), std::string::npos);
+        EXPECT_NE(message.find("node"), std::string::npos);
+        EXPECT_NE(message.find("key 'color'"), std::string::npos);
+    }
+
+    nlohmann::json malformed = saveDocument(sampleDocument());
+    auto& malformedNodes = malformed["networks"].at(0)["nodes"];
+    auto malformedNode = std::find_if(malformedNodes.begin(), malformedNodes.end(),
+                                      [](const auto& entry) { return entry.value("name", std::string{}) == "plate"; });
+    ASSERT_NE(malformedNode, malformedNodes.end());
+    malformedNode->at("type") = "constcolor";
+    malformedNode->at("params") = {{"color", {{"type", "color"}, {"value", 7}}}};
+    EXPECT_THROW(loadDocument(malformed), DeserializeError);
 }
 
 TEST(PersistenceTest, UnknownNodeTypeIsRetainedWithWarning) {
@@ -126,7 +217,8 @@ TEST(PersistenceTest, SparseNodeAndEdgeIdsRoundTripExactly) {
     Document original;
     auto& network = root(original);
     network.graph().removeNode(network.graph().nodeByName("Output")->id);
-    const NodeId source = network.graph().addNodeWithId(17, "testpattern", "source", {{"future", "keep-me"}});
+    const NodeId source = network.graph().addNodeWithId(17, "testpattern", "source",
+                                                        {{"future", ParameterValue{std::string{"keep-me"}}}});
     const NodeId output = network.graph().addNodeWithId(500, "output", "output");
     const EdgeId edge = network.graph().connectWithId(900, {source, 0}, {output, 0});
     LoadResult loaded = loadDocument(saveDocument(original));
@@ -136,7 +228,8 @@ TEST(PersistenceTest, SparseNodeAndEdgeIdsRoundTripExactly) {
     ASSERT_EQ(graph.edges().size(), 1u);
     EXPECT_NE(graph.node(source), nullptr);
     EXPECT_NE(graph.node(output), nullptr);
-    EXPECT_EQ(graph.node(source)->params.at("future"), "keep-me");
+    ASSERT_TRUE(std::holds_alternative<std::string>(graph.node(source)->params.at("future")));
+    EXPECT_EQ(std::get<std::string>(graph.node(source)->params.at("future")), "keep-me");
     EXPECT_EQ(graph.edges().front().id, edge);
     EXPECT_GT(graph.addNode("output", "new-output"), output);
     EXPECT_GT(graph.connect({source, 0}, {graph.nodeByName("new-output")->id, 0}), edge);

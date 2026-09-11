@@ -181,14 +181,14 @@ alive across requests and does not write the input project. For example:
 
 ```json
 {"op":"query","network_id":1,"limit":16}
-{"op":"transaction","expected_revision":1,"request_id":"gesture-a","commands":[{"op":"rename-node","network_id":1,"node_id":1,"name":"plate"},{"op":"set-param","network_id":1,"node_id":1,"key":"note","value":"authored"}]}
+{"op":"transaction","expected_revision":1,"request_id":"gesture-a","commands":[{"op":"rename-node","network_id":1,"node_id":1,"name":"plate"},{"op":"set-param","network_id":1,"node_id":1,"key":"note","value":{"type":"string","value":"authored"}}]}
 {"op":"changes","since":1}
 {"op":"undo","expected_revision":2,"request_id":"undo-a"}
 ```
 
 Edits require `expected_revision`; `request_id` is optional. Commands include
-`add-node`, `set-param`, `rename-node`, `connect`, `transaction`, `undo`, and
-`redo`. Graph queries and child graph edits require `network_id`; mutation
+`add-node`, `set-param`, `reset-param`, `set-parameters`, `rename-node`,
+`connect`, `transaction`, `undo`, and `redo`. Graph queries and child graph edits require `network_id`; mutation
 addresses additionally use `node_id`, `from_node_id`, and `to_node_id`.
 Ports use `from_port` and `to_port`. Query filters include `filter`, `type`,
 `name`, `node_id`, `key_filter`, and `source_filter`; paging uses `node_after`,
@@ -210,9 +210,9 @@ Formal terminals have stable IDs, names, and Image/Mask/Media types.
 `bindInstanceInput` authors parent input bindings by formal port ID;
 ordinary graph connections into an instance are rejected so there is no
 second authoritative binding. Instance parameter overrides address a node
-in the shared definition and a parameter key. Values retain the existing
-string representation until typed-value work (#51). These records own no
-evaluator, decoder, Qt, GPU, or plugin-runtime object.
+in the shared definition and a parameter key. Values use the typed
+representation described below (#51). These records own no evaluator,
+decoder, Qt, GPU, or plugin-runtime object.
 
 `expandDependencies` resolves only dependencies of the requested output,
 including lazy formal inputs. Nested outputs become routing aliases, not
@@ -226,9 +226,54 @@ selects the document's explicit root.
 All reconciliation occurs on the mutable command candidate before
 publication, or during schema restoration. Const snapshot queries never
 repair persistent state or allocate incoming-edge caches. Graph adjacency
-is maintained during edits. Schema 2 records the scoped model and supports
-schema-1 migration; this is not approval of a project-file container,
-open/save workflow, or recovery policy (#32/#35).
+is maintained during edits. Schema 3 records the scoped model and typed
+values, with schema-1/2 migration; this is not approval of a project-file
+container, open/save workflow, or recovery policy (#32/#35).
+
+## Typed parameter integration (#51)
+
+`ParameterValue` stores boolean, signed 64-bit integer, floating-point scalar,
+string, choice, 2D/3D vector, or RGBA color. Vector/color components retain
+float storage; numeric representations must be finite and float-range
+scalars must remain float-representable. The catalog owns parameter keys,
+types, defaults, ranges, and choices. Known fields reject wrong types rather
+than coercing them. Unknown fields remain recoverable typed data, subject to
+the same representation validity rules.
+
+Node and instance parameter maps, effective queries, CPU/GPU plan values,
+and execution all use this representation. Evaluators do not parse authored
+text. Type-tagged canonical values enter dependency identity; pixel math
+and CPU/GPU reference independence are unchanged. Defaults are resolved
+from the active catalog, including when queries return unauthored values.
+
+Schema 3 and CLI transport encode each value as `{"type": "...", "value": ...}`.
+Tags are `boolean`, `integer`, `float`, `string`, `choice`, `vector2`,
+`vector3`, and `color`. For example, a color is
+`{"type":"color","value":[0.25,0.5,0.75,1]}`. Schema-1/2 strings pass through
+the catalog's explicit text parser; unknown fields remain strings.
+Malformed or out-of-range values report their network/node/key context.
+Existing text-entry controls and text-only command flags use this same
+parser. QML does not convert integer text through JavaScript Number.
+
+`setParametersCommand` accepts `ParameterEdit` records addressed by
+`{network, node, key, instance}`; an absent value resets the authored field.
+For an instance override, `network` is the referenced definition's scope.
+Validation and publication run through the existing document command stack:
+failed batches publish nothing, and successful batches/reset undo atomically.
+CLI `set-parameters` takes an `edits` array of
+`{network_id, node_id, key, value, instance_id?}`; `null` resets.
+
+The owner-thread-only `ProjectSession` holds at most one parameter gesture.
+Begin/update return a token and a shared immutable preview snapshot without
+changing published values, revisions, events, or history. Updates merge by
+parameter address; commit publishes once through the existing command stack.
+Intervening edits make the gesture stale; clients cancel and begin again.
+Cancel drops preview state without committing. No panel owns a history.
+The CLI exposes `begin-parameter-gesture`, `update-parameter-gesture`,
+`commit-parameter-gesture`, and `cancel-parameter-gesture`; begin/update use
+`edits`, update/commit/cancel use `token`, and begin/commit require
+`expected_revision`. Successful previews/cancellation report `ok: true`
+and `committed: false`, not a document change.
 
 ## Verification
 

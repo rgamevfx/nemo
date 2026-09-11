@@ -1,9 +1,10 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <exception>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -88,7 +89,18 @@ struct ValueQueryResult {
     NetworkId network{kInvalidNetwork};
     NodeId node{kInvalidNode};
     std::string key;
-    std::string value;
+    ParameterValue value;
+};
+
+using ParameterGestureToken = std::uint64_t;
+
+struct ParameterGestureResult {
+    EditResult result;
+    ParameterGestureToken token{};
+    std::uint64_t expectedRevision{};
+    // A successful preview owns an immutable snapshot. Copy the Document if
+    // a caller needs a mutable worker-side view.
+    std::shared_ptr<const Document> snapshot;
 };
 
 struct EdgeQueryResult {
@@ -146,6 +158,15 @@ public:
     [[nodiscard]] EditResult undo(EditOptions options);
     [[nodiscard]] EditResult redo(EditOptions options);
 
+    // Parameter gestures validate and apply edits to an owner-thread-only
+    // transient snapshot. The published document, revision, event journal,
+    // request deduplication and undo history are untouched until commit.
+    [[nodiscard]] ParameterGestureResult beginParameterGesture(std::vector<ParameterEdit> edits, EditOptions options);
+    [[nodiscard]] ParameterGestureResult updateParameterGesture(ParameterGestureToken token,
+                                                                std::vector<ParameterEdit> edits);
+    [[nodiscard]] EditResult commitParameterGesture(ParameterGestureToken token, EditOptions options);
+    [[nodiscard]] EditResult cancelParameterGesture(ParameterGestureToken token);
+
     [[nodiscard]] bool canUndo() const noexcept { return commands_.canUndo(); }
     [[nodiscard]] bool canRedo() const noexcept { return commands_.canRedo(); }
     [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
@@ -169,6 +190,20 @@ private:
     struct Observer {
         void* context;
         ObserverCallback callback;
+    };
+
+    [[nodiscard]] ParameterGestureResult gestureFailure(std::string message,
+                                                        EditErrorCode code = EditErrorCode::InvalidArgument) const;
+    [[nodiscard]] ParameterGestureResult gestureFailure(const EditResult& result) const;
+    [[nodiscard]] ParameterGestureResult makeGesturePreview(ParameterGestureToken token, std::uint64_t expectedRevision,
+                                                            std::shared_ptr<const Document> snapshot) const;
+    [[nodiscard]] ParameterGestureResult previewFailure(const std::exception& error) const;
+    [[nodiscard]] ParameterGestureResult previewFailure(const GraphException& error) const;
+    struct ParameterGestureState {
+        ParameterGestureToken token{};
+        std::uint64_t expectedRevision{};
+        std::shared_ptr<const Document> snapshot;
+        std::vector<ParameterEdit> edits;
     };
 
     void unsubscribe(std::uint64_t id) noexcept;
@@ -195,6 +230,8 @@ private:
         EditResult result;
     };
     std::deque<RequestRecord> requests_;
+    std::optional<ParameterGestureState> gesture_;
+    ParameterGestureToken nextGestureToken_{1};
 };
 
 }  // namespace nemo

@@ -8,6 +8,8 @@
 #include <nlohmann/json.hpp>
 
 #include "nemo/core/document/Ids.hpp"
+#include "nemo/core/document/ParameterValue.hpp"
+#include "nemo/core/document/ParameterValueJson.hpp"
 #include "nemo/core/evaluation/Image.hpp"
 #include "nemo/core/evaluation/Request.hpp"
 
@@ -73,7 +75,7 @@ struct PlanStep {
     std::vector<NetworkInstanceId> path;
     std::string type;
     std::string name;
-    std::map<std::string, std::string> effectiveParams;
+    ParameterValues effectiveParams;
     std::vector<NodeId> inputs;
     std::vector<ScopedPlanInput> scopedInputs;
     std::vector<ImageIdentity> inputImages;
@@ -111,7 +113,10 @@ struct EvaluationPlan {
                                     {"path", input.path}});
         json["scopedInputs"] = std::move(scopedInputs);
         json["name"] = step.name;
-        json["effectiveParams"] = step.effectiveParams;
+        nlohmann::json effectiveParams = nlohmann::json::object();
+        for (const auto& [key, value] : step.effectiveParams)
+            effectiveParams[key] = parameterValueToJson(value);
+        json["effectiveParams"] = std::move(effectiveParams);
         json["inputs"] = step.inputs;
         nlohmann::json inputImages = nlohmann::json::array();
         for (const auto& image : step.inputImages) {

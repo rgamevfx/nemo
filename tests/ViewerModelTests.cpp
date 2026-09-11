@@ -48,7 +48,7 @@ Document overGraph(const std::string& sourceKey = "plate") {
     rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
     document.name = "viewer-model";
     const NodeId color = rootGraph(document).addNode("constcolor", "bg");
-    rootGraph(document).setParam(color, "color", "0.1 0.2 0.3 1");
+    rootGraph(document).setParam(color, "color", ColorValue{{0.1F, 0.2F, 0.3F, 1.0F}});
     const NodeId source = rootGraph(document).addNode("source", "plateNode");
     rootGraph(document).setParam(source, "source", sourceKey);
     const NodeId merge = rootGraph(document).addNode("merge", "over");
@@ -346,9 +346,9 @@ TEST(SourceEvaluation, ProviderServesMappedFramesAndPlanRecordsEffectiveState) {
         }
     }
     ASSERT_NE(sourceStep, nullptr);
-    EXPECT_EQ(sourceStep->effectiveParams.at("source"), "plate");
-    EXPECT_EQ(sourceStep->effectiveParams.at("sourcePath"), "media/plate.exr");
-    EXPECT_EQ(sourceStep->effectiveParams.at("frame"), "106");
+    EXPECT_EQ(std::get<std::string>(sourceStep->effectiveParams.at("source")), "plate");
+    EXPECT_EQ(std::get<std::string>(sourceStep->effectiveParams.at("sourcePath")), "media/plate.exr");
+    EXPECT_EQ(std::get<std::int64_t>(sourceStep->effectiveParams.at("frame")), 106);
 
     // The decoded pixels actually reached the composition: the merge over
     // the fully opaque constcolor base carries the provider's values.
@@ -695,7 +695,7 @@ TEST(SourceCommand, GraphHistoryPreservesConnectionsAcrossRepeatedRedo) {
     commands.push(addNodeCommand(document.rootNetworkId(), "constcolor", "color", source));
     commands.push(addNodeCommand(document.rootNetworkId(), "output", "view", output));
     commands.push(connectCommand(document.rootNetworkId(), {*source, 0}, {*output, 0}));
-    commands.push(setParamCommand(document.rootNetworkId(), *source, "color", "0.1 0.2 0.3 1"));
+    commands.push(setParamCommand(document.rootNetworkId(), *source, "color", ColorValue{{0.1F, 0.2F, 0.3F, 1.0F}}));
     const auto saved = saveDocument(document);
     for (int cycle = 0; cycle < 2; ++cycle) {
         ASSERT_TRUE(commands.undo());

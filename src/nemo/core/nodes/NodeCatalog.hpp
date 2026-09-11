@@ -1,5 +1,6 @@
 #pragma once
 
+#include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/evaluation/Request.hpp"
 #include <cstdint>
 #include <deque>
@@ -9,7 +10,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
 namespace nemo {
 
 enum class PortKind { Image, Mask, Media };
@@ -21,12 +21,12 @@ struct PortSpec {
     friend bool operator==(const PortSpec&, const PortSpec&) = default;
 };
 
-enum class ParameterType { Boolean, Integer, Float, Color, String };
+enum class ParameterType { Boolean, Integer, Float, Choice, Vector2, Vector3, Color, String };
 
 struct ParameterSpec {
     std::string name;
     ParameterType type{ParameterType::String};
-    std::string defaultValue;
+    ParameterValue defaultValue{std::string{}};
     std::optional<double> minimum{};
     std::optional<double> maximum{};
     std::vector<std::string> choices{};
@@ -72,8 +72,11 @@ public:
     [[nodiscard]] const std::vector<PortSpec>& inputPorts(std::string_view type) const;
     [[nodiscard]] const std::vector<PortSpec>& outputPorts(std::string_view type) const;
     [[nodiscard]] std::optional<std::string> validateParameter(std::string_view type, std::string_view key,
-                                                               std::string_view value) const;
-    [[nodiscard]] std::optional<std::string_view> parameterDefault(std::string_view type, std::string_view key) const;
+                                                               const ParameterValue& value) const;
+    [[nodiscard]] const ParameterValue* parameterDefault(std::string_view type, std::string_view key) const;
+    [[nodiscard]] const ParameterSpec* parameterSpec(std::string_view type, std::string_view key) const;
+    [[nodiscard]] ParameterValue parseParameterText(std::string_view type, std::string_view key,
+                                                    std::string_view value) const;
     [[nodiscard]] std::optional<std::uint64_t> implementationVersion(std::string_view type) const;
 
 private:

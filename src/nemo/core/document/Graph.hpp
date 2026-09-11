@@ -37,7 +37,7 @@ struct NodeInstance {
     NodeId id{kInvalidNode};
     std::string type;
     std::string name;
-    std::map<std::string, std::string> params;
+    ParameterValues params;
     LayoutPosition layout;
     NetworkId definition{kInvalidNetwork};
     NetworkInstanceId instance{kInvalidNetworkInstance};
@@ -106,9 +106,8 @@ public:
     [[nodiscard]] NodeId addNode(std::string type, std::string name);
     // Inserts a persisted node with its exact identity. Reserved for
     // deserialization and command-history restoration.
-    [[nodiscard]] NodeId addNodeWithId(NodeId id, std::string type, std::string name,
-                                       std::map<std::string, std::string> params = {}, LayoutPosition layout = {},
-                                       NetworkId definition = kInvalidNetwork,
+    [[nodiscard]] NodeId addNodeWithId(NodeId id, std::string type, std::string name, ParameterValues params = {},
+                                       LayoutPosition layout = {}, NetworkId definition = kInvalidNetwork,
                                        NetworkInstanceId instance = kInvalidNetworkInstance);
     void removeNode(NodeId id);
     void renameNode(NodeId id, std::string name);
@@ -135,7 +134,7 @@ public:
     [[nodiscard]] bool reachable(NodeId origin, NodeId target) const;
     [[nodiscard]] const std::vector<NodeInstance>& nodes() const { return nodes_; }
     [[nodiscard]] const std::vector<Edge>& edges() const { return edges_; }
-    void setParam(NodeId id, const std::string& key, const std::string& value);
+    void setParam(NodeId id, const std::string& key, ParameterValue value);
     void eraseParam(NodeId id, const std::string& key);
     void restoreIdentityHighWatermarks(NodeId nextNodeId, EdgeId nextEdgeId);
     [[nodiscard]] NodeId nextNodeId() const { return nextNodeId_; }
@@ -260,7 +259,7 @@ struct NetworkInstance {
     // Definition node identity -> authored parameter overrides. Keeping the
     // target node explicit prevents an instance-local key from being applied
     // to an unrelated node in a shared definition.
-    std::map<NodeId, std::map<std::string, std::string>> params;
+    std::map<NodeId, ParameterValues> params;
 
     friend bool operator==(const NetworkInstance&, const NetworkInstance&) = default;
 };

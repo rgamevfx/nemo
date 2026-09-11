@@ -17,6 +17,9 @@
 #include <QTest>
 #include <gtest/gtest.h>
 
+#include <string>
+#include <variant>
+
 #include <stdexcept>
 
 namespace {
@@ -375,10 +378,9 @@ TEST_F(WorkspaceDragTest, RenamedNodeEditsReachBothPanelsAndUndoByIdentity) {
             QTest::keyClick(window, letter);
     }
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphParameterApply"));
-    QTest::qWait(30);
     ASSERT_TRUE(viewerController.error().isEmpty()) << viewerController.error().toStdString();
     ASSERT_TRUE(rootGraph(projectSession.document()).node(id)->params.contains("note"));
-    ASSERT_EQ(rootGraph(projectSession.document()).node(id)->params.at("note"), "shared");
+    ASSERT_EQ(std::get<std::string>(rootGraph(projectSession.document()).node(id)->params.at("note")), "shared");
     EXPECT_EQ(viewerController.graphNodes(), second.graphNodes());
     EXPECT_EQ(rootGraph(projectSession.document()).nodeByName("source")->params.count("note"), 0u);
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphUndo"));

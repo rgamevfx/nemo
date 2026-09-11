@@ -133,8 +133,8 @@ TEST(NetworkTest, SharedDefinitionHasIndependentInstanceBindingsAndValues) {
     ASSERT_EQ(document.instances().size(), 2u);
     EXPECT_EQ(document.instance(first)->definition, definition);
     EXPECT_EQ(document.instance(second)->definition, definition);
-    EXPECT_EQ(document.instance(first)->params.at(target).at("source"), "first.mov");
-    EXPECT_EQ(document.instance(second)->params.at(target).at("source"), "second.mov");
+    EXPECT_EQ(std::get<std::string>(document.instance(first)->params.at(target).at("source")), "first.mov");
+    EXPECT_EQ(std::get<std::string>(document.instance(second)->params.at(target).at("source")), "second.mov");
     EXPECT_TRUE(document.instance(second)->inputBindings.empty());
 }
 
@@ -180,7 +180,7 @@ TEST(NetworkTest, NetworkSchemaRoundTripPreservesInterfacesAndInstances) {
     ASSERT_EQ(loaded.document.networks().size(), 2u);
     EXPECT_EQ(loaded.document.network(definition).input(7)->kind, PortKind::Mask);
     EXPECT_EQ(loaded.document.network(definition).output(8)->kind, PortKind::Image);
-    EXPECT_EQ(loaded.document.instances().front().params.at(source).at("source"), "media.mov");
+    EXPECT_EQ(std::get<std::string>(loaded.document.instances().front().params.at(source).at("source")), "media.mov");
     EXPECT_EQ(loaded.document.network(definition).graph().node(network.defaultOutput())->layout,
               LayoutPosition(42.0, 9.0));
 }
@@ -191,7 +191,7 @@ TEST(NetworkTest, SharedConstSnapshotEvaluatesNestedNetworksConcurrently) {
     const auto definition = document.addNetwork("shared");
     auto& child = document.network(definition);
     const auto color = child.graph().addNode("constcolor", "color");
-    child.graph().setParam(color, "color", "0.25 0.5 0.75 1");
+    child.graph().setParam(color, "color", ColorValue{{0.25F, 0.5F, 0.75F, 1.0F}});
     const auto beauty = child.addOutput("beauty", PortKind::Image);
     child.connectOutput({color, 0}, beauty);
     const auto occurrence = document.addInstance(rootId, definition, "use");

@@ -11,10 +11,12 @@
 namespace nemo {
 
 // Versioned JSON persistence for the document's network definitions and
-// instances. Network-local node/edge/interface identities, typed terminals,
-// authored layouts/routes, bindings, and allocator high watermarks round-trip
-// verbatim. Unknown node types remain inspectable data and are reported as
-// warnings rather than silently dropped.
+// instances. Schema v3 stores authored node and instance parameters as
+// explicitly tagged ParameterValue records; v1/v2 text parameters are parsed
+// through the active catalog during migration. Network-local node/edge/interface
+// identities, typed terminals, authored layouts/routes, bindings, and allocator
+// high watermarks round-trip verbatim. Unknown node types remain inspectable
+// data and are reported as warnings rather than silently dropped.
 struct LoadResult {
     Document document;
     std::vector<std::string> warnings;

@@ -39,7 +39,7 @@ struct SourceReference {
 // instances reference definitions and never copy their topology. No Qt,
 // Vulkan, evaluator, decoder, or plugin-runtime object may appear here.
 struct Document {
-    static inline constexpr int kSchemaVersion = 2;
+    static inline constexpr int kSchemaVersion = 3;
 
     Document();
     explicit Document(std::shared_ptr<const NodeCatalog> catalog);
@@ -64,11 +64,11 @@ struct Document {
     [[nodiscard]] NetworkInstanceId addInstanceWithId(NetworkInstanceId id, NetworkId parentNetwork,
                                                       NetworkId definition, NodeId node, std::string name,
                                                       std::map<InterfacePortId, PortRef> inputBindings = {},
-                                                      std::map<NodeId, std::map<std::string, std::string>> params = {});
+                                                      std::map<NodeId, ParameterValues> params = {});
     void removeInstance(NetworkInstanceId id);
     void bindInstanceInput(NetworkInstanceId id, InterfacePortId input, PortRef source);
     void eraseInstanceInputBinding(NetworkInstanceId id, InterfacePortId input);
-    void setInstanceParam(NetworkInstanceId id, NodeId targetNode, std::string key, std::string value);
+    void setInstanceParam(NetworkInstanceId id, NodeId targetNode, std::string key, ParameterValue value);
     void eraseInstanceParam(NetworkInstanceId id, NodeId targetNode, const std::string& key);
     void restoreIdentityHighWatermarks(NetworkId nextNetworkId, NetworkInstanceId nextInstanceId);
     [[nodiscard]] NetworkId nextNetworkId() const { return nextNetworkId_; }
@@ -134,9 +134,25 @@ private:
 // All graph command factories require an explicit network scope. This keeps
 // accidental single-graph edits impossible and makes command history records
 // unambiguous when node/edge identities are local to a network.
+struct ParameterAddress {
+    NetworkId network{kInvalidNetwork};
+    NodeId node{kInvalidNode};
+    std::string key;
+    NetworkInstanceId instance{kInvalidNetworkInstance};
+
+    friend bool operator==(const ParameterAddress&, const ParameterAddress&) = default;
+};
+
+struct ParameterEdit {
+    ParameterAddress address;
+    std::optional<ParameterValue> value;
+};
+
 Command addNodeCommand(NetworkId network, std::string type, std::string name, std::shared_ptr<NodeId> createdId = {});
 Command connectCommand(NetworkId network, PortRef from, PortRef to, std::shared_ptr<EdgeId> createdId = {});
-Command setParamCommand(NetworkId network, NodeId nodeId, std::string key, std::string value);
+Command setParamCommand(NetworkId network, NodeId nodeId, std::string key, ParameterValue value);
+Command resetParamCommand(NetworkId network, NodeId nodeId, std::string key);
+Command setParametersCommand(std::vector<ParameterEdit> edits);
 Command renameNodeCommand(NetworkId network, NodeId nodeId, std::string name);
 Command setLayoutCommand(NetworkId network, NodeId nodeId, LayoutPosition position);
 Command setRouteCommand(NetworkId network, EdgeId edgeId, std::vector<LayoutPosition> route);
@@ -150,7 +166,8 @@ Command addInstanceCommand(NetworkId parentNetwork, NetworkId definition, std::s
                            std::shared_ptr<NetworkInstanceId> createdId = {});
 Command removeInstanceCommand(NetworkInstanceId instance);
 Command bindInstanceInputCommand(NetworkInstanceId instance, InterfacePortId input, PortRef source);
-Command setInstanceParamCommand(NetworkInstanceId instance, NodeId targetNode, std::string key, std::string value);
+Command setInstanceParamCommand(NetworkInstanceId instance, NodeId targetNode, std::string key, ParameterValue value);
+Command resetInstanceParamCommand(NetworkInstanceId instance, NodeId targetNode, std::string key);
 
 Command transactionCommand(std::string label, std::vector<Command> commands);
 Command setColorPolicyCommand(ColorPolicy value);

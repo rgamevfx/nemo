@@ -73,7 +73,7 @@ NodeId Graph::addNode(std::string type, std::string name) {
     return addNodeWithId(nextNodeId_, std::move(type), std::move(name));
 }
 
-NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, std::map<std::string, std::string> params,
+NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, ParameterValues params,
                             LayoutPosition layout, NetworkId definition, NetworkInstanceId instance) {
     if (id == kInvalidNode || id == std::numeric_limits<NodeId>::max())
         throw GraphException(GraphError::InvalidId, "node id must be a nonzero value below the identity limit");
@@ -88,6 +88,11 @@ NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, std::
         throw GraphException(GraphError::InvalidInstance, "a node instance requires a network definition");
     if (definition != kInvalidNetwork && instance == kInvalidNetworkInstance)
         throw GraphException(GraphError::InvalidInstance, "a network definition requires a node instance identity");
+    for (const auto& [key, value] : params) {
+        if (const auto problem = catalog_->validateParameter(type, key, value))
+            throw GraphException(GraphError::ParameterValue,
+                                 "node '" + name + "' parameter '" + key + "': " + *problem);
+    }
     nodes_.push_back(NodeInstance{.id = id,
                                   .type = std::move(type),
                                   .name = std::move(name),
@@ -367,14 +372,14 @@ void Graph::setRoute(EdgeId id, std::vector<LayoutPosition> route) {
     ++revision_;
 }
 
-void Graph::setParam(NodeId id, const std::string& key, const std::string& value) {
+void Graph::setParam(NodeId id, const std::string& key, ParameterValue value) {
     NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot set a parameter on unknown node " + std::to_string(id));
     if (const auto problem = catalog_->validateParameter(node->type, key, value))
         throw GraphException(GraphError::ParameterValue,
                              "node '" + node->name + "' parameter '" + key + "': " + *problem);
-    node->params[key] = value;
+    node->params[key] = std::move(value);
     ++revision_;
 }
 

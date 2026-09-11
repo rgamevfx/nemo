@@ -4,24 +4,26 @@
 #include <map>
 
 #include "nemo/core/Hashing.hpp"
+#include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
-
 namespace nemo {
 namespace {
 
 // Length-prefixed params records: count, then per record keyLen:key +
-// valueLen:value. Injective over the whole map regardless of content.
+// valueLen:value. Injective over the whole map regardless of content. Values
+// use their tagged, lossless canonical representation so distinct typed values
+// never alias.
 [[nodiscard]] std::string canonicalParams(const NodeInstance& node) {
-    // NodeInstance::params is a std::map, so iteration is already canonical.
     std::string canonical = std::to_string(node.params.size());
     canonical.push_back(':');
     for (const auto& [key, value] : node.params) {
         canonical += std::to_string(key.size());
         canonical.push_back(':');
         canonical += key;
-        canonical += std::to_string(value.size());
+        const std::string encoded = canonicalParameterValue(value);
+        canonical += std::to_string(encoded.size());
         canonical.push_back(':');
-        canonical += value;
+        canonical += encoded;
     }
     return canonical;
 }
@@ -33,9 +35,10 @@ namespace {
 // of the graph keeps its reuse identity.
 [[nodiscard]] std::string canonicalSource(const Document& document, const NodeInstance& node) {
     const auto paramIt = node.params.find("source");
-    std::string out;
-    const std::string key = paramIt != node.params.end() ? paramIt->second : std::string{};
+    const auto* sourceValue = paramIt != node.params.end() ? std::get_if<std::string>(&paramIt->second) : nullptr;
+    const std::string key = sourceValue != nullptr ? *sourceValue : std::string{};
     const auto it = document.sources.find(key);
+    std::string out;
     if (it == document.sources.end()) {
         appendCanonicalField(out, "key", key);
         appendCanonicalField(out, "unresolved", "1");

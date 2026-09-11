@@ -7,11 +7,12 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <gtest/gtest.h>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 nemo::Graph& rootGraph(nemo::Document& document) {
     return document.network(document.rootNetworkId()).graph();
@@ -44,10 +45,20 @@ TEST(Interactive, GraphCommandsUndoAndRejectOccupiedConnectionsAtomically) {
     nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     controller.setNodeParameter(namedNode(controller, "background").value("id").toULongLong(), "color",
-                                "0.2 0.3 0.4 1");
-    EXPECT_EQ(namedNode(controller, "background").value("params").toMap().value("color").toString(), "0.2 0.3 0.4 1");
+                                QVariantList{QVariant{0.2}, QVariant{0.3}, QVariant{0.4}, QVariant{1.0}});
+    const auto color = namedNode(controller, "background").value("params").toMap().value("color").toList();
+    ASSERT_EQ(color.size(), 4);
+    EXPECT_FLOAT_EQ(color.at(0).toFloat(), 0.2F);
+    EXPECT_FLOAT_EQ(color.at(1).toFloat(), 0.3F);
+    EXPECT_FLOAT_EQ(color.at(2).toFloat(), 0.4F);
+    EXPECT_FLOAT_EQ(color.at(3).toFloat(), 1.0F);
     ASSERT_TRUE(controller.undo());
-    EXPECT_EQ(namedNode(controller, "background").value("params").toMap().value("color").toString(), "0 0 0 0");
+    const auto resetColor = namedNode(controller, "background").value("params").toMap().value("color").toList();
+    ASSERT_EQ(resetColor.size(), 4);
+    EXPECT_FLOAT_EQ(resetColor.at(0).toFloat(), 0.0F);
+    EXPECT_FLOAT_EQ(resetColor.at(1).toFloat(), 0.0F);
+    EXPECT_FLOAT_EQ(resetColor.at(2).toFloat(), 0.0F);
+    EXPECT_FLOAT_EQ(resetColor.at(3).toFloat(), 0.0F);
 
     const auto edges = controller.graphEdges();
     controller.connectGraphNodes(namedNode(controller, "background").value("id").toULongLong(), 0,
@@ -55,7 +66,12 @@ TEST(Interactive, GraphCommandsUndoAndRejectOccupiedConnectionsAtomically) {
     EXPECT_FALSE(controller.error().isEmpty());
     EXPECT_EQ(controller.graphEdges(), edges);
     ASSERT_TRUE(controller.redo()) << "A rejected connection must not destroy the redo branch";
-    EXPECT_EQ(namedNode(controller, "background").value("params").toMap().value("color").toString(), "0.2 0.3 0.4 1");
+    const auto redoColor = namedNode(controller, "background").value("params").toMap().value("color").toList();
+    ASSERT_EQ(redoColor.size(), 4);
+    EXPECT_FLOAT_EQ(redoColor.at(0).toFloat(), 0.2F);
+    EXPECT_FLOAT_EQ(redoColor.at(1).toFloat(), 0.3F);
+    EXPECT_FLOAT_EQ(redoColor.at(2).toFloat(), 0.4F);
+    EXPECT_FLOAT_EQ(redoColor.at(3).toFloat(), 1.0F);
 }
 
 TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
@@ -145,9 +161,9 @@ TEST(Interactive, OutputSelectionUsesCatalogDeclaration) {
     ASSERT_TRUE(renamed.committed);
     EXPECT_EQ(controller.outputName(), "renamed");
     EXPECT_EQ(namedNode(controller, "renamed").value("id").toULongLong(), static_cast<qulonglong>(declared));
-    const auto parameter =
-        session.submit(nemo::setParamCommand(session.document().rootNetworkId(), declared, "marker", "stable"),
-                       nemo::EditOptions{.expectedRevision = session.revision()});
+    const auto parameter = session.submit(
+        nemo::setParamCommand(session.document().rootNetworkId(), declared, "marker", std::string{"stable"}),
+        nemo::EditOptions{.expectedRevision = session.revision()});
     ASSERT_TRUE(parameter.committed);
     EXPECT_EQ(namedNode(controller, "renamed").value("params").toMap().value("marker").toString(), "stable");
     EXPECT_TRUE(controller.error().isEmpty());
@@ -237,6 +253,34 @@ TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
     EXPECT_EQ(firstCatalog.count(), 1);
     EXPECT_TRUE(first.graphNodes().isEmpty());
 }
+TEST(Interactive, IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically) {
+    nemo::NodeDescriptor descriptor{
+        .type = "test.integer",
+        .displayName = "Integer",
+        .group = "Tests",
+        .parameters = {{.name = "count", .type = nemo::ParameterType::Integer, .defaultValue = std::int64_t{0}}}};
+    auto catalog = std::make_shared<nemo::NodeCatalog>(std::vector<nemo::NodeDescriptor>{descriptor});
+    nemo::Document document(catalog);
+    const auto network = document.rootNetworkId();
+    const auto node = document.network(network).graph().addNode("test.integer", "control");
+    nemo::ProjectSession session(std::move(document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto id = QString::number(node);
+    controller.setNodeParameterText(id, "count", "9223372036854775807");
+    ASSERT_EQ(session.revision(), 2u);
+    const auto maximum = std::numeric_limits<std::int64_t>::max();
+    EXPECT_EQ(std::get<std::int64_t>(session.queryValues(network, node).front().value), maximum);
+    EXPECT_EQ(namedNode(controller, "control").value("params").toMap().value("count").toLongLong(), maximum);
+    controller.setNodeParameterText(id, "count", "9223372036854775808");
+    EXPECT_EQ(session.revision(), 2u);
+    controller.setNodeParameter(id, "count", QVariant::fromValue<qulonglong>(std::numeric_limits<qulonglong>::max()));
+    EXPECT_EQ(session.revision(), 2u);
+    ASSERT_TRUE(controller.undo());
+    EXPECT_EQ(std::get<std::int64_t>(session.queryValues(network, node).front().value), 0);
+    EXPECT_FALSE(controller.canUndo());
+}
+
 TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
 #ifndef NEMO_SLANG_SPV_DIR
     GTEST_SKIP() << "Native cache-range evidence requires compiled Slang shaders";

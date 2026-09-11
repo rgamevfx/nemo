@@ -1,20 +1,23 @@
 #pragma once
 
 #include <array>
-#include <cmath>
 #include <map>
 #include <sstream>
+#include <string>
+#include <utility>
+#include <variant>
 
 #include "nemo/core/document/Document.hpp"
+#include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
 
 namespace nemo {
 
-// Node-describing error helpers and effective-parameter parsing shared by
-// the CPU reference and the native GPU effect executor (spec section 10.3:
-// both executors consume the same effective parameter/input state). Parsed
-// values are recorded into `effectiveParams` — the plan carries resolved
-// state, not authored guesses.
+// Node-describing error helpers and effective-parameter resolution shared by
+// the CPU reference and the native GPU effect executor. Effective values stay
+// typed all the way through planning and execution; text is only produced for
+// diagnostics.
 
 [[nodiscard]] inline std::string describeNode(const NodeInstance& node) {
     std::ostringstream text;
@@ -26,9 +29,8 @@ namespace nemo {
     throw EvaluationException(describeNode(node) + ": " + what, node.id, node.name);
 }
 
-[[nodiscard]] inline const std::string& effectiveParameter(const NodeCatalog& catalog, const NodeInstance& node,
-                                                           std::map<std::string, std::string>& effectiveParams,
-                                                           const char* key) {
+[[nodiscard]] inline const ParameterValue& effectiveParameter(const NodeCatalog& catalog, const NodeInstance& node,
+                                                              ParameterValues& effectiveParams, const char* key) {
     const auto authored = effectiveParams.find(key);
     if (authored != effectiveParams.end()) {
         return authored->second;
@@ -40,22 +42,14 @@ namespace nemo {
     return effectiveParams.emplace(key, *declared).first->second;
 }
 
-[[nodiscard]] inline std::array<float, 4> parseColor4(const NodeCatalog& catalog, const NodeInstance& node,
-                                                      std::map<std::string, std::string>& effectiveParams,
-                                                      const char* key) {
-    const auto& text = effectiveParameter(catalog, node, effectiveParams, key);
-    std::istringstream stream(text);
-    std::array<float, 4> value{};
-    for (float& channel : value) {
-        if (!(stream >> channel) || !std::isfinite(channel)) {
-            failNode(node, std::string("parameter '") + key + "' must be 4 finite floats, got '" + text + "'");
-        }
+[[nodiscard]] inline std::array<float, 4> effectiveColor4(const NodeCatalog& catalog, const NodeInstance& node,
+                                                          ParameterValues& effectiveParams, const char* key) {
+    const auto& value = effectiveParameter(catalog, node, effectiveParams, key);
+    const auto* color = std::get_if<ColorValue>(&value);
+    if (color == nullptr) {
+        failNode(node, std::string("parameter '") + key + "' must be a color, got '" + parameterValueText(value) + "'");
     }
-    std::string extra;
-    if (stream >> extra) {
-        failNode(node, std::string("parameter '") + key + "' has extra tokens: '" + text + "'");
-    }
-    return value;
+    return color->value;
 }
 
 }  // namespace nemo

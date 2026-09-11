@@ -66,7 +66,12 @@ public:
     // Graph/timeline surfaces use these validated command entry points.
     Q_INVOKABLE void addGraphNode(const QString& type, const QString& name);
     Q_INVOKABLE void connectGraphNodes(const QVariant& fromNode, int fromPort, const QVariant& toNode, int toPort);
-    Q_INVOKABLE void setNodeParameter(const QVariant& nodeId, const QString& key, const QString& value);
+    Q_INVOKABLE void setNodeParameter(const QVariant& nodeId, const QString& key, const QVariant& value);
+    // Explicit text-entry adapter; parsing remains catalog-owned and avoids
+    // converting signed 64-bit values through JavaScript Number.
+    Q_INVOKABLE void setNodeParameterText(const QVariant& nodeId, const QString& key, const QString& text);
+    Q_INVOKABLE void resetNodeParameter(const QVariant& nodeId, const QString& key);
+    Q_INVOKABLE void setNodeParameters(const QVariantList& edits);
     // The current persistent model exposes source timing, not timeline clip
     // occurrences. These edit SourceReference through the command API.
     Q_INVOKABLE void slipTimelineClip(const QString& source, int delta);

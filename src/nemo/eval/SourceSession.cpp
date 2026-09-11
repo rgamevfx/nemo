@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
-
+#include <variant>
 namespace nemo::eval {
 
 namespace {
@@ -109,7 +109,11 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, Net
     if (sourceParam == node.params.end()) {
         failSource(node, "parameter 'source' (the document source key) is required");
     }
-    const std::string& key = sourceParam->second;
+    const auto* keyValue = std::get_if<std::string>(&sourceParam->second);
+    if (keyValue == nullptr || keyValue->empty()) {
+        failSource(node, "parameter 'source' (the document source key) must be a non-empty string");
+    }
+    const std::string& key = *keyValue;
     const auto referenceIt = document.sources.find(key);
     if (referenceIt == document.sources.end()) {
         std::string available;

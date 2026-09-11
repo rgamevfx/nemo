@@ -1,6 +1,8 @@
 find_package(nlohmann_json CONFIG REQUIRED)
 
 add_library(nemo_core
+    core/document/ParameterValue.cpp
+    core/document/ParameterValueJson.cpp
     core/document/Graph.cpp
     core/document/Document.cpp
     core/document/Serialization.cpp

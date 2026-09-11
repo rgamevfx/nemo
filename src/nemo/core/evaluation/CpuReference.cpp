@@ -67,7 +67,7 @@ ImageIdentity identityOf(const CpuImage& image, Residency residency) {
 // ---------------------------------------------------------------------------
 
 void evalTestpattern(const NodeInstance& /*node*/, const EvaluationRequest& request,
-                     std::map<std::string, std::string>& /*effectiveParams*/, CpuImage& out) {
+                     ParameterValues& /*effectiveParams*/, CpuImage& out) {
     // Deterministic reference pattern: horizontal red gradient, vertical
     // green gradient, and a blue bar whose position tracks local time. Any
     // change here is an observable image change.
@@ -96,8 +96,8 @@ void evalTestpattern(const NodeInstance& /*node*/, const EvaluationRequest& requ
 }
 
 void evalConstcolor(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest& /*request*/,
-                    std::map<std::string, std::string>& effectiveParams, CpuImage& out) {
-    const std::array<float, 4> color = parseColor4(catalog, node, effectiveParams, "color");
+                    ParameterValues& effectiveParams, CpuImage& out) {
+    const std::array<float, 4> color = effectiveColor4(catalog, node, effectiveParams, "color");
     for (int y = 0; y < out.height(); ++y) {
         for (int x = 0; x < out.width(); ++x) {
             out.setPixel(x, y, color);
@@ -106,9 +106,13 @@ void evalConstcolor(const NodeCatalog& catalog, const NodeInstance& node, const 
 }
 
 void evalMerge(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest&,
-               std::map<std::string, std::string>& effectiveParams, const std::vector<const CpuImage*>& inputs,
-               CpuImage& out) {
-    const std::string& operation = effectiveParameter(catalog, node, effectiveParams, "operation");
+               ParameterValues& effectiveParams, const std::vector<const CpuImage*>& inputs, CpuImage& out) {
+    const auto& operationValue = effectiveParameter(catalog, node, effectiveParams, "operation");
+    const auto* operationChoice = std::get_if<ChoiceValue>(&operationValue);
+    if (operationChoice == nullptr) {
+        failNode(node, "parameter 'operation' must be a choice, got '" + parameterValueText(operationValue) + "'");
+    }
+    const std::string& operation = operationChoice->value;
     if (operation != "over") {
         failNode(node, "unsupported merge operation '" + operation + "' (CPU reference implements 'over' only)");
     }
@@ -130,7 +134,7 @@ void evalMerge(const NodeCatalog& catalog, const NodeInstance& node, const Evalu
     }
 }
 
-void evalOutput(const NodeInstance&, const EvaluationRequest&, std::map<std::string, std::string>&,
+void evalOutput(const NodeInstance&, const EvaluationRequest&, ParameterValues&,
                 const std::vector<const CpuImage*>& inputs, CpuImage& out) {
     for (int y = 0; y < out.height(); ++y) {
         for (int x = 0; x < out.width(); ++x) {
@@ -144,12 +148,16 @@ void evalOutput(const NodeInstance&, const EvaluationRequest&, std::map<std::str
 // unresolved or unprovided source is an explicit evaluation error that
 // identifies the node.
 void evalSource(const Document& document, const NodeInstance& node, const EvaluationRequest& request,
-                std::map<std::string, std::string>& effectiveParams, CpuImage& out, SourceProvider* provider) {
+                ParameterValues& effectiveParams, CpuImage& out, SourceProvider* provider) {
     const auto keyIt = node.params.find("source");
-    if (keyIt == node.params.end() || keyIt->second.empty()) {
+    if (keyIt == node.params.end()) {
         failNode(node, "source node has no 'source' parameter naming a document source");
     }
-    const std::string& key = keyIt->second;
+    const auto* keyValue = std::get_if<std::string>(&keyIt->second);
+    if (keyValue == nullptr || keyValue->empty()) {
+        failNode(node, "source node parameter 'source' must be a non-empty string");
+    }
+    const std::string& key = *keyValue;
     const auto referenceIt = document.sources.find(key);
     if (referenceIt == document.sources.end()) {
         failNode(node, "unresolved source '" + key +
@@ -157,15 +165,15 @@ void evalSource(const Document& document, const NodeInstance& node, const Evalua
                            "evaluated as synthetic content)");
     }
     const SourceReference& reference = referenceIt->second;
-    effectiveParams["source"] = key;
-    effectiveParams["sourcePath"] = reference.path;
+    effectiveParams["source"] = std::string(key);
+    effectiveParams["sourcePath"] = std::string(reference.path);
     std::int64_t mappedFrame = 0;
     try {
         mappedFrame = reference.frameAt(request.localTime);
     } catch (const std::exception& error) {
         failNode(node, std::string("source time mapping failed: ") + error.what());
     }
-    effectiveParams["frame"] = std::to_string(mappedFrame);
+    effectiveParams["frame"] = mappedFrame;
     if (provider == nullptr) {
         failNode(node, "source '" + key + "' (" + reference.path +
                            ") requires a decode provider; this "

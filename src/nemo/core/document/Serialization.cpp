@@ -1,9 +1,12 @@
 #include "nemo/core/document/Serialization.hpp"
 
+#include "nemo/core/document/ParameterValueJson.hpp"
+
 #include <cmath>
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace nemo {
@@ -113,7 +116,43 @@ std::vector<PortSpec> parsePorts(const nlohmann::json& value, const std::string&
             throw DeserializeError(context + "[" + std::to_string(index) + "]: kind and string name are required");
         ports.push_back(PortSpec{parseKind(entry.at("kind"), context), entry.at("name").get<std::string>()});
     }
+
     return ports;
+}
+
+ParameterValues parseParameterValues(const nlohmann::json& value, int schema, std::string_view type,
+                                     const NodeCatalog& catalog, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + ": 'params' must be an object");
+    ParameterValues params;
+    for (auto it = value.begin(); it != value.end(); ++it) {
+        const std::string fieldContext = context + " key '" + it.key() + "'";
+        try {
+            ParameterValue parsed;
+            if (schema >= 3) {
+                parsed = parameterValueFromJson(it.value());
+            } else {
+                if (!it.value().is_string())
+                    throw DeserializeError(fieldContext + ": legacy parameter must be a string");
+                parsed = catalog.parseParameterText(type, it.key(), it.value().get<std::string>());
+            }
+            if (const auto problem = catalog.validateParameter(type, it.key(), parsed))
+                throw DeserializeError(fieldContext + ": " + *problem);
+            params.emplace(it.key(), std::move(parsed));
+        } catch (const DeserializeError&) {
+            throw;
+        } catch (const std::exception& error) {
+            throw DeserializeError(fieldContext + ": " + error.what());
+        }
+    }
+    return params;
+}
+
+nlohmann::json parameterValuesJson(const ParameterValues& params) {
+    nlohmann::json result = nlohmann::json::object();
+    for (const auto& [key, value] : params)
+        result[key] = parameterValueToJson(value);
+    return result;
 }
 
 void clearNetwork(Network& network) {
@@ -124,8 +163,8 @@ void clearNetwork(Network& network) {
         network.graph().removeNode(id);
 }
 
-void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& result) {
-    const std::string context = "network '" + network.name() + "'";
+void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& result, int schema) {
+    std::string context = "network '" + network.name() + "'";
     if (!entry.is_object())
         throw DeserializeError(context + " must be an object");
     if (entry.contains("name")) {
@@ -133,6 +172,7 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             throw DeserializeError(context + ": 'name' must be a string");
         network.rename(entry.at("name").get<std::string>());
     }
+    context = "network '" + network.name() + "'";
     clearNetwork(network);
     if (entry.contains("inputs")) {
         if (!entry.at("inputs").is_array())
@@ -199,16 +239,10 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
         }
         if (!seenNodes.insert(id).second)
             throw DeserializeError("duplicate node id in file: " + std::to_string(id));
-        std::map<std::string, std::string> params;
-        if (n.contains("params")) {
-            if (!n.at("params").is_object())
-                throw DeserializeError(nc + ": 'params' must be an object");
-            for (auto it = n.at("params").begin(); it != n.at("params").end(); ++it) {
-                if (!it.value().is_string())
-                    throw DeserializeError(nc + ": parameter must be a string");
-                params[it.key()] = it.value().get<std::string>();
-            }
-        }
+        ParameterValues params;
+        if (n.contains("params"))
+            params = parseParameterValues(n.at("params"), schema, n.at("type").get<std::string>(),
+                                          network.graph().catalog(), nc + " id " + std::to_string(id) + " parameters");
         LayoutPosition layout;
         if (n.contains("layout"))
             layout = parseLayout(n.at("layout"), nc);
@@ -339,7 +373,7 @@ nlohmann::json saveDocument(const Document& document) {
             nlohmann::json value{{"id", node.id},
                                  {"type", node.type},
                                  {"name", node.name},
-                                 {"params", node.params},
+                                 {"params", parameterValuesJson(node.params)},
                                  {"layout", layoutJson(node.layout)}};
             if (node.definition != kInvalidNetwork)
                 value["definition"] = node.definition;
@@ -406,7 +440,7 @@ nlohmann::json saveDocument(const Document& document) {
     for (const auto& instance : document.instances()) {
         nlohmann::json instanceParams = nlohmann::json::object();
         for (const auto& [target, values] : instance.params)
-            instanceParams[std::to_string(target)] = values;
+            instanceParams[std::to_string(target)] = parameterValuesJson(values);
         nlohmann::json value{{"id", instance.id},
                              {"parentNetwork", instance.parentNetwork},
                              {"definition", instance.definition},
@@ -513,7 +547,7 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
             const auto id = requiredId(entry, "id", "network");
             if (id != initialRoot)
                 (void)result.document.addNetworkWithId(id, entry.at("name").get<std::string>());
-            loadNetwork(entry, result.document.network(id), result);
+            loadNetwork(entry, result.document.network(id), result, schema);
         }
         result.document.setRootNetworkId(rootId);
         if (!seen.contains(initialRoot))
@@ -527,7 +561,7 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
             legacy["nextNodeId"] = json.at("nextNodeId");
         if (json.contains("nextEdgeId"))
             legacy["nextEdgeId"] = json.at("nextEdgeId");
-        loadNetwork(legacy, result.document.network(result.document.rootNetworkId()), result);
+        loadNetwork(legacy, result.document.network(result.document.rootNetworkId()), result, schema);
         for (const auto& node : result.document.network(result.document.rootNetworkId()).graph().nodes()) {
             const auto* descriptor =
                 result.document.network(result.document.rootNetworkId()).graph().descriptor(node.type);
@@ -538,7 +572,7 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
         }
         result.warnings.push_back("legacy single-graph document migrated to the root network");
     } else {
-        throw DeserializeError("schema 2 document has no 'networks' field");
+        throw DeserializeError("schema " + std::to_string(schema) + " document has no 'networks' field");
     }
     if (json.contains("instances")) {
         if (!json.at("instances").is_array())
@@ -562,25 +596,36 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                     bindings.emplace(terminal, PortRef{endpointNode(ref, context), port(ref, context)});
                 }
             }
-            std::map<NodeId, std::map<std::string, std::string>> params;
+            std::map<NodeId, ParameterValues> params;
             if (e.contains("params")) {
                 if (!e.at("params").is_object())
                     throw DeserializeError(context + ": params must be an object");
                 for (auto p = e.at("params").begin(); p != e.at("params").end(); ++p) {
                     NodeId target{};
                     try {
-                        target = static_cast<NodeId>(std::stoull(p.key()));
+                        std::size_t consumed = 0;
+                        target = static_cast<NodeId>(std::stoull(p.key(), &consumed));
+                        if (consumed != p.key().size())
+                            throw std::invalid_argument("not a node id");
                     } catch (...) {
                         throw DeserializeError(context + ": parameter target must be a node id");
                     }
                     if (target == kInvalidNode || target == std::numeric_limits<NodeId>::max() ||
                         !p.value().is_object())
-                        throw DeserializeError(context + ": malformed parameter target");
-                    for (auto value = p.value().begin(); value != p.value().end(); ++value) {
-                        if (!value.value().is_string())
-                            throw DeserializeError(context + ": instance parameters must be strings");
-                        params[target][value.key()] = value.value().get<std::string>();
+                        throw DeserializeError(context + " node " + std::to_string(target) +
+                                               ": malformed parameter target");
+                    const NodeInstance* targetNode = nullptr;
+                    try {
+                        targetNode = result.document.network(definition).graph().node(target);
+                    } catch (const std::exception&) {
                     }
+                    const std::string type = targetNode == nullptr ? std::string{} : targetNode->type;
+                    params.emplace(
+                        target,
+                        parseParameterValues(p.value(), schema, type,
+                                             result.document.network(result.document.rootNetworkId()).graph().catalog(),
+                                             context + " id " + std::to_string(id) + " node " + std::to_string(target) +
+                                                 " parameters"));
                 }
             }
             try {

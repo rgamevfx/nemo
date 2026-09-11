@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "nemo/core/Hashing.hpp"
+#include "nemo/core/document/ParameterValue.hpp"
 
 namespace nemo {
 namespace {
@@ -42,6 +43,64 @@ void hashPortRef(std::uint64_t& hash, PortRef ref) {
 }
 std::string describePortRef(PortRef ref) {
     return "node " + std::to_string(ref.node) + " port " + std::to_string(ref.port);
+}
+void validateParameterEdit(const Document& document, const ParameterEdit& edit) {
+    const auto& address = edit.address;
+    if (address.network == kInvalidNetwork)
+        throw GraphException(GraphError::InvalidNetwork, "parameter edit requires a network scope");
+    if (address.node == kInvalidNode)
+        throw GraphException(GraphError::UnknownNode, "parameter edit requires a node scope");
+    if (address.key.empty())
+        throw GraphException(GraphError::InvalidName, "parameter key must not be empty");
+
+    if (address.instance == kInvalidNetworkInstance) {
+        const auto& graph = document.network(address.network).graph();
+        const auto* node = graph.node(address.node);
+        if (!node)
+            throw GraphException(GraphError::UnknownNode, "cannot edit unknown node " + std::to_string(address.node));
+        if (edit.value) {
+            if (const auto problem = graph.catalog().validateParameter(node->type, address.key, *edit.value))
+                throw GraphException(GraphError::ParameterValue,
+                                     "node '" + node->name + "' parameter '" + address.key + "': " + *problem);
+        }
+        return;
+    }
+
+    const auto* instance = document.instance(address.instance);
+    if (!instance)
+        throw GraphException(GraphError::UnknownInstance,
+                             "cannot edit unknown network instance " + std::to_string(address.instance));
+    if (address.network != instance->definition)
+        throw GraphException(GraphError::InvalidInstance,
+                             "instance parameter scope network " + std::to_string(address.network) +
+                                 " does not match definition network " + std::to_string(instance->definition));
+    const auto& graph = document.network(instance->definition).graph();
+    const auto* node = graph.node(address.node);
+    if (!node)
+        throw GraphException(GraphError::UnknownNode, "instance parameter target node " + std::to_string(address.node) +
+                                                          " is not in definition");
+    if (edit.value) {
+        if (const auto problem = graph.catalog().validateParameter(node->type, address.key, *edit.value))
+            throw GraphException(GraphError::ParameterValue, "instance parameter target node " +
+                                                                 std::to_string(address.node) + " key '" + address.key +
+                                                                 "': " + *problem);
+    }
+}
+
+void applyParameterEdit(Document& document, const ParameterEdit& edit) {
+    validateParameterEdit(document, edit);
+    const auto& address = edit.address;
+    if (address.instance == kInvalidNetworkInstance) {
+        auto& graph = document.network(address.network).graph();
+        if (edit.value)
+            graph.setParam(address.node, address.key, *edit.value);
+        else
+            graph.eraseParam(address.node, address.key);
+    } else if (edit.value) {
+        document.setInstanceParam(address.instance, address.node, address.key, *edit.value);
+    } else {
+        document.eraseInstanceParam(address.instance, address.node, address.key);
+    }
 }
 
 }  // namespace
@@ -173,7 +232,7 @@ NetworkInstanceId Document::addInstance(NetworkId parentNetwork, NetworkId defin
 NetworkInstanceId Document::addInstanceWithId(NetworkInstanceId id, NetworkId parentNetwork, NetworkId definition,
                                               NodeId node, std::string name,
                                               std::map<InterfacePortId, PortRef> inputBindings,
-                                              std::map<NodeId, std::map<std::string, std::string>> params) {
+                                              std::map<NodeId, ParameterValues> params) {
     checkAllocatable(id, "network instance");
     if (instance(id))
         throw GraphException(GraphError::DuplicateId, "network instance id " + std::to_string(id) + " already exists");
@@ -223,6 +282,8 @@ NetworkInstanceId Document::addInstanceWithId(NetworkInstanceId id, NetworkId pa
                                                               std::to_string(targetNode) + " is not in definition " +
                                                               std::to_string(definition));
         for (const auto& [key, value] : parameterValues) {
+            if (key.empty())
+                throw GraphException(GraphError::InvalidName, "instance parameter key must not be empty");
             if (const auto problem = definitionNetwork.graph().catalog().validateParameter(target->type, key, value))
                 throw GraphException(GraphError::ParameterValue, "instance parameter target node " +
                                                                      std::to_string(targetNode) + " key '" + key +
@@ -337,7 +398,7 @@ void Document::eraseInstanceInputBinding(NetworkInstanceId id, InterfacePortId i
     target->inputBindings.erase(input);
 }
 
-void Document::setInstanceParam(NetworkInstanceId id, NodeId targetNode, std::string key, std::string value) {
+void Document::setInstanceParam(NetworkInstanceId id, NodeId targetNode, std::string key, ParameterValue value) {
     NetworkInstance* target = findInstanceMutable(id);
     if (!target)
         throw GraphException(GraphError::UnknownInstance,
@@ -361,6 +422,12 @@ void Document::eraseInstanceParam(NetworkInstanceId id, NodeId targetNode, const
     if (!target)
         throw GraphException(GraphError::UnknownInstance,
                              "cannot erase a parameter on unknown network instance " + std::to_string(id));
+    if (key.empty())
+        throw GraphException(GraphError::InvalidName, "instance parameter key must not be empty");
+    const Network& definition = network(target->definition);
+    if (!definition.graph().node(targetNode))
+        throw GraphException(GraphError::UnknownNode,
+                             "instance parameter target node " + std::to_string(targetNode) + " is not in definition");
     const auto targetIt = target->params.find(targetNode);
     if (targetIt == target->params.end())
         return;
@@ -547,7 +614,7 @@ std::uint64_t Document::stateRevision() const {
             hashMixWord(hash, static_cast<std::uint64_t>(nodeValue.outputPorts.size()));
             for (const auto& [key, value] : nodeValue.params) {
                 hashMixText(hash, key);
-                hashMixText(hash, value);
+                hashMixText(hash, canonicalParameterValue(value));
             }
             hashMixWord(hash, static_cast<std::uint64_t>(nodeValue.params.size()));
         }
@@ -584,7 +651,7 @@ std::uint64_t Document::stateRevision() const {
             hashMixWord(hash, targetNode);
             for (const auto& [key, parameter] : parameterValues) {
                 hashMixText(hash, key);
-                hashMixText(hash, parameter);
+                hashMixText(hash, canonicalParameterValue(parameter));
             }
             hashMixWord(hash, static_cast<std::uint64_t>(parameterValues.size()));
         }
@@ -677,14 +744,34 @@ void CommandStack::clear() {
     undo_.clear();
     redo_.clear();
 }
-
-Command setParamCommand(NetworkId network, NodeId nodeId, std::string key, std::string value) {
+Command setParamCommand(NetworkId network, NodeId nodeId, std::string key, ParameterValue value) {
     return Command{"set " + key + " on node " + std::to_string(nodeId),
                    [network, nodeId, key = std::move(key), value = std::move(value)](Document& document) {
+                       const ParameterEdit edit{ParameterAddress{network, nodeId, key}, value};
+                       validateParameterEdit(document, edit);
                        document.network(network).graph().setParam(nodeId, key, value);
                    }};
 }
 
+Command resetParamCommand(NetworkId network, NodeId nodeId, std::string key) {
+    return Command{"reset " + key + " on node " + std::to_string(nodeId),
+                   [network, nodeId, key = std::move(key)](Document& document) {
+                       const ParameterEdit edit{ParameterAddress{network, nodeId, key}, std::nullopt};
+                       validateParameterEdit(document, edit);
+                       document.network(network).graph().eraseParam(nodeId, key);
+                   }};
+}
+
+Command setParametersCommand(std::vector<ParameterEdit> edits) {
+    if (edits.empty())
+        throw std::invalid_argument("parameter batch must contain at least one edit");
+    return Command{"set parameters", [edits = std::move(edits)](Document& document) {
+                       for (const auto& edit : edits)
+                           validateParameterEdit(document, edit);
+                       for (const auto& edit : edits)
+                           applyParameterEdit(document, edit);
+                   }};
+}
 Command renameNodeCommand(NetworkId network, NodeId nodeId, std::string name) {
     return Command{"rename node " + std::to_string(nodeId),
                    [network, nodeId, name = std::move(name)](Document& document) {
@@ -774,10 +861,21 @@ Command bindInstanceInputCommand(NetworkInstanceId instance, InterfacePortId inp
         [instance, input, source](Document& document) { document.bindInstanceInput(instance, input, source); }};
 }
 
-Command setInstanceParamCommand(NetworkInstanceId instance, NodeId targetNode, std::string key, std::string value) {
+Command setInstanceParamCommand(NetworkInstanceId instance, NodeId targetNode, std::string key, ParameterValue value) {
     return Command{"set instance parameter " + key,
                    [instance, targetNode, key = std::move(key), value = std::move(value)](Document& document) {
                        document.setInstanceParam(instance, targetNode, key, value);
+                   }};
+}
+
+Command resetInstanceParamCommand(NetworkInstanceId instance, NodeId targetNode, std::string key) {
+    return Command{"reset instance parameter " + key, [instance, targetNode, key = std::move(key)](Document& document) {
+                       const auto* target = document.instance(instance);
+                       if (!target)
+                           throw GraphException(GraphError::UnknownInstance,
+                                                "cannot reset a parameter on unknown network instance " +
+                                                    std::to_string(instance));
+                       document.eraseInstanceParam(instance, targetNode, key);
                    }};
 }
 

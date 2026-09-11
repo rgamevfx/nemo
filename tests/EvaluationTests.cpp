@@ -94,7 +94,8 @@ TEST(EvaluationTest, LinearChainRendersPatternThroughOutput) {
 TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     Document document =
         makeDocument({{"testpattern", "plate"}, {"constcolor", "backdrop"}, {"merge", "comp"}, {"output", "out"}});
-    rootGraph(document).setParam(rootGraph(document).nodeByName("backdrop")->id, "color", "0 0 1 0.5");
+    rootGraph(document).setParam(rootGraph(document).nodeByName("backdrop")->id, "color",
+                                 ColorValue{{0.0F, 0.0F, 1.0F, 0.5F}});
     connect(rootGraph(document), "plate", "comp", 0, 0);     // port A: over base
     connect(rootGraph(document), "backdrop", "comp", 0, 1);  // port B: over source
     connect(rootGraph(document), "comp", "out");
@@ -115,8 +116,7 @@ TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     EXPECT_NEAR(pixel[0], 0.5F * (4.0F / 7.0F), 1e-6F);
     EXPECT_NEAR(pixel[2], 0.5F * 1.0F, 1e-6F);
     // Effective parameter state records the resolved operation.
-    ASSERT_EQ(merge->effectiveParams.count("operation"), 1);
-    EXPECT_EQ(merge->effectiveParams.at("operation"), "over");
+    EXPECT_EQ(std::get<ChoiceValue>(merge->effectiveParams.at("operation")).value, "over");
 }
 
 // Acceptance example 2: no Output node -> evaluation error naming the
@@ -269,7 +269,7 @@ TEST(EvaluationTest, NestedSharedInstancesKeepScopedOverridesAndLazyInputs) {
     const InterfacePortId innerOutput = inner.addOutput("out", PortKind::Image);
     const NodeId innerMerge = inner.graph().addNode("merge", "inner-merge");
     const NodeId innerBackground = inner.graph().addNode("constcolor", "inner-background");
-    inner.graph().setParam(innerBackground, "color", "0 0 0 0");
+    inner.graph().setParam(innerBackground, "color", ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}});
     inner.connectInput(innerInput, {innerMerge, 0});
     inner.graph().connect({innerBackground, 0}, {innerMerge, 1});
     inner.connectOutput({innerMerge, 0}, innerOutput);
@@ -285,8 +285,8 @@ TEST(EvaluationTest, NestedSharedInstancesKeepScopedOverridesAndLazyInputs) {
 
     const NetworkInstanceId first = document.addInstance(root, sharedDefinition, "first");
     const NetworkInstanceId second = document.addInstance(root, sharedDefinition, "second");
-    document.setInstanceParam(first, color, "color", "1 0 0 1");
-    document.setInstanceParam(second, color, "color", "0 1 0 1");
+    document.setInstanceParam(first, color, "color", ColorValue{{1.0F, 0.0F, 0.0F, 1.0F}});
+    document.setInstanceParam(second, color, "color", ColorValue{{0.0F, 1.0F, 0.0F, 1.0F}});
 
     auto& rootGraphRef = document.network(root).graph();
     const NodeId firstOutput = rootGraphRef.addNode("output", "first-output");
@@ -300,7 +300,7 @@ TEST(EvaluationTest, NestedSharedInstancesKeepScopedOverridesAndLazyInputs) {
     rootGraphRef.connect({branches, 0}, {combinedOutput, 0});
 
     const NodeId missingSource = rootGraphRef.addNode("source", "unused-missing");
-    rootGraphRef.setParam(missingSource, "source", "missing");
+    rootGraphRef.setParam(missingSource, "source", std::string("missing"));
     document.bindInstanceInput(first, unusedInput, {missingSource, 0});
 
     const auto nodesBefore = shared.graph().nodes().size();
@@ -329,10 +329,12 @@ TEST(EvaluationTest, NestedSharedInstancesKeepScopedOverridesAndLazyInputs) {
         if (step.name != "color")
             continue;
         if (step.path == std::vector<NetworkInstanceId>{first}) {
-            EXPECT_EQ(step.effectiveParams.at("color"), "1 0 0 1");
+            EXPECT_EQ(std::get<ColorValue>(step.effectiveParams.at("color")).value,
+                      (std::array<float, 4>{1.0F, 0.0F, 0.0F, 1.0F}));
             firstBranchSeen = true;
         } else if (step.path == std::vector<NetworkInstanceId>{second}) {
-            EXPECT_EQ(step.effectiveParams.at("color"), "0 1 0 1");
+            EXPECT_EQ(std::get<ColorValue>(step.effectiveParams.at("color")).value,
+                      (std::array<float, 4>{0.0F, 1.0F, 0.0F, 1.0F}));
             secondBranchSeen = true;
         }
     }

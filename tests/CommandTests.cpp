@@ -59,9 +59,9 @@ TEST(CommandStackTest, PushAppliesImmediately) {
     Document doc = emptyDocument();
     CommandStack stack(doc);
     const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
-    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", "2.0"));
+    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", ParameterValue{std::string{"2.0"}}));
     ASSERT_NE(rootGraph(doc).node(plate), nullptr);
-    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), "2.0");
+    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), ParameterValue{std::string{"2.0"}});
     EXPECT_EQ(stack.depth(), 1u);
 }
 
@@ -70,20 +70,20 @@ TEST(CommandStackTest, UndoRestoresAndRedoReapplies) {
     CommandStack stack(doc);
     const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
 
-    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", "2.0"));
-    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", "4.0"));
-    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), "4.0");
+    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", ParameterValue{std::string{"2.0"}}));
+    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", ParameterValue{std::string{"4.0"}}));
+    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), ParameterValue{std::string{"4.0"}});
 
     EXPECT_TRUE(stack.undo());
-    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), "2.0");
+    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), ParameterValue{std::string{"2.0"}});
     EXPECT_TRUE(stack.undo());
     EXPECT_EQ(rootGraph(doc).node(plate)->params.count("gain"), 0u);
     EXPECT_FALSE(stack.undo());
 
     EXPECT_TRUE(stack.redo());
-    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), "2.0");
+    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), ParameterValue{std::string{"2.0"}});
     EXPECT_TRUE(stack.redo());
-    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), "4.0");
+    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), ParameterValue{std::string{"4.0"}});
     EXPECT_FALSE(stack.redo());
 }
 
@@ -91,12 +91,12 @@ TEST(CommandStackTest, NewCommandDropsRedoBranch) {
     Document doc = emptyDocument();
     CommandStack stack(doc);
     const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
-    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", "2.0"));
+    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", ParameterValue{std::string{"2.0"}}));
     ASSERT_TRUE(stack.undo());
 
-    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", "8.0"));
+    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", ParameterValue{std::string{"8.0"}}));
     EXPECT_FALSE(stack.canRedo());
-    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), "8.0");
+    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), ParameterValue{std::string{"8.0"}});
 }
 
 TEST(CommandStackTest, FailingApplyLeavesDocumentUntouched) {
@@ -105,7 +105,8 @@ TEST(CommandStackTest, FailingApplyLeavesDocumentUntouched) {
     const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
     const std::size_t nodeCountBefore = rootGraph(doc).nodes().size();
     const auto revisionBefore = doc.stateRevision();
-    EXPECT_THROW(stack.push(setParamCommand(doc.rootNetworkId(), 999, "gain", "1.0")), std::runtime_error);
+    EXPECT_THROW(stack.push(setParamCommand(doc.rootNetworkId(), 999, "gain", ParameterValue{std::string{"1.0"}})),
+                 std::runtime_error);
     EXPECT_EQ(rootGraph(doc).nodes().size(), nodeCountBefore);
     EXPECT_EQ(doc.stateRevision(), revisionBefore);
     EXPECT_EQ(stack.depth(), 0u);
@@ -119,9 +120,10 @@ TEST(CommandStackTest, FailedTransactionIsAtomic) {
     const NodeId merge = rootGraph(doc).addNode("merge", "merge");
     const auto revisionBefore = doc.stateRevision();
 
-    auto transaction =
-        transactionCommand("invalid batch", {setParamCommand(doc.rootNetworkId(), source, "authored", "value"),
-                                             connectCommand(doc.rootNetworkId(), {source, 0}, {merge, 9})});
+    auto transaction = transactionCommand(
+        "invalid batch",
+        {setParamCommand(doc.rootNetworkId(), source, "authored", ParameterValue{std::string{"value"}}),
+         connectCommand(doc.rootNetworkId(), {source, 0}, {merge, 9})});
     EXPECT_THROW(stack.push(std::move(transaction)), GraphException);
     EXPECT_EQ(doc.stateRevision(), revisionBefore);
     EXPECT_EQ(stack.depth(), 0u);
@@ -150,14 +152,14 @@ TEST(CommandStackTest, HistoryBoundedByCapacity) {
     Document doc = emptyDocument();
     CommandStack stack(doc, /*capacity=*/2);
     const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
-    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", "1.0"));
-    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", "2.0"));
-    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", "3.0"));
+    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", ParameterValue{std::string{"1.0"}}));
+    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", ParameterValue{std::string{"2.0"}}));
+    stack.push(setParamCommand(doc.rootNetworkId(), plate, "gain", ParameterValue{std::string{"3.0"}}));
     EXPECT_EQ(stack.depth(), 2u);
     EXPECT_TRUE(stack.undo());
     EXPECT_TRUE(stack.undo());
     EXPECT_FALSE(stack.undo());
-    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), "1.0");
+    EXPECT_EQ(rootGraph(doc).node(plate)->params.at("gain"), ParameterValue{std::string{"1.0"}});
 }
 
 TEST(ProjectSessionTest, SharesDocumentHistoryAndPreservesSnapshots) {
@@ -167,15 +169,16 @@ TEST(ProjectSessionTest, SharesDocumentHistoryAndPreservesSnapshots) {
     ASSERT_TRUE(created.committed);
     const NodeId plate = created.createdNodeIds.front().id;
     const Document beforeEdit = session.snapshot();
-    const auto edit =
-        session.submit(setParamCommand(session.document().rootNetworkId(), plate, "gain", "2.0"), current(session));
+    const auto edit = session.submit(
+        setParamCommand(session.document().rootNetworkId(), plate, "gain", ParameterValue{std::string{"2.0"}}),
+        current(session));
     ASSERT_TRUE(edit.committed);
-    EXPECT_EQ(rootGraph(session.document()).node(plate)->params.at("gain"), "2.0");
+    EXPECT_EQ(rootGraph(session.document()).node(plate)->params.at("gain"), ParameterValue{std::string{"2.0"}});
     EXPECT_EQ(rootGraph(beforeEdit).node(plate)->params.count("gain"), 0u);
     EXPECT_TRUE(session.undo(current(session)).committed);
     EXPECT_EQ(rootGraph(session.document()).node(plate)->params.count("gain"), 0u);
     EXPECT_TRUE(session.redo(current(session)).committed);
-    EXPECT_EQ(rootGraph(session.snapshot()).node(plate)->params.at("gain"), "2.0");
+    EXPECT_EQ(rootGraph(session.snapshot()).node(plate)->params.at("gain"), ParameterValue{std::string{"2.0"}});
 }
 
 TEST(ProjectSessionTest, RejectsStaleRevisionWithoutChangingDocument) {
@@ -197,8 +200,9 @@ TEST(ProjectSessionTest, NotifiesObserversOnlyForSuccessfulMutations) {
     ObserverCount count;
     auto subscription = session.subscribe(&count, &countObserver);
 
-    const auto rejected =
-        session.submit(setParamCommand(session.document().rootNetworkId(), 999, "gain", "1.0"), current(session));
+    const auto rejected = session.submit(
+        setParamCommand(session.document().rootNetworkId(), 999, "gain", ParameterValue{std::string{"1.0"}}),
+        current(session));
     EXPECT_FALSE(rejected.committed);
     EXPECT_EQ(count.calls, 0);
 
@@ -298,13 +302,76 @@ TEST(CommandStackTest, FailedPublicationPreparationPreservesUndoAndIdentityHighW
     EXPECT_GT(rootGraph(doc).nodes().front().id, first);
 }
 
+TEST(CommandStackTest, TypedParameterBatchResetAndUndoRedoAreAtomic) {
+    Document doc = emptyDocument();
+    const auto node = rootGraph(doc).addNode("testpattern", "node");
+    CommandStack stack(doc);
+    const auto network = doc.rootNetworkId();
+
+    stack.push(setParametersCommand({{ParameterAddress{network, node, "first"}, ParameterValue{std::string{"one"}}},
+                                     {ParameterAddress{network, node, "second"}, ParameterValue{std::int64_t{2}}}}));
+    ASSERT_EQ(stack.depth(), 1u);
+    EXPECT_EQ(rootGraph(doc).node(node)->params.at("first"), ParameterValue{std::string{"one"}});
+    EXPECT_EQ(rootGraph(doc).node(node)->params.at("second"), ParameterValue{std::int64_t{2}});
+
+    stack.push(resetParamCommand(network, node, "first"));
+    ASSERT_EQ(stack.depth(), 2u);
+    EXPECT_FALSE(rootGraph(doc).node(node)->params.contains("first"));
+    ASSERT_TRUE(stack.undo());
+    EXPECT_EQ(rootGraph(doc).node(node)->params.at("first"), ParameterValue{std::string{"one"}});
+    ASSERT_TRUE(stack.redo());
+    EXPECT_FALSE(rootGraph(doc).node(node)->params.contains("first"));
+    ASSERT_TRUE(stack.undo());
+    ASSERT_TRUE(stack.undo());
+    EXPECT_TRUE(rootGraph(doc).node(node)->params.empty());
+    ASSERT_TRUE(stack.redo());
+    ASSERT_TRUE(stack.redo());
+    EXPECT_EQ(rootGraph(doc).node(node)->params.at("second"), ParameterValue{std::int64_t{2}});
+}
+
+TEST(CommandStackTest, InvalidTypedBatchLeavesDocumentAndHistoryUntouched) {
+    Document doc = emptyDocument();
+    const auto node = rootGraph(doc).addNode("testpattern", "node");
+    const auto color = rootGraph(doc).addNode("constcolor", "color");
+    CommandStack stack(doc);
+    const auto revision = doc.stateRevision();
+    const auto batch = setParametersCommand(
+        {{ParameterAddress{doc.rootNetworkId(), node, "valid"}, ParameterValue{std::string{"value"}}},
+         {ParameterAddress{doc.rootNetworkId(), color, "color"}, ParameterValue{std::int64_t{1}}}});
+
+    EXPECT_THROW(stack.push(batch), GraphException);
+    EXPECT_EQ(doc.stateRevision(), revision);
+    EXPECT_EQ(stack.depth(), 0u);
+    EXPECT_TRUE(rootGraph(doc).node(node)->params.empty());
+    EXPECT_TRUE(rootGraph(doc).node(color)->params.empty());
+}
+
+TEST(CommandStackTest, InstanceParameterBatchRequiresDefinitionNetworkScope) {
+    Document doc = emptyDocument();
+    const auto definition = doc.addNetwork("Definition");
+    const auto target = doc.network(definition).graph().addNode("testpattern", "target");
+    const auto instance = doc.addInstance(doc.rootNetworkId(), definition, "instance");
+    CommandStack stack(doc);
+    const auto wrongScope = setParametersCommand(
+        {{ParameterAddress{doc.rootNetworkId(), target, "override", instance}, ParameterValue{std::string{"wrong"}}}});
+    EXPECT_THROW(stack.push(wrongScope), GraphException);
+    EXPECT_TRUE(doc.instance(instance)->params.empty());
+
+    stack.push(setParametersCommand(
+        {{ParameterAddress{definition, target, "override", instance}, ParameterValue{std::string{"right"}}}}));
+    EXPECT_EQ(doc.instance(instance)->params.at(target).at("override"), ParameterValue{std::string{"right"}});
+    ASSERT_TRUE(stack.undo());
+    EXPECT_TRUE(doc.instance(instance)->params.empty());
+}
+
 TEST(ProjectSessionTest, BatchFailurePreservesHistoryAndValidBatchUndoesEveryEdit) {
     Document doc = emptyDocument();
     const auto source = rootGraph(doc).addNode("testpattern", "source");
     const auto output = rootGraph(doc).addNode("output", "out");
     ProjectSession session(std::move(doc));
-    auto commands = std::vector<Command>{setParamCommand(session.document().rootNetworkId(), source, "note", "batch"),
-                                         connectCommand(session.document().rootNetworkId(), {source, 0}, {output, 0})};
+    auto commands = std::vector<Command>{
+        setParamCommand(session.document().rootNetworkId(), source, "note", ParameterValue{std::string{"batch"}}),
+        connectCommand(session.document().rootNetworkId(), {source, 0}, {output, 0})};
     const auto committed = session.submit(transactionCommand("valid", std::move(commands)), {1, "batch"});
     ASSERT_TRUE(committed.committed);
     ASSERT_EQ(committed.createdEdgeIds.size(), 1u);
@@ -323,7 +390,7 @@ TEST(ProjectSessionTest, BatchFailurePreservesHistoryAndValidBatchUndoesEveryEdi
     EXPECT_FALSE(session.canUndo());
     ASSERT_TRUE(session.redo(current(session)).committed);
     EXPECT_EQ(rootGraph(session.document()).edges().front().id, edge);
-    EXPECT_EQ(rootGraph(session.document()).node(source)->params.at("note"), "batch");
+    EXPECT_EQ(rootGraph(session.document()).node(source)->params.at("note"), ParameterValue{std::string{"batch"}});
 }
 
 TEST(ProjectSessionTest, SourceEventsAndHistoryRetriesCannotResurrectOldFreshness) {
@@ -368,7 +435,10 @@ TEST(ProjectSessionTest, MissingJournalAndFutureRevisionRequireResynchronization
 TEST(ProjectSessionTest, FilteredPagesPreserveSparseIdentitiesAndValueBoundaries) {
     Document doc = emptyDocument();
     rootGraph(doc).addNodeWithId(90, "testpattern", "plate-last");
-    rootGraph(doc).addNodeWithId(7, "testpattern", "plate-first", {{"a", "one"}, {"b", "two"}});
+    rootGraph(doc).addNodeWithId(
+        7, "testpattern", "plate-first",
+        ParameterValues{{"a", ParameterValue{std::string{"one"}}}, {"b", ParameterValue{std::string{"two"}}}});
+
     rootGraph(doc).addNodeWithId(20, "testpattern", "unrelated");
     ProjectSession session(std::move(doc));
     const NetworkId network = session.document().rootNetworkId();
@@ -382,8 +452,103 @@ TEST(ProjectSessionTest, FilteredPagesPreserveSparseIdentitiesAndValueBoundaries
     const auto values = session.queryValues(network, 7, {}, 1, "a");
     ASSERT_EQ(values.size(), 1u);
     EXPECT_EQ(values.front().key, "b");
-    EXPECT_EQ(values.front().value, "two");
+    EXPECT_EQ(values.front().value, ParameterValue{std::string{"two"}});
+
     EXPECT_TRUE(session.queryValues(network, 7, {}, 0).empty());
+}
+TEST(ProjectSessionTest, ValueQueriesIncludeTypedCatalogDefaults) {
+    Document doc = emptyDocument();
+    const auto node = rootGraph(doc).addNode("constcolor", "color");
+    ProjectSession session(std::move(doc));
+    const auto values = session.queryValues(session.document().rootNetworkId(), node);
+    ASSERT_EQ(values.size(), 1u);
+    EXPECT_EQ(values.front().key, "color");
+    EXPECT_EQ(values.front().value, (ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}}));
+
+    ASSERT_TRUE(session
+                    .submit(setParamCommand(session.document().rootNetworkId(), node, "color",
+                                            ParameterValue{ColorValue{{0.25F, 0.5F, 0.75F, 1.0F}}}),
+                            current(session))
+                    .committed);
+    const auto authored = session.queryValues(session.document().rootNetworkId(), node);
+    ASSERT_EQ(authored.size(), 1u);
+    EXPECT_EQ(authored.front().value, (ParameterValue{ColorValue{{0.25F, 0.5F, 0.75F, 1.0F}}}));
+}
+TEST(ProjectSessionTest, ParameterGesturePreviewsAreTransientAndCommitOnce) {
+    Document doc = emptyDocument();
+    const auto node = rootGraph(doc).addNode("testpattern", "node");
+    ProjectSession session(std::move(doc));
+    const auto network = session.document().rootNetworkId();
+    const auto before = session.snapshot();
+
+    const auto begin = session.beginParameterGesture(
+        {{ParameterAddress{network, node, "gain"}, ParameterValue{std::string{"one"}}}}, current(session));
+    ASSERT_EQ(begin.result.error, std::nullopt);
+    ASSERT_NE(begin.token, 0u);
+    ASSERT_NE(begin.snapshot, nullptr);
+    EXPECT_FALSE(session.document().network(network).graph().node(node)->params.contains("gain"));
+    EXPECT_FALSE(session.canUndo());
+    EXPECT_EQ(session.revision(), 1u);
+
+    Document isolated = *begin.snapshot;
+    isolated.network(network).graph().setParam(node, "gain", ParameterValue{std::string{"isolated"}});
+    EXPECT_EQ(begin.snapshot->network(network).graph().node(node)->params.at("gain"),
+              ParameterValue{std::string{"one"}});
+
+    const auto updated = session.updateParameterGesture(
+        begin.token, {{ParameterAddress{network, node, "gain"}, ParameterValue{std::string{"two"}}}});
+    ASSERT_EQ(updated.result.error, std::nullopt);
+    ASSERT_NE(updated.snapshot, nullptr);
+    EXPECT_EQ(updated.snapshot->network(network).graph().node(node)->params.at("gain"),
+              ParameterValue{std::string{"two"}});
+    EXPECT_FALSE(session.document().network(network).graph().node(node)->params.contains("gain"));
+    EXPECT_EQ(session.snapshot().stateRevision(), before.stateRevision());
+
+    const auto committed = session.commitParameterGesture(begin.token, current(session));
+    ASSERT_TRUE(committed.committed);
+    EXPECT_TRUE(session.canUndo());
+    EXPECT_EQ(session.document().network(network).graph().node(node)->params.at("gain"),
+              ParameterValue{std::string{"two"}});
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    EXPECT_FALSE(session.document().network(network).graph().node(node)->params.contains("gain"));
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    EXPECT_EQ(session.document().network(network).graph().node(node)->params.at("gain"),
+              ParameterValue{std::string{"two"}});
+}
+
+TEST(ProjectSessionTest, ParameterGestureCancelAndConflictDoNotPublish) {
+    Document doc = emptyDocument();
+    const auto node = rootGraph(doc).addNode("testpattern", "node");
+    ProjectSession session(std::move(doc));
+    const auto network = session.document().rootNetworkId();
+    const auto before = session.snapshot();
+
+    const auto begin = session.beginParameterGesture(
+        {{ParameterAddress{network, node, "gain"}, ParameterValue{std::string{"preview"}}}}, current(session));
+    ASSERT_NE(begin.snapshot, nullptr);
+    const auto cancelled = session.cancelParameterGesture(begin.token);
+    EXPECT_FALSE(cancelled.committed);
+    EXPECT_FALSE(cancelled.error.has_value());
+    EXPECT_FALSE(session.canUndo());
+    EXPECT_EQ(session.snapshot().stateRevision(), before.stateRevision());
+    EXPECT_TRUE(session.changesSince(session.revision()).events.empty());
+    EXPECT_TRUE(session.commitParameterGesture(begin.token, current(session)).error.has_value());
+
+    const auto second = session.beginParameterGesture(
+        {{ParameterAddress{network, node, "gain"}, ParameterValue{std::string{"preview"}}}}, current(session));
+    ASSERT_NE(second.snapshot, nullptr);
+    ASSERT_TRUE(
+        session
+            .submit(setParamCommand(network, node, "other", ParameterValue{std::string{"committed"}}), current(session))
+            .committed);
+    const auto conflict = session.commitParameterGesture(second.token, current(session));
+    ASSERT_FALSE(conflict.committed);
+    ASSERT_TRUE(conflict.error.has_value());
+    EXPECT_EQ(conflict.error->code, EditErrorCode::RevisionConflict);
+    EXPECT_EQ(session.document().network(network).graph().node(node)->params.at("other"),
+              ParameterValue{std::string{"committed"}});
+    EXPECT_FALSE(session.document().network(network).graph().node(node)->params.contains("gain"));
+    EXPECT_TRUE(session.cancelParameterGesture(second.token).error == std::nullopt);
 }
 
 TEST(ProjectSessionTest, SharedWorkerSnapshotsRemainImmutableAcrossOwnerEdits) {

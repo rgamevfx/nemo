@@ -361,8 +361,12 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
         const auto* node = graph.nodeByName(options.edit.node);
         if (!node)
             throw std::runtime_error("invalidation probe: unknown node '" + options.edit.node + "'");
-        probe("upstream_parameter_change",
-              nemo::setParamCommand(network, node->id, options.edit.key, options.edit.value), false);
+        const auto* descriptor = graph.descriptor(node->type);
+        if (!descriptor)
+            throw std::runtime_error("invalidation probe: node type '" + node->type + "' is unavailable");
+        const auto typedValue = graph.catalog().parseParameterText(node->type, options.edit.key, options.edit.value);
+        probe("upstream_parameter_change", nemo::setParamCommand(network, node->id, options.edit.key, typedValue),
+              false);
     }
     return probes;
 }

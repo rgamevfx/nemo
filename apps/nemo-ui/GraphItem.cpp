@@ -5,6 +5,7 @@
 #include <QFontMetrics>
 #include <QHash>
 #include <QImage>
+#include <QMetaType>
 #include <QPainter>
 #include <QQuickWindow>
 #include <QSGFlatColorMaterial>
@@ -14,6 +15,7 @@
 #include <QSGTextureMaterial>
 #include <QVariantMap>
 
+#include <QStringList>
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -42,6 +44,18 @@ QString boundedText(QString text, int maxCharacters) {
         return text;
     }
     return text.left(std::max(1, maxCharacters - 3)) + QStringLiteral("...");
+}
+
+QString parameterDisplayText(const QVariant& value) {
+    if (value.metaType().id() == QMetaType::QVariantList) {
+        QStringList components;
+        for (const auto& component : value.toList())
+            components.push_back(component.toString());
+        return components.join(QLatin1Char(' '));
+    }
+    if (value.metaType().id() == QMetaType::Bool)
+        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
+    return value.toString();
 }
 QSGGeometryNode* makeGeometryNode(const QColor& color) {
     auto node = std::make_unique<QSGGeometryNode>();
@@ -362,7 +376,7 @@ void GraphItem::rebuildNodeRecords() {
         int parameterCount = 0;
         for (auto it = parameters.cbegin(); it != parameters.cend() && parameterCount < kMaxParametersPerNode;
              ++it, ++parameterCount) {
-            record.parameters.push_back({boundedText(it.key(), 24), boundedText(it.value().toString(), 42)});
+            record.parameters.push_back({boundedText(it.key(), 24), boundedText(parameterDisplayText(it.value()), 42)});
         }
         if (parameters.size() > kMaxParametersPerNode) {
             record.parameters.push_back({QStringLiteral("..."), QStringLiteral("more parameters")});

@@ -72,7 +72,7 @@ struct SharedVfx {
     NodeId gradeB{kInvalidNode};
 };
 
-[[nodiscard]] SharedVfx makeSharedVfx(const char* tint, const char* gradeA, const char* gradeB) {
+[[nodiscard]] SharedVfx makeSharedVfx(ColorValue tint, const char* gradeA, const char* gradeB) {
     SharedVfx fixture;
     Document& doc = fixture.doc;
     rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
@@ -81,9 +81,9 @@ struct SharedVfx {
     fixture.tint = rootGraph(doc).addNode("constcolor", "tint");
     rootGraph(doc).setParam(fixture.tint, "color", tint);
     fixture.gradeA = rootGraph(doc).addNode("merge", "gradeA");
-    rootGraph(doc).setParam(fixture.gradeA, "grade", gradeA);
+    rootGraph(doc).setParam(fixture.gradeA, "grade", std::string(gradeA));
     fixture.gradeB = rootGraph(doc).addNode("merge", "gradeB");
-    rootGraph(doc).setParam(fixture.gradeB, "grade", gradeB);
+    rootGraph(doc).setParam(fixture.gradeB, "grade", std::string(gradeB));
     (void)rootGraph(doc).addNode("output", "outA");
     (void)rootGraph(doc).addNode("output", "outB");
     connect(rootGraph(doc), "plate", "gradeA", 0, 0);
@@ -149,7 +149,7 @@ TEST(ReuseTest, SecondIdenticalRequestReusesWithoutRerender) {
 // outputs reuses the shared upstream results; changing one grade invalidates
 // only its branch; changing the shared VFX invalidates both.
 TEST(ReuseTest, SharedVfxWithIndependentGradesReuseAndInvalidateByDependency) {
-    SharedVfx fixture = makeSharedVfx("0 0 1 0.5", "1", "2");
+    SharedVfx fixture = makeSharedVfx(ColorValue{{0.0F, 0.0F, 1.0F, 0.5F}}, "1", "2");
 
     ResultCache<CpuImage> cache;
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outA", 0), &cache));
@@ -164,7 +164,7 @@ TEST(ReuseTest, SharedVfxWithIndependentGradesReuseAndInvalidateByDependency) {
     // Change one grade: only gradeA's branch re-renders; shared results and
     // gradeB stay valid.
     CommandStack stack(fixture.doc);
-    stack.push(setParamCommand(fixture.doc.rootNetworkId(), fixture.gradeA, "grade", "3"));
+    stack.push(setParamCommand(fixture.doc.rootNetworkId(), fixture.gradeA, "grade", std::string("3")));
     const CacheCounts before = cache.counts();
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outA", 0), &cache));
     const CacheCounts afterGradeEdit = cache.counts();
@@ -172,7 +172,8 @@ TEST(ReuseTest, SharedVfxWithIndependentGradesReuseAndInvalidateByDependency) {
     EXPECT_EQ(afterGradeEdit.misses - before.misses, 2u);  // gradeA + outA recomputed
 
     // Change the shared VFX: both affected downstream branches invalidate.
-    stack.push(setParamCommand(fixture.doc.rootNetworkId(), fixture.tint, "color", "1 0 0 1"));
+    stack.push(
+        setParamCommand(fixture.doc.rootNetworkId(), fixture.tint, "color", ColorValue{{1.0F, 0.0F, 0.0F, 1.0F}}));
     const CacheCounts beforeShared = cache.counts();
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outA", 0), &cache));
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outB", 0), &cache));
@@ -186,7 +187,7 @@ TEST(ReuseTest, SharedVfxWithIndependentGradesReuseAndInvalidateByDependency) {
 // Acceptance example 2: an unrelated document edit does not invalidate
 // branch reuse — identity comes from effective state, not edit history.
 TEST(ReuseTest, UnrelatedEditPreservesBranchReuse) {
-    SharedVfx fixture = makeSharedVfx("0 0 1 0.5", "1", "2");
+    SharedVfx fixture = makeSharedVfx(ColorValue{{0.0F, 0.0F, 1.0F, 0.5F}}, "1", "2");
     ResultCache<CpuImage> cache;
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outA", 0), &cache));
 
@@ -204,7 +205,7 @@ TEST(ReuseTest, UnrelatedEditPreservesBranchReuse) {
 
     // An edit to the *other* output's grade is unrelated to outA.
     CommandStack stack(fixture.doc);
-    stack.push(setParamCommand(fixture.doc.rootNetworkId(), fixture.gradeB, "grade", "9"));
+    stack.push(setParamCommand(fixture.doc.rootNetworkId(), fixture.gradeB, "grade", std::string("9")));
     const CacheCounts before = cache.counts();
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outA", 0), &cache));
     const CacheCounts after = cache.counts();
@@ -254,7 +255,7 @@ TEST(ReuseTest, RegionVariantsCoexist) {
 // state; viewerResultKey bakes it in.
 TEST(ReuseTest, ViewerTransformEditInvalidatesViewerIdentityButNotSceneLinearReuse) {
     Document doc = makeDocument({{"constcolor", "tint"}, {"output", "out"}});
-    rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", "0.25 0.5 1 1");
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", ColorValue{{0.25F, 0.5F, 1.0F, 1.0F}});
     connect(rootGraph(doc), "tint", "out");
     const EvaluationRequest request = requestFor(doc, "out", 0);
 
@@ -326,7 +327,7 @@ TEST(ReuseTest, StalePublicationTicketIsRejected) {
 // accepting stale publication.
 TEST(ReuseTest, UndoRedoRestoresEffectiveStateAndReuse) {
     Document doc = makeDocument({{"constcolor", "tint"}, {"output", "out"}});
-    rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", "0 0 1 1");
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", ColorValue{{0.0F, 0.0F, 1.0F, 1.0F}});
     connect(rootGraph(doc), "tint", "out");
     const EvaluationRequest request = requestFor(doc, "out", 0);
 
@@ -334,7 +335,8 @@ TEST(ReuseTest, UndoRedoRestoresEffectiveStateAndReuse) {
     const CpuEvaluation original = evaluateCpu(doc, request, &cache);
 
     CommandStack stack(doc);
-    stack.push(setParamCommand(doc.rootNetworkId(), rootGraph(doc).nodeByName("tint")->id, "color", "1 0 0 1"));
+    stack.push(setParamCommand(doc.rootNetworkId(), rootGraph(doc).nodeByName("tint")->id, "color",
+                               ColorValue{{1.0F, 0.0F, 0.0F, 1.0F}}));
     const CpuEvaluation edited = evaluateCpu(doc, request, &cache);
     EXPECT_FALSE(samePixels(original.image, edited.image));
 
@@ -361,7 +363,7 @@ TEST(ReuseTest, EquivalentOccurrenceWithUnchangedEffectiveStateReuses) {
     auto buildGraph = [] {
         Document doc =
             makeDocument({{"testpattern", "plate"}, {"constcolor", "tint"}, {"merge", "comp"}, {"output", "out"}});
-        rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", "0 0 1 0.5");
+        rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", ColorValue{{0.0F, 0.0F, 1.0F, 0.5F}});
         connect(rootGraph(doc), "plate", "comp", 0, 0);
         connect(rootGraph(doc), "tint", "comp", 0, 1);
         connect(rootGraph(doc), "comp", "out");
@@ -394,7 +396,7 @@ TEST(ReuseTest, EquivalentOccurrenceWithUnchangedEffectiveStateReuses) {
 // be computed again on demand.
 TEST(ReuseTest, EvictedIdentityIsRecomputedOnDemand) {
     Document doc = makeDocument({{"constcolor", "tint"}, {"output", "out"}});
-    rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", "0 0 1 1");
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", ColorValue{{0.0F, 0.0F, 1.0F, 1.0F}});
     connect(rootGraph(doc), "tint", "out");
     const EvaluationRequest request = requestFor(doc, "out", 0);
 
@@ -434,7 +436,7 @@ TEST(ReuseTest, EditingCachedNodeInvalidatesOnlyItsResults) {
     static_cast<void>(evaluateCpu(doc, requestFor(doc, "out", 0), &cache));
 
     CommandStack stack(doc);
-    stack.push(setParamCommand(doc.rootNetworkId(), rootGraph(doc).nodeByName("plate")->id, "gain", "2"));
+    stack.push(setParamCommand(doc.rootNetworkId(), rootGraph(doc).nodeByName("plate")->id, "gain", std::string("2")));
     const CacheCounts before = cache.counts();
     static_cast<void>(evaluateCpu(doc, requestFor(doc, "out", 0), &cache));
     const CacheCounts after = cache.counts();
@@ -449,7 +451,7 @@ TEST(ReuseTest, EditingCachedNodeInvalidatesOnlyItsResults) {
 TEST(ReuseTest, AliasedParamSetsGetDistinctKeys) {
     EvaluationRequest request;
 
-    const auto keyFor = [&](const std::map<std::string, std::string>& params) {
+    const auto keyFor = [&](const ParameterValues& params) {
         Document value = makeDocument({{"constcolor", "tint"}});
         request.network = value.rootNetworkId();
         const NodeId id = rootGraph(value).nodeByName("tint")->id;
@@ -458,11 +460,12 @@ TEST(ReuseTest, AliasedParamSetsGetDistinctKeys) {
         return nodeResultKey(value, *rootGraph(value).node(id), {}, request);
     };
 
-    const ResultKey valueWithEquals = keyFor({{"a", "b=c"}});
-    const ResultKey keyWithEquals = keyFor({{"a=b", "c"}});
-    const ResultKey valueWithSeparator = keyFor({{"a", "v\x1F"
-                                                       "b=c"}});
-    const ResultKey twoParams = keyFor({{"a", "v"}, {"b", "c"}});
+    const ResultKey valueWithEquals = keyFor({{"a", ParameterValue{std::string("b=c")}}});
+    const ResultKey keyWithEquals = keyFor({{"a=b", ParameterValue{std::string("c")}}});
+    const ResultKey valueWithSeparator = keyFor({{"a", ParameterValue{std::string("v\x1F"
+                                                                                  "b=c")}}});
+    const ResultKey twoParams =
+        keyFor({{"a", ParameterValue{std::string("v")}}, {"b", ParameterValue{std::string("c")}}});
 
     EXPECT_NE(valueWithEquals, keyWithEquals);
     EXPECT_NE(valueWithSeparator, twoParams);

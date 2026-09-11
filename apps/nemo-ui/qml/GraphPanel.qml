@@ -131,7 +131,26 @@ Pane {
                     }
                 }
                 RowLayout {
+                    id: parameterEditor
                     Layout.fillWidth: true
+                    property var selectedNode: parameterNode.currentIndex >= 0
+                                                     ? controller.graphNodes[parameterNode.currentIndex]
+                                                     : null
+                    property var selectedParameter: {
+                        if (!selectedNode)
+                            return null
+                        for (var descriptorIndex = 0; descriptorIndex < controller.nodeCatalog.length; ++descriptorIndex) {
+                            var descriptor = controller.nodeCatalog[descriptorIndex]
+                            if (descriptor.type !== selectedNode.type)
+                                continue
+                            for (var parameterIndex = 0; parameterIndex < descriptor.parameters.length; ++parameterIndex) {
+                                var candidate = descriptor.parameters[parameterIndex]
+                                if (candidate.name === parameterKey.text.trim())
+                                    return candidate
+                            }
+                        }
+                        return null
+                    }
                     ComboBox {
                         id: parameterNode
                         objectName: "graphParameterNode"
@@ -150,7 +169,7 @@ Pane {
                         id: parameterValue
                         objectName: "graphParameterValue"
                         Layout.fillWidth: true
-                        placeholderText: "Value"
+                        placeholderText: parameterEditor.selectedParameter ? parameterEditor.selectedParameter.type + " value" : "Value"
                         selectByMouse: true
                     }
                     Button {
@@ -160,7 +179,17 @@ Pane {
                         onClicked: {
                             var node = controller.graphNodes[parameterNode.currentIndex]
                             if (node)
-                                controller.setNodeParameter(node.id, parameterKey.text.trim(), parameterValue.text)
+                                controller.setNodeParameterText(node.id, parameterKey.text.trim(), parameterValue.text)
+                        }
+                    }
+                    Button {
+                        objectName: "graphParameterReset"
+                        text: "Reset"
+                        enabled: parameterNode.currentIndex >= 0 && parameterKey.text.trim().length > 0
+                        onClicked: {
+                            var node = controller.graphNodes[parameterNode.currentIndex]
+                            if (node)
+                                controller.resetNodeParameter(node.id, parameterKey.text.trim())
                         }
                     }
                 }

@@ -1,0 +1,135 @@
+{
+  "issue": 51,
+  "branch": "issue/51-typed-parameters",
+  "status": "Implemented and verified; human public-interface review required before merge; publication tracked in GitHub issue 51",
+  "changes": [
+    "Typed boolean/int64/float/string/choice/vector2/vector3/color storage, catalog defaults and validation",
+    "Atomic scoped set/reset/batch commands and shared immutable session gesture previews; one undo entry per commit",
+    "Schema 3 tagged values with explicit schema 1/2 text migration; unknown fields retained",
+    "Typed CPU/GPU plans, native/source execution and type-aware reuse identity; unchanged pixel math",
+    "Tagged headless protocol, typed Qt queries/edits, catalog-owned text entry parsing without JavaScript integer rounding"
+  ],
+  "verification": {
+    "debug_build": {
+      "command": "cmake --build --preset debug -j 3",
+      "result": "passed"
+    },
+    "release_build": {
+      "command": "cmake --build --preset release -j 3",
+      "result": "passed"
+    },
+    "debug_tests": {
+      "command": "ctest --preset debug",
+      "passed": 283,
+      "failed": 0,
+      "seconds": 75.94
+    },
+    "release_tests": {
+      "command": "ctest --preset release -R 'NetworkTest|GraphTest|PersistenceTest|EvaluationTest|RequestValidation|ReuseTest|ProjectSessionTest|CommandStackTest|CatalogTest|SourceEvaluation|SourceCommand|Interactive.IntegerText|Effect'",
+      "passed": 120,
+      "failed": 0,
+      "seconds": 7.9
+    },
+    "asan_ubsan": {
+      "build": "cmake --build --preset asan --target nemo_core_tests -j 2",
+      "command": "ctest --preset asan -R 'NetworkTest|GraphTest|PersistenceTest|EvaluationTest|RequestValidation|ReuseTest|ProjectSessionTest|CommandStackTest|CatalogTest|SourceEvaluation|SourceCommand'",
+      "passed": 108,
+      "failed": 0,
+      "seconds": 5.76
+    },
+    "tsan": {
+      "build": "setarch x86_64 -R cmake --build --preset tsan --target nemo_core_tests -j 2",
+      "command": "setarch x86_64 -R ctest --preset tsan -R 'NetworkTest|GraphTest|PersistenceTest|EvaluationTest|RequestValidation|ReuseTest|ProjectSessionTest|CommandStackTest|CatalogTest|SourceEvaluation|SourceCommand'",
+      "passed": 108,
+      "failed": 0,
+      "seconds": 2.37,
+      "scope": "Core model/evaluation with existing GPU/UI-disabled preset; subprocess-local ASLR workaround, no host sysctl changes"
+    },
+    "authored_smoke": {
+      "command": "c++ -std=c++20 -I src -I build/debug/vcpkg_installed/x64-linux/include <temporary>/smoke.cpp build/debug/src/nemo/libnemo_core.a -pthread -o <temporary>/smoke && <temporary>/smoke <temporary>/typed.json",
+      "result": "passed",
+      "checks": [
+        "Custom catalog numeric range, integer, toggle, choice and vector values",
+        "Invalid typed/range batch leaves revision, values and history unchanged",
+        "Preview changes rendered snapshot but not published document",
+        "Updated preview commits once; undo/redo/reset restore rendered pixels",
+        "Typed schema roundtrip using active catalog; effective query defaults and authored values"
+      ]
+    },
+    "headless_protocol": {
+      "command": "DISPLAY/WAYLAND_DISPLAY/QT_QPA_PLATFORM unset; nemo-cli project-session <temporary>/legacy.json",
+      "operations_per_build": 17,
+      "builds": [
+        "debug",
+        "release"
+      ],
+      "result": "identical verified responses",
+      "checks": [
+        "Typed query/color/choice/toggle/float/int64 transport",
+        "Wrong known types and unsupported choices rejected",
+        "Batch undo/redo and reset",
+        "Gesture begin/update/commit/cancel with truthful noncommitted preview success",
+        "Published state unchanged during preview and cancel"
+      ]
+    },
+    "migration_errors": {
+      "command": "nemo-cli validate <temporary>/malformed-color.json",
+      "result": "NaN and extra legacy color components rejected with Root/node/key diagnostics"
+    },
+    "images": {
+      "comparison": "Captured existing compiled #45 output before rebuilding; compared bytes after typed migration",
+      "color_merge": {
+        "size": [
+          16,
+          16
+        ],
+        "cpu_sha256": "b15ecfd006c144fea48faf11ccc130a1c6f32173296aa8f93b38ff1812e73e44",
+        "gpu_sha256": "b15ecfd006c144fea48faf11ccc130a1c6f32173296aa8f93b38ff1812e73e44",
+        "result": "both byte-identical to their prechange outputs"
+      },
+      "sample_frame12": {
+        "sha256": "539ae078c611de021d1759fbc0410a3f82f64bda3ccfa9e0ff11bb1dc9251650",
+        "result": "debug and release outputs byte-identical to prechange; schema3 sample validates"
+      },
+      "golden_baselines_changed": false
+    },
+    "native_wayland": {
+      "command": "NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland build/debug/tests/nemo_workspace_ui_tests --gtest_filter=WorkspaceDragTest.RenamedNodeEditsReachBothPanelsAndUndoByIdentity:WorkspaceDragTest.InteractiveGraphAndTimelineUseCommandsAndSharePlayhead:Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically",
+      "passed": 3,
+      "failed": 0
+    },
+    "native_app": {
+      "command": "QT_QPA_PLATFORM=wayland OCIO=docs/evidence/issue12-view.ocio XDG_CONFIG_HOME=<temporary>/ui-config build/debug/apps/nemo-ui/nemo-ui --source <temporary>/ui-source.mp4 --cache-benchmark-frames 2 --viewer-cache-dir <temporary>/ui-cache",
+      "exit_code": 0,
+      "frames": [
+        0,
+        1
+      ],
+      "presented_size": [
+        160,
+        90
+      ],
+      "request_to_swap_ms": [
+        567.563563,
+        10.475672
+      ],
+      "boundary": "Qt frameSwapped; window-system handoff, not scanout",
+      "note": "Functional smoke, not performance-gate evidence; final run has no QML runtime warnings"
+    },
+    "formatting": "clang-format -i followed by --dry-run --Werror on changed C++ files passed"
+  },
+  "integration_corrections": [
+    "Restored declarations accidentally dropped during cutover",
+    "Rejected unsigned integer overflow and invalid unknown numeric representations",
+    "Moved QML text parsing into catalog to preserve int64 precision",
+    "Fixed QML selectedParameter scope; existing native scene tests failed before fix and passed after",
+    "Preview/cancel transport reports success without claiming a document commit"
+  ],
+  "limitations": [
+    "Human public-interface review required before merge",
+    "No new effects, image baseline approval, project-file container decision or inspector panel",
+    "Windows not exercised; existing platform gate remains open",
+    "Existing Qt qmlimportscanner missing-QtQml-directory messages and minizip-ng mktemp linker warning remain; no new dependency",
+    "Temporary smoke driver/media/images removed after verification; permanent behavioral regressions and this record remain"
+  ]
+}

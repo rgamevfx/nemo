@@ -4,11 +4,15 @@
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
 #include <QFileInfo>
+#include <QMetaType>
 #include <QQuickWindow>
 #include <QVariantMap>
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
+#include <string_view>
+#include <type_traits>
 #include <utility>
 namespace nemo::ui {
 namespace {
@@ -20,6 +24,12 @@ const char* parameterTypeName(nemo::ParameterType type) {
         return "integer";
     case nemo::ParameterType::Float:
         return "float";
+    case nemo::ParameterType::Choice:
+        return "choice";
+    case nemo::ParameterType::Vector2:
+        return "vector2";
+    case nemo::ParameterType::Vector3:
+        return "vector3";
     case nemo::ParameterType::Color:
         return "color";
     case nemo::ParameterType::String:
@@ -38,6 +48,172 @@ const char* portKindName(nemo::PortKind kind) {
         return "media";
     }
     return "image";
+}
+
+QVariant parameterValueVariant(const nemo::ParameterValue& value) {
+    return std::visit(
+        [](const auto& current) -> QVariant {
+            using T = std::decay_t<decltype(current)>;
+            if constexpr (std::is_same_v<T, bool>)
+                return QVariant{current};
+            else if constexpr (std::is_same_v<T, std::int64_t>)
+                return QVariant::fromValue<qlonglong>(static_cast<qlonglong>(current));
+            else if constexpr (std::is_same_v<T, double>)
+                return QVariant{current};
+            else if constexpr (std::is_same_v<T, std::string>)
+                return QString::fromStdString(current);
+            else if constexpr (std::is_same_v<T, nemo::ChoiceValue>)
+                return QString::fromStdString(current.value);
+            else {
+                QVariantList list;
+                for (const float component : current.value)
+                    list.push_back(component);
+                return list;
+            }
+        },
+        value);
+}
+
+bool isIntegerVariant(const QVariant& value) {
+    switch (value.metaType().id()) {
+    case QMetaType::Int:
+    case QMetaType::UInt:
+    case QMetaType::LongLong:
+    case QMetaType::ULongLong:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool isRealVariant(const QVariant& value) {
+    switch (value.metaType().id()) {
+    case QMetaType::Float:
+    case QMetaType::Double:
+    case QMetaType::Int:
+    case QMetaType::UInt:
+    case QMetaType::LongLong:
+    case QMetaType::ULongLong:
+        return true;
+    default:
+        return false;
+    }
+}
+
+std::optional<nemo::ParameterValue> parameterValueFromVariant(const nemo::NodeCatalog& catalog,
+                                                              const nemo::NodeDescriptor* descriptor,
+                                                              std::string_view key, const QVariant& value,
+                                                              QString& error) {
+    if (value.metaType().id() == QMetaType::ULongLong &&
+        value.toULongLong() > static_cast<qulonglong>(std::numeric_limits<std::int64_t>::max())) {
+        error = QStringLiteral("integer value is outside the signed 64-bit range");
+        return std::nullopt;
+    }
+    const auto* spec = descriptor ? catalog.parameterSpec(descriptor->type, key) : nullptr;
+    if (!spec) {
+        switch (value.metaType().id()) {
+        case QMetaType::Bool:
+            return nemo::ParameterValue{value.toBool()};
+        case QMetaType::Int:
+        case QMetaType::UInt:
+        case QMetaType::LongLong:
+        case QMetaType::ULongLong:
+            return nemo::ParameterValue{static_cast<std::int64_t>(value.toLongLong())};
+        case QMetaType::Float:
+        case QMetaType::Double:
+            return nemo::ParameterValue{value.toDouble()};
+        case QMetaType::QString:
+            return nemo::ParameterValue{value.toString().toStdString()};
+        default:
+            error = QStringLiteral("unsupported value type for unknown parameter");
+            return std::nullopt;
+        }
+    }
+
+    nemo::ParameterValue converted;
+    switch (spec->type) {
+    case nemo::ParameterType::Boolean:
+        if (value.metaType().id() != QMetaType::Bool) {
+            error = QStringLiteral("boolean parameter requires a boolean value");
+            return std::nullopt;
+        }
+        converted = value.toBool();
+        break;
+    case nemo::ParameterType::Integer:
+        if (!isIntegerVariant(value)) {
+            if (value.metaType().id() != QMetaType::Double) {
+                error = QStringLiteral("integer parameter requires an integer value");
+                return std::nullopt;
+            }
+            const double number = value.toDouble();
+            if (!std::isfinite(number) || std::trunc(number) != number ||
+                number < static_cast<double>(std::numeric_limits<std::int64_t>::min()) ||
+                number >= 9223372036854775808.0) {
+                error = QStringLiteral("integer parameter requires an integer value");
+                return std::nullopt;
+            }
+            converted = static_cast<std::int64_t>(number);
+        } else {
+            converted = static_cast<std::int64_t>(value.toLongLong());
+        }
+        break;
+    case nemo::ParameterType::Float:
+        if (!isRealVariant(value)) {
+            error = QStringLiteral("float parameter requires a numeric value");
+            return std::nullopt;
+        }
+        converted = value.toDouble();
+        break;
+    case nemo::ParameterType::Choice:
+        if (value.metaType().id() != QMetaType::QString) {
+            error = QStringLiteral("choice parameter requires a string value");
+            return std::nullopt;
+        }
+        converted = nemo::ChoiceValue{value.toString().toStdString()};
+        break;
+    case nemo::ParameterType::Vector2:
+    case nemo::ParameterType::Vector3:
+    case nemo::ParameterType::Color: {
+        if (value.metaType().id() != QMetaType::QVariantList) {
+            error = QStringLiteral("vector and color parameters require a numeric list");
+            return std::nullopt;
+        }
+        const auto list = value.toList();
+        const int expected = spec->type == nemo::ParameterType::Vector2   ? 2
+                             : spec->type == nemo::ParameterType::Vector3 ? 3
+                                                                          : 4;
+        if (list.size() != expected || std::any_of(list.cbegin(), list.cend(), [](const QVariant& component) {
+                return !isRealVariant(component) || !std::isfinite(component.toDouble());
+            })) {
+            error = QStringLiteral("vector and color parameters require the exact finite component count");
+            return std::nullopt;
+        }
+        if (expected == 2)
+            converted = nemo::Vector2Value{
+                {static_cast<float>(list.at(0).toDouble()), static_cast<float>(list.at(1).toDouble())}};
+        else if (expected == 3)
+            converted = nemo::Vector3Value{{static_cast<float>(list.at(0).toDouble()),
+                                            static_cast<float>(list.at(1).toDouble()),
+                                            static_cast<float>(list.at(2).toDouble())}};
+        else
+            converted = nemo::ColorValue{
+                {static_cast<float>(list.at(0).toDouble()), static_cast<float>(list.at(1).toDouble()),
+                 static_cast<float>(list.at(2).toDouble()), static_cast<float>(list.at(3).toDouble())}};
+        break;
+    }
+    case nemo::ParameterType::String:
+        if (value.metaType().id() != QMetaType::QString) {
+            error = QStringLiteral("string parameter requires a string value");
+            return std::nullopt;
+        }
+        converted = value.toString().toStdString();
+        break;
+    }
+    if (const auto problem = catalog.validateParameter(descriptor->type, key, converted)) {
+        error = QString::fromStdString(*problem);
+        return std::nullopt;
+    }
+    return converted;
 }
 }  // namespace
 ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session)
@@ -109,7 +285,7 @@ QVariantList ViewerController::graphNodes() const {
             for (std::string keyAfter;;) {
                 const auto values = session_.queryValues(network, node.id, {}, 256, keyAfter);
                 for (const auto& value : values)
-                    params.insert(QString::fromStdString(value.key), QString::fromStdString(value.value));
+                    params.insert(QString::fromStdString(value.key), parameterValueVariant(value.value));
                 if (values.size() < 256)
                     break;
                 keyAfter = values.back().key;
@@ -160,7 +336,7 @@ QVariantList ViewerController::nodeCatalog() const {
         for (const auto& parameter : descriptor.parameters) {
             QVariantMap value{{QStringLiteral("name"), QString::fromStdString(parameter.name)},
                               {QStringLiteral("type"), QString::fromLatin1(parameterTypeName(parameter.type))},
-                              {QStringLiteral("defaultValue"), QString::fromStdString(parameter.defaultValue)}};
+                              {QStringLiteral("defaultValue"), parameterValueVariant(parameter.defaultValue)}};
             if (parameter.minimum)
                 value.insert(QStringLiteral("minimum"), *parameter.minimum);
             if (parameter.maximum)
@@ -332,28 +508,28 @@ void ViewerController::buildGraph(const SourceReference& reference) {
             applyEdit(session_.submit(setSourceCommand("src", reference), editOptions()));
             return;
         }
-        const auto result =
-            session_.submit(Command{"open source",
-                                    [reference, network](Document& document) {
-                                        const auto source = std::make_shared<NodeId>();
-                                        const auto background = std::make_shared<NodeId>();
-                                        const auto merge = std::make_shared<NodeId>();
-                                        const auto output =
-                                            std::make_shared<NodeId>(document.network(network).defaultOutput());
-                                        addNodeCommand(network, "source", "source", source).apply(document);
-                                        addNodeCommand(network, "constcolor", "background", background).apply(document);
-                                        addNodeCommand(network, "merge", "composite", merge).apply(document);
-                                        if (*output == kInvalidNode)
-                                            addNodeCommand(network, "output", "result", output).apply(document);
-                                        setParamCommand(network, *source, "source", "src").apply(document);
-                                        setParamCommand(network, *background, "color", "0 0 0 0").apply(document);
-                                        connectCommand(network, {*source, 0}, {*merge, 0}).apply(document);
-                                        connectCommand(network, {*background, 0}, {*merge, 1}).apply(document);
-                                        connectCommand(network, {*merge, 0}, {*output, 0}).apply(document);
-                                        setDefaultOutputCommand(network, *output).apply(document);
-                                        setSourceCommand("src", reference).apply(document);
-                                    }},
-                            editOptions());
+        const auto result = session_.submit(
+            Command{"open source",
+                    [reference, network](Document& document) {
+                        const auto source = std::make_shared<NodeId>();
+                        const auto background = std::make_shared<NodeId>();
+                        const auto merge = std::make_shared<NodeId>();
+                        const auto output = std::make_shared<NodeId>(document.network(network).defaultOutput());
+                        addNodeCommand(network, "source", "source", source).apply(document);
+                        addNodeCommand(network, "constcolor", "background", background).apply(document);
+                        addNodeCommand(network, "merge", "composite", merge).apply(document);
+                        if (*output == kInvalidNode)
+                            addNodeCommand(network, "output", "result", output).apply(document);
+                        setParamCommand(network, *source, "source", std::string{"src"}).apply(document);
+                        setParamCommand(network, *background, "color", ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}})
+                            .apply(document);
+                        connectCommand(network, {*source, 0}, {*merge, 0}).apply(document);
+                        connectCommand(network, {*background, 0}, {*merge, 1}).apply(document);
+                        connectCommand(network, {*merge, 0}, {*output, 0}).apply(document);
+                        setDefaultOutputCommand(network, *output).apply(document);
+                        setSourceCommand("src", reference).apply(document);
+                    }},
+            editOptions());
         applyEdit(result);
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
@@ -397,11 +573,12 @@ void ViewerController::connectGraphNodes(const QVariant& fromValue, int fromPort
     }
 }
 
-void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString& key, const QString& value) {
+void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString& keyValue, const QVariant& value) {
     // QML identities travel as decimal strings, not lossy JavaScript doubles.
     bool validId = false;
     const auto nodeId = nodeValue.toString().toULongLong(&validId);
-    if (!validId || nodeId == static_cast<qulonglong>(kInvalidNode) || key.trimmed().isEmpty()) {
+    const auto key = keyValue.trimmed();
+    if (!validId || nodeId == static_cast<qulonglong>(kInvalidNode) || key.isEmpty()) {
         fail(QStringLiteral("node parameter requires a node ID and key"));
         return;
     }
@@ -412,13 +589,105 @@ void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString
         fail(QStringLiteral("node parameter target does not exist"));
         return;
     }
+    QString conversionError;
+    const auto converted = parameterValueFromVariant(graph.catalog(), graph.descriptor(node->type), key.toStdString(),
+                                                     value, conversionError);
+    if (!converted) {
+        fail(conversionError);
+        return;
+    }
     const auto it = node->params.find(key.toStdString());
-    if (it != node->params.end() && it->second == value.toStdString())
+    if (it != node->params.end() && it->second == *converted)
         return;
     try {
-        applyEdit(session_.submit(
-            setParamCommand(network, static_cast<NodeId>(nodeId), key.toStdString(), value.toStdString()),
-            editOptions()));
+        applyEdit(session_.submit(setParamCommand(network, static_cast<NodeId>(nodeId), key.toStdString(), *converted),
+                                  editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
+void ViewerController::setNodeParameterText(const QVariant& nodeValue, const QString& keyValue, const QString& text) {
+    bool validId = false;
+    const auto nodeId = nodeValue.toString().toULongLong(&validId);
+    const auto key = keyValue.trimmed().toStdString();
+    const auto& graph = session_.document().network(session_.document().rootNetworkId()).graph();
+    const auto* node = validId ? graph.node(nodeId) : nullptr;
+    if (!node || key.empty()) {
+        fail(QStringLiteral("node parameter text requires an existing node ID and key"));
+        return;
+    }
+    try {
+        const auto value = graph.catalog().parseParameterText(node->type, key, text.toStdString());
+        setNodeParameter(nodeValue, keyValue, parameterValueVariant(value));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
+void ViewerController::resetNodeParameter(const QVariant& nodeValue, const QString& keyValue) {
+    bool validId = false;
+    const auto nodeId = nodeValue.toString().toULongLong(&validId);
+    const auto key = keyValue.trimmed();
+    if (!validId || nodeId == static_cast<qulonglong>(kInvalidNode) || key.isEmpty()) {
+        fail(QStringLiteral("node parameter reset requires a node ID and key"));
+        return;
+    }
+    const auto network = session_.document().rootNetworkId();
+    const auto& graph = session_.document().network(network).graph();
+    const auto* node = graph.node(static_cast<NodeId>(nodeId));
+    if (!node) {
+        fail(QStringLiteral("node parameter target does not exist"));
+        return;
+    }
+    if (!node->params.contains(key.toStdString()))
+        return;
+    try {
+        applyEdit(
+            session_.submit(resetParamCommand(network, static_cast<NodeId>(nodeId), key.toStdString()), editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
+void ViewerController::setNodeParameters(const QVariantList& edits) {
+    if (edits.isEmpty()) {
+        fail(QStringLiteral("parameter batch requires at least one edit"));
+        return;
+    }
+    const auto network = session_.document().rootNetworkId();
+    const auto& graph = session_.document().network(network).graph();
+    std::vector<nemo::ParameterEdit> converted;
+    converted.reserve(edits.size());
+    for (const auto& entry : edits) {
+        const auto map = entry.toMap();
+        bool validId = false;
+        const auto nodeId = map.value(QStringLiteral("nodeId")).toString().toULongLong(&validId);
+        const auto key = map.value(QStringLiteral("key")).toString().trimmed();
+        if (!validId || nodeId == static_cast<qulonglong>(kInvalidNode) || key.isEmpty()) {
+            fail(QStringLiteral("parameter batch entries require a node ID and key"));
+            return;
+        }
+        const auto* node = graph.node(static_cast<NodeId>(nodeId));
+        if (!node) {
+            fail(QStringLiteral("node parameter target does not exist"));
+            return;
+        }
+        std::optional<nemo::ParameterValue> value;
+        if (map.contains(QStringLiteral("value")) && map.value(QStringLiteral("value")).isValid()) {
+            QString conversionError;
+            value = parameterValueFromVariant(graph.catalog(), graph.descriptor(node->type), key.toStdString(),
+                                              map.value(QStringLiteral("value")), conversionError);
+            if (!value) {
+                fail(conversionError);
+                return;
+            }
+        }
+        converted.push_back(nemo::ParameterEdit{
+            nemo::ParameterAddress{network, static_cast<NodeId>(nodeId), key.toStdString()}, std::move(value)});
+    }
+    try {
+        applyEdit(session_.submit(setParametersCommand(std::move(converted)), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }

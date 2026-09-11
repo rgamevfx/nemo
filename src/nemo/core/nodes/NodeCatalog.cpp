@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <set>
 #include <span>
 #include <sstream>
@@ -13,57 +14,142 @@ namespace nemo {
 namespace {
 
 [[nodiscard]] std::optional<std::string> validateParameterValue(const ParameterSpec& parameter,
-                                                                std::string_view value) {
-    if (!parameter.choices.empty() &&
-        std::find(parameter.choices.begin(), parameter.choices.end(), value) == parameter.choices.end()) {
-        return "must be one of the declared choices";
-    }
-    if (parameter.type == ParameterType::String)
-        return std::nullopt;
-    if (parameter.type == ParameterType::Boolean) {
-        if (value != "true" && value != "false" && value != "0" && value != "1")
-            return "must be boolean";
-        return std::nullopt;
-    }
-
-    std::istringstream stream{std::string(value)};
-    auto readNumber = [&stream](long double& number) {
-        return static_cast<bool>(stream >> number) && std::isfinite(number);
-    };
-    auto withinRange = [&parameter](long double number) {
+                                                                const ParameterValue& value) {
+    const auto withinRange = [&parameter](long double number) {
         return (!parameter.minimum || number >= static_cast<long double>(*parameter.minimum)) &&
                (!parameter.maximum || number <= static_cast<long double>(*parameter.maximum));
     };
-
-    if (parameter.type == ParameterType::Color) {
-        for (int channel = 0; channel < 4; ++channel) {
-            long double number = 0.0L;
-            if (!readNumber(number))
-                return "must contain finite, float-representable numeric channels";
-            const float representable = static_cast<float>(number);
-            if (!std::isfinite(representable))
-                return "must contain finite, float-representable numeric channels";
-            if (!withinRange(number))
-                return "is outside the declared range";
-        }
-        std::string extra;
-        return stream >> extra ? std::optional<std::string>{"must contain exactly four channels"} : std::nullopt;
+    const auto validateFloat = [&withinRange](float number) -> std::optional<std::string> {
+        if (!std::isfinite(number))
+            return "must be finite and float-representable";
+        if (!withinRange(static_cast<long double>(number)))
+            return "is outside the declared range";
+        return std::nullopt;
+    };
+    switch (parameter.type) {
+    case ParameterType::Boolean:
+        return std::holds_alternative<bool>(value) ? std::nullopt : std::optional<std::string>{"must be boolean"};
+    case ParameterType::Integer: {
+        if (!std::holds_alternative<std::int64_t>(value))
+            return "must be an integer";
+        const long double number = static_cast<long double>(std::get<std::int64_t>(value));
+        return withinRange(number) ? std::nullopt : std::optional<std::string>{"is outside the declared range"};
     }
+    case ParameterType::Float: {
+        if (!std::holds_alternative<double>(value))
+            return "must be finite numeric";
+        const double number = std::get<double>(value);
+        if (!std::isfinite(number) || !std::isfinite(static_cast<float>(number)))
+            return "must be finite and representable as a float";
+        return withinRange(static_cast<long double>(number))
+                   ? std::nullopt
+                   : std::optional<std::string>{"is outside the declared range"};
+    }
+    case ParameterType::Choice: {
+        if (!std::holds_alternative<ChoiceValue>(value))
+            return "must be a choice";
+        const auto& choice = std::get<ChoiceValue>(value).value;
+        return std::find(parameter.choices.begin(), parameter.choices.end(), choice) != parameter.choices.end()
+                   ? std::nullopt
+                   : std::optional<std::string>{"must be one of the declared choices"};
+    }
+    case ParameterType::Vector2: {
+        if (!std::holds_alternative<Vector2Value>(value))
+            return "must contain two finite, float-representable components";
+        for (const float number : std::get<Vector2Value>(value).value)
+            if (const auto problem = validateFloat(number))
+                return problem;
+        return std::nullopt;
+    }
+    case ParameterType::Vector3: {
+        if (!std::holds_alternative<Vector3Value>(value))
+            return "must contain three finite, float-representable components";
+        for (const float number : std::get<Vector3Value>(value).value)
+            if (const auto problem = validateFloat(number))
+                return problem;
+        return std::nullopt;
+    }
+    case ParameterType::Color: {
+        if (!std::holds_alternative<ColorValue>(value))
+            return "must contain four finite, float-representable channels";
+        for (const float number : std::get<ColorValue>(value).value)
+            if (const auto problem = validateFloat(number))
+                return problem;
+        return std::nullopt;
+    }
+    case ParameterType::String:
+        return std::holds_alternative<std::string>(value) ? std::nullopt
+                                                          : std::optional<std::string>{"must be a string"};
+    }
+    return "has an invalid type";
+}
 
-    long double number = 0.0L;
-    if (!readNumber(number))
-        return parameter.type == ParameterType::Integer ? std::optional<std::string>{"must be an integer"}
-                                                        : std::optional<std::string>{"must be finite numeric"};
+template <std::size_t N>
+[[nodiscard]] std::optional<std::string> parseVectorText(std::string_view text, std::array<float, N>& result,
+                                                         const char* description) {
+    std::istringstream stream{std::string(text)};
+    for (float& component : result) {
+        long double number = 0.0L;
+        if (!(stream >> number) || !std::isfinite(number) || !std::isfinite(static_cast<float>(number)))
+            return std::string("must contain exactly ") + std::to_string(N) + " finite, float-representable " +
+                   description;
+        component = static_cast<float>(number);
+    }
     std::string extra;
     if (stream >> extra)
-        return "contains extra tokens";
-    if (parameter.type == ParameterType::Integer && number != std::trunc(number))
-        return "must be an integer";
-    if (parameter.type == ParameterType::Float && !std::isfinite(static_cast<float>(number)))
-        return "must be finite and representable as a float";
-    if (!withinRange(number))
-        return "is outside the declared range";
+        return std::string("must contain exactly ") + std::to_string(N) + " " + description;
     return std::nullopt;
+}
+
+[[nodiscard]] ParameterValue parseParameterValueText(const ParameterSpec& parameter, std::string_view text) {
+    switch (parameter.type) {
+    case ParameterType::String:
+        return std::string{text};
+    case ParameterType::Choice:
+        return ChoiceValue{std::string{text}};
+    case ParameterType::Boolean:
+        if (text == "true" || text == "1")
+            return true;
+        if (text == "false" || text == "0")
+            return false;
+        throw std::invalid_argument("must be boolean");
+    case ParameterType::Integer: {
+        std::istringstream stream{std::string(text)};
+        std::int64_t number = 0;
+        std::string extra;
+        if (!(stream >> number) || (stream >> extra))
+            throw std::invalid_argument("must be an integer");
+        return number;
+    }
+    case ParameterType::Float: {
+        std::istringstream stream{std::string(text)};
+        long double number = 0.0L;
+        std::string extra;
+        if (!(stream >> number) || !std::isfinite(number) || (stream >> extra) ||
+            !std::isfinite(static_cast<float>(number)))
+            throw std::invalid_argument("must be finite and representable as a float");
+        return static_cast<double>(number);
+    }
+    case ParameterType::Vector2: {
+        Vector2Value result;
+        if (const auto problem = parseVectorText(text, result.value, "components"))
+            throw std::invalid_argument(*problem);
+        return result;
+    }
+    case ParameterType::Vector3: {
+        Vector3Value result;
+        if (const auto problem = parseVectorText(text, result.value, "components"))
+            throw std::invalid_argument(*problem);
+        return result;
+    }
+    case ParameterType::Color: {
+        ColorValue result;
+        if (const auto problem = parseVectorText(text, result.value, "channels"))
+            throw std::invalid_argument(*problem);
+        return result;
+    }
+    }
+    throw std::invalid_argument("has an invalid type");
 }
 
 void validateDescriptor(const NodeDescriptor& descriptor) {
@@ -93,10 +179,6 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
 
     std::set<std::string> parameterNames;
     for (const auto& parameter : descriptor.parameters) {
-        if (parameter.type != ParameterType::Boolean && parameter.type != ParameterType::Integer &&
-            parameter.type != ParameterType::Float && parameter.type != ParameterType::Color &&
-            parameter.type != ParameterType::String)
-            throw std::invalid_argument(context + ": parameter '" + parameter.name + "' has an invalid type");
         if (parameter.name.empty())
             throw std::invalid_argument(context + ": parameter name must not be empty");
         if (!parameterNames.insert(parameter.name).second)
@@ -106,28 +188,31 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
             (parameter.minimum && parameter.maximum && *parameter.minimum > *parameter.maximum)) {
             throw std::invalid_argument(context + ": parameter '" + parameter.name + "' has an invalid range");
         }
-        if ((parameter.type == ParameterType::String || parameter.type == ParameterType::Boolean) &&
-            (parameter.minimum || parameter.maximum)) {
+        const bool numeric = parameter.type == ParameterType::Integer || parameter.type == ParameterType::Float ||
+                             parameter.type == ParameterType::Vector2 || parameter.type == ParameterType::Vector3 ||
+                             parameter.type == ParameterType::Color;
+        if (!numeric && (parameter.minimum || parameter.maximum))
             throw std::invalid_argument(context + ": parameter '" + parameter.name +
                                         "' declares a range for a non-numeric type");
-        }
+        if (parameter.type != ParameterType::Choice && !parameter.choices.empty())
+            throw std::invalid_argument(context + ": only choice parameters may declare choices");
+        if (parameter.type == ParameterType::Choice && parameter.choices.empty())
+            throw std::invalid_argument(context + ": choice parameter '" + parameter.name + "' has no choices");
         std::set<std::string> choices;
         for (const auto& choice : parameter.choices) {
             if (choice.empty() || !choices.insert(choice).second)
                 throw std::invalid_argument(context + ": parameter '" + parameter.name +
                                             "' has an empty or duplicate choice");
         }
-        if (const auto problem = validateParameterValue(parameter, parameter.defaultValue)) {
+        if (parameter.type == ParameterType::Integer &&
+            ((parameter.minimum && *parameter.minimum != std::trunc(*parameter.minimum)) ||
+             (parameter.maximum && *parameter.maximum != std::trunc(*parameter.maximum)))) {
+            throw std::invalid_argument(context + ": integer parameter '" + parameter.name +
+                                        "' has a non-integer bound");
+        }
+        if (const auto problem = validateParameterValue(parameter, parameter.defaultValue))
             throw std::invalid_argument(context + ": parameter '" + parameter.name +
                                         "' has an invalid default: " + *problem);
-        }
-        if (parameter.type == ParameterType::Integer) {
-            if ((parameter.minimum && *parameter.minimum != std::trunc(*parameter.minimum)) ||
-                (parameter.maximum && *parameter.maximum != std::trunc(*parameter.maximum))) {
-                throw std::invalid_argument(context + ": integer parameter '" + parameter.name +
-                                            "' has a non-integer bound");
-            }
-        }
     }
 
     std::set<int> scales;
@@ -168,7 +253,9 @@ NodeDescriptor constColorDescriptor() {
                           .implementationVersion = 1,
                           .inputs = {},
                           .outputs = {{PortKind::Image, "color"}},
-                          .parameters = {{.name = "color", .type = ParameterType::Color, .defaultValue = "1 1 1 1"}},
+                          .parameters = {{.name = "color",
+                                          .type = ParameterType::Color,
+                                          .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}}}},
                           .capabilities = allBuiltinCapabilities()};
 }
 
@@ -180,8 +267,8 @@ NodeDescriptor mergeDescriptor() {
                           .inputs = {{PortKind::Image, "A"}, {PortKind::Image, "B"}},
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = {{.name = "operation",
-                                          .type = ParameterType::String,
-                                          .defaultValue = "over",
+                                          .type = ParameterType::Choice,
+                                          .defaultValue = ParameterValue{ChoiceValue{"over"}},
                                           .choices = {"over"}}},
                           .capabilities = allBuiltinCapabilities()};
 }
@@ -205,7 +292,9 @@ NodeDescriptor sourceDescriptor() {
                           .implementationVersion = 1,
                           .inputs = {},
                           .outputs = {{PortKind::Image, "color"}},
-                          .parameters = {{.name = "source", .type = ParameterType::String, .defaultValue = ""}},
+                          .parameters = {{.name = "source",
+                                          .type = ParameterType::String,
+                                          .defaultValue = ParameterValue{std::string{}}}},
                           .capabilities = allBuiltinCapabilities(true)};
 }
 
@@ -279,24 +368,41 @@ const std::vector<PortSpec>& NodeCatalog::outputPorts(std::string_view type) con
 }
 
 std::optional<std::string> NodeCatalog::validateParameter(std::string_view type, std::string_view key,
-                                                          std::string_view value) const {
-    const auto* descriptor = find(type);
-    if (descriptor == nullptr)
-        return std::nullopt;
-    const auto it = std::find_if(descriptor->parameters.begin(), descriptor->parameters.end(),
-                                 [key](const ParameterSpec& p) { return p.name == key; });
-    if (it == descriptor->parameters.end())
-        return std::nullopt;  // Unknown authored fields remain recoverable data.
-    return validateParameterValue(*it, value);
+                                                          const ParameterValue& value) const {
+    const auto* parameter = parameterSpec(type, key);
+    if (parameter == nullptr)
+        return validateParameterValueRepresentation(value);
+    return validateParameterValue(*parameter, value);
 }
 
-std::optional<std::string_view> NodeCatalog::parameterDefault(std::string_view type, std::string_view key) const {
+const ParameterValue* NodeCatalog::parameterDefault(std::string_view type, std::string_view key) const {
+    const auto* parameter = parameterSpec(type, key);
+    return parameter == nullptr ? nullptr : &parameter->defaultValue;
+}
+
+const ParameterSpec* NodeCatalog::parameterSpec(std::string_view type, std::string_view key) const {
     const auto* descriptor = find(type);
     if (descriptor == nullptr)
-        return std::nullopt;
+        return nullptr;
     const auto it = std::find_if(descriptor->parameters.begin(), descriptor->parameters.end(),
-                                 [key](const ParameterSpec& p) { return p.name == key; });
-    return it == descriptor->parameters.end() ? std::nullopt : std::optional<std::string_view>{it->defaultValue};
+                                 [key](const ParameterSpec& parameter) { return parameter.name == key; });
+    return it == descriptor->parameters.end() ? nullptr : &*it;
+}
+
+ParameterValue NodeCatalog::parseParameterText(std::string_view type, std::string_view key,
+                                               std::string_view value) const {
+    const auto* parameter = parameterSpec(type, key);
+    if (parameter == nullptr)
+        return std::string{value};  // Unknown schemas remain recoverable typed data.
+    ParameterValue parsed;
+    try {
+        parsed = parseParameterValueText(*parameter, value);
+    } catch (const std::invalid_argument& error) {
+        throw std::invalid_argument("parameter '" + std::string(key) + "': " + error.what());
+    }
+    if (const auto problem = validateParameterValue(*parameter, parsed))
+        throw std::invalid_argument("parameter '" + std::string(key) + "': " + *problem);
+    return parsed;
 }
 std::optional<std::uint64_t> NodeCatalog::implementationVersion(std::string_view type) const {
     const auto* descriptor = find(type);

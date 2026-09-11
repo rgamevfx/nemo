@@ -39,6 +39,11 @@ public:
     Q_INVOKABLE QString viewerRole(const QString& panelId) const;
     Q_INVOKABLE QVariantMap contextFor(const QString& panelId) const;
     Q_INVOKABLE QVariantList availableTargets(const QString& panelId) const;
+    // Target selection is explicit and group-scoped. These methods never
+    // open decoders or mutate the Document.
+    Q_INVOKABLE bool setGraphTarget(const QString& group, const QString& target);
+    Q_INVOKABLE bool setTimelineTarget(const QString& group, const QString& target);
+    Q_INVOKABLE bool openSource(const QString& group, const QString& source);
     Q_INVOKABLE bool setGroupContext(const QString& group, const QVariantMap& changes);
 
     [[nodiscard]] QString activePanel() const { return activePanel_; }
@@ -77,6 +82,9 @@ private:
                                        const GroupContext& context) const;
     [[nodiscard]] bool targetAvailable(const QString& kind, const QString& target) const;
     [[nodiscard]] QVariantList sourceMarks(const QString& target) const;
+    [[nodiscard]] static QVariantMap groupContextMap(const GroupContext& context);
+    [[nodiscard]] static std::optional<GroupContext> groupContextFromMap(const QVariantMap& value);
+    [[nodiscard]] bool setTarget(const QString& group, const QString& key, const QString& kind, const QString& target);
     [[nodiscard]] bool panelExists(const QString& panelId) const;
     void persist(const QString& panelId, const PanelBinding& binding);
     void synchronizeWorkspace();

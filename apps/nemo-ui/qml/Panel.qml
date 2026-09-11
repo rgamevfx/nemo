@@ -154,6 +154,20 @@ Rectangle {
             panelRoot.contextRevision++
         }
     }
+
+    // Observe panel presses, then reject the event so the real control,
+    // graph gesture, or dock drag underneath remains the input owner.
+    MouseArea {
+        anchors.fill: parent
+        z: 1000
+        acceptedButtons: Qt.LeftButton
+        propagateComposedEvents: true
+        onPressed: function(mouse) {
+            if (panelRoot.contextRouter && panelRoot.panelId.length > 0)
+                panelRoot.contextRouter.setActivePanel(panelRoot.panelId)
+            mouse.accepted = false
+        }
+    }
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 1

@@ -68,6 +68,43 @@ QString PanelContextRouter::normalized(const QString& value) {
     return value.trimmed();
 }
 
+QVariantMap PanelContextRouter::groupContextMap(const GroupContext& context) {
+    return {{QStringLiteral("graphTarget"), context.graphTarget},
+            {QStringLiteral("timelineTarget"), context.timelineTarget},
+            {QStringLiteral("sourceTarget"), context.sourceTarget},
+            {QStringLiteral("graphClock"), context.graphClock},
+            {QStringLiteral("timelineClock"), context.timelineClock},
+            {QStringLiteral("sourceClock"), context.sourceClock}};
+}
+
+std::optional<PanelContextRouter::GroupContext> PanelContextRouter::groupContextFromMap(const QVariantMap& value) {
+    GroupContext context;
+    const auto readTarget = [&](const QString& key, QString* output) {
+        if (!value.contains(key) || !value.value(key).canConvert<QString>())
+            return false;
+        *output = normalized(value.value(key).toString());
+        return true;
+    };
+    const auto readClock = [&](const QString& key, double* output) {
+        if (!value.contains(key))
+            return false;
+        bool ok = false;
+        const auto clock = value.value(key).toDouble(&ok);
+        if (!ok || !std::isfinite(clock))
+            return false;
+        *output = clock;
+        return true;
+    };
+    if (!readTarget(QStringLiteral("graphTarget"), &context.graphTarget) ||
+        !readTarget(QStringLiteral("timelineTarget"), &context.timelineTarget) ||
+        !readTarget(QStringLiteral("sourceTarget"), &context.sourceTarget) ||
+        !readClock(QStringLiteral("graphClock"), &context.graphClock) ||
+        !readClock(QStringLiteral("timelineClock"), &context.timelineClock) ||
+        !readClock(QStringLiteral("sourceClock"), &context.sourceClock))
+        return std::nullopt;
+    return context;
+}
+
 int PanelContextRouter::groupIndex(const QString& group) noexcept {
     if (group.size() != 1)
         return -1;
@@ -93,6 +130,13 @@ void PanelContextRouter::persist(const QString& panelId, const PanelBinding& bin
     auto state = workspace_->panelState(panelId);
     state.insert(QStringLiteral("linkMode"), binding.mode);
     state.insert(QStringLiteral("viewerRole"), binding.role);
+    if (binding.mode == QStringLiteral("pinned") && binding.hasPinned) {
+        state.insert(QStringLiteral("pinnedGroup"), binding.pinnedGroup);
+        state.insert(QStringLiteral("pinnedContext"), groupContextMap(binding.pinned));
+    } else {
+        state.remove(QStringLiteral("pinnedGroup"));
+        state.remove(QStringLiteral("pinnedContext"));
+    }
     workspace_->setPanelState(panelId, state);
 }
 
@@ -155,8 +199,15 @@ bool PanelContextRouter::registerPanel(const QString& rawPanelId, const QString&
             binding.mode = savedMode;
         if (validRole(savedRole))
             binding.role = savedRole;
+        const auto savedPinnedGroup = state.value(QStringLiteral("pinnedGroup")).toString();
+        const auto savedPinned = groupContextFromMap(state.value(QStringLiteral("pinnedContext")).toMap());
+        if (binding.mode == QStringLiteral("pinned") && groupIndex(savedPinnedGroup) >= 0 && savedPinned) {
+            binding.pinnedGroup = savedPinnedGroup;
+            binding.pinned = *savedPinned;
+            binding.hasPinned = true;
+        }
     }
-    if (binding.mode == QStringLiteral("pinned")) {
+    if (binding.mode == QStringLiteral("pinned") && !binding.hasPinned) {
         binding.pinned = groups_[groupIndex(group)];
         binding.pinnedGroup = group;
         binding.hasPinned = true;
@@ -312,6 +363,10 @@ bool PanelContextRouter::targetAvailable(const QString& kind, const QString& tar
         }
         return false;
     }
+    if (kind == QStringLiteral("timeline") && target.startsWith(QStringLiteral("source:"))) {
+        const auto source = target.mid(7).toStdString();
+        return session_.document().sources.contains(source);
+    }
     // Graph/timeline targets are presentation identities. Known document
     // identities receive strict deletion checks; opaque plugin IDs remain
     // valid until their owner changes the group selection.
@@ -421,6 +476,30 @@ QVariantList PanelContextRouter::availableTargets(const QString& panelId) const 
         add(QStringLiteral("source"), id, QString::fromStdString(entry.metadata.userName).trimmed());
     }
     return result;
+}
+
+bool PanelContextRouter::setTarget(const QString& rawGroup, const QString& key, const QString& kind,
+                                   const QString& rawTarget) {
+    const auto group = normalized(rawGroup);
+    const auto target = normalized(rawTarget);
+    if (groupIndex(group) < 0 || (!target.isEmpty() && !targetAvailable(kind, target)))
+        return false;
+    return setGroupContext(group, {{key, target}});
+}
+
+bool PanelContextRouter::setGraphTarget(const QString& group, const QString& target) {
+    return setTarget(group, QStringLiteral("graphTarget"), QStringLiteral("graph"), target);
+}
+
+bool PanelContextRouter::setTimelineTarget(const QString& group, const QString& target) {
+    return setTarget(group, QStringLiteral("timelineTarget"), QStringLiteral("timeline"), target);
+}
+
+bool PanelContextRouter::openSource(const QString& group, const QString& source) {
+    const auto target = normalized(source);
+    if (target.isEmpty())
+        return false;
+    return setTarget(group, QStringLiteral("sourceTarget"), QStringLiteral("source"), target);
 }
 
 bool PanelContextRouter::setGroupContext(const QString& rawGroup, const QVariantMap& changes) {

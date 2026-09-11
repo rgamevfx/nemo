@@ -129,6 +129,32 @@ TEST_F(PanelContextUiTest, BindingAndRoleMenusExposePresentationChoices) {
     EXPECT_FALSE(viewerController.hasSource()) << "Changing viewer role must not load media";
 }
 
+TEST_F(PanelContextUiTest, FollowActiveTracksPointerActivatedPanel) {
+    const auto viewer = panelByType(root(), QStringLiteral("viewer"));
+    const auto graph = panelByType(root(), QStringLiteral("nodegraph"));
+    ASSERT_FALSE(viewer.isEmpty());
+    ASSERT_FALSE(graph.isEmpty());
+    const auto viewerId = viewer.value(QStringLiteral("id")).toString();
+    const auto graphId = graph.value(QStringLiteral("id")).toString();
+    ASSERT_TRUE(router.setGroup(viewerId, QStringLiteral("A")));
+    ASSERT_TRUE(router.setGroup(graphId, QStringLiteral("B")));
+    ASSERT_TRUE(router.setLinkMode(viewerId, QStringLiteral("follow")));
+
+    auto* graphCanvas = item(QStringLiteral("graphCanvas"));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      graphCanvas->mapToScene(QPointF(graphCanvas->width() / 2, graphCanvas->height() / 2)).toPoint());
+    QTest::qWait(20);
+    EXPECT_EQ(router.activePanel(), graphId);
+    EXPECT_EQ(context(viewerId).value(QStringLiteral("resolvedGroup")).toString(), QStringLiteral("B"));
+
+    auto* viewerArea = item(QStringLiteral("viewerImageArea"));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      viewerArea->mapToScene(QPointF(viewerArea->width() / 2, viewerArea->height() / 2)).toPoint());
+    QTest::qWait(20);
+    EXPECT_EQ(router.activePanel(), viewerId);
+    EXPECT_EQ(context(viewerId).value(QStringLiteral("resolvedGroup")).toString(), QStringLiteral("A"));
+}
+
 TEST_F(PanelContextUiTest, GroupClocksAreIsolatedAndPinnedContextStaysFixed) {
     const auto viewer = panelByType(root(), QStringLiteral("viewer"));
     const auto graph = panelByType(root(), QStringLiteral("nodegraph"));
@@ -162,6 +188,10 @@ TEST_F(PanelContextUiTest, GroupClocksAreIsolatedAndPinnedContextStaysFixed) {
     EXPECT_EQ(context(viewerId).value(QStringLiteral("sourceTarget")), pinned.value(QStringLiteral("sourceTarget")));
     EXPECT_FALSE(context(viewerId).value(QStringLiteral("available")).toBool());
     EXPECT_FALSE(context(viewerId).value(QStringLiteral("unavailableReason")).toString().isEmpty());
+    ASSERT_TRUE(router.setViewerRole(viewerId, QStringLiteral("media")));
+    QTest::qWait(20);
+    EXPECT_FALSE(item(QStringLiteral("viewerItem_") + viewerId)->isVisible());
+    EXPECT_TRUE(item(QStringLiteral("viewerUnavailable_") + viewerId)->isVisible());
 }
 
 }  // namespace

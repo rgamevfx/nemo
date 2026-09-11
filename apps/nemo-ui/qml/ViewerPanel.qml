@@ -371,12 +371,26 @@ FocusScope {
                 clip: true
                 controller: viewerPanel.controller
                 displayRect: viewerPanel.computeDisplayRect()
+                visible: viewerPanel.targetAvailable
+            }
+
+            Text {
+                anchors.centerIn: parent
+                width: Math.max(0, parent.width - 32)
+                visible: !viewerPanel.targetAvailable
+                objectName: "viewerUnavailable_" + viewerPanel.panelId
+                text: viewerPanel.targetName
+                color: viewerPanel.theme ? viewerPanel.theme.muted : "#979ea8"
+                font.pixelSize: 12
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
             }
 
             MouseArea {
                 id: panArea
                 anchors.fill: parent
                 cursorShape: viewerPanel.imageScale() > viewerPanel.displayScale() ? Qt.OpenHandCursor : Qt.ArrowCursor
+                enabled: viewerPanel.targetAvailable
                 property real lastX: 0
                 property real lastY: 0
                 onWheel: function(wheel) {

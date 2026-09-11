@@ -1,10 +1,12 @@
 #include "PanelContextRouter.hpp"
+#include "WorkspaceController.hpp"
 
 #include "nemo/core/commands/MediaCatalogCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QVariantMap>
 #include <gtest/gtest.h>
 
@@ -16,6 +18,22 @@ QVariantMap changes(const char* graph, const char* timeline, const char* source,
     return {{QStringLiteral("graphTarget"), graph},         {QStringLiteral("timelineTarget"), timeline},
             {QStringLiteral("sourceTarget"), source},       {QStringLiteral("graphClock"), clock},
             {QStringLiteral("timelineClock"), clock + 1.0}, {QStringLiteral("sourceClock"), clock + 2.0}};
+}
+
+QString panelIdByType(const QVariantMap& node, const QString& type) {
+    if (node.value(QStringLiteral("kind")).toString() == QStringLiteral("tabs")) {
+        for (const auto& value : node.value(QStringLiteral("panels")).toList()) {
+            const auto panel = value.toMap();
+            if (panel.value(QStringLiteral("type")).toString() == type)
+                return panel.value(QStringLiteral("id")).toString();
+        }
+    }
+    for (const auto& value : node.value(QStringLiteral("children")).toList()) {
+        const auto found = panelIdByType(value.toMap(), type);
+        if (!found.isEmpty())
+            return found;
+    }
+    return {};
 }
 
 }  // namespace
@@ -59,6 +77,35 @@ TEST(PanelContextRouter, PinnedSnapshotDoesNotBorrowLaterGroupUpdates) {
     EXPECT_EQ(context.value(QStringLiteral("graphClock")).toDouble(), 1.0);
 }
 
+TEST(PanelContextRouter, PinnedSnapshotSurvivesWorkspaceReload) {
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("workspace.json"));
+    nemo::ProjectSession session;
+    QString panelId;
+    {
+        nemo::workspace::WorkspaceController workspace(path);
+        panelId = panelIdByType(workspace.root(), QStringLiteral("viewer"));
+        ASSERT_FALSE(panelId.isEmpty());
+        nemo::ui::PanelContextRouter router(session);
+        router.setWorkspaceController(&workspace);
+        ASSERT_TRUE(router.registerPanel(panelId, QStringLiteral("B"), QStringLiteral("group")));
+        ASSERT_TRUE(router.setGroupContext(QStringLiteral("B"), changes("graph-b", "timeline-b", "source-b", 17.0)));
+        ASSERT_TRUE(router.setLinkMode(panelId, QStringLiteral("pinned")));
+        ASSERT_TRUE(workspace.save());
+    }
+
+    nemo::workspace::WorkspaceController workspace(path);
+    nemo::ui::PanelContextRouter router(session);
+    router.setWorkspaceController(&workspace);
+    ASSERT_TRUE(router.registerPanel(panelId, QStringLiteral("B"), QStringLiteral("pinned")));
+    const auto restored = router.contextFor(panelId);
+    EXPECT_EQ(restored.value(QStringLiteral("mode")).toString(), QStringLiteral("pinned"));
+    EXPECT_EQ(restored.value(QStringLiteral("resolvedGroup")).toString(), QStringLiteral("B"));
+    EXPECT_EQ(restored.value(QStringLiteral("graphTarget")).toString(), QStringLiteral("graph-b"));
+    EXPECT_EQ(restored.value(QStringLiteral("sourceClock")).toDouble(), 19.0);
+}
+
 TEST(PanelContextRouter, FollowReportsUnavailableWithoutActivePanel) {
     nemo::ProjectSession session;
     nemo::ui::PanelContextRouter router(session);
@@ -93,7 +140,12 @@ TEST(PanelContextRouter, ViewerRoleSelectsTargetWithoutRepurposingGroupContext) 
     ASSERT_TRUE(source.committed);
     nemo::ui::PanelContextRouter router(session);
     ASSERT_TRUE(router.registerPanel(QStringLiteral("viewer"), QStringLiteral("C"), QStringLiteral("group")));
-    ASSERT_TRUE(router.setGroupContext(QStringLiteral("C"), changes("graph-id", "timeline-id", "clip", 5.0)));
+    ASSERT_TRUE(router.setGraphTarget(QStringLiteral("C"), QStringLiteral("graph-id")));
+    ASSERT_TRUE(router.setTimelineTarget(QStringLiteral("C"), QStringLiteral("timeline-id")));
+    ASSERT_TRUE(router.openSource(QStringLiteral("C"), QStringLiteral("clip")));
+    ASSERT_TRUE(router.setGroupContext(QStringLiteral("C"), {{QStringLiteral("graphClock"), 5.0},
+                                                             {QStringLiteral("timelineClock"), 6.0},
+                                                             {QStringLiteral("sourceClock"), 7.0}}));
 
     auto context = router.contextFor(QStringLiteral("viewer"));
     EXPECT_EQ(context.value(QStringLiteral("viewerRole")).toString(), QStringLiteral("graph"));
@@ -125,8 +177,7 @@ TEST(PanelContextRouter, MediaAvailabilityAndMarksFollowTheDocumentCatalog) {
     nemo::ui::PanelContextRouter router(session);
     ASSERT_TRUE(router.registerPanel(QStringLiteral("viewer"), QStringLiteral("A"), QStringLiteral("group")));
     ASSERT_TRUE(router.setViewerRole(QStringLiteral("viewer"), QStringLiteral("media")));
-    ASSERT_TRUE(
-        router.setGroupContext(QStringLiteral("A"), {{QStringLiteral("sourceTarget"), QStringLiteral("clip")}}));
+    ASSERT_TRUE(router.openSource(QStringLiteral("A"), QStringLiteral("clip")));
     const auto available = router.contextFor(QStringLiteral("viewer"));
     EXPECT_TRUE(available.value(QStringLiteral("available")).toBool());
     const auto marks = available.value(QStringLiteral("sourceMarks")).toList();
@@ -146,4 +197,22 @@ TEST(PanelContextRouter, MediaAvailabilityAndMarksFollowTheDocumentCatalog) {
     EXPECT_FALSE(unavailable.value(QStringLiteral("available")).toBool());
     EXPECT_EQ(unavailable.value(QStringLiteral("unavailableReason")).toString(),
               QStringLiteral("source target is unavailable"));
+}
+
+TEST(PanelContextRouter, ExplicitSourceOpenIsGroupScopedAndDoesNotMutateTheDocument) {
+    nemo::ProjectSession session;
+    const auto source = session.submit(nemo::setSourceCommand("clip", {.path = "/tmp/clip"}),
+                                       {.expectedRevision = session.revision(), .requestId = "source-open"});
+    ASSERT_TRUE(source.committed);
+    const auto revision = session.revision();
+    nemo::ui::PanelContextRouter router(session);
+    ASSERT_TRUE(router.registerPanel(QStringLiteral("a"), QStringLiteral("A"), QStringLiteral("group")));
+    ASSERT_TRUE(router.registerPanel(QStringLiteral("b"), QStringLiteral("B"), QStringLiteral("group")));
+
+    EXPECT_FALSE(router.openSource(QStringLiteral("A"), QStringLiteral("missing")));
+    ASSERT_TRUE(router.openSource(QStringLiteral("B"), QStringLiteral("clip")));
+    EXPECT_TRUE(router.contextFor(QStringLiteral("a")).value(QStringLiteral("sourceTarget")).toString().isEmpty());
+    EXPECT_EQ(router.contextFor(QStringLiteral("b")).value(QStringLiteral("sourceTarget")).toString(),
+              QStringLiteral("clip"));
+    EXPECT_EQ(session.revision(), revision);
 }

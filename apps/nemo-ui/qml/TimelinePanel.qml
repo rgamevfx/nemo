@@ -4,18 +4,17 @@ import QtQuick.Layouts
 import Nemo
 
 // Timeline chrome remains QML, while TimelineItem owns the dense ruler and
-// source-reference drawing/input surface. Source timing edits are deliberately
-// limited to the persistent SourceReference mapping exposed by the controller;
-// this document does not invent clip move/trim occurrences.
+// source-reference drawing/input surface. The playhead is a presentation
+// clock routed through the panel's resolved group; source timing edits still
+// use the existing controller command API.
 Pane {
     id: timelinePanel
     objectName: "timelinePanel"
     property string panelId: ""
     property string panelGroup: "A"
     property var panelState: ({})
-    padding: 0
-    font.pixelSize: 12
-    background: Rectangle { color: "#202020" }
+    property var panelContext: ({})
+    property var contextRouter: null
     readonly property var controller: viewerController
     readonly property int timelineLength: controller.frameCount > 0 ? controller.frameCount : 240
     readonly property string selectedSource: timelineItem.selectedSource
@@ -26,6 +25,23 @@ Pane {
                 return candidate
         }
         return null
+    }
+    readonly property string resolvedGroup: panelContext && panelContext.resolvedGroup
+                                           ? panelContext.resolvedGroup : panelGroup
+    readonly property real routedClock: contextRouter && panelContext && panelContext.timelineClock !== undefined
+                                        ? Number(panelContext.timelineClock) : controller.frame
+    readonly property bool targetAvailable: !contextRouter
+                                            || Boolean(panelContext && panelContext.timelineTarget)
+    readonly property string targetStatus: targetAvailable ? "Timeline target: " + (panelContext.timelineTarget || "available")
+                                                           : "Timeline target is unavailable"
+    padding: 0
+    font.pixelSize: 12
+    background: Rectangle { color: "#202020" }
+
+    function updateClock(value) {
+        if (contextRouter && resolvedGroup.length > 0)
+            contextRouter.setGroupContext(resolvedGroup, {timelineClock: Math.round(value)})
+        controller.setFrame(Math.round(value))
     }
 
     ColumnLayout {
@@ -45,10 +61,13 @@ Pane {
                     Text {
                         objectName: "timelineState"
                         font.pixelSize: 12
-                        text: "Frame " + controller.frame + " · " + controller.renderState
-                        color: controller.outdated ? "#e7ba76" : "#c8d3df"
+                        text: "Frame " + timelinePanel.routedClock + " · " + controller.renderState
+                              + " · " + timelinePanel.targetStatus
+                        color: timelinePanel.targetAvailable
+                               ? (controller.outdated ? "#e7ba76" : "#c8d3df") : "#efb0b0"
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
                     }
-                    Item { Layout.fillWidth: true }
                     Button {
                         implicitHeight: 26
                         objectName: "timelineUndo"
@@ -117,7 +136,6 @@ Pane {
             }
         }
 
-
         Flickable {
             id: timelineScroll
             objectName: "timelineSurface"
@@ -137,13 +155,12 @@ Pane {
                 width: Math.max(timelineScroll.width - 8, 600)
                 height: implicitHeight
                 clips: controller.timelineClips
-                frame: controller.frame
+                frame: timelinePanel.routedClock
                 frameCount: controller.frameCount
                 viewportY: timelineScroll.contentY
                 viewportHeight: timelineScroll.height
-                onFrameSelected: function(frameValue) { controller.setFrame(frameValue) }
+                onFrameSelected: function(frameValue) { timelinePanel.updateClock(frameValue) }
             }
-
         }
 
         Rectangle {
@@ -232,8 +249,9 @@ Pane {
                 anchors.fill: parent
                 anchors.margins: 5
                 text: controller.cacheError.length > 0 ? controller.cacheError
-                      : (controller.error.length > 0 ? controller.error : controller.status)
-                color: controller.cacheError.length > 0 || controller.error.length > 0 ? "#efb0b0" : "#8f9aa4"
+                      : (controller.error.length > 0 ? controller.error : timelinePanel.targetStatus)
+                color: controller.cacheError.length > 0 || controller.error.length > 0 || !timelinePanel.targetAvailable
+                       ? "#efb0b0" : "#8f9aa4"
                 font.pixelSize: 11
                 elide: Text.ElideRight
             }

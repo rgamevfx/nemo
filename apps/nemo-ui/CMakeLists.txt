@@ -12,7 +12,8 @@ if(NEMO_BUILD_UI)
     if(NOT NEMO_BUILD_GPU)
         message(FATAL_ERROR "NEMO_BUILD_UI requires NEMO_BUILD_GPU for native viewer presentation")
     endif()
-    qt_add_executable(nemo-ui main.cpp WorkspaceController.cpp WorkspaceController.hpp
+    qt_add_executable(nemo-ui main.cpp PanelContextRouter.cpp PanelContextRouter.hpp
+        WorkspaceController.cpp WorkspaceController.hpp
         ViewerController.cpp ViewerController.hpp ViewerRuntime.cpp ViewerRuntime.hpp
         ViewerItem.cpp ViewerItem.hpp GraphItem.cpp GraphItem.hpp TimelineItem.cpp TimelineItem.hpp)
     qt_add_qml_module(nemo-ui

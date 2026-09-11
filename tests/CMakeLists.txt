@@ -100,6 +100,10 @@ if(NEMO_BUILD_UI)
     add_executable(nemo_workspace_ui_tests
         WorkspaceDragTests.cpp
         InteractiveUiTests.cpp
+        PanelContextRouterTests.cpp
+        PanelContextUiTests.cpp
+        ../apps/nemo-ui/PanelContextRouter.cpp
+        ../apps/nemo-ui/PanelContextRouter.hpp
         ../apps/nemo-ui/WorkspaceController.cpp
         ../apps/nemo-ui/WorkspaceController.hpp
         ../apps/nemo-ui/ViewerController.cpp

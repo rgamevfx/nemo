@@ -16,9 +16,13 @@ Item {
     property var workspace
     property var drag            // the DockDrag coordinator
     property var theme
+    // The router is a GUI-thread presentation service supplied by Main's
+    // context. `typeof` keeps the workspace layout harness usable on its own.
+    property var contextRouter: typeof panelContextRouter !== "undefined" ? panelContextRouter : null
 
     readonly property bool isValid: node !== undefined && node !== null
                                     && node.kind !== undefined && node.kind !== ""
+
     readonly property bool isSplit: isValid && node.kind === "split"
     readonly property real minimumPaneWidth: isSplit && inner.item ? inner.item.minimumPaneWidth : 120
     readonly property real minimumPaneHeight: isSplit && inner.item ? inner.item.minimumPaneHeight : 80
@@ -68,6 +72,7 @@ Item {
                     item.workspace = Qt.binding(function() { return rootNode.workspace })
                     item.drag = Qt.binding(function() { return rootNode.drag })
                     item.theme = Qt.binding(function() { return rootNode.theme })
+                    item.contextRouter = Qt.binding(function() { return rootNode.contextRouter })
                 }
                 SplitView.minimumWidth: item ? item.minimumPaneWidth : 120
                 SplitView.minimumHeight: item ? item.minimumPaneHeight : 80
@@ -80,6 +85,7 @@ Item {
                     item.workspace = Qt.binding(function() { return rootNode.workspace })
                     item.drag = Qt.binding(function() { return rootNode.drag })
                     item.theme = Qt.binding(function() { return rootNode.theme })
+                    item.contextRouter = Qt.binding(function() { return rootNode.contextRouter })
                 }
                 SplitView.minimumWidth: item ? item.minimumPaneWidth : 120
                 SplitView.minimumHeight: item ? item.minimumPaneHeight : 80
@@ -157,11 +163,24 @@ Item {
             readonly property var workspace: rootNode.workspace
             readonly property var drag: rootNode.drag
             readonly property var theme: rootNode.theme
+            readonly property var contextRouter: rootNode.contextRouter
             readonly property string nodeId: node ? node.id : ""
             readonly property int panelCount: node.panels ? node.panels.length : 0
             readonly property Item tabStrip: leaf.panelCount > 1 ? tabRow : null
             readonly property var tabButtons: tabItems
             property string _registeredId: ""
+
+            function registerContextPanels() {
+                if (!contextRouter || !node || !node.panels)
+                    return
+                for (var index = 0; index < node.panels.length; ++index) {
+                    var panel = node.panels[index]
+                    var state = panel.state || ({})
+                    contextRouter.registerPanel(panel.id, panel.group || "A",
+                                                state.linkMode || "group")
+                }
+            }
+
 
             function registerCurrentLeaf() {
                 if (leaf.drag) {
@@ -172,8 +191,21 @@ Item {
                 }
             }
             onDragChanged: registerCurrentLeaf()
-            onNodeIdChanged: registerCurrentLeaf()
-            Component.onCompleted: registerCurrentLeaf()
+            onNodeIdChanged: {
+                registerCurrentLeaf()
+                registerContextPanels()
+            }
+            onNodeChanged: registerContextPanels()
+            onActivePanelChanged: {
+                if (contextRouter && activePanel)
+                    contextRouter.setActivePanel(activePanel.id)
+            }
+            Component.onCompleted: {
+                registerCurrentLeaf()
+                registerContextPanels()
+                if (contextRouter && activePanel)
+                    contextRouter.setActivePanel(activePanel.id)
+            }
             Component.onDestruction: {
                 if (leaf.drag && _registeredId)
                     leaf.drag.unregisterLeaf(_registeredId, leaf)
@@ -262,6 +294,7 @@ Item {
                     workspace: leaf.workspace
                     drag: leaf.drag
                     theme: leaf.theme
+                    contextRouter: leaf.contextRouter
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                 }

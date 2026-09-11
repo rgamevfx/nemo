@@ -1,4 +1,5 @@
 #include "GraphItem.hpp"
+#include "PanelContextRouter.hpp"
 #include "TimelineItem.hpp"
 #include "ViewerController.hpp"
 #include "ViewerItem.hpp"
@@ -68,6 +69,9 @@ protected:
     nemo::workspace::WorkspaceController controller{directory.filePath("workspace.json")};
     nemo::ui::ViewerRuntime viewerRuntime;
     nemo::ProjectSession projectSession;
+    nemo::ui::PanelContextRouter panelContextRouter{projectSession};
+    // Context bindings persist through the same workspace presentation state.
+    // Rendering and document ownership remain in their existing objects.
     nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
     QQmlApplicationEngine engine;
     QSignalSpy warnings{&engine, &QQmlEngine::warnings};
@@ -83,7 +87,9 @@ protected:
                                      QStringLiteral("GraphPanel.qml"), QString());
         controller.registerPanelType(QStringLiteral("timeline"), QStringLiteral("Timeline"),
                                      QStringLiteral("TimelinePanel.qml"), QString());
+        panelContextRouter.setWorkspaceController(&controller);
         engine.rootContext()->setContextProperty("workspace", &controller);
+        engine.rootContext()->setContextProperty("panelContextRouter", &panelContextRouter);
         engine.rootContext()->setContextProperty("viewerController", &viewerController);
         engine.load(QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/Main.qml")));
         ASSERT_FALSE(engine.rootObjects().isEmpty());
@@ -297,7 +303,7 @@ TEST_F(WorkspaceDragTest, NestedPanelMenusSwitchTypeAndCloseViewer) {
     QTest::qWait(60);
     EXPECT_EQ(containing(snapshot(), other.toStdString()), nullptr);
 }
-TEST_F(WorkspaceDragTest, InteractiveGraphAndTimelineUseCommandsAndSharePlayhead) {
+TEST_F(WorkspaceDragTest, InteractiveGraphAndTimelineUseCommandsWithIndependentClocks) {
     viewerController.openSource("/tmp/nemo-interactive-command-source.mkv");
     QTest::qWait(30);
     auto* name = item("graphAddName");
@@ -331,15 +337,16 @@ TEST_F(WorkspaceDragTest, InteractiveGraphAndTimelineUseCommandsAndSharePlayhead
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, middle);
     QTest::qWait(30);
     EXPECT_GT(viewerController.frame(), quarterFrame);
-    EXPECT_EQ(item("graphPlayhead")->property("value").toInt(), viewerController.frame());
+    EXPECT_EQ(item("graphPlayhead")->property("value").toInt(), 0);
     auto* slider = item("graphPlayhead");
     slider->forceActiveFocus();
-    const auto before = viewerController.frame();
+    const auto graphBefore = slider->property("value").toInt();
     const auto previousPosition = ruler->property("playheadPosition").toReal();
     QTest::keyClick(window, Qt::Key_Right);
     QTest::qWait(30);
-    EXPECT_GT(viewerController.frame(), before);
-    EXPECT_GT(ruler->property("playheadPosition").toReal(), previousPosition);
+    EXPECT_GT(slider->property("value").toInt(), graphBefore);
+    EXPECT_EQ(viewerController.frame(), slider->property("value").toInt());
+    EXPECT_EQ(ruler->property("playheadPosition").toReal(), previousPosition);
     const auto slip = center("timelineSlipPlus");
     ASSERT_TRUE(QRect(QPoint(), window->size()).contains(slip)) << "Source timing controls must fit the tiled panel";
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, slip);

@@ -1,3 +1,4 @@
+#include "PanelContextRouter.hpp"
 #include "ViewerController.hpp"
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
@@ -145,6 +146,7 @@ int main(int argc, char* argv[]) {
     // The application composes one project owner; presentation facades may
     // come and go without taking the document or shared history with them.
     nemo::ProjectSession projectSession;
+    nemo::ui::PanelContextRouter panelContextRouter(projectSession);
     nemo::ui::ViewerController viewerController(&runtime, projectSession);
     std::vector<double> swapLatencies;
     if (benchmarkFrames > 0) {
@@ -191,6 +193,7 @@ int main(int argc, char* argv[]) {
 
     nemo::workspace::WorkspaceController workspace(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
                                                    QStringLiteral("/workspace.json"));
+    panelContextRouter.setWorkspaceController(&workspace);
     // Production panels register their presentation descriptors before QML is
     // loaded; the shared shell never switches on panel type.
     workspace.registerPanelType(QStringLiteral("viewer"), QStringLiteral("Viewer"), QStringLiteral("ViewerPanel.qml"),
@@ -203,6 +206,7 @@ int main(int argc, char* argv[]) {
     {
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
+        engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &panelContextRouter);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
         engine.load(QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/Main.qml")));
         if (engine.rootObjects().isEmpty()) {

@@ -3,19 +3,35 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Nemo
 
-// Graph presentation over the authored Document. Nodes and edges come from
-// ViewerController's query properties; every mutation goes through a command
-// invokable so the same undo/redo and revision path serves UI and automation.
+// Graph presentation over the authored Document. Graph playback is a routed
+// presentation clock; document edits below remain on ViewerController's
+// existing command/history path.
 Pane {
     id: graphPanel
     objectName: "graphPanel"
     property string panelId: ""
     property string panelGroup: "A"
     property var panelState: ({})
+    property var panelContext: ({})
+    property var contextRouter: null
+    readonly property var controller: viewerController
+    readonly property string resolvedGroup: panelContext && panelContext.resolvedGroup
+                                           ? panelContext.resolvedGroup : panelGroup
+    readonly property real routedClock: contextRouter && panelContext && panelContext.graphClock !== undefined
+                                        ? Number(panelContext.graphClock) : controller.frame
+    readonly property bool targetAvailable: !contextRouter
+                                            || Boolean(panelContext && panelContext.graphTarget)
+    readonly property string targetStatus: targetAvailable ? "Graph target: " + (panelContext.graphTarget || "available")
+                                                           : "Graph target is unavailable"
     padding: 0
     font.pixelSize: 12
     background: Rectangle { color: "#202020" }
-    readonly property var controller: viewerController
+
+    function updateClock(value) {
+        if (contextRouter && resolvedGroup.length > 0)
+            contextRouter.setGroupContext(resolvedGroup, {graphClock: Math.round(value)})
+        controller.setFrame(Math.round(value))
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -92,14 +108,15 @@ Pane {
                         to: Math.max(1, controller.frameCount > 0 ? controller.frameCount - 1 : 239)
                         stepSize: 1
                         snapMode: Slider.SnapAlways
-                        value: controller.frame
-                        onMoved: controller.setFrame(Math.round(value))
+                        value: graphPanel.routedClock
+                        onMoved: graphPanel.updateClock(value)
                     }
-                    Text { objectName: "graphFrame"; text: controller.frame; color: "#d0d0d0" }
+                    Text { objectName: "graphFrame"; text: graphPanel.routedClock; color: "#d0d0d0" }
                     Text {
                         objectName: "graphState"
-                        text: controller.renderState
-                        color: controller.outdated ? "#e7ba76" : "#a8b5c5"
+                        text: controller.renderState + " · " + graphPanel.targetStatus
+                        color: graphPanel.targetAvailable ? (controller.outdated ? "#e7ba76" : "#a8b5c5") : "#efb0b0"
+                        elide: Text.ElideRight
                     }
                 }
                 RowLayout {
@@ -137,8 +154,7 @@ Pane {
                     id: parameterEditor
                     Layout.fillWidth: true
                     property var selectedNode: parameterNode.currentIndex >= 0
-                                                     ? controller.graphNodes[parameterNode.currentIndex]
-                                                     : null
+                                                     ? controller.graphNodes[parameterNode.currentIndex] : null
                     property var selectedParameter: {
                         if (!selectedNode)
                             return null
@@ -211,11 +227,6 @@ Pane {
             ScrollBar.vertical: ScrollBar {}
             ScrollBar.horizontal: ScrollBar {}
 
-            // The custom item is the only scene-graph content for the dense
-            // graph. It receives model snapshots on the GUI thread, caches
-            // layout records, and draws only the visible records from
-            // updatePaintNode. Flickable supplies the viewport and scrolling;
-            // visibleRect remains in the item's content coordinates.
             GraphItem {
                 id: graphItem
                 objectName: "graphItem"

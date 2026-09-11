@@ -1,4 +1,4 @@
-add_executable(nemo-cli main.cpp ViewerCacheCommand.cpp)
+add_executable(nemo-cli main.cpp ProjectSessionCommand.cpp ViewerCacheCommand.cpp)
 target_link_libraries(nemo-cli PRIVATE nemo::core nemo::media)
 
 if(NEMO_BUILD_GPU)

@@ -69,11 +69,11 @@ struct SharedVfx {
     doc.name = "shared-vfx";
     (void)doc.graph.addNode("testpattern", "plate");
     fixture.tint = doc.graph.addNode("constcolor", "tint");
-    doc.graph.node(fixture.tint)->params = {{"color", tint}};
+    doc.graph.setParam(fixture.tint, "color", tint);
     fixture.gradeA = doc.graph.addNode("merge", "gradeA");
-    doc.graph.node(fixture.gradeA)->params = {{"grade", gradeA}};
+    doc.graph.setParam(fixture.gradeA, "grade", gradeA);
     fixture.gradeB = doc.graph.addNode("merge", "gradeB");
-    doc.graph.node(fixture.gradeB)->params = {{"grade", gradeB}};
+    doc.graph.setParam(fixture.gradeB, "grade", gradeB);
     (void)doc.graph.addNode("output", "outA");
     (void)doc.graph.addNode("output", "outB");
     connect(doc.graph, "plate", "gradeA", 0, 0);
@@ -155,7 +155,7 @@ TEST(ReuseTest, SharedVfxWithIndependentGradesReuseAndInvalidateByDependency) {
     // Change one grade: only gradeA's branch re-renders; shared results and
     // gradeB stay valid.
     CommandStack stack(fixture.doc);
-    stack.push(setParamCommand("gradeA", "grade", "3"));
+    stack.push(setParamCommand(fixture.gradeA, "grade", "3"));
     const CacheCounts before = cache.counts();
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outA", 0), &cache));
     const CacheCounts afterGradeEdit = cache.counts();
@@ -163,7 +163,7 @@ TEST(ReuseTest, SharedVfxWithIndependentGradesReuseAndInvalidateByDependency) {
     EXPECT_EQ(afterGradeEdit.misses - before.misses, 2u);  // gradeA + outA recomputed
 
     // Change the shared VFX: both affected downstream branches invalidate.
-    stack.push(setParamCommand("tint", "color", "1 0 0 1"));
+    stack.push(setParamCommand(fixture.tint, "color", "1 0 0 1"));
     const CacheCounts beforeShared = cache.counts();
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outA", 0), &cache));
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outB", 0), &cache));
@@ -195,7 +195,7 @@ TEST(ReuseTest, UnrelatedEditPreservesBranchReuse) {
 
     // An edit to the *other* output's grade is unrelated to outA.
     CommandStack stack(fixture.doc);
-    stack.push(setParamCommand("gradeB", "grade", "9"));
+    stack.push(setParamCommand(fixture.gradeB, "grade", "9"));
     const CacheCounts before = cache.counts();
     static_cast<void>(evaluateCpu(fixture.doc, requestFor(fixture.doc, "outA", 0), &cache));
     const CacheCounts after = cache.counts();
@@ -245,7 +245,7 @@ TEST(ReuseTest, RegionVariantsCoexist) {
 // state; viewerResultKey bakes it in.
 TEST(ReuseTest, ViewerTransformEditInvalidatesViewerIdentityButNotSceneLinearReuse) {
     Document doc = makeDocument({{"constcolor", "tint"}, {"output", "out"}});
-    doc.graph.nodeByName("tint")->params = {{"color", "0.25 0.5 1 1"}};
+    doc.graph.setParam(doc.graph.nodeByName("tint")->id, "color", "0.25 0.5 1 1");
     connect(doc.graph, "tint", "out");
     const EvaluationRequest request = requestFor(doc, "out", 0);
 
@@ -317,7 +317,7 @@ TEST(ReuseTest, StalePublicationTicketIsRejected) {
 // accepting stale publication.
 TEST(ReuseTest, UndoRedoRestoresEffectiveStateAndReuse) {
     Document doc = makeDocument({{"constcolor", "tint"}, {"output", "out"}});
-    doc.graph.nodeByName("tint")->params = {{"color", "0 0 1 1"}};
+    doc.graph.setParam(doc.graph.nodeByName("tint")->id, "color", "0 0 1 1");
     connect(doc.graph, "tint", "out");
     const EvaluationRequest request = requestFor(doc, "out", 0);
 
@@ -325,7 +325,7 @@ TEST(ReuseTest, UndoRedoRestoresEffectiveStateAndReuse) {
     const CpuEvaluation original = evaluateCpu(doc, request, &cache);
 
     CommandStack stack(doc);
-    stack.push(setParamCommand("tint", "color", "1 0 0 1"));
+    stack.push(setParamCommand(doc.graph.nodeByName("tint")->id, "color", "1 0 0 1"));
     const CpuEvaluation edited = evaluateCpu(doc, request, &cache);
     EXPECT_FALSE(samePixels(original.image, edited.image));
 
@@ -352,7 +352,7 @@ TEST(ReuseTest, EquivalentOccurrenceWithUnchangedEffectiveStateReuses) {
     auto buildGraph = [] {
         Document doc =
             makeDocument({{"testpattern", "plate"}, {"constcolor", "tint"}, {"merge", "comp"}, {"output", "out"}});
-        doc.graph.nodeByName("tint")->params = {{"color", "0 0 1 0.5"}};
+        doc.graph.setParam(doc.graph.nodeByName("tint")->id, "color", "0 0 1 0.5");
         connect(doc.graph, "plate", "comp", 0, 0);
         connect(doc.graph, "tint", "comp", 0, 1);
         connect(doc.graph, "comp", "out");
@@ -385,7 +385,7 @@ TEST(ReuseTest, EquivalentOccurrenceWithUnchangedEffectiveStateReuses) {
 // be computed again on demand.
 TEST(ReuseTest, EvictedIdentityIsRecomputedOnDemand) {
     Document doc = makeDocument({{"constcolor", "tint"}, {"output", "out"}});
-    doc.graph.nodeByName("tint")->params = {{"color", "0 0 1 1"}};
+    doc.graph.setParam(doc.graph.nodeByName("tint")->id, "color", "0 0 1 1");
     connect(doc.graph, "tint", "out");
     const EvaluationRequest request = requestFor(doc, "out", 0);
 
@@ -425,7 +425,7 @@ TEST(ReuseTest, EditingCachedNodeInvalidatesOnlyItsResults) {
     static_cast<void>(evaluateCpu(doc, requestFor(doc, "out", 0), &cache));
 
     CommandStack stack(doc);
-    stack.push(setParamCommand("plate", "gain", "2"));  // effective state of plate changed
+    stack.push(setParamCommand(doc.graph.nodeByName("plate")->id, "gain", "2"));  // effective state of plate changed
     const CacheCounts before = cache.counts();
     static_cast<void>(evaluateCpu(doc, requestFor(doc, "out", 0), &cache));
     const CacheCounts after = cache.counts();
@@ -438,14 +438,15 @@ TEST(ReuseTest, EditingCachedNodeInvalidatesOnlyItsResults) {
 // must produce distinct keys — otherwise the cache could serve wrong
 // results (ADR-0007: canonical equality is the collision protection).
 TEST(ReuseTest, AliasedParamSetsGetDistinctKeys) {
-    Document doc = makeDocument({{"constcolor", "tint"}});
-    Node* tint = doc.graph.nodeByName("tint");
     EvaluationRequest request;
     request.localTime = 0;
 
     const auto keyFor = [&](const std::map<std::string, std::string>& params) {
-        tint->params = params;
-        return nodeResultKey(doc, *tint, {}, request);
+        Document value = makeDocument({{"constcolor", "tint"}});
+        const NodeId id = value.graph.nodeByName("tint")->id;
+        for (const auto& [key, parameter] : params)
+            value.graph.setParam(id, key, parameter);
+        return nodeResultKey(value, *value.graph.node(id), {}, request);
     };
 
     const ResultKey valueWithEquals = keyFor({{"a", "b=c"}});

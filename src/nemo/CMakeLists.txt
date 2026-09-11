@@ -4,6 +4,8 @@ add_library(nemo_core
     core/document/Graph.cpp
     core/document/Document.cpp
     core/document/Serialization.cpp
+    core/session/ProjectSession.cpp
+    core/nodes/NodeCatalog.cpp
     core/evaluation/CpuReference.cpp
     core/evaluation/Reuse.cpp
 )

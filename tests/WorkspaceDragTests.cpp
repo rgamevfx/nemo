@@ -3,6 +3,7 @@
 #include "ViewerController.hpp"
 #include "ViewerItem.hpp"
 #include "WorkspaceController.hpp"
+#include "nemo/core/session/ProjectSession.hpp"
 
 #include <QGuiApplication>
 #include <QJsonDocument>
@@ -55,7 +56,8 @@ protected:
     QTemporaryDir directory;
     nemo::workspace::WorkspaceController controller{directory.filePath("workspace.json")};
     nemo::ui::ViewerRuntime viewerRuntime;
-    nemo::ui::ViewerController viewerController{&viewerRuntime};
+    nemo::ProjectSession projectSession;
+    nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
     QQmlApplicationEngine engine;
     QSignalSpy warnings{&engine, &QQmlEngine::warnings};
     QQuickWindow* window = nullptr;
@@ -206,14 +208,13 @@ TEST_F(WorkspaceDragTest, DeactivationCancelsAndSmallTargetsRejectSplits) {
     anotherWindow.resize(200, 100);
     anotherWindow.show();
     anotherWindow.requestActivate();
-    QTest::qWait(30);
-    ASSERT_FALSE(window->isActive());
+    ASSERT_TRUE(QTest::qWaitFor([&] { return anotherWindow.isActive() && !window->isActive(); }));
     release(to);
     EXPECT_EQ(snapshot(), before);
     EXPECT_FALSE(item("dockLabel")->isVisible());
     anotherWindow.hide();
     window->requestActivate();
-    QTest::qWait(30);
+    ASSERT_TRUE(QTest::qWaitFor([&] { return window->isActive(); }));
 
     controller.setRatio(QString::fromStdString(before["children"][0]["id"]), 0.88);
     // A metadata update publishes the new ratio without simulating a divider.
@@ -335,15 +336,54 @@ TEST_F(WorkspaceDragTest, InteractiveGraphAndTimelineUseCommandsAndSharePlayhead
     EXPECT_EQ(viewerController.timelineClips().first().toMap().value("offset").toLongLong(), 1);
 }
 
+TEST_F(WorkspaceDragTest, RenamedNodeEditsReachBothPanelsAndUndoByIdentity) {
+    constexpr nemo::NodeId highId = (nemo::NodeId{1} << 53) + 1;
+    ASSERT_TRUE(projectSession
+                    .submit(nemo::Command{"restore sparse identity",
+                                          [](nemo::Document& document) {
+                                              static_cast<void>(
+                                                  document.graph.addNodeWithId(highId, "testpattern", "source"));
+                                          }},
+                            {projectSession.revision()})
+                    .committed);
+    nemo::ui::ViewerRuntime secondRuntime;
+    nemo::ui::ViewerController second(&secondRuntime, projectSession);
+    const auto id = projectSession.document().graph.nodeByName("source")->id;
+    const auto renamed =
+        projectSession.submit(nemo::renameNodeCommand(id, "renamed"), {projectSession.revision(), "rename-source"});
+    ASSERT_TRUE(renamed.committed);
+    viewerController.addGraphNode("testpattern", "source");
+    QTest::qWait(30);
+    item("graphParameterNode")->setProperty("currentIndex", 0);
+    for (const auto& field : {std::pair{"graphParameterKey", "note"}, std::pair{"graphParameterValue", "shared"}}) {
+        item(field.first)->forceActiveFocus();
+        for (const char letter : std::string(field.second))
+            QTest::keyClick(window, letter);
+    }
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphParameterApply"));
+    QTest::qWait(30);
+    ASSERT_TRUE(viewerController.error().isEmpty()) << viewerController.error().toStdString();
+    ASSERT_TRUE(projectSession.document().graph.node(id)->params.contains("note"));
+    ASSERT_EQ(projectSession.document().graph.node(id)->params.at("note"), "shared");
+    EXPECT_EQ(viewerController.graphNodes(), second.graphNodes());
+    EXPECT_EQ(projectSession.document().graph.nodeByName("source")->params.count("note"), 0u);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphUndo"));
+    QTest::qWait(30);
+    EXPECT_EQ(projectSession.document().graph.node(id)->params.count("note"), 0u);
+    EXPECT_EQ(viewerController.graphNodes(), second.graphNodes());
+    EXPECT_EQ(projectSession.document().graph.node(id)->name, "renamed");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    qputenv("QT_QPA_PLATFORM", "offscreen");
-    // Use QRhi like production, but without a platform GPU for these layout
-    // and input assertions. Qt 6.4's software adaptation leaks its texture
-    // cache on invalidate; that upstream path is not used by Nemo's viewer.
+    const bool nativeUi = qEnvironmentVariableIntValue("NEMO_TEST_NATIVE_UI") == 1;
+    if (!nativeUi)
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    // Keep CI isolated even when the desktop exports a QPA fallback list.
+    // Native acceptance opts in and uses the requested system platform.
     QQuickWindow::setSceneGraphBackend(QStringLiteral("rhi"));
-    QQuickWindow::setGraphicsApi(QSGRendererInterface::Null);
+    QQuickWindow::setGraphicsApi(nativeUi ? QSGRendererInterface::OpenGL : QSGRendererInterface::Null);
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     qmlRegisterType<nemo::ui::ViewerItem>("Nemo", 1, 0, "ViewerItem");

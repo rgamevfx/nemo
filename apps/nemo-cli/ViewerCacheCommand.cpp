@@ -21,6 +21,7 @@
 #include <nlohmann/json.hpp>
 
 #include "nemo/core/evaluation/Request.hpp"
+#include "nemo/core/session/ProjectSession.hpp"
 
 #ifdef NEMO_BUILD_GPU
 #include "nemo/core/document/Serialization.hpp"
@@ -298,16 +299,20 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
     return result;
 }
 
-// Explicit diagnostic edits affect only an in-memory document copy and the
+// Explicit diagnostic edits affect only an in-memory project session and the
 // last explicitly requested frame. Never rewrites the input project.
 [[nodiscard]] Json probeInvalidation(nemo::eval::ViewerSession& session, const nemo::Document& original,
                                      const CacheCommandOptions& options, std::uint64_t& generation) {
-    nemo::Document document = original;
-    nemo::CommandStack commands(document);
+    nemo::ProjectSession projectSession(original);
     Json probes = Json::array();
     const auto frameNumber = options.requestedFrames.back();
     const auto probe = [&](const char* kind, nemo::Command command, bool viewOnly) {
-        commands.push(std::move(command));
+        const auto result = projectSession.submit(std::move(command),
+                                                  nemo::EditOptions{.expectedRevision = projectSession.revision(),
+                                                                    .requestId = std::string{"cache-viewer:"} + kind});
+        if (!result.committed)
+            throw std::runtime_error(result.error ? result.error->message : "project edit was rejected");
+        const nemo::Document document = projectSession.snapshot();
         const auto before = session.cacheCounts();
         const auto reuseBefore = session.reuseCounts();
         const auto request = makeRequest(document, options, frameNumber);
@@ -333,13 +338,17 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
                           {"ok", ok}});
     };
     if (!options.viewAfter.empty()) {
-        auto policy = document.color;
+        auto policy = projectSession.snapshot().color;
         policy.viewerTransform = options.viewAfter;
         probe("view_change", nemo::setColorPolicyCommand(policy), true);
     }
-    if (options.edit.requested())
-        probe("upstream_parameter_change",
-              nemo::setParamCommand(options.edit.node, options.edit.key, options.edit.value), false);
+    if (options.edit.requested()) {
+        const auto* node = original.graph.nodeByName(options.edit.node);
+        if (!node)
+            throw std::runtime_error("invalidation probe: unknown node '" + options.edit.node + "'");
+        probe("upstream_parameter_change", nemo::setParamCommand(node->id, options.edit.key, options.edit.value),
+              false);
+    }
     return probes;
 }
 

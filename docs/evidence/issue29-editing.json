@@ -1,0 +1,540 @@
+{
+  "issue": 29,
+  "status": "verified locally; uncommitted",
+  "branch": "issue/29-stable-atomic-editing",
+  "scope": "Stable document-local node/edge identities, atomic shared history, expected revisions, typed queries/errors/events, retry deduplication, migrated native and headless consumers.",
+  "verification": {
+    "debug_build": "passed",
+    "release_build": "passed",
+    "full_debug_tests": {
+      "passed": 248,
+      "failed": 0,
+      "seconds": 44.43,
+      "command": "ctest --preset debug"
+    },
+    "focused_release": {
+      "passed": 36,
+      "failed": 0
+    },
+    "focused_asan_ubsan": {
+      "passed": 36,
+      "failed": 0
+    },
+    "focused_tsan": {
+      "passed": 36,
+      "failed": 0,
+      "command": "setarch x86_64 -R ctest --preset tsan -R 'CommandStackTest|ProjectSessionTest|PersistenceTest|SourceCommand'",
+      "environment_note": "Plain TSan test discovery failed with unexpected memory mapping on this kernel; subprocess-local ASLR disable succeeded. No host sysctl changed."
+    },
+    "native_wayland_gestures": {
+      "passed": 2,
+      "failed": 0,
+      "command": "NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland build/debug/tests/nemo_workspace_ui_tests --gtest_filter=WorkspaceDragTest.RenamedNodeEditsReachBothPanelsAndUndoByIdentity:WorkspaceDragTest.InteractiveGraphAndTimelineUseCommandsAndSharePlayhead"
+    },
+    "headless_validate": {
+      "project": "docs/samples/sample.json",
+      "ok": true,
+      "errors": [],
+      "warnings": []
+    },
+    "headless_render": "nemo-cli render docs/samples/sample.json --out <temporary>/frame.ppm --frame 12 passed",
+    "headless_session": {
+      "operations": 18,
+      "passed": true,
+      "desktop_environment": "DISPLAY, WAYLAND_DISPLAY and QT_QPA_PLATFORM unset",
+      "requests": [
+        {
+          "op": "query"
+        },
+        {
+          "op": "transaction",
+          "expected_revision": 1,
+          "request_id": "bad",
+          "commands": [
+            {
+              "op": "rename-node",
+              "node_id": 1,
+              "name": "must-not-publish"
+            },
+            {
+              "op": "connect",
+              "from_node_id": 1,
+              "from_port": 0,
+              "to_node_id": 2,
+              "to_port": 0
+            }
+          ]
+        },
+        {
+          "op": "changes",
+          "since": 1
+        },
+        {
+          "op": "transaction",
+          "expected_revision": 1,
+          "request_id": "batch",
+          "commands": [
+            {
+              "op": "rename-node",
+              "node_id": 1,
+              "name": "renamed"
+            },
+            {
+              "op": "set-param",
+              "node_id": 1,
+              "key": "marker",
+              "value": "authored"
+            }
+          ]
+        },
+        {
+          "op": "transaction",
+          "expected_revision": 1,
+          "request_id": "batch",
+          "commands": [
+            {
+              "op": "rename-node",
+              "node_id": 1,
+              "name": "renamed"
+            },
+            {
+              "op": "set-param",
+              "node_id": 1,
+              "key": "marker",
+              "value": "authored"
+            }
+          ]
+        },
+        {
+          "op": "set-param",
+          "node_id": 1,
+          "key": "marker",
+          "value": "stale",
+          "expected_revision": 1
+        },
+        {
+          "op": "query",
+          "filter": "renamed"
+        },
+        {
+          "op": "undo",
+          "expected_revision": 2,
+          "request_id": "undo"
+        },
+        {
+          "op": "undo",
+          "expected_revision": 2,
+          "request_id": "undo"
+        },
+        {
+          "op": "redo",
+          "expected_revision": 3,
+          "request_id": "redo"
+        },
+        {
+          "op": "changes",
+          "since": 1
+        },
+        {
+          "op": "set-param",
+          "node_id": 1.5,
+          "key": "marker",
+          "value": "invalid",
+          "expected_revision": 4
+        },
+        {
+          "op": "add-node",
+          "type": "testpattern",
+          "name": "plate",
+          "expected_revision": 4,
+          "request_id": "new"
+        },
+        {
+          "op": "set-param",
+          "node_id": 1,
+          "key": "marker",
+          "value": "stable",
+          "expected_revision": 5,
+          "request_id": "stable"
+        },
+        {
+          "op": "query"
+        },
+        {
+          "op": "set-param",
+          "node_id": 1,
+          "key": "marker",
+          "value": "missing-revision"
+        },
+        {
+          "op": "query",
+          "limit": 1,
+          "node_after": 1
+        },
+        {
+          "op": "changes",
+          "since": 18446744073709551615
+        }
+      ],
+      "responses": [
+        {
+          "edges": [
+            {
+              "from_node_id": 1,
+              "from_port": 0,
+              "id": 1,
+              "to_node_id": 2,
+              "to_port": 0
+            }
+          ],
+          "next_edge_after": 1,
+          "next_node_after": 2,
+          "nodes": [
+            {
+              "id": 1,
+              "name": "plate",
+              "params": {},
+              "type": "testpattern"
+            },
+            {
+              "id": 2,
+              "name": "out",
+              "params": {},
+              "type": "output"
+            }
+          ],
+          "ok": true,
+          "revision": 1,
+          "sources": []
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": false,
+          "created_edge_ids": [],
+          "created_node_ids": [],
+          "error": {
+            "code": "invalid_argument",
+            "message": "input node 2 port 0 is already fed by node 1"
+          },
+          "ok": false,
+          "revision": 1
+        },
+        {
+          "events": [],
+          "ok": true,
+          "resync_required": false,
+          "revision": 1
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [
+            1
+          ],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": true,
+          "created_edge_ids": [],
+          "created_node_ids": [],
+          "ok": true,
+          "revision": 2
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [
+            1
+          ],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": true,
+          "created_edge_ids": [],
+          "created_node_ids": [],
+          "ok": true,
+          "revision": 2
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [
+            1
+          ],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": false,
+          "created_edge_ids": [],
+          "created_node_ids": [],
+          "error": {
+            "code": "revision_conflict",
+            "message": "revision conflict: expected 1, current 2"
+          },
+          "ok": false,
+          "revision": 2
+        },
+        {
+          "edges": [
+            {
+              "from_node_id": 1,
+              "from_port": 0,
+              "id": 1,
+              "to_node_id": 2,
+              "to_port": 0
+            }
+          ],
+          "next_edge_after": 1,
+          "next_node_after": 1,
+          "nodes": [
+            {
+              "id": 1,
+              "name": "renamed",
+              "params": {
+                "marker": "authored"
+              },
+              "type": "testpattern"
+            }
+          ],
+          "ok": true,
+          "revision": 2,
+          "sources": []
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [
+            1
+          ],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": true,
+          "created_edge_ids": [],
+          "created_node_ids": [],
+          "ok": true,
+          "revision": 3
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [
+            1
+          ],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": true,
+          "created_edge_ids": [],
+          "created_node_ids": [],
+          "ok": true,
+          "revision": 3
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [
+            1
+          ],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": true,
+          "created_edge_ids": [],
+          "created_node_ids": [],
+          "ok": true,
+          "revision": 4
+        },
+        {
+          "events": [
+            {
+              "changed_edge_ids": [],
+              "changed_node_ids": [
+                1
+              ],
+              "changed_source_ids": [],
+              "color_policy_changed": false,
+              "created_edge_ids": [],
+              "created_node_ids": [],
+              "revision": 2
+            },
+            {
+              "changed_edge_ids": [],
+              "changed_node_ids": [
+                1
+              ],
+              "changed_source_ids": [],
+              "color_policy_changed": false,
+              "created_edge_ids": [],
+              "created_node_ids": [],
+              "revision": 3
+            },
+            {
+              "changed_edge_ids": [],
+              "changed_node_ids": [
+                1
+              ],
+              "changed_source_ids": [],
+              "color_policy_changed": false,
+              "created_edge_ids": [],
+              "created_node_ids": [],
+              "revision": 4
+            }
+          ],
+          "ok": true,
+          "resync_required": false,
+          "revision": 4
+        },
+        {
+          "error": {
+            "code": "invalid_request",
+            "message": "expected nonnegative integer field node_id"
+          },
+          "ok": false,
+          "revision": 4
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [
+            3
+          ],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": true,
+          "created_edge_ids": [],
+          "created_node_ids": [
+            3
+          ],
+          "ok": true,
+          "revision": 5
+        },
+        {
+          "changed_edge_ids": [],
+          "changed_node_ids": [
+            1
+          ],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": true,
+          "created_edge_ids": [],
+          "created_node_ids": [],
+          "ok": true,
+          "revision": 6
+        },
+        {
+          "edges": [
+            {
+              "from_node_id": 1,
+              "from_port": 0,
+              "id": 1,
+              "to_node_id": 2,
+              "to_port": 0
+            }
+          ],
+          "next_edge_after": 1,
+          "next_node_after": 3,
+          "nodes": [
+            {
+              "id": 1,
+              "name": "renamed",
+              "params": {
+                "marker": "stable"
+              },
+              "type": "testpattern"
+            },
+            {
+              "id": 2,
+              "name": "out",
+              "params": {},
+              "type": "output"
+            },
+            {
+              "id": 3,
+              "name": "plate",
+              "params": {},
+              "type": "testpattern"
+            }
+          ],
+          "ok": true,
+          "revision": 6,
+          "sources": []
+        },
+        {
+          "error": {
+            "code": "invalid_request",
+            "message": "expected nonnegative integer field expected_revision"
+          },
+          "ok": false,
+          "revision": 6
+        },
+        {
+          "edges": [
+            {
+              "from_node_id": 1,
+              "from_port": 0,
+              "id": 1,
+              "to_node_id": 2,
+              "to_port": 0
+            }
+          ],
+          "next_edge_after": 1,
+          "next_node_after": 2,
+          "nodes": [
+            {
+              "id": 2,
+              "name": "out",
+              "params": {},
+              "type": "output"
+            }
+          ],
+          "ok": true,
+          "revision": 6,
+          "sources": []
+        },
+        {
+          "events": [],
+          "ok": true,
+          "resync_required": true,
+          "revision": 6
+        }
+      ]
+    }
+  },
+  "native_packaged_application": {
+    "platform": "Wayland",
+    "exit_code": 0,
+    "source": "FFmpeg testsrc2 640x360 24fps; 4 FFV1 frames, yuv444p10le, BT.709 transfer/primaries/matrix, limited range",
+    "ocio": "docs/evidence/issue12-view.ocio",
+    "frames": [
+      0,
+      1
+    ],
+    "width": 320,
+    "height": 180,
+    "cache_hits": [
+      false,
+      false
+    ],
+    "request_to_qt_frame_swapped_ms": [
+      640.621751,
+      65.589628
+    ],
+    "scope": "Two cold/live frames; Qt frameSwapped is window-system handoff, not scanout or performance-gate acceptance.",
+    "options": "--source <fixture.mkv> --viewer-cache-dir <temporary> --viewer-cache-chunk-frames 1 --cache-benchmark-frames 2",
+    "screenshot": "issue29-native.png",
+    "visual_confirmation": "Separate packaged-app run displayed the tagged source at 640x360, frame 0, current state, beside the authored graph. Screenshot cropped to application window."
+  },
+  "acceptance": {
+    "identity_roundtrip": "PersistenceTest exercises exact sparse IDs, IDs above signed range, allocator high-watermarks, unknown node types/params, and explicit legacy migration diagnostics.",
+    "atomic_history": "CommandStackTest/ProjectSessionTest reject a batch with an occupied connection without publishing its earlier rename; valid parameter+connection batch undoes/redoes in one step with exact edge identity. Failed publication preparation preserves history.",
+    "revision_and_observers": "Typed RevisionConflict reports current revision; shared presenter tests and native QML edit/undo show both consumers the same state. Sources/events, journal resync, and shared immutable worker snapshots covered.",
+    "rename_and_retry": "Native gesture preserves NodeId 9007199254740993 through rename and reuse of its former label; viewer output reference follows ID. Submit and undo retries replay original results without duplicate edits."
+  },
+  "contracts": {
+    "history": "One CommandStack, private candidate validation, prepublication event/retry allocation, noexcept state/history publication; inverse callback history removed.",
+    "revision": "Monotonic public session revision is distinct from pure document render freshness and independent content reuse keys.",
+    "dedup": "Last 256 successful identified operations in one live session; IDs <=256 bytes; failures not retained; retry returns original result, including after later edits/undo.",
+    "queries": "Copied node/edge/source/value pages, clamped to 256, filters and exclusive cursors; do not combine revisions.",
+    "threading": "Session and subscription operations are owner-thread-only; callbacks cannot reenter mutation; workers receive independent immutable snapshots."
+  },
+  "limitations": [
+    "Public API review remains human-owned before merge; no new dependency, node type, or image baseline introduced.",
+    "Windows and broader platform/performance gates remain open; this is local Linux Wayland evidence only.",
+    "Existing minizip-ng linker and Qt qmldir scanner warnings remain.",
+    "Native tests require explicit NEMO_TEST_NATIVE_UI=1. Default tests remain offscreen even when desktop exports a QPA fallback list.",
+    "Final project container/recovery selection is not part of this task.",
+    "No commits or pushes; earlier uncommitted session/catalog changes preserved."
+  ],
+  "cleanup": "Redundant inverse/history closures and graph checkpoint path removed; existing ADR-0007 updated; temporary media/render/cache/config and raw desktop captures removed after verification."
+}

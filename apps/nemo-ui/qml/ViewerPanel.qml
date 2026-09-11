@@ -4,8 +4,9 @@ import QtQuick.Layouts
 import Nemo
 
 // Native Vulkan viewer panel content (issue #11). `viewerController` is the
-// GUI-thread viewer facade context property: it owns the Document (mutated
-// only through the command API), drives the render worker, and exposes
+// GUI-thread viewer facade context property: its explicitly composed
+// ProjectSession owns the Document and command history (mutated only through
+// the command API), while the controller drives the render worker and exposes
 // source/status/error/view state. `viewer` is the native QSG item that
 // imports the GPU presentation image; the panel computes the aspect-fit
 // display rectangle (zoom/pan in image pixels, clamped so the image center

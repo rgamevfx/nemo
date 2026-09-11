@@ -62,11 +62,6 @@ struct KeyContext {
     std::uint64_t implementationTag{0};
 };
 
-// Version of a node type's evaluation semantics. Bump when an operation's
-// meaning changes in a way keys must observe (different sampling, defaults,
-// alpha convention) so cached results from the older semantics miss.
-[[nodiscard]] std::uint64_t implementationVersion(const std::string& nodeType);
-
 // The reuse key of `node`'s result under `request`. `inputKeyHashes` are the
 // key hashes of the node's effective inputs in declared port order (empty
 // for source nodes).

@@ -337,10 +337,10 @@ struct SourceComposition {
     CommandStack stack(doc);
     stack.push(setSourceCommand(key, reference));
     const NodeId plate = doc.graph.addNode("source", "plate");
-    doc.graph.node(plate)->params = {{"source", key}};  // fixture/setup writes are sanctioned
+    doc.graph.setParam(plate, "source", key);  // fixture/setup writes are sanctioned
     if (withTint) {
         const NodeId tint = doc.graph.addNode("constcolor", "tint");
-        doc.graph.node(tint)->params = {{"color", "1.0 0.5 0.25 0.25"}};
+        doc.graph.setParam(tint, "color", "1.0 0.5 0.25 0.25");
         composition.over = doc.graph.addNode("merge", "over");
         (void)doc.graph.connect({plate, 0}, {composition.over, 0});
         (void)doc.graph.connect({tint, 0}, {composition.over, 1});
@@ -583,7 +583,7 @@ TEST(Viewer, SourceTimeMappingAndBackwardsReEntry) {
     // available keys as evidence.
     try {
         Document missing = composition.doc;
-        missing.graph.nodeByName("plate")->params = {{"source", "missing"}};
+        missing.graph.setParam(missing.graph.nodeByName("plate")->id, "source", "missing");
         (void)evaluateGpu(missing, requestFor(missing, {0, 0, 64, 48}, 0), slang, *boot.device, *boot.allocator,
                           10'000'000'000ULL, nullptr, &sources);
         ADD_FAILURE() << "expected unknown-key EvaluationException";

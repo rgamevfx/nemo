@@ -4,9 +4,9 @@
 #include <map>
 
 #include "nemo/core/Hashing.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
 
 namespace nemo {
-
 namespace {
 
 // Length-prefixed params records: count, then per record keyLen:key +
@@ -58,18 +58,6 @@ namespace {
 
 }  // namespace
 
-std::uint64_t implementationVersion(const std::string& nodeType) {
-    // Bump a type's version when its evaluation semantics change in a way
-    // keys must observe (see Reuse.hpp).
-    static const std::map<std::string, std::uint64_t> versions{{"testpattern", 2},
-                                                               {"constcolor", 1},
-                                                               {"merge", 1},
-                                                               {"source", 1},
-                                                               {"output", 1}};
-    const auto it = versions.find(nodeType);
-    return it != versions.end() ? it->second : 1;
-}
-
 ResultKey nodeResultKey(const Document& document, const Node& node, const std::vector<std::uint64_t>& inputKeyHashes,
                         const EvaluationRequest& request, const KeyContext& context) {
     // Canonical form, every string field length-prefixed:
@@ -90,7 +78,8 @@ ResultKey nodeResultKey(const Document& document, const Node& node, const std::v
     // distinguishable in the identity.
     std::string canonical;
     canonical.reserve(96 + node.params.size() * 24);
-    appendCanonicalField(canonical, "impl", std::to_string(implementationVersion(node.type)));
+    appendCanonicalField(canonical, "impl",
+                         std::to_string(document.graph.catalog().implementationVersion(node.type).value_or(1)));
     appendCanonicalField(canonical, "type", node.type);
     appendCanonicalField(canonical, "params", canonicalParams(node));
     canonical += "inputs:";

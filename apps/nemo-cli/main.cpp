@@ -11,6 +11,7 @@
 // bytes are the scene-linear reference values clamped to [0, 1] -- no
 // viewing transform is applied (spec section 8). `render` is the older
 // single-node pattern writer kept for the CI smoke test.
+#include "ProjectSessionCommand.hpp"
 #include "ViewerCacheCommand.hpp"
 #include <algorithm>
 #include <charconv>
@@ -54,7 +55,7 @@ int printUsage() {
                  "[--width W] [--height H] [--output NAME]\n"
                  "  nemo-cli render <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H]\n"
-                 "  nemo-cli imageinfo <image> [--frame N]\n"
+                 "  nemo-cli project-session <project.json>  JSON-lines edit/query session\n"
                  "  nemo-cli probe-media [project.json]      hardware codec capability report\n"
                  "  nemo-cli codec-sweep <tagged-viewer-clip> [--codecs a,b] [--chunks a,b] [--max-frames N]\n"
                  "          [--width W --height H] [--profile NAME] [--bit-depth N] [--bitrate-kbps N]\n"
@@ -560,6 +561,9 @@ int main(int argc, char** argv) {
     }
     if (command == "probe-media") {
         return commandProbeMedia(args);
+    }
+    if (command == "project-session") {
+        return commandProjectSession(args);
     }
     if (argc < 3) {
         return printUsage();

@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
-#include <string>
-#include <vector>
-
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace nemo;
 
@@ -16,6 +18,15 @@ Document makeDocument(const std::vector<std::pair<std::string, std::string>>& ty
         document.graph.addNode(type, name);
     }
     return document;
+}
+
+NodeDescriptor capabilityFixture(NodeCapabilities capabilities) {
+    return NodeDescriptor{.type = "fixture.capability",
+                          .displayName = "Capability Fixture",
+                          .group = "Tests",
+                          .inputs = {},
+                          .outputs = {{PortKind::Color, "color"}},
+                          .capabilities = std::move(capabilities)};
 }
 void connect(Graph& graph, const std::string& from, const std::string& to, std::uint32_t fromPort = 0,
              std::uint32_t toPort = 0) {
@@ -72,7 +83,7 @@ TEST(EvaluationTest, LinearChainRendersPatternThroughOutput) {
 TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     Document document =
         makeDocument({{"testpattern", "plate"}, {"constcolor", "backdrop"}, {"merge", "comp"}, {"output", "out"}});
-    document.graph.nodeByName("backdrop")->params["color"] = "0 0 1 0.5";
+    document.graph.setParam(document.graph.nodeByName("backdrop")->id, "color", "0 0 1 0.5");
     connect(document.graph, "plate", "comp", 0, 0);     // port A: over base
     connect(document.graph, "backdrop", "comp", 0, 1);  // port B: over source
     connect(document.graph, "comp", "out");
@@ -195,4 +206,50 @@ TEST(EvaluationTest, RequestValidationRejectsUnsupportedChannelsAndQuality) {
     EvaluationRequest quality = fullFrameRequest(document, 0);
     quality.quality = Quality::Draft;
     EXPECT_THROW(static_cast<void>(evaluateCpu(document, quality)), EvaluationException);
+}
+
+TEST(RequestValidation, EnforcesEachDependencyCapabilityWithNodeContext) {
+    const auto check = [](NodeCapabilities capabilities, const EvaluationRequest& request,
+                          const std::string& expected) {
+        auto catalog = std::make_shared<const NodeCatalog>(
+            std::vector<NodeDescriptor>{capabilityFixture(std::move(capabilities))});
+        Document document(catalog);
+        const NodeId fixture = document.graph.addNode("fixture.capability", "fixture");
+        const NodeId output = document.graph.addNode("output", "out");
+        document.graph.connect(PortRef{fixture, 0}, PortRef{output, 0});
+        EvaluationRequest contextual = request;
+        contextual.output = output;
+        try {
+            validateRequest(document, contextual);
+            FAIL() << "expected capability rejection";
+        } catch (const EvaluationException& error) {
+            EXPECT_TRUE(error.hasNode());
+            EXPECT_EQ(error.nodeName, "fixture");
+            EXPECT_NE(std::string(error.what()).find(expected), std::string::npos);
+        }
+    };
+
+    EvaluationRequest reduced;
+    reduced.region = {0, 0, 2, 2};
+    reduced.samplingScale = 2;
+    check(NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Full}, .channels = {"RGBA"}}, reduced,
+          "sampling scale");
+
+    EvaluationRequest rgba;
+    rgba.region = {0, 0, 2, 2};
+    check(NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Full}, .channels = {"Y"}}, rgba,
+          "channels");
+    EvaluationRequest quality;
+    quality.region = {0, 0, 2, 2};
+    check(NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Draft}, .channels = {"RGBA"}}, quality,
+          "quality");
+    EvaluationRequest cropped;
+    cropped.region = {1, 0, 2, 2};
+    cropped.fullWidth = 4;
+    cropped.fullHeight = 2;
+    check(NodeCapabilities{.samplingScales = {1},
+                           .qualityModes = {Quality::Full},
+                           .channels = {"RGBA"},
+                           .supportsRegion = false},
+          cropped, "region-of-interest");
 }

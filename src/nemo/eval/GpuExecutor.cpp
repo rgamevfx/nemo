@@ -2,6 +2,7 @@
 
 #include "nemo/core/Hashing.hpp"
 #include "nemo/core/evaluation/Params.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
 #include "nemo/eval/EffectShaders.hpp"
 #include "nemo/eval/SourceSession.hpp"
 #include "nemo/gpu/Compile.hpp"
@@ -72,10 +73,11 @@ void afterWriteBeforeRead(VkCommandBuffer command, const gpu::Image& image) {
 // `sourceFrame` supplies the decoded full-resolution frame for `source`
 // nodes (issue #11): it binds as set 1 input 0 and its dimensions feed the
 // fill kernel through param0.
-std::uint32_t prepareEffectStep(const Node& node, const EvaluationRequest& request, const EffectProgram& program,
-                                std::map<std::string, std::string>& effectiveParams, EffectUniforms& uniforms,
-                                std::vector<ComputeBinding>& bindings, gpu::Buffer& uniformBuffer,
-                                gpu::Allocator& allocator, const gpu::Image* sourceFrame = nullptr) {
+std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const Node& node, const EvaluationRequest& request,
+                                const EffectProgram& program, std::map<std::string, std::string>& effectiveParams,
+                                EffectUniforms& uniforms, std::vector<ComputeBinding>& bindings,
+                                gpu::Buffer& uniformBuffer, gpu::Allocator& allocator,
+                                const gpu::Image* sourceFrame = nullptr) {
     uniforms.misc[0] = static_cast<float>(request.localTime);
     // The request region stays FULL-RESOLUTION; the executed raster samples
     // it at samplingScale (issue #11). Both sets of numbers travel in the
@@ -106,7 +108,7 @@ std::uint32_t prepareEffectStep(const Node& node, const EvaluationRequest& reque
     } else if (node.type == "testpattern" || node.type == "output") {
         inputs = node.type == "output" ? 1u : 0u;
     } else if (node.type == "constcolor") {
-        const std::array<float, 4> color = parseColor4(node, effectiveParams, "color", {1.0F, 1.0F, 1.0F, 1.0F});
+        const std::array<float, 4> color = parseColor4(catalog, node, effectiveParams, "color");
         for (int c = 0; c < 4; ++c) {
             uniforms.param0[c] = color[c];
         }
@@ -115,10 +117,7 @@ std::uint32_t prepareEffectStep(const Node& node, const EvaluationRequest& reque
         // Identical operation bookkeeping as the CPU reference: 'over' is
         // the only implemented operation; anything else is a declared
         // limitation, never a silent substitution.
-        const std::string operation = effectiveParams.count("operation") > 0 ? effectiveParams.at("operation") : [&] {
-            effectiveParams.emplace("operation", "over");
-            return std::string{"over"};
-        }();
+        const std::string& operation = effectiveParameter(catalog, node, effectiveParams, "operation");
         if (operation != "over") {
             failEffect(node, program,
                        "unsupported merge operation '" + operation + "' (this inventory implements 'over' only)");
@@ -308,8 +307,11 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
     for (const Node* node : order) {
         const auto programIt = effects.find(node->type);
         if (programIt == effects.end()) {
+            const std::string availability = document.graph.descriptor(node->type) != nullptr
+                                                 ? "declared node type is unavailable to the GPU executor"
+                                                 : "unknown node type";
             failEffect(*node, EffectProgram{},
-                       "no effect package in the supplied effect library (no silent substitution: evaluation stops)");
+                       availability + " (no effect package in the supplied effect library; no silent substitution)");
         }
         const EffectProgram& program = programIt->second;
 
@@ -403,8 +405,8 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         std::vector<ComputeBinding> bindings;
         gpu::Buffer uniformBuffer;
         const std::uint32_t inputCount =
-            prepareEffectStep(*node, request, program, step.effectiveParams, uniforms, bindings, uniformBuffer,
-                              allocator, sourceFrame ? &*sourceFrame : nullptr);
+            prepareEffectStep(document.graph.catalog(), *node, request, program, step.effectiveParams, uniforms,
+                              bindings, uniformBuffer, allocator, sourceFrame ? &*sourceFrame : nullptr);
         if (inputCount != inputs.size()) {
             failEffect(*node, program,
                        "effect declares " + std::to_string(inputCount) + " inputs but the plan wires " +

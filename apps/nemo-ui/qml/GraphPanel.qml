@@ -37,8 +37,10 @@ Pane {
                     ComboBox {
                         id: nodeType
                         objectName: "graphAddType"
-                        Layout.preferredWidth: 108
-                        model: ["constcolor", "testpattern", "source", "merge", "output"]
+                        Layout.preferredWidth: 150
+                        model: controller.nodeCatalog
+                        textRole: "displayName"
+                        valueRole: "type"
                     }
                     TextField {
                         id: nodeName
@@ -50,8 +52,9 @@ Pane {
                     Button {
                         objectName: "graphAddButton"
                         text: "Add node"
+                        enabled: nodeType.currentIndex >= 0
                         onClicked: {
-                            controller.addGraphNode(nodeType.currentText, nodeName.text.trim())
+                            controller.addGraphNode(nodeType.currentValue, nodeName.text.trim())
                             nodeName.clear()
                         }
                     }
@@ -157,7 +160,7 @@ Pane {
                         onClicked: {
                             var node = controller.graphNodes[parameterNode.currentIndex]
                             if (node)
-                                controller.setNodeParameter(node.name, parameterKey.text.trim(), parameterValue.text)
+                                controller.setNodeParameter(node.id, parameterKey.text.trim(), parameterValue.text)
                         }
                     }
                 }

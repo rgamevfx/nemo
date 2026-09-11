@@ -70,8 +70,8 @@ TEST(Interactive, SupersedingOneViewerPreservesOtherDestinationAndSnapshot) {
     ViewerScheduler scheduler(2);
     Document document;
     CommandStack commands(document);
-    commands.push(addNodeCommand("constcolor", "color"));
-    commands.push(setParamCommand("color", "color", "0.1 0.2 0.3 1"));
+    const NodeId color = document.graph.addNode("constcolor", "color");
+    commands.push(setParamCommand(color, "color", "0.1 0.2 0.3 1"));
     EvaluationRequest request;
     const auto otherViewer = static_cast<ViewerDestination>(2);
     ASSERT_TRUE(scheduler.submit(document, request, 1));
@@ -80,7 +80,7 @@ TEST(Interactive, SupersedingOneViewerPreservesOtherDestinationAndSnapshot) {
     ASSERT_TRUE(scheduler.submit(document, request, 1, otherViewer));
     const auto other = scheduler.take();
     ASSERT_TRUE(other);
-    commands.push(setParamCommand("color", "color", "0.7 0.8 0.9 1"));
+    commands.push(setParamCommand(color, "color", "0.7 0.8 0.9 1"));
     ASSERT_TRUE(scheduler.submit(document, request, 2));
     EXPECT_EQ(old->document->graph.nodeByName("color")->params.at("color"), "0.1 0.2 0.3 1");
     EXPECT_FALSE(scheduler.complete(*old, true));

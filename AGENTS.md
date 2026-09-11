@@ -133,7 +133,21 @@ on the actual running UI.
 - Issues specify: outcome, scope, non-goals, acceptance examples, verification
   commands. PRs report: what changed, test evidence, limitations, and image
   diffs where relevant.
-- Keep ticket status and decisions in GitHub/docs, never in chat history.
+- **Start every project-work session at the
+  [development roadmap](https://github.com/rgamevfx/nemo/issues/24).**
+  It is the single entry point for all current planning, implementation,
+  bug fixes, prototype work, and documentation changes.
+- Before starting, identify the relevant task linked from the roadmap, check
+  its blockers and assignee, and claim it. Link newly requested work there;
+  create a task issue when it needs its own scope or acceptance criteria.
+- On starting, blocking, or finishing work, update the task and the roadmap's
+  current status/next action as appropriate. Record decisions, changes,
+  verification evidence, and remaining gaps in the task; keep the roadmap
+  concise with links rather than duplicated logs. Small changes without a
+  separate task are logged directly on the roadmap.
+- Fetch the latest issue body before editing to preserve concurrent updates.
+  Keep issue 24 open through implementation; agents maintain it so the user
+  does not have to reconstruct progress from chat or find another tracker.
 
 ## Agent skills
 

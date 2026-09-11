@@ -10,9 +10,10 @@
 
 namespace nemo {
 
-// Versioned JSON persistence (schema version rides in the file). Loading
-// retains unknown node types and reports them as warnings instead of
-// dropping data: projects must recover when dependencies return
+// Versioned JSON persistence (schema version rides in the file). Node and
+// edge identities plus allocator high watermarks are persisted verbatim.
+// Loading retains unknown node types and authored parameters, and reports
+// unavailable node implementations as warnings instead of dropping data
 // (spec section 10.7).
 struct LoadResult {
     Document document;
@@ -20,7 +21,10 @@ struct LoadResult {
 };
 
 [[nodiscard]] nlohmann::json saveDocument(const Document& document);
-[[nodiscard]] LoadResult loadDocument(const nlohmann::json& json);
+// The caller supplies its active immutable schema snapshot. Catalog metadata
+// is not written into the document; unavailable types still remain recoverable.
+[[nodiscard]] LoadResult loadDocument(const nlohmann::json& json,
+                                      std::shared_ptr<const NodeCatalog> catalog = builtinNodeCatalogPtr());
 
 // Thrown when the file is structurally unusable (bad schema, malformed JSON).
 struct DeserializeError : std::runtime_error {

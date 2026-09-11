@@ -1,0 +1,85 @@
+{
+  "issue": 30,
+  "cycles_this_resume": [
+    4,
+    5,
+    6
+  ],
+  "implementation_status": "verified locally; uncommitted",
+  "source_fixture": "FFmpeg testsrc2, 640x360, 24 fps, 12 FFV1 frames, yuv444p10le, BT.709 transfer/primaries/matrix, limited range",
+  "surface": "Production Main.qml, ViewerController, ViewerRuntime, ProjectSession and scene-graph items in a temporary native Qt/Wayland interaction driver",
+  "native_exit_code": 0,
+  "native_observations": [
+    {
+      "event": "catalog_fixture_discovered",
+      "descriptor_count": 6,
+      "type": "fixture.unavailable",
+      "execution_attempted": false
+    },
+    {
+      "event": "native_frame_presented",
+      "frame": 0,
+      "width": 640,
+      "height": 360,
+      "cache_hit": false,
+      "qt_frame_swapped_count": 4,
+      "request_to_swap_ms": 671.296258
+    },
+    {
+      "event": "supported_parameter_edited",
+      "node": "background",
+      "key": "color",
+      "revision_before": 8283122501220211083,
+      "revision_after": 6348401668709611190,
+      "snapshot_revision": 8283122501220211083,
+      "render_revision": 6348401668709611190
+    },
+    {
+      "event": "qml_node_undo_redo",
+      "node": "nativeExtra",
+      "undo_and_redo": true
+    },
+    {
+      "event": "qml_graph_connected",
+      "from": "nativeExtra",
+      "to": "nativeBranch",
+      "from_port": 0,
+      "to_port": 0,
+      "edge_count": 4
+    },
+    {
+      "event": "native_driver_success",
+      "wayland": true,
+      "frame_presented": true,
+      "snapshot_stable": true,
+      "fixture_execution_attempted": false
+    }
+  ],
+  "screenshot": "issue30-session-native.png",
+  "visual_confirmation": "Inspected native screenshot: rendered edited constant-color output at left, populated graph with source/background and new branch at right, timeline source strip below. This verifies current production behavior, not later prototype-parity tasks.",
+  "checks": {
+    "debug_build": "pass",
+    "release_build": "pass",
+    "headless_core_build": "pass",
+    "debug_ctest_passed": 230,
+    "debug_ctest_failed": 0,
+    "focused_asan_passed": 26,
+    "focused_asan_failed": 0,
+    "headless_smoke": "shared subscriptions/lifetime, edit/undo/redo, failed-edit invariants, snapshot stability and CPU render passed"
+  },
+  "commands": [
+    "cmake --build --preset debug --parallel 3 -- -k 0",
+    "cmake --build --preset release --parallel 2 -- -k 0",
+    "ctest --preset debug",
+    "cmake --build --preset asan --target nemo_core_tests nemo_workspace_ui_tests --parallel 2 -- -k 0",
+    "ctest --preset asan -R 'ProjectSessionTest|CommandStackTest|CatalogTest|PersistenceTest|Interactive\\.(Graph|Timeline|Undoing|Presentation|Shared|Catalog)'"
+  ],
+  "limitations": [
+    "Public API and image review remains human-owned before merge; no commits or pushes.",
+    "Native driver was not sanitizer-instrumented; focused ownership tests were.",
+    "clang-tidy ran for new session/catalog modules and emitted warnings; no clean static-analysis claim.",
+    "Issue33 remains open: standalone consumer of NodeCatalog::outputPorts fails to link because the definition is missing.",
+    "Seven other Phase1 tasks remain unstarted.",
+    "Native driver, fixture and temporary builds removed after evidence capture."
+  ]
+}

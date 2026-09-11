@@ -94,9 +94,9 @@ void evalTestpattern(const Node& /*node*/, const EvaluationRequest& request,
     }
 }
 
-void evalConstcolor(const Node& node, const EvaluationRequest& /*request*/,
+void evalConstcolor(const NodeCatalog& catalog, const Node& node, const EvaluationRequest& /*request*/,
                     std::map<std::string, std::string>& effectiveParams, CpuImage& out) {
-    const std::array<float, 4> color = parseColor4(node, effectiveParams, "color", {1.0F, 1.0F, 1.0F, 1.0F});
+    const std::array<float, 4> color = parseColor4(catalog, node, effectiveParams, "color");
     for (int y = 0; y < out.height(); ++y) {
         for (int x = 0; x < out.width(); ++x) {
             out.setPixel(x, y, color);
@@ -104,12 +104,10 @@ void evalConstcolor(const Node& node, const EvaluationRequest& /*request*/,
     }
 }
 
-void evalMerge(const Node& node, const EvaluationRequest&, std::map<std::string, std::string>& effectiveParams,
-               const std::vector<const CpuImage*>& inputs, CpuImage& out) {
-    const std::string operation = effectiveParams.count("operation") > 0 ? effectiveParams.at("operation") : [&] {
-        effectiveParams.emplace("operation", "over");
-        return std::string{"over"};
-    }();
+void evalMerge(const NodeCatalog& catalog, const Node& node, const EvaluationRequest&,
+               std::map<std::string, std::string>& effectiveParams, const std::vector<const CpuImage*>& inputs,
+               CpuImage& out) {
+    const std::string& operation = effectiveParameter(catalog, node, effectiveParams, "operation");
     if (operation != "over") {
         failNode(node, "unsupported merge operation '" + operation + "' (CPU reference implements 'over' only)");
     }
@@ -257,16 +255,17 @@ std::vector<const Node*> scheduleDependencies(const Document& document, NodeId o
 NodeId resolveOutput(const Document& document, const std::string& outputName) {
     std::vector<const Node*> outputs;
     for (const auto& node : document.graph.nodes()) {
-        if (node.type == "output") {
+        const auto* schema = document.graph.descriptor(node.type);
+        if (schema != nullptr && schema->isOutput)
             outputs.push_back(&node);
-        }
     }
     if (!outputName.empty()) {
         const Node* named = document.graph.nodeByName(outputName);
         if (named == nullptr) {
             throw EvaluationException("no node named '" + outputName + "' in document '" + document.name + "'");
         }
-        if (named->type != "output") {
+        const auto* schema = document.graph.descriptor(named->type);
+        if (schema == nullptr || !schema->isOutput) {
             throw EvaluationException(describeNode(*named) + ": --output must name an Output node");
         }
         return named->id;
@@ -287,25 +286,18 @@ NodeId resolveOutput(const Document& document, const std::string& outputName) {
 }
 
 // Shared request validation for both executors (CPU reference and native
-// GPU, issues #8/#11): quality (spec section 8: a reduced-quality result
-// must not substitute for a full-quality request), channels, region
-// bounds, sampling scale, and that the request targets an existing Output
-// node. The scale must be one of the declared reductions AND every
-// scheduled node type must declare support for it: unsupported reductions
-// are explicit errors, never silent approximations.
+// GPU, issues #8/#11): executor support (currently Full/RGBA), region
+// bounds, output identity, and every declared capability of every scheduled
+// dependency. Unsupported metadata is an explicit error, never a silent
+// approximation or executor substitution.
 void validateRequest(const Document& document, const EvaluationRequest& request) {
-    if (request.quality != Quality::Full) {
-        throw EvaluationException(std::string("quality '") + qualityName(request.quality) +
-                                  "' is not implemented by this executor (spec section 8: reduced quality must "
-                                  "not substitute for full quality)");
-    }
+    // These are executor limitations, not schema declarations. A future
+    // executor may advertise more modes/channels, but this CPU/GPU pair
+    // currently implements only the full-quality RGBA contract.
     if (!isSamplingScale(request.samplingScale)) {
         throw EvaluationException("sampling scale " + std::to_string(request.samplingScale) +
                                   " is not a declared reduction (supported scales: 1, 2, 4; spec section 8: "
                                   "reductions are explicit, never silent)");
-    }
-    if (request.channels != "RGBA") {
-        throw EvaluationException("channels '" + request.channels + "' are not implemented (supported: RGBA)");
     }
     if (request.region.width <= 0 || request.region.height <= 0) {
         throw EvaluationException("request region must have positive width and height");
@@ -329,37 +321,64 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
     if (output == nullptr) {
         throw EvaluationException("request output node " + std::to_string(request.output) + " does not exist");
     }
-    if (output->type != "output") {
+    const auto* outputSchema = document.graph.descriptor(output->type);
+    if (outputSchema == nullptr || !outputSchema->isOutput) {
         failNode(*output, "evaluation request must target an Output node");
     }
 
-    // Every scheduled node type must declare support for a requested
-    // reduction (spec section 8: nodes declare supported reductions). A
-    // scale-1 request is not a reduction; unknown types keep failing at
-    // their own execution step instead.
-    if (request.samplingScale != 1) {
-        for (const Node* node : scheduleDependencies(document, request.output)) {
-            const auto supported = samplingScalesSupported(node->type);
-            if (std::find(supported.begin(), supported.end(), request.samplingScale) == supported.end()) {
-                std::ostringstream declared;
-                if (supported.empty()) {
-                    declared << "none";
-                } else {
-                    for (std::size_t i = 0; i < supported.size(); ++i) {
-                        declared << (i == 0 ? "" : ", ") << supported[i];
-                    }
-                }
+    const bool wholeImage = request.region.x == 0 && request.region.y == 0 &&
+                            request.region.width == request.imageWidth() &&
+                            request.region.height == request.imageHeight();
+    // A request is valid only when every scheduled dependency advertises the
+    // requested metadata. The executor checks above remain separate: a
+    // descriptor can be registered and discoverable without supplying a CPU
+    // or GPU implementation.
+    for (const Node* node : scheduleDependencies(document, request.output)) {
+        const auto* schema = document.graph.descriptor(node->type);
+        if (schema == nullptr) {
+            // Unknown persisted types remain recoverable. Preserve the
+            // existing explicit scale failure for such a type, while its
+            // executor-specific failure handles a full-resolution request.
+            if (request.samplingScale != 1)
                 failNode(*node, "sampling scale " + std::to_string(request.samplingScale) +
-                                    " is not among the declared reductions (declared: " + std::move(declared).str() +
-                                    "); the request is rejected rather than silently reduced");
-            }
+                                    " cannot be validated because the node type has no descriptor");
+            continue;
         }
+        const auto& capabilities = schema->capabilities;
+        if (std::find(capabilities.qualityModes.begin(), capabilities.qualityModes.end(), request.quality) ==
+            capabilities.qualityModes.end()) {
+            failNode(*node, std::string("quality '") + qualityName(request.quality) +
+                                "' is not declared by node type '" + node->type + "'");
+        }
+        if (std::find(capabilities.channels.begin(), capabilities.channels.end(), request.channels) ==
+            capabilities.channels.end()) {
+            failNode(*node, "channels '" + request.channels + "' are not declared by node type '" + node->type + "'");
+        }
+        if (std::find(capabilities.samplingScales.begin(), capabilities.samplingScales.end(), request.samplingScale) ==
+            capabilities.samplingScales.end()) {
+            failNode(*node, "sampling scale " + std::to_string(request.samplingScale) +
+                                " is not declared by node type '" + node->type + "'");
+        }
+        if (!capabilities.supportsRegion && !wholeImage) {
+            failNode(*node, "does not support region-of-interest requests");
+        }
+    }
+    // Apply the executor's narrower implementation contract only after the
+    // per-node declarations have been checked, so declaration violations
+    // retain the offending node context.
+    if (request.quality != Quality::Full) {
+        throw EvaluationException(std::string("quality '") + qualityName(request.quality) +
+                                  "' is not implemented by this executor (spec section 8: reduced quality must "
+                                  "not substitute for full quality)");
+    }
+    if (request.channels != "RGBA") {
+        throw EvaluationException("channels '" + request.channels + "' are not implemented (supported: RGBA)");
     }
 }
 
 std::vector<NodeId> resolveStepInputs(const Document& document, const Node& node,
                                       const std::map<NodeId, ImageIdentity>& evaluated, PlanStep& step) {
-    const auto& inPorts = inputPorts(node.type);
+    const auto& inPorts = document.graph.inputPortsFor(node.type);
     std::vector<NodeId> producers;
     for (std::uint32_t port = 0; port < inPorts.size(); ++port) {
         const Edge* edge = nullptr;
@@ -444,13 +463,15 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
             } else if (node->type == "source") {
                 evalSource(document, *node, request, step.effectiveParams, *fresh, sources);
             } else if (node->type == "constcolor") {
-                evalConstcolor(*node, request, step.effectiveParams, *fresh);
+                evalConstcolor(document.graph.catalog(), *node, request, step.effectiveParams, *fresh);
             } else if (node->type == "merge") {
-                evalMerge(*node, request, step.effectiveParams, inputs, *fresh);
+                evalMerge(document.graph.catalog(), *node, request, step.effectiveParams, inputs, *fresh);
             } else if (node->type == "output") {
                 evalOutput(*node, request, step.effectiveParams, inputs, *fresh);
+            } else if (document.graph.descriptor(node->type) != nullptr) {
+                failNode(*node, "declared node type has no CPU reference implementation (executor unavailable)");
             } else {
-                failNode(*node, "type '" + node->type + "' has no CPU reference implementation");
+                failNode(*node, "unknown node type has no CPU reference implementation");
             }
 
             step.produced = identityOf(*fresh, Residency::HostCpuReference);

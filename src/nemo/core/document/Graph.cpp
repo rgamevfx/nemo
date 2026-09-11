@@ -2,85 +2,27 @@
 #include "nemo/core/evaluation/Request.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
-
 namespace nemo {
-
-void Graph::exchangeState(Graph& checkpoint) {
-    nodes_.swap(checkpoint.nodes_);
-    edges_.swap(checkpoint.edges_);
-    incomingCache_.clear();
-    checkpoint.incomingCache_.clear();
-    nextNodeId_ = checkpoint.nextNodeId_ = std::max(nextNodeId_, checkpoint.nextNodeId_);
-    nextEdgeId_ = checkpoint.nextEdgeId_ = std::max(nextEdgeId_, checkpoint.nextEdgeId_);
-    revision_ = checkpoint.revision_ = std::max(revision_, checkpoint.revision_) + 1;
-}
-
 namespace {
-
-// The CPU reference inventory and any declared no-op node types live here so
-// edge validation, serialization warnings, and the evaluator share one table.
-struct NodeInterface {
-    std::string type;
-    std::vector<PortSpec> inputs;
-    std::vector<PortSpec> outputs;
-    std::span<const int> samplingScales{};
-};
-
-const std::vector<NodeInterface>& nodeInterfaces() {
-    static const std::vector<NodeInterface> interfaces{
-        {"constcolor", {}, {{PortKind::Color, "color"}}, kSamplingScales},
-        {"merge",
-         {{PortKind::Color, "A"}, {PortKind::Color, "B"}},  // A = over base, B = over source
-         {{PortKind::Color, "out"}},
-         kSamplingScales},
-        {"output", {{PortKind::Color, "color"}}, {}, kSamplingScales},
-        // Real source media reference (issue #11): the node carries a
-        // `source` parameter addressing Document::sources and produces the
-        // decoded, working-space-interpreted image. The decode itself is
-        // never a Document/evaluation concern (spec section 10.2); an
-        // executor evaluates it only through its source provider/decoder
-        // layer and rejects unresolved sources explicitly.
-        {"source", {}, {{PortKind::Color, "color"}}, kSamplingScales},
-        {"testpattern", {}, {{PortKind::Color, "color"}}, kSamplingScales},
-    };
-    return interfaces;
-}
-
-const NodeInterface* interfaceOf(const std::string& type) {
-    for (const auto& interface : nodeInterfaces()) {
-        if (interface.type == type) {
-            return &interface;
-        }
-    }
-    return nullptr;
-}
-
 std::string describe(PortRef ref) {
     return "node " + std::to_string(ref.node) + " port " + std::to_string(ref.port);
 }
-
 }  // namespace
 
-std::span<const int> samplingScalesSupported(const std::string& type) {
-    const auto* interface = interfaceOf(type);
-    return interface ? interface->samplingScales : std::span<const int>{};
+Graph::Graph(std::shared_ptr<const NodeCatalog> catalog) : catalog_(std::move(catalog)) {
+    if (!catalog_) {
+        throw std::invalid_argument("graph catalog must not be null");
+    }
 }
 
-const std::vector<PortSpec>& inputPorts(const std::string& type) {
-    static const std::vector<PortSpec> none;
-    const NodeInterface* interface = interfaceOf(type);
-    return interface ? interface->inputs : none;
-}
-
-const std::vector<PortSpec>& outputPorts(const std::string& type) {
-    static const std::vector<PortSpec> none;
-    const NodeInterface* interface = interfaceOf(type);
-    return interface ? interface->outputs : none;
-}
-
-bool isKnownNodeType(const std::string& type) {
-    return interfaceOf(type) != nullptr;
+void Graph::restoreIdentityHighWatermarks(NodeId nextNodeId, EdgeId nextEdgeId) {
+    if (nextNodeId == kInvalidNode || nextEdgeId == kInvalidEdge) {
+        throw GraphException(GraphError::InvalidId, "identity high watermarks must be nonzero");
+    }
+    nextNodeId_ = std::max(nextNodeId_, nextNodeId);
+    nextEdgeId_ = std::max(nextEdgeId_, nextEdgeId);
 }
 
 const Node* Graph::findNode(NodeId id) const {
@@ -89,15 +31,44 @@ const Node* Graph::findNode(NodeId id) const {
 }
 
 NodeId Graph::addNode(std::string type, std::string name) {
-    for (const auto& existing : nodes_) {
-        if (existing.name == name) {
-            throw GraphException(GraphError::DuplicateName, "node name '" + name + "' already exists in this graph");
-        }
+    if (nextNodeId_ == kInvalidNode || nextNodeId_ == std::numeric_limits<NodeId>::max()) {
+        throw GraphException(GraphError::InvalidId, "node identity space is exhausted");
     }
-    const NodeId id = nextNodeId_++;
-    nodes_.push_back(Node{.id = id, .type = std::move(type), .name = std::move(name), .params = {}});
+    return addNodeWithId(nextNodeId_, std::move(type), std::move(name));
+}
+
+NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, std::map<std::string, std::string> params) {
+    if (id == kInvalidNode || id == std::numeric_limits<NodeId>::max()) {
+        throw GraphException(GraphError::InvalidId, "node id must be a nonzero value below the identity limit");
+    }
+    if (findNode(id) != nullptr) {
+        throw GraphException(GraphError::DuplicateId,
+                             "node id " + std::to_string(id) + " already exists in this graph");
+    }
+    if (nodeByName(name) != nullptr) {
+        throw GraphException(GraphError::DuplicateName, "node name '" + name + "' already exists in this graph");
+    }
+    nodes_.push_back(Node{.id = id, .type = std::move(type), .name = std::move(name), .params = std::move(params)});
+    nextNodeId_ = std::max(nextNodeId_, static_cast<NodeId>(id + 1));
     ++revision_;
     return id;
+}
+
+void Graph::renameNode(NodeId id, std::string name) {
+    Node* node = const_cast<Node*>(findNode(id));
+    if (node == nullptr) {
+        throw GraphException(GraphError::UnknownNode, "cannot rename unknown node " + std::to_string(id));
+    }
+    if (name.empty()) {
+        throw GraphException(GraphError::InvalidName, "node name must not be empty");
+    }
+    if (const Node* existing = nodeByName(name); existing != nullptr && existing->id != id) {
+        throw GraphException(GraphError::DuplicateName, "node name '" + name + "' already exists in this graph");
+    }
+    if (node->name == name)
+        return;
+    node->name = std::move(name);
+    ++revision_;
 }
 
 void Graph::removeNode(NodeId id) {
@@ -107,9 +78,10 @@ void Graph::removeNode(NodeId id) {
     edges_.erase(std::remove_if(edges_.begin(), edges_.end(),
                                 [id](const Edge& e) { return e.from.node == id || e.to.node == id; }),
                  edges_.end());
-    incomingCache_.erase(id);
     nodes_.erase(std::remove_if(nodes_.begin(), nodes_.end(), [id](const Node& n) { return n.id == id; }),
                  nodes_.end());
+    // Removing a source can change the incoming list of every destination.
+    incomingCache_.clear();
     ++revision_;
 }
 
@@ -117,17 +89,9 @@ const Node* Graph::node(NodeId id) const {
     return findNode(id);
 }
 
-Node* Graph::node(NodeId id) {
-    return const_cast<Node*>(findNode(id));
-}
-
 const Node* Graph::nodeByName(const std::string& name) const {
     const auto it = std::find_if(nodes_.begin(), nodes_.end(), [&name](const Node& n) { return n.name == name; });
     return it == nodes_.end() ? nullptr : &*it;
-}
-
-Node* Graph::nodeByName(const std::string& name) {
-    return const_cast<Node*>(static_cast<const Graph*>(this)->nodeByName(name));
 }
 
 bool Graph::reachable(NodeId origin, NodeId target) const {
@@ -159,12 +123,10 @@ std::optional<GraphErrorDetails> Graph::validateEdge(PortRef from, PortRef to) c
         return GraphErrorDetails{GraphError::UnknownNode,
                                  "connect references an unknown node: " + describe(from) + " -> " + describe(to)};
     }
-    // Typed ports: reject connections whose source is not a declared output
-    // port, or whose destination is not a declared input port of the same
-    // kind. Unknown node types declare no ports and are not type-checked
-    // (spec section 10.7 recovery rule).
-    const NodeInterface* fromInterface = interfaceOf(fromNode->type);
-    const NodeInterface* toInterface = interfaceOf(toNode->type);
+    // Typed ports come from the immutable schema catalog. Unknown persisted
+    // node types declare no ports and remain loadable recovery data.
+    const NodeDescriptor* fromInterface = catalog_->find(fromNode->type);
+    const NodeDescriptor* toInterface = catalog_->find(toNode->type);
     if (fromInterface && static_cast<std::size_t>(from.port) >= fromInterface->outputs.size()) {
         return GraphErrorDetails{GraphError::PortType,
                                  "cannot connect from " + describe(from) + ": node '" + fromNode->name + "' of type '" +
@@ -199,11 +161,25 @@ std::optional<GraphErrorDetails> Graph::validateEdge(PortRef from, PortRef to) c
 }
 
 EdgeId Graph::connect(PortRef from, PortRef to) {
+    if (nextEdgeId_ == kInvalidEdge || nextEdgeId_ == std::numeric_limits<EdgeId>::max()) {
+        throw GraphException(GraphError::InvalidId, "edge identity space is exhausted");
+    }
+    return connectWithId(nextEdgeId_, from, to);
+}
+
+EdgeId Graph::connectWithId(EdgeId id, PortRef from, PortRef to) {
+    if (id == kInvalidEdge || id == std::numeric_limits<EdgeId>::max()) {
+        throw GraphException(GraphError::InvalidId, "edge id must be a nonzero value below the identity limit");
+    }
+    if (std::find_if(edges_.begin(), edges_.end(), [id](const Edge& edge) { return edge.id == id; }) != edges_.end()) {
+        throw GraphException(GraphError::DuplicateId,
+                             "edge id " + std::to_string(id) + " already exists in this graph");
+    }
     if (const auto problem = validateEdge(from, to)) {
         throw GraphException(problem->code, problem->message);
     }
-    const EdgeId id = nextEdgeId_++;
     edges_.push_back(Edge{.id = id, .from = from, .to = to});
+    nextEdgeId_ = std::max(nextEdgeId_, static_cast<EdgeId>(id + 1));
     incomingCache_.erase(to.node);
     ++revision_;
     return id;
@@ -223,6 +199,10 @@ void Graph::setParam(NodeId id, const std::string& key, const std::string& value
     Node* node = const_cast<Node*>(findNode(id));
     if (node == nullptr) {
         throw GraphException(GraphError::UnknownNode, "cannot set a parameter on unknown node " + std::to_string(id));
+    }
+    if (const auto problem = catalog_->validateParameter(node->type, key, value)) {
+        throw GraphException(GraphError::ParameterValue,
+                             "node '" + node->name + "' parameter '" + key + "': " + *problem);
     }
     node->params[key] = value;
     ++revision_;

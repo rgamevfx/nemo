@@ -51,7 +51,7 @@ document revision, result cache, or publication guard existed.
 
 4. **Publication freshness is a ticket, not invalidation.**
    `ResultCache::beginTicket(document)` captures the document revision
-   (`Document::stateRevision()`: graph edit counter + color policy + source content)
+   (`Document::stateRevision()`: command generation + graph edit counter + color policy + source content)
    and a request generation. A computed result publishes only while the
    ticket still matches; superseded publications are discarded and counted
    (`staleRejected`), never stored. Reuse identity deliberately ignores the
@@ -119,17 +119,87 @@ Late cancellation during metadata I/O prunes only obsolete identities and
 preserves original codec offsets; the index is rewritten without re-encoding
 or reevaluating surviving frames.
 
-The graph and timeline panels use the same controller and CommandStack.
-The graph exposes node creation, connections, parameter editing, and output
-selection. Timeline source strips expose the existing persistent source
-offset/step mapping and shared playhead. They do not claim clip-occurrence
-move/trim support: that model is not yet present. Unknown source coverage is
+The graph and timeline panels use the same ViewerController facade and
+explicitly composed ProjectSession. The session owns one Document and
+CommandStack per open project, so both panels share history. The graph exposes
+node creation, connections, parameter editing, and output selection. Timeline
+source strips expose the existing persistent source offset/step mapping and
+shared playhead. They do not claim clip-occurrence move/trim support: that
+model is not yet present. Unknown source coverage is
 shown explicitly rather than inferred from the ruler's visible extent.
 Dense graph and timeline content uses culled, batched C++ scene-graph items.
 QML owns chrome and a single selected-source inspector; offscreen nodes,
 connections, and source strips do not create per-element control trees.
 
+## Revisioned editing integration (#29)
+
+`ProjectSession::revision()` is a monotonically increasing, session-local
+edit revision, not an image reuse key or the renderer's publication token.
+Every public submit/undo/redo supplies an expected revision; conflicts return
+the current revision and typed errors without publishing a partial edit.
+Rendering compares `Document::stateRevision()` with the immutable request
+snapshot. This query is pure, including on worker threads. Each successful
+command, undo, and redo advances its command generation, so restoring source
+or color values cannot make an obsolete render current.
+
+`CommandStack` validates on a private candidate, prepares session event/retry
+records, then publishes the document and history without allocation. Bounded
+history retains document states, not a second collection of mutable inverse
+callbacks. This trades whole-document history storage for atomic rollback
+and stable redo identities; there are no render-path copies added by history.
+Creation watermarks survive undo and serialization, including deletion of
+the highest live ID. Existing JSON schema-1 IDs are restored exactly; legacy
+missing IDs produce migration warnings. This does not select the final
+project container or recovery format (#32/#35).
+
+Queries return bounded, filtered value copies, ordered by stable node/edge
+ID or source/parameter key. Limits are clamped to 256; exclusive cursors
+allow pagination. Clients must not combine pages across revisions.
+`changesSince(revision)` reports changed node/edge/source IDs and color policy
+changes; an expired, unavailable, or future event cursor requires resync.
+Notifications are synchronous, owner-thread-only, nonblocking callbacks;
+subscriptions must not outlive their session. Edits during a command or
+notification are rejected.
+
+Nonempty request IDs identify operations across submit/undo/redo in one live
+session. The last 256 successful identified operations replay their original
+result, even after subsequent edits or undo. IDs are limited to 256 bytes.
+Failures are not retained; a restarted session has no retry history.
+Reusing an ID means retrying the original operation, not a different payload.
+File writes and render jobs remain outside document history.
+
+Viewer targets retain `NodeId`; names are labels. QML transports IDs as
+decimal strings to preserve the entire 64-bit range instead of rounding
+through JavaScript numbers.
+
+The desktop-free consumer `nemo-cli project-session <project.json>` accepts
+JSON-lines on stdin and emits one JSON result per line. It keeps one session
+alive across requests and does not write the input project. For example:
+
+```json
+{"op":"query","limit":16}
+{"op":"transaction","expected_revision":1,"request_id":"gesture-a","commands":[{"op":"rename-node","node_id":1,"name":"plate"},{"op":"set-param","node_id":1,"key":"note","value":"authored"}]}
+{"op":"changes","since":1}
+{"op":"undo","expected_revision":2,"request_id":"undo-a"}
+```
+
+Edits require `expected_revision`; `request_id` is optional. Commands include
+`add-node`, `set-param`, `rename-node`, `connect`, `transaction`, `undo`, and
+`redo`. Mutation addresses use `node_id`, `from_node_id`, and `to_node_id`;
+ports use `from_port` and `to_port`. Query filters include `filter`, `type`,
+`name`, `node_id`, `key_filter`, and `source_filter`; paging uses `node_after`,
+`edge_after`, `key_after`, and `source_after`. Query results identify the
+current revision; rejected edits distinguish revision conflicts, missing
+objects, invalid arguments, unavailable operations, and reentrant mutation.
+
 ## Verification
+
+The workspace test executable stays offscreen by default, independent of a
+desktop's exported `QT_QPA_PLATFORM` fallback list. Native input verification
+uses `NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland` with
+`nemo_workspace_ui_tests`; the issue #29 identity/gesture scenario exercises
+IDs above JavaScript's exact integer range. Packaged-app frame-swapped and
+screenshot evidence additionally verifies real Vulkan viewer presentation.
 
 `tests/ReuseTests.cpp` (CPU, 12 scenarios: acceptance examples 1–6 of issue
 #9) and `Effect.GpuReuseAvoidsRecomputationAndPreservesResults` (native GPU

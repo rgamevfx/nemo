@@ -1,14 +1,17 @@
 #pragma once
 
+#include "nemo/core/document/Ids.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
-
-#include "nemo/core/document/Ids.hpp"
 
 namespace nemo {
 
@@ -19,26 +22,6 @@ struct PortRef {
     friend bool operator==(const PortRef&, const PortRef&) = default;
 };
 
-// Declared port interfaces of node types known to this build. Ports are
-// typed so invalid-type connections are rejected when the graph is edited,
-// not when it is evaluated (spec section 10.4: typed ports). Node types
-// unknown to this build declare no ports; they load as data (spec
-// section 10.7) and are only rejected when a request actually needs them.
-enum class PortKind { Color };
-
-struct PortSpec {
-    PortKind kind;
-    std::string name;
-};
-
-// The port interface of `type`: empty vectors when the type is unknown.
-[[nodiscard]] const std::vector<PortSpec>& inputPorts(const std::string& type);
-[[nodiscard]] const std::vector<PortSpec>& outputPorts(const std::string& type);
-// True for node types this build declares a port interface for.
-[[nodiscard]] bool isKnownNodeType(const std::string& type);
-// Explicit node sampling capabilities. Unknown/new types declare none
-// until their implementation supports reductions; no per-request allocation.
-[[nodiscard]] std::span<const int> samplingScalesSupported(const std::string& type);
 struct Node {
     NodeId id{kInvalidNode};
 
@@ -53,8 +36,19 @@ struct Edge {
     PortRef to;
 };
 
-// Rejected graph edits always explain the offending relationship.
-enum class GraphError { UnknownNode, UnknownEdge, PortOccupied, Cycle, DuplicateName, PortType };
+// Rejected graph edits always explain the offending relationship or value.
+enum class GraphError {
+    UnknownNode,
+    UnknownEdge,
+    PortOccupied,
+    Cycle,
+    DuplicateName,
+    InvalidName,
+    PortType,
+    ParameterValue,
+    InvalidId,
+    DuplicateId
+};
 
 struct GraphErrorDetails {
     GraphError code;
@@ -76,50 +70,56 @@ private:
 // Node identities are never reused within a graph instance.
 class Graph {
 public:
+    explicit Graph(std::shared_ptr<const NodeCatalog> catalog = builtinNodeCatalogPtr());
+    [[nodiscard]] const NodeCatalog& catalog() const { return *catalog_; }
+    [[nodiscard]] const NodeDescriptor* descriptor(std::string_view type) const { return catalog_->find(type); }
+    [[nodiscard]] const std::vector<PortSpec>& inputPortsFor(std::string_view type) const {
+        return catalog_->inputPorts(type);
+    }
+    [[nodiscard]] std::span<const int> samplingScalesFor(std::string_view type) const {
+        return catalog_->samplingScalesSupported(type);
+    }
     [[nodiscard]] NodeId addNode(std::string type, std::string name);
+    // Inserts a persisted node with its exact identity. This is reserved for
+    // deserialization and command history restoration; regular creation uses
+    // addNode and always allocates above the graph high watermark.
+    [[nodiscard]] NodeId addNodeWithId(NodeId id, std::string type, std::string name,
+                                       std::map<std::string, std::string> params = {});
     // Detaches and removes the node together with every edge touching it.
     void removeNode(NodeId id);
+    // Changes the display label without changing the node identity.
+    void renameNode(NodeId id, std::string name);
 
     [[nodiscard]] const Node* node(NodeId id) const;
-    [[nodiscard]] Node* node(NodeId id);
-
     [[nodiscard]] const Node* nodeByName(const std::string& name) const;
-    [[nodiscard]] Node* nodeByName(const std::string& name);
 
+    // Inserts a persisted edge with its exact identity.
+    [[nodiscard]] EdgeId connectWithId(EdgeId id, PortRef from, PortRef to);
     // Throws GraphException on UnknownNode, PortOccupied, or Cycle.
     [[nodiscard]] EdgeId connect(PortRef from, PortRef to);
     // Throws GraphException on UnknownEdge.
     void disconnect(EdgeId id);
-
-    // Returns the offending relationship when the edge would be rejected,
-    // including typed-port mismatches for known node types.
     [[nodiscard]] std::optional<GraphErrorDetails> validateEdge(PortRef from, PortRef to) const;
+    [[nodiscard]] const std::vector<Edge>& edgesInto(NodeId node) const;
+    [[nodiscard]] bool reachable(NodeId origin, NodeId target) const;
     [[nodiscard]] const std::vector<Node>& nodes() const { return nodes_; }
     [[nodiscard]] const std::vector<Edge>& edges() const { return edges_; }
 
-    // Sanctioned parameter mutation: records the parameter and advances the
-    // graph revision. Direct writes through node() are fixture/setup only —
-    // they bypass revision bookkeeping.
+    // Throws GraphException::ParameterValue for invalid declared values;
+    // unknown authored keys remain recoverable data.
     void setParam(NodeId id, const std::string& key, const std::string& value);
     void eraseParam(NodeId id, const std::string& key);
-
-    // Commands exchange authored content with an undo checkpoint without
-    // reassigning identities. Allocation high-water marks and edit revision
-    // remain monotonic even when a new edit branches from undone history.
-    void exchangeState(Graph& checkpoint);
-
-    // Monotonic graph-edit counter: every structural or sanctioned parameter
-    // mutation advances it. Combined with the color policy into
-    // Document::stateRevision() for publication-freshness checks (issue #9,
-    // spec section 8); reuse identity itself is content-derived (Reuse.hpp).
+    // Identity allocation watermarks are persisted separately from live
+    // objects so deleting the newest object can never make its ID reusable.
+    void restoreIdentityHighWatermarks(NodeId nextNodeId, EdgeId nextEdgeId);
+    [[nodiscard]] NodeId nextNodeId() const { return nextNodeId_; }
+    [[nodiscard]] EdgeId nextEdgeId() const { return nextEdgeId_; }
     [[nodiscard]] std::uint64_t revision() const { return revision_; }
-    [[nodiscard]] const std::vector<Edge>& edgesInto(NodeId node) const;
-
-    // True when `target` is reachable from `origin` through existing edges.
-    [[nodiscard]] bool reachable(NodeId origin, NodeId target) const;
 
 private:
     [[nodiscard]] const Node* findNode(NodeId id) const;
+
+    std::shared_ptr<const NodeCatalog> catalog_;
 
     std::vector<Node> nodes_;
     std::vector<Edge> edges_;

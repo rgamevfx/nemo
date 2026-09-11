@@ -1,0 +1,63 @@
+{
+  "issue": 33,
+  "status": "verified locally; uncommitted",
+  "followup_change": "Defined NodeCatalog::outputPorts using the same immutable-descriptor lookup and empty unknown-type behavior as inputPorts; extended the existing fixture test to discover and wire a contributed named output.",
+  "previous_reproduction": "Standalone catalog consumer failed to link: undefined reference to NodeCatalog::outputPorts(std::string_view) const.",
+  "verification": {
+    "debug_build": "passed",
+    "release_build": "passed",
+    "full_debug_tests": {
+      "passed": 230,
+      "failed": 0
+    },
+    "focused_asan_ubsan": {
+      "passed": 7,
+      "failed": 0
+    },
+    "desktop_free_core_build": "passed with GPU/UI/CLI/tests disabled",
+    "standalone_public_query": "passed: 5 builtins, 2 named contributed outputs, empty unknown and terminal outputs"
+  },
+  "commands": [
+    "cmake --build --preset debug --parallel 3",
+    "cmake --build --preset release --parallel 2",
+    "ctest --preset debug",
+    "cmake --build --preset asan --target nemo_core_tests --parallel 2",
+    "ctest --preset asan -R 'CatalogTest|PersistenceTest.ActiveCatalog'"
+  ],
+  "native_packaged_application": {
+    "platform": "Wayland",
+    "exit_code": 0,
+    "frames": [
+      0,
+      1
+    ],
+    "width": 320,
+    "height": 180,
+    "cache_hits": [
+      false,
+      false
+    ],
+    "request_to_qt_frame_swapped_ms": [
+      623.184046,
+      66.388988
+    ],
+    "scope": "Two cold/live frames from packaged nemo-ui; not latency benchmark acceptance",
+    "options": "--source <tagged-fixture.mkv> --viewer-cache-dir <temporary> --viewer-cache-chunk-frames 1 --cache-benchmark-frames 2",
+    "source": "FFmpeg testsrc2 640x360, 24fps, 4 FFV1 frames, yuv444p10le, BT.709 transfer/primaries/matrix, limited range",
+    "user_configuration": "isolated temporary XDG_CONFIG_HOME and XDG_CACHE_HOME"
+  },
+  "acceptance": {
+    "builtin_discovery_and_consistent_queries": "Standalone query enumerates all builtins; graph/catalog/evaluation regressions pass.",
+    "contributed_discovery_and_unavailable_executor": "Named-output fixture regression and unavailable-executor regression pass. Prior real QML fixture-discovery/gesture evidence is in issue30-session.json; UI code unchanged by this follow-up.",
+    "unknown_data_and_invalid_relationships": "Persistence recovery, active catalog loading, invalid port/parameter/schema tests pass.",
+    "independent_images": "Existing native effect and CPU/GPU image checks pass as part of full debug CTest; pixel implementations and baselines unchanged."
+  },
+  "prior_native_interaction_evidence": "issue30-session.json",
+  "limitations": [
+    "Public API/image review remains human-owned before merge.",
+    "Previously recorded clang-tidy warnings remain; no clean static-analysis claim.",
+    "Existing minizip-ng linker warning remains.",
+    "No commits or pushes; later Phase1 tasks not implemented in this request."
+  ],
+  "cleanup": "Temporary public consumer, headless build, media fixture and native cache/config removed after verification."
+}

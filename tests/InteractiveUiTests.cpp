@@ -1,10 +1,15 @@
 #include "ScopedEnvironment.hpp"
 #include "ViewerController.hpp"
+#include "nemo/core/session/ProjectSession.hpp"
 #include "nemo/gpu/Error.hpp"
 
-#include <QElapsedTimer>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+
+#include <memory>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -18,15 +23,16 @@ QVariantMap namedNode(const nemo::ui::ViewerController& controller, const QStrin
     }
     return {};
 }
-
 // No decoder is needed for command semantics: the unstarted runtime accepts
-// the immutable probe snapshot, but all observed edits use the real controller
-// and CommandStack, exactly as QML does.
+// immutable probe snapshots, but all observed edits use the real controller
+// and its explicitly composed ProjectSession, exactly as QML does.
 TEST(Interactive, GraphCommandsUndoAndRejectOccupiedConnectionsAtomically) {
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime);
+    nemo::ProjectSession session;
+    nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
-    controller.setNodeParameter("background", "color", "0.2 0.3 0.4 1");
+    controller.setNodeParameter(namedNode(controller, "background").value("id").toULongLong(), "color",
+                                "0.2 0.3 0.4 1");
     EXPECT_EQ(namedNode(controller, "background").value("params").toMap().value("color").toString(), "0.2 0.3 0.4 1");
     ASSERT_TRUE(controller.undo());
     EXPECT_EQ(namedNode(controller, "background").value("params").toMap().value("color").toString(), "0 0 0 0");
@@ -42,7 +48,8 @@ TEST(Interactive, GraphCommandsUndoAndRejectOccupiedConnectionsAtomically) {
 
 TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime);
+    nemo::ProjectSession session;
+    nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     const auto before = controller.graphEdges();
     controller.addGraphNode("output", "independentOutput");
@@ -60,7 +67,8 @@ TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
 
 TEST(Interactive, TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently) {
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime);
+    nemo::ProjectSession session;
+    nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     controller.setFrame(3);
     controller.slipTimelineClip("src", 7);
@@ -80,7 +88,8 @@ TEST(Interactive, TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently) {
 
 TEST(Interactive, UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata) {
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime);
+    nemo::ProjectSession session;
+    nemo::ui::ViewerController controller(&runtime, session);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     ASSERT_TRUE(controller.pending());
     ASSERT_TRUE(controller.undo());
@@ -88,12 +97,128 @@ TEST(Interactive, UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata) {
     EXPECT_FALSE(controller.pending());
     EXPECT_FALSE(controller.hasSource());
     EXPECT_EQ(runtime.counts().queued, 0u);
+
     ASSERT_TRUE(controller.redo());
     EXPECT_TRUE(controller.pending());
     EXPECT_EQ(namedNode(controller, "source").value("params").toMap().value("source").toString(), "src");
     EXPECT_EQ(runtime.counts().queued, 1u);
 }
 
+TEST(Interactive, OutputSelectionUsesCatalogDeclaration) {
+    auto catalog = std::make_shared<nemo::NodeCatalog>(std::vector<nemo::NodeDescriptor>{
+        nemo::NodeDescriptor{.type = "fixture.output",
+                             .displayName = "Fixture Output",
+                             .group = "I/O",
+                             .isOutput = true,
+                             .inputs = {{nemo::PortKind::Color, "color"}},
+                             .capabilities = nemo::NodeCapabilities{.samplingScales = {1},
+                                                                    .qualityModes = {nemo::Quality::Full},
+                                                                    .channels = {"RGBA"}}}});
+    nemo::ProjectSession session{nemo::Document{std::move(catalog)}};
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+
+    static_cast<void>(session.submit(nemo::addNodeCommand("fixture.output", "declared"),
+                                     nemo::EditOptions{.expectedRevision = session.revision()}));
+    ASSERT_EQ(controller.outputNames(), (QStringList{"declared"}));
+    controller.setOutputName("declared");
+    EXPECT_EQ(controller.outputName(), "declared");
+    const nemo::NodeId declared = session.document().graph.nodeByName("declared")->id;
+    const auto renamed = session.submit(nemo::renameNodeCommand(declared, "renamed"),
+                                        nemo::EditOptions{.expectedRevision = session.revision()});
+    ASSERT_TRUE(renamed.committed);
+    EXPECT_EQ(controller.outputName(), "renamed");
+    EXPECT_EQ(namedNode(controller, "renamed").value("id").toULongLong(), static_cast<qulonglong>(declared));
+    const auto parameter = session.submit(nemo::setParamCommand(declared, "marker", "stable"),
+                                          nemo::EditOptions{.expectedRevision = session.revision()});
+    ASSERT_TRUE(parameter.committed);
+    EXPECT_EQ(namedNode(controller, "renamed").value("params").toMap().value("marker").toString(), "stable");
+    EXPECT_TRUE(controller.error().isEmpty());
+}
+
+TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
+    nemo::ui::ViewerRuntime firstRuntime;
+    nemo::ui::ViewerRuntime secondRuntime;
+    nemo::ProjectSession session;
+    nemo::ui::ViewerController first(&firstRuntime, session);
+    QSignalSpy firstGraph(&first, &nemo::ui::ViewerController::graphChanged);
+    QSignalSpy firstTimeline(&first, &nemo::ui::ViewerController::timelineChanged);
+    QSignalSpy firstHistory(&first, &nemo::ui::ViewerController::historyChanged);
+    QSignalSpy firstCatalog(&first, &nemo::ui::ViewerController::catalogChanged);
+
+    {
+        nemo::ui::ViewerController second(&secondRuntime, session);
+        QSignalSpy secondGraph(&second, &nemo::ui::ViewerController::graphChanged);
+        QSignalSpy secondTimeline(&second, &nemo::ui::ViewerController::timelineChanged);
+        QSignalSpy secondHistory(&second, &nemo::ui::ViewerController::historyChanged);
+        QSignalSpy secondCatalog(&second, &nemo::ui::ViewerController::catalogChanged);
+
+        first.openSource("/tmp/nemo-shared-session-source.mkv");
+        EXPECT_EQ(firstGraph.count(), 1);
+        EXPECT_EQ(secondGraph.count(), 1);
+        EXPECT_EQ(firstTimeline.count(), 1);
+        EXPECT_EQ(secondTimeline.count(), 1);
+        EXPECT_EQ(firstHistory.count(), 1);
+        EXPECT_EQ(secondHistory.count(), 1);
+        EXPECT_EQ(firstCatalog.count(), 1);
+        EXPECT_EQ(secondCatalog.count(), 1);
+        ASSERT_TRUE(first.canUndo());
+
+        firstGraph.clear();
+        secondGraph.clear();
+        firstTimeline.clear();
+        secondTimeline.clear();
+        firstHistory.clear();
+        secondHistory.clear();
+        firstCatalog.clear();
+        secondCatalog.clear();
+        ASSERT_TRUE(second.undo());
+        EXPECT_TRUE(first.graphNodes().isEmpty());
+        EXPECT_TRUE(second.graphNodes().isEmpty());
+        EXPECT_EQ(firstGraph.count(), 1);
+        EXPECT_EQ(secondGraph.count(), 1);
+        EXPECT_EQ(firstTimeline.count(), 1);
+        EXPECT_EQ(secondTimeline.count(), 1);
+        EXPECT_EQ(firstHistory.count(), 1);
+        EXPECT_EQ(secondHistory.count(), 1);
+        EXPECT_EQ(firstCatalog.count(), 1);
+        EXPECT_EQ(secondCatalog.count(), 1);
+
+        firstGraph.clear();
+        secondGraph.clear();
+        firstTimeline.clear();
+        secondTimeline.clear();
+        firstHistory.clear();
+        secondHistory.clear();
+        firstCatalog.clear();
+        secondCatalog.clear();
+        static_cast<void>(session.submit(nemo::addNodeCommand("testpattern", "direct"),
+                                         nemo::EditOptions{.expectedRevision = session.revision()}));
+        EXPECT_EQ(firstGraph.count(), 1);
+        EXPECT_EQ(secondGraph.count(), 1);
+        EXPECT_EQ(firstTimeline.count(), 1);
+        EXPECT_EQ(secondTimeline.count(), 1);
+        EXPECT_EQ(firstHistory.count(), 1);
+        EXPECT_EQ(secondHistory.count(), 1);
+        EXPECT_EQ(firstCatalog.count(), 1);
+        EXPECT_EQ(secondCatalog.count(), 1);
+        EXPECT_FALSE(first.graphNodes().isEmpty());
+        EXPECT_FALSE(second.graphNodes().isEmpty());
+    }
+
+    // The surviving controller remains subscribed after the other consumer's
+    // explicit lifetime ends.
+    firstGraph.clear();
+    firstTimeline.clear();
+    firstHistory.clear();
+    firstCatalog.clear();
+    EXPECT_TRUE(first.undo());
+    EXPECT_EQ(firstGraph.count(), 1);
+    EXPECT_EQ(firstTimeline.count(), 1);
+    EXPECT_EQ(firstHistory.count(), 1);
+    EXPECT_EQ(firstCatalog.count(), 1);
+    EXPECT_TRUE(first.graphNodes().isEmpty());
+}
 TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
 #ifndef NEMO_SLANG_SPV_DIR
     GTEST_SKIP() << "Native cache-range evidence requires compiled Slang shaders";
@@ -103,13 +228,15 @@ TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
     const auto config = std::filesystem::path(NEMO_UI_QML_DIR).parent_path().parent_path().parent_path() /
                         "docs/evidence/issue12-view.ocio";
     const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
-    nemo::Document document;
-    nemo::CommandStack commands(document);
+    nemo::ProjectSession session;
     auto color = std::make_shared<nemo::NodeId>();
     auto output = std::make_shared<nemo::NodeId>();
-    commands.push(nemo::addNodeCommand("constcolor", "color", color));
-    commands.push(nemo::addNodeCommand("output", "result", output));
-    commands.push(nemo::connectCommand({*color, 0}, {*output, 0}));
+    static_cast<void>(session.submit(nemo::addNodeCommand("constcolor", "color", color),
+                                     nemo::EditOptions{.expectedRevision = session.revision()}));
+    static_cast<void>(session.submit(nemo::addNodeCommand("output", "result", output),
+                                     nemo::EditOptions{.expectedRevision = session.revision()}));
+    static_cast<void>(session.submit(nemo::connectCommand({*color, 0}, {*output, 0}),
+                                     nemo::EditOptions{.expectedRevision = session.revision()}));
     nemo::EvaluationRequest request;
     request.output = *output;
     request.region = {0, 0, 64, 48};
@@ -126,7 +253,7 @@ TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
             GTEST_SKIP() << error.what();
         throw;
     }
-    ASSERT_TRUE(runtime.requestRange(document, request, 0, 0, 1));
+    ASSERT_TRUE(runtime.requestRange(session.snapshot(), request, 0, 0, 1));
     QElapsedTimer deadline;
     deadline.start();
     while (runtime.counts().cacheErrors == 0 && deadline.elapsed() < 60000)

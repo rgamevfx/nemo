@@ -2,6 +2,8 @@
 
 #include "ViewerRuntime.hpp"
 #include "nemo/core/evaluation/ViewerResolution.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
+#include "nemo/core/session/ProjectSession.hpp"
 #include <QPointer>
 #include <QRectF>
 #include <QSizeF>
@@ -13,9 +15,10 @@
 namespace nemo::ui {
 class ViewerItem;
 class WindowPresentationState;
-
-// GUI-thread state. Scenegraph reads happen only during updatePaintNode,
-// while Qt blocks the GUI thread. The worker sees immutable Document copies.
+// GUI-thread presentation state. The explicitly composed ProjectSession owns
+// the live Document/history; this facade only submits commands and reads it.
+// Scenegraph reads happen only during updatePaintNode, while Qt blocks the GUI
+// thread. The worker sees immutable Document copies.
 class ViewerController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool hasSource READ hasSource NOTIFY sourceChanged)
@@ -37,6 +40,7 @@ class ViewerController final : public QObject {
     Q_PROPERTY(QStringList outputNames READ outputNames NOTIFY graphChanged)
     Q_PROPERTY(QVariantList graphNodes READ graphNodes NOTIFY graphChanged)
     Q_PROPERTY(QVariantList graphEdges READ graphEdges NOTIFY graphChanged)
+    Q_PROPERTY(QVariantList nodeCatalog READ nodeCatalog NOTIFY catalogChanged)
     Q_PROPERTY(QVariantList timelineClips READ timelineClips NOTIFY timelineChanged)
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY historyChanged)
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY historyChanged)
@@ -50,7 +54,7 @@ class ViewerController final : public QObject {
     Q_PROPERTY(qulonglong cachePublished READ cachePublished NOTIFY schedulerChanged)
     Q_PROPERTY(QString cacheError READ cacheError NOTIFY schedulerChanged)
 public:
-    explicit ViewerController(ViewerRuntime* runtime);
+    explicit ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session);
     ~ViewerController() override;
     Q_INVOKABLE void openSource(const QString& path);
     Q_INVOKABLE void setResolutionMode(const QString& mode);
@@ -61,8 +65,8 @@ public:
     Q_INVOKABLE void setFrame(int frame);
     // Graph/timeline surfaces use these validated command entry points.
     Q_INVOKABLE void addGraphNode(const QString& type, const QString& name);
-    Q_INVOKABLE void connectGraphNodes(qulonglong fromNode, int fromPort, qulonglong toNode, int toPort);
-    Q_INVOKABLE void setNodeParameter(const QString& nodeName, const QString& key, const QString& value);
+    Q_INVOKABLE void connectGraphNodes(const QVariant& fromNode, int fromPort, const QVariant& toNode, int toPort);
+    Q_INVOKABLE void setNodeParameter(const QVariant& nodeId, const QString& key, const QString& value);
     // The current persistent model exposes source timing, not timeline clip
     // occurrences. These edit SourceReference through the command API.
     Q_INVOKABLE void slipTimelineClip(const QString& source, int delta);
@@ -95,9 +99,10 @@ public:
     [[nodiscard]] QStringList outputNames() const;
     [[nodiscard]] QVariantList graphNodes() const;
     [[nodiscard]] QVariantList graphEdges() const;
+    [[nodiscard]] QVariantList nodeCatalog() const;
     [[nodiscard]] QVariantList timelineClips() const;
-    [[nodiscard]] bool canUndo() const { return commands_.canUndo(); }
-    [[nodiscard]] bool canRedo() const { return commands_.canRedo(); }
+    [[nodiscard]] bool canUndo() const { return session_.canUndo(); }
+    [[nodiscard]] bool canRedo() const { return session_.canRedo(); }
     [[nodiscard]] qulonglong queued() const;
     [[nodiscard]] qulonglong dropped() const;
     [[nodiscard]] qulonglong staleRejected() const;
@@ -125,6 +130,7 @@ signals:
     void outputChanged();
     void graphChanged();
     void timelineChanged();
+    void catalogChanged();
     void historyChanged();
     void schedulerChanged();
     void frameArrived();
@@ -133,17 +139,19 @@ signals:
     void framePresented(int frame, int width, int height, bool cacheHit, double requestToSwapMs);
 
 private:
+    static void sessionDocumentChanged(void* context) noexcept;
+    void documentChanged();
     void buildGraph(const SourceReference& reference);
     void refreshRequest();
     void receive();
     void fail(QString message);
-    void documentChanged();
+    bool applyEdit(const nemo::EditResult& result);
+    [[nodiscard]] nemo::EditOptions editOptions() const;
     void invalidateRequest();
     void pollScheduler();
     ViewerRuntime* runtime_;
-    Document document_;
+    nemo::ProjectSession& session_;
     SourceReference probedSource_;
-    CommandStack commands_;
     ViewerResolutionPolicy policy_;
     QSizeF sourceSize_;
     QSizeF viewport_;
@@ -153,8 +161,9 @@ private:
     int effectiveScale_{1};
     double zoom_{1.0};
     QPointF pan_;
-    QString mode_{QStringLiteral("auto")};
     QString outputName_{QStringLiteral("result")};
+    NodeId outputNode_{kInvalidNode};
+    QString mode_{QStringLiteral("auto")};
     QString status_;
     QString error_;
     QString sourceDescription_;
@@ -174,5 +183,6 @@ private:
     // Outlives all QML nodes and retains their images through Qt frame-slot
     // completion, including when a viewer panel is closed during a frame.
     std::unique_ptr<WindowPresentationState> presentationState_;
+    nemo::ProjectSession::Subscription sessionSubscription_;
 };
 }  // namespace nemo::ui

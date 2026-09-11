@@ -1,0 +1,574 @@
+{
+  "archive": {
+    "path": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+    "sha256_recorded_outside_manifest": true
+  },
+  "branch": "prototype/viewer-workspace",
+  "captured_at_utc": "2026-09-10T23:00:46.871677+00:00",
+  "file_count": 107,
+  "files": [
+    {
+      "bytes": 650,
+      "path": "apps/nemo-ui/prototype/CMakeLists.txt",
+      "sha256": "0e4d57520d35fecbfcf2a7ad31f4a9d1f5f0da7a5d756502b6f3a1e908981d76"
+    },
+    {
+      "bytes": 100789,
+      "path": "apps/nemo-ui/prototype/evidence/animation-curves.png",
+      "sha256": "de3cd8e477b57914b462bc2153db6a0969a6f19e9dc335a983d04a67bb5e593b"
+    },
+    {
+      "bytes": 96851,
+      "path": "apps/nemo-ui/prototype/evidence/animation-empty.png",
+      "sha256": "c7fd8d5bd64a635e6475c8735d9e6d8e350be25e2b2065cc52f6bab424b36109"
+    },
+    {
+      "bytes": 9214,
+      "path": "apps/nemo-ui/prototype/evidence/animation-interaction-session.json",
+      "sha256": "5be62c9fed84c0c37ad57501ca4a729683c7da59916b3e75e9835f089c16bac0"
+    },
+    {
+      "bytes": 20624,
+      "path": "apps/nemo-ui/prototype/evidence/animation-narrow.png",
+      "sha256": "3e0343442a88230d05d1b34203ef966efdbf67e37e575d52f9932e042c90352f"
+    },
+    {
+      "bytes": 119751,
+      "path": "apps/nemo-ui/prototype/evidence/animation-overhaul-curves.png",
+      "sha256": "cdc5fcd73cb6dbd3af7b7ffaec8ccef91197ef8a27130d8e9091543e78c5e613"
+    },
+    {
+      "bytes": 102564,
+      "path": "apps/nemo-ui/prototype/evidence/animation-overhaul-isolated.png",
+      "sha256": "708a76087c90bec4e0c4e3f990118daf1e6dd73482d62ff0b04014d62a15f4c2"
+    },
+    {
+      "bytes": 96226,
+      "path": "apps/nemo-ui/prototype/evidence/animation-overhaul-key-edit.png",
+      "sha256": "8fb5eee3c78c277ddf3423b4d83208b7ac3e6889f99c1b59250bdb41d4d8a432"
+    },
+    {
+      "bytes": 53595,
+      "path": "apps/nemo-ui/prototype/evidence/animation-overhaul-narrow-paper.png",
+      "sha256": "ff10b5ba4217bef7ca650462236804242a49c8dc3eda4ca55ed6ff1c0e84bb45"
+    },
+    {
+      "bytes": 53879,
+      "path": "apps/nemo-ui/prototype/evidence/animation-overhaul-narrow.png",
+      "sha256": "1ec34e178bd6063c20933026c1e461f2e480840203e3600e907836fb6a3df320"
+    },
+    {
+      "bytes": 7028,
+      "path": "apps/nemo-ui/prototype/evidence/animation-overhaul-session.json",
+      "sha256": "11e0aeff1e9ae32ea540d545dcfd43a06202571a7317f22161f11c391baa0737"
+    },
+    {
+      "bytes": 63612,
+      "path": "apps/nemo-ui/prototype/evidence/animation-overhaul-track.png",
+      "sha256": "8e3808d18d9f1df5bebc559bbd908ff78103bd8bd1bb0271b9ccb812dffc5734"
+    },
+    {
+      "bytes": 102407,
+      "path": "apps/nemo-ui/prototype/evidence/animation-overhaul-workspace.png",
+      "sha256": "6b6700b6c2d102523fb2b6ad2413ca47f1deb9dbf588263b62d86a52570b5f0c"
+    },
+    {
+      "bytes": 8996,
+      "path": "apps/nemo-ui/prototype/evidence/animation-repair-session.json",
+      "sha256": "69d08278fa38dd008abbf74d975b8a722858db54d81e0cc7d5f35c508f95d2a3"
+    },
+    {
+      "bytes": 103579,
+      "path": "apps/nemo-ui/prototype/evidence/animation-repaired-curves.png",
+      "sha256": "9f718b877bceb65586f0a595a98a402af45c11f80ab361bdd83e12be6c0d67ef"
+    },
+    {
+      "bytes": 99045,
+      "path": "apps/nemo-ui/prototype/evidence/animation-track.png",
+      "sha256": "3dec30d95b0519405623763036a8ff0febd1328769910bef0652eba073477a1a"
+    },
+    {
+      "bytes": 43012,
+      "path": "apps/nemo-ui/prototype/evidence/compact-category-nodes.png",
+      "sha256": "0d4661718db85848468f0fb60183d4570d68bf7ba3b726b7c494dfc53c8df404"
+    },
+    {
+      "bytes": 47864,
+      "path": "apps/nemo-ui/prototype/evidence/compact-docking-rearranged.png",
+      "sha256": "0563cc220a838c2ecd8ae6c5c66c23af46c255a9c5ac6e41ca59a03f9f2d6d05"
+    },
+    {
+      "bytes": 772,
+      "path": "apps/nemo-ui/prototype/evidence/compact-docking-session.json",
+      "sha256": "dfae734dec7b9e0b6be756f39a99bd9652950e16de369c1c98687215c871f9f0"
+    },
+    {
+      "bytes": 60002,
+      "path": "apps/nemo-ui/prototype/evidence/compact-viewer-docking.png",
+      "sha256": "96a661e7cab65bcf1b8f9cdd93df9e39eaf620b5473b7f7e3d217d4f70126018"
+    },
+    {
+      "bytes": 3705,
+      "path": "apps/nemo-ui/prototype/evidence/graph-behaviors-session.json",
+      "sha256": "6bf610fa3431b96be45b7f2b381a3c00f479c219eeda4dce89d971f373320d8a"
+    },
+    {
+      "bytes": 123818,
+      "path": "apps/nemo-ui/prototype/evidence/graph-behaviors.png",
+      "sha256": "6b2eb15da4a69a45bc2db7dbd1f2116155c62d12105ea0f3884c2c68e8d5fbf8"
+    },
+    {
+      "bytes": 67466,
+      "path": "apps/nemo-ui/prototype/evidence/graph-reroutes.png",
+      "sha256": "73aecd797d945a0b25998c83581425d088ee9a56329524b559b6c72d29058df8"
+    },
+    {
+      "bytes": 4760,
+      "path": "apps/nemo-ui/prototype/evidence/graph-routing-session.json",
+      "sha256": "ba381bf906655b1a2d42a03877da572a978a6517408747b2d5e2812f0a15c2ec"
+    },
+    {
+      "bytes": 6286,
+      "path": "apps/nemo-ui/prototype/evidence/media-bin-session.json",
+      "sha256": "941464cacf02c848b09dea1bf01e800d1ef45d07beb555e059a0bcdb7a9f4d50"
+    },
+    {
+      "bytes": 74053,
+      "path": "apps/nemo-ui/prototype/evidence/media-dense-scrolled.png",
+      "sha256": "126a798a0f89baa3893cde4bd2db390d797bf5250b79fffdcd3a19d930cf5c69"
+    },
+    {
+      "bytes": 71019,
+      "path": "apps/nemo-ui/prototype/evidence/media-dense.png",
+      "sha256": "ff3254e8506bedd6526228b10137c368f7f22316db2b00d31333992fd29729dc"
+    },
+    {
+      "bytes": 43450,
+      "path": "apps/nemo-ui/prototype/evidence/media-grid.png",
+      "sha256": "9544b9259e0a84b760535ffc6ddce8b71213c99ea112bb4686029d7f8dde2d8b"
+    },
+    {
+      "bytes": 64587,
+      "path": "apps/nemo-ui/prototype/evidence/media-list.png",
+      "sha256": "e36772cf99bf619851f1fce7b89506479c30a76360585960ab26c4494e55a0d4"
+    },
+    {
+      "bytes": 105192,
+      "path": "apps/nemo-ui/prototype/evidence/media-narrow.png",
+      "sha256": "bce757396abb6d4bbfe972e7b1eb82b657081ebc273e514a7786b5207520f23a"
+    },
+    {
+      "bytes": 43433,
+      "path": "apps/nemo-ui/prototype/evidence/media-paper.png",
+      "sha256": "c2ed475b2a270027b2304992e0a4e75270ece5ca80c50c500339724d397b728a"
+    },
+    {
+      "bytes": 28369,
+      "path": "apps/nemo-ui/prototype/evidence/media-search.png",
+      "sha256": "1328aac5141a8deca17dbd9ea9882f152a44bdbfe249e21db1afb36b63be25a5"
+    },
+    {
+      "bytes": 29678,
+      "path": "apps/nemo-ui/prototype/evidence/media-smart-bin.png",
+      "sha256": "8652eaa50cbf2f891fe0020eb0ad609f0c2891b8d8024a10e38d6ac6b34a245d"
+    },
+    {
+      "bytes": 74240,
+      "path": "apps/nemo-ui/prototype/evidence/media-source-view.png",
+      "sha256": "ce88bee3b02f353ad60bc4f7b487a800b5af812cca91304ee11fbc61e1a295ce"
+    },
+    {
+      "bytes": 73001,
+      "path": "apps/nemo-ui/prototype/evidence/media-timeline-drag.png",
+      "sha256": "573a95fad2e89dcce297ae38f5bd20b392f0d0c62752061ae293e65560d3e8f6"
+    },
+    {
+      "bytes": 39967,
+      "path": "apps/nemo-ui/prototype/evidence/media-two-viewers.png",
+      "sha256": "049488d0792346def070d73c96aea58a42e94ebdcb4494e42f9ed3b83c3f8d5f"
+    },
+    {
+      "bytes": 73687,
+      "path": "apps/nemo-ui/prototype/evidence/media-workspace.png",
+      "sha256": "9ff28ba46874952ccbba20d7bdf7897a0ef0ffdb27213f57b9f86d5a19178cc1"
+    },
+    {
+      "bytes": 58187,
+      "path": "apps/nemo-ui/prototype/evidence/node-category-settings.png",
+      "sha256": "61982e12113c0ae3d48bb044ed8bb345175b040af9f170ae1e16263286e775c5"
+    },
+    {
+      "bytes": 6427,
+      "path": "apps/nemo-ui/prototype/evidence/node-creation-deletion-session.json",
+      "sha256": "8175cff80adfc228536bda79f8abd7ae82188afc03bd18f2bb267abf6f057a64"
+    },
+    {
+      "bytes": 47970,
+      "path": "apps/nemo-ui/prototype/evidence/node-delete-selection.png",
+      "sha256": "5e9f84e37a36fc723da6769b70ac3a0eba8488b90e40137b8b1073f6cdb5e07d"
+    },
+    {
+      "bytes": 68092,
+      "path": "apps/nemo-ui/prototype/evidence/node-insert-after-selection.png",
+      "sha256": "10286d3ccd9b02f22439d76b13003587a209ca2ec1c2e3994fbcbbc15a375375"
+    },
+    {
+      "bytes": 68495,
+      "path": "apps/nemo-ui/prototype/evidence/node-last-click-placement.png",
+      "sha256": "2dcb1b885bb47fcd355ffab13cf7222e60ab5f3e9c14c6d6397527bd9bdb5e91"
+    },
+    {
+      "bytes": 916,
+      "path": "apps/nemo-ui/prototype/evidence/node-style-session.json",
+      "sha256": "dd33ecabef3718cb976e0a3c87c336d92c6e4196b94e08e7c5e115cd74106ec3"
+    },
+    {
+      "bytes": 66410,
+      "path": "apps/nemo-ui/prototype/evidence/node-tools-menu.png",
+      "sha256": "62bfd99af413e984ed6cd022e43e1c035f445e80bc8c4c4166ec4680b59f2e60"
+    },
+    {
+      "bytes": 4745,
+      "path": "apps/nemo-ui/prototype/evidence/pipe-gesture-session.json",
+      "sha256": "2d8585962d515b4ee09f55b82d475e7d4fbf77a95edf161385277e7d4d2a3fb3"
+    },
+    {
+      "bytes": 67039,
+      "path": "apps/nemo-ui/prototype/evidence/pipe-hover-destination.png",
+      "sha256": "f6db184200411a7ec45597577b2c04df06e783deddec0174b28ef1f0c2d76033"
+    },
+    {
+      "bytes": 67035,
+      "path": "apps/nemo-ui/prototype/evidence/pipe-hover-source.png",
+      "sha256": "bb332bc68cfc7877045cdec3dcdea89d9f3cfd12a2e05c37cf6360075872868f"
+    },
+    {
+      "bytes": 127422,
+      "path": "apps/nemo-ui/prototype/evidence/subnet-inside.png",
+      "sha256": "f2163e3a1f046cafbb1d147f34593b17a9dd47074cc5635da65c5edc05d7af7c"
+    },
+    {
+      "bytes": 11506,
+      "path": "apps/nemo-ui/prototype/evidence/subnet-interaction-session.json",
+      "sha256": "038af1f831523102d0476cb8c61f4294b88b5add669db28593b00ff62597bbbf"
+    },
+    {
+      "bytes": 129961,
+      "path": "apps/nemo-ui/prototype/evidence/subnet-parent.png",
+      "sha256": "425f61b0586b87d762f6f1a2aed423292b39958f0ad796a96c4f976a84f7bc5f"
+    },
+    {
+      "bytes": 193986,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-dense-scrolled.png",
+      "sha256": "9dfa071abf4b691a327f7d8cc963fb5272d593e1be221de08cbdbf4e08b15d31"
+    },
+    {
+      "bytes": 172540,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-dense.png",
+      "sha256": "973b65bce6bae154ba049cb3cca58cf6579c34b97ca53e9f7f82028b26fb2c80"
+    },
+    {
+      "bytes": 98071,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-drag-preview.png",
+      "sha256": "a293e36635723b5a7cfe62857feeeb0dcd716c847808a1e26d3b17be5fe0a11f"
+    },
+    {
+      "bytes": 46129,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-full.png",
+      "sha256": "e782bfd48bae56b6149cbe1c43a8b8f797ec2237fddcb64166c7deb79441c73f"
+    },
+    {
+      "bytes": 99734,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-media.png",
+      "sha256": "76e09f4ed18e3edea6151a4c42b7b55102b271e8f14123f8c6b1172b68bf7a24"
+    },
+    {
+      "bytes": 84305,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-narrow.png",
+      "sha256": "581b51b493821328106045c36c631415f92b03d33cfeaa3476adb3b9fd288a2a"
+    },
+    {
+      "bytes": 46112,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-paper.png",
+      "sha256": "b662883dac84c70bfcc9f9d4296e244bc29174aaf84043fd885ea6d7a622561f"
+    },
+    {
+      "bytes": 10783,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-session.json",
+      "sha256": "7d24a218fe52b9befb27895fcdb156eec604c5d4e46df8cdfc9866e969153a09"
+    },
+    {
+      "bytes": 86543,
+      "path": "apps/nemo-ui/prototype/evidence/timeline-workspace.png",
+      "sha256": "78910c4f8d11a72868392b59e26fae1c903902573ccee05ea80ab12dd257234f"
+    },
+    {
+      "bytes": 30907,
+      "path": "apps/nemo-ui/prototype/evidence/viewer-depth.png",
+      "sha256": "2cee69442c29d0905f6c9a7594ab019d6b12f32c7a195831ac17a71ce7d6d097"
+    },
+    {
+      "bytes": 40641,
+      "path": "apps/nemo-ui/prototype/evidence/viewer-dropdown.png",
+      "sha256": "b12b509ae81f07372ecf666904c581c6217764ecbe71460e22121983ec79700c"
+    },
+    {
+      "bytes": 32106,
+      "path": "apps/nemo-ui/prototype/evidence/viewer-narrow.png",
+      "sha256": "e5896c6ae9a74d391d9092c681634918adedeedd9be3eed8be952e56fc4f2981"
+    },
+    {
+      "bytes": 78618,
+      "path": "apps/nemo-ui/prototype/evidence/viewer-role-menu.png",
+      "sha256": "8426a560406323909173867ab8387be1fe4b3a856f4966b8d29147b88e57d1a2"
+    },
+    {
+      "bytes": 2528,
+      "path": "apps/nemo-ui/prototype/evidence/viewer-session.json",
+      "sha256": "2dfbd96de55ac5fc044dd85bd0a3c1661a0b0c7c5c9c6341c68284f62d840d38"
+    },
+    {
+      "bytes": 38940,
+      "path": "apps/nemo-ui/prototype/evidence/viewer-wide.png",
+      "sha256": "208a022c5a679e59c8146d94acb3ecb0bc580241b1fa5736e018ea6b7ac8ffb0"
+    },
+    {
+      "bytes": 75273,
+      "path": "apps/nemo-ui/prototype/evidence/workflow-catalog.png",
+      "sha256": "1f04d6e6ac411a27023f654e634964d1220afd44d5c81b01ae3da908a5dff625"
+    },
+    {
+      "bytes": 132671,
+      "path": "apps/nemo-ui/prototype/evidence/workflow-final.png",
+      "sha256": "e6e10c19e2b7ed7d95704a0fd4e1d1b769d3d4147cd6ffd6c8dbce55d3387259"
+    },
+    {
+      "bytes": 113774,
+      "path": "apps/nemo-ui/prototype/evidence/workflow-narrow.png",
+      "sha256": "fe3e31e9eb9ac29e61683e7d3efcfa771b7c269fc8fc358293524b9ea011d3c6"
+    },
+    {
+      "bytes": 130243,
+      "path": "apps/nemo-ui/prototype/evidence/workflow-packed.png",
+      "sha256": "1ede605afda78311759b76160f5bf0533fbca45d84a6f1de3465f2022d4a7430"
+    },
+    {
+      "bytes": 131185,
+      "path": "apps/nemo-ui/prototype/evidence/workflow-placement.png",
+      "sha256": "7b9889baf586f2a649e1d89006feaea8896b722d248630d7cd8094487feb753a"
+    },
+    {
+      "bytes": 2923,
+      "path": "apps/nemo-ui/prototype/evidence/workflow-session.json",
+      "sha256": "e1e12ee4c60d11314fcb0346f4d1cbd5bd86fc72c63922941e015f9278619bde"
+    },
+    {
+      "bytes": 136224,
+      "path": "apps/nemo-ui/prototype/evidence/workflow-tools.png",
+      "sha256": "d53a799e715900a8b43cbd22a49af3758bba452216e04641088a98d77abad9c7"
+    },
+    {
+      "bytes": 110386,
+      "path": "apps/nemo-ui/prototype/evidence/workspace-accumulation.png",
+      "sha256": "76307402ab6fd256ee04bea55c18002e10629efb98a3f6c200a39f9d148fffd8"
+    },
+    {
+      "bytes": 119431,
+      "path": "apps/nemo-ui/prototype/evidence/workspace-comp.png",
+      "sha256": "8b107ae1aaaebe3d77a89fadd455c83d0bb2c3848b97dfba8e4eece9425c7b0e"
+    },
+    {
+      "bytes": 115612,
+      "path": "apps/nemo-ui/prototype/evidence/workspace-narrow.png",
+      "sha256": "90c3db7226bc9b2bd5fd379583902cee4a24252b7013faafd38d8b841d60f9d1"
+    },
+    {
+      "bytes": 116312,
+      "path": "apps/nemo-ui/prototype/evidence/workspace-paper.png",
+      "sha256": "e76e489590f1e64612172c992756ec37d05746c1936701cdfa12f952d90772d8"
+    },
+    {
+      "bytes": 2569,
+      "path": "apps/nemo-ui/prototype/evidence/workspace-session.json",
+      "sha256": "815fc6cef7783dfbf2e4badeefe29aa41a035b92ec359c4167357fb1d90dd05e"
+    },
+    {
+      "bytes": 1916,
+      "path": "apps/nemo-ui/prototype/main.cpp",
+      "sha256": "8ff8849de9dba40f8572c174e36cdc790b3fb766f2238b2554f29accc8f90723"
+    },
+    {
+      "bytes": 8118,
+      "path": "apps/nemo-ui/qml/AnimationHeaderTools.qml",
+      "sha256": "5ad9128e56e4aee27a24029267693e34bde8ad209c1b90ec018cfa51a725bb59"
+    },
+    {
+      "bytes": 7985,
+      "path": "apps/nemo-ui/qml/AnimationHeaderTools.qml~",
+      "sha256": "33e86349bc6d5a30ad95d19e6986948e86633f04168a55648cde1f43e00ba455"
+    },
+    {
+      "bytes": 74202,
+      "path": "apps/nemo-ui/qml/AnimationPanel.qml",
+      "sha256": "82ac98cd4b8cdd3f65b83963f3fd1f7e71cbbe4830fffd4ae13a9171f0ba8c17"
+    },
+    {
+      "bytes": 72173,
+      "path": "apps/nemo-ui/qml/AnimationPanel.qml1~",
+      "sha256": "e557c24bd2327bb1f35d21c2a4bc95c4fe5fb02f174295937e0f864fc85ea628"
+    },
+    {
+      "bytes": 44678,
+      "path": "apps/nemo-ui/qml/AnimationPanel.qml~",
+      "sha256": "7c887018c8fd7b8df62c4757dca82aec4f4827d385224fa8297d1a2433f33389"
+    },
+    {
+      "bytes": 7425,
+      "path": "apps/nemo-ui/qml/DockDrag.qml",
+      "sha256": "517906bf9911ea67ff42e54f7c1f487dafe5224ec9d320009f53694f54d39de1"
+    },
+    {
+      "bytes": 16442,
+      "path": "apps/nemo-ui/qml/FrameRuler.qml",
+      "sha256": "4b280eba3bde21e088e93f8188a81cd49fe151ffbfcf07383ef688182688a656"
+    },
+    {
+      "bytes": 89632,
+      "path": "apps/nemo-ui/qml/GraphPanel.qml",
+      "sha256": "d85d3d8ec102d6ad79af5c59e0dfa196847bc4f2c2c065c594c7a56bd8267484"
+    },
+    {
+      "bytes": 74551,
+      "path": "apps/nemo-ui/qml/GraphPanel.qml~",
+      "sha256": "435b1b6f5c2191bb99f8822170aedc27f8b58850fcb48880736992e5ff7b8dc7"
+    },
+    {
+      "bytes": 19684,
+      "path": "apps/nemo-ui/qml/Main.qml",
+      "sha256": "0b02059aa41f1048e6c37c5a6f4cb02b3c768218ebc3dbee1424895e8c978434"
+    },
+    {
+      "bytes": 79409,
+      "path": "apps/nemo-ui/qml/MediaBinPanel.qml",
+      "sha256": "17c60ede7cb8986a8c3f3f11ee8cf4464e0bed22ab5b07da2748ef814fba2522"
+    },
+    {
+      "bytes": 32024,
+      "path": "apps/nemo-ui/qml/MediaCatalog.qml",
+      "sha256": "2f8972c166f4f1f983dd6eff7a4fe512623dc956a72a6f614a18d7ed8ee9c8f2"
+    },
+    {
+      "bytes": 10804,
+      "path": "apps/nemo-ui/qml/Panel.qml",
+      "sha256": "ffe22c379c51243db7a7a2aafc03024161bac286c433ce8769c1964d28045973"
+    },
+    {
+      "bytes": 1574,
+      "path": "apps/nemo-ui/qml/PanelDragHandler.qml",
+      "sha256": "aec5b640ff4fcbcc685fa809e56032749534263004fc7fe7348ffe89e5f4e2f5"
+    },
+    {
+      "bytes": 42622,
+      "path": "apps/nemo-ui/qml/ParametersPanel.qml",
+      "sha256": "56a9c965cb3a1f4c8e5b46c550571f46b0accb255cccadd9ff3fa97283c2aa5c"
+    },
+    {
+      "bytes": 42289,
+      "path": "apps/nemo-ui/qml/ParametersPanel.qml1~",
+      "sha256": "c2ec4d1f430f5b21fd1c5286e27a79cbda921f2f59d91ba809db67014e2392ae"
+    },
+    {
+      "bytes": 40219,
+      "path": "apps/nemo-ui/qml/ParametersPanel.qml~",
+      "sha256": "4769bf87ecbb2437333a6eef9630f8556a0363ed2a710214496e20c1bff8572a"
+    },
+    {
+      "bytes": 2234,
+      "path": "apps/nemo-ui/qml/StudioComboBox.qml",
+      "sha256": "aaf15a39da83fed48c3801e0f4336cefa7d351c0acc538ebface3c8fa30c249d"
+    },
+    {
+      "bytes": 108144,
+      "path": "apps/nemo-ui/qml/StudioModel.qml",
+      "sha256": "3936bbe35603d53948250f5e40ec082283a87fd12e07083d38528b9d43a601e5"
+    },
+    {
+      "bytes": 90245,
+      "path": "apps/nemo-ui/qml/StudioModel.qml1~",
+      "sha256": "8c8806ee9faeda7cc9703803c6be8872a0031e4e0ba8a14793c7f820a7f1ef79"
+    },
+    {
+      "bytes": 35486,
+      "path": "apps/nemo-ui/qml/StudioModel.qml~",
+      "sha256": "ee828319d0d02dbf85b972bbcb76a423f4ea80f7b16808646d54cada4a0319b1"
+    },
+    {
+      "bytes": 3511,
+      "path": "apps/nemo-ui/qml/Theme.qml",
+      "sha256": "1d3e62c2978384ab4bbe8100914afe3e7c01d8d4e9c0bcf1dc5cbc72cabca0ab"
+    },
+    {
+      "bytes": 15222,
+      "path": "apps/nemo-ui/qml/TimelineHeaderTools.qml",
+      "sha256": "f4b3e45bc779163a71c4e4f10744f927a771a3880482e9bdd292af346019488d"
+    },
+    {
+      "bytes": 53616,
+      "path": "apps/nemo-ui/qml/TimelineModel.qml",
+      "sha256": "c504f7dd467b9e2992086d732c7c29a6bf48d607d499ae453883dfe196a2e216"
+    },
+    {
+      "bytes": 71330,
+      "path": "apps/nemo-ui/qml/TimelinePanel.qml",
+      "sha256": "fce85e756a72a7c3afb82dc24df9eafd11fef6b5e523264a21c9c808ef7657f7"
+    },
+    {
+      "bytes": 5757,
+      "path": "apps/nemo-ui/qml/TransportButton.qml",
+      "sha256": "9f03052e44d9dc15dbe0693a5ca8a94c91a34a9b5cf5cc1ba3f46de7757b4bf9"
+    },
+    {
+      "bytes": 35172,
+      "path": "apps/nemo-ui/qml/ViewerPanel.qml",
+      "sha256": "97e7955cd5b918937879a0d893fd828978bb220b0ac8d4eed630539915e537f6"
+    },
+    {
+      "bytes": 11941,
+      "path": "apps/nemo-ui/qml/WorkspaceNode.qml",
+      "sha256": "2a53eb82286ba4391a8374b92e08d629d262fed71f0fe649915d3429f8bd0cc2"
+    },
+    {
+      "bytes": 708,
+      "path": "run-prototype.sh",
+      "sha256": "8af09504b0f116c44283cda76c741ed2ab9e1a8d735d7d3b1b4042dcd01a505a"
+    }
+  ],
+  "git_status_porcelain": [
+    " M apps/nemo-ui/prototype/main.cpp",
+    " M apps/nemo-ui/qml/FrameRuler.qml",
+    " M apps/nemo-ui/qml/GraphPanel.qml",
+    " M apps/nemo-ui/qml/Main.qml",
+    " M apps/nemo-ui/qml/Panel.qml",
+    " M apps/nemo-ui/qml/ParametersPanel.qml",
+    " M apps/nemo-ui/qml/StudioModel.qml",
+    " M apps/nemo-ui/qml/Theme.qml",
+    " M apps/nemo-ui/qml/ViewerPanel.qml",
+    "?? apps/nemo-ui/prototype/evidence/compact-category-nodes.png",
+    "?? apps/nemo-ui/prototype/evidence/compact-docking-rearranged.png",
+    "?? apps/nemo-ui/prototype/evidence/compact-docking-session.json",
+    "?? apps/nemo-ui/prototype/evidence/compact-viewer-docking.png",
+    "?? apps/nemo-ui/prototype/evidence/node-category-settings.png",
+    "?? apps/nemo-ui/prototype/evidence/node-style-session.json",
+    "?? apps/nemo-ui/qml/AnimationHeaderTools.qml~",
+    "?? apps/nemo-ui/qml/AnimationPanel.qml1~",
+    "?? apps/nemo-ui/qml/AnimationPanel.qml~",
+    "?? apps/nemo-ui/qml/GraphPanel.qml~",
+    "?? apps/nemo-ui/qml/ParametersPanel.qml1~",
+    "?? apps/nemo-ui/qml/ParametersPanel.qml~",
+    "?? apps/nemo-ui/qml/StudioModel.qml1~",
+    "?? apps/nemo-ui/qml/StudioModel.qml~"
+  ],
+  "head": "76071624aebd6577ca613a9d3322f535fd80f399",
+  "prototype_root": "/home/rgame/dev/Nemo_UI_Prototype",
+  "schema": "nemo.issue25.prototype-reference-manifest.v1"
+}

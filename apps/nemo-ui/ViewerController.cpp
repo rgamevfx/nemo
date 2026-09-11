@@ -1,6 +1,7 @@
 #include "ViewerController.hpp"
 #include "ViewerItem.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
 
 #include <QFileInfo>
 #include <QQuickWindow>
@@ -10,8 +11,25 @@
 #include <limits>
 #include <utility>
 namespace nemo::ui {
-ViewerController::ViewerController(ViewerRuntime* runtime)
-    : runtime_(runtime), commands_(document_), schedulerPoll_(this),
+namespace {
+const char* parameterTypeName(nemo::ParameterType type) {
+    switch (type) {
+    case nemo::ParameterType::Boolean:
+        return "boolean";
+    case nemo::ParameterType::Integer:
+        return "integer";
+    case nemo::ParameterType::Float:
+        return "float";
+    case nemo::ParameterType::Color:
+        return "color";
+    case nemo::ParameterType::String:
+        return "string";
+    }
+    return "string";
+}
+}  // namespace
+ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session)
+    : runtime_(runtime), session_(session), schedulerPoll_(this),
       presentationState_(std::make_unique<WindowPresentationState>()) {
     connect(runtime_, &ViewerRuntime::resultReady, this, &ViewerController::receive, Qt::QueuedConnection);
     connect(
@@ -26,7 +44,18 @@ ViewerController::ViewerController(ViewerRuntime* runtime)
     schedulerPoll_.setInterval(200);
     connect(&schedulerPoll_, &QTimer::timeout, this, &ViewerController::pollScheduler);
     schedulerPoll_.start();
+    sessionSubscription_ = session_.subscribe(this, &ViewerController::sessionDocumentChanged);
 }
+
+void ViewerController::sessionDocumentChanged(void* context) noexcept {
+    auto* controller = static_cast<ViewerController*>(context);
+    try {
+        controller->documentChanged();
+    } catch (const std::exception& error) {
+        controller->fail(QString::fromUtf8(error.what()));
+    }
+}
+
 ViewerController::~ViewerController() = default;
 
 QString ViewerController::renderState() const {
@@ -43,35 +72,106 @@ QString ViewerController::renderState() const {
 
 QStringList ViewerController::outputNames() const {
     QStringList result;
-    for (const auto& node : document_.graph.nodes()) {
-        if (node.type == "output")
-            result.push_back(QString::fromStdString(node.name));
+    for (NodeId after = kInvalidNode;;) {
+        const auto page = session_.queryNodes({}, 256, after);
+        for (const auto& node : page) {
+            const auto* descriptor = session_.document().graph.descriptor(node.type);
+            if (descriptor && descriptor->isOutput)
+                result.push_back(QString::fromStdString(node.name));
+        }
+        if (page.size() < 256)
+            break;
+        after = page.back().id;
     }
     return result;
 }
 
 QVariantList ViewerController::graphNodes() const {
     QVariantList result;
-    for (const auto& node : document_.graph.nodes()) {
-        QVariantMap params;
-        for (const auto& [key, value] : node.params)
-            params.insert(QString::fromStdString(key), QString::fromStdString(value));
-        result.push_back(QVariantMap{{QStringLiteral("id"), QVariant::fromValue<qulonglong>(node.id)},
-                                     {QStringLiteral("type"), QString::fromStdString(node.type)},
-                                     {QStringLiteral("name"), QString::fromStdString(node.name)},
-                                     {QStringLiteral("params"), params}});
+    for (NodeId after = kInvalidNode;;) {
+        const auto page = session_.queryNodes({}, 256, after);
+        for (const auto& node : page) {
+            QVariantMap params;
+            for (std::string keyAfter;;) {
+                const auto values = session_.queryValues(node.id, {}, 256, keyAfter);
+                for (const auto& value : values)
+                    params.insert(QString::fromStdString(value.key), QString::fromStdString(value.value));
+                if (values.size() < 256)
+                    break;
+                keyAfter = values.back().key;
+            }
+            result.push_back(QVariantMap{{QStringLiteral("id"), QString::number(node.id)},
+                                         {QStringLiteral("type"), QString::fromStdString(node.type)},
+                                         {QStringLiteral("name"), QString::fromStdString(node.name)},
+                                         {QStringLiteral("params"), params}});
+        }
+        if (page.size() < 256)
+            break;
+        after = page.back().id;
     }
     return result;
 }
 
 QVariantList ViewerController::graphEdges() const {
     QVariantList result;
-    for (const auto& edge : document_.graph.edges()) {
-        result.push_back(QVariantMap{{QStringLiteral("id"), QVariant::fromValue<qulonglong>(edge.id)},
-                                     {QStringLiteral("fromNode"), QVariant::fromValue<qulonglong>(edge.from.node)},
-                                     {QStringLiteral("fromPort"), static_cast<int>(edge.from.port)},
-                                     {QStringLiteral("toNode"), QVariant::fromValue<qulonglong>(edge.to.node)},
-                                     {QStringLiteral("toPort"), static_cast<int>(edge.to.port)}});
+    for (EdgeId after = kInvalidEdge;;) {
+        const auto page = session_.queryEdges(kInvalidNode, 256, after);
+        for (const auto& edge : page)
+            result.push_back(QVariantMap{{QStringLiteral("id"), QString::number(edge.id)},
+                                         {QStringLiteral("fromNode"), QString::number(edge.from.node)},
+                                         {QStringLiteral("fromPort"), static_cast<int>(edge.from.port)},
+                                         {QStringLiteral("toNode"), QString::number(edge.to.node)},
+                                         {QStringLiteral("toPort"), static_cast<int>(edge.to.port)}});
+        if (page.size() < 256)
+            break;
+        after = page.back().id;
+    }
+    return result;
+}
+
+QVariantList ViewerController::nodeCatalog() const {
+    QVariantList result;
+    for (const auto& descriptor : session_.document().graph.catalog().descriptors()) {
+        QVariantList inputs;
+        for (const auto& port : descriptor.inputs)
+            inputs.push_back(QVariantMap{{QStringLiteral("name"), QString::fromStdString(port.name)},
+                                         {QStringLiteral("kind"), QStringLiteral("color")}});
+        QVariantList outputs;
+        for (const auto& port : descriptor.outputs)
+            outputs.push_back(QVariantMap{{QStringLiteral("name"), QString::fromStdString(port.name)},
+                                          {QStringLiteral("kind"), QStringLiteral("color")}});
+        QVariantList parameters;
+        for (const auto& parameter : descriptor.parameters) {
+            QVariantMap value{{QStringLiteral("name"), QString::fromStdString(parameter.name)},
+                              {QStringLiteral("type"), QString::fromLatin1(parameterTypeName(parameter.type))},
+                              {QStringLiteral("defaultValue"), QString::fromStdString(parameter.defaultValue)}};
+            if (parameter.minimum)
+                value.insert(QStringLiteral("minimum"), *parameter.minimum);
+            if (parameter.maximum)
+                value.insert(QStringLiteral("maximum"), *parameter.maximum);
+            QVariantList choices;
+            for (const auto& choice : parameter.choices)
+                choices.push_back(QString::fromStdString(choice));
+            value.insert(QStringLiteral("choices"), choices);
+            parameters.push_back(value);
+        }
+        QVariantList samplingScales;
+        for (const int scale : descriptor.capabilities.samplingScales)
+            samplingScales.push_back(scale);
+        QStringList channels;
+        for (const auto& channel : descriptor.capabilities.channels)
+            channels.push_back(QString::fromStdString(channel));
+        result.push_back(
+            QVariantMap{{QStringLiteral("type"), QString::fromStdString(descriptor.type)},
+                        {QStringLiteral("displayName"), QString::fromStdString(descriptor.displayName)},
+                        {QStringLiteral("group"), QString::fromStdString(descriptor.group)},
+                        {QStringLiteral("version"), QVariant::fromValue<qulonglong>(descriptor.implementationVersion)},
+                        {QStringLiteral("inputs"), inputs},
+                        {QStringLiteral("outputs"), outputs},
+                        {QStringLiteral("parameters"), parameters},
+                        {QStringLiteral("samplingScales"), samplingScales},
+                        {QStringLiteral("channels"), channels},
+                        {QStringLiteral("temporal"), descriptor.capabilities.temporal}});
     }
     return result;
 }
@@ -82,13 +182,20 @@ void ViewerController::setOutputName(const QString& name) {
         fail(QStringLiteral("viewer output name must not be empty"));
         return;
     }
-    const auto* node = document_.graph.nodeByName(trimmed.toStdString());
-    if (!node || node->type != "output") {
+    const auto* node = session_.document().graph.nodeByName(trimmed.toStdString());
+    const auto* descriptor = node ? session_.document().graph.descriptor(node->type) : nullptr;
+    if (!descriptor || !descriptor->isOutput) {
         fail(QStringLiteral("viewer output '%1' is not an Output node").arg(trimmed));
         return;
     }
-    if (outputName_ == trimmed)
+    if (outputNode_ == node->id) {
+        if (outputName_ != trimmed) {
+            outputName_ = trimmed;
+            emit outputChanged();
+        }
         return;
+    }
+    outputNode_ = node->id;
     outputName_ = trimmed;
     emit outputChanged();
     lastRequest_.reset();
@@ -97,7 +204,7 @@ void ViewerController::setOutputName(const QString& name) {
 
 QVariantList ViewerController::timelineClips() const {
     QVariantList result;
-    for (const auto& [key, source] : document_.sources) {
+    for (const auto& [key, source] : session_.document().sources) {
         const auto local = static_cast<std::int64_t>(frame_);
         qlonglong sourceFrame = -1;
         try {
@@ -146,16 +253,25 @@ void ViewerController::documentChanged() {
     error_.clear();
     pending_ = false;
     outdated_ = static_cast<bool>(presentation_);
-    const auto* selected = document_.graph.nodeByName(outputName_.toStdString());
-    if (!selected || selected->type != "output") {
+    const auto* selected = session_.document().graph.node(outputNode_);
+    const auto* descriptor = selected ? session_.document().graph.descriptor(selected->type) : nullptr;
+    if (!descriptor || !descriptor->isOutput) {
         const auto outputs = outputNames();
         const QString replacement = outputs.isEmpty() ? QStringLiteral("result") : outputs.front();
-        if (replacement != outputName_) {
+        const auto* replacementNode =
+            outputs.isEmpty() ? nullptr : session_.document().graph.nodeByName(replacement.toStdString());
+        const NodeId replacementId = replacementNode ? replacementNode->id : kInvalidNode;
+        if (replacement != outputName_ || replacementId != outputNode_) {
             outputName_ = replacement;
+            outputNode_ = replacementId;
             emit outputChanged();
         }
+    } else if (outputName_ != QString::fromStdString(selected->name)) {
+        outputName_ = QString::fromStdString(selected->name);
+        emit outputChanged();
     }
     emit graphChanged();
+    emit catalogChanged();
     emit timelineChanged();
     emit historyChanged();
     emit statusChanged();
@@ -177,33 +293,51 @@ void ViewerController::invalidateRequest() {
         emit schedulerChanged();
 }
 
-void ViewerController::buildGraph(const SourceReference& reference) {
-    if (!document_.sources.empty()) {
-        commands_.push(setSourceCommand("src", reference));
-        return;
-    }
-    const auto before = std::make_shared<Document>(document_);
-    commands_.push(Command{"open source",
-                           [reference](Document& document) {
-                               Document next = document;
-                               const auto source = std::make_shared<NodeId>();
-                               const auto background = std::make_shared<NodeId>();
-                               const auto merge = std::make_shared<NodeId>();
-                               const auto output = std::make_shared<NodeId>();
-                               addNodeCommand("source", "source", source).apply(next);
-                               addNodeCommand("constcolor", "background", background).apply(next);
-                               addNodeCommand("merge", "composite", merge).apply(next);
-                               addNodeCommand("output", "result", output).apply(next);
-                               setParamCommand("source", "source", "src").apply(next);
-                               setParamCommand("background", "color", "0 0 0 0").apply(next);
-                               connectCommand({*source, 0}, {*merge, 0}).apply(next);
-                               connectCommand({*background, 0}, {*merge, 1}).apply(next);
-                               connectCommand({*merge, 0}, {*output, 0}).apply(next);
-                               setSourceCommand("src", reference).apply(next);
-                               document = std::move(next);
-                           },
-                           [before](Document& document) { document = *before; }});
+nemo::EditOptions ViewerController::editOptions() const {
+    return nemo::EditOptions{.expectedRevision = session_.revision()};
 }
+
+bool ViewerController::applyEdit(const nemo::EditResult& result) {
+    if (result.committed)
+        return true;
+    if (result.error)
+        fail(QString::fromStdString(result.error->message));
+    else
+        fail(QStringLiteral("edit was rejected"));
+    return false;
+}
+
+void ViewerController::buildGraph(const SourceReference& reference) {
+    try {
+        if (!session_.document().sources.empty()) {
+            applyEdit(session_.submit(setSourceCommand("src", reference), editOptions()));
+            return;
+        }
+        const auto result =
+            session_.submit(Command{"open source",
+                                    [reference](Document& document) {
+                                        const auto source = std::make_shared<NodeId>();
+                                        const auto background = std::make_shared<NodeId>();
+                                        const auto merge = std::make_shared<NodeId>();
+                                        const auto output = std::make_shared<NodeId>();
+                                        addNodeCommand("source", "source", source).apply(document);
+                                        addNodeCommand("constcolor", "background", background).apply(document);
+                                        addNodeCommand("merge", "composite", merge).apply(document);
+                                        addNodeCommand("output", "result", output).apply(document);
+                                        setParamCommand(*source, "source", "src").apply(document);
+                                        setParamCommand(*background, "color", "0 0 0 0").apply(document);
+                                        connectCommand({*source, 0}, {*merge, 0}).apply(document);
+                                        connectCommand({*background, 0}, {*merge, 1}).apply(document);
+                                        connectCommand({*merge, 0}, {*output, 0}).apply(document);
+                                        setSourceCommand("src", reference).apply(document);
+                                    }},
+                            editOptions());
+        applyEdit(result);
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+    }
+}
+
 void ViewerController::addGraphNode(const QString& type, const QString& name) {
     const auto trimmedName = name.trimmed();
     if (trimmedName.isEmpty()) {
@@ -211,41 +345,52 @@ void ViewerController::addGraphNode(const QString& type, const QString& name) {
         return;
     }
     try {
-        commands_.push(addNodeCommand(type.toStdString(), trimmedName.toStdString()));
-        documentChanged();
+        applyEdit(session_.submit(addNodeCommand(type.toStdString(), trimmedName.toStdString()), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
 }
 
-void ViewerController::connectGraphNodes(qulonglong fromNode, int fromPort, qulonglong toNode, int toPort) {
+void ViewerController::connectGraphNodes(const QVariant& fromValue, int fromPort, const QVariant& toValue, int toPort) {
+    bool fromOk = false, toOk = false;
+    const auto fromNode = fromValue.toString().toULongLong(&fromOk);
+    const auto toNode = toValue.toString().toULongLong(&toOk);
+    if (!fromOk || !toOk) {
+        fail(QStringLiteral("graph connection requires exact node IDs"));
+        return;
+    }
     if (fromPort < 0 || toPort < 0) {
         fail(QStringLiteral("graph ports must be non-negative"));
         return;
     }
     try {
-        commands_.push(connectCommand({static_cast<NodeId>(fromNode), static_cast<std::uint32_t>(fromPort)},
-                                      {static_cast<NodeId>(toNode), static_cast<std::uint32_t>(toPort)}));
-        documentChanged();
+        applyEdit(session_.submit(connectCommand({static_cast<NodeId>(fromNode), static_cast<std::uint32_t>(fromPort)},
+                                                 {static_cast<NodeId>(toNode), static_cast<std::uint32_t>(toPort)}),
+                                  editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
 }
 
-void ViewerController::setNodeParameter(const QString& nodeName, const QString& key, const QString& value) {
-    if (nodeName.trimmed().isEmpty() || key.trimmed().isEmpty()) {
-        fail(QStringLiteral("node parameter requires a node and key"));
+void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString& key, const QString& value) {
+    // QML identities travel as decimal strings, not lossy JavaScript doubles.
+    bool validId = false;
+    const auto nodeId = nodeValue.toString().toULongLong(&validId);
+    if (!validId || nodeId == static_cast<qulonglong>(kInvalidNode) || key.trimmed().isEmpty()) {
+        fail(QStringLiteral("node parameter requires a node ID and key"));
         return;
     }
-    const auto* node = document_.graph.nodeByName(nodeName.toStdString());
-    if (node) {
-        const auto it = node->params.find(key.toStdString());
-        if (it != node->params.end() && it->second == value.toStdString())
-            return;
+    const auto* node = session_.document().graph.node(static_cast<NodeId>(nodeId));
+    if (!node) {
+        fail(QStringLiteral("node parameter target does not exist"));
+        return;
     }
+    const auto it = node->params.find(key.toStdString());
+    if (it != node->params.end() && it->second == value.toStdString())
+        return;
     try {
-        commands_.push(setParamCommand(nodeName.toStdString(), key.toStdString(), value.toStdString()));
-        documentChanged();
+        applyEdit(session_.submit(setParamCommand(static_cast<NodeId>(nodeId), key.toStdString(), value.toStdString()),
+                                  editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -253,8 +398,8 @@ void ViewerController::setNodeParameter(const QString& nodeName, const QString& 
 
 void ViewerController::slipTimelineClip(const QString& source, int delta) {
     const auto key = source.trimmed().toStdString();
-    const auto it = document_.sources.find(key);
-    if (it == document_.sources.end()) {
+    const auto it = session_.document().sources.find(key);
+    if (it == session_.document().sources.end()) {
         fail(QStringLiteral("timeline source '%1' is unavailable").arg(source));
         return;
     }
@@ -270,8 +415,7 @@ void ViewerController::slipTimelineClip(const QString& source, int delta) {
     try {
         // Slip changes the source local-time interval without moving the
         // parent placement. SourceReference is the persistent timing mapping.
-        commands_.push(setSourceCommand(key, replacement));
-        documentChanged();
+        applyEdit(session_.submit(setSourceCommand(key, replacement), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -279,8 +423,8 @@ void ViewerController::slipTimelineClip(const QString& source, int delta) {
 
 void ViewerController::retimeTimelineClip(const QString& source, int step) {
     const auto key = source.trimmed().toStdString();
-    const auto it = document_.sources.find(key);
-    if (it == document_.sources.end()) {
+    const auto it = session_.document().sources.find(key);
+    if (it == session_.document().sources.end()) {
         fail(QStringLiteral("timeline source '%1' is unavailable").arg(source));
         return;
     }
@@ -295,21 +439,17 @@ void ViewerController::retimeTimelineClip(const QString& source, int step) {
     try {
         // Retime is source timing: each composition frame advances `step`
         // source frames before downstream graph processing.
-        commands_.push(setSourceCommand(key, replacement));
-        documentChanged();
+        applyEdit(session_.submit(setSourceCommand(key, replacement), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
 }
 
 bool ViewerController::undo() {
-    if (!commands_.canUndo())
+    if (!session_.canUndo())
         return false;
     try {
-        if (!commands_.undo())
-            return false;
-        documentChanged();
-        return true;
+        return applyEdit(session_.undo(editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
         return false;
@@ -317,13 +457,10 @@ bool ViewerController::undo() {
 }
 
 bool ViewerController::redo() {
-    if (!commands_.canRedo())
+    if (!session_.canRedo())
         return false;
     try {
-        if (!commands_.redo())
-            return false;
-        documentChanged();
-        return true;
+        return applyEdit(session_.redo(editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
         return false;
@@ -357,7 +494,7 @@ void ViewerController::requestRange(int first, int last) {
     rangeGeneration_ = ++nextRequestId_;
     rangeError_.clear();
     emit schedulerChanged();
-    if (!runtime_->requestRange(document_, *lastRequest_, first, last, rangeGeneration_)) {
+    if (!runtime_->requestRange(session_.snapshot(), *lastRequest_, first, last, rangeGeneration_)) {
         status_ = QStringLiteral("Cache range admission rejected; see scheduler drop count");
         emit statusChanged();
         pollScheduler();
@@ -376,13 +513,13 @@ void ViewerController::openSource(const QString& path) {
     try {
         SourceReference reference;
         reference.path = QFileInfo(path).absoluteFilePath().toStdString();
-        if (const auto previous = document_.sources.find("src"); previous != document_.sources.end()) {
+        if (const auto previous = session_.document().sources.find("src");
+            previous != session_.document().sources.end()) {
             if (previous->second.revision == std::numeric_limits<std::uint64_t>::max())
                 throw std::runtime_error("source revision exhausted");
             reference.revision = previous->second.revision + 1;
         }
         buildGraph(reference);
-        documentChanged();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
@@ -400,7 +537,7 @@ void ViewerController::receive() {
         if (probe->requestId != generation_)
             return;
         const auto& info = probe->source.info;
-        probedSource_ = document_.sources.at("src");
+        probedSource_ = session_.document().sources.at("src");
         pending_ = false;
         sourceSize_ = QSizeF(info.width, info.height);
         pixelAspect_ = info.pixelAspect;
@@ -417,7 +554,7 @@ void ViewerController::receive() {
         refreshRequest();
     } else {
         auto frame = std::get<std::shared_ptr<const ViewerResult>>(std::move(*result));
-        if (frame->requestId != generation_ || frame->revision != document_.stateRevision())
+        if (frame->requestId != generation_ || frame->revision != session_.document().stateRevision())
             return;
         presentation_ = std::move(frame);
         pending_ = false;
@@ -439,8 +576,11 @@ void ViewerController::receive() {
 
 void ViewerController::refreshRequest() {
     try {
-        const auto source = document_.sources.find("src");
-        if (source == document_.sources.end()) {
+        // Capture one immutable project state for the whole request. The
+        // session remains owner-thread-only; workers receive this snapshot.
+        const Document document = session_.snapshot();
+        const auto source = document.sources.find("src");
+        if (source == document.sources.end()) {
             sourceSize_ = {};
             probedSource_ = {};
             frameCount_ = -1;
@@ -463,7 +603,7 @@ void ViewerController::refreshRequest() {
             emit sourceChanged();
             emit statusChanged();
             generation_ = ++nextRequestId_;
-            if (!runtime_->probe(document_, "src", generation_))
+            if (!runtime_->probe(document, "src", generation_))
                 fail(QStringLiteral("Source probe admission rejected"));
             return;
         }
@@ -476,7 +616,7 @@ void ViewerController::refreshRequest() {
                           : mode_ == "quarter" ? ViewerResolution::Quarter
                                                : ViewerResolution::Auto;
         EvaluationRequest request;
-        request.output = resolveOutput(document_, outputName_.toStdString());
+        request.output = outputNode_;
         request.localTime = frame_;
         request.samplingScale =
             policy_.resolve(mode, width, height, pixelAspect_, viewport_.width(), viewport_.height(), zoom_);
@@ -494,15 +634,14 @@ void ViewerController::refreshRequest() {
         request.region = {x, y, right - x, bottom - y};
         request.fullWidth = width;
         request.fullHeight = height;
-        const auto revision = document_.stateRevision();
+        const auto revision = document.stateRevision();
         if (lastRequest_ && *lastRequest_ == request && lastRevision_ == revision)
             return;
         lastRequest_ = request;
         lastRevision_ = revision;
         const auto id = generation_ = ++nextRequestId_;
-        if (!runtime_->submit(document_, request, id))
-            throw std::runtime_error("Viewer request admission rejected");
-        pending_ = true;
+        if (!runtime_->submit(document, request, id))
+            pending_ = true;
         outdated_ = static_cast<bool>(presentation_);
         error_.clear();
         status_ = presentation_ ? QStringLiteral("Pending 1:%1; previous frame is outdated").arg(request.samplingScale)

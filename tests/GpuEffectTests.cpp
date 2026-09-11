@@ -133,7 +133,7 @@ struct Composition {
     doc.name = "gpu-effect-composition";
     const NodeId plate = doc.graph.addNode("testpattern", "plate");
     composition.tint = doc.graph.addNode("constcolor", "tint");
-    doc.graph.node(composition.tint)->params = {{"color", "0.5 8 -1 0.25"}};
+    doc.graph.setParam(composition.tint, "color", "0.5 8 -1 0.25");
     const NodeId over = doc.graph.addNode("merge", "over");
     composition.output = doc.graph.addNode("output", "result");
     (void)doc.graph.connect({plate, 0}, {over, 0});
@@ -193,7 +193,7 @@ TEST(Effect, ConstcolorIsBitExact) {
     Document doc;
     doc.name = "exact-const";
     const NodeId color = doc.graph.addNode("constcolor", "color");
-    doc.graph.node(color)->params = {{"color", "4 -2 2.5 0.125"}};
+    doc.graph.setParam(color, "color", "4 -2 2.5 0.125");
     const NodeId out = doc.graph.addNode("output", "result");
     (void)doc.graph.connect({color, 0}, {out, 0});
     const EvaluationRequest request = requestFor(doc, {0, 0, 9, 7}, 0);
@@ -270,7 +270,7 @@ TEST(Effect, MultiNodeGpuCompositionMatchesCpuReference) {
 
     // A contributing input change must change the GPU output.
     Document changed = composition.doc;
-    changed.graph.node(composition.tint)->params = {{"color", "0.5 8 -1 1.0"}};
+    changed.graph.setParam(composition.tint, "color", "0.5 8 -1 1.0");
     eval::GpuEvaluation changedEval = evaluateGpu(changed, request, slang, *boot.device, *boot.allocator);
     const CpuImage changedImage = changedEval.readBack(request.output, *boot.device, *boot.allocator);
     EXPECT_GT(gpuEval.plan.result.contentHash, 0u);
@@ -411,9 +411,9 @@ TEST(Effect, DependentChainSynchronizesWithoutIntermediateReadback) {
     doc.name = "dependent-chain";
     const NodeId plate = doc.graph.addNode("testpattern", "plate");
     const NodeId tint1 = doc.graph.addNode("constcolor", "tint1");
-    doc.graph.node(tint1)->params = {{"color", "1 0.5 0.25 0.5"}};
+    doc.graph.setParam(tint1, "color", "1 0.5 0.25 0.5");
     const NodeId tint2 = doc.graph.addNode("constcolor", "tint2");
-    doc.graph.node(tint2)->params = {{"color", "0.25 0.5 2 0.75"}};
+    doc.graph.setParam(tint2, "color", "0.25 0.5 2 0.75");
     const NodeId over1 = doc.graph.addNode("merge", "over1");
     const NodeId over2 = doc.graph.addNode("merge", "over2");
     const NodeId out = doc.graph.addNode("output", "result");

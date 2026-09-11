@@ -1,6 +1,7 @@
 #include "ViewerController.hpp"
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
+#include "nemo/core/session/ProjectSession.hpp"
 
 #include <QCommandLineParser>
 #include <QGuiApplication>
@@ -141,7 +142,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    nemo::ui::ViewerController viewerController(&runtime);
+    // The application composes one project owner; presentation facades may
+    // come and go without taking the document or shared history with them.
+    nemo::ProjectSession projectSession;
+    nemo::ui::ViewerController viewerController(&runtime, projectSession);
     std::vector<double> swapLatencies;
     if (benchmarkFrames > 0) {
         viewerController.setResolutionMode("half");

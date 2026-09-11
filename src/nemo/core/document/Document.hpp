@@ -13,6 +13,7 @@
 
 #include "nemo/core/document/Animation.hpp"
 #include "nemo/core/document/Graph.hpp"
+#include "nemo/core/document/MediaCatalog.hpp"
 namespace nemo {
 
 // Persistent color policy names only; runtime OCIO objects belong to
@@ -42,8 +43,10 @@ struct Document {
     static inline constexpr int kSchemaVersion = 4;
     Document();
     explicit Document(std::shared_ptr<const NodeCatalog> catalog);
-
     std::map<std::string, SourceReference> sources;
+    // Catalog entries retain only source keys and schema data; runtime media
+    // and probe/decode objects are owned by media/evaluation modules.
+    MediaCatalog mediaCatalog;
     int schemaVersion{kSchemaVersion};
     std::string name;
     ColorPolicy color;
@@ -79,6 +82,9 @@ struct Document {
     [[nodiscard]] const std::vector<AnimationChannel>& animationChannels() const { return animationChannels_; }
     [[nodiscard]] const AnimationChannel* animationChannel(AnimationChannelId id) const;
     [[nodiscard]] const AnimationChannel* animationChannel(const ParameterAddress& address) const;
+    [[nodiscard]] MediaSourceId nextMediaSourceId() const { return mediaCatalog.nextEntryId(); }
+    [[nodiscard]] MediaBinId nextMediaBinId() const { return mediaCatalog.nextBinId(); }
+    void restoreMediaIdentityHighWatermarks(MediaSourceId nextSourceId, MediaBinId nextBinId);
     [[nodiscard]] AnimationChannelId nextAnimationChannelId() const { return nextAnimationChannelId_; }
     [[nodiscard]] KeyframeId nextKeyframeId() const { return nextKeyframeId_; }
     // Serialization is the only intended caller. It validates the complete
@@ -176,5 +182,5 @@ Command resetInstanceParamCommand(NetworkInstanceId instance, NodeId targetNode,
 Command transactionCommand(std::string label, std::vector<Command> commands);
 Command setColorPolicyCommand(ColorPolicy value);
 Command setSourceCommand(std::string id, SourceReference value);
-
+Command removeSourceCommand(std::string id);
 }  // namespace nemo

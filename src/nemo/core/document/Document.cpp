@@ -567,9 +567,13 @@ void Document::restoreIdentityHighWatermarks(NetworkId nextNetworkId, NetworkIns
     nextNetworkId_ = std::max(nextNetworkId_, nextNetworkId);
     nextInstanceId_ = std::max(nextInstanceId_, nextInstanceId);
 }
+void Document::restoreMediaIdentityHighWatermarks(MediaSourceId nextSourceId, MediaBinId nextBinId) {
+    mediaCatalog.restoreIdentityHighWatermarks(nextSourceId, nextBinId);
+}
 
 void Document::preserveIdentityHighWatermarksFrom(const Document& source) {
     restoreIdentityHighWatermarks(source.nextNetworkId_, source.nextInstanceId_);
+    mediaCatalog.preserveIdentityHighWatermarksFrom(source.mediaCatalog);
     for (const auto& [id, watermark] : source.retiredNetworkWatermarks_) {
         auto& candidate = retiredNetworkWatermarks_[id];
         candidate.nextNodeId = std::max(candidate.nextNodeId, watermark.nextNodeId);
@@ -617,6 +621,8 @@ std::uint64_t Document::stateRevision() const {
         hashMixWord(hash, static_cast<std::uint64_t>(source.interpretation.size()));
     }
     hashMixWord(hash, static_cast<std::uint64_t>(sources.size()));
+
+    hashMixWord(hash, mediaCatalog.stateHash());
 
     for (const auto& networkValue : networks_) {
         hashMixWord(hash, networkValue.id());
@@ -952,6 +958,24 @@ Command setSourceCommand(std::string id, SourceReference value) {
         throw std::runtime_error("setSource: source '" + id + "' frameStep must not be zero");
     return Command{"set source '" + id + "'", [id = std::move(id), value = std::move(value)](Document& document) {
                        document.sources[id] = value;
+                   }};
+}
+Command removeSourceCommand(std::string id) {
+    if (id.empty())
+        throw std::runtime_error("removeSource: source key must not be empty");
+    return Command{"remove source '" + id + "'", [id = std::move(id)](Document& document) {
+                       if (!document.sources.contains(id))
+                           throw GraphException(GraphError::MissingMediaSource,
+                                                "cannot remove unknown source '" + id + "'");
+                       if (document.mediaCatalog.sourceUsed(document, id))
+                           throw GraphException(GraphError::MediaSourceInUse,
+                                                "cannot remove source '" + id + "': it is addressed by a source node");
+                       for (const auto& entry : document.mediaCatalog.entries())
+                           if (entry.sourceKey == id)
+                               throw GraphException(GraphError::MediaSourceInUse,
+                                                    "cannot remove source '" + id + "': media entry " +
+                                                        std::to_string(entry.id) + " references it");
+                       document.sources.erase(id);
                    }};
 }
 

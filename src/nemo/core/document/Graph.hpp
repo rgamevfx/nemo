@@ -70,7 +70,15 @@ enum class GraphError {
     UnknownNetwork,
     DuplicateNetwork,
     UnknownInstance,
-    InvalidInstance
+    InvalidInstance,
+    UnknownMediaEntry,
+    UnknownMediaBin,
+    MediaDuplicateName,
+    MediaCycle,
+    MediaSourceInUse,
+    InvalidMediaMark,
+    InvalidMediaQuery,
+    MissingMediaSource
 };
 
 struct GraphErrorDetails {

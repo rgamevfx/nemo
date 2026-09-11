@@ -5,8 +5,10 @@ add_library(nemo_core
     core/document/ParameterValueJson.cpp
     core/document/Animation.cpp
     core/document/Graph.cpp
+    core/document/MediaCatalog.cpp
     core/document/Document.cpp
     core/commands/AnimationCommands.cpp
+    core/commands/MediaCatalogCommands.cpp
     core/document/Serialization.cpp
     core/session/ProjectSession.cpp
     core/nodes/NodeCatalog.cpp

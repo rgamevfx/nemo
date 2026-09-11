@@ -148,10 +148,12 @@ EditResult ProjectSession::conflict(std::uint64_t expected) const {
                                      event.changedEdgeIds.end());
         result.changedNetworkIds.insert(result.changedNetworkIds.end(), event.changedNetworkIds.begin(),
                                         event.changedNetworkIds.end());
-        result.changedInstanceIds.insert(result.changedInstanceIds.end(), event.changedInstanceIds.begin(),
-                                         event.changedInstanceIds.end());
         result.changedSourceIds.insert(result.changedSourceIds.end(), event.changedSourceIds.begin(),
                                        event.changedSourceIds.end());
+        result.changedMediaEntryIds.insert(result.changedMediaEntryIds.end(), event.changedMediaEntryIds.begin(),
+                                           event.changedMediaEntryIds.end());
+        result.changedMediaBinIds.insert(result.changedMediaBinIds.end(), event.changedMediaBinIds.begin(),
+                                         event.changedMediaBinIds.end());
         result.changedAnimationChannelIds.insert(result.changedAnimationChannelIds.end(),
                                                  event.changedAnimationChannelIds.begin(),
                                                  event.changedAnimationChannelIds.end());
@@ -270,6 +272,28 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
     for (const auto& [id, source] : after.sources)
         if (!before.sources.contains(id))
             result.changedSourceIds.push_back(id);
+    for (const auto& value : before.mediaCatalog.entries()) {
+        const auto* current = after.mediaCatalog.entry(value.id);
+        if (current == nullptr || *current != value)
+            result.changedMediaEntryIds.push_back(value.id);
+    }
+    for (const auto& value : after.mediaCatalog.entries()) {
+        if (before.mediaCatalog.entry(value.id) == nullptr) {
+            result.createdMediaEntryIds.push_back(value.id);
+            result.changedMediaEntryIds.push_back(value.id);
+        }
+    }
+    for (const auto& value : before.mediaCatalog.bins()) {
+        const auto* current = after.mediaCatalog.bin(value.id);
+        if (current == nullptr || *current != value)
+            result.changedMediaBinIds.push_back(value.id);
+    }
+    for (const auto& value : after.mediaCatalog.bins()) {
+        if (before.mediaCatalog.bin(value.id) == nullptr) {
+            result.createdMediaBinIds.push_back(value.id);
+            result.changedMediaBinIds.push_back(value.id);
+        }
+    }
 
     const auto addAnimationChange = [&](const AnimationChannel& channel) {
         result.changedAnimationChannelIds.push_back(channel.id);
@@ -327,7 +351,11 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
                       result.changedSourceIds,
                       result.changedAnimationChannelIds,
                       result.changedAnimationKeyIds,
-                      result.colorPolicyChanged};
+                      result.colorPolicyChanged,
+                      result.changedMediaEntryIds,
+                      result.createdMediaEntryIds,
+                      result.changedMediaBinIds,
+                      result.createdMediaBinIds};
     if (!requestId.empty())
         requests_.push_back(RequestRecord{requestId, result});
     try {
@@ -385,7 +413,10 @@ EditResult ProjectSession::execute(Operation operation, Command* command, const 
         auto rejected = failure(error.what(), error.errorCode() == GraphError::UnknownNode ||
                                                       error.errorCode() == GraphError::UnknownEdge ||
                                                       error.errorCode() == GraphError::UnknownNetwork ||
-                                                      error.errorCode() == GraphError::UnknownInstance
+                                                      error.errorCode() == GraphError::UnknownInstance ||
+                                                      error.errorCode() == GraphError::UnknownMediaEntry ||
+                                                      error.errorCode() == GraphError::UnknownMediaBin ||
+                                                      error.errorCode() == GraphError::MissingMediaSource
                                                   ? EditErrorCode::MissingObject
                                                   : EditErrorCode::InvalidArgument);
         rejected.error->graphError = error.errorCode();
@@ -749,6 +780,39 @@ std::vector<SourceQueryResult> ProjectSession::querySources(std::string_view fil
         if (!filter.empty() && it->first.find(filter) == std::string::npos)
             continue;
         result.push_back(SourceQueryResult{it->first, it->second});
+        if (result.size() == limit)
+            break;
+    }
+    return result;
+}
+std::vector<MediaQueryResult> ProjectSession::queryMedia(std::string_view filter, std::optional<MediaKind> kind,
+                                                         std::optional<bool> offline, std::optional<bool> unused,
+                                                         MediaBinId scope, std::size_t limit,
+                                                         MediaSourceId after) const {
+    limit = std::min<std::size_t>(limit, 256);
+    std::vector<MediaQueryResult> result;
+    if (limit == 0)
+        return result;
+    for (const auto id : document_.mediaCatalog.search(document_, filter, kind, offline, unused, scope)) {
+        if (id <= after)
+            continue;
+        const auto* value = document_.mediaCatalog.entry(id);
+        result.push_back(MediaQueryResult{id, value->sourceKey, value->parent, value->metadata});
+        if (result.size() == limit)
+            break;
+    }
+    return result;
+}
+
+std::vector<MediaBin> ProjectSession::queryMediaBins(MediaBinId parent, std::size_t limit, MediaBinId after) const {
+    limit = std::min<std::size_t>(limit, 256);
+    std::vector<MediaBin> result;
+    if (limit == 0)
+        return result;
+    for (const auto id : document_.mediaCatalog.childBins(parent)) {
+        if (id <= after)
+            continue;
+        result.push_back(*document_.mediaCatalog.bin(id));
         if (result.size() == limit)
             break;
     }

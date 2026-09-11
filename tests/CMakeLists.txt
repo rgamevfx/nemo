@@ -7,6 +7,7 @@ add_executable(nemo_core_tests
     ReuseTests.cpp
     CommandTests.cpp
     CatalogTests.cpp
+    MediaCatalogTests.cpp
     PersistenceTests.cpp
     GraphTests.cpp
     NetworkTests.cpp

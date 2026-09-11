@@ -13,11 +13,13 @@ using NetworkInstanceId = std::uint64_t;
 using InterfacePortId = std::uint64_t;
 using NodeId = std::uint64_t;
 using EdgeId = std::uint64_t;
-
+using MediaSourceId = std::uint64_t;
+using MediaBinId = std::uint64_t;
 inline constexpr NetworkId kInvalidNetwork = 0;
 inline constexpr NetworkInstanceId kInvalidNetworkInstance = 0;
 inline constexpr InterfacePortId kInvalidInterfacePort = 0;
 inline constexpr NodeId kInvalidNode = 0;
 inline constexpr EdgeId kInvalidEdge = 0;
-
+inline constexpr MediaSourceId kInvalidMediaSource = 0;
+inline constexpr MediaBinId kInvalidMediaBin = 0;
 }  // namespace nemo

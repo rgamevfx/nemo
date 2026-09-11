@@ -65,6 +65,10 @@ struct EditResult {
     std::vector<NetworkInstanceId> changedInstanceIds;
     std::vector<NetworkInstanceId> createdInstanceIds;
     std::vector<std::string> changedSourceIds;
+    std::vector<MediaSourceId> changedMediaEntryIds;
+    std::vector<MediaSourceId> createdMediaEntryIds;
+    std::vector<MediaBinId> changedMediaBinIds;
+    std::vector<MediaBinId> createdMediaBinIds;
     std::vector<AnimationChannelId> changedAnimationChannelIds;
     std::vector<KeyframeRef> changedAnimationKeyIds;
     bool colorPolicyChanged{false};
@@ -84,6 +88,10 @@ struct ChangeEvent {
     std::vector<AnimationChannelId> changedAnimationChannelIds;
     std::vector<KeyframeRef> changedAnimationKeyIds;
     bool colorPolicyChanged{false};
+    std::vector<MediaSourceId> changedMediaEntryIds;
+    std::vector<MediaSourceId> createdMediaEntryIds;
+    std::vector<MediaBinId> changedMediaBinIds;
+    std::vector<MediaBinId> createdMediaBinIds;
 };
 
 struct ChangeHistory {
@@ -126,6 +134,13 @@ struct EdgeQueryResult {
 struct SourceQueryResult {
     std::string id;
     SourceReference reference;
+};
+
+struct MediaQueryResult {
+    MediaSourceId id{kInvalidMediaSource};
+    std::string sourceKey;
+    MediaBinId parent{kInvalidMediaBin};
+    MediaMetadata metadata;
 };
 
 // All methods and subscriptions are owner-thread-only; the session must
@@ -210,6 +225,12 @@ public:
                                                           std::size_t limit = 256, EdgeId after = kInvalidEdge) const;
     [[nodiscard]] std::vector<SourceQueryResult> querySources(std::string_view filter = {}, std::size_t limit = 256,
                                                               std::string_view after = {}) const;
+    [[nodiscard]] std::vector<MediaQueryResult>
+    queryMedia(std::string_view filter = {}, std::optional<MediaKind> kind = {}, std::optional<bool> offline = {},
+               std::optional<bool> unused = {}, MediaBinId scope = kInvalidMediaBin, std::size_t limit = 256,
+               MediaSourceId after = kInvalidMediaSource) const;
+    [[nodiscard]] std::vector<MediaBin> queryMediaBins(MediaBinId parent = kInvalidMediaBin, std::size_t limit = 256,
+                                                       MediaBinId after = kInvalidMediaBin) const;
 
 private:
     struct Observer {

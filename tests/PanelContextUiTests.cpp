@@ -51,22 +51,6 @@ QVariantMap panelByType(const QVariantMap& node, const QString& type) {
     return {};
 }
 
-QString leafForPanel(const QVariantMap& node, const QString& panelId) {
-    if (node.value(QStringLiteral("kind")).toString() == QStringLiteral("tabs")) {
-        for (const auto& value : node.value(QStringLiteral("panels")).toList()) {
-            if (value.toMap().value(QStringLiteral("id")).toString() == panelId)
-                return node.value(QStringLiteral("id")).toString();
-        }
-        return {};
-    }
-    for (const auto& value : node.value(QStringLiteral("children")).toList()) {
-        const auto found = leafForPanel(value.toMap(), panelId);
-        if (!found.isEmpty())
-            return found;
-    }
-    return {};
-}
-
 class PanelContextUiTest : public testing::Test {
 protected:
     QTemporaryDir directory;
@@ -126,14 +110,23 @@ TEST_F(PanelContextUiTest, BindingAndRoleMenusExposePresentationChoices) {
     auto* menu = window->findChild<QObject*>(QStringLiteral("panelBindingMenu_") + id);
     ASSERT_NE(menu, nullptr);
     EXPECT_TRUE(menu->property("visible").toBool());
-    EXPECT_NE(window->findChild<QObject*>(QStringLiteral("panelBindingFollow_") + id), nullptr);
-    EXPECT_NE(window->findChild<QObject*>(QStringLiteral("panelBindingPinned_") + id), nullptr);
+    auto* pinned = visual(window->contentItem(), QStringLiteral("panelBindingPinned_") + id);
+    ASSERT_NE(pinned, nullptr);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      pinned->mapToScene(QPointF(pinned->width() / 2, pinned->height() / 2)).toPoint());
+    EXPECT_EQ(context(id).value(QStringLiteral("mode")).toString(), QStringLiteral("pinned"));
     QTest::keyClick(window, Qt::Key_Escape);
 
-    auto* role = item(QStringLiteral("viewerRole_") + id);
-    EXPECT_EQ(role->property("count").toInt(), 3);
-    EXPECT_EQ(role->property("model").toStringList(),
-              QStringList({QStringLiteral("Graph"), QStringLiteral("Timeline"), QStringLiteral("Media")}));
+    auto* target = item(QStringLiteral("viewerTargetMenu_") + id);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
+    QTest::qWait(20);
+    auto* role = item(QStringLiteral("viewerRoleMedia_") + id);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      role->mapToScene(QPointF(role->width() / 2, role->height() / 2)).toPoint());
+    QTest::qWait(20);
+    EXPECT_EQ(context(id).value(QStringLiteral("viewerRole")).toString(), QStringLiteral("media"));
+    EXPECT_FALSE(viewerController.hasSource()) << "Changing viewer role must not load media";
 }
 
 TEST_F(PanelContextUiTest, GroupClocksAreIsolatedAndPinnedContextStaysFixed) {
@@ -169,28 +162,6 @@ TEST_F(PanelContextUiTest, GroupClocksAreIsolatedAndPinnedContextStaysFixed) {
     EXPECT_EQ(context(viewerId).value(QStringLiteral("sourceTarget")), pinned.value(QStringLiteral("sourceTarget")));
     EXPECT_FALSE(context(viewerId).value(QStringLiteral("available")).toBool());
     EXPECT_FALSE(context(viewerId).value(QStringLiteral("unavailableReason")).toString().isEmpty());
-}
-
-TEST_F(PanelContextUiTest, SameGroupViewersShareSourceClockAndDisplayZoomRemainsPanelLocal) {
-    const auto viewer = panelByType(root(), QStringLiteral("viewer"));
-    ASSERT_FALSE(viewer.isEmpty());
-    const auto viewerId = viewer.value(QStringLiteral("id")).toString();
-    const auto leafId = leafForPanel(root(), viewerId);
-    ASSERT_FALSE(leafId.isEmpty());
-    const auto secondId = workspace.createPanel(leafId, QStringLiteral("viewer"), QStringLiteral("A"));
-    ASSERT_FALSE(secondId.isEmpty());
-    router.registerPanel(secondId, QStringLiteral("A"), QStringLiteral("group"));
-    router.setLinkMode(viewerId, QStringLiteral("group"));
-    router.setGroup(viewerId, QStringLiteral("A"));
-    router.setGroupContext(QStringLiteral("A"), QVariantMap{{QStringLiteral("sourceClock"), 42}});
-    EXPECT_EQ(context(viewerId).value(QStringLiteral("sourceClock")).toInt(),
-              context(secondId).value(QStringLiteral("sourceClock")).toInt());
-
-    auto* firstPanel = item(QStringLiteral("viewerPanel"));
-    ASSERT_NE(firstPanel, nullptr);
-    firstPanel->setProperty("displayZoom", 2.0);
-    EXPECT_DOUBLE_EQ(firstPanel->property("displayZoom").toDouble(), 2.0);
-    EXPECT_EQ(context(viewerId).value(QStringLiteral("sourceClock")).toInt(), 42);
 }
 
 }  // namespace

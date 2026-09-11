@@ -5,7 +5,6 @@
 #include <QFontMetrics>
 #include <QHash>
 #include <QImage>
-#include <QMetaType>
 #include <QPainter>
 #include <QQuickWindow>
 #include <QSGFlatColorMaterial>
@@ -13,9 +12,9 @@
 #include <QSGGeometryNode>
 #include <QSGTexture>
 #include <QSGTextureMaterial>
+#include <QSGVertexColorMaterial>
 #include <QVariantMap>
 
-#include <QStringList>
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -24,18 +23,15 @@
 namespace nemo::ui {
 namespace {
 
-constexpr int kMaxParametersPerNode = 8;
 constexpr int kMaxVisibleLabels = 256;
 constexpr int kAtlasWidth = 1008;
-constexpr int kAtlasCellWidth = 336;
+constexpr int kAtlasCellWidth = 112;
 constexpr int kAtlasCellHeight = 24;
 constexpr qreal kGraphMargin = 16.0;
-constexpr qreal kNodeWidth = 232.0;
-constexpr qreal kNodeHeaderHeight = 56.0;
-constexpr qreal kNodeParameterHeight = 17.0;
-constexpr qreal kNodeColumnGap = 56.0;
-constexpr qreal kNodeRowHeight = 240.0;
-constexpr qreal kNodeRowGap = 48.0;
+constexpr qreal kNodeWidth = 112.0;
+constexpr qreal kNodeHeight = 28.0;
+constexpr qreal kNodeColumnGap = 24.0;
+constexpr qreal kNodeRowGap = 32.0;
 
 QString boundedText(QString text, int maxCharacters) {
     text.replace('\n', ' ');
@@ -46,17 +42,6 @@ QString boundedText(QString text, int maxCharacters) {
     return text.left(std::max(1, maxCharacters - 3)) + QStringLiteral("...");
 }
 
-QString parameterDisplayText(const QVariant& value) {
-    if (value.metaType().id() == QMetaType::QVariantList) {
-        QStringList components;
-        for (const auto& component : value.toList())
-            components.push_back(component.toString());
-        return components.join(QLatin1Char(' '));
-    }
-    if (value.metaType().id() == QMetaType::Bool)
-        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
-    return value.toString();
-}
 QSGGeometryNode* makeGeometryNode(const QColor& color) {
     auto node = std::make_unique<QSGGeometryNode>();
     auto geometry = std::make_unique<QSGGeometry>(QSGGeometry::defaultAttributes_Point2D(), 0);
@@ -70,6 +55,50 @@ QSGGeometryNode* makeGeometryNode(const QColor& color) {
     node->setMaterial(material.release());
     node->setFlag(QSGNode::OwnsMaterial);
     return node.release();
+}
+
+QSGGeometryNode* makeColoredGeometryNode() {
+    auto node = std::make_unique<QSGGeometryNode>();
+    auto geometry = std::make_unique<QSGGeometry>(QSGGeometry::defaultAttributes_ColoredPoint2D(), 0);
+    geometry->setDrawingMode(QSGGeometry::DrawTriangles);
+    geometry->setVertexDataPattern(QSGGeometry::DynamicPattern);
+    node->setGeometry(geometry.release());
+    node->setFlag(QSGNode::OwnsGeometry);
+    node->setFlag(QSGNode::OwnedByParent);
+    auto material = std::make_unique<QSGVertexColorMaterial>();
+    node->setMaterial(material.release());
+    node->setFlag(QSGNode::OwnsMaterial);
+    return node.release();
+}
+
+void appendColoredQuad(QVector<QSGGeometry::ColoredPoint2D>& vertices, const QRectF& rectangle, const QColor& color) {
+    const auto topLeft = rectangle.topLeft();
+    const auto topRight = rectangle.topRight();
+    const auto bottomLeft = rectangle.bottomLeft();
+    const auto bottomRight = rectangle.bottomRight();
+    const auto append = [&vertices, &color](QPointF point) {
+        vertices.push_back({});
+        vertices.back().set(float(point.x()), float(point.y()), color.red(), color.green(), color.blue(),
+                            color.alpha());
+    };
+    append(topLeft);
+    append(topRight);
+    append(bottomRight);
+    append(topLeft);
+    append(bottomRight);
+    append(bottomLeft);
+}
+
+void updateColoredGeometry(QSGGeometryNode* node, const QVector<QSGGeometry::ColoredPoint2D>& vertices) {
+    auto* geometry = node->geometry();
+    if (geometry->vertexCount() != vertices.size())
+        geometry->allocate(static_cast<int>(vertices.size()));
+    if (!vertices.isEmpty()) {
+        auto* destination = geometry->vertexDataAsColoredPoint2D();
+        std::copy(vertices.cbegin(), vertices.cend(), destination);
+    }
+    geometry->markVertexDataDirty();
+    node->markDirty(QSGNode::DirtyGeometry);
 }
 
 void appendQuad(QVector<QSGGeometry::Point2D>& vertices, const QRectF& rectangle) {
@@ -169,28 +198,19 @@ private:
     std::unique_ptr<QSGGeometryNode> geometryNode_;
 };
 
-struct VisibleEdge {
-    qsizetype edge{};
-    qsizetype from{};
-    qsizetype to{};
-    QPointF source;
-    QPointF destination;
-};
-
 struct GraphFrame {
     QVector<QSGGeometry::Point2D> edges;
-    QVector<QSGGeometry::Point2D> bodies;
+    QVector<QSGGeometry::ColoredPoint2D> bodies;
     QVector<QSGGeometry::Point2D> outlines;
-    QVector<VisibleEdge> visibleEdges;
     QVector<LabelSpec> labels;
 };
 
 class GraphSceneNode final : public QSGNode {
 public:
     GraphSceneNode() {
-        edges_ = makeGeometryNode(QColor(111, 159, 197));
+        edges_ = makeGeometryNode(QColor(151, 158, 168, 150));
         appendChildNode(edges_);
-        bodies_ = makeGeometryNode(QColor(52, 58, 72));
+        bodies_ = makeColoredGeometryNode();
         appendChildNode(bodies_);
         outlines_ = makeGeometryNode(QColor(98, 108, 124));
         appendChildNode(outlines_);
@@ -200,7 +220,6 @@ public:
         frame_.edges.clear();
         frame_.bodies.clear();
         frame_.outlines.clear();
-        frame_.visibleEdges.clear();
         frame_.labels.clear();
         return frame_;
     }
@@ -231,10 +250,8 @@ private:
 };
 
 [[nodiscard]] QPointF pointForPort(const QRectF& rectangle, int port, bool output) {
-    const qreal top = rectangle.top() + kNodeHeaderHeight - 10.0;
-    const qreal bottom = rectangle.bottom() - 8.0;
-    const qreal y = std::clamp(top + std::max(0, port) * kNodeParameterHeight, top, bottom);
-    return {output ? rectangle.right() : rectangle.left(), y};
+    const qreal x = rectangle.left() + rectangle.width() * 0.5;
+    return {x + (output ? 0.0 : port * 8.0), output ? rectangle.bottom() : rectangle.top()};
 }
 
 QImage renderLabelAtlas(const QVector<LabelSpec>& labels, QVector<QRectF>* atlasRects, QSize* atlasSize) {
@@ -242,10 +259,9 @@ QImage renderLabelAtlas(const QVector<LabelSpec>& labels, QVector<QRectF>* atlas
         return {};
     }
 
-    const QFont headerFont(QStringLiteral("Sans Serif"), 13, QFont::Bold);
-    const QFont detailFont(QStringLiteral("Sans Serif"), 11);
-    const QFontMetrics headerMetrics(headerFont);
-    const QFontMetrics detailMetrics(detailFont);
+    QFont font(QStringLiteral("Inter"));
+    font.setPixelSize(11);
+    const QFontMetrics metrics(font);
     const int columns = kAtlasWidth / kAtlasCellWidth;
     const int rows = (static_cast<int>(labels.size()) + columns - 1) / columns;
     *atlasSize = QSize(kAtlasWidth, rows * kAtlasCellHeight);
@@ -258,21 +274,17 @@ QImage renderLabelAtlas(const QVector<LabelSpec>& labels, QVector<QRectF>* atlas
     painter.setRenderHint(QPainter::Antialiasing, true);
     for (int i = 0; i < labels.size(); ++i) {
         const auto& label = labels.at(i);
-        const bool header = label.key.startsWith(QStringLiteral("node-header"));
-        const QFont& font = header ? headerFont : detailFont;
-        const QFontMetrics& metrics = header ? headerMetrics : detailMetrics;
+        painter.setFont(font);
         const int column = i % columns;
         const int row = i / columns;
-        const int x = column * kAtlasCellWidth + 5;
         const int y = row * kAtlasCellHeight;
-        const int textWidth =
-            label.key.startsWith(QStringLiteral("edge:")) ? kAtlasCellWidth - 10 : static_cast<int>(kNodeWidth) - 20;
+        const int textWidth = static_cast<int>(kNodeWidth) - 12;
         const QString text = metrics.elidedText(label.text, Qt::ElideRight, textWidth);
         const int advance = std::max(1, metrics.horizontalAdvance(text));
-        painter.setFont(font);
+        const int centeredX = column * kAtlasCellWidth + (kAtlasCellWidth - advance) / 2;
         painter.setPen(label.color);
-        painter.drawText(QPointF(x, y + metrics.ascent() + 2), text);
-        atlasRects->push_back(QRectF(x, y, advance, kAtlasCellHeight));
+        painter.drawText(QPointF(centeredX, y + (kAtlasCellHeight - metrics.height()) / 2 + metrics.ascent()), text);
+        atlasRects->push_back(QRectF(column * kAtlasCellWidth, y, kAtlasCellWidth, kAtlasCellHeight));
     }
     painter.end();
     return image;
@@ -321,7 +333,6 @@ std::unique_ptr<LabelAtlasNode> makeLabelAtlas(QQuickWindow* window, const QVect
 }
 
 }  // namespace
-
 GraphItem::GraphItem(QQuickItem* parent) : QQuickItem(parent) {
     setFlag(ItemHasContents, true);
     setImplicitSize(520.0, 260.0);
@@ -349,6 +360,15 @@ void GraphItem::setEdges(const QVariantList& edges) {
     update();
 }
 
+void GraphItem::setCategoryColors(const QVariantMap& colors) {
+    if (categoryColors_ == colors) {
+        return;
+    }
+    categoryColors_ = colors;
+    emit categoryColorsChanged();
+    update();
+}
+
 void GraphItem::setVisibleRect(QRectF rect) {
     rect = rect.normalized();
     if (visibleRect_ == rect) {
@@ -369,32 +389,23 @@ void GraphItem::rebuildNodeRecords() {
         record.id = map.value(QStringLiteral("id")).toULongLong();
         record.name = boundedText(map.value(QStringLiteral("name")).toString(), 48);
         record.type = boundedText(map.value(QStringLiteral("type")).toString(), 32);
-        record.header = record.name.isEmpty() ? QStringLiteral("node #%1").arg(record.id) : record.name;
-        record.detail = QStringLiteral("%1  (#%2)").arg(record.type, QString::number(record.id));
+        record.category = map.value(QStringLiteral("category")).toString();
+        record.header = record.name.isEmpty() ? record.type : record.name;
+        record.inputs = map.value(QStringLiteral("inputs")).toInt();
+        record.outputs = map.value(QStringLiteral("outputs")).toInt();
 
-        const QVariantMap parameters = map.value(QStringLiteral("params")).toMap();
-        int parameterCount = 0;
-        for (auto it = parameters.cbegin(); it != parameters.cend() && parameterCount < kMaxParametersPerNode;
-             ++it, ++parameterCount) {
-            record.parameters.push_back({boundedText(it.key(), 24), boundedText(parameterDisplayText(it.value()), 42)});
-        }
-        if (parameters.size() > kMaxParametersPerNode) {
-            record.parameters.push_back({QStringLiteral("..."), QStringLiteral("more parameters")});
-        }
-        record.rectangle = QRectF();
         nodeIndex_.insert(record.id, nodeRecords_.size());
         nodeRecords_.push_back(std::move(record));
     }
 
     const int columns =
-        nodeRecords_.isEmpty() ? 1 : std::max(1, std::min(4, int(std::ceil(std::sqrt(nodeRecords_.size())))));
+        nodeRecords_.isEmpty() ? 1 : std::max(1, std::min(8, int(std::ceil(std::sqrt(nodeRecords_.size())))));
     for (int i = 0; i < nodeRecords_.size(); ++i) {
         auto& record = nodeRecords_[i];
         const int column = i % columns;
         const int row = i / columns;
-        const qreal height = kNodeHeaderHeight + static_cast<qreal>(record.parameters.size()) * kNodeParameterHeight;
         record.rectangle = QRectF(kGraphMargin + column * (kNodeWidth + kNodeColumnGap),
-                                  kGraphMargin + row * (kNodeRowHeight + kNodeRowGap), kNodeWidth, height);
+                                  kGraphMargin + row * (kNodeHeight + kNodeRowGap), kNodeWidth, kNodeHeight);
     }
     updateImplicitSize();
 }
@@ -449,8 +460,7 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
         if (!bounds.normalized().adjusted(-6.0, -6.0, 6.0, 6.0).intersects(clip)) {
             continue;
         }
-        appendLine(frame.edges, source, destination, 3.0);
-        frame.visibleEdges.push_back({index, from, to, source, destination});
+        appendLine(frame.edges, source, destination, 1.25);
     }
     auto appendLabel = [&frame, &clip](QString key, QString text, QPointF position, QColor color) {
         if (frame.labels.size() < kMaxVisibleLabels &&
@@ -463,33 +473,29 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
         if (!node.rectangle.intersects(clip)) {
             continue;
         }
-        appendQuad(frame.bodies, node.rectangle);
+        QColor fill(categoryColors_.value(node.category).toString());
+        if (!fill.isValid())
+            fill = QColor(QStringLiteral("#59646f"));
+        const QColor text =
+            fill.lightnessF() > 0.62F ? QColor(QStringLiteral("#1c2025")) : QColor(QStringLiteral("#f1f4f7"));
+        appendColoredQuad(frame.bodies, node.rectangle, fill);
         appendBorder(frame.outlines, node.rectangle, 1.0);
-        appendLabel(QStringLiteral("node-header:%1").arg(i), node.header, node.rectangle.topLeft() + QPointF(10.0, 5.0),
-                    QColor(240, 242, 245));
-        appendLabel(QStringLiteral("node-detail:%1").arg(i), node.detail,
-                    node.rectangle.topLeft() + QPointF(10.0, 26.0), QColor(174, 183, 197));
-        for (int parameter = 0; parameter < node.parameters.size(); ++parameter) {
-            const auto& pair = node.parameters.at(parameter);
-            appendLabel(QStringLiteral("node-parameter:%1:%2").arg(i).arg(parameter),
-                        QStringLiteral("%1: %2").arg(pair.first, pair.second),
-                        node.rectangle.topLeft() + QPointF(10.0, 45.0 + parameter * kNodeParameterHeight),
-                        QColor(192, 200, 210));
-        }
-    }
-    for (const auto& visible : frame.visibleEdges) {
-        const auto& edge = edgeRecords_.at(visible.edge);
-        const QString text = QStringLiteral("#%1  %2:%3 -> %4:%5")
-                                 .arg(edge.id)
-                                 .arg(nodeRecords_.at(visible.from).name)
-                                 .arg(edge.fromPort)
-                                 .arg(nodeRecords_.at(visible.to).name)
-                                 .arg(edge.toPort);
-        appendLabel(QStringLiteral("edge:%1").arg(edge.id), boundedText(text, 80),
-                    (visible.source + visible.destination) * 0.5 + QPointF(5.0, -8.0), QColor(182, 212, 232));
+        const auto appendPorts = [&](int count, bool output) {
+            static constexpr QPointF ring[] = {{3, 0},  {2.12, 2.12},   {0, 3},  {-2.12, 2.12},
+                                               {-3, 0}, {-2.12, -2.12}, {0, -3}, {2.12, -2.12}};
+            for (int port = 0; port < count; ++port) {
+                const auto center = pointForPort(node.rectangle, port, output);
+                for (int segment = 0; segment < 8; ++segment)
+                    appendLine(frame.outlines, center + ring[segment], center + ring[(segment + 1) % 8], 1.0);
+            }
+        };
+        appendPorts(node.inputs, false);
+        appendPorts(node.outputs, true);
+        appendLabel(QStringLiteral("node-header:%1").arg(i), node.header, node.rectangle.topLeft() + QPointF(0.0, 2.0),
+                    text);
     }
     updateGeometry(scene->edges(), frame.edges);
-    updateGeometry(scene->bodies(), frame.bodies);
+    updateColoredGeometry(scene->bodies(), frame.bodies);
     updateGeometry(scene->outlines(), frame.outlines);
     if (frame.labels != scene->cachedLabels()) {
         auto nextLabels = makeLabelAtlas(window(), frame.labels);

@@ -131,9 +131,14 @@ The existing `Nemo` QML module owns the shared UI library alongside its panels:
 and `StudioComboBox.qml` require an explicit `theme`. Appearance defaults,
 validation, independent accent/category resets and persistence stay in the
 controller. `Main.qml` composes workspace navigation and settings; `Panel.qml`
-owns headers, context badges and descriptor-provided header tools. A panel may
-expose `headerPreferredHeight` for compact chrome. Keep panel-specific composition
-with its panel rather than adding panel-type switches or a second UI system.
+owns headers and context badges. Panel bodies declare a `theme` property, supplied
+by `Loader.setSource` before construction so nested shared controls never read
+an uninitialized theme. Other panel context bindings are supplied by `configureLoaded`.
+Panel-specific header controls live in the body's optional `headerTools` Component;
+`headerToolsFillWidth` requests the viewer's expanding header arrangement and
+`headerPreferredHeight` selects compact chrome. Registry `headerSource` is the
+alternative for externally supplied header controls. Keep these components with
+their panel; the shell has no panel-type switches.
 
 `Theme.qml` also owns pane minimums and splitter size, consumed by both
 `WorkspaceNode.qml` and `DockDrag.qml`: drop previews must predict the resulting
@@ -149,6 +154,15 @@ required for deviations. [#40](https://github.com/rgamevfx/nemo/issues/40) owns
 the shared shell/library; [#59](https://github.com/rgamevfx/nemo/issues/59) owns
 existing panel-content cutover. Shell evidence does not establish panel-content
 or complete-workflow parity.
+
+The #59 cutover removes temporary viewer-path, graph-edit-form and timeline-cache
+toolbars rather than keeping them behind compatibility menus. The prototype
+defines visible controls; unsupported actions remain disabled until their owning
+feature ticket implements them. Graph creation reads the production catalog and
+submits existing commands through its category menu. Native media verification
+uses the existing `--source` option and an explicit OCIO configuration; a test
+entry field is not the media-import workflow. GraphItem/TimelineItem consume
+plain presentation colors and records, never theme QObjects on the render thread.
 
 ### Add a command
 

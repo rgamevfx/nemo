@@ -1,14 +1,13 @@
 #pragma once
 
 #include <QHash>
-#include <QPair>
 #include <QQuickItem>
 #include <QRectF>
 #include <QSizeF>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 #include <QVector>
-#include <QtQml/qqmlregistration.h>
 
 namespace nemo::ui {
 
@@ -24,8 +23,8 @@ class GraphItem : public QQuickItem {
     QML_ELEMENT
     Q_PROPERTY(QVariantList nodes READ nodes WRITE setNodes NOTIFY nodesChanged)
     Q_PROPERTY(QVariantList edges READ edges WRITE setEdges NOTIFY edgesChanged)
+    Q_PROPERTY(QVariantMap categoryColors READ categoryColors WRITE setCategoryColors NOTIFY categoryColorsChanged)
     Q_PROPERTY(QRectF visibleRect READ visibleRect WRITE setVisibleRect NOTIFY visibleRectChanged)
-
 public:
     explicit GraphItem(QQuickItem* parent = nullptr);
     ~GraphItem() override;
@@ -33,12 +32,15 @@ public:
     void setNodes(const QVariantList& nodes);
     [[nodiscard]] QVariantList edges() const { return edgesProperty_; }
     void setEdges(const QVariantList& edges);
+    [[nodiscard]] QVariantMap categoryColors() const { return categoryColors_; }
+    void setCategoryColors(const QVariantMap& colors);
     [[nodiscard]] QRectF visibleRect() const { return visibleRect_; }
     void setVisibleRect(QRectF rect);
 
 signals:
     void nodesChanged();
     void edgesChanged();
+    void categoryColorsChanged();
     void visibleRectChanged();
 
 protected:
@@ -50,9 +52,10 @@ private:
         quint64 id{};
         QString name;
         QString type;
+        QString category;
         QString header;
-        QString detail;
-        QVector<QPair<QString, QString>> parameters;
+        int inputs{};
+        int outputs{};
         QRectF rectangle;
     };
     struct EdgeRecord {
@@ -69,6 +72,7 @@ private:
 
     QVariantList nodesProperty_;
     QVariantList edgesProperty_;
+    QVariantMap categoryColors_;
     QRectF visibleRect_;
     QVector<NodeRecord> nodeRecords_;
     QVector<EdgeRecord> edgeRecords_;

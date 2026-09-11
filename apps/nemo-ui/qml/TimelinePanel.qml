@@ -3,138 +3,358 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Nemo
 
-// Timeline chrome remains QML, while TimelineItem owns the dense ruler and
-// source-reference drawing/input surface. The playhead is a presentation
-// clock routed through the panel's resolved group; source timing edits still
-// use the existing controller command API.
+// Production timeline presentation. The native item draws bounded source
+// references; it is deliberately not an editorial occurrence model. Seeking,
+// source timing edits, cache admission and render history remain owned by the
+// existing routed controller.
 Pane {
     id: timelinePanel
     objectName: "timelinePanel"
+
     property string panelId: ""
     property string panelGroup: "A"
     property var panelState: ({})
     property var panelContext: ({})
     property var contextRouter: null
+    property var theme: null
+    property var workspace: null
+
     readonly property var controller: viewerController
     readonly property int timelineLength: controller.frameCount > 0 ? controller.frameCount : 240
     readonly property string selectedSource: timelineItem.selectedSource
-    readonly property var selectedClip: {
+    readonly property var sourceNames: {
+        var result = []
         for (var i = 0; i < controller.timelineClips.length; ++i) {
-            var candidate = controller.timelineClips[i]
-            if (candidate && candidate.source === selectedSource)
-                return candidate
+            var clip = controller.timelineClips[i]
+            if (clip)
+                result.push(String(clip.source || clip.id || "Source"))
         }
-        return null
+        return result
     }
     readonly property string resolvedGroup: panelContext && panelContext.resolvedGroup
                                            ? panelContext.resolvedGroup : panelGroup
     readonly property real routedClock: contextRouter && panelContext && panelContext.timelineClock !== undefined
                                         ? Number(panelContext.timelineClock) : controller.frame
-    readonly property bool targetAvailable: !contextRouter
-                                            || Boolean(panelContext && panelContext.timelineTarget)
-    readonly property string targetStatus: targetAvailable ? "Timeline target: " + (panelContext.timelineTarget || "available")
-                                                           : "Timeline target is unavailable"
+    readonly property int sourceRulerHeight: 28
+    readonly property int sourceRowPitch: 40
+
     padding: 0
-    font.pixelSize: 12
-    background: Rectangle { color: "#202020" }
+    font.pixelSize: theme ? theme.fontSize : 11
+    background: Rectangle { color: timelinePanel.theme ? timelinePanel.theme.background : "#181a1d" }
+
+    // Panel.qml loads this component into the shared compact panel header.
+    // The compact header mirrors the prototype affordance; unsupported native
+    // editor mutations remain visibly disabled until their owner is available.
+    property Component headerTools: Component {
+        Item {
+            id: timelineHeaderTools
+            implicitHeight: 24
+            implicitWidth: toolsRow.implicitWidth
+
+            property var theme: timelinePanel.theme
+
+            component GlyphButton: Button {
+                id: control
+                property string glyph: ""
+                property bool activeMode: false
+                implicitWidth: 24
+                implicitHeight: 24
+                width: 24
+                height: 24
+                padding: 0
+                flat: true
+                background: Rectangle {
+                    radius: timelinePanel.theme ? timelinePanel.theme.smallRadius : 4
+                    color: control.activeMode
+                           ? Qt.rgba((timelinePanel.theme ? timelinePanel.theme.accent : "#3485f6").r,
+                                     (timelinePanel.theme ? timelinePanel.theme.accent : "#3485f6").g,
+                                     (timelinePanel.theme ? timelinePanel.theme.accent : "#3485f6").b, 0.15)
+                           : control.hovered
+                             ? (timelinePanel.theme ? timelinePanel.theme.hover : "#343940")
+                             : "transparent"
+                    border.width: control.activeFocus ? 1 : 0
+                    border.color: timelinePanel.theme ? timelinePanel.theme.accent : "#3485f6"
+                    opacity: control.enabled ? 1 : 0.55
+                }
+                contentItem: Canvas {
+                    id: glyphCanvas
+                    anchors.fill: parent
+                    anchors.margins: 5
+                    antialiasing: true
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.reset()
+                        var muted = timelinePanel.theme ? timelinePanel.theme.muted : "#979ea8"
+                        var disabled = timelinePanel.theme ? timelinePanel.theme.disabled : "#626a75"
+                        var accent = timelinePanel.theme ? timelinePanel.theme.accent : "#3485f6"
+                        var text = timelinePanel.theme ? timelinePanel.theme.text : "#dce0e6"
+                        var foreground = !control.enabled ? disabled : control.activeMode ? accent
+                                                                                           : control.hovered ? text : muted
+                        ctx.strokeStyle = foreground
+                        ctx.fillStyle = foreground
+                        ctx.lineWidth = 1.25
+                        ctx.lineCap = "round"
+                        ctx.lineJoin = "round"
+                        var w = width
+                        var h = height
+                        var cx = w * 0.5
+                        var cy = h * 0.5
+                        if (control.glyph === "select") {
+                            ctx.beginPath()
+                            ctx.moveTo(w * .25, h * .14)
+                            ctx.lineTo(w * .72, h * .55)
+                            ctx.lineTo(w * .51, h * .58)
+                            ctx.lineTo(w * .62, h * .87)
+                            ctx.lineTo(w * .51, h * .91)
+                            ctx.lineTo(w * .39, h * .61)
+                            ctx.lineTo(w * .25, h * .75)
+                            ctx.closePath()
+                            ctx.fill()
+                        } else if (control.glyph === "ripple") {
+                            ctx.beginPath()
+                            ctx.moveTo(w * .18, h * .32)
+                            ctx.lineTo(w * .82, h * .32)
+                            ctx.moveTo(w * .18, h * .68)
+                            ctx.lineTo(w * .82, h * .68)
+                            ctx.moveTo(w * .18, h * .32)
+                            ctx.lineTo(w * .28, h * .22)
+                            ctx.moveTo(w * .18, h * .32)
+                            ctx.lineTo(w * .28, h * .42)
+                            ctx.moveTo(w * .82, h * .68)
+                            ctx.lineTo(w * .72, h * .58)
+                            ctx.moveTo(w * .82, h * .68)
+                            ctx.lineTo(w * .72, h * .78)
+                            ctx.stroke()
+                        } else if (control.glyph === "roll") {
+                            ctx.strokeRect(w * .12, h * .30, w * .30, h * .40)
+                            ctx.strokeRect(w * .58, h * .30, w * .30, h * .40)
+                            ctx.beginPath()
+                            ctx.moveTo(w * .42, cy)
+                            ctx.lineTo(w * .58, cy)
+                            ctx.stroke()
+                            ctx.beginPath()
+                            ctx.moveTo(w * .48, h * .42)
+                            ctx.lineTo(w * .42, cy)
+                            ctx.lineTo(w * .48, h * .58)
+                            ctx.moveTo(w * .52, h * .42)
+                            ctx.lineTo(w * .58, cy)
+                            ctx.lineTo(w * .52, h * .58)
+                            ctx.stroke()
+                        } else if (control.glyph === "slip") {
+                            ctx.strokeRect(w * .25, h * .27, w * .50, h * .46)
+                            ctx.beginPath()
+                            ctx.moveTo(w * .10, cy)
+                            ctx.lineTo(w * .36, cy)
+                            ctx.moveTo(w * .10, cy)
+                            ctx.lineTo(w * .20, h * .40)
+                            ctx.moveTo(w * .10, cy)
+                            ctx.lineTo(w * .20, h * .60)
+                            ctx.moveTo(w * .90, cy)
+                            ctx.lineTo(w * .64, cy)
+                            ctx.moveTo(w * .90, cy)
+                            ctx.lineTo(w * .80, h * .40)
+                            ctx.moveTo(w * .90, cy)
+                            ctx.lineTo(w * .80, h * .60)
+                            ctx.stroke()
+                        } else if (control.glyph === "slide") {
+                            ctx.beginPath()
+                            ctx.moveTo(w * .18, cy)
+                            ctx.lineTo(w * .82, cy)
+                            ctx.moveTo(w * .18, cy)
+                            ctx.lineTo(w * .30, h * .38)
+                            ctx.moveTo(w * .18, cy)
+                            ctx.lineTo(w * .30, h * .62)
+                            ctx.moveTo(w * .82, cy)
+                            ctx.lineTo(w * .70, h * .38)
+                            ctx.moveTo(w * .82, cy)
+                            ctx.lineTo(w * .70, h * .62)
+                            ctx.stroke()
+                            ctx.strokeRect(w * .40, h * .32, w * .20, h * .36)
+                        } else if (control.glyph === "blade") {
+                            ctx.beginPath()
+                            ctx.moveTo(w * .24, h * .78)
+                            ctx.lineTo(w * .72, h * .22)
+                            ctx.stroke()
+                            ctx.beginPath()
+                            ctx.arc(w * .28, h * .75, w * .14, 0, Math.PI * 2)
+                            ctx.stroke()
+                            ctx.beginPath()
+                            ctx.moveTo(w * .57, h * .37)
+                            ctx.lineTo(w * .77, h * .57)
+                            ctx.stroke()
+                        } else if (control.glyph === "snap") {
+                            ctx.beginPath()
+                            ctx.moveTo(w * .18, cy)
+                            ctx.lineTo(w * .82, cy)
+                            ctx.moveTo(cx, h * .18)
+                            ctx.lineTo(cx, h * .82)
+                            ctx.stroke()
+                            ctx.beginPath()
+                            ctx.arc(cx, cy, w * .18, 0, Math.PI * 2)
+                            ctx.stroke()
+                        } else if (control.glyph === "link") {
+                            ctx.strokeRect(w * .12, h * .42, w * .42, h * .27)
+                            ctx.strokeRect(w * .46, h * .31, w * .42, h * .27)
+                            ctx.beginPath()
+                            ctx.moveTo(w * .38, h * .55)
+                            ctx.lineTo(w * .62, h * .45)
+                            ctx.stroke()
+                        } else if (control.glyph === "frame") {
+                            ctx.beginPath()
+                            ctx.moveTo(w * .18, h * .35)
+                            ctx.lineTo(w * .18, h * .18)
+                            ctx.lineTo(w * .35, h * .18)
+                            ctx.moveTo(w * .65, h * .18)
+                            ctx.lineTo(w * .82, h * .18)
+                            ctx.lineTo(w * .82, h * .35)
+                            ctx.moveTo(w * .18, h * .65)
+                            ctx.lineTo(w * .18, h * .82)
+                            ctx.lineTo(w * .35, h * .82)
+                            ctx.moveTo(w * .65, h * .82)
+                            ctx.lineTo(w * .82, h * .82)
+                            ctx.lineTo(w * .82, h * .65)
+                            ctx.stroke()
+                            ctx.beginPath()
+                            ctx.arc(cx, cy, 1.35, 0, Math.PI * 2)
+                            ctx.fill()
+                        } else if (control.glyph === "media") {
+                            ctx.strokeRect(w * .14, h * .21, w * .72, h * .58)
+                            ctx.beginPath()
+                            ctx.moveTo(w * .25, h * .35)
+                            ctx.lineTo(w * .75, h * .35)
+                            ctx.moveTo(w * .25, h * .52)
+                            ctx.lineTo(w * .62, h * .52)
+                            ctx.moveTo(w * .25, h * .67)
+                            ctx.lineTo(w * .50, h * .67)
+                            ctx.stroke()
+                        } else if (control.glyph === "menu") {
+                            ctx.beginPath()
+                            ctx.arc(cx - 4.1, cy, 1.2, 0, Math.PI * 2)
+                            ctx.arc(cx, cy, 1.2, 0, Math.PI * 2)
+                            ctx.arc(cx + 4.1, cy, 1.2, 0, Math.PI * 2)
+                            ctx.fill()
+                        }
+                    }
+                    Component.onCompleted: requestPaint()
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                }
+                Connections {
+                    target: timelinePanel.theme
+                    function onTextChanged() { glyphCanvas.requestPaint() }
+                    function onMutedChanged() { glyphCanvas.requestPaint() }
+                    function onDisabledChanged() { glyphCanvas.requestPaint() }
+                    function onAccentChanged() { glyphCanvas.requestPaint() }
+                    function onHoverChanged() { glyphCanvas.requestPaint() }
+                    function onSmallRadiusChanged() { glyphCanvas.requestPaint() }
+                }
+                onGlyphChanged: glyphCanvas.requestPaint()
+                onActiveModeChanged: glyphCanvas.requestPaint()
+                onHoveredChanged: glyphCanvas.requestPaint()
+                onEnabledChanged: glyphCanvas.requestPaint()
+                ToolTip.visible: hovered
+                ToolTip.delay: 450
+                ToolTip.text: ""
+            }
+
+            Row {
+                id: toolsRow
+                anchors.fill: parent
+                spacing: 2
+                GlyphButton {
+                    id: toolButton
+                    objectName: "timelineToolButton"
+                    glyph: "select"
+                    enabled: false
+                    ToolTip.text: "Editing tools are not available in the native timeline yet"
+                    Accessible.name: "Editing tool menu"
+                    onClicked: toolMenu.open()
+                }
+                GlyphButton {
+                    id: snapButton
+                    objectName: "timelineSnapButton"
+                    glyph: "snap"
+                    enabled: false
+                    ToolTip.text: "Timeline snapping is not available in the native timeline yet"
+                    Accessible.name: "Toggle timeline snapping"
+                }
+                GlyphButton {
+                    id: linkButton
+                    objectName: "timelineLinkButton"
+                    glyph: "link"
+                    enabled: false
+                    ToolTip.text: "Linked selection is not available in the native timeline yet"
+                    Accessible.name: "Toggle linked selection"
+                }
+                GlyphButton {
+                    id: frameButton
+                    objectName: "timelineFrameButton"
+                    glyph: "frame"
+                    enabled: false
+                    ToolTip.text: "Frame controls are available from the timeline ruler"
+                    Accessible.name: "Frame timeline"
+                }
+                GlyphButton {
+                    id: mediaButton
+                    objectName: "timelineMediaButton"
+                    glyph: "media"
+                    enabled: false
+                    ToolTip.text: "Media insertion is not available in the native timeline yet"
+                    Accessible.name: "Open media bin"
+                }
+                GlyphButton {
+                    id: menuButton
+                    objectName: "timelineMenuButton"
+                    glyph: "menu"
+                    ToolTip.text: "Timeline editor menu"
+                    Accessible.name: "Timeline editor menu"
+                    onClicked: toolMenu.open()
+                }
+            }
+
+            Menu {
+                id: toolMenu
+                objectName: "timelineToolMenu"
+                title: "Editing tool"
+                MenuItem {
+                    text: "Select                         V"
+                    enabled: false
+                }
+                MenuItem {
+                    text: "Ripple                         R"
+                    enabled: false
+                }
+                MenuItem {
+                    text: "Roll                           T"
+                    enabled: false
+                }
+                MenuItem {
+                    text: "Slip                           Y"
+                    enabled: false
+                }
+                MenuItem {
+                    text: "Slide                          U"
+                    enabled: false
+                }
+                MenuItem {
+                    text: "Blade                          B"
+                    enabled: false
+                }
+            }
+        }
+    }
 
     function updateClock(value) {
+        var frame = Math.round(value)
         if (contextRouter && resolvedGroup.length > 0)
-            contextRouter.setGroupContext(resolvedGroup, {timelineClock: Math.round(value)})
-        controller.setFrame(Math.round(value))
+            contextRouter.setGroupContext(resolvedGroup, {timelineClock: frame})
+        controller.setFrame(frame)
     }
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 0
+        spacing: 2
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 70
-            color: "#303030"
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 5
-                spacing: 3
-                RowLayout {
-                    Layout.fillWidth: true
-                    Text {
-                        objectName: "timelineState"
-                        font.pixelSize: 12
-                        text: "Frame " + timelinePanel.routedClock + " · " + controller.renderState
-                              + " · " + timelinePanel.targetStatus
-                        color: timelinePanel.targetAvailable
-                               ? (controller.outdated ? "#e7ba76" : "#c8d3df") : "#efb0b0"
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-                    Button {
-                        implicitHeight: 26
-                        objectName: "timelineUndo"
-                        text: "Undo"
-                        enabled: controller.canUndo
-                        onClicked: controller.undo()
-                    }
-                    Button {
-                        implicitHeight: 26
-                        objectName: "timelineRedo"
-                        text: "Redo"
-                        enabled: controller.canRedo
-                        onClicked: controller.redo()
-                    }
-                    Button {
-                        implicitHeight: 26
-                        objectName: "timelineCancel"
-                        text: "Cancel"
-                        enabled: controller.pending || controller.queued > 0
-                        onClicked: controller.cancelRender()
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-                    Text { text: "Cache range"; color: "#aeaeae" }
-                    SpinBox {
-                        implicitHeight: 26
-                        id: rangeFirst
-                        objectName: "timelineRangeFirst"
-                        from: 0
-                        to: Math.max(0, timelinePanel.timelineLength - 1)
-                        value: 0
-                        editable: true
-                        implicitWidth: 78
-                    }
-                    Text { text: "–"; color: "#858585" }
-                    SpinBox {
-                        implicitHeight: 26
-                        id: rangeLast
-                        objectName: "timelineRangeLast"
-                        from: 0
-                        to: Math.max(0, timelinePanel.timelineLength - 1)
-                        value: Math.min(47, Math.max(0, timelinePanel.timelineLength - 1))
-                        editable: true
-                        implicitWidth: 78
-                    }
-                    Button {
-                        implicitHeight: 26
-                        objectName: "timelineCacheRange"
-                        text: "Cache requested range"
-                        onClicked: controller.requestRange(rangeFirst.value, rangeLast.value)
-                    }
-                    Text {
-                        objectName: "timelineSchedulerCounts"
-                        text: "queued " + controller.queued + " · dropped " + controller.dropped
-                              + " · stale " + controller.staleRejected + " · request completions " + controller.completed
-                              + " · cache queued " + controller.cacheQueued + " · cache dropped " + controller.cacheDropped
-                              + " · stored " + controller.cachePublished + " · cache errors " + controller.cacheErrors
-                        color: "#8e9cab"
-                        font.pixelSize: 11
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-                }
-            }
-        }
 
         Flickable {
             id: timelineScroll
@@ -143,118 +363,68 @@ Pane {
             Layout.fillHeight: true
             Layout.minimumHeight: 24
             clip: true
-            contentWidth: timelineItem.width
-            contentHeight: timelineItem.implicitHeight
+            contentWidth: timelineContent.width
+            contentHeight: timelineContent.height
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
-            ScrollBar.horizontal: ScrollBar {}
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
 
-            TimelineItem {
-                id: timelineItem
-                objectName: "timelineRuler"
-                width: Math.max(timelineScroll.width - 8, 600)
-                height: implicitHeight
-                clips: controller.timelineClips
-                frame: timelinePanel.routedClock
-                frameCount: controller.frameCount
-                viewportY: timelineScroll.contentY
-                viewportHeight: timelineScroll.height
-                onFrameSelected: function(frameValue) { timelinePanel.updateClock(frameValue) }
-            }
-        }
+            Item {
+                id: timelineContent
+                width: Math.max(timelineScroll.width, 440)
+                height: timelineItem.implicitHeight
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 56
-            color: "#292929"
-            border.color: "#414b55"
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 5
-                spacing: 3
-                RowLayout {
-                    Layout.fillWidth: true
+                TimelineItem {
+                    id: timelineItem
+                    objectName: "timelineRuler"
+                    anchors.fill: parent
+                    clips: controller.timelineClips
+                    frame: timelinePanel.routedClock
+                    frameCount: controller.frameCount
+                    viewportY: timelineScroll.contentY
+                    viewportHeight: timelineScroll.height
+                    backgroundColor: timelinePanel.theme ? timelinePanel.theme.background : "#181a1d"
+                    panelColor: timelinePanel.theme ? timelinePanel.theme.panel : "#1e2023"
+                    headerColor: timelinePanel.theme ? timelinePanel.theme.header : "#212428"
+                    borderColor: timelinePanel.theme ? timelinePanel.theme.border : "#30343a"
+                    accentColor: timelinePanel.theme ? timelinePanel.theme.accent : "#3485f6"
+                    raisedColor: timelinePanel.theme ? timelinePanel.theme.raised : "#282c31"
+                    onFrameSelected: function(frameValue) { timelinePanel.updateClock(frameValue) }
+                }
+
+                Repeater {
+                    model: timelinePanel.sourceNames
                     Text {
-                        objectName: "timelineSelectedSource"
-                        font.pixelSize: 12
-                        text: selectedSource.length > 0 ? "Selected source: " + selectedSource : "No source selected"
-                        color: "#e5e9ed"
-                        font.bold: true
+                        objectName: "timelineSourceLabel_" + index
+                        x: 7
+                        y: timelinePanel.sourceRulerHeight + index * timelinePanel.sourceRowPitch + 5
+                        width: 118
+                        height: 18
+                        text: modelData
+                        color: timelinePanel.theme ? timelinePanel.theme.text : "#dce0e6"
+                        font.pixelSize: timelinePanel.theme ? timelinePanel.theme.fontSize : 11
                         elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-                    Text {
-                        objectName: "timelineSelectedCoverage"
-                        text: selectedClip ? (selectedClip.end > selectedClip.start ? "coverage [" + selectedClip.start + "–" + selectedClip.end + ")" : "coverage unknown") : ""
-                        color: "#a9b6c3"
-                        font.pixelSize: 11
+                        verticalAlignment: Text.AlignVCenter
                     }
                 }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
+
+                Repeater {
+                    model: 9
                     Text {
-                        text: selectedClip ? ("source frame " + (selectedClip.sourceFrame >= 0 ? selectedClip.sourceFrame : "unknown")
-                                               + " · offset " + selectedClip.offset + " · step " + selectedClip.step) : "Open a source in the Viewer to create an authored source strip."
-                        color: "#a9b6c3"
-                        font.pixelSize: 11
+                        x: 132 + (timelineContent.width - 132) * index / 8 - 24
+                        y: 4
+                        width: 48
+                        height: 16
+                        text: Math.round((timelinePanel.timelineLength - 1) * index / 8)
+                        color: timelinePanel.theme ? timelinePanel.theme.muted : "#979ea8"
+                        font.pixelSize: 9
+                        horizontalAlignment: Text.AlignHCenter
                         elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-                    Button {
-                        objectName: "timelineSlipMinus"
-                        text: "Slip −1"
-                        enabled: selectedSource.length > 0
-                        implicitHeight: 26
-                        onClicked: controller.slipTimelineClip(selectedSource, -1)
-                    }
-                    Button {
-                        objectName: "timelineSlipPlus"
-                        text: "Slip +1"
-                        enabled: selectedSource.length > 0
-                        implicitHeight: 26
-                        onClicked: controller.slipTimelineClip(selectedSource, 1)
-                    }
-                    Button {
-                        objectName: "timelineRetime1"
-                        text: "Rate 1"
-                        enabled: selectedSource.length > 0
-                        implicitHeight: 26
-                        onClicked: controller.retimeTimelineClip(selectedSource, 1)
-                    }
-                    Button {
-                        objectName: "timelineRetime2"
-                        text: "Rate 2"
-                        enabled: selectedSource.length > 0
-                        implicitHeight: 26
-                        onClicked: controller.retimeTimelineClip(selectedSource, 2)
-                    }
-                    Button {
-                        objectName: "timelineRetimeReverse"
-                        text: "Reverse"
-                        enabled: selectedSource.length > 0
-                        implicitHeight: 26
-                        onClicked: controller.retimeTimelineClip(selectedSource, -1)
                     }
                 }
             }
         }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 24
-            color: "#252525"
-            Text {
-                objectName: "timelineStatus"
-                anchors.fill: parent
-                anchors.margins: 5
-                text: controller.cacheError.length > 0 ? controller.cacheError
-                      : (controller.error.length > 0 ? controller.error : timelinePanel.targetStatus)
-                color: controller.cacheError.length > 0 || controller.error.length > 0 || !timelinePanel.targetAvailable
-                       ? "#efb0b0" : "#8f9aa4"
-                font.pixelSize: 11
-                elide: Text.ElideRight
-            }
-        }
+
     }
 }

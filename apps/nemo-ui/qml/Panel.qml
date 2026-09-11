@@ -92,9 +92,9 @@ Rectangle {
         if (!item)
             return
         if ("panelId" in item)
-            item.panelId = panelRoot.panelId
+            item.panelId = Qt.binding(function() { return panelRoot.panelId })
         if ("panelGroup" in item)
-            item.panelGroup = panelRoot.panelGroup
+            item.panelGroup = Qt.binding(function() { return panelRoot.panelGroup })
         if ("panelState" in item)
             item.panelState = Qt.binding(function() { return panelRoot.panelState })
         if ("panelContext" in item)
@@ -103,7 +103,26 @@ Rectangle {
             item.contextRouter = panelRoot.contextRouter
         if ("workspace" in item)
             item.workspace = panelRoot.workspace
+        if ("theme" in item)
+            item.theme = Qt.binding(function() { return panelRoot.theme })
     }
+
+    function configureHeader() {
+        headerTools.source = ""
+        headerTools.sourceComponent = null
+        if (bodyLoader.item && bodyLoader.item.headerTools !== undefined)
+            headerTools.sourceComponent = bodyLoader.item.headerTools
+        else if (available && descriptor.headerSource)
+            headerTools.setSource(descriptor.headerSource, {theme: panelRoot.theme})
+    }
+
+    function loadBody() {
+        var nextSource = available ? Qt.resolvedUrl(descriptor.source) : ""
+        if (String(bodyLoader.source) !== String(nextSource))
+            bodyLoader.setSource(nextSource, nextSource ? {theme: panelRoot.theme} : {})
+    }
+
+    onDescriptorChanged: Qt.callLater(loadBody)
 
     // Coalesce dependent ID/group/state bindings before hydrating the router.
     onPanelIdChanged: Qt.callLater(syncRouter)
@@ -114,6 +133,7 @@ Rectangle {
             contextRouter.setActivePanel(panelId)
     }
     Component.onCompleted: {
+        loadBody()
         Qt.callLater(syncRouter)
         if (contextRouter && panelId.length > 0 && visible)
             contextRouter.setActivePanel(panelId)
@@ -171,7 +191,7 @@ Rectangle {
                     implicitHeight: 24
                     font.pixelSize: 12
                     Layout.maximumWidth: Math.max(0, header.width - bindingButton.implicitWidth
-                                                  - (headerTools.visible ? headerTools.implicitWidth : 0) - 8)
+                                                  - (headerTools.visible && !headerTools.fillHeader ? headerTools.implicitWidth : 0) - 8)
                     text: panelRoot.title
                     background: Rectangle {
                         radius: panelRoot.theme ? panelRoot.theme.smallRadius : 4
@@ -301,16 +321,19 @@ Rectangle {
                 }
 
                 Item {
-                    Layout.fillWidth: true
+                    Layout.fillWidth: !headerTools.fillHeader
                     Layout.fillHeight: true
                 }
 
                 Loader {
                     id: headerTools
+                    readonly property bool fillHeader: bodyLoader.item
+                                                       && bodyLoader.item.headerToolsFillWidth === true
+                    Layout.preferredWidth: fillHeader ? 0 : implicitWidth
+                    Layout.minimumWidth: 0
+                    Layout.fillWidth: fillHeader
                     Layout.fillHeight: true
-                    visible: panelRoot.available && panelRoot.descriptor.headerSource
-                             && panelRoot.descriptor.headerSource.length > 0
-                    source: visible ? panelRoot.descriptor.headerSource : ""
+                    visible: item !== null
                     onLoaded: panelRoot.configureLoaded(item)
                 }
             }
@@ -324,8 +347,10 @@ Rectangle {
                 id: bodyLoader
                 anchors.fill: parent
                 active: panelRoot.available
-                source: panelRoot.available ? panelRoot.descriptor.source : ""
-                onLoaded: panelRoot.configureLoaded(item)
+                onLoaded: {
+                    panelRoot.configureLoaded(item)
+                    panelRoot.configureHeader()
+                }
             }
 
             Loader {

@@ -1,0 +1,1430 @@
+{
+  "schema": 1,
+  "issue": 59,
+  "recorded_at_utc": "2026-09-11T16:29:56.004821+00:00",
+  "branch": "issue/59-production-panel-cutover",
+  "base_commit": "101de516273e407d40a1c39f95142be7a42a2781",
+  "implementation_commit": "Containing Git commit versions this record. Owner appearance/interaction approval remains pending.",
+  "source_sha256": {
+    "apps/nemo-ui/GraphItem.cpp": "10034520052771f335108752dfb86b6dd3113b38c2337f32fbfc6aa76b445f4c",
+    "apps/nemo-ui/GraphItem.hpp": "a76ae8c6e0990e7fb8f3b9af807897c32f23b9dc4c38ba0245eb3b3fe3dbca37",
+    "apps/nemo-ui/TimelineItem.cpp": "1ddd9f6dcdade86f97f17371a915acc8ff81e6475e609c7f29b0274406e962c7",
+    "apps/nemo-ui/TimelineItem.hpp": "dd01099cd0a6defb9706e275f64d8febc0d506eb197b340887ed539f14c0eed2",
+    "apps/nemo-ui/qml/GraphPanel.qml": "db69be2ae1c183e8962fdc4a0f82a6295e84a065d2f9f77f8d3081dc94140234",
+    "apps/nemo-ui/qml/Panel.qml": "07de89c13367a98fe7ea63eb6cc64a2126b86f6641aa6b6ce4d74833e0f80747",
+    "apps/nemo-ui/qml/TimelinePanel.qml": "1089d5a21b6feab84a7928855b8d81fc57030de7548f4639e492be577e71f4b7",
+    "apps/nemo-ui/qml/ViewerPanel.qml": "e61ea594150edb935c8f53719f34f7c23cbb245659343e9a5f41e6e18e485341",
+    "docs/agents/ownership.md": "e553cb082712a4b3ba90329131851bd6a8daed75ffc11446730557322043fd53",
+    "tests/PanelContextUiTests.cpp": "f7a6b4aeabdcb141d5899876365ba5af7c73fe472d91fdf53fd46f22feed6f08",
+    "tests/WorkspaceDragTests.cpp": "997ee87bf30c0f4851f5661eeac543a5ba21165afb3fa8ded567418302ae2d09"
+  },
+  "scope": "Normal production graph/viewer/timeline presentation cutover, not full compositor/editor parity. Existing session/history/router/rendering owners retained.",
+  "owner_clarification": {
+    "url": "https://github.com/rgamevfx/nemo/issues/59#issuecomment-5636979290",
+    "decision": "Remove temporary test controls, not preserve them in popups. Prototype controls define the visible contract. Unsupported future actions disabled. Existing --source supplies real media for verification."
+  },
+  "removed": [
+    "Viewer media-path input/Load popup",
+    "Graph add-name/connection-port/parameter/output/playhead forms and temporary history buttons",
+    "Timeline cache-range/counters/source slip-rate forms and permanent debug/status chrome",
+    "No legacy shell switch or copied prototype authoritative models"
+  ],
+  "migrated_controls": [
+    {
+      "surface": "Viewer",
+      "implemented": "Compact target/role menu, shared display combo arrangement, narrow second-row transport, editable frame, first/previous/next seeking, real fit/50%/100% zoom and pan over actual ViewerItem. Display settings read workspace panel state, without a second writable local model."
+    },
+    {
+      "surface": "Graph",
+      "implemented": "Reference Frame all/Tools/zoom header; real catalog category creation through existing commands; Root breadcrumb, 24px reference grid, native 112x28 category-colored nodes, contrast labels, straight connections and port dots. Frame all remains disabled until #44."
+    },
+    {
+      "surface": "Timeline",
+      "implemented": "Reference compact glyph header; native source-ruler seeking and source selection. Editorial glyphs disabled. Source references are not represented as authored editorial occurrences."
+    },
+    {
+      "surface": "Shared shell",
+      "implemented": "Theme supplied before QML construction; panel-local headerTools Component/headerToolsFillWidth; reactive panel IDs/groups preserve actions across workspace switches. Existing registry/docking/persistence/router remain authoritative."
+    }
+  ],
+  "future_ownership": [
+    {
+      "tickets": [
+        41
+      ],
+      "remaining": "Routing semantic review; groups/roles/pinning retained, not independent output rendering."
+    },
+    {
+      "tickets": [
+        44,
+        49
+      ],
+      "remaining": "Graph authored layout, pan/zoom/framing, selection/deletion, wiring/reroutes, subnets/navigation."
+    },
+    {
+      "tickets": [
+        46
+      ],
+      "remaining": "Schema-driven parameter inspectors."
+    },
+    {
+      "tickets": [
+        47
+      ],
+      "remaining": "Independent viewer destinations/targets, playback, marks/loops, authoritative timecode, layer/channel processing. Those controls are visibly unavailable; end-frame is unavailable when media length is unknown. Existing unknown-length preview range remains 0..239."
+    },
+    {
+      "tickets": [
+        43
+      ],
+      "remaining": "Real Media Bin/import/probing UI; no fixture catalog or viewer path entry."
+    },
+    {
+      "tickets": [
+        50
+      ],
+      "remaining": "Animation panel."
+    },
+    {
+      "tickets": [
+        53,
+        54,
+        52
+      ],
+      "remaining": "Authored editorial sequences/occurrences, full timeline gestures, assembly and audio; native drawing still shows real source references."
+    }
+  ],
+  "prototype": {
+    "inventory": "docs/evidence/issue25-prototype-acceptance-v1.md",
+    "archive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+    "manifest": "docs/evidence/assets/issue25-prototype-reference-manifest.json",
+    "head": "76071624aebd6577ca613a9d3322f535fd80f399",
+    "source_matches": [
+      {
+        "path": "apps/nemo-ui/qml/AnimationHeaderTools.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/AnimationPanel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/DockDrag.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/FrameRuler.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/GraphPanel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/Main.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/MediaBinPanel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/MediaCatalog.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/Panel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/PanelDragHandler.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/ParametersPanel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/StudioComboBox.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/StudioModel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/Theme.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/TimelineHeaderTools.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/TimelineModel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/TimelinePanel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/TransportButton.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/ViewerPanel.qml",
+        "matches": true
+      },
+      {
+        "path": "apps/nemo-ui/qml/WorkspaceNode.qml",
+        "matches": true
+      }
+    ],
+    "reference_accounting": [
+      {
+        "reference": "animation-curves.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-empty.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-narrow.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-overhaul-curves.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-overhaul-isolated.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-overhaul-key-edit.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-overhaul-narrow-paper.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-overhaul-narrow.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-overhaul-track.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-overhaul-workspace.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-repaired-curves.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "animation-track.png",
+        "accounting": "Future Animation surface; not registered or faked by this cutover",
+        "owners": [
+          50,
+          48
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "compact-category-nodes.png",
+        "accounting": "112x28 native nodes, category palette and appearance settings exercised; real document differs from prototype fixtures",
+        "owners": [
+          59,
+          44
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "compact-docking-rearranged.png",
+        "accounting": "Native header/title center-tab, edge-tile and Escape gestures retained; paired live reference captures",
+        "owners": [
+          59,
+          40
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "compact-viewer-docking.png",
+        "accounting": "Native header/title center-tab, edge-tile and Escape gestures retained; paired live reference captures",
+        "owners": [
+          59,
+          40
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "graph-behaviors.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "graph-reroutes.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-dense-scrolled.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-dense.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-grid.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-list.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-narrow.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-paper.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-search.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-smart-bin.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-source-view.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-timeline-drag.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-two-viewers.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "media-workspace.png",
+        "accounting": "Future Media Bin/import surface; no fixture catalog copied",
+        "owners": [
+          43,
+          47,
+          52,
+          54
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "node-category-settings.png",
+        "accounting": "112x28 native nodes, category palette and appearance settings exercised; real document differs from prototype fixtures",
+        "owners": [
+          59,
+          44
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "node-delete-selection.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "node-insert-after-selection.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "node-last-click-placement.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "node-tools-menu.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "pipe-hover-destination.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "pipe-hover-source.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "subnet-inside.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "subnet-parent.png",
+        "accounting": "Graph category creation/compact drawing ported; full selection/wiring/reroute/subnet interaction remains with graph feature tickets",
+        "owners": [
+          44,
+          49
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "timeline-dense-scrolled.png",
+        "accounting": "Header/ruler density compared; authored editorial clips/track operations remain unimplemented, real source strips retained",
+        "owners": [
+          53,
+          54,
+          52
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "timeline-dense.png",
+        "accounting": "Header/ruler density compared; authored editorial clips/track operations remain unimplemented, real source strips retained",
+        "owners": [
+          53,
+          54,
+          52
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "timeline-drag-preview.png",
+        "accounting": "Header/ruler density compared; authored editorial clips/track operations remain unimplemented, real source strips retained",
+        "owners": [
+          53,
+          54,
+          52
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "timeline-full.png",
+        "accounting": "Header/ruler density compared; authored editorial clips/track operations remain unimplemented, real source strips retained",
+        "owners": [
+          53,
+          54,
+          52
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "timeline-media.png",
+        "accounting": "Header/ruler density compared; authored editorial clips/track operations remain unimplemented, real source strips retained",
+        "owners": [
+          53,
+          54,
+          52
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "timeline-narrow.png",
+        "accounting": "Header/ruler density compared; authored editorial clips/track operations remain unimplemented, real source strips retained",
+        "owners": [
+          53,
+          54,
+          52
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "timeline-paper.png",
+        "accounting": "Header/ruler density compared; authored editorial clips/track operations remain unimplemented, real source strips retained",
+        "owners": [
+          53,
+          54,
+          52
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "timeline-workspace.png",
+        "accounting": "Header/ruler density compared; authored editorial clips/track operations remain unimplemented, real source strips retained",
+        "owners": [
+          53,
+          54,
+          52
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "viewer-depth.png",
+        "accounting": "Layer/depth preview unavailable; visible layer/channel controls disabled",
+        "owners": [
+          47
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "viewer-dropdown.png",
+        "accounting": "Compact header, target roles, display combos, seek ruler and narrow transport compared; playback/marks/timecode unavailable",
+        "owners": [
+          59,
+          41,
+          47
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "viewer-narrow.png",
+        "accounting": "Compact header, target roles, display combos, seek ruler and narrow transport compared; playback/marks/timecode unavailable",
+        "owners": [
+          59,
+          41,
+          47
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "viewer-role-menu.png",
+        "accounting": "Compact header, target roles, display combos, seek ruler and narrow transport compared; playback/marks/timecode unavailable",
+        "owners": [
+          59,
+          41,
+          47
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "viewer-wide.png",
+        "accounting": "Compact header, target roles, display combos, seek ruler and narrow transport compared; playback/marks/timecode unavailable",
+        "owners": [
+          59,
+          41,
+          47
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workflow-catalog.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workflow-final.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workflow-narrow.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workflow-packed.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workflow-placement.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workflow-tools.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workspace-accumulation.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workspace-comp.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workspace-narrow.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      },
+      {
+        "reference": "workspace-paper.png",
+        "accounting": "Shared chrome/themes and supported-panel layouts compared; full Parameters/Animation/Media workflows stay with their owners",
+        "owners": [
+          59,
+          40,
+          43,
+          44,
+          46,
+          50
+        ],
+        "acceptance": "No owner approval inferred; immutable original remains archived in #25."
+      }
+    ]
+  },
+  "comparison": {
+    "viewports": [
+      [
+        1568,
+        926
+      ],
+      [
+        960,
+        640
+      ]
+    ],
+    "dpr": 1,
+    "requested_font": "Inter",
+    "resolved_font": "Noto Sans Regular (fc-match Inter)",
+    "themes": [
+      "Graphite",
+      "Slate",
+      "Paper"
+    ],
+    "measured_reference_panes": [
+      {
+        "size": "full",
+        "panes": {
+          "viewer": {
+            "enabled": true,
+            "height": 623.52,
+            "visible": true,
+            "width": 772,
+            "x": 8,
+            "y": 44
+          },
+          "nodegraph": {
+            "enabled": true,
+            "height": 623.52,
+            "visible": true,
+            "width": 772,
+            "x": 788,
+            "y": 44
+          },
+          "timeline": {
+            "enabled": true,
+            "height": 242.48000000000002,
+            "visible": true,
+            "width": 1552,
+            "x": 8,
+            "y": 675.52
+          }
+        }
+      },
+      {
+        "size": "narrow",
+        "panes": {
+          "viewer": {
+            "enabled": true,
+            "height": 417.59999999999997,
+            "visible": true,
+            "width": 468,
+            "x": 8,
+            "y": 44
+          },
+          "nodegraph": {
+            "enabled": true,
+            "height": 417.59999999999997,
+            "visible": true,
+            "width": 468,
+            "x": 484,
+            "y": 44
+          },
+          "timeline": {
+            "enabled": true,
+            "height": 162.40000000000003,
+            "visible": true,
+            "width": 944,
+            "x": 8,
+            "y": 469.59999999999997
+          }
+        }
+      }
+    ],
+    "arrangement": "Live prototype Edit workspace rearranged through existing operations to supported viewer/graph/timeline arrangement: .72 vertical/.5 horizontal. Measured settled geometry matches production. Original Comp/full/narrow references retained separately; archive unchanged.",
+    "images": "comparison-<theme>-<full|narrow>-pair.png: prototype left, production right. 50% overlay and absolute RGB diff alongside. Real media/document/time differ from prototype fixtures; no pixel threshold or agent baseline approval.",
+    "final_source_images": [
+      "production-normal-startup.png",
+      "production-next-frame.png",
+      "production-minimum-viewer.png",
+      "production-graphite-full.png",
+      "production-graphite-narrow.png",
+      "production-slate-full.png",
+      "production-slate-narrow.png",
+      "production-paper-full.png",
+      "production-paper-narrow.png"
+    ],
+    "intermediate_images": "Other menu/focus/docking/recovery screenshots retained during integration document exercised interactions, not independently approved image baselines."
+  },
+  "native_environment": {
+    "platform": "Qt 6.4.2 native Wayland on COSMIC",
+    "renderer": "Production Vulkan ViewerRuntime/ViewerItem; prototype software renderer",
+    "gpu": "NVIDIA GeForce GTX 1070",
+    "driver": "580.173.02",
+    "capture": "QQuickWindow::grabWindow in actual packaged app via temporary LD_PRELOAD Qt driver; native QTest mouse/key input, no alternate QML harness or mocked output.",
+    "window_sizing": "Normal compositor startup 1274x687; temporary Qt.Tool flag in driver only permits matched 1568x926/960x640. Application flags unchanged.",
+    "settings": "Isolated /tmp/nemo59-config; user settings untouched.",
+    "media": "Retained FFV1 file genuinely decoded and presented; not a prototype image."
+  },
+  "commands": [
+    "clang-format -i apps/nemo-ui/GraphItem.cpp apps/nemo-ui/GraphItem.hpp apps/nemo-ui/TimelineItem.cpp apps/nemo-ui/TimelineItem.hpp tests/WorkspaceDragTests.cpp tests/PanelContextUiTests.cpp",
+    "cmake --build --preset debug -j 4",
+    "cmake --build --preset release -j 4",
+    "ctest --preset debug --output-on-failure",
+    "ctest --preset release --output-on-failure",
+    "cmake --build --preset asan --target nemo_workspace_ui_tests -j 2",
+    "ASAN_OPTIONS=detect_leaks=0 build/asan/tests/nemo_workspace_ui_tests",
+    "ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=24 -t 3 -c:v ffv1 -pix_fmt yuv444p10le -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv -chroma_sample_location left -y /tmp/nemo59-source.mkv",
+    "QT_QPA_PLATFORM=wayland XDG_CONFIG_HOME=/tmp/nemo59-config OCIO=/home/rgame/dev/Nemo_Dev2/docs/evidence/issue12-view.ocio LD_PRELOAD=/tmp/nemo59-driver.so NEMO_DRIVER_SOCKET=/tmp/nemo59.sock build/debug/apps/nemo-ui/nemo-ui --source /tmp/nemo59-source.mkv --viewer-cache-dir /tmp/nemo59-cache",
+    "QT_QPA_PLATFORM=wayland LD_PRELOAD=/tmp/nemo59-driver.so NEMO_DRIVER_SOCKET=/tmp/nemo59-prototype.sock /home/rgame/dev/Nemo_UI_Prototype/build/viewer-prototype/nemo-viewer-prototype"
+  ],
+  "manual_replay": "QT_QPA_PLATFORM=wayland XDG_CONFIG_HOME=/tmp/nemo59-review OCIO=\"$PWD/docs/evidence/issue12-view.ocio\" build/debug/apps/nemo-ui/nemo-ui --source \"$PWD/docs/evidence/assets/issue59-production-cutover/source-640x360-bt709.mkv\" --viewer-cache-dir /tmp/nemo59-review-cache",
+  "verification": {
+    "debug": "333/333 passed",
+    "release": "333/333 passed",
+    "asan_ubsan": "29/29 affected UI/controller/router tests passed; leak detection disabled",
+    "chronological_native_checks": [
+      {
+        "check": "Real tagged FFV1 source decoded and displayed by production Vulkan viewer",
+        "passed": true,
+        "details": "Displayed 640x360, 1:1, frame 0; compressed cache; 640x360 ffv1; decode selection: libavcodec build has no Vulkan hwaccel for this codec"
+      },
+      {
+        "check": "Native next-frame button advances actual controller output",
+        "passed": true,
+        "details": "Pending 1:1; previous frame is outdated"
+      },
+      {
+        "check": "Frame text entry commits native frame 12",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Prototype target menu changes presentation role without replacing source",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Compact header badge switches viewer to group B",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Pinned badge retains explicit pinned routing mode",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native plus dialog creates and activates Comp workspace copy",
+        "passed": false,
+        "details": {
+          "reason": "Driver key events entered lowercase labels; native dialog created all copies correctly. Case-sensitive harness expectation corrected below."
+        }
+      },
+      {
+        "check": "Native plus dialog creates and activates named workspace copies",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native workspace tab switching preserves loaded media",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Prototype category menu creates real command-owned Constant Color",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Existing shared history undoes native catalogue creation",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native 50-percent zoom displays a 320-pixel-wide 640-pixel source",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Initial native 50-percent zoom resize reproduction",
+        "passed": false,
+        "details": "Before fix: 640px source was 320px wide at full viewport, shrank to 172.883px at narrow viewport. Corrected imageScale uses absolute percentages; confirmation follows."
+      },
+      {
+        "check": "Fixed 50-percent zoom renders actual 320px source at full size",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Fixed 50-percent zoom remains 320px across narrow resize",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Persisted viewer zoom restores across real application restart",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Workspace switch keeps body actions bound to current panel identity",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Viewer display change persists to the active workspace panel",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Other workspace retains its independent Fit display setting",
+        "passed": false,
+        "details": null
+      },
+      {
+        "check": "Final Edit workspace saves Fit",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Final Comp workspace saves 50 percent",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Fixed workspace switch restores independent Fit display state",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Fixed workspace switch restores independent 50-percent display state",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native ruler seeks timeline independently of graph clock",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Final prototype frame field and next control render frame 13",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native Escape cancels header drag without workspace mutation",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native center drop tabs viewer and graph without losing either panel",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native tab click activates graph body",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native edge drop separates viewer from graph tab group",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native splitter drag updates saved split ratio",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Minimum-width viewer retains frame, target, zoom and next controls in-window",
+        "passed": true,
+        "details": {
+          "viewerFrame_panel-4": {
+            "enabled": true,
+            "height": 28,
+            "visible": true,
+            "width": 65,
+            "x": 117.5,
+            "y": 635
+          },
+          "viewerTargetMenu_panel-4": {
+            "enabled": true,
+            "height": 24,
+            "visible": true,
+            "width": 136,
+            "x": 541,
+            "y": 49
+          },
+          "nextButton": {
+            "enabled": true,
+            "height": 28,
+            "visible": true,
+            "width": 29,
+            "x": 350.5,
+            "y": 635
+          },
+          "viewerZoomMenu_panel-4": {
+            "enabled": true,
+            "height": 24,
+            "visible": true,
+            "width": 78,
+            "x": 261,
+            "y": 49
+          }
+        }
+      },
+      {
+        "check": "Final native target menu changes routed role with source retained",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Final compact badge pins current panel context",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Actual native minimum viewer clamps to 280px",
+        "passed": true,
+        "details": {
+          "enabled": true,
+          "height": 623.52,
+          "visible": true,
+          "width": 280,
+          "x": 8,
+          "y": 44
+        }
+      },
+      {
+        "check": "Controls fit inside actual minimum-width viewer",
+        "passed": true,
+        "details": {
+          "viewerFrame_panel-4": {
+            "enabled": true,
+            "height": 28,
+            "visible": true,
+            "width": 65,
+            "x": 79,
+            "y": 637
+          },
+          "viewerTargetMenu_panel-4": {
+            "enabled": true,
+            "height": 24,
+            "visible": true,
+            "width": 136,
+            "x": 149,
+            "y": 49
+          },
+          "nextButton": {
+            "enabled": true,
+            "height": 28,
+            "visible": true,
+            "width": 29,
+            "x": 181.5,
+            "y": 607
+          },
+          "viewerZoomMenu_panel-4": {
+            "enabled": true,
+            "height": 24,
+            "visible": true,
+            "width": 78,
+            "x": 173,
+            "y": 507
+          }
+        }
+      },
+      {
+        "check": "Native appearance menu applies Slate",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "QTest hash-character injection",
+        "passed": false,
+        "details": "Temporary driver hit Qt Test qasciikey.cpp assertion for #; not application input code. Hex fixture text assigned to TextField then committed by native focus change below."
+      },
+      {
+        "check": "Native focus commit applies white IO category setting",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Native category reset restores IO reference palette",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Final tabbed layout includes both actual panels",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Production workspace save succeeds",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Real restart restores exact tabbed layout and panel state",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Real restart restores workspace IDs/order and active workspace",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Real restart restores Slate appearance",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Reset retains workspace list and loaded media",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Final default-window startup displays real media without QML errors",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Final geometry build still steps actual media to frame 13",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Fit respects prototype image inset",
+        "passed": true,
+        "details": null
+      },
+      {
+        "check": "Final source minimum viewer remains 280px with accessible controls",
+        "passed": true,
+        "details": null
+      }
+    ],
+    "final_runtime_status": {
+      "error": "",
+      "frame": 13,
+      "status": "Displayed 640x360, 1:1, frame 13; compressed cache; 640x360 ffv1; decode selection: libavcodec build has no Vulkan hwaccel for this codec"
+    },
+    "final_workspace": {
+      "active": "workspace-2",
+      "appearance": "Graphite",
+      "root": {
+        "children": [
+          {
+            "children": [
+              {
+                "active": "panel-1",
+                "id": "leaf-2",
+                "kind": "tabs",
+                "panels": [
+                  {
+                    "group": "A",
+                    "id": "panel-1",
+                    "state": {
+                      "panX": 0,
+                      "panY": 0,
+                      "zoom": 1,
+                      "zoomMode": "Fit"
+                    },
+                    "type": "viewer"
+                  }
+                ]
+              },
+              {
+                "active": "panel-3",
+                "id": "leaf-4",
+                "kind": "tabs",
+                "panels": [
+                  {
+                    "group": "A",
+                    "id": "panel-3",
+                    "type": "nodegraph"
+                  }
+                ]
+              }
+            ],
+            "id": "split-5",
+            "kind": "split",
+            "orientation": "horizontal",
+            "ratio": 0.5
+          },
+          {
+            "active": "panel-6",
+            "id": "leaf-7",
+            "kind": "tabs",
+            "panels": [
+              {
+                "group": "A",
+                "id": "panel-6",
+                "type": "timeline"
+              }
+            ]
+          }
+        ],
+        "id": "split-8",
+        "kind": "split",
+        "orientation": "vertical",
+        "ratio": 0.72
+      },
+      "workspaces": [
+        {
+          "id": "workspace-1",
+          "name": "Project"
+        },
+        {
+          "id": "workspace-2",
+          "name": "Edit"
+        },
+        {
+          "id": "workspace-3",
+          "name": "Image"
+        },
+        {
+          "id": "workspace-4",
+          "name": "Comp"
+        }
+      ]
+    }
+  },
+  "regressions_fixed": [
+    "Missing viewer seek handlers and frame entry commit/style",
+    "Absolute 50%/100% zoom changing physical size during resize",
+    "Same-source Loader retaining old panel IDs after workspace changes",
+    "Writable display properties breaking restoration bindings; workspace panel state is now the single source"
+  ],
+  "limitations": [
+    "Owner native appearance/interaction and app-internal QML-facing API approval pending; #59 stays open.",
+    "Supported-surface comparisons are not full four-panel Comp parity with Parameters/Animation/Media Bin; those panels remain with their owners.",
+    "Explicit OCIO config required. Initial invalid-chroma source/unconfigured-runtime diagnostics retained and resolved with valid input/config.",
+    "Driver-only failures recorded: case-sensitive label expectation and Qt Test assertion injecting #. Hex text fixture subsequently assigned to TextField before native focus commit.",
+    "No Windows run, leak sanitizer, or native GPU sanitizer image run claimed.",
+    "Vendor warnings: Qt qmlimportscanner missing QtQml qmldir and pinned minizip-ng mktemp linker warning."
+  ],
+  "source_media_metadata": {
+    "streams": [
+      {
+        "index": 0,
+        "codec_name": "ffv1",
+        "codec_long_name": "FFmpeg video codec #1",
+        "codec_type": "video",
+        "codec_tag_string": "FFV1",
+        "codec_tag": "0x31564646",
+        "width": 640,
+        "height": 360,
+        "coded_width": 640,
+        "coded_height": 360,
+        "closed_captions": 0,
+        "film_grain": 0,
+        "has_b_frames": 0,
+        "sample_aspect_ratio": "1:1",
+        "display_aspect_ratio": "16:9",
+        "pix_fmt": "yuv444p10le",
+        "level": -99,
+        "color_range": "tv",
+        "color_space": "bt709",
+        "color_transfer": "bt709",
+        "color_primaries": "bt709",
+        "chroma_location": "left",
+        "field_order": "progressive",
+        "refs": 1,
+        "r_frame_rate": "24/1",
+        "avg_frame_rate": "24/1",
+        "time_base": "1/1000",
+        "start_pts": 0,
+        "start_time": "0.000000",
+        "bits_per_raw_sample": "10",
+        "disposition": {
+          "default": 0,
+          "dub": 0,
+          "original": 0,
+          "comment": 0,
+          "lyrics": 0,
+          "karaoke": 0,
+          "forced": 0,
+          "hearing_impaired": 0,
+          "visual_impaired": 0,
+          "clean_effects": 0,
+          "attached_pic": 0,
+          "timed_thumbnails": 0,
+          "non_diegetic": 0,
+          "captions": 0,
+          "descriptions": 0,
+          "metadata": 0,
+          "dependent": 0,
+          "still_image": 0
+        },
+        "tags": {
+          "ENCODER": "Lavc60.31.102 ffv1",
+          "DURATION": "00:00:03.000000000"
+        }
+      }
+    ],
+    "format": {
+      "filename": "docs/evidence/assets/issue59-production-cutover/source-640x360-bt709.mkv",
+      "nb_streams": 1,
+      "nb_programs": 0,
+      "format_name": "matroska,webm",
+      "format_long_name": "Matroska / WebM",
+      "start_time": "0.000000",
+      "duration": "3.000000",
+      "size": "3780945",
+      "bit_rate": "10082520",
+      "probe_score": 100,
+      "tags": {
+        "ENCODER": "Lavf60.16.100"
+      }
+    }
+  },
+  "cleanup": "Temporary driver removed after collection; not linked or shipped. Retained artifacts are preserved."
+}

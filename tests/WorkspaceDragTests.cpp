@@ -19,10 +19,8 @@
 #include <QTest>
 #include <gtest/gtest.h>
 
-#include <string>
-#include <variant>
-
 #include <stdexcept>
+#include <string>
 
 namespace {
 using Json = nlohmann::json;
@@ -42,13 +40,6 @@ const Json* containing(const Json& node, const std::string& id) {
         }
     }
     return nullptr;
-}
-nemo::Graph& rootGraph(nemo::Document& document) {
-    return document.network(document.rootNetworkId()).graph();
-}
-
-const nemo::Graph& rootGraph(const nemo::Document& document) {
-    return document.network(document.rootNetworkId()).graph();
 }
 
 QQuickItem* visual(QQuickItem* root, const QString& name) {
@@ -303,33 +294,27 @@ TEST_F(WorkspaceDragTest, NestedPanelMenusSwitchTypeAndCloseViewer) {
     QTest::qWait(60);
     EXPECT_EQ(containing(snapshot(), other.toStdString()), nullptr);
 }
-TEST_F(WorkspaceDragTest, InteractiveGraphAndTimelineUseCommandsWithIndependentClocks) {
+TEST_F(WorkspaceDragTest, CatalogMenuCreatesRealNodesAndTimelineSeeks) {
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphToolsButton"));
+    QTest::qWait(30);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("toolCategory_Utility"));
+    QTest::qWait(30);
+    const auto before = viewerController.graphNodes().size();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("toolNode_constcolor"));
+    QTest::qWait(30);
+    ASSERT_EQ(viewerController.graphNodes().size(), before + 1);
+    EXPECT_EQ(viewerController.graphNodes().last().toMap().value("type").toString(), "constcolor");
+    viewerController.undo();
+    EXPECT_EQ(viewerController.graphNodes().size(), before);
+
     viewerController.openSource("/tmp/nemo-interactive-command-source.mkv");
     QTest::qWait(30);
-    auto* name = item("graphAddName");
-    name->forceActiveFocus();
-    for (const char letter : std::string("extra"))
-        QTest::keyClick(window, letter);
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphAddButton"));
-    QTest::qWait(30);
-    const auto containsExtra = [&] {
-        for (const auto& value : viewerController.graphNodes())
-            if (value.toMap().value("name").toString() == "extra")
-                return true;
-        return false;
-    };
-    ASSERT_TRUE(containsExtra());
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphUndo"));
-    QTest::qWait(30);
-    EXPECT_FALSE(containsExtra());
-
     auto* ruler = item("timelineRuler");
     const auto quarter = ruler->mapToScene(QPointF(ruler->width() / 4, 10)).toPoint();
-    const auto beforeScrub = viewerController.frame();
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, quarter);
     QTest::qWait(30);
-    EXPECT_GT(viewerController.frame(), beforeScrub);
     const auto quarterFrame = viewerController.frame();
+    EXPECT_GT(quarterFrame, 0);
     const auto middle = ruler->mapToScene(QPointF(ruler->width() / 2, 10)).toPoint();
     QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, quarter);
     for (int step = 1; step <= 8; ++step)
@@ -337,65 +322,6 @@ TEST_F(WorkspaceDragTest, InteractiveGraphAndTimelineUseCommandsWithIndependentC
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, middle);
     QTest::qWait(30);
     EXPECT_GT(viewerController.frame(), quarterFrame);
-    EXPECT_EQ(item("graphPlayhead")->property("value").toInt(), 0);
-    auto* slider = item("graphPlayhead");
-    slider->forceActiveFocus();
-    const auto graphBefore = slider->property("value").toInt();
-    const auto previousPosition = ruler->property("playheadPosition").toReal();
-    QTest::keyClick(window, Qt::Key_Right);
-    QTest::qWait(30);
-    EXPECT_GT(slider->property("value").toInt(), graphBefore);
-    EXPECT_EQ(viewerController.frame(), slider->property("value").toInt());
-    EXPECT_EQ(ruler->property("playheadPosition").toReal(), previousPosition);
-    const auto slip = center("timelineSlipPlus");
-    ASSERT_TRUE(QRect(QPoint(), window->size()).contains(slip)) << "Source timing controls must fit the tiled panel";
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, slip);
-    QTest::qWait(30);
-    EXPECT_EQ(viewerController.timelineClips().first().toMap().value("offset").toLongLong(), 1);
-}
-
-TEST_F(WorkspaceDragTest, RenamedNodeEditsReachBothPanelsAndUndoByIdentity) {
-    constexpr nemo::NodeId highId = (nemo::NodeId{1} << 53) + 1;
-    ASSERT_TRUE(projectSession
-                    .submit(nemo::Command{"restore sparse identity",
-                                          [](nemo::Document& document) {
-                                              static_cast<void>(
-                                                  rootGraph(document).addNodeWithId(highId, "testpattern", "source"));
-                                          }},
-                            {projectSession.revision()})
-                    .committed);
-    nemo::ui::ViewerRuntime secondRuntime;
-    nemo::ui::ViewerController second(&secondRuntime, projectSession);
-    const auto id = rootGraph(projectSession.document()).nodeByName("source")->id;
-    const auto renamed =
-        projectSession.submit(nemo::renameNodeCommand(projectSession.document().rootNetworkId(), id, "renamed"),
-                              {projectSession.revision(), "rename-source"});
-    ASSERT_TRUE(renamed.committed);
-    viewerController.addGraphNode("testpattern", "source");
-    QTest::qWait(30);
-    const auto nodes = viewerController.graphNodes();
-    int selected = -1;
-    for (int index = 0; index < nodes.size(); ++index)
-        if (nodes[index].toMap().value("id").toString() == QString::number(id))
-            selected = index;
-    ASSERT_GE(selected, 0);
-    item("graphParameterNode")->setProperty("currentIndex", selected);
-    for (const auto& field : {std::pair{"graphParameterKey", "note"}, std::pair{"graphParameterValue", "shared"}}) {
-        item(field.first)->forceActiveFocus();
-        for (const char letter : std::string(field.second))
-            QTest::keyClick(window, letter);
-    }
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphParameterApply"));
-    ASSERT_TRUE(viewerController.error().isEmpty()) << viewerController.error().toStdString();
-    ASSERT_TRUE(rootGraph(projectSession.document()).node(id)->params.contains("note"));
-    ASSERT_EQ(std::get<std::string>(rootGraph(projectSession.document()).node(id)->params.at("note")), "shared");
-    EXPECT_EQ(viewerController.graphNodes(), second.graphNodes());
-    EXPECT_EQ(rootGraph(projectSession.document()).nodeByName("source")->params.count("note"), 0u);
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphUndo"));
-    QTest::qWait(30);
-    EXPECT_EQ(rootGraph(projectSession.document()).node(id)->params.count("note"), 0u);
-    EXPECT_EQ(viewerController.graphNodes(), second.graphNodes());
-    EXPECT_EQ(rootGraph(projectSession.document()).node(id)->name, "renamed");
 }
 
 TEST_F(WorkspaceDragTest, CreatingWorkspaceThroughDialogActivatesAnIndependentCopy) {

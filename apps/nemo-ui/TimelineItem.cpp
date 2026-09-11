@@ -12,11 +12,12 @@
 
 namespace nemo::ui {
 namespace {
-constexpr qreal kRulerHeight = 30.0;
-constexpr qreal kRowsTop = 36.0;
-constexpr qreal kStripHeight = 54.0;
-constexpr qreal kRowGap = 6.0;
+constexpr qreal kRulerHeight = 28.0;
+constexpr qreal kRowsTop = 30.0;
+constexpr qreal kStripHeight = 38.0;
+constexpr qreal kRowGap = 2.0;
 constexpr qreal kRowPitch = kStripHeight + kRowGap;
+constexpr qreal kLabelWidth = 132.0;
 constexpr int kDefaultTimelineLength = 240;
 
 void appendRect(QSGGeometry::ColoredPoint2D*& vertices, const QRectF& rect, const QColor& color) {
@@ -193,20 +194,70 @@ void TimelineItem::setSelectedSource(const QString& source) {
     update();
 }
 
+void TimelineItem::setBackgroundColor(const QColor& color) {
+    if (backgroundColor_ == color)
+        return;
+    backgroundColor_ = color;
+    emit colorsChanged();
+    update();
+}
+
+void TimelineItem::setPanelColor(const QColor& color) {
+    if (panelColor_ == color)
+        return;
+    panelColor_ = color;
+    emit colorsChanged();
+    update();
+}
+
+void TimelineItem::setHeaderColor(const QColor& color) {
+    if (headerColor_ == color)
+        return;
+    headerColor_ = color;
+    emit colorsChanged();
+    update();
+}
+
+void TimelineItem::setBorderColor(const QColor& color) {
+    if (borderColor_ == color)
+        return;
+    borderColor_ = color;
+    emit colorsChanged();
+    update();
+}
+
+void TimelineItem::setAccentColor(const QColor& color) {
+    if (accentColor_ == color)
+        return;
+    accentColor_ = color;
+    emit colorsChanged();
+    update();
+}
+
+void TimelineItem::setRaisedColor(const QColor& color) {
+    if (raisedColor_ == color)
+        return;
+    raisedColor_ = color;
+    emit colorsChanged();
+    update();
+}
+
 qreal TimelineItem::playheadPosition() const {
     const int length = frameCount_ > 1 ? frameCount_ : kDefaultTimelineLength;
-    if (width() <= 0.0) {
-        return 0.0;
+    if (width() <= kLabelWidth) {
+        return std::max<qreal>(0.0, width());
     }
-    return width() * static_cast<qreal>(std::clamp(frame_, 0, length - 1)) / static_cast<qreal>(length - 1);
+    const qreal timelineWidth = width() - kLabelWidth;
+    return kLabelWidth +
+           timelineWidth * static_cast<qreal>(std::clamp(frame_, 0, length - 1)) / static_cast<qreal>(length - 1);
 }
 
 int TimelineItem::frameAt(qreal x) const {
     const int length = frameCount_ > 1 ? frameCount_ : kDefaultTimelineLength;
-    if (width() <= 0.0) {
+    if (width() <= kLabelWidth) {
         return 0;
     }
-    const qreal normalized = std::clamp(x / width(), 0.0, 1.0);
+    const qreal normalized = std::clamp((x - kLabelWidth) / (width() - kLabelWidth), 0.0, 1.0);
     return std::clamp(static_cast<int>(std::llround(normalized * static_cast<qreal>(length - 1))), 0, length - 1);
 }
 
@@ -288,69 +339,62 @@ TimelineItem::VisibleArea TimelineItem::visibleArea() const {
 
 void TimelineItem::drawFills(QSGGeometryNode* node, const VisibleArea& view) const {
     const int rows = std::max(0, view.lastRow - view.firstRow + 1);
-    const int rectangles = static_cast<int>(view.ruler) + rows * 2;
+    const int rectangles = static_cast<int>(view.ruler) + rows * 3;
     auto* geometry = prepareGeometry(node, rectangles * 6);
     auto* vertices = static_cast<QSGGeometry::ColoredPoint2D*>(geometry->vertexData());
-    if (view.ruler) {
-        appendRect(vertices, QRectF(0.0, 0.0, width(), kRulerHeight), QColor(48, 48, 48));
-    }
+    if (view.ruler)
+        appendRect(vertices, QRectF(0.0, 0.0, width(), kRulerHeight), headerColor_);
+
     const int length = frameCount_ > 0 ? frameCount_ : kDefaultTimelineLength;
+    const qreal labelWidth = std::min(kLabelWidth, width());
+    const qreal timelineWidth = std::max<qreal>(1.0, width() - labelWidth);
     for (int row = view.firstRow; row <= view.lastRow; ++row) {
         const auto& record = records_[static_cast<std::size_t>(row)];
         const qreal y = kRowsTop + row * kRowPitch;
         const bool selected = record.source == selectedSource_;
-        appendRect(vertices, QRectF(0.0, y, width(), kStripHeight),
-                   selected ? QColor(64, 84, 104) : QColor(52, 59, 67));
-        qreal left = 0.0;
+        appendRect(vertices, QRectF(0.0, y, labelWidth, kStripHeight), selected ? raisedColor_ : panelColor_);
+        appendRect(vertices, QRectF(labelWidth, y, timelineWidth, kStripHeight), backgroundColor_);
+
+        qreal left = labelWidth;
         qreal right = width();
-        QColor coverage(85, 80, 74);
+        QColor coverage = selected ? accentColor_ : raisedColor_;
         if (record.end > record.start && frameCount_ > 0) {
-            left = width() * std::clamp(record.start / static_cast<qreal>(std::max(1, length - 1)), 0.0, 1.0);
-            right = width() * std::clamp(record.end / static_cast<qreal>(length), 0.0, 1.0);
+            left = labelWidth +
+                   timelineWidth * std::clamp(record.start / static_cast<qreal>(std::max(1, length - 1)), 0.0, 1.0);
+            right = labelWidth + timelineWidth * std::clamp(record.end / static_cast<qreal>(length), 0.0, 1.0);
             right = std::max(left + 1.0, right);
-            coverage = selected ? QColor(95, 142, 183) : QColor(76, 107, 136);
         }
-        appendRect(vertices, QRectF(left, y + 17.0, std::min(width(), right) - left, 20.0), coverage);
+        appendRect(vertices, QRectF(left, y + 8.0, std::max<qreal>(0.0, std::min(width(), right) - left), 22.0),
+                   coverage);
     }
 }
 
 void TimelineItem::drawLines(QSGGeometryNode* node, const VisibleArea& view) const {
     const int rows = std::max(0, view.lastRow - view.firstRow + 1);
-    int count = view.ruler ? 9 : 0;
-    count += rows * 4;
-    for (int row = view.firstRow; row <= view.lastRow; ++row) {
-        const auto& record = records_[static_cast<std::size_t>(row)];
-        if (record.end <= record.start || frameCount_ <= 0) {
-            ++count;
-        }
-    }
+    const int count = (view.ruler ? 10 : 0) + rows * 4;
     auto* vertices = prepareGeometry(node, count * 2)->vertexDataAsPoint2D();
     if (view.ruler) {
         for (int tick = 0; tick < 9; ++tick) {
-            const qreal x = width() * tick / 8.0;
+            const qreal x = kLabelWidth + (width() - kLabelWidth) * tick / 8.0;
             appendLine(vertices, QPointF(x, 0.0), QPointF(x, kRulerHeight));
         }
+        appendLine(vertices, QPointF(kLabelWidth, 0.0), QPointF(kLabelWidth, height()));
     }
     for (int row = view.firstRow; row <= view.lastRow; ++row) {
-        const auto& record = records_[static_cast<std::size_t>(row)];
         const qreal y = kRowsTop + row * kRowPitch;
         appendLine(vertices, QPointF(0.0, y), QPointF(width(), y));
         appendLine(vertices, QPointF(0.0, y + kStripHeight), QPointF(width(), y + kStripHeight));
         appendLine(vertices, QPointF(0.0, y), QPointF(0.0, y + kStripHeight));
         appendLine(vertices, QPointF(width(), y), QPointF(width(), y + kStripHeight));
-        if (record.end <= record.start || frameCount_ <= 0) {
-            appendLine(vertices, QPointF(10.0 + (row % 4) * 7.0, y + 17.0), QPointF(10.0 + (row % 4) * 7.0, y + 37.0));
-        }
     }
 }
 
 void TimelineItem::drawPlayhead(QSGGeometryNode* node, const VisibleArea& view) const {
     const qreal playhead = playheadPosition();
-    const bool visible = playhead >= 0.0 && playhead <= width() && view.bottom > view.top;
+    const bool visible = playhead >= kLabelWidth && playhead <= width() && view.bottom > view.top;
     auto* vertices = prepareGeometry(node, visible ? 2 : 0)->vertexDataAsPoint2D();
-    if (visible) {
+    if (visible)
         appendLine(vertices, QPointF(playhead, view.top), QPointF(playhead, view.bottom));
-    }
 }
 
 QSGNode* TimelineItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*/) {
@@ -360,14 +404,18 @@ QSGNode* TimelineItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unus
     if (root == nullptr) {
         auto created = std::make_unique<QSGNode>();
         created->appendChildNode(makeColoredNode().release());
-        created->appendChildNode(makeLineNode(QColor(101, 113, 125)).release());
-        created->appendChildNode(makeLineNode(QColor(230, 179, 94)).release());
+        created->appendChildNode(makeLineNode(borderColor_).release());
+        created->appendChildNode(makeLineNode(accentColor_).release());
         root = created.release();
     }
     const auto view = visibleArea();
     auto* fills = static_cast<QSGGeometryNode*>(root->firstChild());
     auto* lines = static_cast<QSGGeometryNode*>(fills->nextSibling());
     auto* playhead = static_cast<QSGGeometryNode*>(lines->nextSibling());
+    static_cast<QSGFlatColorMaterial*>(lines->material())->setColor(borderColor_);
+    static_cast<QSGFlatColorMaterial*>(playhead->material())->setColor(accentColor_);
+    lines->markDirty(QSGNode::DirtyMaterial);
+    playhead->markDirty(QSGNode::DirtyMaterial);
     drawFills(fills, view);
     drawLines(lines, view);
     drawPlayhead(playhead, view);

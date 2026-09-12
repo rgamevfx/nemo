@@ -187,6 +187,14 @@ Command insertRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t in
 Command moveRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t index, LayoutPosition position);
 Command removeRoutePointCommand(NetworkId network, EdgeId edgeId, std::size_t index);
 Command setDefaultOutputCommand(NetworkId network, NodeId output);
+// Attaches `sourceNode`'s image output to viewer(viewerIndex)'s input, creating
+// any missing viewer nodes first. An invalid source detaches the viewer when
+// already fed by it; re-assigning the currently attached source toggles the
+// edge off. The whole edit is validated on a trial graph and committed as one
+// undo step. New viewer ids are reported in creation order through
+// `createdViewer` when provided.
+Command assignViewerCommand(NetworkId network, std::size_t viewerIndex, NodeId sourceNode,
+                            std::shared_ptr<NodeId> createdViewer = {});
 Command connectInputCommand(NetworkId network, InterfacePortId input, PortRef destination);
 Command connectOutputCommand(NetworkId network, PortRef source, InterfacePortId output);
 

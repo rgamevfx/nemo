@@ -31,8 +31,6 @@ Pane {
         }
         return result
     }
-    readonly property string resolvedGroup: panelContext && panelContext.resolvedGroup
-                                           ? panelContext.resolvedGroup : panelGroup
     readonly property real routedClock: contextRouter && panelContext && panelContext.timelineClock !== undefined
                                         ? Number(panelContext.timelineClock) : controller.frame
     readonly property int sourceRulerHeight: 28
@@ -346,8 +344,8 @@ Pane {
 
     function updateClock(value) {
         var frame = Math.round(value)
-        if (contextRouter && resolvedGroup.length > 0)
-            contextRouter.setGroupContext(resolvedGroup, {timelineClock: frame})
+        if (contextRouter && panelGroup.length > 0)
+            contextRouter.setGroupContext(panelGroup, {timelineClock: frame})
         controller.setFrame(frame)
     }
 

@@ -12,7 +12,6 @@
 
 namespace nemo::ui {
 namespace {
-constexpr std::array<QStringView, 3> kModes{QStringView(u"follow"), QStringView(u"group"), QStringView(u"pinned")};
 constexpr std::array<QStringView, 3> kRoles{QStringView(u"graph"), QStringView(u"timeline"), QStringView(u"media")};
 
 QString unavailableReason(const QString& kind) {
@@ -68,52 +67,11 @@ QString PanelContextRouter::normalized(const QString& value) {
     return value.trimmed();
 }
 
-QVariantMap PanelContextRouter::groupContextMap(const GroupContext& context) {
-    return {{QStringLiteral("graphTarget"), context.graphTarget},
-            {QStringLiteral("timelineTarget"), context.timelineTarget},
-            {QStringLiteral("sourceTarget"), context.sourceTarget},
-            {QStringLiteral("graphClock"), context.graphClock},
-            {QStringLiteral("timelineClock"), context.timelineClock},
-            {QStringLiteral("sourceClock"), context.sourceClock}};
-}
-
-std::optional<PanelContextRouter::GroupContext> PanelContextRouter::groupContextFromMap(const QVariantMap& value) {
-    GroupContext context;
-    const auto readTarget = [&](const QString& key, QString* output) {
-        if (!value.contains(key) || !value.value(key).canConvert<QString>())
-            return false;
-        *output = normalized(value.value(key).toString());
-        return true;
-    };
-    const auto readClock = [&](const QString& key, double* output) {
-        if (!value.contains(key))
-            return false;
-        bool ok = false;
-        const auto clock = value.value(key).toDouble(&ok);
-        if (!ok || !std::isfinite(clock))
-            return false;
-        *output = clock;
-        return true;
-    };
-    if (!readTarget(QStringLiteral("graphTarget"), &context.graphTarget) ||
-        !readTarget(QStringLiteral("timelineTarget"), &context.timelineTarget) ||
-        !readTarget(QStringLiteral("sourceTarget"), &context.sourceTarget) ||
-        !readClock(QStringLiteral("graphClock"), &context.graphClock) ||
-        !readClock(QStringLiteral("timelineClock"), &context.timelineClock) ||
-        !readClock(QStringLiteral("sourceClock"), &context.sourceClock))
-        return std::nullopt;
-    return context;
-}
-
 int PanelContextRouter::groupIndex(const QString& group) noexcept {
     if (group.size() != 1)
         return -1;
     const auto index = group.at(0).unicode() - QChar(u'A').unicode();
     return index >= 0 && index < 5 ? index : -1;
-}
-
-bool PanelContextRouter::validMode(const QString& mode) noexcept {
-    return std::any_of(kModes.begin(), kModes.end(), [&](QStringView value) { return mode == value; });
 }
 
 bool PanelContextRouter::validRole(const QString& role) noexcept {
@@ -128,15 +86,7 @@ void PanelContextRouter::persist(const QString& panelId, const PanelBinding& bin
     if (!workspace_)
         return;
     auto state = workspace_->panelState(panelId);
-    state.insert(QStringLiteral("linkMode"), binding.mode);
     state.insert(QStringLiteral("viewerRole"), binding.role);
-    if (binding.mode == QStringLiteral("pinned") && binding.hasPinned) {
-        state.insert(QStringLiteral("pinnedGroup"), binding.pinnedGroup);
-        state.insert(QStringLiteral("pinnedContext"), groupContextMap(binding.pinned));
-    } else {
-        state.remove(QStringLiteral("pinnedGroup"));
-        state.remove(QStringLiteral("pinnedContext"));
-    }
     workspace_->setPanelState(panelId, state);
 }
 
@@ -161,56 +111,27 @@ void PanelContextRouter::synchronizeWorkspace() {
     }
 }
 
-bool PanelContextRouter::registerPanel(const QString& rawPanelId, const QString& rawGroup, const QString& rawMode) {
+bool PanelContextRouter::registerPanel(const QString& rawPanelId, const QString& rawGroup) {
     const auto panelId = normalized(rawPanelId);
     const auto group = normalized(rawGroup);
-    const auto mode = normalized(rawMode);
-    if (panelId.isEmpty() || groupIndex(group) < 0 || !validMode(mode))
+    if (panelId.isEmpty() || groupIndex(group) < 0)
         return false;
 
     auto found = panels_.find(panelId);
     if (found != panels_.end()) {
-        auto& binding = found->second;
-        binding.group = group;
-        if (binding.mode != mode) {
-            if (mode == QStringLiteral("pinned")) {
-                binding.pinned = groups_[groupIndex(group)];
-                binding.pinnedGroup = group;
-                binding.hasPinned = true;
-            } else {
-                binding.pinnedGroup.clear();
-                binding.hasPinned = false;
-            }
-            binding.mode = mode;
-        }
+        found->second.group = group;
         lastContexts_[panelId] = contextFor(panelId);
         return true;
     }
 
     PanelBinding binding;
     binding.group = group;
-    binding.mode = mode;
     binding.role = QStringLiteral("graph");
     if (workspace_) {
         const auto state = workspace_->panelState(panelId);
-        const auto savedMode = state.value(QStringLiteral("linkMode")).toString();
         const auto savedRole = state.value(QStringLiteral("viewerRole")).toString();
-        if (validMode(savedMode))
-            binding.mode = savedMode;
         if (validRole(savedRole))
             binding.role = savedRole;
-        const auto savedPinnedGroup = state.value(QStringLiteral("pinnedGroup")).toString();
-        const auto savedPinned = groupContextFromMap(state.value(QStringLiteral("pinnedContext")).toMap());
-        if (binding.mode == QStringLiteral("pinned") && groupIndex(savedPinnedGroup) >= 0 && savedPinned) {
-            binding.pinnedGroup = savedPinnedGroup;
-            binding.pinned = *savedPinned;
-            binding.hasPinned = true;
-        }
-    }
-    if (binding.mode == QStringLiteral("pinned") && !binding.hasPinned) {
-        binding.pinned = groups_[groupIndex(group)];
-        binding.pinnedGroup = group;
-        binding.hasPinned = true;
     }
     panels_[panelId] = binding;
     lastContexts_[panelId] = contextFor(panelId);
@@ -231,51 +152,12 @@ bool PanelContextRouter::removePanel(const QString& panelId) {
     emit panelContextChanged(panelId);
     return true;
 }
+
 bool PanelContextRouter::setActivePanel(const QString& panelId) {
     if (!panelExists(panelId) || activePanel_ == panelId)
         return panelExists(panelId);
     activePanel_ = panelId;
-    for (auto& [id, context] : lastContexts_) {
-        const auto before = context;
-        const auto now = contextFor(id);
-        context = now;
-        if (now != before)
-            emit panelContextChanged(id);
-    }
     emit activePanelChanged(activePanel_);
-    return true;
-}
-
-bool PanelContextRouter::setLinkMode(const QString& panelId, const QString& rawMode) {
-    const auto mode = normalized(rawMode);
-    auto found = panels_.find(panelId);
-    if (found == panels_.end() || !validMode(mode))
-        return false;
-    auto& binding = found->second;
-    if (binding.mode == mode)
-        return true;
-    if (mode == QStringLiteral("pinned")) {
-        QString resolvedGroupName;
-        const auto* resolved = resolvedGroup(panelId, &resolvedGroupName);
-        if (!resolved) {
-            const auto index = groupIndex(binding.group);
-            if (index < 0)
-                return false;
-            resolved = &groups_[index];
-            resolvedGroupName = binding.group;
-        }
-        binding.pinned = *resolved;
-        binding.pinnedGroup = resolvedGroupName;
-        binding.hasPinned = true;
-    } else {
-        binding.hasPinned = false;
-        binding.pinnedGroup.clear();
-    }
-    binding.mode = mode;
-    persist(panelId, binding);
-    lastContexts_[panelId] = contextFor(panelId);
-    emit panelBindingChanged(panelId);
-    emit panelContextChanged(panelId);
     return true;
 }
 
@@ -289,17 +171,11 @@ bool PanelContextRouter::setGroup(const QString& panelId, const QString& rawGrou
     found->second.group = group;
     if (workspace_)
         workspace_->setGroup(panelId, group);
-    for (const auto& [id, candidate] : panels_) {
-        if (candidate.mode == QStringLiteral("pinned"))
-            continue;
-        const auto before = lastContexts_.at(id);
-        const auto now = contextFor(id);
-        lastContexts_[id] = now;
-        QString resolved;
-        if (resolvedGroup(id, &resolved) && resolved == group && now != before)
-            emit panelContextChanged(id);
-    }
-    emit panelBindingChanged(panelId);
+    const auto before = lastContexts_.at(panelId);
+    const auto now = contextFor(panelId);
+    lastContexts_[panelId] = now;
+    if (now != before)
+        emit panelContextChanged(panelId);
     return true;
 }
 
@@ -316,38 +192,12 @@ bool PanelContextRouter::setViewerRole(const QString& panelId, const QString& ra
     emit panelContextChanged(panelId);
     return true;
 }
+
 QString PanelContextRouter::viewerRole(const QString& panelId) const {
     const auto found = panels_.find(panelId);
     return found == panels_.end() ? QString{} : found->second.role;
 }
 
-const PanelContextRouter::GroupContext* PanelContextRouter::resolvedGroup(const QString& panelId,
-                                                                          QString* groupName) const {
-    const auto found = panels_.find(panelId);
-    if (found == panels_.end())
-        return nullptr;
-    const auto& binding = found->second;
-    if (binding.mode == QStringLiteral("pinned")) {
-        if (!binding.hasPinned)
-            return nullptr;
-        if (groupName)
-            *groupName = binding.pinnedGroup;
-        return &binding.pinned;
-    }
-    QString selected = binding.group;
-    if (binding.mode == QStringLiteral("follow")) {
-        const auto active = panels_.find(activePanel_);
-        if (active == panels_.end())
-            return nullptr;
-        selected = active->second.group;
-    }
-    const auto index = groupIndex(selected);
-    if (index < 0)
-        return nullptr;
-    if (groupName)
-        *groupName = selected;
-    return &groups_[index];
-}
 bool PanelContextRouter::targetAvailable(const QString& kind, const QString& target) const {
     if (target.isEmpty())
         return false;
@@ -367,16 +217,9 @@ bool PanelContextRouter::targetAvailable(const QString& kind, const QString& tar
         const auto source = target.mid(7).toStdString();
         return session_.document().sources.contains(source);
     }
-    // Graph/timeline targets are presentation identities. Known document
-    // identities receive strict deletion checks; opaque plugin IDs remain
-    // valid until their owner changes the group selection.
-    if (kind == QStringLiteral("graph") && target.startsWith(QStringLiteral("network:"))) {
-        std::uint64_t id = 0;
-        if (!parseUnsigned(target.mid(8), &id))
-            return false;
-        return std::any_of(session_.document().networks().begin(), session_.document().networks().end(),
-                           [id](const auto& network) { return network.id() == static_cast<NetworkId>(id); });
-    }
+    // Timeline targets are presentation identities. Known document identities
+    // receive strict deletion checks; opaque plugin IDs remain valid until
+    // their owner changes the group selection.
     if (kind == QStringLiteral("timeline") && target.startsWith(QStringLiteral("channel:"))) {
         std::uint64_t id = 0;
         if (!parseUnsigned(target.mid(8), &id))
@@ -405,46 +248,26 @@ QVariantList PanelContextRouter::sourceMarks(const QString& target) const {
     return {};
 }
 
-QVariantMap PanelContextRouter::groupMap(const QString& panelId, const QString& mode, const QString& group,
-                                         const GroupContext& context) const {
-    const auto& role = panels_.at(panelId).role;
+QVariantMap PanelContextRouter::groupMap(const QString& panelId, const GroupContext& context) const {
+    const auto& binding = panels_.at(panelId);
     QVariantMap result{{QStringLiteral("panelId"), panelId},
-                       {QStringLiteral("mode"), mode},
-                       {QStringLiteral("group"), panels_.at(panelId).group},
-                       {QStringLiteral("resolvedGroup"), group},
-                       {QStringLiteral("viewerRole"), role},
-                       {QStringLiteral("graphTarget"), context.graphTarget},
+                       {QStringLiteral("group"), binding.group},
+                       {QStringLiteral("viewerRole"), binding.role},
                        {QStringLiteral("timelineTarget"), context.timelineTarget},
                        {QStringLiteral("sourceTarget"), context.sourceTarget},
-                       {QStringLiteral("graphClock"), context.graphClock},
                        {QStringLiteral("timelineClock"), context.timelineClock},
                        {QStringLiteral("sourceClock"), context.sourceClock}};
     result.insert(QStringLiteral("sourceMarks"), sourceMarks(context.sourceTarget));
-    const QString kind = role == QStringLiteral("media") ? QStringLiteral("source") : role;
-    const QString target = role == QStringLiteral("graph")      ? context.graphTarget
-                           : role == QStringLiteral("timeline") ? context.timelineTarget
-                                                                : context.sourceTarget;
-    const bool available = targetAvailable(kind, target);
+    const QString kind = binding.role == QStringLiteral("media") ? QStringLiteral("source") : binding.role;
+    const QString target = binding.role == QStringLiteral("timeline") ? context.timelineTarget
+                           : binding.role == QStringLiteral("media")  ? context.sourceTarget
+                                                                      : QString{};
+    // The graph role carries no image gate: the viewer's attached upstream
+    // node is owned by the viewer controller, not by this router.
+    const bool available = binding.role != QStringLiteral("graph") && targetAvailable(kind, target);
     result.insert(QStringLiteral("available"), available);
     result.insert(QStringLiteral("unavailableReason"), available ? QString{} : unavailableReason(kind));
     return result;
-}
-
-QVariantMap PanelContextRouter::contextForBinding(const QString& panelId, const PanelBinding& binding) const {
-    QString group;
-    const auto* context = resolvedGroup(panelId, &group);
-    if (!context) {
-        return {{QStringLiteral("panelId"), panelId},
-                {QStringLiteral("mode"), binding.mode},
-                {QStringLiteral("group"), binding.group},
-                {QStringLiteral("resolvedGroup"), QString{}},
-                {QStringLiteral("viewerRole"), binding.role},
-                {QStringLiteral("available"), false},
-                {QStringLiteral("unavailableReason"), binding.mode == QStringLiteral("follow")
-                                                          ? QStringLiteral("no active panel")
-                                                          : QStringLiteral("pinned snapshot unavailable")}};
-    }
-    return groupMap(panelId, binding.mode, group, *context);
 }
 
 QVariantMap PanelContextRouter::contextFor(const QString& panelId) const {
@@ -453,29 +276,14 @@ QVariantMap PanelContextRouter::contextFor(const QString& panelId) const {
         return {{QStringLiteral("panelId"), panelId},
                 {QStringLiteral("available"), false},
                 {QStringLiteral("unavailableReason"), QStringLiteral("unknown panel")}};
-    return contextForBinding(panelId, found->second);
-}
-
-QVariantList PanelContextRouter::availableTargets(const QString& panelId) const {
-    QVariantList result;
-    const auto context = contextFor(panelId);
-    const auto add = [&](const QString& kind, const QString& target, const QString& label) {
-        if (target.isEmpty())
-            return;
-        result.push_back(QVariantMap{{QStringLiteral("kind"), kind},
-                                     {QStringLiteral("id"), target},
-                                     {QStringLiteral("label"), label.isEmpty() ? target : label},
-                                     {QStringLiteral("available"), targetAvailable(kind, target)}});
-    };
-    add(QStringLiteral("graph"), context.value(QStringLiteral("graphTarget")).toString(),
-        QStringLiteral("Current graph"));
-    add(QStringLiteral("timeline"), context.value(QStringLiteral("timelineTarget")).toString(),
-        QStringLiteral("Current timeline"));
-    for (const auto& entry : session_.document().mediaCatalog.entries()) {
-        const auto id = QString::fromStdString(entry.sourceKey);
-        add(QStringLiteral("source"), id, QString::fromStdString(entry.metadata.userName).trimmed());
-    }
-    return result;
+    const auto index = groupIndex(found->second.group);
+    if (index < 0)
+        return {{QStringLiteral("panelId"), panelId},
+                {QStringLiteral("group"), found->second.group},
+                {QStringLiteral("viewerRole"), found->second.role},
+                {QStringLiteral("available"), false},
+                {QStringLiteral("unavailableReason"), QStringLiteral("panel group is unavailable")}};
+    return groupMap(panelId, groups_[index]);
 }
 
 bool PanelContextRouter::setTarget(const QString& rawGroup, const QString& key, const QString& kind,
@@ -485,10 +293,6 @@ bool PanelContextRouter::setTarget(const QString& rawGroup, const QString& key, 
     if (groupIndex(group) < 0 || (!target.isEmpty() && !targetAvailable(kind, target)))
         return false;
     return setGroupContext(group, {{key, target}});
-}
-
-bool PanelContextRouter::setGraphTarget(const QString& group, const QString& target) {
-    return setTarget(group, QStringLiteral("graphTarget"), QStringLiteral("graph"), target);
 }
 
 bool PanelContextRouter::setTimelineTarget(const QString& group, const QString& target) {
@@ -508,7 +312,7 @@ bool PanelContextRouter::setGroupContext(const QString& rawGroup, const QVariant
     if (index < 0)
         return false;
     GroupContext next = groups_[index];
-    const auto setTarget = [&](const QString& key, QString* output) {
+    const auto applyTarget = [&](const QString& key, QString* output) {
         if (!changes.contains(key))
             return true;
         if (!changes.value(key).canConvert<QString>())
@@ -516,7 +320,7 @@ bool PanelContextRouter::setGroupContext(const QString& rawGroup, const QVariant
         *output = normalized(changes.value(key).toString());
         return true;
     };
-    const auto setClock = [&](const QString& key, double* output) {
+    const auto applyClock = [&](const QString& key, double* output) {
         if (!changes.contains(key))
             return true;
         bool ok = false;
@@ -526,37 +330,36 @@ bool PanelContextRouter::setGroupContext(const QString& rawGroup, const QVariant
         *output = value;
         return true;
     };
-    if (!setTarget(QStringLiteral("graphTarget"), &next.graphTarget) ||
-        !setTarget(QStringLiteral("timelineTarget"), &next.timelineTarget) ||
-        !setTarget(QStringLiteral("sourceTarget"), &next.sourceTarget) ||
-        !setClock(QStringLiteral("graphClock"), &next.graphClock) ||
-        !setClock(QStringLiteral("timelineClock"), &next.timelineClock) ||
-        !setClock(QStringLiteral("sourceClock"), &next.sourceClock))
+    if (!applyTarget(QStringLiteral("timelineTarget"), &next.timelineTarget) ||
+        !applyTarget(QStringLiteral("sourceTarget"), &next.sourceTarget) ||
+        !applyClock(QStringLiteral("timelineClock"), &next.timelineClock) ||
+        !applyClock(QStringLiteral("sourceClock"), &next.sourceClock))
         return false;
-    if (next.graphTarget == groups_[index].graphTarget && next.timelineTarget == groups_[index].timelineTarget &&
-        next.sourceTarget == groups_[index].sourceTarget && next.graphClock == groups_[index].graphClock &&
+    if (next.timelineTarget == groups_[index].timelineTarget && next.sourceTarget == groups_[index].sourceTarget &&
         next.timelineClock == groups_[index].timelineClock && next.sourceClock == groups_[index].sourceClock)
         return true;
     groups_[index] = std::move(next);
     emit groupContextChanged(group);
     for (const auto& [panelId, binding] : panels_) {
+        if (binding.group != group)
+            continue;
         const auto before = lastContexts_.at(panelId);
         const auto now = contextFor(panelId);
         lastContexts_[panelId] = now;
-        QString resolved;
-        if (binding.mode != QStringLiteral("pinned") && resolvedGroup(panelId, &resolved) && resolved == group &&
-            now != before)
+        if (now != before)
             emit panelContextChanged(panelId);
     }
     return true;
 }
 
-bool PanelContextRouter::requestInspector(const QString& graphTarget, const QString& nodeId) {
-    const auto target = normalized(graphTarget);
-    const auto node = normalized(nodeId);
-    if (target.isEmpty() || node.isEmpty())
+bool PanelContextRouter::requestInspector(const QString& rawGroup, const QString& rawNetwork,
+                                          const QString& rawNodeId) {
+    const auto group = normalized(rawGroup);
+    const auto network = normalized(rawNetwork);
+    const auto node = normalized(rawNodeId);
+    if (group.isEmpty() || network.isEmpty() || node.isEmpty())
         return false;
-    emit inspectorRequested(target, node);
+    emit inspectorRequested(group, network, node);
     return true;
 }
 
@@ -567,7 +370,7 @@ void PanelContextRouter::sessionChanged(void* context) noexcept {
 void PanelContextRouter::documentChanged() noexcept {
     for (const auto& [panelId, binding] : panels_) {
         const auto before = lastContexts_.at(panelId);
-        const auto now = contextForBinding(panelId, binding);
+        const auto now = contextFor(panelId);
         lastContexts_[panelId] = now;
         if (now != before)
             emit panelContextChanged(panelId);

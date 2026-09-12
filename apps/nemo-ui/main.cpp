@@ -153,10 +153,7 @@ int main(int argc, char* argv[]) {
         if (!viewerController.hasSource())
             return;
         const auto source = QStringLiteral("src");
-        const auto network = projectSession.document().rootNetworkId();
         panelContextRouter.openSource(QStringLiteral("A"), source);
-        panelContextRouter.setGraphTarget(QStringLiteral("A"),
-                                          QStringLiteral("network:%1").arg(static_cast<qulonglong>(network)));
         panelContextRouter.setTimelineTarget(QStringLiteral("A"), QStringLiteral("source:%1").arg(source));
     });
     std::vector<double> swapLatencies;

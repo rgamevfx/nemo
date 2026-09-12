@@ -1,12 +1,10 @@
 #include "PanelContextRouter.hpp"
-#include "ScopedEnvironment.hpp"
 #include "ViewerController.hpp"
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
 #include <QGuiApplication>
-#include <QJsonDocument>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -51,6 +49,8 @@ QVariantMap panelByType(const QVariantMap& node, const QString& type) {
     return {};
 }
 
+}  // namespace
+
 class PanelContextUiTest : public testing::Test {
 protected:
     QTemporaryDir directory;
@@ -69,6 +69,8 @@ protected:
                                     QStringLiteral("GraphPanel.qml"));
         workspace.registerPanelType(QStringLiteral("timeline"), QStringLiteral("Timeline"),
                                     QStringLiteral("TimelinePanel.qml"));
+        workspace.registerPanelType(QStringLiteral("parameters"), QStringLiteral("Parameters"),
+                                    QStringLiteral("ParametersPanel.qml"));
         router.setWorkspaceController(&workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
@@ -96,40 +98,32 @@ protected:
         return found;
     }
 
+    QQuickItem* panelBody(const QString& objectName, const QString& panelId) const {
+        std::function<QQuickItem*(QQuickItem*)> walk = [&](QQuickItem* node) -> QQuickItem* {
+            if (node->objectName() == objectName && node->property("panelId").toString() == panelId)
+                return node;
+            for (auto* child : node->childItems())
+                if (auto* found = walk(child))
+                    return found;
+            return nullptr;
+        };
+        return walk(window->contentItem());
+    }
+
     QVariantMap context(const QString& panelId) const { return router.contextFor(panelId); }
 };
 
-TEST_F(PanelContextUiTest, BindingAndRoleMenusExposePresentationChoices) {
+TEST_F(PanelContextUiTest, RetiredBindingChromeIsGoneFromPanelHeaders) {
     const auto viewer = panelByType(root(), QStringLiteral("viewer"));
     ASSERT_FALSE(viewer.isEmpty());
     const auto id = viewer.value(QStringLiteral("id")).toString();
 
-    auto* binding = item(QStringLiteral("panelBinding_") + id);
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                      binding->mapToScene(QPointF(binding->width() / 2, binding->height() / 2)).toPoint());
-    auto* menu = window->findChild<QObject*>(QStringLiteral("panelBindingMenu_") + id);
-    ASSERT_NE(menu, nullptr);
-    EXPECT_TRUE(menu->property("visible").toBool());
-    auto* pinned = visual(window->contentItem(), QStringLiteral("panelBindingPinned_") + id);
-    ASSERT_NE(pinned, nullptr);
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                      pinned->mapToScene(QPointF(pinned->width() / 2, pinned->height() / 2)).toPoint());
-    EXPECT_EQ(context(id).value(QStringLiteral("mode")).toString(), QStringLiteral("pinned"));
-    QTest::keyClick(window, Qt::Key_Escape);
-
-    auto* target = item(QStringLiteral("viewerTargetMenu_") + id);
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                      target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
-    QTest::qWait(20);
-    auto* role = item(QStringLiteral("viewerRoleMedia_") + id);
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                      role->mapToScene(QPointF(role->width() / 2, role->height() / 2)).toPoint());
-    QTest::qWait(20);
-    EXPECT_EQ(context(id).value(QStringLiteral("viewerRole")).toString(), QStringLiteral("media"));
-    EXPECT_FALSE(viewerController.hasSource()) << "Changing viewer role must not load media";
+    EXPECT_NE(item(QStringLiteral("panelType_") + id), nullptr);
+    EXPECT_EQ(visual(window->contentItem(), QStringLiteral("panelBinding_") + id), nullptr);
+    EXPECT_EQ(visual(window->contentItem(), QStringLiteral("panelBindingMenu_") + id), nullptr);
 }
 
-TEST_F(PanelContextUiTest, FollowActiveTracksPointerActivatedPanel) {
+TEST_F(PanelContextUiTest, GroupContextsStayIsolatedWithoutLinkModes) {
     const auto viewer = panelByType(root(), QStringLiteral("viewer"));
     const auto graph = panelByType(root(), QStringLiteral("nodegraph"));
     ASSERT_FALSE(viewer.isEmpty());
@@ -138,60 +132,65 @@ TEST_F(PanelContextUiTest, FollowActiveTracksPointerActivatedPanel) {
     const auto graphId = graph.value(QStringLiteral("id")).toString();
     ASSERT_TRUE(router.setGroup(viewerId, QStringLiteral("A")));
     ASSERT_TRUE(router.setGroup(graphId, QStringLiteral("B")));
-    ASSERT_TRUE(router.setLinkMode(viewerId, QStringLiteral("follow")));
 
-    auto* graphCanvas = item(QStringLiteral("graphCanvas"));
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                      graphCanvas->mapToScene(QPointF(graphCanvas->width() / 2, graphCanvas->height() / 2)).toPoint());
-    QTest::qWait(20);
-    EXPECT_EQ(router.activePanel(), graphId);
-    EXPECT_EQ(context(viewerId).value(QStringLiteral("resolvedGroup")).toString(), QStringLiteral("B"));
-
-    auto* viewerArea = item(QStringLiteral("viewerImageArea"));
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                      viewerArea->mapToScene(QPointF(viewerArea->width() / 2, viewerArea->height() / 2)).toPoint());
-    QTest::qWait(20);
-    EXPECT_EQ(router.activePanel(), viewerId);
-    EXPECT_EQ(context(viewerId).value(QStringLiteral("resolvedGroup")).toString(), QStringLiteral("A"));
-}
-
-TEST_F(PanelContextUiTest, GroupClocksAreIsolatedAndPinnedContextStaysFixed) {
-    const auto viewer = panelByType(root(), QStringLiteral("viewer"));
-    const auto graph = panelByType(root(), QStringLiteral("nodegraph"));
-    ASSERT_FALSE(viewer.isEmpty());
-    ASSERT_FALSE(graph.isEmpty());
-    const auto viewerId = viewer.value(QStringLiteral("id")).toString();
-    const auto graphId = graph.value(QStringLiteral("id")).toString();
-
-    router.setLinkMode(viewerId, QStringLiteral("group"));
-    router.setGroup(viewerId, QStringLiteral("A"));
-    router.setLinkMode(graphId, QStringLiteral("group"));
-    router.setGroup(graphId, QStringLiteral("B"));
     router.setGroupContext(
         QStringLiteral("A"),
         QVariantMap{{QStringLiteral("sourceClock"), 11}, {QStringLiteral("sourceTarget"), QStringLiteral("source-a")}});
-    router.setGroupContext(QStringLiteral("B"),
-                           QVariantMap{{QStringLiteral("graphClock"), 27},
-                                       {QStringLiteral("sourceClock"), 29},
-                                       {QStringLiteral("sourceTarget"), QStringLiteral("source-b")}});
+    router.setGroupContext(
+        QStringLiteral("B"),
+        QVariantMap{{QStringLiteral("sourceClock"), 29}, {QStringLiteral("sourceTarget"), QStringLiteral("source-b")}});
     EXPECT_EQ(context(viewerId).value(QStringLiteral("sourceClock")).toInt(), 11);
     EXPECT_EQ(context(graphId).value(QStringLiteral("sourceClock")).toInt(), 29);
     EXPECT_NE(context(viewerId).value(QStringLiteral("sourceTarget")).toString(),
               context(graphId).value(QStringLiteral("sourceTarget")).toString());
-
-    router.setLinkMode(viewerId, QStringLiteral("pinned"));
-    const auto pinned = context(viewerId);
-    router.setGroupContext(
-        QStringLiteral("A"),
-        QVariantMap{{QStringLiteral("sourceClock"), 99}, {QStringLiteral("sourceTarget"), QStringLiteral("later-a")}});
-    EXPECT_EQ(context(viewerId).value(QStringLiteral("sourceClock")), pinned.value(QStringLiteral("sourceClock")));
-    EXPECT_EQ(context(viewerId).value(QStringLiteral("sourceTarget")), pinned.value(QStringLiteral("sourceTarget")));
-    EXPECT_FALSE(context(viewerId).value(QStringLiteral("available")).toBool());
-    EXPECT_FALSE(context(viewerId).value(QStringLiteral("unavailableReason")).toString().isEmpty());
-    ASSERT_TRUE(router.setViewerRole(viewerId, QStringLiteral("media")));
-    QTest::qWait(20);
-    EXPECT_FALSE(item(QStringLiteral("viewerItem_") + viewerId)->isVisible());
-    EXPECT_TRUE(item(QStringLiteral("viewerUnavailable_") + viewerId)->isVisible());
+    EXPECT_FALSE(context(viewerId).contains(QStringLiteral("resolvedGroup")));
+    EXPECT_FALSE(context(viewerId).contains(QStringLiteral("mode")));
 }
 
-}  // namespace
+TEST_F(PanelContextUiTest, InspectorRequestsAreGroupScopedAndMediaFree) {
+    const auto parameters = panelByType(root(), QStringLiteral("parameters"));
+    ASSERT_FALSE(parameters.isEmpty());
+    const auto groupAId = parameters.value(QStringLiteral("id")).toString();
+
+    // Convert the timeline leaf into a second live parameters panel in group B
+    // so both group receivers are instantiated and visible.
+    const auto timeline = panelByType(root(), QStringLiteral("timeline"));
+    ASSERT_FALSE(timeline.isEmpty());
+    const auto groupBId = timeline.value(QStringLiteral("id")).toString();
+    workspace.setPanelType(groupBId, QStringLiteral("parameters"));
+    workspace.setGroup(groupBId, QStringLiteral("B"));
+
+    const auto waitForPanel = [&](const QString& id) -> QQuickItem* {
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            if (auto* found = panelBody(QStringLiteral("parametersPanel"), id))
+                return found;
+            QTest::qWait(25);
+        }
+        return nullptr;
+    };
+    auto* panelA = waitForPanel(groupAId);
+    auto* panelB = waitForPanel(groupBId);
+    ASSERT_NE(panelA, nullptr);
+    ASSERT_NE(panelB, nullptr);
+    EXPECT_EQ(panelA->property("panelGroup").toString(), QStringLiteral("A"));
+    EXPECT_EQ(panelB->property("panelGroup").toString(), QStringLiteral("B"));
+
+    const auto revision = projectSession.revision();
+    ASSERT_TRUE(router.requestInspector(QStringLiteral("A"), QStringLiteral("7"), QStringLiteral("42")));
+    QTest::qWait(30);
+    ASSERT_EQ(panelA->property("inspectors").toList().size(), 1);
+    EXPECT_TRUE(panelB->property("inspectors").toList().isEmpty())
+        << "a group-A request must not reach the group-B parameters panel";
+    const auto opened = panelA->property("inspectors").toList().front().toMap();
+    EXPECT_EQ(opened.value(QStringLiteral("network")).toString(), QStringLiteral("7"));
+    EXPECT_EQ(opened.value(QStringLiteral("node")).toString(), QStringLiteral("42"));
+
+    ASSERT_TRUE(router.requestInspector(QStringLiteral("B"), QStringLiteral("9"), QStringLiteral("11")));
+    QTest::qWait(30);
+    EXPECT_EQ(panelA->property("inspectors").toList().size(), 1);
+    ASSERT_EQ(panelB->property("inspectors").toList().size(), 1);
+
+    // The relay is media-free and never mutates the document.
+    EXPECT_EQ(projectSession.revision(), revision);
+    EXPECT_TRUE(projectSession.document().mediaCatalog.entries().empty());
+}

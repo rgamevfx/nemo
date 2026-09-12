@@ -926,6 +926,86 @@ Command setDefaultOutputCommand(NetworkId network, NodeId output) {
                    [network, output](Document& document) { document.network(network).setDefaultOutput(output); }};
 }
 
+Command assignViewerCommand(NetworkId network, std::size_t viewerIndex, NodeId sourceNode,
+                            std::shared_ptr<NodeId> createdViewer) {
+    return Command{
+        "assign viewer " + std::to_string(viewerIndex),
+        [network, viewerIndex, sourceNode, createdViewer](Document& document) {
+            Graph& graph = document.network(network).graph();
+
+            // Viewer occurrences are ordered by identity so viewerIndex stays
+            // stable across renames and unrelated insertions.
+            const auto collectViewers = [](const Graph& candidate) {
+                std::vector<NodeId> viewers;
+                for (const auto& node : candidate.nodes()) {
+                    const NodeDescriptor* descriptor = candidate.descriptor(node.type);
+                    if (descriptor != nullptr && descriptor->type == "viewer")
+                        viewers.push_back(node.id);
+                }
+                std::sort(viewers.begin(), viewers.end());
+                return viewers;
+            };
+
+            // Validate and stage the complete edit on a trial graph: a failed
+            // creation or rejected relationship leaves the document untouched.
+            Graph trial = graph;
+            std::vector<NodeId> viewers = collectViewers(trial);
+            std::vector<NodeId> created;
+            LayoutPosition sourceLayout{};
+            bool hasSourceLayout = false;
+            if (const NodeInstance* source = trial.node(sourceNode)) {
+                sourceLayout = source->layout;
+                hasSourceLayout = true;
+            }
+            while (viewers.size() <= viewerIndex && sourceNode != kInvalidNode) {
+                const std::size_t ordinal = viewers.size();
+                std::size_t suffix = ordinal + 1;
+                std::string name = "Viewer" + std::to_string(suffix);
+                while (trial.nodeByName(name) != nullptr)
+                    name = "Viewer" + std::to_string(++suffix);
+                LayoutPosition position{0.0, 60.0 * static_cast<double>(ordinal + 1)};
+                if (hasSourceLayout)
+                    position = LayoutPosition{sourceLayout.x, sourceLayout.y + 60.0 * static_cast<double>(ordinal + 1)};
+                const NodeId inserted = trial.addNodeWithId(trial.nextNodeId(), "viewer", name, {}, position);
+                created.push_back(inserted);
+                viewers.push_back(inserted);
+            }
+
+            // Detaching a viewer that does not exist is a no-op; it must never
+            // fabricate a viewer occurrence.
+            if (viewers.size() <= viewerIndex)
+                return;
+
+            const PortRef viewerInput{viewers[viewerIndex], 0};
+            EdgeId occupant = kInvalidEdge;
+            PortRef occupantSource{};
+            for (const auto& edge : trial.edges()) {
+                if (edge.to == viewerInput) {
+                    occupant = edge.id;
+                    occupantSource = edge.from;
+                    break;
+                }
+            }
+
+            if (sourceNode == kInvalidNode) {
+                if (occupant != kInvalidEdge)
+                    trial.disconnect(occupant);
+            } else {
+                const PortRef sourceOutput{sourceNode, 0};
+                const bool attached = occupant != kInvalidEdge && occupantSource == sourceOutput;
+                if (occupant != kInvalidEdge)
+                    trial.disconnect(occupant);
+                // Re-assigning the attached source toggles the edge off.
+                if (!attached)
+                    static_cast<void>(trial.connect(sourceOutput, viewerInput));
+            }
+
+            graph = std::move(trial);
+            if (createdViewer && !created.empty())
+                *createdViewer = created.back();
+        }};
+}
+
 Command connectInputCommand(NetworkId network, InterfacePortId input, PortRef destination) {
     return Command{"connect formal input " + std::to_string(input), [network, input, destination](Document& document) {
                        document.network(network).connectInput(input, destination);

@@ -16,7 +16,6 @@ FocusScope {
     property string panelId: ""
     property string panelGroup: "A"
     property var panelState: ({})
-    property var panelContext: ({})
     property var contextRouter: null
     property var theme
     property var workspace
@@ -151,10 +150,17 @@ FocusScope {
         return Math.max(0.2, Math.min(2.5, Number(value) || 1));
     }
     function targetNetworkId() {
-        var target = panelContext && panelContext.graphTarget !== undefined ? String(panelContext.graphTarget || "") : "";
-        if (!target.length)
-            return controller && controller.rootNetworkId !== undefined ? String(controller.rootNetworkId || "") : "";
-        return target.indexOf("network:") === 0 ? target.slice(8) : "";
+        if (graphNetworkId.length)
+            return graphNetworkId;
+        return controller && controller.rootNetworkId !== undefined ? String(controller.rootNetworkId || "") : "";
+    }
+    function viewerShortcutEnabled() {
+        return graphPanel.activeFocus && selectedNodeIds.length === 1 && !gesture && !graphSearchPopup.opened && !graphContextMenu.opened;
+    }
+    function assignViewerShortcut(viewerIndex) {
+        if (!viewerShortcutEnabled())
+            return;
+        controller.assignViewer(graphNetworkId, viewerIndex, String(selectedNodeIds[0]));
     }
     function scopeKey(id) {
         return String(id || "");
@@ -981,7 +987,6 @@ FocusScope {
             graphPanel.refreshSnapshots();
         }
     }
-    onPanelContextChanged: switchNetwork()
     onPanelStateChanged: {
         if (!graphPanel.gesture) {
             graphPanel.restoreScopeState();
@@ -1361,8 +1366,8 @@ FocusScope {
                     if (mouse.button !== Qt.LeftButton || lastClickMoved)
                         return;
                     var id = nodeAt(mouse.x, mouse.y);
-                    if (id && contextRouter && panelContext && panelContext.graphTarget)
-                        contextRouter.requestInspector(String(panelContext.graphTarget), String(id));
+                    if (id && contextRouter)
+                        contextRouter.requestInspector(panelGroup, graphNetworkId, String(id));
                 }
                 onWheel: function (wheel) {
                     if (gesture === "wire") {
@@ -1424,6 +1429,62 @@ FocusScope {
                 savePanelState();
             }
         }
+    }
+    // Digits 1..9 attach the single selected node to viewer N. The core command
+    // toggles, so pressing the same digit for the attached node detaches it.
+    Shortcut {
+        sequence: "1"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(0)
+    }
+    Shortcut {
+        sequence: "2"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(1)
+    }
+    Shortcut {
+        sequence: "3"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(2)
+    }
+    Shortcut {
+        sequence: "4"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(3)
+    }
+    Shortcut {
+        sequence: "5"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(4)
+    }
+    Shortcut {
+        sequence: "6"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(5)
+    }
+    Shortcut {
+        sequence: "7"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(6)
+    }
+    Shortcut {
+        sequence: "8"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(7)
+    }
+    Shortcut {
+        sequence: "9"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.viewerShortcutEnabled()
+        onActivated: graphPanel.assignViewerShortcut(8)
     }
 
     Popup {
@@ -1558,7 +1619,12 @@ FocusScope {
         MenuItem {
             objectName: "graphSetViewerSelection"
             text: "Set as Viewer"
-            enabled: false
+            enabled: graphPanel.selectedNodeIds.length === 1
+            onTriggered: {
+                if (graphPanel.selectedNodeIds.length !== 1)
+                    return;
+                controller.assignViewer(graphPanel.graphNetworkId, 0, String(graphPanel.selectedNodeIds[0]));
+            }
         }
     }
     Text {

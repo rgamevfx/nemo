@@ -120,6 +120,38 @@ TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     EXPECT_EQ(std::get<ChoiceValue>(merge->effectiveParams.at("operation")).value, "over");
 }
 
+// Acceptance for the interactive viewer: a request whose target is a
+// processing node (not an Output) is valid and publishes that node's image.
+TEST(EvaluationTest, NonOutputProcessingNodeIsAValidEvaluationTarget) {
+    Document document =
+        makeDocument({{"testpattern", "plate"}, {"constcolor", "backdrop"}, {"merge", "comp"}, {"output", "out"}});
+    rootGraph(document).setParam(rootGraph(document).nodeByName("backdrop")->id, "color",
+                                 ColorValue{{0.0F, 0.25F, 1.0F, 1.0F}});
+    connect(rootGraph(document), "plate", "comp", 0, 0);
+    connect(rootGraph(document), "backdrop", "comp", 0, 1);
+    connect(rootGraph(document), "comp", "out");
+
+    EvaluationRequest request = fullFrameRequest(document, 0);
+    request.output = rootGraph(document).nodeByName("comp")->id;
+    const CpuEvaluation evaluation = evaluateCpu(document, request);
+
+    // Only the merge's own dependencies are scheduled; the Output node is not.
+    ASSERT_EQ(evaluation.plan.steps.size(), 3u);
+    EXPECT_EQ(evaluation.plan.result.contentHash, stepFor(evaluation.plan, "comp")->produced.contentHash);
+    // The opaque backdrop wins the "over", so the viewer shows merge's image.
+    const auto pixel = evaluation.image.pixel(4, 0);
+    EXPECT_FLOAT_EQ(pixel[0], 0.0F);
+    EXPECT_FLOAT_EQ(pixel[1], 0.25F);
+    EXPECT_FLOAT_EQ(pixel[2], 1.0F);
+    EXPECT_FLOAT_EQ(pixel[3], 1.0F);
+
+    // The network's Output node still defines the consumption result.
+    EvaluationRequest throughOutput = fullFrameRequest(document, 0);
+    const CpuEvaluation published = evaluateCpu(document, throughOutput);
+    EXPECT_EQ(published.plan.result.contentHash, stepFor(published.plan, "out")->produced.contentHash);
+    EXPECT_EQ(published.plan.result.contentHash, evaluation.plan.result.contentHash);
+}
+
 // Acceptance example 2: no Output node -> evaluation error naming the
 // document, surfaced verbatim by the CLI as {"errors": [...]} with exit 1.
 TEST(EvaluationTest, MissingOutputNodeFailsWithClearError) {

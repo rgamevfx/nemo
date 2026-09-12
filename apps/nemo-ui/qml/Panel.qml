@@ -19,8 +19,8 @@ Rectangle {
 
     readonly property string panelId: panel && panel.id ? panel.id : ""
     readonly property string panelType: panel && panel.type ? panel.type : ""
-    // The Workspace group remains the persisted A-E owner. Routing mode lives
-    // in panelState and is deliberately not folded into this property.
+    // The Workspace group is the persisted A-E owner and the panel's sole
+    // context key.
     readonly property string panelGroup: panel && panel.group ? panel.group : "A"
     readonly property var panelState: panel && panel.state ? panel.state : ({})
     readonly property var descriptor: workspace && panelType.length > 0
@@ -35,32 +35,17 @@ Rectangle {
         return contextRouter && panelId.length > 0
                 ? contextRouter.contextFor(panelId) : ({
                     panelId: panelId,
-                    mode: bindingModeFromState(),
                     group: panelGroup,
-                    resolvedGroup: panelGroup,
                     viewerRole: roleFromState(),
                     available: false,
                     unavailableReason: "Context router unavailable"
                 })
     }
-    readonly property string bindingMode: panelContext && panelContext.mode
-                                         ? panelContext.mode : bindingModeFromState()
-    readonly property string bindingBadge: bindingMode === "pinned" ? "P"
-                                          : bindingMode === "group" ? panelGroup : "F"
-    readonly property string bindingSummary: bindingMode === "follow"
-                                             ? "Follow Active"
-                                             : bindingMode === "pinned" ? "Pinned"
-                                             : "Group " + panelGroup
 
     color: theme ? theme.panel : "#2b2b2b"
     radius: theme ? theme.radius : 7
     border.color: theme ? theme.border : "#30343a"
     clip: true
-
-    function bindingModeFromState() {
-        var value = panelState && panelState.linkMode ? panelState.linkMode : "group"
-        return value === "follow" || value === "pinned" ? value : "group"
-    }
 
     function roleFromState() {
         var value = panelState && panelState.viewerRole ? panelState.viewerRole : "graph"
@@ -72,19 +57,8 @@ Rectangle {
         if (!contextRouter || !panelId.length)
             return
         // Hydrate from saved state without writing back while QML is reading
-        // the workspace root. Only user binding actions persist a change.
-        contextRouter.registerPanel(panelId, panelGroup, bindingModeFromState())
-        contextRevision++
-    }
-
-    function setBindingMode(mode, group) {
-        if (!contextRouter || !panelId.length)
-            return
-        if (mode === "group" && (group === undefined || group === ""))
-            group = panelGroup
-        if (mode === "group" && group !== panelGroup)
-            contextRouter.setGroup(panelId, group)
-        contextRouter.setLinkMode(panelId, mode)
+        // the workspace root.
+        contextRouter.registerPanel(panelId, panelGroup)
         contextRevision++
     }
 
@@ -146,8 +120,7 @@ Rectangle {
                 panelRoot.contextRevision++
         }
         function onGroupContextChanged(changedGroup) {
-            var resolved = panelRoot.panelContext && panelRoot.panelContext.resolvedGroup
-            if (changedGroup === resolved)
+            if (changedGroup === panelRoot.panelGroup)
                 panelRoot.contextRevision++
         }
         function onActivePanelChanged() {
@@ -204,7 +177,7 @@ Rectangle {
                     implicitWidth: contentItem.implicitWidth + 16
                     implicitHeight: 24
                     font.pixelSize: 12
-                    Layout.maximumWidth: Math.max(0, header.width - bindingButton.implicitWidth
+                    Layout.maximumWidth: Math.max(0, header.width
                                                   - (headerTools.visible && !headerTools.fillHeader ? headerTools.implicitWidth : 0) - 8)
                     text: panelRoot.title
                     background: Rectangle {
@@ -265,71 +238,6 @@ Rectangle {
                         MenuItem {
                             text: "Reset Layout"
                             onTriggered: panelRoot.workspace.reset()
-                        }
-                    }
-                }
-
-                Button {
-                    id: bindingButton
-                    flat: true
-                    padding: 6
-                    implicitWidth: 26
-                    implicitHeight: 24
-                    font.pixelSize: 12
-                    text: panelRoot.bindingBadge
-                    background: Rectangle {
-                        radius: panelRoot.theme ? panelRoot.theme.smallRadius : 4
-                        color: bindingButton.hovered
-                               ? (panelRoot.theme ? panelRoot.theme.hover : "#343940")
-                               : "transparent"
-                    }
-                    contentItem: Text {
-                        text: bindingButton.text
-                        color: panelRoot.theme ? panelRoot.theme.muted : "#979ea8"
-                        font.pixelSize: 10
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    onClicked: bindingMenu.open()
-                    Accessible.name: "Panel context binding. Opens Follow Active, group, and Pinned choices."
-                    objectName: "panelBinding_" + panelRoot.panelId
-                    ToolTip.visible: hovered
-                    ToolTip.text: panelRoot.bindingSummary + " · "
-                                   + (panelRoot.panelContext && panelRoot.panelContext.available
-                                      ? "target available" : (panelRoot.panelContext && panelRoot.panelContext.unavailableReason
-                                         ? panelRoot.panelContext.unavailableReason : "target unavailable"))
-
-                    Menu {
-                        id: bindingMenu
-                        objectName: "panelBindingMenu_" + panelRoot.panelId
-                        x: 0
-                        y: parent.height
-                        MenuItem {
-                            text: "Follow Active"
-                            checkable: true
-                            checked: panelRoot.bindingMode === "follow"
-                            objectName: "panelBindingFollow_" + panelRoot.panelId
-                            onTriggered: panelRoot.setBindingMode("follow")
-                        }
-                        MenuSeparator {}
-                        Repeater {
-                            model: ["A", "B", "C", "D", "E"]
-                            delegate: MenuItem {
-                                required property string modelData
-                                text: modelData
-                                checkable: true
-                                checked: panelRoot.bindingMode === "group" && panelRoot.panelGroup === modelData
-                                objectName: "panelBindingGroup_" + modelData + "_" + panelRoot.panelId
-                                onTriggered: panelRoot.setBindingMode("group", modelData)
-                            }
-                        }
-                        MenuSeparator {}
-                        MenuItem {
-                            text: "Pinned"
-                            checkable: true
-                            checked: panelRoot.bindingMode === "pinned"
-                            objectName: "panelBindingPinned_" + panelRoot.panelId
-                            onTriggered: panelRoot.setBindingMode("pinned")
                         }
                     }
                 }

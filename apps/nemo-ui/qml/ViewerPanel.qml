@@ -23,9 +23,25 @@ FocusScope {
     property var theme: null
 
     readonly property var controller: viewerController
-    readonly property bool hasImage: controller.hasSource && controller.sourceSize.width > 0
-    readonly property real sourceWidth: hasImage ? controller.sourceSize.width : 0
-    readonly property real sourceHeight: hasImage ? controller.sourceSize.height : 0
+    // Panel-local viewer selector. Index addresses the network's Viewer
+    // nodes in ascending NodeId order; the shared controller renders one.
+    readonly property int viewerIndex: panelState && panelState.viewerIndex !== undefined
+                                       ? Math.max(0, Math.round(Number(panelState.viewerIndex))) : 0
+    // Re-evaluated on every graph change: a Q_INVOKABLE used directly in a
+    // binding would otherwise never refresh when a Viewer node is created or
+    // deleted, because its only other dependency (the root id) is constant.
+    property int graphRevision: 0
+    readonly property int viewerTotal: {
+        graphRevision
+        return controller.viewerCount(controller.rootNetworkId)
+    }
+    // Display math reads the composition canvas, not the media-only source
+    // size: a media-free graph still has a 1920x1080 domain to fit.
+    readonly property real compositionWidth: controller.compositionSize.width
+    readonly property real compositionHeight: controller.compositionSize.height
+    readonly property bool hasImage: compositionWidth > 0 && compositionHeight > 0
+    readonly property real sourceWidth: hasImage ? compositionWidth : 0
+    readonly property real sourceHeight: hasImage ? compositionHeight : 0
     // Display settings are panel-local. They deliberately do not use the
     // controller's shared render state, so two panels may pan/zoom separately.
     readonly property real displayZoom: panelState && panelState.zoom !== undefined ? Number(panelState.zoom) : 1
@@ -34,21 +50,29 @@ FocusScope {
     readonly property string zoomMode: panelState && panelState.zoomMode ? panelState.zoomMode : "Fit"
     readonly property string viewerRole: panelContext && panelContext.viewerRole
                                         ? panelContext.viewerRole : "graph"
-    readonly property string resolvedGroup: panelContext && panelContext.resolvedGroup
-                                           ? panelContext.resolvedGroup : panelGroup
-    readonly property real routedClock: viewerRole === "graph"
-                                        ? Number(panelContext.graphClock || 0)
+    readonly property string resolvedGroup: panelGroup
+    readonly property bool graphRole: viewerRole === "graph"
+    // The graph role follows the active Viewer node's attachment; the router
+    // carries no graph target any more, and the shared controller owns it.
+    readonly property string graphTargetId: String(controller.viewerTargetId || "")
+    readonly property string graphTargetName: controller.viewerTargetName || ""
+    readonly property real routedClock: graphRole
+                                        ? controller.frame
                                         : viewerRole === "timeline"
                                           ? Number(panelContext.timelineClock || 0)
                                           : Number(panelContext.sourceClock || 0)
-    readonly property string targetId: viewerRole === "graph" ? String(panelContext.graphTarget || "")
+    readonly property string targetId: graphRole ? graphTargetId
                                        : viewerRole === "timeline" ? String(panelContext.timelineTarget || "")
                                                                    : String(panelContext.sourceTarget || "")
-    readonly property bool targetAvailable: panelContext && panelContext.available === true
-    readonly property string targetName: targetAvailable && targetId.length > 0
-                                        ? targetId
-                                        : viewerRole === "graph" ? "No node graph target"
-                                          : viewerRole === "media" ? "No media source" : "Timeline"
+    readonly property bool targetAvailable: graphRole ? graphTargetId.length > 0
+                                                      : panelContext && panelContext.available === true
+    readonly property string targetName: graphRole
+                                        ? (graphTargetId.length > 0
+                                           ? (graphTargetName.length > 0 ? graphTargetName : graphTargetId)
+                                           : "No Viewer target")
+                                        : targetAvailable && targetId.length > 0
+                                          ? targetId
+                                          : viewerRole === "timeline" ? "No timeline target" : "No media source"
     readonly property int firstFrame: 0
     readonly property int lastFrame: controller.frameCount > 0 ? controller.frameCount - 1 : 239
     readonly property int currentFrame: Math.max(firstFrame, Math.min(lastFrame, Math.round(routedClock)))
@@ -124,7 +148,9 @@ FocusScope {
         Item {
             id: viewerHeaderTools
             implicitHeight: Math.max(24, headerDisplayControls.implicitHeight)
-            implicitWidth: headerDisplayControls.implicitWidth + targetButton.implicitWidth + 4
+            implicitWidth: headerDisplayControls.implicitWidth
+                           + (viewerSelector.visible ? viewerSelector.width + 4 : 0)
+                           + targetButton.implicitWidth + 4
 
             RowLayout {
                 anchors.fill: parent
@@ -134,6 +160,27 @@ FocusScope {
                     id: headerDisplayControls
                     Layout.fillWidth: true
                     sourceComponent: viewerPanel.width >= 560 ? viewerPanel.displayControlsComponent : null
+                }
+
+                StudioComboBox {
+                    id: viewerSelector
+                    objectName: "viewerSelector_" + viewerPanel.panelId
+                    theme: viewerPanel.theme
+                    Layout.alignment: Qt.AlignVCenter
+                    width: 84
+                    height: 24
+                    visible: viewerPanel.viewerTotal > 1
+                    model: {
+                        var items = []
+                        for (var index = 0; index < viewerPanel.viewerTotal; ++index)
+                            items.push("Viewer " + (index + 1))
+                        return items
+                    }
+                    currentIndex: Math.max(0, Math.min(viewerPanel.viewerTotal - 1, viewerPanel.viewerIndex))
+                    onActivated: viewerPanel.selectViewer(currentIndex)
+                    Accessible.name: "Viewer node"
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Active Viewer node rendered by the shared viewer."
                 }
 
                 ChromeButton {
@@ -173,8 +220,8 @@ FocusScope {
                         y: targetButton.height
                         MenuItem {
                             objectName: "viewerRole_" + viewerPanel.panelId
-                            text: "Node Graph — " + (viewerPanel.panelContext && viewerPanel.panelContext.graphTarget
-                                                       ? viewerPanel.panelContext.graphTarget : "Unavailable")
+                            text: "Node Graph — " + (viewerPanel.graphTargetName.length > 0
+                                                       ? viewerPanel.graphTargetName : "No Viewer target")
                             checkable: true
                             checked: viewerPanel.viewerRole === "graph"
                             onTriggered: viewerPanel.setRole("graph")
@@ -237,13 +284,37 @@ FocusScope {
         if (!contextRouter || !panelId.length)
             return
         contextRouter.setViewerRole(panelId, role)
+        if (role === "graph")
+            activateViewer()
+    }
+
+    // The shared controller renders exactly one Viewer node. This panel drives
+    // that choice whenever it is the active panel or its selector changes.
+    function activateViewer() {
+        if (!controller)
+            return
+        controller.setActiveViewer(controller.rootNetworkId, viewerIndex)
+        if (viewer)
+            viewer.makePrimary()
+    }
+
+    function selectViewer(index) {
+        var bounded = Math.max(0, Math.round(Number(index)))
+        if (bounded === viewerIndex) {
+            activateViewer()
+            return
+        }
+        saveState({viewerIndex: bounded})
+        activateViewer()
     }
 
     function updateClock(value) {
         var bounded = Math.max(firstFrame, Math.min(lastFrame, Math.round(value)))
-        if (contextRouter && resolvedGroup.length > 0) {
+        // The graph role clock is the shared controller frame; timeline and
+        // media clocks remain group-routed presentation state.
+        if (viewerRole !== "graph" && contextRouter && resolvedGroup.length > 0) {
             var change = {}
-            change[viewerRole === "media" ? "sourceClock" : viewerRole + "Clock"] = bounded
+            change[viewerRole === "media" ? "sourceClock" : "timelineClock"] = bounded
             contextRouter.setGroupContext(resolvedGroup, change)
         }
         // The controller remains the single request consumer until issue #47
@@ -688,6 +759,34 @@ FocusScope {
             frameField.text = String(currentFrame)
     }
 
+    // The panel that owns the shared viewer renders its selected Viewer node.
+    function ownsActiveViewer() {
+        if (!contextRouter)
+            return true
+        var active = contextRouter.activePanel
+        return !active || active.length === 0 || active === panelId
+    }
+    Component.onCompleted: Qt.callLater(function() { if (ownsActiveViewer()) activateViewer() })
+    onViewerIndexChanged: activateViewer()
+    onGraphRoleChanged: if (graphRole) activateViewer()
+    onVisibleChanged: if (visible && graphRole && ownsActiveViewer()) activateViewer()
+
+    Connections {
+        target: viewerPanel.contextRouter
+        function onActivePanelChanged() {
+            if (viewerPanel.graphRole && viewerPanel.contextRouter
+                    && viewerPanel.contextRouter.activePanel === viewerPanel.panelId)
+                viewerPanel.activateViewer()
+        }
+    }
+
+    Connections {
+        target: viewerPanel.controller
+        function onGraphChanged() {
+            viewerPanel.graphRevision++
+        }
+    }
+
     Keys.onPressed: function(event) {
         if (frameField.activeFocus)
             return
@@ -699,6 +798,12 @@ FocusScope {
             viewerPanel.updateClock(viewerPanel.firstFrame); event.accepted = true
         } else if (event.key === Qt.Key_End) {
             viewerPanel.updateClock(viewerPanel.lastFrame); event.accepted = true
+        } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+            var index = event.key - Qt.Key_1
+            if (index < viewerPanel.viewerTotal) {
+                viewerPanel.selectViewer(index)
+                event.accepted = true
+            }
         }
     }
 }

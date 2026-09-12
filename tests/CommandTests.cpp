@@ -832,3 +832,117 @@ TEST(CommandStackTest, RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAto
     EXPECT_EQ(rootGraph(document).edges().front().id, edge);
     EXPECT_EQ(rootGraph(document).edges().front().route, (std::vector<LayoutPosition>{{4.0, 5.0}}));
 }
+
+TEST(CommandStackTest, ViewerAssignmentCreatesMissingViewerAndAttachesAtomically) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    const NodeId color = rootGraph(document).addNode("constcolor", "background");
+    const NodeId merge = rootGraph(document).addNode("merge", "comp");
+    rootGraph(document).connect({color, 0}, {merge, 1});
+    const std::size_t nodesBefore = rootGraph(document).nodes().size();
+
+    CommandStack history(document);
+    auto created = std::make_shared<NodeId>();
+    history.push(assignViewerCommand(network, 0, merge, created));
+    ASSERT_NE(rootGraph(document).node(*created), nullptr);
+    EXPECT_EQ(rootGraph(document).node(*created)->type, "viewer");
+    EXPECT_EQ(rootGraph(document).nodes().size(), nodesBefore + 1);
+    ASSERT_EQ(rootGraph(document).edgesInto(*created).size(), 1u);
+    EXPECT_EQ(rootGraph(document).edgesInto(*created).front().from, (PortRef{merge, 0}));
+
+    // Creating the viewer and its edge is one undo step.
+    EXPECT_EQ(history.depth(), 1u);
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(rootGraph(document).nodes().size(), nodesBefore);
+    EXPECT_EQ(rootGraph(document).node(*created), nullptr);
+    EXPECT_EQ(rootGraph(document).edges().size(), 1u);
+    ASSERT_TRUE(history.redo());
+    ASSERT_NE(rootGraph(document).node(*created), nullptr);
+    ASSERT_EQ(rootGraph(document).edgesInto(*created).size(), 1u);
+    EXPECT_EQ(rootGraph(document).edgesInto(*created).front().from, (PortRef{merge, 0}));
+}
+
+TEST(CommandStackTest, ViewerIndexCreatesEveryMissingViewerInOrder) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    const NodeId first = rootGraph(document).addNode("testpattern", "first");
+    CommandStack history(document);
+    auto created = std::make_shared<NodeId>();
+    history.push(assignViewerCommand(network, 1, first, created));
+
+    std::vector<NodeId> viewers;
+    for (const auto& node : rootGraph(document).nodes())
+        if (node.type == "viewer")
+            viewers.push_back(node.id);
+    std::sort(viewers.begin(), viewers.end());
+    ASSERT_EQ(viewers.size(), 2u);
+    EXPECT_EQ(viewers[1], *created);
+    EXPECT_TRUE(rootGraph(document).edgesInto(viewers[0]).empty());
+    ASSERT_EQ(rootGraph(document).edgesInto(viewers[1]).size(), 1u);
+    EXPECT_EQ(rootGraph(document).edgesInto(viewers[1]).front().from, (PortRef{first, 0}));
+}
+
+TEST(CommandStackTest, ViewerAssignmentReplacesAndTogglesInOneHistoryEntry) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    const NodeId first = rootGraph(document).addNode("testpattern", "first");
+    const NodeId second = rootGraph(document).addNode("testpattern", "second");
+    auto viewer = std::make_shared<NodeId>();
+    CommandStack history(document);
+    history.push(assignViewerCommand(network, 0, first, viewer));
+    history.push(assignViewerCommand(network, 0, second));
+    ASSERT_EQ(rootGraph(document).edgesInto(*viewer).size(), 1u);
+    EXPECT_EQ(rootGraph(document).edgesInto(*viewer).front().from, (PortRef{second, 0}));
+    EXPECT_EQ(rootGraph(document).edges().size(), 1u);
+
+    // Re-assigning the attached source toggles the edge off.
+    history.push(assignViewerCommand(network, 0, second));
+    EXPECT_TRUE(rootGraph(document).edgesInto(*viewer).empty());
+    EXPECT_TRUE(rootGraph(document).edges().empty());
+    ASSERT_TRUE(history.undo());
+    ASSERT_EQ(rootGraph(document).edgesInto(*viewer).size(), 1u);
+    EXPECT_EQ(rootGraph(document).edgesInto(*viewer).front().from, (PortRef{second, 0}));
+}
+
+TEST(CommandStackTest, ViewerAssignmentRejectsUnknownSourceWithoutChangingDocument) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    rootGraph(document).addNode("testpattern", "first");
+    CommandStack history(document);
+    const auto revision = document.stateRevision();
+    EXPECT_THROW(history.push(assignViewerCommand(network, 0, 999)), GraphException);
+    EXPECT_EQ(document.stateRevision(), revision);
+    EXPECT_EQ(history.depth(), 0u);
+    EXPECT_TRUE(rootGraph(document).edges().empty());
+    for (const auto& node : rootGraph(document).nodes())
+        EXPECT_NE(node.type, "viewer");
+}
+
+TEST(CommandStackTest, RemovingAttachedNodeAndExplicitDetachLeaveViewerEmpty) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    const NodeId merge = rootGraph(document).addNode("merge", "comp");
+    const NodeId color = rootGraph(document).addNode("constcolor", "background");
+    rootGraph(document).connect({color, 0}, {merge, 1});
+    auto viewer = std::make_shared<NodeId>();
+    CommandStack history(document);
+    history.push(assignViewerCommand(network, 0, merge, viewer));
+    ASSERT_EQ(rootGraph(document).edgesInto(*viewer).size(), 1u);
+
+    // Deleting the attached node removes only the incident edge.
+    history.push(removeNodeCommand(network, merge));
+    EXPECT_EQ(rootGraph(document).node(merge), nullptr);
+    ASSERT_NE(rootGraph(document).node(*viewer), nullptr);
+    EXPECT_TRUE(rootGraph(document).edgesInto(*viewer).empty());
+
+    // An invalid source explicitly detaches a still-attached viewer.
+    history.push(assignViewerCommand(network, 0, color));
+    ASSERT_EQ(rootGraph(document).edgesInto(*viewer).size(), 1u);
+    history.push(assignViewerCommand(network, 0, kInvalidNode));
+    EXPECT_TRUE(rootGraph(document).edgesInto(*viewer).empty());
+
+    // Detaching a viewer index that does not exist must not fabricate one.
+    history.push(assignViewerCommand(network, 5, kInvalidNode));
+    EXPECT_EQ(rootGraph(document).nodeByName("Viewer2"), nullptr);
+    EXPECT_EQ(rootGraph(document).nodeByName("Viewer6"), nullptr);
+}

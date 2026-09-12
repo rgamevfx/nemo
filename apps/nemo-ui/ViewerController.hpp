@@ -36,8 +36,13 @@ class ViewerController final : public QObject {
     Q_PROPERTY(int frame READ frame WRITE setFrame NOTIFY frameChanged)
     Q_PROPERTY(int effectiveScale READ effectiveScale NOTIFY effectiveScaleChanged)
     Q_PROPERTY(QRectF presentedRegion READ presentedRegion NOTIFY frameArrived)
-    Q_PROPERTY(QString outputName READ outputName WRITE setOutputName NOTIFY outputChanged)
-    Q_PROPERTY(QStringList outputNames READ outputNames NOTIFY graphChanged)
+    // Full-resolution image domain the current presentation was evaluated
+    // against: the probed media size, or the default composition canvas when
+    // no media source is loaded. Display math reads this rather than the
+    // media-only source size so a media-free graph still shows its result.
+    Q_PROPERTY(QSizeF compositionSize READ compositionSize NOTIFY frameArrived)
+    Q_PROPERTY(QString viewerTargetName READ viewerTargetName NOTIFY viewerTargetChanged)
+    Q_PROPERTY(QString viewerTargetId READ viewerTargetId NOTIFY viewerTargetChanged)
     Q_PROPERTY(QString rootNetworkId READ rootNetworkId NOTIFY graphChanged)
     Q_PROPERTY(QVariantList graphNodes READ graphNodes NOTIFY graphChanged)
     Q_PROPERTY(QVariantList graphEdges READ graphEdges NOTIFY graphChanged)
@@ -112,7 +117,13 @@ public:
     // occurrences. These edit SourceReference through the command API.
     Q_INVOKABLE void slipTimelineClip(const QString& source, int delta);
     Q_INVOKABLE void retimeTimelineClip(const QString& source, int step);
-    Q_INVOKABLE void setOutputName(const QString& name);
+    // Viewer attachment is command-owned like every other graph edit. The
+    // shared controller renders one viewer at a time: the active viewer's
+    // attached upstream node is the evaluation target.
+    Q_INVOKABLE void setActiveViewer(const QString& networkId, int viewerIndex);
+    Q_INVOKABLE int viewerCount(const QString& networkId) const;
+    Q_INVOKABLE QVariantMap viewerAttachment(const QString& networkId, int viewerIndex) const;
+    Q_INVOKABLE bool assignViewer(const QString& networkId, int viewerIndex, const QVariant& nodeId);
     Q_INVOKABLE bool undo();
     Q_INVOKABLE bool redo();
     Q_INVOKABLE void cancelRender();
@@ -136,8 +147,8 @@ public:
     [[nodiscard]] QPointF pan() const { return pan_; }
     [[nodiscard]] int frame() const { return frame_; }
     [[nodiscard]] int effectiveScale() const { return effectiveScale_; }
-    [[nodiscard]] QString outputName() const { return outputName_; }
-    [[nodiscard]] QStringList outputNames() const;
+    [[nodiscard]] QString viewerTargetName() const { return viewerTargetName_; }
+    [[nodiscard]] QString viewerTargetId() const;
     [[nodiscard]] QString rootNetworkId() const;
     Q_INVOKABLE QVariantMap graphSnapshot(const QString& networkId) const;
     [[nodiscard]] QVariantList graphNodes() const;
@@ -158,6 +169,7 @@ public:
         return rangeError_.isEmpty() ? QString::fromStdString(schedulerCounts_.cacheError) : rangeError_;
     }
     [[nodiscard]] QRectF presentedRegion() const;
+    [[nodiscard]] QSizeF compositionSize() const;
     [[nodiscard]] std::shared_ptr<const ViewerResult> presentation() const { return presentation_; }
     [[nodiscard]] WindowPresentationState& presentationState() const { return *presentationState_; }
     [[nodiscard]] bool filterLinear() const { return runtime_->presentationFilterLinear(); }
@@ -170,7 +182,7 @@ signals:
     void panChanged();
     void frameChanged();
     void effectiveScaleChanged();
-    void outputChanged();
+    void viewerTargetChanged();
     void graphChanged();
     void timelineChanged();
     void catalogChanged();
@@ -184,6 +196,7 @@ signals:
 private:
     static void sessionDocumentChanged(void* context) noexcept;
     void documentChanged();
+    void refreshViewerTarget();
     void buildGraph(const SourceReference& reference);
     void refreshRequest();
     void invalidateRequest();
@@ -205,8 +218,12 @@ private:
     int effectiveScale_{1};
     double zoom_{1.0};
     QPointF pan_;
-    QString outputName_{QStringLiteral("result")};
-    NodeId outputNode_{kInvalidNode};
+    // The active viewer: its attached upstream node is the evaluation target.
+    // Defaults to root network viewer 0 until a panel activates another.
+    NetworkId activeViewerNetwork_{kInvalidNetwork};
+    int activeViewerIndex_{0};
+    NodeId viewerTargetNode_{kInvalidNode};
+    QString viewerTargetName_;
     QString mode_{QStringLiteral("auto")};
     QString status_;
     QString error_;

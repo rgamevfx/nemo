@@ -328,6 +328,18 @@ NodeDescriptor outputDescriptor() {
                           .capabilities = allBuiltinCapabilities()};
 }
 
+NodeDescriptor viewerDescriptor() {
+    return NodeDescriptor{.type = "viewer",
+                          .displayName = "Viewer",
+                          .group = "I/O",
+                          .isOutput = false,
+                          .implementationVersion = 1,
+                          .inputs = {{PortKind::Image, "color"}},
+                          .outputs = {},
+                          .parameters = {},
+                          .capabilities = allBuiltinCapabilities()};
+}
+
 NodeDescriptor sourceDescriptor() {
     return NodeDescriptor{.type = "source",
                           .displayName = "Source",
@@ -368,6 +380,7 @@ NodeCatalog::NodeCatalog() {
     append(outputDescriptor());
     append(sourceDescriptor());
     append(testPatternDescriptor());
+    append(viewerDescriptor());
 }
 
 NodeCatalog::NodeCatalog(std::vector<NodeDescriptor> extensions) : NodeCatalog() {

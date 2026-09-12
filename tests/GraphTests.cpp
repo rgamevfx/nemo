@@ -161,3 +161,22 @@ TEST(GraphTest, ImageAndMaskPortsRejectIncompatibleConnections) {
     EXPECT_EQ(incompatible->code, GraphError::PortType);
     EXPECT_NE(incompatible->message.find("does not match"), std::string::npos);
 }
+
+TEST(GraphTest, ViewerAcceptsOneImageInputAndProvidesNoOutput) {
+    Graph g;
+    const NodeId plate = g.addNode("testpattern", "plate");
+    const NodeId viewer = g.addNode("viewer", "Viewer1");
+    ASSERT_NE(g.node(viewer), nullptr);
+    ASSERT_EQ(g.inputPorts(viewer).size(), 1u);
+    EXPECT_EQ(g.inputPorts(viewer).front().kind, PortKind::Image);
+    EXPECT_EQ(g.inputPorts(viewer).front().name, "color");
+    EXPECT_TRUE(g.outputPorts(viewer).empty());
+    const EdgeId edge = g.connect(PortRef{plate, 0}, PortRef{viewer, 0});
+    ASSERT_EQ(g.edgesInto(viewer).size(), 1u);
+    EXPECT_EQ(g.edgesInto(viewer).front().id, edge);
+
+    // A display sink has no output to fan out to a processing node.
+    const auto rejected = g.validateEdge(PortRef{viewer, 0}, PortRef{plate, 0});
+    ASSERT_TRUE(rejected.has_value());
+    EXPECT_EQ(rejected->code, GraphError::PortType);
+}

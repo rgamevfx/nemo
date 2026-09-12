@@ -189,9 +189,7 @@ Item {
                     return
                 for (var index = 0; index < node.panels.length; ++index) {
                     var panel = node.panels[index]
-                    var state = panel.state || ({})
-                    contextRouter.registerPanel(panel.id, panel.group || "A",
-                                                state.linkMode || "group")
+                    contextRouter.registerPanel(panel.id, panel.group || "A")
                 }
             }
 

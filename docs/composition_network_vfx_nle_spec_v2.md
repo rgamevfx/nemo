@@ -139,9 +139,9 @@ Switching workspace preserves the active shot and corresponding playhead context
 
 ### Panel linkage
 
-Each contextual panel has a compact badge offering **Follow Active**, **A–E link groups**, or **Pinned**. Groups may have names and optional colors; letters remain visible. Hovering a badge highlights related panels.
+Each contextual panel belongs to one **A–E** group. Groups may have names and optional colors; letters remain visible. A panel's context is always its own group.
 
-Groups share relevant context such as composition, node selection, and playhead. Viewer target is independently pinnable: a graph and parameter panel can follow selection while a viewer remains on final output. Pinned panels resist unrelated selection changes and display the pinned target. Missing targets show an explicit unavailable state.
+Groups share relevant context such as node selection and playhead. A viewer's target is the graph node attached to its Viewer node, independent of group context; a graph double-click issues a group-scoped inspector request carrying the target group, network, and node. Missing targets show an explicit unavailable state.
 
 ## 7. Copying, linked instances, and reusable tools
 
@@ -305,7 +305,7 @@ Qt supports native Wayland clients and Qt Quick rendering through Vulkan. Its sc
 
 The workspace model owns a serializable split tree, tab groups, panel type/instance IDs, sizes, and context-binding rules. A panel registry creates panels from these definitions. Adding a panel type must not require changes to graph evaluation. Layout state is separate from project processing state; closing a panel neither deletes a network nor changes its output.
 
-A context router implements Follow Active, A–E groups, and pinning using stable document IDs. Composition context, selected node, playhead, and viewer output target are distinct fields; relevant updates propagate without feedback loops. A Color workspace binds controls to the same parameter model used by the graph editor. QML bindings present values; command transactions own their edits and undo behavior.
+A context router implements group-only A–E context using stable document IDs. A panel's context is its own group; the selected node, playhead, and source target are distinct fields, and inspector requests are relayed group-scoped. A viewer's output target is the graph node attached to its Viewer node, while the network's Output node still defines its consumption result. Relevant updates propagate without feedback loops. A Color workspace binds controls to the same parameter model used by the graph editor. QML bindings present values; command transactions own their edits and undo behavior.
 
 Windows and native Wayland are required validation targets, not merely build targets. Test text/IME input, clipboard, drag/drop, shortcuts, tablet input, mixed-DPI screens, multi-window behavior, and layout restoration. Unsupported window placement requests must degrade gracefully. HDR/reference-monitor output requires separate display-path validation; Vulkan and color-managed shaders alone do not guarantee it.
 

@@ -218,41 +218,151 @@ TEST(Interactive, UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata) {
     EXPECT_EQ(runtime.counts().queued, 1u);
 }
 
-TEST(Interactive, OutputSelectionUsesCatalogDeclaration) {
-    auto catalog = std::make_shared<nemo::NodeCatalog>(std::vector<nemo::NodeDescriptor>{
-        nemo::NodeDescriptor{.type = "fixture.output",
-                             .displayName = "Fixture Output",
-                             .group = "I/O",
-                             .isOutput = true,
-                             .inputs = {{nemo::PortKind::Image, "color"}},
-                             .capabilities = nemo::NodeCapabilities{.samplingScales = {1},
-                                                                    .qualityModes = {nemo::Quality::Full},
-                                                                    .channels = {"RGBA"}}}});
-    nemo::Document document{std::move(catalog)};
-    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
-    nemo::ProjectSession session{std::move(document)};
+TEST(Interactive, ViewerAssignmentAttachesTargetAndIsOneUndoableCommand) {
     nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto colorId = controller.createGraphNode(scope, "constcolor", "viewerColor", 0.0, 0.0, {}, {});
+    const auto mergeId = controller.createGraphNode(scope, "merge", "viewerMerge", 120.0, 0.0, {}, {});
+    ASSERT_FALSE(colorId.isEmpty());
+    ASSERT_FALSE(mergeId.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, colorId, 0, mergeId, 0));
 
-    static_cast<void>(
-        session.submit(nemo::addNodeCommand(session.document().rootNetworkId(), "fixture.output", "declared"),
-                       nemo::EditOptions{.expectedRevision = session.revision()}));
-    ASSERT_EQ(controller.outputNames(), (QStringList{"declared"}));
-    controller.setOutputName("declared");
-    EXPECT_EQ(controller.outputName(), "declared");
-    const nemo::NodeId declared = rootGraph(session.document()).nodeByName("declared")->id;
-    const auto renamed =
-        session.submit(nemo::renameNodeCommand(session.document().rootNetworkId(), declared, "renamed"),
-                       nemo::EditOptions{.expectedRevision = session.revision()});
-    ASSERT_TRUE(renamed.committed);
-    EXPECT_EQ(controller.outputName(), "renamed");
-    EXPECT_EQ(namedNode(controller, "renamed").value("id").toULongLong(), static_cast<qulonglong>(declared));
-    const auto parameter = session.submit(
-        nemo::setParamCommand(session.document().rootNetworkId(), declared, "marker", std::string{"stable"}),
-        nemo::EditOptions{.expectedRevision = session.revision()});
-    ASSERT_TRUE(parameter.committed);
-    EXPECT_EQ(namedNode(controller, "renamed").value("params").toMap().value("marker").toString(), "stable");
-    EXPECT_TRUE(controller.error().isEmpty());
+    EXPECT_EQ(controller.viewerCount(scope), 0);
+    EXPECT_TRUE(controller.viewerTargetId().isEmpty());
+    ASSERT_TRUE(controller.assignViewer(scope, 0, mergeId));
+    ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    EXPECT_EQ(controller.viewerCount(scope), 1);
+    const auto attachment = controller.viewerAttachment(scope, 0);
+    EXPECT_EQ(attachment.value(QStringLiteral("index")).toInt(), 0);
+    EXPECT_EQ(attachment.value(QStringLiteral("viewerName")).toString(), QStringLiteral("Viewer1"));
+    EXPECT_FALSE(attachment.value(QStringLiteral("viewerId")).toString().isEmpty());
+    EXPECT_EQ(attachment.value(QStringLiteral("attachedId")).toString(), mergeId);
+    EXPECT_EQ(attachment.value(QStringLiteral("attachedName")).toString(), QStringLiteral("viewerMerge"));
+    // The default active viewer is index 0 of the root network, so the shared
+    // controller renders the attached node without an explicit activation.
+    EXPECT_EQ(controller.viewerTargetId(), mergeId);
+    EXPECT_EQ(controller.viewerTargetName(), QStringLiteral("viewerMerge"));
+
+    // Creation and attachment are one command: undo removes the viewer again.
+    ASSERT_TRUE(controller.undo());
+    EXPECT_EQ(controller.viewerCount(scope), 0);
+    EXPECT_TRUE(controller.viewerTargetId().isEmpty());
+    ASSERT_TRUE(controller.redo());
+    EXPECT_EQ(controller.viewerTargetId(), mergeId);
+}
+
+TEST(Interactive, ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto colorId = controller.createGraphNode(scope, "constcolor", "orderedColor", 0.0, 0.0, {}, {});
+    const auto mergeId = controller.createGraphNode(scope, "merge", "orderedMerge", 120.0, 0.0, {}, {});
+    ASSERT_FALSE(colorId.isEmpty());
+    ASSERT_FALSE(mergeId.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, colorId, 0, mergeId, 0));
+
+    // Assigning index 1 creates Viewer1 and Viewer2 in order; only the second
+    // carries the attachment.
+    ASSERT_TRUE(controller.assignViewer(scope, 1, mergeId));
+    ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    EXPECT_EQ(controller.viewerCount(scope), 2);
+    EXPECT_TRUE(controller.viewerAttachment(scope, 0).value(QStringLiteral("attachedId")).toString().isEmpty());
+    EXPECT_EQ(controller.viewerAttachment(scope, 1).value(QStringLiteral("attachedId")).toString(), mergeId);
+    EXPECT_TRUE(controller.viewerTargetId().isEmpty()) << "Active viewer 0 has no attachment";
+
+    controller.setActiveViewer(scope, 1);
+    EXPECT_EQ(controller.viewerTargetId(), mergeId);
+    EXPECT_EQ(controller.viewerTargetName(), QStringLiteral("orderedMerge"));
+
+    controller.setActiveViewer(scope, 0);
+    EXPECT_TRUE(controller.viewerTargetId().isEmpty());
+    EXPECT_TRUE(controller.viewerTargetName().isEmpty());
+}
+
+TEST(Interactive, ViewerDetachAndNodeDeletionLeaveEmptyWithoutOutputFallback) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto colorId = controller.createGraphNode(scope, "constcolor", "detachColor", 0.0, 0.0, {}, {});
+    const auto outputId = controller.createGraphNode(scope, "output", "detachOutput", 220.0, 0.0, {}, {});
+    ASSERT_FALSE(colorId.isEmpty());
+    ASSERT_FALSE(outputId.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, colorId, 0, outputId, 0));
+    ASSERT_TRUE(controller.assignViewer(scope, 0, colorId));
+    ASSERT_EQ(controller.viewerTargetId(), colorId);
+
+    // An empty node identity detaches the viewer. The Output node still exists
+    // and is the network's consumption result; it must not become the target.
+    ASSERT_TRUE(controller.assignViewer(scope, 0, QString()));
+    EXPECT_TRUE(controller.viewerTargetId().isEmpty());
+    EXPECT_TRUE(controller.viewerTargetName().isEmpty());
+    EXPECT_TRUE(controller.viewerAttachment(scope, 0).value(QStringLiteral("attachedId")).toString().isEmpty());
+    EXPECT_TRUE(controller.compositionSize().isEmpty());
+    EXPECT_EQ(controller.status(), QStringLiteral("No viewer target"));
+
+    // Re-attach, then delete the attached node: incident-edge removal empties
+    // the viewer with the same explicit state.
+    ASSERT_TRUE(controller.assignViewer(scope, 0, colorId));
+    ASSERT_EQ(controller.viewerTargetId(), colorId);
+    ASSERT_TRUE(controller.deleteGraphNodes(scope, QVariantList{colorId}));
+    EXPECT_TRUE(controller.viewerTargetId().isEmpty());
+    EXPECT_TRUE(controller.compositionSize().isEmpty());
+    EXPECT_EQ(controller.status(), QStringLiteral("No viewer target"));
+}
+
+TEST(Interactive, MediaFreeViewerRendersAttachedComposite) {
+#ifndef NEMO_SLANG_SPV_DIR
+    GTEST_SKIP() << "Native viewer evidence requires compiled Slang shaders";
+#else
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const auto config = std::filesystem::path(NEMO_UI_QML_DIR).parent_path().parent_path().parent_path() /
+                        "docs/evidence/issue12-view.ocio";
+    const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
+    nemo::ui::ViewerRuntime runtime;
+    nemo::eval::ViewerCacheOptions options;
+    options.directory = directory.path().toStdString();
+    options.encoding.codec = "libx264-cpu";
+    options.chunkFrames = 1;
+    try {
+        runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
+    } catch (const nemo::gpu::GpuException& error) {
+        if (error.errorCode() == nemo::gpu::GpuError::NoDevice)
+            GTEST_SKIP() << error.what();
+        throw;
+    }
+    // A media-free graph: no source is imported, only generators and a merge.
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto colorA = controller.createGraphNode(scope, "constcolor", "canvasA", 0.0, 0.0, {}, {});
+    const auto colorB = controller.createGraphNode(scope, "constcolor", "canvasB", 0.0, 80.0, {}, {});
+    const auto mergeId = controller.createGraphNode(scope, "merge", "canvasMerge", 140.0, 40.0, {}, {});
+    ASSERT_FALSE(colorA.isEmpty());
+    ASSERT_FALSE(colorB.isEmpty());
+    ASSERT_FALSE(mergeId.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, colorA, 0, mergeId, 0));
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, colorB, 0, mergeId, 1));
+    ASSERT_FALSE(controller.hasSource());
+    ASSERT_TRUE(controller.assignViewer(scope, 0, mergeId));
+    controller.setResolutionMode("quarter");
+    controller.viewportChanged(QSizeF(320.0, 240.0));
+
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!controller.presentation() && controller.error().isEmpty() && deadline.elapsed() < 60000)
+        QTest::qWait(10);
+    ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.presentation());
+    EXPECT_EQ(controller.presentation()->request.output, static_cast<nemo::NodeId>(mergeId.toULongLong()));
+    EXPECT_EQ(controller.presentation()->request.imageWidth(), 1920);
+    EXPECT_EQ(controller.presentation()->request.imageHeight(), 1080);
+    EXPECT_FALSE(controller.presentation()->frame.width <= 0);
+#endif
 }
 
 TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {

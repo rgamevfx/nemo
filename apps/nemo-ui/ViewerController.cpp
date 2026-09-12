@@ -453,19 +453,63 @@ QString ViewerController::renderState() const {
     return QStringLiteral("idle");
 }
 
-QStringList ViewerController::outputNames() const {
-    QStringList result;
-    const auto network = session_.document().rootNetworkId();
-    for (NodeId after = kInvalidNode;;) {
-        const auto page = session_.queryNodes(network, {}, 256, after);
-        for (const auto& node : page) {
-            const auto* descriptor = session_.document().network(network).graph().descriptor(node.type);
-            if (descriptor && descriptor->isOutput)
-                result.push_back(QString::fromStdString(node.name));
+namespace {
+// Viewer nodes are the network's nodes whose descriptor type is "viewer",
+// ordered by ascending NodeId. This is the presentation ordering the panel
+// selector and assignViewerCommand agree on.
+std::vector<NodeId> viewerNodeIds(const nemo::Document& document, NetworkId network) {
+    try {
+        const auto& graph = document.network(network).graph();
+        std::vector<NodeId> viewers;
+        for (const auto& node : graph.nodes()) {
+            const auto* descriptor = graph.descriptor(node.type);
+            if (descriptor && descriptor->type == "viewer")
+                viewers.push_back(node.id);
         }
-        if (page.size() < 256)
+        std::sort(viewers.begin(), viewers.end());
+        return viewers;
+    } catch (const std::exception&) {
+        return {};
+    }
+}
+}  // namespace
+
+int ViewerController::viewerCount(const QString& networkValue) const {
+    const auto network = networkIdentity(networkValue);
+    if (!network)
+        return 0;
+    return static_cast<int>(viewerNodeIds(session_.document(), *network).size());
+}
+
+QVariantMap ViewerController::viewerAttachment(const QString& networkValue, int viewerIndex) const {
+    QVariantMap result{{QStringLiteral("index"), viewerIndex},
+                       {QStringLiteral("viewerId"), QString()},
+                       {QStringLiteral("viewerName"), QString()},
+                       {QStringLiteral("attachedId"), QString()},
+                       {QStringLiteral("attachedName"), QString()}};
+    const auto network = networkIdentity(networkValue);
+    if (!network || viewerIndex < 0)
+        return result;
+    const auto& document = session_.document();
+    const auto viewers = viewerNodeIds(document, *network);
+    if (static_cast<std::size_t>(viewerIndex) >= viewers.size())
+        return result;
+    const NodeId viewer = viewers[static_cast<std::size_t>(viewerIndex)];
+    try {
+        const auto& graph = document.network(*network).graph();
+        if (const auto* instance = graph.node(viewer)) {
+            result.insert(QStringLiteral("viewerId"), QString::number(viewer));
+            result.insert(QStringLiteral("viewerName"), QString::fromStdString(instance->name));
+        }
+        for (const auto& edge : graph.edgesInto(viewer)) {
+            if (edge.to.port != 0)
+                continue;
+            result.insert(QStringLiteral("attachedId"), QString::number(edge.from.node));
+            if (const auto* upstream = graph.node(edge.from.node))
+                result.insert(QStringLiteral("attachedName"), QString::fromStdString(upstream->name));
             break;
-        after = page.back().id;
+        }
+    } catch (const std::exception&) {
     }
     return result;
 }
@@ -612,31 +656,74 @@ QVariantList ViewerController::nodeCatalog() const {
     return result;
 }
 
-void ViewerController::setOutputName(const QString& name) {
-    const auto trimmed = name.trimmed();
-    if (trimmed.isEmpty()) {
-        fail(QStringLiteral("viewer output name must not be empty"));
+void ViewerController::setActiveViewer(const QString& networkValue, int viewerIndex) {
+    const auto network = networkIdentity(networkValue);
+    if (!network || viewerIndex < 0) {
+        fail(QStringLiteral("active viewer requires a valid network ID and nonnegative index"));
         return;
     }
-    const auto network = session_.document().rootNetworkId();
-    const auto* node = session_.document().network(network).graph().nodeByName(trimmed.toStdString());
-    const auto* descriptor = node ? session_.document().network(network).graph().descriptor(node->type) : nullptr;
-    if (!descriptor || !descriptor->isOutput) {
-        fail(QStringLiteral("viewer output '%1' is not an Output node").arg(trimmed));
+    if (activeViewerNetwork_ == *network && activeViewerIndex_ == viewerIndex)
         return;
-    }
-    if (outputNode_ == node->id) {
-        if (outputName_ != trimmed) {
-            outputName_ = trimmed;
-            emit outputChanged();
-        }
-        return;
-    }
-    outputNode_ = node->id;
-    outputName_ = trimmed;
-    emit outputChanged();
-    lastRequest_.reset();
+    activeViewerNetwork_ = *network;
+    activeViewerIndex_ = viewerIndex;
+    refreshViewerTarget();
+    invalidateRequest();
     refreshRequest();
+}
+
+bool ViewerController::assignViewer(const QString& networkValue, int viewerIndex, const QVariant& nodeValue) {
+    const auto network = networkIdentity(networkValue);
+    if (!network || viewerIndex < 0) {
+        fail(QStringLiteral("viewer assignment requires a valid network ID and nonnegative index"));
+        return false;
+    }
+    // An empty or invalid node identity detaches the viewer.
+    const auto source = graphIdentity(nodeValue);
+    try {
+        static_cast<void>(session_.document().network(*network));
+        return applyEdit(session_.submit(assignViewerCommand(*network, static_cast<std::size_t>(viewerIndex),
+                                                             source ? static_cast<NodeId>(*source) : kInvalidNode),
+                                         editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+QString ViewerController::viewerTargetId() const {
+    return viewerTargetNode_ == kInvalidNode ? QString{} : QString::number(viewerTargetNode_);
+}
+
+void ViewerController::refreshViewerTarget() {
+    const auto& document = session_.document();
+    NetworkId network = activeViewerNetwork_;
+    if (network == kInvalidNetwork)
+        network = document.rootNetworkId();
+    NodeId target = kInvalidNode;
+    QString name;
+    const auto viewers = viewerNodeIds(document, network);
+    if (activeViewerIndex_ >= 0 && static_cast<std::size_t>(activeViewerIndex_) < viewers.size()) {
+        try {
+            const auto& graph = document.network(network).graph();
+            const NodeId viewer = viewers[static_cast<std::size_t>(activeViewerIndex_)];
+            for (const auto& edge : graph.edgesInto(viewer)) {
+                if (edge.to.port != 0)
+                    continue;
+                target = edge.from.node;
+                break;
+            }
+            if (const auto* upstream = graph.node(target))
+                name = QString::fromStdString(upstream->name);
+        } catch (const std::exception&) {
+            target = kInvalidNode;
+            name.clear();
+        }
+    }
+    if (target == viewerTargetNode_ && name == viewerTargetName_)
+        return;
+    viewerTargetNode_ = target;
+    viewerTargetName_ = name;
+    emit viewerTargetChanged();
 }
 
 QVariantList ViewerController::timelineClips() const {
@@ -690,24 +777,7 @@ void ViewerController::documentChanged() {
     error_.clear();
     pending_ = false;
     outdated_ = static_cast<bool>(presentation_);
-    const auto network = session_.document().rootNetworkId();
-    const auto& graph = session_.document().network(network).graph();
-    const auto* selected = graph.node(outputNode_);
-    const auto* descriptor = selected ? graph.descriptor(selected->type) : nullptr;
-    if (!descriptor || !descriptor->isOutput) {
-        const auto outputs = outputNames();
-        const QString replacement = outputs.isEmpty() ? QStringLiteral("result") : outputs.front();
-        const auto* replacementNode = outputs.isEmpty() ? nullptr : graph.nodeByName(replacement.toStdString());
-        const NodeId replacementId = replacementNode ? replacementNode->id : kInvalidNode;
-        if (replacement != outputName_ || replacementId != outputNode_) {
-            outputName_ = replacement;
-            outputNode_ = replacementId;
-            emit outputChanged();
-        }
-    } else if (outputName_ != QString::fromStdString(selected->name)) {
-        outputName_ = QString::fromStdString(selected->name);
-        emit outputChanged();
-    }
+    refreshViewerTarget();
     emit graphChanged();
     emit catalogChanged();
     emit timelineChanged();
@@ -766,6 +836,9 @@ void ViewerController::buildGraph(const SourceReference& reference) {
                     const auto background = std::make_shared<NodeId>();
                     const auto merge = std::make_shared<NodeId>();
                     const auto output = std::make_shared<NodeId>(document.network(network).defaultOutput());
+                    // The default media workflow displays the composite through
+                    // a Viewer node rather than relying on an Output name.
+                    const auto viewer = std::make_shared<NodeId>();
                     addNodeCommand(network, "source", "source", source, LayoutPosition{60.0, 20.0}).apply(document);
                     addNodeCommand(network, "constcolor", "background", background, LayoutPosition{240.0, 20.0})
                         .apply(document);
@@ -775,12 +848,14 @@ void ViewerController::buildGraph(const SourceReference& reference) {
                             .apply(document);
                     else
                         setLayoutCommand(network, *output, LayoutPosition{150.0, 140.0}).apply(document);
+                    addNodeCommand(network, "viewer", "Viewer1", viewer, LayoutPosition{150.0, 200.0}).apply(document);
                     setParamCommand(network, *source, "source", std::string{"src"}).apply(document);
                     setParamCommand(network, *background, "color", ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}})
                         .apply(document);
                     connectCommand(network, {*source, 0}, {*merge, 0}).apply(document);
                     connectCommand(network, {*background, 0}, {*merge, 1}).apply(document);
                     connectCommand(network, {*merge, 0}, {*output, 0}).apply(document);
+                    connectCommand(network, {*merge, 0}, {*viewer, 0}).apply(document);
                     setDefaultOutputCommand(network, *output).apply(document);
                     setSourceCommand("src", reference).apply(document);
                 }},
@@ -1724,50 +1799,77 @@ void ViewerController::receive() {
     }
 }
 
+namespace {
+// A media-free composition has no probed source to derive pixel dimensions
+// from. The interactive viewer still renders the attached target, evaluated
+// against this default composition canvas so a graph-only workflow displays
+// a result without an Output node.
+constexpr int kDefaultCompositionWidth = 1920;
+constexpr int kDefaultCompositionHeight = 1080;
+}  // namespace
+
 void ViewerController::refreshRequest() {
     try {
         // Capture one immutable project state for the whole request. The
         // session remains owner-thread-only; workers receive this snapshot.
         const Document document = session_.snapshot();
-        const auto source = document.sources.find("src");
-        if (source == document.sources.end()) {
-            sourceSize_ = {};
-            probedSource_ = {};
-            frameCount_ = -1;
+        // No attachment means an explicit empty viewer, never an Output
+        // fallback: the Output node still defines network consumption, but it
+        // is not what the interactive viewer displays.
+        if (viewerTargetNode_ == kInvalidNode) {
+            const bool hadPresentation = static_cast<bool>(presentation_);
             presentation_.reset();
+            lastRequest_.reset();
             pending_ = false;
             outdated_ = false;
-            status_ = QStringLiteral("No source");
-            emit sourceChanged();
-            emit frameArrived();
+            status_ = QStringLiteral("No viewer target");
             emit statusChanged();
+            if (hadPresentation)
+                emit frameArrived();
             return;
         }
-        const auto& reference = source->second;
-        if (!hasSource() || reference.path != probedSource_.path || reference.revision != probedSource_.revision ||
-            reference.interpretation != probedSource_.interpretation) {
+        const auto source = document.sources.find("src");
+        bool mediaReady = false;
+        if (source == document.sources.end()) {
+            const bool hadMedia = !sourceSize_.isEmpty() || !probedSource_.path.empty() || pixelAspect_ != 1.0;
             sourceSize_ = {};
+            probedSource_ = {};
+            pixelAspect_ = 1.0;
             frameCount_ = -1;
-            pending_ = true;
-            status_ = QStringLiteral("Probing %1").arg(QString::fromStdString(reference.path));
-            emit sourceChanged();
-            emit statusChanged();
-            generation_ = ++nextRequestId_;
-            if (!runtime_->probe(document, "src", generation_))
-                fail(QStringLiteral("Source probe admission rejected"));
-            return;
+            if (hadMedia)
+                emit sourceChanged();
+        } else {
+            const auto& reference = source->second;
+            mediaReady = !sourceSize_.isEmpty() && reference.path == probedSource_.path &&
+                         reference.revision == probedSource_.revision &&
+                         reference.interpretation == probedSource_.interpretation;
+            if (!mediaReady) {
+                // Probe and interactive render share one scheduler slot, so a
+                // probe in flight must be the only queued work. The render
+                // resumes from the probe result at the real media size.
+                sourceSize_ = {};
+                frameCount_ = -1;
+                pending_ = true;
+                status_ = QStringLiteral("Probing %1").arg(QString::fromStdString(reference.path));
+                emit sourceChanged();
+                emit statusChanged();
+                generation_ = ++nextRequestId_;
+                if (!runtime_->probe(document, "src", generation_))
+                    fail(QStringLiteral("Source probe admission rejected"));
+                return;
+            }
         }
         if (viewport_.isEmpty())
             return;
-        const int width = static_cast<int>(sourceSize_.width());
-        const int height = static_cast<int>(sourceSize_.height());
+        const int width = mediaReady ? static_cast<int>(sourceSize_.width()) : kDefaultCompositionWidth;
+        const int height = mediaReady ? static_cast<int>(sourceSize_.height()) : kDefaultCompositionHeight;
         const auto mode = mode_ == "full"      ? ViewerResolution::Full
                           : mode_ == "half"    ? ViewerResolution::Half
                           : mode_ == "quarter" ? ViewerResolution::Quarter
                                                : ViewerResolution::Auto;
         EvaluationRequest request;
-        request.network = document.rootNetworkId();
-        request.output = outputNode_;
+        request.network = activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : document.rootNetworkId();
+        request.output = viewerTargetNode_;
         request.localTime = frame_;
         request.samplingScale =
             policy_.resolve(mode, width, height, pixelAspect_, viewport_.width(), viewport_.height(), zoom_);
@@ -1809,6 +1911,16 @@ QRectF ViewerController::presentedRegion() const {
         return {};
     const auto& region = presentation_->request.region;
     return QRectF(region.x, region.y, region.width, region.height);
+}
+
+QSizeF ViewerController::compositionSize() const {
+    if (presentation_)
+        return QSizeF(presentation_->request.imageWidth(), presentation_->request.imageHeight());
+    if (hasSource())
+        return sourceSize_;
+    if (viewerTargetNode_ != kInvalidNode)
+        return QSizeF(kDefaultCompositionWidth, kDefaultCompositionHeight);
+    return {};
 }
 void ViewerController::setResolutionMode(const QString& mode) {
     if (mode != "auto" && mode != "full" && mode != "half" && mode != "quarter") {

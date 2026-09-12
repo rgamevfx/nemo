@@ -70,13 +70,6 @@ FocusScope {
         return -1;
     }
 
-    function networkFromTarget(graphTarget) {
-        var text = String(graphTarget === undefined || graphTarget === null ? "" : graphTarget);
-        if (text.indexOf("network:") !== 0)
-            return "";
-        return text.substring("network:".length);
-    }
-
     // Walk the item tree to the owning inspector card. Repeater delegates are
     // file-level components, so the card is resolved through the parent chain.
     function owningCard(item) {
@@ -128,8 +121,7 @@ FocusScope {
     }
 
     // Merge inspector arrangement into the existing panel state so routing
-    // fields owned by PanelContextRouter (linkMode/viewerRole/pinnedGroup/
-    // pinnedContext) are preserved.
+    // fields owned by PanelContextRouter (viewerRole) are preserved.
     function saveState() {
         if (!workspace || !workspace.setPanelState || !panelId || !stateReady)
             return;
@@ -231,16 +223,6 @@ FocusScope {
             saveState();
         }
         revealTop();
-    }
-
-    // Relay from GraphPanel double-click through PanelContextRouter. The
-    // network scope travels with the request so pinned/group routing is not
-    // consulted and no Document object crosses the boundary.
-    function openFromRequest(graphTarget, node) {
-        var network = networkFromTarget(graphTarget);
-        if (network.length === 0 || !validIdentity(node))
-            return;
-        openInspector(network, String(node));
     }
 
     function closeInspector(network, node) {
@@ -463,10 +445,12 @@ FocusScope {
 
     Connections {
         target: parametersPanel.contextRouter
-        function onInspectorRequested(graphTarget, nodeId) {
+        function onInspectorRequested(group, network, nodeId) {
+            if (group !== parametersPanel.panelGroup)
+                return;
             if (!parametersPanel.effectivelyVisible())
                 return;
-            parametersPanel.openFromRequest(graphTarget, nodeId);
+            parametersPanel.openInspector(String(network), String(nodeId));
         }
     }
 

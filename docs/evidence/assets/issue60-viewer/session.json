@@ -1,0 +1,42 @@
+{
+  "issue": 60,
+  "title": "Retire panel routing modes, link inspectors by group, and add a graph Viewer node",
+  "branch": "issue/60-retire-routing-viewer-node",
+  "base_commit": "b0f152bfba464f0b89204adb0f2c6dab24c2dbe3",
+  "date": "2026-09-11",
+  "source": {
+    "reference": "apps/nemo-ui (PanelContextRouter, ViewerController, qml/*), src/nemo/core (NodeCatalog, Document, CpuReference), tests/*",
+    "prototype_reference": "/home/rgame/dev/Nemo_UI_Prototype (Viewer node type 'Viewer', I/O category, sink, 112x28, one image + optional mask input; 'Set as Viewer' + shortcut '1'; no 1-9 family)"
+  },
+  "verification": {
+    "debug_ctest": "100% tests passed, 0 failed out of 369 (ctest --preset debug)",
+    "release_ctest": "100% tests passed, 0 failed out of 369 (ctest --preset release)",
+    "asan_core": "61/61 CommandStack/Catalog/Graph/Evaluation tests passed (build/asan/tests/nemo_core_tests)",
+    "asan_ui": "14/14 Interactive viewer/attachment + PanelContextRouter + PanelContextUi tests passed (ASAN_OPTIONS=detect_leaks=0; the only leak report is a libdbus dbus_bus_register global from Qt, not project code)",
+    "media_free_render": "Interactive.MediaFreeViewerRendersAttachedComposite ran (not skipped) and passed: constructs a media-free constcolor+merge graph, attaches the merge to a Viewer node, and publishes a rendered frame through the real ViewerRuntime/scheduler.",
+    "builds": "cmake --build --preset debug and --preset release both clean; changed C++ files pass clang-format --dry-run --Werror"
+  },
+  "native_smoke": {
+    "attempted": true,
+    "commands": [
+      "hub start build/debug/apps/nemo-ui/nemo-ui (no --source), QT_QPA_PLATFORM=xcb DISPLAY=:1 and QT_QPA_PLATFORM=wayland",
+      "ffmpeg -f x11grab -i :1 -frames:v 1 (capture attempt)",
+      "python-xlib XTest: focus 'Nemo' window, click graph area, Tab search 'constcolor', Enter, press '1'"
+    ],
+    "result": "The application starts on both the Xwayland and Wayland platforms with no source, creates its window, and stays alive after the graph-create + viewer-attach interaction with no QML/runtime errors on stderr.",
+    "capture_limitation": "Native pixel capture is not possible in this environment: the session runs rootless Xwayland with no compositor screenshot client, so x11grab of the X root returns a uniform black frame (verified: signalstats YMIN=YMAX=16). No Wayland screenshot tool (grim/spectacle/etc.) is installed. Per the issue's evidence rules this run is a startup/interaction non-crash check only; it is NOT appearance or interaction-parity evidence. Owner native review of the Viewer node rendering, viewer index selector, removed badge chrome, and the 1-9 attach gesture remains required."
+  },
+  "acceptance_examples": {
+    "no_media_attach_and_inspect": "Covered by tests: ViewerAssignmentAttachesTargetAndIsOneUndoableCommand, ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget, MediaFreeViewerRendersAttachedComposite, and PanelContextUiTest.InspectorRequestsAreGroupScopedAndMediaFree (double-click request opens Parameters in the same group, media-free).",
+    "group_scoped_inspector": "PanelContextRouter.InspectorRequestIsGroupScopedAndMediaFree + PanelContextUiTest.InspectorRequestsAreGroupScopedAndMediaFree.",
+    "empty_state_no_output_fallback": "ViewerDetachAndNodeDeletionLeaveEmptyWithoutOutputFallback + ViewerController 'No viewer target' path.",
+    "output_result_unchanged": "EvaluationTest.NonOutputProcessingNodeIsAValidEvaluationTarget (Output-target request hash unchanged) plus existing evaluation tests.",
+    "modes_absent": "PanelContextRouter.RetiredRoutingModesAreAbsentFromThePublicApi + PanelContextUiTest.RetiredBindingChromeIsGoneFromPanelHeaders.",
+    "attach_detach_undo_delete": "CommandStackTest.ViewerAssignment* and RemovingAttachedNodeAndExplicitDetachLeaveViewerEmpty."
+  },
+  "remaining_gates": [
+    "Owner review for the new public catalog node type and the removed badge chrome / new viewer index selector (risk:api-change, risk:baseline).",
+    "Native appearance/interaction-parity review (capture tooling unavailable here).",
+    "#47 retains independent per-viewer scheduler destinations; only the shared ViewerController target-selection path changed here."
+  ]
+}

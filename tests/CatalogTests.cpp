@@ -275,3 +275,27 @@ TEST(CatalogTest, InspectorMetadataIsValidatedBeforeSnapshotPublication) {
     EXPECT_EQ(spec->section, "Tone Map");
     EXPECT_EQ(spec->editor, "nemo.exposure");
 }
+
+TEST(CatalogTest, ViewerDescriptorIsDisplayOnlyAndNeverANetworkOutput) {
+    const auto& catalog = builtinNodeCatalog();
+    const auto* viewer = catalog.find("viewer");
+    ASSERT_NE(viewer, nullptr);
+    EXPECT_EQ(viewer->type, "viewer");
+    EXPECT_EQ(viewer->displayName, "Viewer");
+    EXPECT_EQ(viewer->group, "I/O");
+    EXPECT_FALSE(viewer->isOutput);
+    EXPECT_EQ(viewer->implementationVersion, 1u);
+    ASSERT_EQ(viewer->inputs.size(), 1u);
+    EXPECT_EQ(viewer->inputs.front().kind, PortKind::Image);
+    EXPECT_EQ(viewer->inputs.front().name, "color");
+    EXPECT_TRUE(viewer->outputs.empty());
+    EXPECT_TRUE(viewer->parameters.empty());
+    EXPECT_FALSE(viewer->capabilities.temporal);
+    EXPECT_TRUE(catalog.outputPorts("viewer").empty());
+
+    // Being display-only, a viewer can never become the network's result.
+    Document document;
+    const NodeId viewerNode = rootGraph(document).addNode("viewer", "Viewer1");
+    EXPECT_THROW(document.network(document.rootNetworkId()).setDefaultOutput(viewerNode), GraphException);
+    EXPECT_EQ(document.network(document.rootNetworkId()).defaultOutput(), rootGraph(document).nodeByName("Output")->id);
+}

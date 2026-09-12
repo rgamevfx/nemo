@@ -461,8 +461,10 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
     }
     const auto& graph = document.network(request.network).graph();
     const auto* outputSchema = graph.descriptor(output->type);
-    if (outputSchema == nullptr || !outputSchema->isOutput) {
-        failNode(*output, "evaluation request must target an Output node");
+    // Processors with declared image outputs are valid evaluation targets too:
+    // the interactive viewer renders the attached upstream node directly.
+    if (outputSchema == nullptr || (!outputSchema->isOutput && outputSchema->outputs.empty())) {
+        failNode(*output, "evaluation request must target an Output node or a node type with declared outputs");
     }
 
     const bool wholeImage = request.region.x == 0 && request.region.y == 0 &&

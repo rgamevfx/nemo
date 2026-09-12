@@ -21,6 +21,7 @@
 #include "ScopedEnvironment.hpp"
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -29,6 +30,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -59,6 +61,8 @@ extern "C" {
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/gpu/Submit.hpp"
 #include "nemo/gpu/ViewerPresentation.hpp"
+#include "nemo/media/ImageIO.hpp"
+#include "nemo/media/ImageSource.hpp"
 #include "nemo/media/VideoDecode.hpp"
 #include "nemo/media/ViewingTransform.hpp"
 
@@ -448,6 +452,73 @@ CpuImage readViewerFrame(const eval::ViewerFrame& frame, const Bootstrap& boot) 
                        pixels.data(), static_cast<std::size_t>(pixels.width()) * pixels.height() * 4 * sizeof(float),
                        10'000'000'000ULL);
     return pixels;
+}
+
+// ---------------------------------------------------------------------------
+// Still/sequence source fixtures (issue #62). These write REAL EXR/TIFF
+// files in-test through media::writeImage and evaluate them through the
+// same shared source-fill plan the clip tests use; every expected pixel is
+// derived here from the written pattern, never from the adapter.
+// ---------------------------------------------------------------------------
+
+// Temp directory per test (pid-qualified like TaggedClip); removed on
+// destruction so the fixtures leave nothing behind.
+struct ImageScratchDir {
+    std::filesystem::path path;
+    ImageScratchDir() {
+        path =
+            std::filesystem::temp_directory_path() / ("nemo-viewer-still-" + std::to_string(::getpid()) + "-" +
+                                                      ::testing::UnitTest::GetInstance()->current_test_info()->name());
+        std::filesystem::remove_all(path);
+        std::filesystem::create_directories(path);
+    }
+    ~ImageScratchDir() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
+    }
+    [[nodiscard]] std::string file(const std::string& name) const { return (path / name).string(); }
+};
+
+// A known still pattern: R separates x, G separates y, B separates the
+// diagonal, so a transposed, shifted, clamped, or substituted mapping is
+// visible. Every coefficient is a power of two, so the values are exact in
+// float32 and an equality comparison is meaningful.
+[[nodiscard]] std::array<float, 4> stillPatternPixel(const int x, const int y, const float unit = 0.0625F) {
+    return {(static_cast<float>(x) + 1.0F) * unit, (static_cast<float>(y) + 1.0F) * 2.0F * unit,
+            (static_cast<float>(x + y) + 1.0F) * 0.5F * unit, 1.0F};
+}
+
+[[nodiscard]] CpuImage stillPatternFrame(const int width, const int height, const float unit = 0.0625F) {
+    CpuImage image(width, height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            image.setPixel(x, y, stillPatternPixel(x, y, unit));
+        }
+    }
+    return image;
+}
+
+// A request over the source's own full-resolution domain, so a still's
+// pixel grid maps 1:1 at samplingScale 1. `requestFor` anchors real-source
+// domains at the clip size (64x48); a still supplies its own extent.
+[[nodiscard]] EvaluationRequest stillRequest(const Document& doc, Region region, const int fullWidth,
+                                             const int fullHeight, const std::int64_t localTime, const int scale = 1) {
+    EvaluationRequest request = requestFor(doc, region, localTime, scale);
+    request.fullWidth = fullWidth;
+    request.fullHeight = fullHeight;
+    return request;
+}
+
+// Copies a still's expected pixels into an image for CPU/GPU parity checks.
+[[nodiscard]] CpuImage expectPatternImage(const int width, const int height, const int scale = 1,
+                                          const float unit = 0.0625F) {
+    CpuImage image(width, height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            image.setPixel(x, y, stillPatternPixel(x * scale, y * scale, unit));
+        }
+    }
+    return image;
 }
 }  // namespace
 
@@ -1003,6 +1074,302 @@ TEST(Viewer, SourceRetentionUnderDelayedCompletion) {
     EXPECT_NEAR(pixel[1], 0.32132675F, 0.003F);
     EXPECT_NEAR(pixel[2], 0.25882675F, 0.003F);
     EXPECT_FLOAT_EQ(pixel[3], 1.0F);
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// 9b. Real still images and image sequences through the same source-fill
+//     path (issue #62): media::writeImage fixtures decode through
+//     eval::SourceSession into the GPU plan, and the CPU reference's
+//     media::ImageSourceProvider must agree pixel for pixel. Every
+//     expectation below is derived from the written pattern here, never
+//     from the adapter under test.
+// ---------------------------------------------------------------------------
+
+// (a) A real float32 EXR still evaluated through evaluateGpu returns the
+// written pixels, and the same request through evaluateCpu agrees exactly.
+TEST(Viewer, StillImageFillMatchesCpuReference) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const ImageScratchDir scratch;
+    const std::string path = scratch.file("still.exr");
+    media::writeImage(path, stillPatternFrame(4, 4), media::OutputPrecision::Float32);
+
+    SourceComposition composition = makeSourceComposition("plate", SourceReference{path}, false);
+    const EvaluationRequest request = stillRequest(composition.doc, {0, 0, 4, 4}, 4, 4, 0);
+
+    // The pattern separates the axes, so a transposed or shifted mapping is
+    // visible in the comparison (not a uniform image that any map passes).
+    ASSERT_NE(stillPatternPixel(1, 0), stillPatternPixel(0, 1));
+
+    media::ImageSourceProvider provider;
+    const CpuEvaluation cpu = evaluateCpu(composition.doc, request, nullptr, &provider);
+    ASSERT_EQ(cpu.image.width(), 4);
+    ASSERT_EQ(cpu.image.height(), 4);
+
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
+    auto evaluation = eval::evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator,
+                                        10'000'000'000ULL, nullptr, &sources);
+    const CpuImage gpu = readBackEvaluation(evaluation, request.output, *boot.device, *boot.allocator);
+    ASSERT_EQ(gpu.width(), 4);
+    ASSERT_EQ(gpu.height(), 4);
+
+    for (int y = 0; y < 4; ++y) {
+        for (int x = 0; x < 4; ++x) {
+            const std::array<float, 4> expected = stillPatternPixel(x, y);
+            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+                EXPECT_FLOAT_EQ(cpu.image.pixel(x, y)[channel], expected[channel]) << "CPU (" << x << "," << y << ")";
+                EXPECT_FLOAT_EQ(gpu.pixel(x, y)[channel], expected[channel]) << "GPU (" << x << "," << y << ")";
+            }
+        }
+    }
+    expectImagesClose(cpu.image, gpu, 0.0F, "still source CPU/GPU parity");
+    expectValidationClean(*boot.instance);
+}
+
+// (b) samplingScale halves the raster; each reduced pixel is the nearest
+// source pixel the source-fill contract maps it to, and CPU and GPU agree.
+TEST(Viewer, StillImageSamplingScaleNearestSourcePixel) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const ImageScratchDir scratch;
+    const std::string path = scratch.file("still-scale.exr");
+    media::writeImage(path, stillPatternFrame(4, 4), media::OutputPrecision::Float32);
+
+    SourceComposition composition = makeSourceComposition("plate", SourceReference{path}, false);
+    const EvaluationRequest request = stillRequest(composition.doc, {0, 0, 4, 4}, 4, 4, 0, 2);
+
+    // Raster extent is ceil(region / scale); the hand-written constants pin
+    // the expected 2x2 independently of the helper.
+    const int expectedWidth = scaledDimension(4, 2);
+    const int expectedHeight = scaledDimension(4, 2);
+    ASSERT_EQ(expectedWidth, 2);
+    ASSERT_EQ(expectedHeight, 2);
+
+    // Hand-derived source-fill index math: with region origin (0,0), full
+    // domain 4x4, source 4x4, and scale 2, raster pixel (x,y) reads source
+    // pixel ((0 + x*2)*4/4, (0 + y*2)*4/4) = (2x, 2y).
+    CpuImage expected(expectedWidth, expectedHeight);
+    for (int y = 0; y < expectedHeight; ++y) {
+        for (int x = 0; x < expectedWidth; ++x) {
+            expected.setPixel(x, y, stillPatternPixel(2 * x, 2 * y));
+        }
+    }
+    // The reduced raster must not collapse to a constant: the sampled
+    // source pixels differ from each other.
+    ASSERT_NE(stillPatternPixel(0, 0), stillPatternPixel(2, 2));
+
+    media::ImageSourceProvider provider;
+    const CpuEvaluation cpu = evaluateCpu(composition.doc, request, nullptr, &provider);
+    ASSERT_EQ(cpu.image.width(), expectedWidth);
+    ASSERT_EQ(cpu.image.height(), expectedHeight);
+
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
+    auto evaluation = eval::evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator,
+                                        10'000'000'000ULL, nullptr, &sources);
+    const CpuImage gpu = readBackEvaluation(evaluation, request.output, *boot.device, *boot.allocator);
+    ASSERT_EQ(gpu.width(), expectedWidth);
+    ASSERT_EQ(gpu.height(), expectedHeight);
+
+    expectImagesClose(expected, cpu.image, 0.0F, "reduced still CPU nearest-source fill");
+    expectImagesClose(expected, gpu, 0.0F, "reduced still GPU nearest-source fill");
+    expectImagesClose(cpu.image, gpu, 0.0F, "reduced still CPU/GPU parity");
+    expectValidationClean(*boot.instance);
+}
+
+// (c) A '####'-patterned sequence resolves each requested frame through
+// frameOffset/frameStep: both frames decode, and they differ.
+TEST(Viewer, StillSequenceResolvesFramesThroughTimeMapping) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const ImageScratchDir scratch;
+    const std::string pattern = scratch.file("shot.####.exr");
+    media::writeImage(media::resolveFramePath(pattern, 0), stillPatternFrame(2, 2), media::OutputPrecision::Float32);
+    media::writeImage(media::resolveFramePath(pattern, 1), stillPatternFrame(2, 2, 0.25F),
+                      media::OutputPrecision::Float32);
+
+    SourceReference reference;
+    reference.path = pattern;
+    reference.frameOffset = 0;
+    reference.frameStep = 1;
+    SourceComposition composition = makeSourceComposition("plate", reference, false);
+
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
+    const auto render = [&](const std::int64_t localTime) {
+        const EvaluationRequest request = stillRequest(composition.doc, {0, 0, 2, 2}, 2, 2, localTime);
+        auto evaluation = eval::evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator,
+                                            10'000'000'000ULL, nullptr, &sources);
+        return readBackEvaluation(evaluation, request.output, *boot.device, *boot.allocator);
+    };
+
+    const CpuImage first = render(0);
+    const CpuImage second = render(1);
+    ASSERT_EQ(first.width(), 2);
+    ASSERT_EQ(second.width(), 2);
+    for (int y = 0; y < 2; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            const std::array<float, 4> frameZero = stillPatternPixel(x, y);
+            const std::array<float, 4> frameOne = stillPatternPixel(x, y, 0.25F);
+            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+                EXPECT_FLOAT_EQ(first.pixel(x, y)[channel], frameZero[channel]) << "frame 0 (" << x << "," << y << ")";
+                EXPECT_FLOAT_EQ(second.pixel(x, y)[channel], frameOne[channel]) << "frame 1 (" << x << "," << y << ")";
+            }
+        }
+    }
+    EXPECT_NE(first.pixel(0, 0), second.pixel(0, 0)) << "the time mapping must select different frames";
+    expectValidationClean(*boot.instance);
+}
+
+// (d) A frame past the end of a sequence, a negative mapped frame, and an
+// overflowing mapping all fail explicitly, naming the offending path —
+// never clamped to a neighbor and never substituted.
+TEST(Viewer, StillSequenceOutOfRangeFrameFailsNamingPath) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const ImageScratchDir scratch;
+    const std::string pattern = scratch.file("shot.####.exr");
+    media::writeImage(media::resolveFramePath(pattern, 0), stillPatternFrame(2, 2), media::OutputPrecision::Float32);
+    media::writeImage(media::resolveFramePath(pattern, 1), stillPatternFrame(2, 2, 0.25F),
+                      media::OutputPrecision::Float32);
+
+    SourceReference reference;
+    reference.path = pattern;
+    reference.frameOffset = 0;
+    reference.frameStep = 1;
+    SourceComposition composition = makeSourceComposition("plate", reference, false);
+
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
+
+    // Resolve a real frame first: the sequence is classified as image data
+    // from its resolved path, so frame 0 establishes the source's kind
+    // before the out-of-range request below.
+    const EvaluationRequest inRange = stillRequest(composition.doc, {0, 0, 2, 2}, 2, 2, 0);
+    (void)eval::evaluateGpu(composition.doc, inRange, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr,
+                            &sources);
+
+    // Past the end: the resolved frame path does not exist. The error must
+    // name that exact path.
+    const std::string missingPath = media::resolveFramePath(pattern, 5);
+    const EvaluationRequest pastEnd = stillRequest(composition.doc, {0, 0, 2, 2}, 2, 2, 5);
+    try {
+        (void)eval::evaluateGpu(composition.doc, pastEnd, slang, *boot.device, *boot.allocator, 10'000'000'000ULL,
+                                nullptr, &sources);
+        ADD_FAILURE() << "expected a frame past the end of the sequence to fail";
+    } catch (const std::exception& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find(missingPath), std::string::npos) << what;
+    }
+
+    // Negative mapped frame: frameOffset -2 at localTime 0.
+    SourceReference negative = reference;
+    negative.frameOffset = -2;
+    SourceComposition negativeComposition = makeSourceComposition("plate", negative, false);
+    const EvaluationRequest negativeRequest = stillRequest(negativeComposition.doc, {0, 0, 2, 2}, 2, 2, 0);
+    try {
+        (void)eval::evaluateGpu(negativeComposition.doc, negativeRequest, slang, *boot.device, *boot.allocator,
+                                10'000'000'000ULL, nullptr, &sources);
+        ADD_FAILURE() << "expected a negative mapped frame to fail";
+    } catch (const std::exception& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find("negative"), std::string::npos) << what;
+        EXPECT_NE(what.find(negative.path), std::string::npos) << what;
+    }
+
+    // Overflowing mapping: frameStep at the 64-bit maximum.
+    SourceReference overflowing = reference;
+    overflowing.frameStep = std::numeric_limits<std::int64_t>::max();
+    SourceComposition overflowComposition = makeSourceComposition("plate", overflowing, false);
+    const EvaluationRequest overflowRequest = stillRequest(overflowComposition.doc, {0, 0, 2, 2}, 2, 2, 2);
+    try {
+        (void)eval::evaluateGpu(overflowComposition.doc, overflowRequest, slang, *boot.device, *boot.allocator,
+                                10'000'000'000ULL, nullptr, &sources);
+        ADD_FAILURE() << "expected an overflowing mapped frame to fail";
+    } catch (const std::exception& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find("overflow"), std::string::npos) << what;
+        EXPECT_NE(what.find(overflowing.path), std::string::npos) << what;
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// (e) An ambiguous color declaration (a TIFF with no color metadata) is
+// rejected through the GPU path too, naming the file, format, and reason.
+TEST(Viewer, StillImageAmbiguousColorDeclarationFailsThroughGpu) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const ImageScratchDir scratch;
+    const std::string path = scratch.file("ambiguous.tif");
+    media::writeImage(path, stillPatternFrame(2, 2), media::OutputPrecision::Float32);
+
+    SourceComposition composition = makeSourceComposition("plate", SourceReference{path}, false);
+    const EvaluationRequest request = stillRequest(composition.doc, {0, 0, 2, 2}, 2, 2, 0);
+
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
+    try {
+        (void)eval::evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL,
+                                nullptr, &sources);
+        ADD_FAILURE() << "expected the ambiguous TIFF to be rejected through the GPU path";
+    } catch (const std::exception& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find(path), std::string::npos) << what;
+        EXPECT_NE(what.find("tiff"), std::string::npos) << what;
+        EXPECT_NE(what.find("ambiguous"), std::string::npos) << what;
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// (f) The still hand-off lifetime: an evaluation dropped before it is
+// consumed must not free the session-cached source frame out from under
+// the in-flight queue; the same still still evaluates correctly afterwards
+// on a short timeout, with no validation error.
+TEST(Viewer, StillImageHandoffSurvivesDroppedEvaluation) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const ImageScratchDir scratch;
+    const std::string path = scratch.file("handoff.exr");
+    media::writeImage(path, stillPatternFrame(4, 4), media::OutputPrecision::Float32);
+
+    SourceComposition composition = makeSourceComposition("plate", SourceReference{path}, false);
+    const EvaluationRequest request = stillRequest(composition.doc, {0, 0, 4, 4}, 4, 4, 0);
+
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
+
+    // First request: submitted and dropped WITHOUT consuming it. Dropping a
+    // GpuEvaluation cancels publication, not execution — the queue keeps
+    // the decoded still alive for the submission that reads it.
+    {
+        auto pending = eval::submitGpu(composition.doc, request, slang, *boot.device, *boot.allocator, &sources);
+        ASSERT_TRUE(pending);
+    }
+
+    // Second request of the same still: the hand-off survived, and the
+    // result is still exact within a short timeout (the frame is cached,
+    // so this bounds only the tiny dispatch wait).
+    auto evaluation = eval::evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator, 100'000'000ULL,
+                                        nullptr, &sources);
+    const CpuImage gpu = readBackEvaluation(evaluation, request.output, *boot.device, *boot.allocator);
+    ASSERT_EQ(gpu.width(), 4);
+    ASSERT_EQ(gpu.height(), 4);
+    for (int y = 0; y < 4; ++y) {
+        for (int x = 0; x < 4; ++x) {
+            const std::array<float, 4> expected = stillPatternPixel(x, y);
+            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+                EXPECT_FLOAT_EQ(gpu.pixel(x, y)[channel], expected[channel]) << "(" << x << "," << y << ")";
+            }
+        }
+    }
     expectValidationClean(*boot.instance);
 }
 

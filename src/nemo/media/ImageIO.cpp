@@ -62,6 +62,21 @@ OIIO::TypeDesc outputType(OutputPrecision precision) {
     return precision == OutputPrecision::Half ? OIIO::TypeDesc::HALF : OIIO::TypeDesc::FLOAT;
 }
 
+// Declared `chromaticities`, if the file declares them in a numeric form:
+// 8 values (rx,ry,gx,gy,bx,by,wx,wy). Absent attributes stay empty.
+std::vector<float> declaredChromaticities(const OIIO::ImageSpec& spec) {
+    const OIIO::TypeDesc type = spec.getattributetype("chromaticities");
+    if ((type.basetype != OIIO::TypeDesc::FLOAT && type.basetype != OIIO::TypeDesc::DOUBLE) ||
+        type.numelements() != 8) {
+        return {};
+    }
+    std::vector<float> values(8, 0.0F);
+    if (!spec.getattribute("chromaticities", OIIO::TypeDesc(OIIO::TypeDesc::FLOAT, 8), OIIO::make_span(values))) {
+        return {};
+    }
+    return values;
+}
+
 }  // namespace
 
 std::string resolveFramePath(const std::string& pattern, std::int64_t frame) {
@@ -105,6 +120,8 @@ ImageReadResult readImage(const std::string& path) {
     result.channelNames.assign(spec.channelnames.begin(), spec.channelnames.end());
     result.nativePrecision = std::string(typeName(spec.format));
     result.formatName = std::string(input->format_name());
+    result.declaredColorSpace = spec.get_string_attribute("oiio:ColorSpace");
+    result.chromaticities = declaredChromaticities(spec);
 
     std::vector<float> raw(static_cast<std::size_t>(spec.width) * static_cast<std::size_t>(spec.height) *
                            static_cast<std::size_t>(spec.nchannels));
@@ -149,10 +166,12 @@ ImageReadResult readImage(const std::string& path) {
             std::array<float, kImageChannels> rgba{src[r], src[g], src[b], 1.0F};
             if (a >= 0) {
                 rgba[3] = src[a];
-                // OpenEXR convention: color channels are premultiplied by
-                // alpha when present. Declared, not converted (issue #6
-                // owns association/color application).
-                result.alpha = AlphaAssociation::Premultiplied;
+                // Declared association, not converted (issue #6 owns
+                // association/color application). EXR's convention is
+                // premultiplied when an alpha channel is present; other
+                // formats keep straight alpha.
+                result.alpha =
+                    result.formatName == "openexr" ? AlphaAssociation::Premultiplied : AlphaAssociation::Straight;
             }
             result.image.setPixel(x, y, rgba);
         }

@@ -33,6 +33,7 @@
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/ImageIO.hpp"
+#include "nemo/media/ImageSource.hpp"
 #include "nemo/media/Probe.hpp"
 #include "nemo/media/VideoDecode.hpp"
 #ifdef NEMO_BUILD_GPU
@@ -273,7 +274,8 @@ int commandEvaluate(const std::vector<std::string>& args) {
             request.output = nemo::resolveOutput(loaded.document, request.network, outputName);
             request.localTime = frame;
             request.region = {0, 0, width, height};
-            const nemo::CpuEvaluation evaluation = nemo::evaluateCpu(loaded.document, request);
+            nemo::media::ImageSourceProvider sources;
+            const nemo::CpuEvaluation evaluation = nemo::evaluateCpu(loaded.document, request, nullptr, &sources);
 
             std::ofstream out(outPath, std::ios::binary);
             if (!out) {

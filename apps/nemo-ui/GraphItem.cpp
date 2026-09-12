@@ -29,15 +29,9 @@ constexpr qreal kCardWidth = 112.0;
 constexpr qreal kCardHeight = 28.0;
 constexpr qreal kPortRadius = 4.0;
 
-quint64 idFromVariant(const QVariant& value) {
-    bool ok = false;
+QString idFromVariant(const QVariant& value) {
     const auto text = value.toString();
-    if (!text.isEmpty()) {
-        const auto id = text.toULongLong(&ok);
-        if (ok)
-            return id;
-    }
-    return value.toULongLong(&ok);
+    return text == QStringLiteral("0") ? QString{} : text;
 }
 
 QPointF pointFromVariant(const QVariant& value, bool* valid = nullptr) {
@@ -64,7 +58,7 @@ QPointF pointFromVariant(const QVariant& value, bool* valid = nullptr) {
 }
 
 struct EndpointValues {
-    quint64 node{};
+    QString node;
     QString portId;
     int portIndex{-1};
 };
@@ -252,6 +246,8 @@ struct LabelSpec {
     QColor color;
     int fontSize{11};
     int rasterScale{1};
+    int leftInset{6};
+    int rightInset{6};
     friend bool operator==(const LabelSpec&, const LabelSpec&) = default;
 };
 
@@ -359,9 +355,10 @@ QImage renderLabelAtlas(const QVector<LabelSpec>& labels, QVector<QRectF>* atlas
         const int column = i % columns;
         const int row = i / columns;
         const int y = row * kAtlasCellHeight;
-        const QString text = metrics.elidedText(label.text, Qt::ElideRight, kAtlasCellWidth - 12);
+        const int contentWidth = kAtlasCellWidth - label.leftInset - label.rightInset;
+        const QString text = metrics.elidedText(label.text, Qt::ElideRight, contentWidth);
         const int advance = std::max(1, metrics.horizontalAdvance(text));
-        const int centeredX = column * kAtlasCellWidth + (kAtlasCellWidth - advance) / 2;
+        const int centeredX = column * kAtlasCellWidth + label.leftInset + (contentWidth - advance) / 2;
         painter.setPen(label.color);
         painter.drawText(QPointF(centeredX, y + (kAtlasCellHeight - metrics.height()) / 2 + metrics.ascent()), text);
         atlasRects->push_back(QRectF(column * kAtlasCellWidth * rasterScale, y * rasterScale,
@@ -555,6 +552,7 @@ void GraphItem::rebuildNodeRecords() {
         record.name = map.value(QStringLiteral("name")).toString();
         record.type = map.value(QStringLiteral("type")).toString();
         record.category = map.value(QStringLiteral("category")).toString();
+        record.hasChildScope = !map.value(QStringLiteral("definition")).toString().isEmpty();
         record.position = {map.value(QStringLiteral("x")).toDouble(), map.value(QStringLiteral("y")).toDouble()};
         bool positionValid = map.contains(QStringLiteral("x")) && map.contains(QStringLiteral("y"));
         if (!positionValid && map.contains(QStringLiteral("position")))
@@ -622,7 +620,7 @@ void GraphItem::rebuildInteractionRecords() {
     selectedNodeIds_.reserve(selectedNodeIdsProperty_.size());
     for (const auto& id : selectedNodeIdsProperty_) {
         const auto parsed = idFromVariant(id);
-        if (parsed != 0)
+        if (!parsed.isEmpty())
             selectedNodeIds_.push_back(parsed);
     }
     hoveredNodeId_ = idFromVariant(hoveredNodeIdProperty_);
@@ -656,7 +654,7 @@ void GraphItem::rebuildInteractionRecords() {
     wirePreviewPointer_ = {wirePreviewProperty_.value(QStringLiteral("x")).toDouble(),
                            wirePreviewProperty_.value(QStringLiteral("y")).toDouble()};
     wirePreviewHiddenEdge_ = idFromVariant(wirePreviewProperty_.value(QStringLiteral("hiddenEdge")));
-    wirePreviewValid_ = wirePreviewFromInput_ ? wirePreviewTo_.node != 0 : wirePreviewFrom_.node != 0;
+    wirePreviewValid_ = wirePreviewFromInput_ ? !wirePreviewTo_.node.isEmpty() : !wirePreviewFrom_.node.isEmpty();
 }
 void GraphItem::updateImplicitSize() {
     QSizeF next(520.0, 260.0);
@@ -675,7 +673,7 @@ void GraphItem::updateImplicitSize() {
         setImplicitSize(contentSize_.width(), contentSize_.height());
     }
 }
-const GraphItem::NodeRecord* GraphItem::nodeRecord(quint64 id) const {
+const GraphItem::NodeRecord* GraphItem::nodeRecord(const QString& id) const {
     const auto nodeIndex = nodeIndex_.value(id, -1);
     return nodeIndex >= 0 && nodeIndex < nodeRecords_.size() ? &nodeRecords_.at(nodeIndex) : nullptr;
 }
@@ -836,10 +834,11 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
             1,
             static_cast<int>(std::ceil(viewScaleProperty_ * (window() ? window()->effectiveDevicePixelRatio() : 1.0))));
         const auto appendLabel = [&frame, &clip, this, rasterScale](QString key, QString text, QPointF position,
-                                                                    const QColor& color) {
+                                                                    const QColor& color, bool hasChildScope) {
             if (frame.labels.size() < kMaxVisibleLabels &&
                 QRectF(position, QSizeF(kAtlasCellWidth, kAtlasCellHeight)).intersects(clip))
-                frame.labels.push_back({std::move(key), std::move(text), position, color, fontSize_, rasterScale});
+                frame.labels.push_back({std::move(key), std::move(text), position, color, fontSize_, rasterScale,
+                                        hasChildScope ? 7 : 6, hasChildScope ? 27 : 6});
         };
         for (const auto& node : nodeRecords_) {
             if (!node.rectangle.intersects(clip))
@@ -851,7 +850,8 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
             appendBorder(frame.outlines, node.rectangle, selected ? 2.0 : 1.0, selected ? accentColor_ : borderColor_);
             const QColor text = nodeTextColor(fill);
             const auto header = node.name.isEmpty() ? node.type : node.name;
-            appendLabel(QStringLiteral("node:%1").arg(node.id), header, node.rectangle.topLeft() + QPointF(0, 2), text);
+            appendLabel(QStringLiteral("node:%1").arg(node.id), header, node.rectangle.topLeft() + QPointF(0, 2), text,
+                        node.hasChildScope);
 
             const auto appendPort = [&](const PortRecord& port, int index, bool output) {
                 const QPointF center = portPoint(node, port.id, index, output);
@@ -871,7 +871,7 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
                 appendPort(node.outputs.at(i), i, true);
         }
 
-        if (!wirePreviewValid_ && hoveredEndpointEdge_ != 0 && hoveredEndpoint_.node != 0) {
+        if (!wirePreviewValid_ && !hoveredEndpointEdge_.isEmpty() && !hoveredEndpoint_.node.isEmpty()) {
             const auto* node = nodeRecord(hoveredEndpoint_.node);
             if (node != nullptr) {
                 const auto center =

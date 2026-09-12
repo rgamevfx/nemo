@@ -1,0 +1,8 @@
+collapse OK
+save/reload OK
+nested collapse OK
+nested unpack OK
+unpack OK
+undo unpack OK
+redo unpack OK
+RGBA 0.45 0.25 0.5 1; 8x4; hash 11099986428057246802

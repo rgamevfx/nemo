@@ -9,6 +9,7 @@ add_library(nemo_core
     core/document/Document.cpp
     core/commands/AnimationCommands.cpp
     core/commands/MediaCatalogCommands.cpp
+    core/commands/NetworkCommands.cpp
     core/document/Serialization.cpp
     core/session/ProjectSession.cpp
     core/session/ProjectFile.cpp

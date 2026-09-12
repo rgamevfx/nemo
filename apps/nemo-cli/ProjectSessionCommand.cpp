@@ -13,6 +13,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/ParameterValueJson.hpp"
 #include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
@@ -40,6 +41,49 @@ template <typename T>
 
 [[nodiscard]] nemo::NodeId nodeIdAt(const Json& command, const char* idKey) {
     return unsignedValue<nemo::NodeId>(command, idKey);
+}
+[[nodiscard]] std::vector<nemo::NodeId> nodeIdsAt(const Json& command, const char* key = "node_ids") {
+    const auto& ids = command.at(key);
+    if (!ids.is_array() || ids.empty())
+        throw std::invalid_argument(std::string{key} + " must be a nonempty array");
+    std::vector<nemo::NodeId> result;
+    result.reserve(ids.size());
+    for (const auto& value : ids) {
+        if (!value.is_number_unsigned())
+            throw std::invalid_argument(std::string{key} + " entries must be nonnegative integers");
+        result.push_back(value.get<nemo::NodeId>());
+    }
+    return result;
+}
+
+[[nodiscard]] nemo::InterfacePortId interfaceIdAt(const Json& command, const char* key = "interface_id") {
+    return unsignedValue<nemo::InterfacePortId>(command, key);
+}
+
+[[nodiscard]] nemo::PortDirection portDirectionAt(const Json& command) {
+    const auto direction = command.at("direction").get<std::string>();
+    if (direction == "input")
+        return nemo::PortDirection::Input;
+    if (direction == "output")
+        return nemo::PortDirection::Output;
+    throw std::invalid_argument("direction must be 'input' or 'output'");
+}
+
+[[nodiscard]] nemo::LayoutPosition layoutOffsetAt(const Json& command) {
+    return {command.value("offset_x", 0.0), command.value("offset_y", 0.0)};
+}
+[[nodiscard]] nemo::LayoutPosition layoutAt(const Json& command) {
+    return {command.value("x", 0.0), command.value("y", 0.0)};
+}
+[[nodiscard]] nemo::PortKind portKindAt(const Json& command) {
+    const auto kind = command.at("kind").get<std::string>();
+    if (kind == "image")
+        return nemo::PortKind::Image;
+    if (kind == "mask")
+        return nemo::PortKind::Mask;
+    if (kind == "media")
+        return nemo::PortKind::Media;
+    throw std::invalid_argument("kind must be 'image', 'mask', or 'media'");
 }
 
 [[nodiscard]] const char* parameterTypeName(nemo::ParameterType type) {
@@ -122,9 +166,8 @@ template <typename T>
         return nemo::setParametersCommand(parameterEditsAt(command));
     }
     if (op == "rename-node") {
-        const nemo::NetworkId network = networkIdAt(command);
-        const nemo::NodeId id = nodeIdAt(command, "node_id");
-        return nemo::renameNodeCommand(network, id, command.at("name").get<std::string>());
+        return nemo::renameNodeCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
+                                       command.at("name").get<std::string>());
     }
     if (op == "connect") {
         const nemo::NetworkId network = networkIdAt(command);
@@ -132,6 +175,86 @@ template <typename T>
         const nemo::NodeId to = nodeIdAt(command, "to_node_id");
         return nemo::connectCommand(network, {from, unsignedValue<std::uint32_t>(command, "from_port")},
                                     {to, unsignedValue<std::uint32_t>(command, "to_port")});
+    }
+    if (op == "collapse-selection") {
+        return nemo::collapseSelectionCommand(networkIdAt(command), nodeIdsAt(command),
+                                              command.value("name", std::string{"Subnet"}));
+    }
+    if (op == "unpack-instance") {
+        return nemo::unpackInstanceCommand(unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"));
+    }
+    if (op == "rename-interface") {
+        return nemo::renameInterfaceCommand(networkIdAt(command), portDirectionAt(command), interfaceIdAt(command),
+                                            command.at("name").get<std::string>());
+    }
+    if (op == "promote-parameter") {
+        return nemo::promoteParameterCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
+                                             command.at("key").get<std::string>(),
+                                             command.at("name").get<std::string>());
+    }
+    if (op == "rename-exposed-parameter") {
+        return nemo::renameExposedParameterCommand(networkIdAt(command), interfaceIdAt(command),
+                                                   command.at("name").get<std::string>());
+    }
+    if (op == "remove-exposed-parameter") {
+        return nemo::removeExposedParameterCommand(networkIdAt(command), interfaceIdAt(command));
+    }
+    if (op == "create-linked-instance") {
+        return nemo::createLinkedInstanceCommand(networkIdAt(command),
+                                                 unsignedValue<nemo::NetworkId>(command, "definition_id"),
+                                                 command.at("name").get<std::string>());
+    }
+    if (op == "make-independent") {
+        return nemo::makeIndependentCommand(unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"));
+    }
+    if (op == "copy-selection") {
+        return nemo::copySelectionCommand(networkIdAt(command), nodeIdsAt(command),
+                                          unsignedValue<nemo::NetworkId>(command, "destination_network_id"),
+                                          layoutOffsetAt(command));
+    }
+    if (op == "promote-interface") {
+        return nemo::promoteInterfaceCommand(networkIdAt(command), portDirectionAt(command), portKindAt(command),
+                                             command.at("name").get<std::string>());
+    }
+    if (op == "set-interface-layout") {
+        return nemo::setInterfaceLayoutCommand(networkIdAt(command), portDirectionAt(command), interfaceIdAt(command),
+                                               layoutAt(command));
+    }
+    if (op == "disconnect-input") {
+        return nemo::disconnectInputCommand(
+            networkIdAt(command), interfaceIdAt(command, "input_id"),
+            {nodeIdAt(command, "node_id"), unsignedValue<std::uint32_t>(command, "port")});
+    }
+    if (op == "disconnect-output") {
+        return nemo::disconnectOutputCommand(networkIdAt(command), interfaceIdAt(command, "output_id"));
+    }
+    if (op == "connect-input-output") {
+        return nemo::connectInputToOutputCommand(networkIdAt(command), interfaceIdAt(command, "input_id"),
+                                                 interfaceIdAt(command, "output_id"));
+    }
+    if (op == "replace-input") {
+        return nemo::replaceInputConnectionCommand(
+            networkIdAt(command), interfaceIdAt(command, "input_id"),
+            {nodeIdAt(command, "node_id"), unsignedValue<std::uint32_t>(command, "port")});
+    }
+    if (op == "replace-output") {
+        return nemo::replaceOutputConnectionCommand(
+            networkIdAt(command), interfaceIdAt(command, "output_id"),
+            {nodeIdAt(command, "node_id"), unsignedValue<std::uint32_t>(command, "port")});
+    }
+    if (op == "bind-instance-input") {
+        return nemo::bindInstanceInputCommand(
+            unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"), interfaceIdAt(command, "input_id"),
+            {nodeIdAt(command, "node_id"), unsignedValue<std::uint32_t>(command, "port")});
+    }
+    if (op == "bind-instance-input-parent") {
+        return nemo::bindInstanceInputToParentTerminalCommand(
+            unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"), interfaceIdAt(command, "input_id"),
+            interfaceIdAt(command, "parent_input_id"));
+    }
+    if (op == "unbind-instance-input") {
+        return nemo::unbindInstanceInputCommand(unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"),
+                                                interfaceIdAt(command, "input_id"));
     }
     if (op == "transaction") {
         const auto& commands = command.at("commands");

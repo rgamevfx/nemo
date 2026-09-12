@@ -25,6 +25,7 @@ FocusScope {
     property var catalogByType: ({})
     property var portPresentationById: ({})
     property var displayNodes: []
+    property var subnetDisplayNodes: []
     property var displayEdges: []
     property var selectedNodeIds: []
     property string hoveredNodeId: ""
@@ -33,8 +34,14 @@ FocusScope {
     property var hoveredReroute: ({})
     property var wirePreview: ({})
     property var graphSnapshotData: ({})
+    onGraphSnapshotDataChanged: portPresentationById = ({})
     property string graphNetworkId: ""
     property bool graphAvailable: false
+    // A scope path is explicit occurrence ancestry. Definitions can be used
+    // by multiple instances, so navigation never infers a parent from a
+    // definition identity.
+    property var scopePath: []
+    property var scopeBreadcrumbs: []
     property var graphSelections: ({})
     property var graphViews: ({})
     property bool stateReady: false
@@ -149,9 +156,9 @@ FocusScope {
     function clampZoom(value) {
         return Math.max(0.2, Math.min(2.5, Number(value) || 1));
     }
-    function targetNetworkId() {
-        if (graphNetworkId.length)
-            return graphNetworkId;
+    // The graph panel always starts from the document's root network; scope
+    // navigation below is presentation state, never document data.
+    function baseNetworkId() {
         return controller && controller.rootNetworkId !== undefined ? String(controller.rootNetworkId || "") : "";
     }
     function viewerShortcutEnabled() {
@@ -161,6 +168,16 @@ FocusScope {
         if (!viewerShortcutEnabled())
             return;
         controller.assignViewer(graphNetworkId, viewerIndex, String(selectedNodeIds[0]));
+    }
+    function targetNetworkId() {
+        if (scopePath.length)
+            return String(scopePath[scopePath.length - 1].networkId || "");
+        return baseNetworkId();
+    }
+    function pathRootMatchesBase(path) {
+        if (!path || !path.length)
+            return true;
+        return String(path[0].parentNetworkId || baseNetworkId()) === baseNetworkId();
     }
     function scopeKey(id) {
         return String(id || "");
@@ -190,6 +207,52 @@ FocusScope {
     }
     function nodeLabel(node) {
         return node && String(node.name || node.type || "Node");
+    }
+    function isSubnet(node) {
+        return !!node && !!node.definition && !!node.instance;
+    }
+    function subnetAt(px, py) {
+        var id = nodeAt(px, py), node = id ? nodeById(id) : null;
+        if (!isSubnet(node))
+            return "";
+        var point = scenePoint(px, py), x = nodeX(node), y = nodeY(node);
+        return point.x >= x + nodeWidth - 24 && point.x <= x + nodeWidth - 3 && point.y >= y + 3 && point.y <= y + 24 ? id : "";
+    }
+    function enterSubnet(id) {
+        var node = nodeById(id);
+        if (!isSubnet(node) || !node.definition || !node.instance)
+            return false;
+        var next = scopePath.slice();
+        next.push({
+                "parentNetworkId": graphNetworkId,
+                "networkId": String(node.definition),
+                "instanceId": String(node.instance),
+                "nodeId": String(node.id),
+                "name": nodeLabel(node)
+            });
+        scopePath = next;
+        switchNetwork();
+        return true;
+    }
+    function navigateBreadcrumb(index) {
+        var target = Number(index);
+        if (!isFinite(target) || target < 0)
+            return;
+        if (target === 0)
+            scopePath = [];
+        else
+            scopePath = scopePath.slice(0, target);
+        switchNetwork();
+    }
+    function collapseSelection() {
+        if (!graphAvailable || !selectedNodeIds.length || !controller || !controller.collapseSelection)
+            return "";
+        var created = controller.collapseSelection(graphNetworkId, selectedNodeIds.slice(), "Subnet");
+        if (created) {
+            setSelection([String(created)]);
+            savePanelState();
+        }
+        return String(created || "");
     }
     function selected(id) {
         return selectedNodeIds.indexOf(String(id)) >= 0;
@@ -290,13 +353,16 @@ FocusScope {
         return theme && theme.nodeCategoryColors && theme.nodeCategoryColors[group] !== undefined ? group : "Utility";
     }
     function refreshDisplayNodes() {
-        var source = activeNodes(), next = [];
+        var source = activeNodes(), next = [], subnets = [];
         for (var i = 0; i < source.length; ++i) {
             var copy = copyNode(source[i]);
             copy.category = copy.category || "Utility";
             next.push(copy);
+            if (isSubnet(copy))
+                subnets.push(copy);
         }
         displayNodes = next;
+        subnetDisplayNodes = subnets;
         var valid = [];
         for (var s = 0; s < selectedNodeIds.length; ++s)
             if (nodeById(selectedNodeIds[s]))
@@ -485,8 +551,9 @@ FocusScope {
             var edge = activeEdges()[i], points = edgePoints(edge);
             if (points.length < 2)
                 continue;
+            var sourceNode = nodeById(edge.fromNode), targetNode = nodeById(edge.toNode);
             var sourceDistance = Math.hypot(px - points[0].x, py - points[0].y);
-            if (sourceDistance <= distance) {
+            if (sourceDistance <= distance && sourceNode && portHitAllowed(sourceNode, (sourceNode.outputs || [])[edge.fromPort], true, px, py)) {
                 distance = sourceDistance;
                 best = {
                     "edge": edge,
@@ -494,7 +561,7 @@ FocusScope {
                 };
             }
             var targetDistance = Math.hypot(px - points[points.length - 1].x, py - points[points.length - 1].y);
-            if (targetDistance <= distance) {
+            if (targetDistance <= distance && targetNode && portHitAllowed(targetNode, (targetNode.inputs || [])[edge.toPort], false, px, py)) {
                 distance = targetDistance;
                 best = {
                     "edge": edge,
@@ -547,6 +614,8 @@ FocusScope {
         selections[scopeKey(graphNetworkId)] = selectedNodeIds.slice();
         merged.graphViews = views;
         merged.graphSelections = selections;
+        merged.scopeRootNetworkId = baseNetworkId();
+        merged.scopePath = scopePath.slice();
         // Migrate the former root-only view record into the scoped record.
         delete merged.zoom;
         delete merged.panX;
@@ -557,6 +626,35 @@ FocusScope {
         if (JSON.stringify(merged) === JSON.stringify(panelStateCopy()))
             return;
         workspace.setPanelState(panelId, merged);
+    }
+    function restoreScopePath() {
+        var state = panelStateCopy(), saved = state.scopePath || [];
+        if (!Array.isArray(saved) || !pathRootMatchesBase(saved)) {
+            scopePath = [];
+            return;
+        }
+        var restored = [], parentNetwork = baseNetworkId();
+        for (var i = 0; i < saved.length; ++i) {
+            var entry = saved[i] || ({});
+            if (!entry.networkId || !entry.instanceId || !entry.name || String(entry.parentNetworkId || parentNetwork) !== parentNetwork)
+                break;
+            restored.push({
+                    "parentNetworkId": parentNetwork,
+                    "networkId": String(entry.networkId),
+                    "instanceId": String(entry.instanceId),
+                    "nodeId": String(entry.nodeId || ""),
+                    "name": String(entry.name)
+                });
+            parentNetwork = String(entry.networkId);
+        }
+        scopePath = restored;
+    }
+    function reconcileScopePath() {
+        var scope = controller.graphScope(baseNetworkId(), scopePath);
+        var valid = scope.path || [];
+        if (JSON.stringify(valid) !== JSON.stringify(scopePath))
+            scopePath = valid;
+        scopeBreadcrumbs = scope.breadcrumbs || [];
     }
     function restoreScopeState() {
         var state = panelState || ({}), views = state.graphViews || ({}), selections = state.graphSelections || ({});
@@ -587,10 +685,19 @@ FocusScope {
         graphItem.selectedNodeIds = selectedNodeIds;
     }
     function switchNetwork() {
+        reconcileScopePath();
         var nextNetwork = targetNetworkId();
         if (stateReady && nextNetwork === graphNetworkId) {
             graphSnapshotData = graphNetworkId.length ? controller.graphSnapshot(graphNetworkId) : ({});
             graphAvailable = graphSnapshotData.available === true;
+            // Undo can remove the active child definition. Walk the explicit
+            // occurrence path back to its surviving parent rather than
+            // falling through to an unrelated definition or root graph.
+            if (!graphAvailable && scopePath.length) {
+                scopePath = scopePath.slice(0, scopePath.length - 1);
+                switchNetwork();
+                return;
+            }
             refreshSnapshots();
             return;
         }
@@ -606,7 +713,14 @@ FocusScope {
             graphSnapshotData = controller.graphSnapshot(graphNetworkId) || ({});
             graphAvailable = graphSnapshotData.available === true;
         }
+        while (!graphAvailable && scopePath.length) {
+            scopePath = scopePath.slice(0, scopePath.length - 1);
+            graphNetworkId = targetNetworkId();
+            graphSnapshotData = controller.graphSnapshot(graphNetworkId) || ({});
+            graphAvailable = graphSnapshotData.available === true;
+        }
         stateReady = false;
+        reconcileScopePath();
         restoreScopeState();
         refreshSnapshots();
         stateReady = true;
@@ -987,13 +1101,19 @@ FocusScope {
             graphPanel.refreshSnapshots();
         }
     }
+
     onPanelStateChanged: {
         if (!graphPanel.gesture) {
+            if (!graphPanel.stateReady)
+                graphPanel.restoreScopePath();
             graphPanel.restoreScopeState();
             graphPanel.refreshSnapshots();
         }
     }
-    Component.onCompleted: switchNetwork()
+    Component.onCompleted: {
+        restoreScopePath();
+        switchNetwork();
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -1057,13 +1177,28 @@ FocusScope {
             height: 27
             color: Qt.rgba(graphPanel.theme.panel.r, graphPanel.theme.panel.g, graphPanel.theme.panel.b, 0.94)
             border.color: graphPanel.theme.border
-            Text {
+            Row {
                 anchors.fill: parent
-                anchors.leftMargin: 10
-                text: graphPanel.graphAvailable ? (graphPanel.graphNetworkId === String(graphPanel.controller.rootNetworkId || "") ? "Root" : "Network " + graphPanel.graphNetworkId) : "Graph unavailable"
-                color: graphPanel.theme.text
-                font.pixelSize: 11
-                verticalAlignment: Text.AlignVCenter
+                anchors.leftMargin: 6
+                spacing: 2
+                Repeater {
+                    model: graphPanel.scopeBreadcrumbs
+                    delegate: ChromeButton {
+                        required property var modelData
+                        required property int index
+                        objectName: "graphBreadcrumb_" + String(modelData.networkId)
+                        theme: graphPanel.theme
+                        text: (index > 0 ? "›  " : "") + String(modelData.name || modelData.networkId)
+                        flat: true
+                        padding: 4
+                        implicitHeight: 25
+                        onClicked: graphPanel.navigateBreadcrumb(index)
+                        background: Rectangle {
+                            radius: 3
+                            color: parent.hovered ? graphPanel.theme.hover : "transparent"
+                        }
+                    }
+                }
             }
         }
         Item {
@@ -1119,6 +1254,32 @@ FocusScope {
                 wirePreview: graphPanel.wirePreview
                 presentationStyle: graphPanel.presentationStyle
                 viewScale: graphPanel.zoom
+            }
+            Repeater {
+                model: graphPanel.subnetDisplayNodes
+                delegate: Rectangle {
+                    required property var modelData
+                    objectName: "graphEnterAffordance_" + String(modelData.id)
+                    enabled: false
+                    x: graphPanel.panX + (graphPanel.nodeX(modelData) + graphPanel.nodeWidth - 24) * graphPanel.zoom
+                    y: graphPanel.panY + (graphPanel.nodeY(modelData) + 4) * graphPanel.zoom
+                    width: 20
+                    height: 20
+                    scale: graphPanel.zoom
+                    transformOrigin: Item.TopLeft
+                    radius: 3
+                    color: graphPanel.theme.raised
+                    border.color: graphPanel.theme.border
+                    border.width: 1
+                    z: 6
+                    Text {
+                        anchors.centerIn: parent
+                        text: ">"
+                        color: graphPanel.theme.text
+                        font.pixelSize: 13
+                        font.bold: true
+                    }
+                }
             }
             Rectangle {
                 id: selectionBox
@@ -1196,6 +1357,13 @@ FocusScope {
                     }
                     if (mouse.button !== Qt.LeftButton)
                         return;
+                    var enterId = subnetAt(mouse.x, mouse.y);
+                    if (enterId) {
+                        contextNodeId = enterId;
+                        gesture = "enter";
+                        mouse.accepted = true;
+                        return;
+                    }
                     var port = anyPortAt(mouse.x, mouse.y), endpoint = port ? null : endpointAt(mouse.x, mouse.y), dot = (!port && !endpoint) ? rerouteAt(mouse.x, mouse.y) : null;
                     if (port) {
                         if (!selected(port.node))
@@ -1306,7 +1474,13 @@ FocusScope {
                         lastClickY = pressSceneY;
                     }
                     if (mouse.button === Qt.LeftButton) {
-                        if (gesture === "wire") {
+                        if (gesture === "enter") {
+                            var entered = contextNodeId;
+                            var shouldEnter = subnetAt(mouse.x, mouse.y) === entered;
+                            clearInteraction();
+                            if (shouldEnter)
+                                enterSubnet(entered);
+                        } else if (gesture === "wire") {
                             finishWire();
                             savePanelState();
                         } else if (gesture === "pipe" && pipePullPending) {
@@ -1589,12 +1763,24 @@ FocusScope {
         MenuItem {
             objectName: "graphCollapseSelection"
             text: "Collapse to subnetwork"
-            enabled: false
+            enabled: graphPanel.graphAvailable && graphPanel.selectedNodeIds.length > 0
+            onTriggered: graphPanel.collapseSelection()
         }
         MenuItem {
             objectName: "graphEnterSelection"
             text: "Enter subnet"
-            enabled: false
+            enabled: {
+                var candidate = graphPanel.contextNodeId;
+                if (!candidate && graphPanel.selectedNodeIds.length === 1)
+                    candidate = graphPanel.selectedNodeIds[0];
+                return graphPanel.isSubnet(graphPanel.nodeById(candidate));
+            }
+            onTriggered: {
+                var candidate = graphPanel.contextNodeId;
+                if (!candidate && graphPanel.selectedNodeIds.length === 1)
+                    candidate = graphPanel.selectedNodeIds[0];
+                graphPanel.enterSubnet(candidate);
+            }
         }
         MenuSeparator {
         }

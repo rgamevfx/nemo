@@ -5,6 +5,7 @@
 #include "ViewerController.hpp"
 #include "ViewerItem.hpp"
 #include "WorkspaceController.hpp"
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
 #include <QFile>
@@ -19,7 +20,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <gtest/gtest.h>
-
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -53,6 +54,15 @@ QQuickItem* visual(QQuickItem* root, const QString& name) {
         }
     }
     return nullptr;
+}
+
+QVariantMap prefixedNodeRecord(const QVariantList& nodes, const QString& prefix) {
+    for (const auto& value : nodes) {
+        const auto node = value.toMap();
+        if (node.value(QStringLiteral("id")).toString().startsWith(prefix))
+            return node;
+    }
+    return {};
 }
 
 class WorkspaceDragTest : public testing::Test {
@@ -330,6 +340,65 @@ TEST_F(WorkspaceDragTest, CatalogMenuCreatesRealNodesAndTimelineSeeks) {
     EXPECT_GT(viewerController.frame(), quarterFrame);
 }
 
+TEST_F(WorkspaceDragTest, LowZoomConnectedNodeBodiesRemainSelectable) {
+    const auto network = viewerController.rootNetworkId();
+    const auto source = viewerController.createGraphNode(network, "constcolor", "Source", 40, 40, {}, {});
+    const auto target = viewerController.createGraphNode(network, "merge", "Target", 40, 240, {}, {});
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, source, 0, target, 0));
+    auto* panel = item("graphPanel");
+    const auto panelId = panel->property("panelId").toString();
+    auto state = controller.panelState(panelId);
+    auto views = state.value("graphViews").toMap();
+    views[network] = QVariantMap{{"zoom", 0.5}, {"panX", 80.0}, {"panY", 80.0}};
+    state["graphViews"] = views;
+    controller.setPanelState(panelId, state);
+    QTest::qWait(40);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto revision = projectSession.revision();
+    const auto edges = viewerController.graphEdges();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      graph->mapToScene(graph->nodeRect(source).center()).toPoint());
+    EXPECT_EQ(graph->selectedNodeIds(), QStringList{source});
+    QTest::mouseClick(window, Qt::LeftButton, Qt::ShiftModifier,
+                      graph->mapToScene(graph->nodeRect(target).center()).toPoint());
+    EXPECT_EQ(graph->selectedNodeIds(), (QStringList{source, target}));
+    EXPECT_EQ(projectSession.revision(), revision);
+    EXPECT_EQ(viewerController.graphEdges(), edges);
+}
+
+TEST_F(WorkspaceDragTest, EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry) {
+    const auto rootNetwork = viewerController.rootNetworkId();
+    const auto rootNode = viewerController.createGraphNode(rootNetwork, "constcolor", "Root source", 40, 40, {}, {});
+    auto child = std::make_shared<nemo::NetworkId>();
+    ASSERT_TRUE(
+        projectSession
+            .submit(nemo::addNetworkCommand("Child", child), nemo::EditOptions{projectSession.revision(), "child"})
+            .committed);
+    const auto childNetwork = QString::number(*child);
+    const auto childNode = viewerController.createGraphNode(childNetwork, "merge", "Child merge", 40, 40, {}, {});
+    ASSERT_EQ(rootNode, childNode) << "The fixture must exercise equal network-local node identities";
+    auto instance = std::make_shared<nemo::NetworkInstanceId>();
+    ASSERT_TRUE(projectSession
+                    .submit(nemo::addInstanceCommand(rootNetwork.toULongLong(), *child, "Child", instance),
+                            nemo::EditOptions{projectSession.revision(), "instance"})
+                    .committed);
+    const auto subnet = QString::number(projectSession.document().instance(*instance)->node);
+    ASSERT_TRUE(viewerController.commitGraphMove(rootNetwork,
+                                                 QVariantList{QVariantMap{{"id", subnet}, {"x", 300}, {"y", 120}}}));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphEnterAffordance_" + subnet));
+    QTest::qWait(40);
+    ASSERT_EQ(item("graphPanel")->property("graphNetworkId").toString(), childNetwork);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto rectangle = graph->nodeRect(childNode);
+    const auto input = graph->portPosition(childNode, 0, false);
+    EXPECT_NEAR(input.x(), rectangle.left() + rectangle.width() / 3.0, 1e-6);
+    EXPECT_NEAR(input.y(), rectangle.top(), 1e-6);
+}
+
 TEST_F(WorkspaceDragTest, GraphDragPreviewCancellationAndGroupOffsets) {
     const auto network = viewerController.rootNetworkId();
     const auto a = viewerController.createGraphNode(network, "constcolor", "A", 40, 40, {}, {});
@@ -467,6 +536,251 @@ TEST_F(WorkspaceDragTest, GraphSearchCreatesImmediatelyAndProtectsSelectionWhile
     ASSERT_TRUE(viewerController.undo());
     EXPECT_EQ(viewerController.graphNodes(), before);
     EXPECT_TRUE(viewerController.graphEdges().isEmpty());
+}
+
+TEST_F(WorkspaceDragTest, SubnetNavigationShowsTypedTerminalsAndRestoresScopedView) {
+    const auto network = viewerController.rootNetworkId();
+    const auto external = viewerController.createGraphNode(network, "constcolor", "External", -180, 0, {}, {});
+    const auto source = viewerController.createGraphNode(network, "constcolor", "Source", 0, 0, {}, {});
+    const auto merge = viewerController.createGraphNode(network, "merge", "Merge", 0, 180, {}, {});
+    ASSERT_FALSE(external.isEmpty());
+    ASSERT_FALSE(source.isEmpty());
+    ASSERT_FALSE(merge.isEmpty());
+
+    auto rootNodes = viewerController.graphSnapshot(network).value(QStringLiteral("nodes")).toList();
+    QString output;
+    for (const auto& value : rootNodes) {
+        const auto node = value.toMap();
+        if (node.value(QStringLiteral("type")).toString() == QStringLiteral("output") &&
+            !node.value(QStringLiteral("deletable")).toBool()) {
+            output = node.value(QStringLiteral("id")).toString();
+            break;
+        }
+    }
+    ASSERT_FALSE(output.isEmpty());
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, external, 0, merge, 1));
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, source, 0, merge, 0));
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, merge, 0, output, 0));
+
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto point = [&](const QString& id) { return graph->mapToScene(graph->nodeRect(id).center()).toPoint(); };
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(source));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::ShiftModifier, point(merge));
+    QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, point(merge));
+    QTest::qWait(20);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphCollapseSelection"));
+    QTest::qWait(60);
+
+    QString subnet;
+    QString definition;
+    for (const auto& value : viewerController.graphNodes()) {
+        const auto node = value.toMap();
+        if (!node.value(QStringLiteral("definition")).toString().isEmpty() &&
+            !node.value(QStringLiteral("instance")).toString().isEmpty()) {
+            subnet = node.value(QStringLiteral("id")).toString();
+            definition = node.value(QStringLiteral("definition")).toString();
+            break;
+        }
+    }
+    ASSERT_FALSE(subnet.isEmpty());
+    ASSERT_FALSE(definition.isEmpty());
+    auto* panel = item("graphPanel");
+    ASSERT_EQ(panel->property("graphNetworkId").toString(), network);
+    ASSERT_TRUE(item("graphEnterAffordance_" + subnet)->isVisible());
+
+    graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto rootRect = graph->nodeRect(subnet);
+    const auto rootScreen = graph->mapToScene(rootRect.topLeft());
+    const auto revision = projectSession.revision();
+    const auto enter = center("graphEnterAffordance_" + subnet);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, enter);
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), network);
+    const auto outside = item("graphSurface")->mapToScene(QPointF(-12, -12)).toPoint();
+    QTest::mouseMove(window, outside, 10);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, outside);
+    QTest::qWait(40);
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), network);
+    EXPECT_EQ(projectSession.revision(), revision);
+
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, enter);
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, enter);
+    QTest::qWait(30);
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), network);
+    EXPECT_EQ(projectSession.revision(), revision);
+
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, enter);
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), network)
+        << "navigation commits only when the affordance press is released";
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, enter);
+    QTest::qWait(60);
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), definition);
+    ASSERT_TRUE(item("graphBreadcrumb_" + definition)->isVisible());
+    EXPECT_EQ(projectSession.revision(), revision);
+
+    graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto childNodes = graph->nodes();
+    const auto input = prefixedNodeRecord(childNodes, QStringLiteral("input:"));
+    const auto formalOutput = prefixedNodeRecord(childNodes, QStringLiteral("output:"));
+    ASSERT_FALSE(input.isEmpty()) << "formal input must be projected as a visible graph record";
+    ASSERT_FALSE(formalOutput.isEmpty()) << "formal output must be projected as a visible graph record";
+    const auto inputPort = input.value(QStringLiteral("outputs")).toList();
+    const auto outputPort = formalOutput.value(QStringLiteral("inputs")).toList();
+    ASSERT_EQ(inputPort.size(), 1);
+    ASSERT_EQ(outputPort.size(), 1);
+    EXPECT_EQ(inputPort.front().toMap().value(QStringLiteral("kind")).toString(), QStringLiteral("image"));
+    EXPECT_EQ(outputPort.front().toMap().value(QStringLiteral("kind")).toString(), QStringLiteral("image"));
+    const auto inputId = input.value(QStringLiteral("id")).toString();
+    const auto outputId = formalOutput.value(QStringLiteral("id")).toString();
+    const auto inputRect = graph->nodeRect(inputId);
+    const auto outputRect = graph->nodeRect(outputId);
+    const auto surfaceRect = item("graphSurface");
+    const auto inputTopLeft = surfaceRect->mapFromScene(graph->mapToScene(inputRect.topLeft()));
+    const auto inputBottomRight = surfaceRect->mapFromScene(graph->mapToScene(inputRect.bottomRight()));
+    const auto outputTopLeft = surfaceRect->mapFromScene(graph->mapToScene(outputRect.topLeft()));
+    const auto outputBottomRight = surfaceRect->mapFromScene(graph->mapToScene(outputRect.bottomRight()));
+    EXPECT_GT(inputRect.width(), 0);
+    EXPECT_GT(inputRect.height(), 0);
+    EXPECT_GT(outputRect.width(), 0);
+    EXPECT_GT(outputRect.height(), 0);
+    const QRectF viewport(0, 0, surfaceRect->width(), surfaceRect->height());
+    EXPECT_TRUE(viewport.contains(inputTopLeft));
+    EXPECT_TRUE(viewport.contains(inputBottomRight));
+    EXPECT_TRUE(viewport.contains(outputTopLeft));
+    EXPECT_TRUE(viewport.contains(outputBottomRight));
+    bool inputWire = false;
+    bool outputWire = false;
+    for (const auto& value : graph->edges()) {
+        const auto edge = value.toMap();
+        const auto id = edge.value(QStringLiteral("id")).toString();
+        if (id.startsWith(QStringLiteral("input:"))) {
+            inputWire = true;
+            EXPECT_EQ(edge.value(QStringLiteral("fromNode")).toString(), inputId);
+            EXPECT_FALSE(edge.value(QStringLiteral("toNode")).toString().isEmpty());
+        } else if (id.startsWith(QStringLiteral("output:"))) {
+            outputWire = true;
+            EXPECT_FALSE(edge.value(QStringLiteral("fromNode")).toString().isEmpty());
+            EXPECT_EQ(edge.value(QStringLiteral("toNode")).toString(), outputId);
+        }
+    }
+    EXPECT_TRUE(inputWire);
+    EXPECT_TRUE(outputWire);
+
+    QString inner;
+    for (const auto& value : childNodes) {
+        const auto node = value.toMap();
+        const auto id = node.value(QStringLiteral("id")).toString();
+        if (!id.startsWith(QStringLiteral("input:")) && !id.startsWith(QStringLiteral("output:")) && id != output &&
+            node.value(QStringLiteral("type")).toString() != QStringLiteral("output")) {
+            inner = id;
+            break;
+        }
+    }
+    ASSERT_FALSE(inner.isEmpty());
+    const auto childPoint = graph->mapToScene(graph->nodeRect(inner).center()).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, childPoint);
+    QTest::qWait(20);
+    const auto childSelection = graph->selectedNodeIds();
+    ASSERT_EQ(childSelection.size(), 1);
+    const auto childRect = graph->nodeRect(inner);
+    const auto childScreen = graph->mapToScene(childRect.topLeft());
+    const auto childSurface = item("graphSurface");
+    const auto panStart = childSurface->mapToScene(QPointF(80, 80)).toPoint();
+    QTest::mousePress(window, Qt::MiddleButton, Qt::NoModifier, panStart);
+    QTest::mouseMove(window, panStart + QPoint(31, 19), 20);
+    QTest::mouseRelease(window, Qt::MiddleButton, Qt::NoModifier, panStart + QPoint(31, 19));
+    const auto pannedChildRect = graph->nodeRect(inner);
+    const auto pannedChildScreen = graph->mapToScene(pannedChildRect.topLeft());
+    EXPECT_NE(pannedChildScreen, childScreen);
+
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphBreadcrumb_" + network));
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), network);
+    ASSERT_TRUE(item("graphBreadcrumb_" + network)->isVisible());
+    const auto rootSelection = graph->selectedNodeIds();
+    ASSERT_EQ(rootSelection.size(), 1);
+    EXPECT_EQ(graph->mapToScene(graph->nodeRect(subnet).topLeft()), rootScreen);
+
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphEnterAffordance_" + subnet));
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), definition);
+    graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto reenteredSelection = graph->selectedNodeIds();
+    ASSERT_EQ(reenteredSelection.size(), 1);
+    EXPECT_EQ(reenteredSelection.front(), inner);
+    EXPECT_EQ(graph->mapToScene(graph->nodeRect(inner).topLeft()), pannedChildScreen);
+}
+
+TEST_F(WorkspaceDragTest, RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition) {
+    const auto network = viewerController.rootNetworkId();
+    const auto source = viewerController.createGraphNode(network, "constcolor", "PathSource", 0, 0, {}, {});
+    const auto merge = viewerController.createGraphNode(network, "merge", "PathMerge", 0, 160, {}, {});
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, source, 0, merge, 0));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    auto point = [&](const QString& id) { return graph->mapToScene(graph->nodeRect(id).center()).toPoint(); };
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(source));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::ShiftModifier, point(merge));
+    QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, point(merge));
+    QTest::qWait(20);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphCollapseSelection"));
+    QTest::qWait(60);
+
+    QString subnet;
+    QString definition;
+    QString instance;
+    for (const auto& value : viewerController.graphNodes()) {
+        const auto node = value.toMap();
+        if (!node.value(QStringLiteral("instance")).toString().isEmpty()) {
+            subnet = node.value(QStringLiteral("id")).toString();
+            definition = node.value(QStringLiteral("definition")).toString();
+            instance = node.value(QStringLiteral("instance")).toString();
+            break;
+        }
+    }
+    ASSERT_FALSE(subnet.isEmpty());
+    ASSERT_FALSE(definition.isEmpty());
+    ASSERT_FALSE(instance.isEmpty());
+    auto sibling = std::make_shared<nemo::NetworkInstanceId>();
+    ASSERT_TRUE(
+        projectSession
+            .submit(nemo::addInstanceCommand(network.toULongLong(), definition.toULongLong(), "SharedSibling", sibling),
+                    nemo::EditOptions{projectSession.revision(), "shared-sibling"})
+            .committed);
+    ASSERT_TRUE(projectSession
+                    .submit(nemo::setLayoutCommand(network.toULongLong(),
+                                                   projectSession.document().instance(*sibling)->node, {300, 0}),
+                            nemo::EditOptions{projectSession.revision(), "place-shared-sibling"})
+                    .committed);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(30);
+
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphEnterAffordance_" + subnet));
+    QTest::qWait(60);
+    auto* panel = item("graphPanel");
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), definition);
+    const auto revision = projectSession.revision();
+    ASSERT_TRUE(viewerController.deleteGraphNodes(network, QVariantList{subnet}));
+    QTest::qWait(80);
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), network);
+    EXPECT_TRUE(viewerController.graphSnapshot(definition).value(QStringLiteral("available")).toBool());
+    EXPECT_EQ(projectSession.document().instances().size(), 1U);
+    EXPECT_GT(projectSession.revision(), revision);
+
+    ASSERT_TRUE(viewerController.undo());
+    QTest::qWait(60);
+    EXPECT_EQ(panel->property("graphNetworkId").toString(), network);
+    EXPECT_TRUE(viewerController.graphSnapshot(definition).value(QStringLiteral("available")).toBool());
+    bool restored = false;
+    for (const auto& value : viewerController.graphNodes())
+        restored = restored || value.toMap().value(QStringLiteral("id")).toString() == subnet;
+    EXPECT_TRUE(restored);
 }
 
 TEST_F(WorkspaceDragTest, CreatingWorkspaceThroughDialogActivatesAnIndependentCopy) {

@@ -19,7 +19,7 @@ namespace nemo::ui {
 // consumes those records while Qt has blocked the GUI thread: it never reads
 // Document/controller state. The scene graph owns all QSG resources.
 //
-// Node snapshot keys: id (decimal string), type, name, params, category,
+// Node snapshot keys: id (opaque presentation string), type, name, params, category,
 // authored x/y (top-left position), inputs and outputs (descriptor maps with
 // index/name/kind and optional local x/y), and deletable. Edge snapshot keys:
 // id, fromNode, fromPort, toNode, toPort, and route (maps with x/y).
@@ -100,7 +100,7 @@ protected:
         bool hasPosition{};
     };
     struct NodeRecord {
-        quint64 id{};
+        QString id;
         QString name;
         QString type;
         QString category;
@@ -109,21 +109,22 @@ protected:
         QVector<PortRecord> inputs;
         QVector<PortRecord> outputs;
         bool deletable{true};
+        bool hasChildScope{false};
     };
     struct EndpointRecord {
-        quint64 node{};
+        QString node;
         QString portId;
         int portIndex{-1};
         bool output{};
     };
     struct EdgeRecord {
-        quint64 id{};
+        QString id;
         EndpointRecord from;
         EndpointRecord to;
         QVector<QPointF> route;
     };
     struct RerouteRecord {
-        quint64 edge{};
+        QString edge;
         int index{-1};
         QPointF position;
         bool selected{};
@@ -134,7 +135,7 @@ protected:
     void rebuildEdgeRecords();
     void rebuildInteractionRecords();
     void updateImplicitSize();
-    [[nodiscard]] const NodeRecord* nodeRecord(quint64 id) const;
+    [[nodiscard]] const NodeRecord* nodeRecord(const QString& id) const;
     [[nodiscard]] QPointF portPoint(const NodeRecord& node, const QString& portId, int portIndex, bool output) const;
 
     QVariantList nodesProperty_;
@@ -150,13 +151,13 @@ protected:
     QVariantMap hoveredRerouteProperty_;
     QVariantMap wirePreviewProperty_;
 
-    QVector<quint64> selectedNodeIds_;
+    QStringList selectedNodeIds_;
     QVector<NodeRecord> nodeRecords_;
     QVector<EdgeRecord> edgeRecords_;
     QVector<RerouteRecord> rerouteRecords_;
-    quint64 hoveredNodeId_{};
-    quint64 hoveredEdgeId_{};
-    QHash<quint64, qsizetype> nodeIndex_;
+    QString hoveredNodeId_;
+    QString hoveredEdgeId_;
+    QHash<QString, qsizetype> nodeIndex_;
     QHash<QString, QColor> categoryColorRecords_;
     QColor accentColor_{QStringLiteral("#3485f6")};
     QColor borderColor_{QStringLiteral("#30343a")};
@@ -167,12 +168,12 @@ protected:
     EndpointRecord wirePreviewFrom_;
     EndpointRecord wirePreviewTo_;
     QPointF wirePreviewPointer_;
-    quint64 wirePreviewHiddenEdge_{};
+    QString wirePreviewHiddenEdge_;
     bool wirePreviewFromInput_{};
     bool wirePreviewValid_{};
     EndpointRecord hoveredEndpoint_;
-    quint64 hoveredEndpointEdge_{};
-    quint64 hoveredRerouteEdge_{};
+    QString hoveredEndpointEdge_;
+    QString hoveredRerouteEdge_;
     int hoveredRerouteIndex_{-1};
     QSizeF contentSize_;
 };

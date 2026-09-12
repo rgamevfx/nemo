@@ -1,0 +1,546 @@
+{
+  "requests": [
+    {
+      "op": "query",
+      "network_id": 1
+    },
+    {
+      "op": "collapse-selection",
+      "network_id": 1,
+      "node_ids": [
+        4
+      ],
+      "name": "Subnet",
+      "expected_revision": 1
+    },
+    {
+      "op": "query",
+      "network_id": 2
+    },
+    {
+      "op": "collapse-selection",
+      "network_id": 1,
+      "node_ids": [
+        1
+      ],
+      "name": "Invalid",
+      "expected_revision": 2
+    },
+    {
+      "op": "undo",
+      "expected_revision": 2
+    },
+    {
+      "op": "query",
+      "network_id": 1
+    },
+    {
+      "op": "redo",
+      "expected_revision": 3
+    },
+    {
+      "op": "query",
+      "network_id": 1
+    }
+  ],
+  "responses": [
+    {
+      "edges": [
+        {
+          "from_node_id": 2,
+          "from_port": 0,
+          "id": 1,
+          "network": 1,
+          "to_node_id": 4,
+          "to_port": 1
+        },
+        {
+          "from_node_id": 3,
+          "from_port": 0,
+          "id": 2,
+          "network": 1,
+          "to_node_id": 4,
+          "to_port": 0
+        },
+        {
+          "from_node_id": 4,
+          "from_port": 0,
+          "id": 3,
+          "network": 1,
+          "to_node_id": 1,
+          "to_port": 0
+        }
+      ],
+      "network": 1,
+      "next_edge_after": 3,
+      "next_node_after": 4,
+      "nodes": [
+        {
+          "id": 1,
+          "name": "Output",
+          "network": 1,
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 2,
+          "name": "Foreground",
+          "network": 1,
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.800000011920929,
+                0.20000000298023224,
+                0.10000000149011612,
+                0.5
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 3,
+          "name": "Background",
+          "network": 1,
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.10000000149011612,
+                0.30000001192092896,
+                0.8999999761581421,
+                1.0
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 4,
+          "name": "Composite",
+          "network": 1,
+          "params": {
+            "operation": {
+              "type": "choice",
+              "value": "over"
+            }
+          },
+          "type": "merge"
+        }
+      ],
+      "ok": true,
+      "revision": 1,
+      "sources": []
+    },
+    {
+      "changed_animation_channel_ids": [],
+      "changed_animation_key_ids": [],
+      "changed_edge_ids": [
+        {
+          "id": 1,
+          "network": 1
+        },
+        {
+          "id": 2,
+          "network": 1
+        },
+        {
+          "id": 3,
+          "network": 1
+        },
+        {
+          "id": 4,
+          "network": 1
+        }
+      ],
+      "changed_instance_ids": [
+        1
+      ],
+      "changed_network_ids": [
+        1,
+        2
+      ],
+      "changed_node_ids": [
+        {
+          "id": 4,
+          "network": 1
+        },
+        {
+          "id": 5,
+          "network": 1
+        },
+        {
+          "id": 4,
+          "network": 2
+        }
+      ],
+      "changed_source_ids": [],
+      "color_policy_changed": false,
+      "committed": true,
+      "created_edge_ids": [
+        {
+          "id": 4,
+          "network": 1
+        }
+      ],
+      "created_instance_ids": [
+        1
+      ],
+      "created_network_ids": [
+        2
+      ],
+      "created_node_ids": [
+        {
+          "id": 5,
+          "network": 1
+        },
+        {
+          "id": 4,
+          "network": 2
+        }
+      ],
+      "ok": true,
+      "revision": 2
+    },
+    {
+      "edges": [],
+      "network": 2,
+      "next_edge_after": 0,
+      "next_node_after": 4,
+      "nodes": [
+        {
+          "id": 4,
+          "name": "Composite",
+          "network": 2,
+          "params": {
+            "operation": {
+              "type": "choice",
+              "value": "over"
+            }
+          },
+          "type": "merge"
+        }
+      ],
+      "ok": true,
+      "revision": 2,
+      "sources": []
+    },
+    {
+      "changed_animation_channel_ids": [],
+      "changed_animation_key_ids": [],
+      "changed_edge_ids": [],
+      "changed_instance_ids": [],
+      "changed_network_ids": [],
+      "changed_node_ids": [],
+      "changed_source_ids": [],
+      "color_policy_changed": false,
+      "committed": false,
+      "created_edge_ids": [],
+      "created_instance_ids": [],
+      "created_network_ids": [],
+      "created_node_ids": [],
+      "error": {
+        "code": "invalid_argument",
+        "message": "formal Input/Output terminals cannot be collapsed"
+      },
+      "ok": false,
+      "revision": 2
+    },
+    {
+      "changed_animation_channel_ids": [],
+      "changed_animation_key_ids": [],
+      "changed_edge_ids": [
+        {
+          "id": 4,
+          "network": 1
+        },
+        {
+          "id": 1,
+          "network": 1
+        },
+        {
+          "id": 2,
+          "network": 1
+        },
+        {
+          "id": 3,
+          "network": 1
+        }
+      ],
+      "changed_instance_ids": [
+        1
+      ],
+      "changed_network_ids": [
+        1,
+        2
+      ],
+      "changed_node_ids": [
+        {
+          "id": 5,
+          "network": 1
+        },
+        {
+          "id": 4,
+          "network": 1
+        }
+      ],
+      "changed_source_ids": [],
+      "color_policy_changed": false,
+      "committed": true,
+      "created_edge_ids": [
+        {
+          "id": 1,
+          "network": 1
+        },
+        {
+          "id": 2,
+          "network": 1
+        },
+        {
+          "id": 3,
+          "network": 1
+        }
+      ],
+      "created_instance_ids": [],
+      "created_network_ids": [],
+      "created_node_ids": [
+        {
+          "id": 4,
+          "network": 1
+        }
+      ],
+      "ok": true,
+      "revision": 3
+    },
+    {
+      "edges": [
+        {
+          "from_node_id": 2,
+          "from_port": 0,
+          "id": 1,
+          "network": 1,
+          "to_node_id": 4,
+          "to_port": 1
+        },
+        {
+          "from_node_id": 3,
+          "from_port": 0,
+          "id": 2,
+          "network": 1,
+          "to_node_id": 4,
+          "to_port": 0
+        },
+        {
+          "from_node_id": 4,
+          "from_port": 0,
+          "id": 3,
+          "network": 1,
+          "to_node_id": 1,
+          "to_port": 0
+        }
+      ],
+      "network": 1,
+      "next_edge_after": 3,
+      "next_node_after": 4,
+      "nodes": [
+        {
+          "id": 1,
+          "name": "Output",
+          "network": 1,
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 2,
+          "name": "Foreground",
+          "network": 1,
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.800000011920929,
+                0.20000000298023224,
+                0.10000000149011612,
+                0.5
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 3,
+          "name": "Background",
+          "network": 1,
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.10000000149011612,
+                0.30000001192092896,
+                0.8999999761581421,
+                1.0
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 4,
+          "name": "Composite",
+          "network": 1,
+          "params": {
+            "operation": {
+              "type": "choice",
+              "value": "over"
+            }
+          },
+          "type": "merge"
+        }
+      ],
+      "ok": true,
+      "revision": 3,
+      "sources": []
+    },
+    {
+      "changed_animation_channel_ids": [],
+      "changed_animation_key_ids": [],
+      "changed_edge_ids": [
+        {
+          "id": 1,
+          "network": 1
+        },
+        {
+          "id": 2,
+          "network": 1
+        },
+        {
+          "id": 3,
+          "network": 1
+        },
+        {
+          "id": 4,
+          "network": 1
+        }
+      ],
+      "changed_instance_ids": [
+        1
+      ],
+      "changed_network_ids": [
+        1,
+        2
+      ],
+      "changed_node_ids": [
+        {
+          "id": 4,
+          "network": 1
+        },
+        {
+          "id": 5,
+          "network": 1
+        },
+        {
+          "id": 4,
+          "network": 2
+        }
+      ],
+      "changed_source_ids": [],
+      "color_policy_changed": false,
+      "committed": true,
+      "created_edge_ids": [
+        {
+          "id": 4,
+          "network": 1
+        }
+      ],
+      "created_instance_ids": [
+        1
+      ],
+      "created_network_ids": [
+        2
+      ],
+      "created_node_ids": [
+        {
+          "id": 5,
+          "network": 1
+        },
+        {
+          "id": 4,
+          "network": 2
+        }
+      ],
+      "ok": true,
+      "revision": 4
+    },
+    {
+      "edges": [
+        {
+          "from_node_id": 5,
+          "from_port": 0,
+          "id": 4,
+          "network": 1,
+          "to_node_id": 1,
+          "to_port": 0
+        }
+      ],
+      "network": 1,
+      "next_edge_after": 4,
+      "next_node_after": 5,
+      "nodes": [
+        {
+          "id": 1,
+          "name": "Output",
+          "network": 1,
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 2,
+          "name": "Foreground",
+          "network": 1,
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.800000011920929,
+                0.20000000298023224,
+                0.10000000149011612,
+                0.5
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 3,
+          "name": "Background",
+          "network": 1,
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.10000000149011612,
+                0.30000001192092896,
+                0.8999999761581421,
+                1.0
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 5,
+          "name": "Subnet",
+          "network": 1,
+          "params": {},
+          "type": "network.instance"
+        }
+      ],
+      "ok": true,
+      "revision": 4,
+      "sources": []
+    }
+  ],
+  "stderr": "",
+  "result": "passed"
+}

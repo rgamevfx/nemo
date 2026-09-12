@@ -204,8 +204,12 @@ headless evaluation, and the native inspector host.
 ### Extend graph editing
 
 `ViewerController::graphSnapshot(networkId)` is the panel query seam. It returns
-availability plus nodes/edges with decimal-string identities, typed indexed ports,
-authored positions and routes. Graph mutation methods take the network identity
+availability plus graph nodes/edges with decimal-string identities, typed indexed
+ports, authored positions and routes. Formal terminals are projected from Network
+metadata as `input:<id>` / `output:<id>` records; their binding wires also have
+opaque presentation identities. They are not additional persistent graph nodes.
+GraphItem accepts those opaque strings; controller commands resolve them to the
+owning model. Graph mutation methods take the network identity
 explicitly; an unavailable scope never falls back to editing the root. Root
 `graphNodes`/`graphEdges` properties remain read-only root queries, not panel scope.
 
@@ -223,6 +227,32 @@ local port positions. UI selection/view/click anchors live in panel-state
 `graphSelections`/`graphViews` keyed by network, while authored node positions and
 routes live in Document. Saving that presentation metadata must not reactivate
 an unrelated panel; workspace activation follows panel identity, not map changes.
+
+`ViewerController::graphScope(rootNetworkId, instancePath)` resolves occurrence
+ancestry and breadcrumbs without querying every node's parameters. GraphPanel
+stores `scopePath` in panel state; definition identity alone cannot identify the
+parent of a shared network. Navigation changes no document revision. Removing an
+entered occurrence unwinds to its surviving ancestor even if another occurrence
+keeps the definition alive.
+
+`core/commands/NetworkCommands.hpp` owns collapse/unpack, interface and parameter
+promotion, linked creation, independent copies and selection copying. Submit
+these through ProjectSession/CommandStack; that owner supplies the private
+candidate and atomic publication. Formal-input wires, including wires into
+nested instance nodes, live in `Network::inputConnections()`. Instance
+`inputBindings` bind parent graph outputs to definition inputs. Input-to-output
+pass-through lives in `Network::outputInputBindings()`. Dependency expansion
+retains the source scope when forwarding inputs through nested definitions.
+Owned local definitions are copied independently and cleaned up with their
+owning occurrence; explicitly linked definitions retain their identity.
+
+Network exposed-parameter metadata references a single node/key and derives its
+type from the catalog. Promotion/removal does not rewrite the target value or
+animation. The [owner-approved #49 popout](https://github.com/rgamevfx/nemo/issues/49#issuecomment-5640704767)
+accepts individual parameter-label drags, inline exposure labels, reorder and
+removal, while ordinary values use the shared Parameters inspector. Its live
+implementation depends on #46's real parameter rows, drag payload and controls;
+the backend metadata is not proof that this inspector/popout exists.
 
 Effect additions use the catalog entry point above, including the category
 metadata that drives shared colors and search. They do not extend this gesture

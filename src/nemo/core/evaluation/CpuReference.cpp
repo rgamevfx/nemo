@@ -214,12 +214,17 @@ const NodeInstance* findNode(const Document& document, NetworkId networkId, Node
 }
 }  // namespace
 std::vector<ExpandedNode> expandDependencies(const Document& document, NetworkId rootNetwork, NodeId output) {
+    struct Scope;
+    struct ExternalBinding {
+        const Scope* scope;
+        PortRef source;
+    };
     struct Scope {
         NetworkId network{kInvalidNetwork};
         NetworkInstanceId instance{kInvalidNetworkInstance};
         std::vector<NetworkInstanceId> path;
         const Scope* parent{};
-        std::map<InterfacePortId, PortRef> externalBindings;
+        std::map<InterfacePortId, ExternalBinding> externalBindings;
     };
     std::vector<ExpandedNode> expanded;
     std::map<EvaluationNodeId, std::size_t> emitted;
@@ -292,7 +297,8 @@ std::vector<ExpandedNode> expandDependencies(const Document& document, NetworkId
                     throw EvaluationException("formal input '" + network.input(terminal->terminal)->name +
                                               "' has no instance binding for node '" + node->name + "'");
                 }
-                inputs.push_back(visit(*scope.parent, external->second.node, external->second.port));
+                inputs.push_back(
+                    visit(*external->second.scope, external->second.source.node, external->second.source.port));
             }
         }
 
@@ -311,12 +317,24 @@ std::vector<ExpandedNode> expandDependencies(const Document& document, NetworkId
                 const auto edge = std::find_if(graph.edgesInto(nodeId).begin(), graph.edgesInto(nodeId).end(),
                                                [index](const Edge& candidate) { return candidate.to.port == index; });
                 if (edge != graph.edgesInto(nodeId).end()) {
-                    child.externalBindings.emplace(formal.id, edge->from);
+                    child.externalBindings.emplace(formal.id, ExternalBinding{&scope, edge->from});
                     continue;
                 }
                 const auto binding = occurrence->inputBindings.find(formal.id);
-                if (binding != occurrence->inputBindings.end())
-                    child.externalBindings.emplace(formal.id, binding->second);
+                if (binding != occurrence->inputBindings.end()) {
+                    child.externalBindings.emplace(formal.id, ExternalBinding{&scope, binding->second});
+                    continue;
+                }
+                const auto connection =
+                    std::find_if(network.inputConnections().begin(), network.inputConnections().end(),
+                                 [nodeId, index](const TerminalConnection& value) {
+                                     return value.node == PortRef{nodeId, static_cast<std::uint32_t>(index)};
+                                 });
+                if (connection != network.inputConnections().end()) {
+                    const auto external = scope.externalBindings.find(connection->terminal);
+                    if (external != scope.externalBindings.end())
+                        child.externalBindings.emplace(formal.id, external->second);
+                }
             }
             const auto& outputs = definition.outputs();
             const std::size_t selected = outputPort == kEvaluationWholeNode ? 0 : static_cast<std::size_t>(outputPort);
@@ -329,10 +347,19 @@ std::vector<ExpandedNode> expandDependencies(const Document& document, NetworkId
                              [&outputs, selected](const TerminalConnection& candidate) {
                                  return candidate.terminal == outputs[selected].id;
                              });
-            if (connection == definition.outputConnections().end()) {
-                throw EvaluationException("formal output '" + outputs[selected].name + "' has no internal producer");
+            if (connection != definition.outputConnections().end()) {
+                alias = visit(child, connection->node.node, connection->node.port);
+            } else {
+                const auto passThrough = definition.outputInputBindings().find(outputs[selected].id);
+                if (passThrough == definition.outputInputBindings().end())
+                    throw EvaluationException("formal output '" + outputs[selected].name +
+                                              "' has no internal producer");
+                const auto external = child.externalBindings.find(passThrough->second);
+                if (external == child.externalBindings.end())
+                    throw EvaluationException("formal output '" + outputs[selected].name +
+                                              "' has no bound pass-through input");
+                alias = visit(*external->second.scope, external->second.source.node, external->second.source.port);
             }
-            alias = visit(child, connection->node.node, connection->node.port);
             inputs.push_back(*alias);
         }
 

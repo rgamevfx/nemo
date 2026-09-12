@@ -137,6 +137,39 @@ TEST(Interactive, GraphScopeEditsDoNotFallBackToRoot) {
     EXPECT_EQ(session.revision(), revision);
     EXPECT_EQ(controller.graphSnapshot(root), rootBefore);
 }
+
+TEST(Interactive, CollapseSelectionReturnsCommittedInstanceNodeAndRestoresAtomically) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto source = controller.createGraphNode(scope, "source", "collapseSource", 0.0, 0.0, {}, {});
+    const auto merge = controller.createGraphNode(scope, "merge", "collapseMerge", 140.0, 0.0, {}, {});
+    const auto output = controller.createGraphNode(scope, "output", "collapseOutput", 280.0, 0.0, {}, {});
+    ASSERT_FALSE(source.isEmpty());
+    ASSERT_FALSE(merge.isEmpty());
+    ASSERT_FALSE(output.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, source, 0, merge, 0));
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, merge, 0, output, 0));
+
+    const auto subnet = controller.collapseSelection(scope, QVariantList{source, merge}, "Collapsed");
+    ASSERT_FALSE(subnet.isEmpty()) << controller.error().toStdString();
+    const auto parentNode = namedNode(controller, "Collapsed");
+    ASSERT_EQ(parentNode.value("id").toString(), subnet);
+    ASSERT_FALSE(parentNode.value("definition").toString().isEmpty());
+    ASSERT_FALSE(parentNode.value("instance").toString().isEmpty());
+    const auto instanceId = parentNode.value("instance").toString().toULongLong();
+    const auto* instance = session.document().instance(instanceId);
+    ASSERT_NE(instance, nullptr);
+    EXPECT_EQ(instance->node, subnet.toULongLong());
+    EXPECT_TRUE(controller.graphSnapshot(parentNode.value("definition").toString()).value("available").toBool());
+
+    ASSERT_TRUE(controller.undo());
+    EXPECT_TRUE(namedNode(controller, "Collapsed").isEmpty());
+    EXPECT_EQ(session.document().instances().size(), 0U);
+    ASSERT_TRUE(controller.redo());
+    EXPECT_EQ(namedNode(controller, "Collapsed").value("id").toString(), subnet);
+}
 TEST(Interactive, DisconnectedProcessingNodeDropsOntoWireAtomically) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};

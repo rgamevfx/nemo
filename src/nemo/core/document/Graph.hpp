@@ -157,6 +157,9 @@ public:
     void removeNode(NodeId id);
     void renameNode(NodeId id, std::string name);
 
+    // Updates an occurrence's linked definition while retaining node identity.
+    // The caller must reconcile the dynamic contract through Document.
+    void setInstanceDefinition(NodeId id, NetworkId definition, NetworkInstanceId instance);
     // Sets a dynamic typed contract (used by a nested NetworkInstance). A
     // native/unknown node keeps the catalog/unknown contract when unset.
     void setPortContract(NodeId id, std::vector<PortSpec> inputs, std::vector<PortSpec> outputs);
@@ -249,8 +252,22 @@ struct FormalPort {
     // Authored fields of the persisted terminal this build does not model,
     // retained verbatim for lossless save. Never consulted by evaluation.
     nlohmann::json extension{};
+    LayoutPosition layout{};
 
     friend bool operator==(const FormalPort&, const FormalPort&) = default;
+};
+
+// A promoted definition parameter. The exposed control retains the source
+// node/key and its catalog type; instances continue to store overrides by the
+// definition node identity.
+struct ExposedParameter {
+    InterfacePortId id{kInvalidInterfacePort};
+    NodeId node{kInvalidNode};
+    std::string key;
+    std::string name;
+    ParameterType type{ParameterType::String};
+
+    friend bool operator==(const ExposedParameter&, const ExposedParameter&) = default;
 };
 
 struct TerminalConnection {
@@ -293,6 +310,14 @@ public:
                                             bool allowFanOut = true);
     [[nodiscard]] InterfacePortId addFormalPort(PortDirection direction, std::string name, PortKind kind,
                                                 InterfacePortId id = kInvalidInterfacePort, bool allowFanOut = true);
+    void renameFormalPort(PortDirection direction, InterfacePortId id, std::string name);
+    void setFormalPortLayout(PortDirection direction, InterfacePortId id, LayoutPosition layout);
+
+    [[nodiscard]] const std::vector<ExposedParameter>& exposedParameters() const { return exposedParameters_; }
+    [[nodiscard]] InterfacePortId addExposedParameter(NodeId node, std::string key, std::string name,
+                                                      InterfacePortId id = kInvalidInterfacePort);
+    void renameExposedParameter(InterfacePortId id, std::string name);
+    void removeExposedParameter(InterfacePortId id);
 
     // Formal input terminals may fan out to internal inputs. Each destination
     // remains subject to Graph's one-edge-per-input invariant.
@@ -308,6 +333,13 @@ public:
     void disconnectOutput(InterfacePortId output);
     [[nodiscard]] const std::vector<TerminalConnection>& inputConnections() const;
     [[nodiscard]] const std::vector<TerminalConnection>& outputConnections() const;
+    // A subnet output may route directly from one of its formal inputs. This
+    // represents viewer/sink pass-through without adding a proxy node.
+    [[nodiscard]] const std::map<InterfacePortId, InterfacePortId>& outputInputBindings() const {
+        return outputInputBindings_;
+    }
+    void connectOutputToInput(InterfacePortId output, InterfacePortId input);
+    void disconnectOutputToInput(InterfacePortId output);
 
     void restoreIdentityHighWatermarks(NodeId nextNodeId, EdgeId nextEdgeId, InterfacePortId nextInterfacePortId);
     [[nodiscard]] InterfacePortId nextInterfacePortId() const { return nextInterfacePortId_; }
@@ -328,6 +360,8 @@ private:
         if (recorder_)
             recorder_->network(id_);
     }
+    [[nodiscard]] ExposedParameter* findExposedParameter(InterfacePortId id);
+    [[nodiscard]] const ExposedParameter* findExposedParameter(InterfacePortId id) const;
     [[nodiscard]] InterfacePortId addFormalPortImpl(PortDirection direction, std::string name, PortKind kind,
                                                     InterfacePortId id, bool allowFanOut);
     [[nodiscard]] const FormalPort* findPort(const std::vector<FormalPort>& ports, InterfacePortId id) const;
@@ -343,8 +377,10 @@ private:
     NodeId defaultOutput_{kInvalidNode};
     std::vector<FormalPort> inputs_;
     std::vector<FormalPort> outputs_;
+    std::vector<ExposedParameter> exposedParameters_;
     std::vector<TerminalConnection> inputConnections_;
     std::vector<TerminalConnection> outputConnections_;
+    std::map<InterfacePortId, InterfacePortId> outputInputBindings_;
     std::uint64_t terminalSyncRevision_{0};
     InterfacePortId nextInterfacePortId_{1};
     std::uint64_t revision_{1};
@@ -357,6 +393,9 @@ struct NetworkInstance {
     NetworkId definition{kInvalidNetwork};
     NodeId node{kInvalidNode};
     std::string name;
+    // Owned definitions are local subnets created by hierarchy editing. A
+    // linked occurrence may share its definition with other parents.
+    bool ownsDefinition{false};
     std::map<InterfacePortId, PortRef> inputBindings;
     // Definition node identity -> authored parameter overrides. Keeping the
     // target node explicit prevents an instance-local key from being applied

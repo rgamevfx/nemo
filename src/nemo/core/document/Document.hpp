@@ -125,12 +125,20 @@ struct Document {
     [[nodiscard]] NetworkInstanceId addInstanceWithId(NetworkInstanceId id, NetworkId parentNetwork,
                                                       NetworkId definition, NodeId node, std::string name,
                                                       std::map<InterfacePortId, PortRef> inputBindings = {},
-                                                      std::map<NodeId, ParameterValues> params = {});
+                                                      std::map<NodeId, ParameterValues> params = {},
+                                                      bool ownsDefinition = false);
     void removeInstance(NetworkInstanceId id);
+    void setInstanceOwnership(NetworkInstanceId id, bool ownsDefinition);
+    void removeOwnedNetworkIfUnreferenced(NetworkId network);
     void bindInstanceInput(NetworkInstanceId id, InterfacePortId input, PortRef source);
+    void bindInstanceInputToParentTerminal(NetworkInstanceId id, InterfacePortId input, InterfacePortId parentInput);
     void eraseInstanceInputBinding(NetworkInstanceId id, InterfacePortId input);
     void setInstanceParam(NetworkInstanceId id, NodeId targetNode, std::string key, ParameterValue value);
     void eraseInstanceParam(NetworkInstanceId id, NodeId targetNode, const std::string& key);
+    // Moves an existing occurrence into a different owning network while
+    // retaining its document identity and linked definition.
+    void reparentInstance(NetworkInstanceId id, NetworkId parentNetwork, NodeId node);
+    void setInstanceDefinition(NetworkInstanceId id, NetworkId definition);
     void restoreIdentityHighWatermarks(NetworkId nextNetworkId, NetworkInstanceId nextInstanceId);
     [[nodiscard]] NetworkId nextNetworkId() const { return nextNetworkId_; }
     [[nodiscard]] NetworkInstanceId nextInstanceId() const { return nextInstanceId_; }
@@ -180,6 +188,11 @@ struct Document {
     // mutations report the network they touched, remembering the install so
     // releasing the recorder can clear it again.
     void installRecorder(Network& network, NetworkId id);
+    void remapAnimationChannels(NetworkId sourceNetwork, NetworkId destinationNetwork,
+                                const std::map<NodeId, NodeId>& nodes,
+                                std::optional<NetworkInstanceId> onlyInstance = std::nullopt);
+    void copyAnimationChannels(NetworkId sourceNetwork, NetworkId destinationNetwork,
+                               const std::map<NodeId, NodeId>& nodes);
 
 private:
     friend class CommandStack;

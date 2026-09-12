@@ -109,6 +109,11 @@ public:
     Q_INVOKABLE bool moveGraphRoutePoint(const QString& networkId, const QVariant& edgeId, int index, double x,
                                          double y);
     Q_INVOKABLE bool removeGraphRoutePoint(const QString& networkId, const QVariant& edgeId, int index);
+    // Collapse/unpack are shared hierarchy commands. The controller only
+    // returns identities read back from the committed session snapshot.
+    Q_INVOKABLE QString collapseSelection(const QString& networkId, const QVariantList& nodeIds,
+                                          const QString& name = QStringLiteral("Subnet"));
+    Q_INVOKABLE bool unpackInstance(const QString& instanceId);
     // Parameter entry points remain command-backed and are used by the inspector.
     Q_INVOKABLE void setNodeParameter(const QVariant& nodeId, const QString& key, const QVariant& value);
     // Explicit text-entry adapter; parsing remains catalog-owned and avoids
@@ -197,6 +202,7 @@ public:
     [[nodiscard]] QString viewerTargetId() const;
     [[nodiscard]] QString rootNetworkId() const;
     Q_INVOKABLE QVariantMap graphSnapshot(const QString& networkId) const;
+    Q_INVOKABLE QVariantMap graphScope(const QString& rootNetworkId, const QVariantList& instancePath) const;
     [[nodiscard]] QVariantList graphNodes() const;
     [[nodiscard]] QVariantList graphEdges() const;
     [[nodiscard]] QVariantList nodeCatalog() const;

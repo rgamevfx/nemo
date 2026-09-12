@@ -1,6 +1,7 @@
 #include "ViewerController.hpp"
 #include "ViewerItem.hpp"
 #include "nemo/core/commands/AnimationCommands.hpp"
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
@@ -236,13 +237,100 @@ std::optional<std::uint64_t> graphIdentity(const QVariant& value) {
         return std::nullopt;
     return id;
 }
+std::optional<nemo::NetworkId> networkIdentity(const QString& value) {
+    const auto id = graphIdentity(value);
+    return id ? std::optional<nemo::NetworkId>{static_cast<nemo::NetworkId>(*id)} : std::nullopt;
+}
 
 bool finitePosition(double x, double y) {
     return std::isfinite(x) && std::isfinite(y);
 }
-std::optional<nemo::NetworkId> networkIdentity(const QString& value) {
+enum class EndpointKind { Graph, InputTerminal, OutputTerminal };
+struct Endpoint {
+    EndpointKind kind{EndpointKind::Graph};
+    nemo::NodeId node{nemo::kInvalidNode};
+    nemo::InterfacePortId terminal{nemo::kInvalidInterfacePort};
+    friend bool operator==(const Endpoint&, const Endpoint&) = default;
+};
+
+std::optional<std::uint64_t> unsignedText(const QString& value) {
+    bool ok = false;
+    const auto id = value.toULongLong(&ok);
+    return ok && id != 0 ? std::optional<std::uint64_t>{id} : std::nullopt;
+}
+
+std::optional<Endpoint> endpointIdentity(const QVariant& value) {
+    const auto text = value.toString().trimmed();
+    if (text.startsWith(QStringLiteral("input:"))) {
+        const auto id = unsignedText(text.mid(6));
+        return id ? std::optional<Endpoint>{{EndpointKind::InputTerminal, nemo::kInvalidNode,
+                                             static_cast<nemo::InterfacePortId>(*id)}}
+                  : std::nullopt;
+    }
+    if (text.startsWith(QStringLiteral("output:"))) {
+        const auto id = unsignedText(text.mid(7));
+        return id ? std::optional<Endpoint>{{EndpointKind::OutputTerminal, nemo::kInvalidNode,
+                                             static_cast<nemo::InterfacePortId>(*id)}}
+                  : std::nullopt;
+    }
     const auto id = graphIdentity(value);
-    return id ? std::optional<nemo::NetworkId>{static_cast<nemo::NetworkId>(*id)} : std::nullopt;
+    return id ? std::optional<Endpoint>{{EndpointKind::Graph, static_cast<nemo::NodeId>(*id),
+                                         nemo::kInvalidInterfacePort}}
+              : std::nullopt;
+}
+
+struct BindingEdge {
+    enum class Kind { Input, Output, Instance };
+    Kind kind;
+    nemo::InterfacePortId terminal{nemo::kInvalidInterfacePort};
+    nemo::NetworkInstanceId instance{nemo::kInvalidNetworkInstance};
+    nemo::PortRef node;
+};
+
+std::optional<BindingEdge> bindingEdgeIdentity(const QVariant& value) {
+    const auto parts = value.toString().trimmed().split(QLatin1Char(':'));
+    if (parts.size() < 2)
+        return std::nullopt;
+    bool ok = false;
+    const auto terminal = parts.at(1).toULongLong(&ok);
+    if (!ok || terminal == 0)
+        return std::nullopt;
+    if (parts.at(0) == QStringLiteral("output") && parts.size() == 2)
+        return BindingEdge{BindingEdge::Kind::Output,
+                           static_cast<nemo::InterfacePortId>(terminal),
+                           nemo::kInvalidNetworkInstance,
+                           {}};
+    if (parts.at(0) == QStringLiteral("input") && parts.size() == 4) {
+        bool nodeOk = false;
+        bool portOk = false;
+        const auto node = parts.at(2).toULongLong(&nodeOk);
+        const auto port = parts.at(3).toUInt(&portOk);
+        if (nodeOk && portOk && node != 0)
+            return BindingEdge{BindingEdge::Kind::Input,
+                               static_cast<nemo::InterfacePortId>(terminal),
+                               nemo::kInvalidNetworkInstance,
+                               {static_cast<nemo::NodeId>(node), port}};
+    }
+    if (parts.at(0) == QStringLiteral("instance") && parts.size() == 3) {
+        bool instanceOk = false;
+        const auto instance = parts.at(1).toULongLong(&instanceOk);
+        const auto childTerminal = parts.at(2).toULongLong(&ok);
+        if (instanceOk && ok && instance != 0 && childTerminal != 0)
+            return BindingEdge{BindingEdge::Kind::Instance,
+                               static_cast<nemo::InterfacePortId>(childTerminal),
+                               static_cast<nemo::NetworkInstanceId>(instance),
+                               {}};
+    }
+    return std::nullopt;
+}
+
+std::optional<std::pair<nemo::PortDirection, nemo::InterfacePortId>> terminalNodeIdentity(const QVariant& value) {
+    const auto endpoint = endpointIdentity(value);
+    if (!endpoint || endpoint->kind == EndpointKind::Graph)
+        return std::nullopt;
+    return std::pair{endpoint->kind == EndpointKind::InputTerminal ? nemo::PortDirection::Input
+                                                                   : nemo::PortDirection::Output,
+                     endpoint->terminal};
 }
 
 bool mapPosition(const QVariantMap& map, double& x, double& y) {
@@ -260,12 +348,196 @@ QVariantList portSnapshot(const std::vector<nemo::PortSpec>& ports) {
     result.reserve(static_cast<qsizetype>(ports.size()));
     for (qsizetype index = 0; index < static_cast<qsizetype>(ports.size()); ++index) {
         const auto& port = ports.at(static_cast<std::size_t>(index));
-        result.push_back(QVariantMap{{QStringLiteral("index"), static_cast<int>(index)},
+        result.push_back(QVariantMap{{QStringLiteral("id"), QString::number(index)},
+                                     {QStringLiteral("index"), static_cast<int>(index)},
                                      {QStringLiteral("name"), QString::fromStdString(port.name)},
                                      {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))},
                                      {QStringLiteral("optional"), port.optional}});
     }
     return result;
+}
+
+QVariantMap formalPortSnapshot(const nemo::FormalPort& port, bool input) {
+    const QVariantMap terminal{{QStringLiteral("id"), QString::number(port.id)},
+                               {QStringLiteral("index"), 0},
+                               {QStringLiteral("name"), QString::fromStdString(port.name)},
+                               {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))},
+                               {QStringLiteral("allowFanOut"), port.allowFanOut}};
+    return QVariantMap{{QStringLiteral("id"), input ? QStringLiteral("input:") + QString::number(port.id)
+                                                    : QStringLiteral("output:") + QString::number(port.id)},
+                       {QStringLiteral("type"), input ? QStringLiteral("input") : QStringLiteral("output")},
+                       {QStringLiteral("name"), QString::fromStdString(port.name)},
+                       {QStringLiteral("x"), port.layout.x},
+                       {QStringLiteral("y"), port.layout.y},
+                       {QStringLiteral("inputs"), input ? QVariantList{} : QVariantList{terminal}},
+                       {QStringLiteral("outputs"), input ? QVariantList{terminal} : QVariantList{}},
+                       {QStringLiteral("category"), QStringLiteral("IO")},
+                       {QStringLiteral("group"), QStringLiteral("I/O")},
+                       {QStringLiteral("terminal"), true},
+                       {QStringLiteral("direction"), input ? QStringLiteral("input") : QStringLiteral("output")},
+                       {QStringLiteral("terminalId"), QString::number(port.id)},
+                       {QStringLiteral("deletable"), false}};
+}
+
+QVariantMap formalMetadataSnapshot(const nemo::FormalPort& port) {
+    return QVariantMap{{QStringLiteral("id"), QString::number(port.id)},
+                       {QStringLiteral("name"), QString::fromStdString(port.name)},
+                       {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))},
+                       {QStringLiteral("allowFanOut"), port.allowFanOut},
+                       {QStringLiteral("x"), port.layout.x},
+                       {QStringLiteral("y"), port.layout.y}};
+}
+
+struct PresentedConnection {
+    QString id;
+    Endpoint from;
+    int fromPort{};
+    Endpoint to;
+    int toPort{};
+    Command disconnect;
+};
+
+PresentedConnection resolveConnection(const Document& document, NetworkId network, const QString& id) {
+    const auto& scoped = document.network(network);
+    if (const auto edgeId = graphIdentity(id)) {
+        const auto& edges = scoped.graph().edges();
+        const auto found =
+            std::find_if(edges.begin(), edges.end(), [&](const Edge& edge) { return edge.id == *edgeId; });
+        if (found != edges.end())
+            return {id,
+                    {EndpointKind::Graph, found->from.node, {}},
+                    static_cast<int>(found->from.port),
+                    {EndpointKind::Graph, found->to.node, {}},
+                    static_cast<int>(found->to.port),
+                    disconnectCommand(network, *edgeId)};
+    } else if (const auto binding = bindingEdgeIdentity(id)) {
+        if (binding->kind == BindingEdge::Kind::Input) {
+            for (const auto& connection : scoped.inputConnections())
+                if (connection.terminal == binding->terminal && connection.node == binding->node)
+                    return {id,
+                            {EndpointKind::InputTerminal, {}, binding->terminal},
+                            0,
+                            {EndpointKind::Graph, binding->node.node, {}},
+                            static_cast<int>(binding->node.port),
+                            disconnectInputCommand(network, binding->terminal, binding->node)};
+        } else if (binding->kind == BindingEdge::Kind::Output) {
+            if (const auto input = scoped.outputInputBindings().find(binding->terminal);
+                input != scoped.outputInputBindings().end())
+                return {id, {EndpointKind::InputTerminal, {}, input->second},
+                        0,  {EndpointKind::OutputTerminal, {}, binding->terminal},
+                        0,  disconnectOutputCommand(network, binding->terminal)};
+            for (const auto& connection : scoped.outputConnections())
+                if (connection.terminal == binding->terminal)
+                    return {id,
+                            {EndpointKind::Graph, connection.node.node, {}},
+                            static_cast<int>(connection.node.port),
+                            {EndpointKind::OutputTerminal, {}, binding->terminal},
+                            0,
+                            disconnectOutputCommand(network, binding->terminal)};
+        } else if (const auto* instance = document.instance(binding->instance);
+                   instance && instance->parentNetwork == network) {
+            const auto& inputs = document.network(instance->definition).inputs();
+            const auto input = std::find_if(inputs.begin(), inputs.end(),
+                                            [&](const FormalPort& port) { return port.id == binding->terminal; });
+            if (input != inputs.end()) {
+                const int index = static_cast<int>(std::distance(inputs.begin(), input));
+                if (const auto source = instance->inputBindings.find(binding->terminal);
+                    source != instance->inputBindings.end())
+                    return {id,
+                            {EndpointKind::Graph, source->second.node, {}},
+                            static_cast<int>(source->second.port),
+                            {EndpointKind::Graph, instance->node, {}},
+                            index,
+                            unbindInstanceInputCommand(instance->id, binding->terminal)};
+            }
+        }
+    }
+    throw GraphException(GraphError::UnknownEdge,
+                         "connection " + id.toStdString() + " does not exist in network " + std::to_string(network));
+}
+
+std::optional<PresentedConnection> occupiedConnection(const Document& document, NetworkId network,
+                                                      const Endpoint& destination, int port) {
+    const auto& scoped = document.network(network);
+    if (destination.kind == EndpointKind::OutputTerminal) {
+        if (scoped.outputInputBindings().contains(destination.terminal))
+            return resolveConnection(document, network,
+                                     QStringLiteral("output:") + QString::number(destination.terminal));
+        for (const auto& connection : scoped.outputConnections())
+            if (connection.terminal == destination.terminal)
+                return resolveConnection(document, network,
+                                         QStringLiteral("output:") + QString::number(destination.terminal));
+        return std::nullopt;
+    }
+    const PortRef target{destination.node, static_cast<std::uint32_t>(port)};
+    if (const auto* node = scoped.graph().node(destination.node); node && node->instance != kInvalidNetworkInstance) {
+        const auto* instance = document.instance(node->instance);
+        const auto& inputs = document.network(instance->definition).inputs();
+        if (static_cast<std::size_t>(port) < inputs.size()) {
+            const auto terminal = inputs[static_cast<std::size_t>(port)].id;
+            if (instance->inputBindings.contains(terminal))
+                return resolveConnection(document, network,
+                                         QStringLiteral("instance:") + QString::number(instance->id) +
+                                             QLatin1Char(':') + QString::number(terminal));
+        }
+    }
+    for (const auto& edge : scoped.graph().edges())
+        if (edge.to == target)
+            return resolveConnection(document, network, QString::number(edge.id));
+    for (const auto& connection : scoped.inputConnections())
+        if (connection.node == target)
+            return resolveConnection(document, network,
+                                     QStringLiteral("input:") + QString::number(connection.terminal) +
+                                         QLatin1Char(':') + QString::number(target.node) + QLatin1Char(':') +
+                                         QString::number(target.port));
+    return std::nullopt;
+}
+
+Command connectPresentedPorts(const Document& document, NetworkId network, const Endpoint& from, int fromPort,
+                              const Endpoint& to, int toPort) {
+    if (fromPort < 0 || toPort < 0 || from.kind == EndpointKind::OutputTerminal ||
+        to.kind == EndpointKind::InputTerminal || (from.kind == EndpointKind::InputTerminal && fromPort != 0) ||
+        (to.kind == EndpointKind::OutputTerminal && toPort != 0))
+        throw GraphException(GraphError::PortType, "connection has an invalid source or destination port");
+    if (to.kind == EndpointKind::OutputTerminal) {
+        if (from.kind == EndpointKind::InputTerminal)
+            return connectInputToOutputCommand(network, from.terminal, to.terminal);
+        return connectOutputCommand(network, {from.node, static_cast<std::uint32_t>(fromPort)}, to.terminal);
+    }
+    const auto* node = document.network(network).graph().node(to.node);
+    if (!node)
+        throw GraphException(GraphError::UnknownNode,
+                             "connection destination node " + std::to_string(to.node) + " is unavailable");
+    if (node->instance != kInvalidNetworkInstance) {
+        const auto* instance = document.instance(node->instance);
+        if (!instance || instance->parentNetwork != network)
+            throw GraphException(GraphError::InvalidInstance,
+                                 "connection destination instance is outside this network");
+        const auto& inputs = document.network(instance->definition).inputs();
+        if (static_cast<std::size_t>(toPort) >= inputs.size())
+            throw GraphException(GraphError::PortType, "connection destination instance input is out of range");
+        const auto terminal = inputs[static_cast<std::size_t>(toPort)].id;
+        return from.kind == EndpointKind::InputTerminal
+                   ? bindInstanceInputToParentTerminalCommand(instance->id, terminal, from.terminal)
+                   : bindInstanceInputCommand(instance->id, terminal,
+                                              {from.node, static_cast<std::uint32_t>(fromPort)});
+    }
+    const PortRef destination{to.node, static_cast<std::uint32_t>(toPort)};
+    return from.kind == EndpointKind::InputTerminal
+               ? connectInputCommand(network, from.terminal, destination)
+               : connectCommand(network, {from.node, static_cast<std::uint32_t>(fromPort)}, destination);
+}
+
+QVariantMap bindingSnapshot(QString id, QString fromNode, int fromPort, QString toNode, int toPort, QString binding,
+                            nemo::PortKind kind) {
+    return QVariantMap{{QStringLiteral("id"), std::move(id)},
+                       {QStringLiteral("fromNode"), std::move(fromNode)},
+                       {QStringLiteral("fromPort"), fromPort},
+                       {QStringLiteral("toNode"), std::move(toNode)},
+                       {QStringLiteral("toPort"), toPort},
+                       {QStringLiteral("route"), QVariantList{}},
+                       {QStringLiteral("binding"), std::move(binding)},
+                       {QStringLiteral("kind"), QString::fromLatin1(portKindName(kind))}};
 }
 
 QVariantList routeSnapshot(const std::vector<nemo::LayoutPosition>& route) {
@@ -613,17 +885,72 @@ QString ViewerController::rootNetworkId() const {
     return QString::number(session_.document().rootNetworkId());
 }
 
+QVariantMap ViewerController::graphScope(const QString& rootValue, const QVariantList& instancePath) const {
+    QVariantList path;
+    QVariantList breadcrumbs;
+    const auto root = networkIdentity(rootValue);
+    if (!root)
+        return {{QStringLiteral("available"), false},
+                {QStringLiteral("path"), path},
+                {QStringLiteral("breadcrumbs"), breadcrumbs}};
+    NetworkId active = *root;
+    try {
+        const auto& document = session_.document();
+        const auto& rootNetwork = document.network(active);
+        breadcrumbs.push_back(QVariantMap{{QStringLiteral("networkId"), QString::number(active)},
+                                          {QStringLiteral("name"), QString::fromStdString(rootNetwork.name())}});
+        for (const auto& value : instancePath) {
+            const auto entry = value.toMap();
+            const auto id = graphIdentity(entry.value(QStringLiteral("instanceId")));
+            const auto* instance = id ? document.instance(*id) : nullptr;
+            if (!instance || instance->parentNetwork != active ||
+                entry.value(QStringLiteral("networkId")).toString() != QString::number(instance->definition))
+                break;
+            const auto* node = document.network(active).graph().node(instance->node);
+            if (!node || node->instance != instance->id)
+                break;
+            path.push_back(QVariantMap{{QStringLiteral("parentNetworkId"), QString::number(active)},
+                                       {QStringLiteral("networkId"), QString::number(instance->definition)},
+                                       {QStringLiteral("instanceId"), QString::number(instance->id)},
+                                       {QStringLiteral("nodeId"), QString::number(instance->node)},
+                                       {QStringLiteral("name"), QString::fromStdString(node->name)}});
+            active = instance->definition;
+            breadcrumbs.push_back(QVariantMap{{QStringLiteral("networkId"), QString::number(active)},
+                                              {QStringLiteral("name"), QString::fromStdString(node->name)}});
+        }
+        return {{QStringLiteral("available"), true},
+                {QStringLiteral("networkId"), QString::number(active)},
+                {QStringLiteral("path"), path},
+                {QStringLiteral("breadcrumbs"), breadcrumbs}};
+    } catch (const std::exception&) {
+        return {{QStringLiteral("available"), false},
+                {QStringLiteral("networkId"), rootValue},
+                {QStringLiteral("path"), QVariantList{}},
+                {QStringLiteral("breadcrumbs"), QVariantList{}}};
+    }
+}
+
 QVariantMap ViewerController::graphSnapshot(const QString& networkValue) const {
     const auto identity = graphIdentity(networkValue);
     if (!identity)
-        return QVariantMap{{QStringLiteral("networkId"), networkValue},
-                           {QStringLiteral("available"), false},
-                           {QStringLiteral("nodes"), QVariantList{}},
-                           {QStringLiteral("edges"), QVariantList{}}};
+        return QVariantMap{{QStringLiteral("networkId"), networkValue}, {QStringLiteral("available"), false},
+                           {QStringLiteral("nodes"), QVariantList{}},   {QStringLiteral("edges"), QVariantList{}},
+                           {QStringLiteral("inputs"), QVariantList{}},  {QStringLiteral("outputs"), QVariantList{}}};
     try {
         const auto network = static_cast<NetworkId>(*identity);
-        const auto& graph = session_.document().network(network).graph();
+        const auto& scoped = session_.document().network(network);
+        const auto& graph = scoped.graph();
         QVariantList nodes;
+        QVariantList formalInputs;
+        QVariantList formalOutputs;
+        for (const auto& port : scoped.inputs()) {
+            nodes.push_back(formalPortSnapshot(port, true));
+            formalInputs.push_back(formalMetadataSnapshot(port));
+        }
+        for (const auto& port : scoped.outputs()) {
+            nodes.push_back(formalPortSnapshot(port, false));
+            formalOutputs.push_back(formalMetadataSnapshot(port));
+        }
         for (NodeId after = kInvalidNode;;) {
             const auto page = session_.queryNodes(network, {}, 256, after);
             for (const auto& query : page) {
@@ -641,47 +968,99 @@ QVariantMap ViewerController::graphSnapshot(const QString& networkValue) const {
                 }
                 const auto descriptor = graph.descriptor(node->type);
                 const auto group = descriptor ? QString::fromStdString(descriptor->group) : QStringLiteral("Utility");
-                nodes.push_back(QVariantMap{
-                    {QStringLiteral("id"), QString::number(node->id)},
-                    {QStringLiteral("type"), QString::fromStdString(node->type)},
-                    {QStringLiteral("name"), QString::fromStdString(node->name)},
-                    {QStringLiteral("params"), params},
-                    {QStringLiteral("x"), node->layout.x},
-                    {QStringLiteral("y"), node->layout.y},
-                    {QStringLiteral("inputs"), portSnapshot(graph.inputPorts(node->id))},
-                    {QStringLiteral("outputs"), portSnapshot(graph.outputPorts(node->id))},
-                    {QStringLiteral("category"), group},
-                    {QStringLiteral("group"), group},
-                    {QStringLiteral("deletable"), node->id != session_.document().network(network).defaultOutput()},
-                });
+                QVariantMap snapshot{{QStringLiteral("id"), QString::number(node->id)},
+                                     {QStringLiteral("type"), QString::fromStdString(node->type)},
+                                     {QStringLiteral("name"), QString::fromStdString(node->name)},
+                                     {QStringLiteral("params"), params},
+                                     {QStringLiteral("x"), node->layout.x},
+                                     {QStringLiteral("y"), node->layout.y},
+                                     {QStringLiteral("inputs"), portSnapshot(graph.inputPorts(node->id))},
+                                     {QStringLiteral("outputs"), portSnapshot(graph.outputPorts(node->id))},
+                                     {QStringLiteral("category"), group},
+                                     {QStringLiteral("group"), group},
+                                     {QStringLiteral("deletable"), node->id != scoped.defaultOutput()}};
+                if (node->definition != kInvalidNetwork)
+                    snapshot.insert(QStringLiteral("definition"), QString::number(node->definition));
+                if (node->instance != kInvalidNetworkInstance)
+                    snapshot.insert(QStringLiteral("instance"), QString::number(node->instance));
+                nodes.push_back(std::move(snapshot));
             }
             if (page.size() < 256)
                 break;
             after = page.back().id;
         }
-
         QVariantList edges;
         for (EdgeId after = kInvalidEdge;;) {
             const auto page = session_.queryEdges(network, kInvalidNode, 256, after);
             for (const auto& query : page) {
                 const auto& edge = query.edge;
-                edges.push_back(QVariantMap{
-                    {QStringLiteral("id"), QString::number(edge.id)},
-                    {QStringLiteral("fromNode"), QString::number(edge.from.node)},
-                    {QStringLiteral("fromPort"), static_cast<int>(edge.from.port)},
-                    {QStringLiteral("toNode"), QString::number(edge.to.node)},
-                    {QStringLiteral("toPort"), static_cast<int>(edge.to.port)},
-                    {QStringLiteral("route"), routeSnapshot(edge.route)},
-                });
+                edges.push_back(QVariantMap{{QStringLiteral("id"), QString::number(edge.id)},
+                                            {QStringLiteral("fromNode"), QString::number(edge.from.node)},
+                                            {QStringLiteral("fromPort"), static_cast<int>(edge.from.port)},
+                                            {QStringLiteral("toNode"), QString::number(edge.to.node)},
+                                            {QStringLiteral("toPort"), static_cast<int>(edge.to.port)},
+                                            {QStringLiteral("route"), routeSnapshot(edge.route)},
+                                            {QStringLiteral("binding"), QStringLiteral("graph")}});
             }
             if (page.size() < 256)
                 break;
             after = page.back().edge.id;
         }
+        for (const auto& connection : scoped.inputConnections()) {
+            const auto* formal = scoped.input(connection.terminal);
+            if (!formal)
+                continue;
+            edges.push_back(bindingSnapshot(
+                QStringLiteral("input:") + QString::number(connection.terminal) + QLatin1Char(':') +
+                    QString::number(connection.node.node) + QLatin1Char(':') + QString::number(connection.node.port),
+                QStringLiteral("input:") + QString::number(connection.terminal), 0,
+                QString::number(connection.node.node), static_cast<int>(connection.node.port),
+                QStringLiteral("networkInput"), formal->kind));
+        }
+        for (const auto& connection : scoped.outputConnections()) {
+            const auto* formal = scoped.output(connection.terminal);
+            if (!formal)
+                continue;
+            edges.push_back(bindingSnapshot(QStringLiteral("output:") + QString::number(connection.terminal),
+                                            QString::number(connection.node.node),
+                                            static_cast<int>(connection.node.port),
+                                            QStringLiteral("output:") + QString::number(connection.terminal), 0,
+                                            QStringLiteral("networkOutput"), formal->kind));
+        }
+        for (const auto& [output, input] : scoped.outputInputBindings()) {
+            const auto* formal = scoped.output(output);
+            if (formal)
+                edges.push_back(bindingSnapshot(QStringLiteral("output:") + QString::number(output),
+                                                QStringLiteral("input:") + QString::number(input), 0,
+                                                QStringLiteral("output:") + QString::number(output), 0,
+                                                QStringLiteral("terminalPassThrough"), formal->kind));
+        }
+        for (const auto& occurrence : session_.document().instances()) {
+            if (occurrence.parentNetwork != network || !graph.node(occurrence.node))
+                continue;
+            const auto& child = session_.document().network(occurrence.definition);
+            for (const auto& [terminal, source] : occurrence.inputBindings) {
+                const auto* formal = child.input(terminal);
+                const auto index =
+                    std::find_if(child.inputs().cbegin(), child.inputs().cend(),
+                                 [terminal](const FormalPort& candidate) { return candidate.id == terminal; });
+                if (!formal || index == child.inputs().cend())
+                    continue;
+                edges.push_back(bindingSnapshot(QStringLiteral("instance:") + QString::number(occurrence.id) +
+                                                    QLatin1Char(':') + QString::number(terminal),
+                                                QString::number(source.node), static_cast<int>(source.port),
+                                                QString::number(occurrence.node),
+                                                static_cast<int>(std::distance(child.inputs().cbegin(), index)),
+                                                QStringLiteral("instanceInput"), formal->kind));
+            }
+        }
         return QVariantMap{{QStringLiteral("networkId"), QString::number(network)},
+                           {QStringLiteral("networkName"), QString::fromStdString(scoped.name())},
                            {QStringLiteral("available"), true},
                            {QStringLiteral("nodes"), nodes},
-                           {QStringLiteral("edges"), edges}};
+                           {QStringLiteral("edges"), edges},
+                           {QStringLiteral("inputs"), formalInputs},
+                           {QStringLiteral("outputs"), formalOutputs}};
     } catch (const std::exception&) {
         return QVariantMap{{QStringLiteral("networkId"), networkValue},
                            {QStringLiteral("available"), false},
@@ -1130,10 +1509,10 @@ QString ViewerController::createGraphNode(const QString& networkValue, const QSt
     const auto id = std::make_shared<NodeId>();
     try {
         static_cast<void>(session_.document().network(*network));
-        if (!applyEdit(session_.submit(
-                addNodeCommand(*network, trimmedType.toStdString(), trimmedName.toStdString(), id, LayoutPosition{x, y},
-                               anchor ? static_cast<NodeId>(*anchor) : kInvalidNode, std::move(shifted)),
-                editOptions())))
+        if (!applyEdit(
+                session_.submit(addNodeCommand(*network, trimmedType.toStdString(), trimmedName.toStdString(), id,
+                                               LayoutPosition{x, y}, anchor.value_or(kInvalidNode), std::move(shifted)),
+                                editOptions())))
             return {};
         return QString::number(*id);
     } catch (const std::exception& error) {
@@ -1242,25 +1621,24 @@ bool ViewerController::deleteGraphNodes(const QString& networkValue, const QVari
 bool ViewerController::connectOrReplaceGraph(const QString& networkValue, const QVariant& fromValue, int fromPort,
                                              const QVariant& toValue, int toPort) {
     const auto network = networkIdentity(networkValue);
-    const auto from = graphIdentity(fromValue);
-    const auto to = graphIdentity(toValue);
+    const auto from = endpointIdentity(fromValue);
+    const auto to = endpointIdentity(toValue);
     if (!network || !from || !to || fromPort < 0 || toPort < 0) {
-        fail(QStringLiteral("graph connection requires a valid network, node IDs, and non-negative ports"));
+        fail(QStringLiteral("graph connection requires valid endpoints and non-negative ports"));
         return false;
     }
     try {
-        const PortRef fromRef{static_cast<NodeId>(*from), static_cast<std::uint32_t>(fromPort)};
-        const PortRef toRef{static_cast<NodeId>(*to), static_cast<std::uint32_t>(toPort)};
-        const auto& graph = session_.document().network(*network).graph();
-        const auto occupied = std::find_if(graph.edges().cbegin(), graph.edges().cend(),
-                                           [toRef](const Edge& edge) { return edge.to == toRef; });
-        if (occupied != graph.edges().cend() && occupied->from == fromRef) {
+        auto connect = connectPresentedPorts(session_.document(), *network, *from, fromPort, *to, toPort);
+        const auto occupied = occupiedConnection(session_.document(), *network, *to, toPort);
+        if (occupied && occupied->from == *from && occupied->fromPort == fromPort) {
             clearError();
             return true;
         }
-        const auto command = occupied == graph.edges().cend() ? connectCommand(*network, fromRef, toRef)
-                                                              : replaceInputCommand(*network, fromRef, toRef);
-        return applyEdit(session_.submit(command, editOptions()));
+        std::vector<Command> edits;
+        if (occupied)
+            edits.push_back(occupied->disconnect);
+        edits.push_back(std::move(connect));
+        return applyEdit(session_.submit(transactionCommand("connect graph ports", std::move(edits)), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
         return false;
@@ -1269,25 +1647,36 @@ bool ViewerController::connectOrReplaceGraph(const QString& networkValue, const 
 bool ViewerController::rewireGraphEdge(const QString& networkValue, const QVariant& edgeValue,
                                        const QVariant& fromValue, int fromPort, const QVariant& toValue, int toPort) {
     const auto network = networkIdentity(networkValue);
-    const auto edge = graphIdentity(edgeValue);
-    const auto from = graphIdentity(fromValue);
-    const auto to = graphIdentity(toValue);
-    if (!network || !edge || !from || !to || fromPort < 0 || toPort < 0) {
-        fail(QStringLiteral("graph rewiring requires a valid network, edge, node IDs, and non-negative ports"));
+    const auto from = endpointIdentity(fromValue);
+    const auto to = endpointIdentity(toValue);
+    if (!network || !from || !to || fromPort < 0 || toPort < 0) {
+        fail(QStringLiteral("graph rewiring requires valid endpoints and non-negative ports"));
         return false;
     }
     try {
-        const PortRef fromRef{static_cast<NodeId>(*from), static_cast<std::uint32_t>(fromPort)};
-        const PortRef toRef{static_cast<NodeId>(*to), static_cast<std::uint32_t>(toPort)};
-        const auto& graph = session_.document().network(*network).graph();
-        const auto existing = std::find_if(graph.edges().cbegin(), graph.edges().cend(),
-                                           [edge](const Edge& candidate) { return candidate.id == *edge; });
-        if (existing != graph.edges().cend() && existing->from == fromRef && existing->to == toRef) {
+        const auto existing = resolveConnection(session_.document(), *network, edgeValue.toString());
+        if (existing.from == *from && existing.to == *to && existing.fromPort == fromPort &&
+            existing.toPort == toPort) {
             clearError();
             return true;
         }
-        return applyEdit(session_.submit(rewireGraphEdgeCommand(*network, static_cast<EdgeId>(*edge), fromRef, toRef),
-                                         editOptions()));
+        auto connect = connectPresentedPorts(session_.document(), *network, *from, fromPort, *to, toPort);
+        const auto occupied = occupiedConnection(session_.document(), *network, *to, toPort);
+        std::vector<Command> edits;
+        if (occupied && occupied->id != existing.id)
+            edits.push_back(occupied->disconnect);
+        const auto edgeId = graphIdentity(existing.id);
+        const auto* target =
+            to->kind == EndpointKind::Graph ? session_.document().network(*network).graph().node(to->node) : nullptr;
+        if (edgeId && from->kind == EndpointKind::Graph && target && target->instance == kInvalidNetworkInstance) {
+            edits.push_back(rewireGraphEdgeCommand(*network, *edgeId,
+                                                   {from->node, static_cast<std::uint32_t>(fromPort)},
+                                                   {to->node, static_cast<std::uint32_t>(toPort)}));
+        } else {
+            edits.push_back(existing.disconnect);
+            edits.push_back(std::move(connect));
+        }
+        return applyEdit(session_.submit(transactionCommand("rewire graph ports", std::move(edits)), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
         return false;
@@ -1296,13 +1685,13 @@ bool ViewerController::rewireGraphEdge(const QString& networkValue, const QVaria
 
 bool ViewerController::disconnectGraphEdge(const QString& networkValue, const QVariant& edgeValue) {
     const auto network = networkIdentity(networkValue);
-    const auto edge = graphIdentity(edgeValue);
-    if (!network || !edge) {
-        fail(QStringLiteral("graph disconnection requires valid network and edge IDs"));
+    if (!network) {
+        fail(QStringLiteral("graph disconnection requires a valid network ID"));
         return false;
     }
     try {
-        return applyEdit(session_.submit(disconnectCommand(*network, static_cast<EdgeId>(*edge)), editOptions()));
+        return applyEdit(session_.submit(
+            resolveConnection(session_.document(), *network, edgeValue.toString()).disconnect, editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
         return false;
@@ -1317,30 +1706,46 @@ bool ViewerController::commitGraphMove(const QString& networkValue, const QVaria
         return false;
     }
     try {
-        const auto& graph = session_.document().network(*network).graph();
-        std::vector<LayoutEdit> edits;
-        edits.reserve(static_cast<std::size_t>(positions.size()));
-        std::unordered_set<NodeId> unique;
+        const auto& scoped = session_.document().network(*network);
+        std::vector<Command> commands;
+        commands.reserve(static_cast<std::size_t>(positions.size()));
+        std::unordered_set<std::string> unique;
         bool changed = false;
         for (const auto& value : positions) {
             const auto map = value.toMap();
-            const auto id = graphIdentity(map.value(QStringLiteral("id")));
+            const auto idValue = map.value(QStringLiteral("id"));
+            const auto idText = idValue.toString().trimmed();
             double x = 0.0;
             double y = 0.0;
-            if (!id || !graph.node(static_cast<NodeId>(*id)) || !mapPosition(map, x, y) ||
-                !unique.insert(static_cast<NodeId>(*id)).second) {
-                fail(QStringLiteral("graph move requires distinct existing IDs and finite x/y positions"));
+            if (idText.isEmpty() || !mapPosition(map, x, y) || !unique.insert(idText.toStdString()).second) {
+                fail(QStringLiteral("graph move requires distinct IDs and finite x/y positions"));
                 return false;
             }
-            const auto* node = graph.node(static_cast<NodeId>(*id));
+            if (const auto terminal = terminalNodeIdentity(idValue)) {
+                const auto* formal = terminal->first == PortDirection::Input ? scoped.input(terminal->second)
+                                                                             : scoped.output(terminal->second);
+                if (!formal) {
+                    fail(QStringLiteral("graph move terminal does not exist"));
+                    return false;
+                }
+                changed = changed || formal->layout != LayoutPosition{x, y};
+                commands.push_back(setInterfaceLayoutCommand(*network, terminal->first, terminal->second, {x, y}));
+                continue;
+            }
+            const auto id = graphIdentity(idValue);
+            if (!id || !scoped.graph().node(static_cast<NodeId>(*id))) {
+                fail(QStringLiteral("graph move requires existing graph or formal terminal IDs"));
+                return false;
+            }
+            const auto* node = scoped.graph().node(static_cast<NodeId>(*id));
             changed = changed || node->layout != LayoutPosition{x, y};
-            edits.push_back(LayoutEdit{static_cast<NodeId>(*id), {x, y}});
+            commands.push_back(setLayoutCommand(*network, static_cast<NodeId>(*id), {x, y}));
         }
         if (!changed) {
             clearError();
             return true;
         }
-        return applyEdit(session_.submit(setLayoutsCommand(*network, std::move(edits)), editOptions()));
+        return applyEdit(session_.submit(transactionCommand("move graph items", std::move(commands)), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
         return false;
@@ -1429,6 +1834,66 @@ bool ViewerController::removeGraphRoutePoint(const QString& networkValue, const 
         return applyEdit(session_.submit(
             removeRoutePointCommand(*network, static_cast<EdgeId>(*edge), static_cast<std::size_t>(index)),
             editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+QString ViewerController::collapseSelection(const QString& networkValue, const QVariantList& nodeValues,
+                                            const QString& nameValue) {
+    const auto network = networkIdentity(networkValue);
+    if (!network || nodeValues.isEmpty()) {
+        fail(QStringLiteral("collapse requires a valid network ID and at least one selected node"));
+        return {};
+    }
+    std::vector<NodeId> nodes;
+    nodes.reserve(static_cast<std::size_t>(nodeValues.size()));
+    std::unordered_set<NodeId> unique;
+    try {
+        const auto& graph = session_.document().network(*network).graph();
+        for (const auto& value : nodeValues) {
+            const auto id = graphIdentity(value);
+            if (!id || !graph.node(static_cast<NodeId>(*id)) || !unique.insert(static_cast<NodeId>(*id)).second) {
+                fail(QStringLiteral("collapse requires distinct existing node IDs"));
+                return {};
+            }
+            nodes.push_back(static_cast<NodeId>(*id));
+        }
+        const auto name = nameValue.trimmed();
+        if (name.isEmpty()) {
+            fail(QStringLiteral("collapse requires a non-empty subnet name"));
+            return {};
+        }
+        const auto createdInstance = std::make_shared<NetworkInstanceId>();
+        if (!applyEdit(session_.submit(
+                collapseSelectionCommand(*network, std::move(nodes), name.toStdString(), createdInstance),
+                editOptions())))
+            return {};
+
+        // The command writes the occurrence identity into createdInstance. Read
+        // the node identity from the committed document, not from a QML guess.
+        const auto* instance = session_.document().instance(*createdInstance);
+        if (!instance || instance->parentNetwork != *network || instance->node == kInvalidNode) {
+            fail(QStringLiteral("collapse committed without a readable subnet instance"));
+            return {};
+        }
+        clearError();
+        return QString::number(instance->node);
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return {};
+    }
+}
+
+bool ViewerController::unpackInstance(const QString& instanceValue) {
+    const auto identity = graphIdentity(instanceValue);
+    if (!identity) {
+        fail(QStringLiteral("unpack requires a valid network instance ID"));
+        return false;
+    }
+    try {
+        return applyEdit(
+            session_.submit(unpackInstanceCommand(static_cast<NetworkInstanceId>(*identity)), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
         return false;

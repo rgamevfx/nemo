@@ -1,0 +1,2349 @@
+{
+  "environment": {
+    "platform": "native Wayland",
+    "qt": "6.4.2",
+    "vulkan": true,
+    "dpr": 1,
+    "source": "docs/evidence/assets/issue59-production-cutover/source-640x360-bt709.mkv",
+    "input": "QTest events delivered to actual nemo-ui QQuickWindow via external temporary LD_PRELOAD observation bridge; not OS/compositor-level pointer acceptance"
+  },
+  "full_window": [
+    1538,
+    926
+  ],
+  "graph_body": [
+    755,
+    404
+  ],
+  "narrow_window": [
+    960,
+    687
+  ],
+  "functional_checkpoints": {
+    "parent": {
+      "network": "1",
+      "path": [],
+      "nodes": [
+        {
+          "category": "I/O",
+          "deletable": false,
+          "group": "I/O",
+          "id": "1",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "color"
+            }
+          ],
+          "name": "Output",
+          "outputs": [],
+          "params": {},
+          "type": "output",
+          "x": 195,
+          "y": 340
+        },
+        {
+          "category": "I/O",
+          "deletable": true,
+          "group": "I/O",
+          "id": "2",
+          "inputs": [],
+          "name": "source",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "color"
+            }
+          ],
+          "params": {
+            "source": "src"
+          },
+          "type": "source",
+          "x": 55,
+          "y": 30
+        },
+        {
+          "category": "Generators",
+          "deletable": true,
+          "group": "Generators",
+          "id": "3",
+          "inputs": [],
+          "name": "background",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "color"
+            }
+          ],
+          "params": {
+            "color": [
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "type": "constcolor",
+          "x": 335,
+          "y": 30
+        },
+        {
+          "category": "Compositing",
+          "deletable": true,
+          "group": "Compositing",
+          "id": "4",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "A"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "B"
+            }
+          ],
+          "name": "composite",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "operation": "over"
+          },
+          "type": "merge",
+          "x": 195,
+          "y": 245
+        },
+        {
+          "category": "Utility",
+          "definition": "2",
+          "deletable": true,
+          "group": "Utility",
+          "id": "7",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 1"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "Input 2"
+            },
+            {
+              "id": "2",
+              "index": 2,
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "instance": "1",
+          "name": "Subnet",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 1"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "Output 2"
+            }
+          ],
+          "params": {},
+          "type": "network.instance",
+          "x": 55,
+          "y": 125
+        }
+      ],
+      "edges": [
+        {
+          "binding": "graph",
+          "fromNode": "4",
+          "fromPort": 0,
+          "id": "3",
+          "route": [],
+          "toNode": "1",
+          "toPort": 0
+        },
+        {
+          "binding": "graph",
+          "fromNode": "7",
+          "fromPort": 0,
+          "id": "10",
+          "route": [],
+          "toNode": "4",
+          "toPort": 0
+        },
+        {
+          "binding": "graph",
+          "fromNode": "7",
+          "fromPort": 1,
+          "id": "11",
+          "route": [],
+          "toNode": "4",
+          "toPort": 1
+        },
+        {
+          "binding": "instanceInput",
+          "fromNode": "2",
+          "fromPort": 0,
+          "id": "instance:1:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "7",
+          "toPort": 0
+        },
+        {
+          "binding": "instanceInput",
+          "fromNode": "3",
+          "fromPort": 0,
+          "id": "instance:1:2",
+          "kind": "image",
+          "route": [],
+          "toNode": "7",
+          "toPort": 1
+        }
+      ],
+      "selected": [
+        "7"
+      ],
+      "error": "",
+      "renderState": "current",
+      "zoom": 0.9911242603550295,
+      "panX": 128.7278106508876,
+      "panY": -8.733727810650887
+    },
+    "child": {
+      "network": "2",
+      "path": [
+        {
+          "instanceId": "1",
+          "name": "Subnet",
+          "networkId": "2",
+          "nodeId": "7",
+          "parentNetworkId": "1"
+        }
+      ],
+      "nodes": [
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:1",
+          "inputs": [],
+          "name": "Input 1",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "1",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 1"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "1",
+          "type": "input",
+          "x": 55,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:2",
+          "inputs": [],
+          "name": "Input 2",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "2",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 2"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "2",
+          "type": "input",
+          "x": 215,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:3",
+          "inputs": [],
+          "name": "Mask",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "3",
+              "index": 0,
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "3",
+          "type": "input",
+          "x": 375,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "output",
+          "group": "I/O",
+          "id": "output:4",
+          "inputs": [
+            {
+              "allowFanOut": true,
+              "id": "4",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 1"
+            }
+          ],
+          "name": "Output 1",
+          "outputs": [],
+          "terminal": true,
+          "terminalId": "4",
+          "type": "output",
+          "x": 55,
+          "y": 275
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "output",
+          "group": "I/O",
+          "id": "output:5",
+          "inputs": [
+            {
+              "allowFanOut": true,
+              "id": "5",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 2"
+            }
+          ],
+          "name": "Output 2",
+          "outputs": [],
+          "terminal": true,
+          "terminalId": "5",
+          "type": "output",
+          "x": 343,
+          "y": 275
+        },
+        {
+          "category": "Compositing",
+          "deletable": true,
+          "group": "Compositing",
+          "id": "5",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "A"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "B"
+            }
+          ],
+          "name": "Left",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "operation": "over"
+          },
+          "type": "merge",
+          "x": 55,
+          "y": 125
+        },
+        {
+          "category": "Compositing",
+          "deletable": true,
+          "group": "Compositing",
+          "id": "6",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "A"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "B"
+            }
+          ],
+          "name": "Right",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "operation": "over"
+          },
+          "type": "merge",
+          "x": 335,
+          "y": 125
+        }
+      ],
+      "edges": [
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:5:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "5",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:2",
+          "fromPort": 0,
+          "id": "input:2:5:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "5",
+          "toPort": 1
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:6:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "6",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:2",
+          "fromPort": 0,
+          "id": "input:2:6:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "6",
+          "toPort": 1
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "5",
+          "fromPort": 0,
+          "id": "output:4",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:4",
+          "toPort": 0
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "6",
+          "fromPort": 0,
+          "id": "output:5",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:5",
+          "toPort": 0
+        }
+      ],
+      "selected": [],
+      "zoom": 1.1631944444444444,
+      "panX": 62.27430555555556,
+      "panY": 3.552083333333332,
+      "root": {
+        "available": true,
+        "edges": [
+          {
+            "binding": "graph",
+            "fromNode": "4",
+            "fromPort": 0,
+            "id": "3",
+            "route": [],
+            "toNode": "1",
+            "toPort": 0
+          },
+          {
+            "binding": "graph",
+            "fromNode": "7",
+            "fromPort": 0,
+            "id": "10",
+            "route": [],
+            "toNode": "4",
+            "toPort": 0
+          },
+          {
+            "binding": "graph",
+            "fromNode": "7",
+            "fromPort": 1,
+            "id": "11",
+            "route": [],
+            "toNode": "4",
+            "toPort": 1
+          },
+          {
+            "binding": "instanceInput",
+            "fromNode": "2",
+            "fromPort": 0,
+            "id": "instance:1:1",
+            "kind": "image",
+            "route": [],
+            "toNode": "7",
+            "toPort": 0
+          },
+          {
+            "binding": "instanceInput",
+            "fromNode": "3",
+            "fromPort": 0,
+            "id": "instance:1:2",
+            "kind": "image",
+            "route": [],
+            "toNode": "7",
+            "toPort": 1
+          }
+        ],
+        "inputs": [],
+        "networkId": "1",
+        "networkName": "Root",
+        "nodes": [
+          {
+            "category": "I/O",
+            "deletable": false,
+            "group": "I/O",
+            "id": "1",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "name": "Output",
+            "outputs": [],
+            "params": {},
+            "type": "output",
+            "x": 195,
+            "y": 340
+          },
+          {
+            "category": "I/O",
+            "deletable": true,
+            "group": "I/O",
+            "id": "2",
+            "inputs": [],
+            "name": "source",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "params": {
+              "source": "src"
+            },
+            "type": "source",
+            "x": 55,
+            "y": 30
+          },
+          {
+            "category": "Generators",
+            "deletable": true,
+            "group": "Generators",
+            "id": "3",
+            "inputs": [],
+            "name": "background",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "params": {
+              "color": [
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "type": "constcolor",
+            "x": 335,
+            "y": 30
+          },
+          {
+            "category": "Compositing",
+            "deletable": true,
+            "group": "Compositing",
+            "id": "4",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "A"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "B"
+              }
+            ],
+            "name": "composite",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "out"
+              }
+            ],
+            "params": {
+              "operation": "over"
+            },
+            "type": "merge",
+            "x": 195,
+            "y": 245
+          },
+          {
+            "category": "Utility",
+            "definition": "2",
+            "deletable": true,
+            "group": "Utility",
+            "id": "7",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "Input 1"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "Input 2"
+              },
+              {
+                "id": "2",
+                "index": 2,
+                "kind": "mask",
+                "name": "Mask"
+              }
+            ],
+            "instance": "1",
+            "name": "Subnet",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "Output 1"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "Output 2"
+              }
+            ],
+            "params": {},
+            "type": "network.instance",
+            "x": 55,
+            "y": 125
+          }
+        ],
+        "outputs": []
+      },
+      "renderState": "current",
+      "error": ""
+    },
+    "port_scope_collision": {
+      "id": "8",
+      "inputs": 2,
+      "outputs": 1,
+      "network": "2"
+    },
+    "panned": {
+      "network": "2",
+      "selected": [
+        "5"
+      ],
+      "zoom": 1.1631944444444444,
+      "panX": 132.27430555555554,
+      "panY": 43.552083333333314,
+      "root": {
+        "available": true,
+        "edges": [
+          {
+            "binding": "graph",
+            "fromNode": "4",
+            "fromPort": 0,
+            "id": "3",
+            "route": [],
+            "toNode": "1",
+            "toPort": 0
+          },
+          {
+            "binding": "graph",
+            "fromNode": "7",
+            "fromPort": 0,
+            "id": "10",
+            "route": [],
+            "toNode": "4",
+            "toPort": 0
+          },
+          {
+            "binding": "graph",
+            "fromNode": "7",
+            "fromPort": 1,
+            "id": "11",
+            "route": [],
+            "toNode": "4",
+            "toPort": 1
+          },
+          {
+            "binding": "instanceInput",
+            "fromNode": "2",
+            "fromPort": 0,
+            "id": "instance:1:1",
+            "kind": "image",
+            "route": [],
+            "toNode": "7",
+            "toPort": 0
+          },
+          {
+            "binding": "instanceInput",
+            "fromNode": "3",
+            "fromPort": 0,
+            "id": "instance:1:2",
+            "kind": "image",
+            "route": [],
+            "toNode": "7",
+            "toPort": 1
+          }
+        ],
+        "inputs": [],
+        "networkId": "1",
+        "networkName": "Root",
+        "nodes": [
+          {
+            "category": "I/O",
+            "deletable": false,
+            "group": "I/O",
+            "id": "1",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "name": "Output",
+            "outputs": [],
+            "params": {},
+            "type": "output",
+            "x": 195,
+            "y": 340
+          },
+          {
+            "category": "I/O",
+            "deletable": true,
+            "group": "I/O",
+            "id": "2",
+            "inputs": [],
+            "name": "source",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "params": {
+              "source": "src"
+            },
+            "type": "source",
+            "x": 55,
+            "y": 30
+          },
+          {
+            "category": "Generators",
+            "deletable": true,
+            "group": "Generators",
+            "id": "3",
+            "inputs": [],
+            "name": "background",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "params": {
+              "color": [
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "type": "constcolor",
+            "x": 335,
+            "y": 30
+          },
+          {
+            "category": "Compositing",
+            "deletable": true,
+            "group": "Compositing",
+            "id": "4",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "A"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "B"
+              }
+            ],
+            "name": "composite",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "out"
+              }
+            ],
+            "params": {
+              "operation": "over"
+            },
+            "type": "merge",
+            "x": 195,
+            "y": 245
+          },
+          {
+            "category": "Utility",
+            "definition": "2",
+            "deletable": true,
+            "group": "Utility",
+            "id": "7",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "Input 1"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "Input 2"
+              },
+              {
+                "id": "2",
+                "index": 2,
+                "kind": "mask",
+                "name": "Mask"
+              }
+            ],
+            "instance": "1",
+            "name": "Subnet",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "Output 1"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "Output 2"
+              }
+            ],
+            "params": {},
+            "type": "network.instance",
+            "x": 55,
+            "y": 125
+          }
+        ],
+        "outputs": []
+      }
+    },
+    "returned": {
+      "network": "1",
+      "selected": [
+        "7"
+      ],
+      "zoom": 0.9911242603550295,
+      "panX": 128.7278106508876,
+      "panY": -8.733727810650887
+    },
+    "reentered": {
+      "network": "2",
+      "selected": [
+        "5"
+      ],
+      "zoom": 1.1631944444444444,
+      "panX": 132.27430555555554,
+      "panY": 43.552083333333314,
+      "root": {
+        "available": true,
+        "edges": [
+          {
+            "binding": "graph",
+            "fromNode": "4",
+            "fromPort": 0,
+            "id": "3",
+            "route": [],
+            "toNode": "1",
+            "toPort": 0
+          },
+          {
+            "binding": "graph",
+            "fromNode": "7",
+            "fromPort": 0,
+            "id": "10",
+            "route": [],
+            "toNode": "4",
+            "toPort": 0
+          },
+          {
+            "binding": "graph",
+            "fromNode": "7",
+            "fromPort": 1,
+            "id": "11",
+            "route": [],
+            "toNode": "4",
+            "toPort": 1
+          },
+          {
+            "binding": "instanceInput",
+            "fromNode": "2",
+            "fromPort": 0,
+            "id": "instance:1:1",
+            "kind": "image",
+            "route": [],
+            "toNode": "7",
+            "toPort": 0
+          },
+          {
+            "binding": "instanceInput",
+            "fromNode": "3",
+            "fromPort": 0,
+            "id": "instance:1:2",
+            "kind": "image",
+            "route": [],
+            "toNode": "7",
+            "toPort": 1
+          }
+        ],
+        "inputs": [],
+        "networkId": "1",
+        "networkName": "Root",
+        "nodes": [
+          {
+            "category": "I/O",
+            "deletable": false,
+            "group": "I/O",
+            "id": "1",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "name": "Output",
+            "outputs": [],
+            "params": {},
+            "type": "output",
+            "x": 195,
+            "y": 340
+          },
+          {
+            "category": "I/O",
+            "deletable": true,
+            "group": "I/O",
+            "id": "2",
+            "inputs": [],
+            "name": "source",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "params": {
+              "source": "src"
+            },
+            "type": "source",
+            "x": 55,
+            "y": 30
+          },
+          {
+            "category": "Generators",
+            "deletable": true,
+            "group": "Generators",
+            "id": "3",
+            "inputs": [],
+            "name": "background",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "color"
+              }
+            ],
+            "params": {
+              "color": [
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "type": "constcolor",
+            "x": 335,
+            "y": 30
+          },
+          {
+            "category": "Compositing",
+            "deletable": true,
+            "group": "Compositing",
+            "id": "4",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "A"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "B"
+              }
+            ],
+            "name": "composite",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "out"
+              }
+            ],
+            "params": {
+              "operation": "over"
+            },
+            "type": "merge",
+            "x": 195,
+            "y": 245
+          },
+          {
+            "category": "Utility",
+            "definition": "2",
+            "deletable": true,
+            "group": "Utility",
+            "id": "7",
+            "inputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "Input 1"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "Input 2"
+              },
+              {
+                "id": "2",
+                "index": 2,
+                "kind": "mask",
+                "name": "Mask"
+              }
+            ],
+            "instance": "1",
+            "name": "Subnet",
+            "outputs": [
+              {
+                "id": "0",
+                "index": 0,
+                "kind": "image",
+                "name": "Output 1"
+              },
+              {
+                "id": "1",
+                "index": 1,
+                "kind": "image",
+                "name": "Output 2"
+              }
+            ],
+            "params": {},
+            "type": "network.instance",
+            "x": 55,
+            "y": 125
+          }
+        ],
+        "outputs": []
+      }
+    },
+    "nested_parent": {
+      "network": "2",
+      "path": [
+        {
+          "instanceId": "1",
+          "name": "Subnet",
+          "networkId": "2",
+          "nodeId": "7",
+          "parentNetworkId": "1"
+        }
+      ],
+      "selected": [
+        "9"
+      ],
+      "nodes": [
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:1",
+          "inputs": [],
+          "name": "Input 1",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "1",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 1"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "1",
+          "type": "input",
+          "x": 55,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:2",
+          "inputs": [],
+          "name": "Input 2",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "2",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 2"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "2",
+          "type": "input",
+          "x": 215,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:3",
+          "inputs": [],
+          "name": "Mask",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "3",
+              "index": 0,
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "3",
+          "type": "input",
+          "x": 375,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "output",
+          "group": "I/O",
+          "id": "output:4",
+          "inputs": [
+            {
+              "allowFanOut": true,
+              "id": "4",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 1"
+            }
+          ],
+          "name": "Output 1",
+          "outputs": [],
+          "terminal": true,
+          "terminalId": "4",
+          "type": "output",
+          "x": 55,
+          "y": 275
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "output",
+          "group": "I/O",
+          "id": "output:5",
+          "inputs": [
+            {
+              "allowFanOut": true,
+              "id": "5",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 2"
+            }
+          ],
+          "name": "Output 2",
+          "outputs": [],
+          "terminal": true,
+          "terminalId": "5",
+          "type": "output",
+          "x": 343,
+          "y": 275
+        },
+        {
+          "category": "Utility",
+          "definition": "3",
+          "deletable": true,
+          "group": "Utility",
+          "id": "9",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 1"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "Input 2"
+            },
+            {
+              "id": "2",
+              "index": 2,
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "instance": "2",
+          "name": "Subnet",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 1"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "Output 2"
+            }
+          ],
+          "params": {},
+          "type": "network.instance",
+          "x": 55,
+          "y": 125
+        }
+      ],
+      "edges": [
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:9:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "9",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:2",
+          "fromPort": 0,
+          "id": "input:2:9:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "9",
+          "toPort": 1
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "9",
+          "fromPort": 0,
+          "id": "output:4",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:4",
+          "toPort": 0
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "9",
+          "fromPort": 1,
+          "id": "output:5",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:5",
+          "toPort": 0
+        }
+      ],
+      "error": ""
+    },
+    "nested_inside": {
+      "network": "3",
+      "path": [
+        {
+          "instanceId": "1",
+          "name": "Subnet",
+          "networkId": "2",
+          "nodeId": "7",
+          "parentNetworkId": "1"
+        },
+        {
+          "instanceId": "2",
+          "name": "Subnet",
+          "networkId": "3",
+          "nodeId": "9",
+          "parentNetworkId": "2"
+        }
+      ],
+      "nodes": [
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:1",
+          "inputs": [],
+          "name": "Input 1",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "1",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 1"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "1",
+          "type": "input",
+          "x": 55,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:2",
+          "inputs": [],
+          "name": "Input 2",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "2",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 2"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "2",
+          "type": "input",
+          "x": 215,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:3",
+          "inputs": [],
+          "name": "Mask",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "3",
+              "index": 0,
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "3",
+          "type": "input",
+          "x": 375,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "output",
+          "group": "I/O",
+          "id": "output:4",
+          "inputs": [
+            {
+              "allowFanOut": true,
+              "id": "4",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 1"
+            }
+          ],
+          "name": "Output 1",
+          "outputs": [],
+          "terminal": true,
+          "terminalId": "4",
+          "type": "output",
+          "x": 55,
+          "y": 275
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "output",
+          "group": "I/O",
+          "id": "output:5",
+          "inputs": [
+            {
+              "allowFanOut": true,
+              "id": "5",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 2"
+            }
+          ],
+          "name": "Output 2",
+          "outputs": [],
+          "terminal": true,
+          "terminalId": "5",
+          "type": "output",
+          "x": 343,
+          "y": 275
+        },
+        {
+          "category": "Compositing",
+          "deletable": true,
+          "group": "Compositing",
+          "id": "5",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "A"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "B"
+            }
+          ],
+          "name": "Left",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "operation": "over"
+          },
+          "type": "merge",
+          "x": 55,
+          "y": 125
+        },
+        {
+          "category": "Compositing",
+          "deletable": true,
+          "group": "Compositing",
+          "id": "6",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "A"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "B"
+            }
+          ],
+          "name": "Right",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "operation": "over"
+          },
+          "type": "merge",
+          "x": 335,
+          "y": 125
+        }
+      ],
+      "edges": [
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:5:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "5",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:2",
+          "fromPort": 0,
+          "id": "input:2:5:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "5",
+          "toPort": 1
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:6:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "6",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:2",
+          "fromPort": 0,
+          "id": "input:2:6:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "6",
+          "toPort": 1
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "5",
+          "fromPort": 0,
+          "id": "output:4",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:4",
+          "toPort": 0
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "6",
+          "fromPort": 0,
+          "id": "output:5",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:5",
+          "toPort": 0
+        }
+      ],
+      "error": "",
+      "renderState": "current"
+    },
+    "narrow": {
+      "network": "1",
+      "zoom": 0.6301775147928994,
+      "width": 466,
+      "height": 282,
+      "error": "",
+      "renderState": "current"
+    },
+    "terminal_before": [
+      {
+        "binding": "networkInput",
+        "fromNode": "input:1",
+        "fromPort": 0,
+        "id": "input:1:5:0",
+        "kind": "image",
+        "route": [],
+        "toNode": "5",
+        "toPort": 0
+      },
+      {
+        "binding": "networkInput",
+        "fromNode": "input:2",
+        "fromPort": 0,
+        "id": "input:2:5:1",
+        "kind": "image",
+        "route": [],
+        "toNode": "5",
+        "toPort": 1
+      },
+      {
+        "binding": "networkInput",
+        "fromNode": "input:1",
+        "fromPort": 0,
+        "id": "input:1:6:0",
+        "kind": "image",
+        "route": [],
+        "toNode": "6",
+        "toPort": 0
+      },
+      {
+        "binding": "networkInput",
+        "fromNode": "input:2",
+        "fromPort": 0,
+        "id": "input:2:6:1",
+        "kind": "image",
+        "route": [],
+        "toNode": "6",
+        "toPort": 1
+      },
+      {
+        "binding": "networkOutput",
+        "fromNode": "5",
+        "fromPort": 0,
+        "id": "output:4",
+        "kind": "image",
+        "route": [],
+        "toNode": "output:4",
+        "toPort": 0
+      },
+      {
+        "binding": "networkOutput",
+        "fromNode": "6",
+        "fromPort": 0,
+        "id": "output:5",
+        "kind": "image",
+        "route": [],
+        "toNode": "output:5",
+        "toPort": 0
+      }
+    ],
+    "terminal_after": {
+      "edges": [
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:5:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "5",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:2",
+          "fromPort": 0,
+          "id": "input:2:5:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "5",
+          "toPort": 1
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:6:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "6",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:6:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "6",
+          "toPort": 1
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "5",
+          "fromPort": 0,
+          "id": "output:4",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:4",
+          "toPort": 0
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "6",
+          "fromPort": 0,
+          "id": "output:5",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:5",
+          "toPort": 0
+        }
+      ],
+      "error": ""
+    },
+    "terminal_undone": [
+      {
+        "binding": "networkInput",
+        "fromNode": "input:1",
+        "fromPort": 0,
+        "id": "input:1:5:0",
+        "kind": "image",
+        "route": [],
+        "toNode": "5",
+        "toPort": 0
+      },
+      {
+        "binding": "networkInput",
+        "fromNode": "input:2",
+        "fromPort": 0,
+        "id": "input:2:5:1",
+        "kind": "image",
+        "route": [],
+        "toNode": "5",
+        "toPort": 1
+      },
+      {
+        "binding": "networkInput",
+        "fromNode": "input:1",
+        "fromPort": 0,
+        "id": "input:1:6:0",
+        "kind": "image",
+        "route": [],
+        "toNode": "6",
+        "toPort": 0
+      },
+      {
+        "binding": "networkInput",
+        "fromNode": "input:2",
+        "fromPort": 0,
+        "id": "input:2:6:1",
+        "kind": "image",
+        "route": [],
+        "toNode": "6",
+        "toPort": 1
+      },
+      {
+        "binding": "networkOutput",
+        "fromNode": "5",
+        "fromPort": 0,
+        "id": "output:4",
+        "kind": "image",
+        "route": [],
+        "toNode": "output:4",
+        "toPort": 0
+      },
+      {
+        "binding": "networkOutput",
+        "fromNode": "6",
+        "fromPort": 0,
+        "id": "output:5",
+        "kind": "image",
+        "route": [],
+        "toNode": "output:5",
+        "toPort": 0
+      }
+    ]
+  },
+  "final_appearance_checkpoints": {
+    "parent": {
+      "scope": "1",
+      "selected": [
+        "7"
+      ],
+      "nodes": [
+        {
+          "category": "I/O",
+          "deletable": false,
+          "group": "I/O",
+          "id": "1",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "color"
+            }
+          ],
+          "name": "Output",
+          "outputs": [],
+          "params": {},
+          "type": "output",
+          "x": 195,
+          "y": 340
+        },
+        {
+          "category": "I/O",
+          "deletable": true,
+          "group": "I/O",
+          "id": "2",
+          "inputs": [],
+          "name": "source",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "color"
+            }
+          ],
+          "params": {
+            "source": "src"
+          },
+          "type": "source",
+          "x": 55,
+          "y": 30
+        },
+        {
+          "category": "Generators",
+          "deletable": true,
+          "group": "Generators",
+          "id": "3",
+          "inputs": [],
+          "name": "background",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "color"
+            }
+          ],
+          "params": {
+            "color": [
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "type": "constcolor",
+          "x": 335,
+          "y": 30
+        },
+        {
+          "category": "Compositing",
+          "deletable": true,
+          "group": "Compositing",
+          "id": "4",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "A"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "B"
+            }
+          ],
+          "name": "composite",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "operation": "over"
+          },
+          "type": "merge",
+          "x": 195,
+          "y": 245
+        },
+        {
+          "category": "Utility",
+          "definition": "2",
+          "deletable": true,
+          "group": "Utility",
+          "id": "7",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 1"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "Input 2"
+            },
+            {
+              "id": "2",
+              "index": 2,
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "instance": "1",
+          "name": "Subnet",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 1"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "Output 2"
+            }
+          ],
+          "params": {},
+          "type": "network.instance",
+          "x": 55,
+          "y": 125
+        }
+      ],
+      "edges": [
+        {
+          "binding": "graph",
+          "fromNode": "4",
+          "fromPort": 0,
+          "id": "3",
+          "route": [],
+          "toNode": "1",
+          "toPort": 0
+        },
+        {
+          "binding": "graph",
+          "fromNode": "7",
+          "fromPort": 0,
+          "id": "10",
+          "route": [],
+          "toNode": "4",
+          "toPort": 0
+        },
+        {
+          "binding": "graph",
+          "fromNode": "7",
+          "fromPort": 1,
+          "id": "11",
+          "route": [],
+          "toNode": "4",
+          "toPort": 1
+        },
+        {
+          "binding": "instanceInput",
+          "fromNode": "2",
+          "fromPort": 0,
+          "id": "instance:1:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "7",
+          "toPort": 0
+        },
+        {
+          "binding": "instanceInput",
+          "fromNode": "3",
+          "fromPort": 0,
+          "id": "instance:1:2",
+          "kind": "image",
+          "route": [],
+          "toNode": "7",
+          "toPort": 1
+        }
+      ],
+      "zoom": 0.9911242603550295,
+      "width": 755,
+      "height": 404,
+      "error": ""
+    },
+    "child": {
+      "scope": "2",
+      "path": [
+        {
+          "instanceId": "1",
+          "name": "Subnet",
+          "networkId": "2",
+          "nodeId": "7",
+          "parentNetworkId": "1"
+        }
+      ],
+      "nodes": [
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:1",
+          "inputs": [],
+          "name": "Input 1",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "1",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 1"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "1",
+          "type": "input",
+          "x": 55,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:2",
+          "inputs": [],
+          "name": "Input 2",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "2",
+              "index": 0,
+              "kind": "image",
+              "name": "Input 2"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "2",
+          "type": "input",
+          "x": 215,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "input",
+          "group": "I/O",
+          "id": "input:3",
+          "inputs": [],
+          "name": "Mask",
+          "outputs": [
+            {
+              "allowFanOut": true,
+              "id": "3",
+              "index": 0,
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "terminal": true,
+          "terminalId": "3",
+          "type": "input",
+          "x": 375,
+          "y": 15
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "output",
+          "group": "I/O",
+          "id": "output:4",
+          "inputs": [
+            {
+              "allowFanOut": true,
+              "id": "4",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 1"
+            }
+          ],
+          "name": "Output 1",
+          "outputs": [],
+          "terminal": true,
+          "terminalId": "4",
+          "type": "output",
+          "x": 55,
+          "y": 275
+        },
+        {
+          "category": "IO",
+          "deletable": false,
+          "direction": "output",
+          "group": "I/O",
+          "id": "output:5",
+          "inputs": [
+            {
+              "allowFanOut": true,
+              "id": "5",
+              "index": 0,
+              "kind": "image",
+              "name": "Output 2"
+            }
+          ],
+          "name": "Output 2",
+          "outputs": [],
+          "terminal": true,
+          "terminalId": "5",
+          "type": "output",
+          "x": 343,
+          "y": 275
+        },
+        {
+          "category": "Compositing",
+          "deletable": true,
+          "group": "Compositing",
+          "id": "5",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "A"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "B"
+            }
+          ],
+          "name": "Left",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "operation": "over"
+          },
+          "type": "merge",
+          "x": 55,
+          "y": 125
+        },
+        {
+          "category": "Compositing",
+          "deletable": true,
+          "group": "Compositing",
+          "id": "6",
+          "inputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "A"
+            },
+            {
+              "id": "1",
+              "index": 1,
+              "kind": "image",
+              "name": "B"
+            }
+          ],
+          "name": "Right",
+          "outputs": [
+            {
+              "id": "0",
+              "index": 0,
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "operation": "over"
+          },
+          "type": "merge",
+          "x": 335,
+          "y": 125
+        }
+      ],
+      "edges": [
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:5:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "5",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:2",
+          "fromPort": 0,
+          "id": "input:2:5:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "5",
+          "toPort": 1
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:1",
+          "fromPort": 0,
+          "id": "input:1:6:0",
+          "kind": "image",
+          "route": [],
+          "toNode": "6",
+          "toPort": 0
+        },
+        {
+          "binding": "networkInput",
+          "fromNode": "input:2",
+          "fromPort": 0,
+          "id": "input:2:6:1",
+          "kind": "image",
+          "route": [],
+          "toNode": "6",
+          "toPort": 1
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "5",
+          "fromPort": 0,
+          "id": "output:4",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:4",
+          "toPort": 0
+        },
+        {
+          "binding": "networkOutput",
+          "fromNode": "6",
+          "fromPort": 0,
+          "id": "output:5",
+          "kind": "image",
+          "route": [],
+          "toNode": "output:5",
+          "toPort": 0
+        }
+      ],
+      "zoom": 1.1631944444444444,
+      "error": ""
+    }
+  },
+  "capture_note": "Functional runs preceded final subnet-only delegate filtering and correct canvas scaling of the enter decoration. Parent/menu/inside/narrow captures were refreshed on the final binary and entry/cancellation/breadcrumb return rechecked. Other functional captures retain their earlier verified checkpoints.",
+  "checks": [
+    "two-node selection and context-menu collapse",
+    "explicit wired image terminals, optional mask terminal and multiple outputs",
+    "entry commits on release; Escape cancels",
+    "scope-local selection and pan/zoom restoration",
+    "equal numeric IDs across scopes retain their own ports",
+    "child edit leaves parent snapshot unchanged",
+    "nested collapse and two-level breadcrumbs",
+    "undo while inside removed subnet returns to surviving parent; redo preserves that presentation scope",
+    "formal-input wire preview is transient; occupied input replacement commits; shared-controller undo restores topology",
+    "real decoded viewer remains available at frame 0"
+  ],
+  "limits": [
+    "No Parameters or Animation host, exposure popout, graphical clipboard/link-state workflow, or Ctrl+Z shortcut was implemented/claimed. Undo proof uses existing controller/shared history.",
+    "No OS-level pointer pass: /dev/uinput is root:root 0660; no permitted virtual-pointer tool was available.",
+    "Viewer screenshot pixels are not a scene-result oracle: ADR-0004 permits 4:2:0 chroma/compression differences. No GPU/cache fidelity investigation or rendering-algorithm work was pursued."
+  ]
+}

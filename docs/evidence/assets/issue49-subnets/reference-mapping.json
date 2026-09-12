@@ -1,0 +1,379 @@
+{
+  "issue": 49,
+  "archive_sha256": "0027b39f6ba20fc2168f83215f8ba036fcc408284e6b3a2702a21c2c37b8e57e",
+  "source_handlers": [
+    "StudioModel.qml:2087-2120",
+    "StudioModel.qml:2125-2369",
+    "GraphPanel.qml:647-659",
+    "GraphPanel.qml:1191-1216",
+    "GraphPanel.qml:1453-1503"
+  ],
+  "entries": [
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[0]",
+      "reference": "zoomed port acquired eight pixels off center on first attempt",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[1]",
+      "reference": "twelve offset port gestures succeed on first attempt",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[2]",
+      "reference": "low zoom node body remains selectable despite generous port targets",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[3]",
+      "reference": "left-drag empty background pans",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[4]",
+      "reference": "small wheel delta produces proportionate zoom",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[5]",
+      "reference": "opposite wheel delta restores zoom",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[6]",
+      "reference": "trackpad zoom uses pixel delta instead of coarser angle delta",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[7]",
+      "reference": "Shift-drag box selects both processing nodes",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[8]",
+      "reference": "drag selected node moves entire selection",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[9]",
+      "reference": "group movement does not invalidate parameter state",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[10]",
+      "reference": "node visual remains aligned with model after group drag",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[11]",
+      "reference": "Shift-click toggles selection membership",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[12]",
+      "reference": "right-click cancels visible node drag without changing model",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[13]",
+      "reference": "every non-Read fixture node has optional side mask port",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[14]",
+      "reference": "mask connection preserves primary image input",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[15]",
+      "reference": "Escape cancels mask rewire without losing edge",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[16]",
+      "reference": "invalid mask rewire preserves graph",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[17]",
+      "reference": "Tab creation remains a cancellable pending preview",
+      "ownership": "superseded-pending-placement-clause",
+      "production_evidence": "Later immediate-creation authority retained; GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[18]",
+      "reference": "pending node places on first click",
+      "ownership": "superseded-pending-placement-clause",
+      "production_evidence": "Later immediate-creation authority retained; GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[19]",
+      "reference": "dragging newly placed node onto wire still inserts chain",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[20]",
+      "reference": "Escape still cancels pending creation",
+      "ownership": "superseded-pending-placement-clause",
+      "production_evidence": "Later immediate-creation authority retained; GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[21]",
+      "reference": "double-click after dragging opens inspector without timer suppression",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[22]",
+      "reference": "empty-background context menu preserves collapse selection",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[23]",
+      "reference": "right-click preserves multi-selection",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[24]",
+      "reference": "Collapse menu replaces selected nodes with subnet",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[25]",
+      "reference": "collapse exposes both original outgoing streams",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[26]",
+      "reference": "auto-wired Input and Output proxies preserve every original route including mask",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[27]",
+      "reference": "explicit subnet enter opens child graph",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[28]",
+      "reference": "child contains automatically wired image mask Input and multiple Output nodes",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[29]",
+      "reference": "first subnet entry frames all auto-wired interface nodes",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[30]",
+      "reference": "global node lookup survives scope navigation",
+      "ownership": "scope-navigation",
+      "production_evidence": "Native breadcrumbs/view restoration and WorkspaceDragTest scoped navigation/identity cases; inspector integration remains #46."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[31]",
+      "reference": "parent inspector remains bound while viewing child graph",
+      "ownership": "scope-navigation",
+      "production_evidence": "Stable scoped queries are implemented; actual parent Parameters inspector binding cannot be accepted until #46 exists."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[32]",
+      "reference": "nested collapse retains all parent-to-child routes",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[33]",
+      "reference": "breadcrumb exposes nested graph ancestry",
+      "ownership": "scope-navigation",
+      "production_evidence": "Native breadcrumbs/view restoration and WorkspaceDragTest scoped navigation/identity cases; inspector integration remains #46."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[34]",
+      "reference": "root breadcrumb exits nested subgraphs",
+      "ownership": "scope-navigation",
+      "production_evidence": "Native breadcrumbs/view restoration and WorkspaceDragTest scoped navigation/identity cases; inspector integration remains #46."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[35]",
+      "reference": "parent viewport restored after nested navigation",
+      "ownership": "scope-navigation",
+      "production_evidence": "Native breadcrumbs/view restoration and WorkspaceDragTest scoped navigation/identity cases; inspector integration remains #46."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[36]",
+      "reference": "navigation leaves graph routing unchanged",
+      "ownership": "scope-navigation",
+      "production_evidence": "Native breadcrumbs/view restoration and WorkspaceDragTest scoped navigation/identity cases; inspector integration remains #46."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[37]",
+      "reference": "collapse deduplicates shared incoming stream without duplicate parent wires",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[38]",
+      "reference": "shared Input router preserves internal fanout and both outputs",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[39]",
+      "reference": "mask-only interface cannot be wired into an image input",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[40]",
+      "reference": "nonconvex collapse rejects new parent cycle atomically",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[41]",
+      "reference": "disconnected processing selection receives a wired formal Output automatically",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[42]",
+      "reference": "collapsing Viewer auto-wires its image input through formal Output",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[43]",
+      "reference": "full graph collapse exposes composed result rather than arbitrary source plate",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/verification/checks[44]",
+      "reference": "output-less disconnected Viewer collapse rejects without unwired placeholder",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/implementation[0]",
+      "reference": "One canvas pointer owner replaces competing node/port MouseAreas.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/implementation[1]",
+      "reference": "Dragging uses per-axis preview deltas and updates model positions once on release; no global revision increment during motion.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/implementation[2]",
+      "reference": "Port visuals use node-local geometry; no per-motion rebuild of port geometry or full preview maps.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/implementation[3]",
+      "reference": "Global indexed node lookup keeps inspectors bound across scope navigation.",
+      "ownership": "scope-navigation",
+      "production_evidence": "Stable scoped queries are implemented; actual parent Parameters inspector binding cannot be accepted until #46 exists."
+    },
+    {
+      "id": "subnet-interaction-session.json:/implementation[4]",
+      "reference": "Explicit edge output IDs and typed image/mask inputs preserve subnet interface routing.",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/implementation[5]",
+      "reference": "Collapsed terminals are auto-wired and positioned above/below the retained internal layout. Viewer sinks expose their incoming composed image, not an arbitrary Read source.",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/controls/navigation",
+      "reference": "Left-drag empty space pans; middle-drag also pans. Wheel/trackpad zoom is cursor-anchored and proportional to delta.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/controls/selection",
+      "reference": "Shift-drag empty space adds intersecting nodes to a box selection; Shift-click toggles; dragging a selected node moves the group. Empty click clears selection.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/controls/ports",
+      "reference": "14 logical-pixel screen-space acquisition radius independent of zoom, with node-core protection, nearest-port hover highlighting and wire preview snapping.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/controls/masks",
+      "reference": "Hollow right-side optional mask ports on non-Read processing/viewer nodes. Formal Input/Output routing terminals use only their declared interface ports.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/controls/collapse",
+      "reference": "Right-click selection or empty background > Collapse to subnetwork. Child graph auto-generates wired Input/Output terminals, preserves masks/fanout/multiple outputs, and supports nested collapse.",
+      "ownership": "hierarchy-command",
+      "production_evidence": "NetworkCommandsTest cases; native parent/inside/nested captures. Native fixture uses two Merge branches; typed mask crossing is model-tested."
+    },
+    {
+      "id": "subnet-interaction-session.json:/controls/subnet_navigation",
+      "reference": "Click subnet > affordance or Enter subnet context action; breadcrumb buttons navigate ancestors. First entry frames all terminals; revisits restore view.",
+      "ownership": "scope-navigation",
+      "production_evidence": "Native breadcrumbs/view restoration and WorkspaceDragTest scoped navigation/identity cases; inspector integration remains #46."
+    },
+    {
+      "id": "subnet-interaction-session.json:/controls/cancellation",
+      "reference": "Escape/right-click cancels wire, placement or node-drag previews without committing. Invalid wire drops preserve existing connections.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    },
+    {
+      "id": "subnet-interaction-session.json:/controls/existing_workflows",
+      "reference": "Tab catalog search and pending placement, insertion of disconnected processing nodes onto wires, double-click inspector and viewer assignment retained.",
+      "ownership": "preserve-accepted-graph",
+      "production_evidence": "Protected #44 behavior; full UI suite and native low-zoom selection checks. Not a claim of 59 independent native passes."
+    }
+  ],
+  "live_reference_probe": {
+    "qml_files_byte_matched": 28,
+    "viewport": [
+      1568,
+      926
+    ],
+    "dpr": 1,
+    "input": "Qt-injected window events, not physical-pointer acceptance",
+    "result": "Selecting color1+transform1 and triggering Collapse to subnetwork produced Collapse rejected: Graph contains an invalid edge port.",
+    "source_observation": "Archived makeNode declares (id,name,type,x,y) at line 492; collapse at line 2320 calls makeNode with four arguments, omitting type. No reference source was modified. Retained subnet session captures remain the demonstrated behavior authority."
+  },
+  "comparison_notes": "Current runtime menu uses byte-matched archived QML; archived successful subnet captures supply topology/layout authority. Their older tall/neutral nodes are superseded by the compact node-style acceptance. Production uses actual catalog Merge nodes instead of missing ColorCorrect/Transform, and an unbound optional Mask terminal. Comparisons are evidence for owner review, not automatic parity approval."
+}

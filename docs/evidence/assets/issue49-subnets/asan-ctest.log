@@ -1,0 +1,207 @@
+[HANDLER_OUTPUT] 
+Test project /home/rgame/dev/Nemo_Dev2/build/asan
+
+        Start 354: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure
+        Start 288: Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion
+  1/100 Test #288: Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion ..................   Passed   15.22 sec
+        Start 281: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations
+  2/100 Test #354: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure ............................   Passed   22.09 sec
+        Start 328: WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks
+  3/100 Test #328: WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks ............................   Passed    1.12 sec
+        Start 333: WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress
+  4/100 Test #333: WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress ...........................   Passed    1.09 sec
+        Start 336: WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition
+  5/100 Test #336: WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition ............   Passed    1.43 sec
+        Start 335: WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView
+  6/100 Test #335: WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView ...............   Passed    1.43 sec
+        Start 332: WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease
+  7/100 Test #332: WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease ..............   Passed    1.04 sec
+        Start 331: WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets
+  8/100 Test #281: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations ....................   Passed   13.21 sec
+        Start 327: WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer
+  9/100 Test #331: WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets ............................   Passed    1.05 sec
+        Start 337: WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy
+ 10/100 Test #327: WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer ...............................   Passed    1.04 sec
+        Start 334: WorkspaceDragTest.GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText
+ 11/100 Test #337: WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy ...............   Passed    1.03 sec
+        Start 330: WorkspaceDragTest.EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry
+ 12/100 Test #334: WorkspaceDragTest.GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText ......   Passed    0.97 sec
+        Start 338: WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance
+ 13/100 Test #330: WorkspaceDragTest.EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry ..................   Passed    1.01 sec
+        Start 364: PanelContextUiTest.BindingAndRoleMenusExposePresentationChoices
+ 14/100 Test #338: WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance .........................   Passed    0.87 sec
+        Start 365: PanelContextUiTest.FollowActiveTracksPointerActivatedPanel
+ 15/100 Test #364: PanelContextUiTest.BindingAndRoleMenusExposePresentationChoices ..........................   Passed    0.82 sec
+        Start 366: PanelContextUiTest.GroupClocksAreIsolatedAndPinnedContextStaysFixed
+ 16/100 Test #365: PanelContextUiTest.FollowActiveTracksPointerActivatedPanel ...............................   Passed    0.82 sec
+        Start 329: WorkspaceDragTest.LowZoomConnectedNodeBodiesRemainSelectable
+ 17/100 Test #366: PanelContextUiTest.GroupClocksAreIsolatedAndPinnedContextStaysFixed ......................   Passed    0.79 sec
+        Start 326: WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges
+ 18/100 Test #329: WorkspaceDragTest.LowZoomConnectedNodeBodiesRemainSelectable .............................   Passed    0.85 sec
+        Start 324: WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures
+ 19/100 Test #324: WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures ............................   Passed    1.10 sec
+        Start 323: WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct
+ 20/100 Test #326: WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges ....................   Passed    1.67 sec
+        Start 325: WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits
+ 21/100 Test #323: WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct .......................   Passed    1.04 sec
+        Start 344: Interactive.GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds
+ 22/100 Test #344: Interactive.GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds ...............   Passed    0.17 sec
+        Start 343: Interactive.GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically
+ 23/100 Test #343: Interactive.GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically .....................   Passed    0.18 sec
+        Start 345: Interactive.GraphScopeEditsDoNotFallBackToRoot
+ 24/100 Test #325: WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits .........................   Passed    0.91 sec
+        Start 346: Interactive.CollapseSelectionReturnsCommittedInstanceNodeAndRestoresAtomically
+ 25/100 Test #345: Interactive.GraphScopeEditsDoNotFallBackToRoot ...........................................   Passed    0.17 sec
+        Start 347: Interactive.DisconnectedProcessingNodeDropsOntoWireAtomically
+ 26/100 Test #346: Interactive.CollapseSelectionReturnsCommittedInstanceNodeAndRestoresAtomically ...........   Passed    0.18 sec
+        Start 351: Interactive.OutputSelectionUsesCatalogDeclaration
+ 27/100 Test #347: Interactive.DisconnectedProcessingNodeDropsOntoWireAtomically ............................   Passed    0.19 sec
+        Start 353: Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically
+ 28/100 Test #351: Interactive.OutputSelectionUsesCatalogDeclaration ........................................   Passed    0.17 sec
+        Start 348: Interactive.GraphCreationUndoPreservesExistingConnections
+ 29/100 Test #353: Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically .................   Passed    0.17 sec
+        Start 352: Interactive.PresentationConsumersShareSessionHistoryAndLifetime
+ 30/100 Test #348: Interactive.GraphCreationUndoPreservesExistingConnections ................................   Passed    0.18 sec
+        Start 142: NetworkCommandsTest.NestedCollapseRetainsExternalScopeAndUnpacksWithoutChangingPixels
+ 31/100 Test #142: NetworkCommandsTest.NestedCollapseRetainsExternalScopeAndUnpacksWithoutChangingPixels ....   Passed    0.10 sec
+        Start 350: Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata
+ 32/100 Test #352: Interactive.PresentationConsumersShareSessionHistoryAndLifetime ..........................   Passed    0.17 sec
+        Start 349: Interactive.TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently
+ 33/100 Test #350: Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata ..................   Passed    0.17 sec
+        Start  51: CommandStackTest.RoutePointCommandsAndLayoutBatchAreAtomic
+ 34/100 Test #349: Interactive.TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently ....................   Passed    0.17 sec
+        Start  53: CommandStackTest.ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode
+ 35/100 Test  #51: CommandStackTest.RoutePointCommandsAndLayoutBatchAreAtomic ...............................   Passed    0.07 sec
+        Start  55: CommandStackTest.CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch
+ 36/100 Test  #53: CommandStackTest.ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode ...   Passed    0.07 sec
+        Start  56: CommandStackTest.RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic
+ 37/100 Test  #55: CommandStackTest.CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch .............   Passed    0.07 sec
+        Start  48: CommandStackTest.GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt
+ 38/100 Test  #56: CommandStackTest.RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic ............   Passed    0.07 sec
+        Start  50: CommandStackTest.InsertNodeOnEdgePreservesDestinationAndOutputFanOut
+ 39/100 Test  #48: CommandStackTest.GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt ..............   Passed    0.07 sec
+        Start 143: NetworkCommandsTest.CopyDuplicatesLocalStructureButRetainsNestedExplicitLinks
+ 40/100 Test  #50: CommandStackTest.InsertNodeOnEdgePreservesDestinationAndOutputFanOut .....................   Passed    0.07 sec
+        Start 138: NetworkCommandsTest.PromotionIsMetadataOnlyAndIndependentCloneDetachesOneOccurrence
+ 41/100 Test #143: NetworkCommandsTest.CopyDuplicatesLocalStructureButRetainsNestedExplicitLinks ............   Passed    0.08 sec
+        Start  52: CommandStackTest.GraphDeletionProtectsFormalOutputTerminal
+ 42/100 Test #138: NetworkCommandsTest.PromotionIsMetadataOnlyAndIndependentCloneDetachesOneOccurrence ......   Passed    0.08 sec
+        Start  54: CommandStackTest.CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically
+ 43/100 Test  #52: CommandStackTest.GraphDeletionProtectsFormalOutputTerminal ...............................   Passed    0.07 sec
+        Start  49: CommandStackTest.OccupiedInputReplacementPreservesMergeFanOutAndUndo
+ 44/100 Test  #54: CommandStackTest.CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically ..............   Passed    0.07 sec
+        Start 141: NetworkCommandsTest.NonconvexCollapseRejectsParentCycleWithoutPublishing
+ 45/100 Test  #49: CommandStackTest.OccupiedInputReplacementPreservesMergeFanOutAndUndo .....................   Passed    0.07 sec
+        Start 144: NetworkCommandsTest.DisconnectedViewerCollapseRejectsWithoutInventingAnOutput
+ 46/100 Test #141: NetworkCommandsTest.NonconvexCollapseRejectsParentCycleWithoutPublishing .................   Passed    0.08 sec
+        Start 137: NetworkCommandsTest.InvalidCollapseIsAtomic
+ 47/100 Test #144: NetworkCommandsTest.DisconnectedViewerCollapseRejectsWithoutInventingAnOutput ............   Passed    0.07 sec
+        Start 139: NetworkCommandsTest.ViewerOnlyCollapseRoutesExternalInputThroughSubnetOutput
+ 48/100 Test #137: NetworkCommandsTest.InvalidCollapseIsAtomic ..............................................   Passed    0.07 sec
+        Start 136: NetworkCommandsTest.CollapseClassifiesCrossingsAndUndoRestoresBothScopes
+ 49/100 Test #139: NetworkCommandsTest.ViewerOnlyCollapseRoutesExternalInputThroughSubnetOutput .............   Passed    0.07 sec
+        Start 140: NetworkCommandsTest.OwnedLocalDefinitionIsRemovedWithoutTouchingLinkedDefinition
+ 50/100 Test #136: NetworkCommandsTest.CollapseClassifiesCrossingsAndUndoRestoresBothScopes .................   Passed    0.07 sec
+        Start 284: Interactive.CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken
+ 51/100 Test #140: NetworkCommandsTest.OwnedLocalDefinitionIsRemovedWithoutTouchingLinkedDefinition .........   Passed    0.07 sec
+        Start 287: Interactive.RangeAtLastRepresentableFrameTerminatesWithoutWrapping
+ 52/100 Test #284: Interactive.CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken ...................   Passed    0.09 sec
+        Start 286: Interactive.CancellationRejectsInflightAndSupersededBacklogIsCounted
+ 53/100 Test #287: Interactive.RangeAtLastRepresentableFrameTerminatesWithoutWrapping .......................   Passed    0.09 sec
+        Start 283: Interactive.CacheHistorySurvivesScrubButCancellationCannotBeResurrected
+ 54/100 Test #286: Interactive.CancellationRejectsInflightAndSupersededBacklogIsCounted .....................   Passed    0.09 sec
+        Start 282: Interactive.FullQueueReportsBackpressureWithoutDroppingAnotherViewer
+ 55/100 Test #283: Interactive.CacheHistorySurvivesScrubButCancellationCannotBeResurrected ..................   Passed    0.09 sec
+        Start 285: Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot
+ 56/100 Test #282: Interactive.FullQueueReportsBackpressureWithoutDroppingAnotherViewer .....................   Passed    0.09 sec
+        Start  14: EvaluationTest.NestedAnimationUsesDefinitionThenInstancePrecedence
+ 57/100 Test #285: Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot .....................   Passed    0.09 sec
+        Start  46: CommandStackTest.InvalidTypedBatchLeavesDocumentAndHistoryUntouched
+ 58/100 Test  #14: EvaluationTest.NestedAnimationUsesDefinitionThenInstancePrecedence .......................   Passed    0.08 sec
+        Start  45: CommandStackTest.TypedParameterBatchResetAndUndoRedoAreAtomic
+ 59/100 Test  #46: CommandStackTest.InvalidTypedBatchLeavesDocumentAndHistoryUntouched ......................   Passed    0.07 sec
+        Start  47: CommandStackTest.InstanceParameterBatchRequiresDefinitionNetworkScope
+ 60/100 Test  #45: CommandStackTest.TypedParameterBatchResetAndUndoRedoAreAtomic ............................   Passed    0.07 sec
+        Start  13: EvaluationTest.AnimatedParametersReachCpuPlanAndPixelsWithoutMutatingDocument
+ 61/100 Test  #47: CommandStackTest.InstanceParameterBatchRequiresDefinitionNetworkScope ....................   Passed    0.07 sec
+        Start  44: CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks
+ 62/100 Test  #44: CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks ......   Passed    0.07 sec
+        Start 135: NetworkTest.SharedConstSnapshotEvaluatesNestedNetworksConcurrently
+ 63/100 Test  #13: EvaluationTest.AnimatedParametersReachCpuPlanAndPixelsWithoutMutatingDocument ............   Passed    0.07 sec
+        Start 131: NetworkTest.ImageAndMaskBoundariesAndNestedCyclesAreRejectedAtomically
+ 64/100 Test #131: NetworkTest.ImageAndMaskBoundariesAndNestedCyclesAreRejectedAtomically ...................   Passed    0.08 sec
+        Start  42: CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity
+ 65/100 Test #135: NetworkTest.SharedConstSnapshotEvaluatesNestedNetworksConcurrently .......................   Passed    0.08 sec
+        Start  41: CommandStackTest.FailedTransactionIsAtomic
+ 66/100 Test  #41: CommandStackTest.FailedTransactionIsAtomic ...............................................   Passed    0.07 sec
+        Start  18: EvaluationTest.NestedSharedInstancesKeepScopedOverridesAndLazyInputs
+ 67/100 Test  #42: CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity ......................   Passed    0.07 sec
+        Start  10: EvaluationTest.ExplicitOutputSelectionUsesNetworkScope
+ 68/100 Test  #18: EvaluationTest.NestedSharedInstancesKeepScopedOverridesAndLazyInputs .....................   Passed    0.08 sec
+        Start 134: NetworkTest.NetworkSchemaRoundTripPreservesInterfacesAndInstances
+ 69/100 Test  #10: EvaluationTest.ExplicitOutputSelectionUsesNetworkScope ...................................   Passed    0.08 sec
+        Start  16: EvaluationTest.UnknownTypeHasNoFabricatedContractAndFailsExplicitly
+ 70/100 Test  #16: EvaluationTest.UnknownTypeHasNoFabricatedContractAndFailsExplicitly ......................   Passed    0.07 sec
+        Start 126: GraphTest.FormalInputReservationRejectsBypassAndCanBeReleased
+ 71/100 Test #134: NetworkTest.NetworkSchemaRoundTripPreservesInterfacesAndInstances ........................   Passed    0.07 sec
+        Start 130: NetworkTest.UndoingNetworkCreationDoesNotLoseRetiredNodeWatermarks
+ 72/100 Test #126: GraphTest.FormalInputReservationRejectsBypassAndCanBeReleased ............................   Passed    0.07 sec
+        Start 124: GraphTest.LayoutAndRoutesArePersistentGraphData
+ 73/100 Test #130: NetworkTest.UndoingNetworkCreationDoesNotLoseRetiredNodeWatermarks .......................   Passed    0.07 sec
+        Start 133: NetworkTest.TransactionCreatesNativeNodesAndSelectsOutputAsOneUndoStep
+ 74/100 Test #133: NetworkTest.TransactionCreatesNativeNodesAndSelectsOutputAsOneUndoStep ...................   Passed    0.07 sec
+        Start 128: NetworkTest.FreshDocumentHasRootNetworkAndDefaultOutput
+ 75/100 Test #124: GraphTest.LayoutAndRoutesArePersistentGraphData ..........................................   Passed    0.07 sec
+        Start 125: GraphTest.UnknownNodeHasNoFabricatedPortContract
+ 76/100 Test #125: GraphTest.UnknownNodeHasNoFabricatedPortContract .........................................   Passed    0.07 sec
+        Start 132: NetworkTest.SharedDefinitionHasIndependentInstanceBindingsAndValues
+ 77/100 Test #128: NetworkTest.FreshDocumentHasRootNetworkAndDefaultOutput ..................................   Passed    0.07 sec
+        Start 127: GraphTest.ImageAndMaskPortsRejectIncompatibleConnections
+ 78/100 Test #132: NetworkTest.SharedDefinitionHasIndependentInstanceBindingsAndValues ......................   Passed    0.07 sec
+        Start 129: NetworkTest.NetworkScopedIdentitiesUndoAndRedo
+ 79/100 Test #127: GraphTest.ImageAndMaskPortsRejectIncompatibleConnections .................................   Passed    0.07 sec
+        Start 116: GraphTest.AddNodeAssignsDistinctIncreasingIds
+ 80/100 Test #129: NetworkTest.NetworkScopedIdentitiesUndoAndRedo ...........................................   Passed    0.07 sec
+        Start 119: GraphTest.ConnectRejectsDirectAndTransitiveCycles
+ 81/100 Test #116: GraphTest.AddNodeAssignsDistinctIncreasingIds ............................................   Passed    0.07 sec
+        Start 120: GraphTest.InputPortOccupiedBySingleEdge
+ 82/100 Test #119: GraphTest.ConnectRejectsDirectAndTransitiveCycles ........................................   Passed    0.07 sec
+        Start 118: GraphTest.ConnectRejectsUnknownNode
+ 83/100 Test #120: GraphTest.InputPortOccupiedBySingleEdge ..................................................   Passed    0.07 sec
+        Start 121: GraphTest.RemoveNodeDropsTouchingEdges
+ 84/100 Test #121: GraphTest.RemoveNodeDropsTouchingEdges ...................................................   Passed    0.07 sec
+        Start 122: GraphTest.DisconnectUnknownEdgeExplains
+ 85/100 Test #118: GraphTest.ConnectRejectsUnknownNode ......................................................   Passed    0.07 sec
+        Start 117: GraphTest.DuplicateNodeNameRejected
+ 86/100 Test #117: GraphTest.DuplicateNodeNameRejected ......................................................   Passed    0.07 sec
+        Start 123: GraphTest.RemovedIdsAreNeverReused
+ 87/100 Test #122: GraphTest.DisconnectUnknownEdgeExplains ..................................................   Passed    0.07 sec
+        Start  40: CommandStackTest.FailingApplyLeavesDocumentUntouched
+ 88/100 Test  #40: CommandStackTest.FailingApplyLeavesDocumentUntouched .....................................   Passed    0.07 sec
+        Start  38: CommandStackTest.UndoRestoresAndRedoReapplies
+ 89/100 Test #123: GraphTest.RemovedIdsAreNeverReused .......................................................   Passed    0.07 sec
+        Start  39: CommandStackTest.NewCommandDropsRedoBranch
+ 90/100 Test  #38: CommandStackTest.UndoRestoresAndRedoReapplies ............................................   Passed    0.07 sec
+        Start  37: CommandStackTest.PushAppliesImmediately
+ 91/100 Test  #39: CommandStackTest.NewCommandDropsRedoBranch ...............................................   Passed    0.07 sec
+        Start  12: EvaluationTest.RepeatedRequestsAreDeterministicAndFrameSensitive
+ 92/100 Test  #37: CommandStackTest.PushAppliesImmediately ..................................................   Passed    0.07 sec
+        Start  43: CommandStackTest.HistoryBoundedByCapacity
+ 93/100 Test  #12: EvaluationTest.RepeatedRequestsAreDeterministicAndFrameSensitive .........................   Passed    0.07 sec
+        Start  11: EvaluationTest.InvalidTypeConnectionRejectedByGraph
+ 94/100 Test  #43: CommandStackTest.HistoryBoundedByCapacity ................................................   Passed    0.07 sec
+        Start   7: EvaluationTest.LinearChainRendersPatternThroughOutput
+ 95/100 Test  #11: EvaluationTest.InvalidTypeConnectionRejectedByGraph ......................................   Passed    0.07 sec
+        Start   9: EvaluationTest.MissingOutputNodeFailsWithClearError
+ 96/100 Test   #7: EvaluationTest.LinearChainRendersPatternThroughOutput ....................................   Passed    0.07 sec
+        Start  17: EvaluationTest.RequestValidationRejectsUnsupportedChannelsAndQuality
+ 97/100 Test   #9: EvaluationTest.MissingOutputNodeFailsWithClearError ......................................   Passed    0.07 sec
+        Start  15: EvaluationTest.UnconnectedRequiredInputIdentifiesTheNode
+ 98/100 Test  #17: EvaluationTest.RequestValidationRejectsUnsupportedChannelsAndQuality .....................   Passed    0.08 sec
+        Start   8: EvaluationTest.MergeCompositesPatternOverConstColor
+ 99/100 Test  #15: EvaluationTest.UnconnectedRequiredInputIdentifiesTheNode .................................   Passed    0.07 sec
+100/100 Test   #8: EvaluationTest.MergeCompositesPatternOverConstColor ......................................   Passed    0.07 sec
+
+100% tests passed, 0 tests failed out of 100
+
+Total Test time (real) =  38.74 sec

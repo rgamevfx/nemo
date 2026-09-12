@@ -874,8 +874,11 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             const auto terminalId =
                 network.addInput(p.at("name").get<std::string>(), parseKind(p.at("kind"), context + " input"),
                                  requiredId(p, "id", context + " input"), allowFanOut);
+            if (p.contains("layout"))
+                network.setFormalPortLayout(PortDirection::Input, terminalId,
+                                            parseLayout(p.at("layout"), context + " input layout"));
             network.restorePortExtension(PortDirection::Input, terminalId,
-                                         collectUnknownFields(p, {"id", "name", "kind", "allowFanOut"}));
+                                         collectUnknownFields(p, {"id", "name", "kind", "allowFanOut", "layout"}));
         }
     }
     if (entry.contains("outputs")) {
@@ -892,8 +895,11 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             const auto terminalId =
                 network.addOutput(p.at("name").get<std::string>(), parseKind(p.at("kind"), context + " output"),
                                   requiredId(p, "id", context + " output"), allowFanOut);
+            if (p.contains("layout"))
+                network.setFormalPortLayout(PortDirection::Output, terminalId,
+                                            parseLayout(p.at("layout"), context + " output layout"));
             network.restorePortExtension(PortDirection::Output, terminalId,
-                                         collectUnknownFields(p, {"id", "name", "kind", "allowFanOut"}));
+                                         collectUnknownFields(p, {"id", "name", "kind", "allowFanOut", "layout"}));
         }
     }
     const auto nodes = entry.find("nodes");
@@ -1063,6 +1069,19 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             }
         }
     }
+    if (entry.contains("outputInputBindings")) {
+        if (!entry.at("outputInputBindings").is_array())
+            throw DeserializeError(context + ": outputInputBindings must be an array");
+        for (const auto& binding : entry.at("outputInputBindings")) {
+            const auto output = requiredId(binding, "output", context + " outputInputBinding");
+            const auto input = requiredId(binding, "input", context + " outputInputBinding");
+            try {
+                network.connectOutputToInput(output, input);
+            } catch (const GraphException& error) {
+                throw DeserializeError(context + " outputInputBinding: " + std::string(error.what()));
+            }
+        }
+    }
     if (entry.contains("defaultOutput")) {
         const auto selected = unsignedValue(entry.at("defaultOutput"), context + " defaultOutput");
         if (selected != kInvalidNode) {
@@ -1073,9 +1092,27 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             }
         }
     }
-    network.setExtension(
-        collectUnknownFields(entry, {"id", "name", "defaultOutput", "nextNodeId", "nextEdgeId", "nextInterfacePortId",
-                                     "inputs", "outputs", "nodes", "edges", "inputConnections", "outputConnections"}));
+    if (entry.contains("exposedParameters")) {
+        if (!entry.at("exposedParameters").is_array())
+            throw DeserializeError(context + ": exposedParameters must be an array");
+        for (const auto& exposed : entry.at("exposedParameters")) {
+            if (!exposed.is_object() || !exposed.contains("id") || !exposed.contains("node") ||
+                !exposed.contains("key") || !exposed.contains("name") || !exposed.at("key").is_string() ||
+                !exposed.at("name").is_string())
+                throw DeserializeError(context + ": malformed exposed parameter");
+            try {
+                (void)network.addExposedParameter(
+                    requiredId(exposed, "node", context + " exposed parameter"), exposed.at("key").get<std::string>(),
+                    exposed.at("name").get<std::string>(), requiredId(exposed, "id", context + " exposed parameter"));
+            } catch (const GraphException& error) {
+                throw DeserializeError(context + ": " + std::string(error.what()));
+            }
+        }
+    }
+    network.setExtension(collectUnknownFields(
+        entry, {"id", "name", "defaultOutput", "nextNodeId", "nextEdgeId", "nextInterfacePortId", "inputs", "outputs",
+                "nodes", "edges", "inputConnections", "outputConnections", "outputInputBindings",
+                "exposedParameters"}));
     network.restoreIdentityHighWatermarks(
         watermark(entry, "nextNodeId", "network").value_or(network.graph().nextNodeId()),
         watermark(entry, "nextEdgeId", "network").value_or(network.graph().nextEdgeId()),
@@ -1148,7 +1185,8 @@ nlohmann::json saveDocument(const Document& document) {
                 nlohmann::json value{{"id", p.id},
                                      {"name", p.name},
                                      {"kind", kindName(p.kind)},
-                                     {"allowFanOut", p.allowFanOut}};
+                                     {"allowFanOut", p.allowFanOut},
+                                     {"layout", layoutJson(p.layout)}};
                 applyUnknownFields(value, p.extension);
                 result.push_back(std::move(value));
             }
@@ -1164,6 +1202,16 @@ nlohmann::json saveDocument(const Document& document) {
                              {"outputs", formal(network.outputs())},
                              {"nodes", nodes},
                              {"edges", edges}};
+        value["outputInputBindings"] = nlohmann::json::array();
+        for (const auto& [output, input] : network.outputInputBindings())
+            value["outputInputBindings"].push_back({{"output", output}, {"input", input}});
+        value["exposedParameters"] = nlohmann::json::array();
+        for (const auto& exposed : network.exposedParameters())
+            value["exposedParameters"].push_back({{"id", exposed.id},
+                                                  {"node", exposed.node},
+                                                  {"key", exposed.key},
+                                                  {"name", exposed.name},
+                                                  {"type", static_cast<int>(exposed.type)}});
         value["inputConnections"] = nlohmann::json::array();
         for (const auto& c : network.inputConnections())
             value["inputConnections"].push_back(
@@ -1203,6 +1251,7 @@ nlohmann::json saveDocument(const Document& document) {
                              {"definition", instance.definition},
                              {"node", instance.node},
                              {"name", instance.name},
+                             {"ownsDefinition", instance.ownsDefinition},
                              {"params", std::move(instanceParams)}};
         value["inputBindings"] = nlohmann::json::array();
         for (const auto& [terminal, source] : instance.inputBindings)
@@ -1473,7 +1522,8 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
             const bool hasOpaqueParams = !opaqueParams.empty();
             try {
                 (void)result.document.addInstanceWithId(id, parent, definition, node, e.at("name").get<std::string>(),
-                                                        std::move(bindings), std::move(params));
+                                                        std::move(bindings), std::move(params),
+                                                        e.value("ownsDefinition", false));
                 result.document.restoreInstanceExtension(id, std::move(extension), std::move(opaqueParams));
             } catch (const std::exception& error) {
                 throw DeserializeError(context + ": " + error.what());

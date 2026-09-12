@@ -192,6 +192,20 @@ void Graph::renameNode(NodeId id, std::string name) {
     ++revision_;
     recordNode(id);
 }
+void Graph::setInstanceDefinition(NodeId id, NetworkId definition, NetworkInstanceId instance) {
+    std::size_t index = 0;
+    NodeInstance* target = mutableNode(id, index);
+    if (!target)
+        throw GraphException(GraphError::UnknownNode, "cannot update definition on unknown node " + std::to_string(id));
+    if (definition == kInvalidNetwork || instance == kInvalidNetworkInstance)
+        throw GraphException(GraphError::InvalidInstance, "an occurrence requires definition and instance identities");
+    if (target->definition == definition && target->instance == instance)
+        return;
+    target->definition = definition;
+    target->instance = instance;
+    ++revision_;
+    recordNode(id);
+}
 
 void Graph::removeNode(NodeId id) {
     const std::size_t nodeIndex = nodeIndexOf(id);
@@ -574,6 +588,18 @@ FormalPort* Network::findPort(std::vector<FormalPort>& ports, InterfacePortId id
     return it == ports.end() ? nullptr : &*it;
 }
 
+const ExposedParameter* Network::findExposedParameter(InterfacePortId id) const {
+    const auto it = std::find_if(exposedParameters_.begin(), exposedParameters_.end(),
+                                 [id](const ExposedParameter& value) { return value.id == id; });
+    return it == exposedParameters_.end() ? nullptr : &*it;
+}
+
+ExposedParameter* Network::findExposedParameter(InterfacePortId id) {
+    const auto it = std::find_if(exposedParameters_.begin(), exposedParameters_.end(),
+                                 [id](const ExposedParameter& value) { return value.id == id; });
+    return it == exposedParameters_.end() ? nullptr : &*it;
+}
+
 const FormalPort* Network::input(InterfacePortId id) const {
     return findPort(inputs_, id);
 }
@@ -582,6 +608,9 @@ const FormalPort* Network::output(InterfacePortId id) const {
 }
 const FormalPort* Network::input(std::string_view name) const {
     return findPort(inputs_, name);
+}
+const FormalPort* Network::output(std::string_view name) const {
+    return findPort(outputs_, name);
 }
 InterfacePortId Network::addFormalPortImpl(PortDirection direction, std::string name, PortKind kind, InterfacePortId id,
                                            bool allowFanOut) {
@@ -617,6 +646,85 @@ InterfacePortId Network::addOutput(std::string name, PortKind kind, InterfacePor
 InterfacePortId Network::addFormalPort(PortDirection direction, std::string name, PortKind kind, InterfacePortId id,
                                        bool allowFanOut) {
     return addFormalPortImpl(direction, std::move(name), kind, id, allowFanOut);
+}
+void Network::renameFormalPort(PortDirection direction, InterfacePortId id, std::string name) {
+    if (name.empty())
+        throw GraphException(GraphError::InvalidName, "formal port name must not be empty");
+    auto& ports = direction == PortDirection::Input ? inputs_ : outputs_;
+    FormalPort* target = findPort(ports, id);
+    if (!target)
+        throw GraphException(GraphError::UnknownEdge, "cannot rename unknown formal port " + std::to_string(id));
+    if (std::any_of(ports.begin(), ports.end(),
+                    [&](const FormalPort& candidate) { return candidate.id != id && candidate.name == name; }))
+        throw GraphException(GraphError::DuplicateName, "formal port name '" + name + "' is already in use");
+    if (target->name == name)
+        return;
+    target->name = std::move(name);
+    ++revision_;
+}
+
+void Network::setFormalPortLayout(PortDirection direction, InterfacePortId id, LayoutPosition layout) {
+    auto& ports = direction == PortDirection::Input ? inputs_ : outputs_;
+    FormalPort* target = findPort(ports, id);
+    if (!target)
+        throw GraphException(GraphError::UnknownEdge, "cannot position unknown formal port " + std::to_string(id));
+    if (target->layout == layout)
+        return;
+    target->layout = layout;
+    ++revision_;
+}
+
+InterfacePortId Network::addExposedParameter(NodeId node, std::string key, std::string name, InterfacePortId id) {
+    if (!graph_.node(node))
+        throw GraphException(GraphError::UnknownNode,
+                             "cannot expose parameter on unknown node " + std::to_string(node));
+    if (key.empty() || name.empty())
+        throw GraphException(GraphError::InvalidName, "exposed parameter key and name must not be empty");
+    if (!graph_.catalog().parameterSpec(graph_.node(node)->type, key))
+        throw GraphException(GraphError::ParameterValue,
+                             "node '" + std::to_string(node) + "' has no parameter '" + key + "'");
+    if (std::any_of(exposedParameters_.begin(), exposedParameters_.end(),
+                    [&](const ExposedParameter& value) { return value.name == name; }))
+        throw GraphException(GraphError::DuplicateName, "exposed parameter name '" + name + "' is already in use");
+    if (id == kInvalidInterfacePort) {
+        if (nextInterfacePortId_ == std::numeric_limits<InterfacePortId>::max())
+            throw GraphException(GraphError::InvalidId, "exposed parameter identity space is exhausted");
+        id = nextInterfacePortId_;
+    }
+    if (id == kInvalidInterfacePort || id == std::numeric_limits<InterfacePortId>::max() || input(id) || output(id) ||
+        findExposedParameter(id))
+        throw GraphException(GraphError::DuplicateId,
+                             "interface identity " + std::to_string(id) + " is already in use");
+    const auto* spec = graph_.catalog().parameterSpec(graph_.node(node)->type, key);
+    exposedParameters_.push_back(
+        ExposedParameter{.id = id, .node = node, .key = std::move(key), .name = std::move(name), .type = spec->type});
+    nextInterfacePortId_ = std::max(nextInterfacePortId_, static_cast<InterfacePortId>(id + 1));
+    ++revision_;
+    return id;
+}
+
+void Network::renameExposedParameter(InterfacePortId id, std::string name) {
+    if (name.empty())
+        throw GraphException(GraphError::InvalidName, "exposed parameter name must not be empty");
+    ExposedParameter* target = findExposedParameter(id);
+    if (!target)
+        throw GraphException(GraphError::UnknownEdge, "cannot rename unknown exposed parameter " + std::to_string(id));
+    if (std::any_of(exposedParameters_.begin(), exposedParameters_.end(),
+                    [&](const ExposedParameter& value) { return value.id != id && value.name == name; }))
+        throw GraphException(GraphError::DuplicateName, "exposed parameter name '" + name + "' is already in use");
+    if (target->name == name)
+        return;
+    target->name = std::move(name);
+    ++revision_;
+}
+
+void Network::removeExposedParameter(InterfacePortId id) {
+    const auto it = std::find_if(exposedParameters_.begin(), exposedParameters_.end(),
+                                 [id](const ExposedParameter& value) { return value.id == id; });
+    if (it == exposedParameters_.end())
+        throw GraphException(GraphError::UnknownEdge, "cannot remove unknown exposed parameter " + std::to_string(id));
+    exposedParameters_.erase(it);
+    ++revision_;
 }
 
 void Network::restorePortExtension(PortDirection direction, InterfacePortId id, nlohmann::json extension) {
@@ -713,7 +821,8 @@ std::optional<GraphErrorDetails> Network::validateOutputConnection(PortRef sourc
                                                            ")"};
     if (std::find_if(outputConnections_.begin(), outputConnections_.end(),
                      [output](const TerminalConnection& connection) { return connection.terminal == output; }) !=
-        outputConnections_.end())
+            outputConnections_.end() ||
+        outputInputBindings_.contains(output))
         return GraphErrorDetails{GraphError::PortOccupied,
                                  "formal output '" + terminal->name + "' is already selected"};
     return std::nullopt;
@@ -727,15 +836,42 @@ void Network::connectOutput(PortRef source, InterfacePortId output) {
     ++revision_;
     record();
 }
-
 void Network::disconnectOutput(InterfacePortId output) {
     syncTerminalConnections();
     const auto it =
         std::find_if(outputConnections_.begin(), outputConnections_.end(),
                      [output](const TerminalConnection& connection) { return connection.terminal == output; });
-    if (it == outputConnections_.end())
-        throw GraphException(GraphError::UnknownEdge, "formal output connection does not exist");
-    outputConnections_.erase(it);
+    if (it != outputConnections_.end()) {
+        outputConnections_.erase(it);
+        ++revision_;
+        return;
+    }
+    if (outputInputBindings_.erase(output) != 0) {
+        ++revision_;
+        return;
+    }
+    throw GraphException(GraphError::UnknownEdge, "formal output connection does not exist");
+}
+
+void Network::connectOutputToInput(InterfacePortId output, InterfacePortId input) {
+    const auto* outputPort = output ? this->output(output) : nullptr;
+    const auto* inputPort = input ? this->input(input) : nullptr;
+    if (!outputPort || !inputPort)
+        throw GraphException(GraphError::PortType, "output pass-through references an unknown terminal");
+    if (outputPort->kind != inputPort->kind)
+        throw GraphException(GraphError::PortType, "output pass-through terminal kinds do not match");
+    if (outputConnections_.end() !=
+            std::find_if(outputConnections_.begin(), outputConnections_.end(),
+                         [output](const TerminalConnection& connection) { return connection.terminal == output; }) ||
+        outputInputBindings_.contains(output))
+        throw GraphException(GraphError::PortOccupied, "formal output already has a connection");
+    outputInputBindings_.emplace(output, input);
+    ++revision_;
+}
+
+void Network::disconnectOutputToInput(InterfacePortId output) {
+    if (outputInputBindings_.erase(output) == 0)
+        throw GraphException(GraphError::UnknownEdge, "formal output pass-through does not exist");
     ++revision_;
     record();
 }

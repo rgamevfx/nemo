@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstddef>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <set>
@@ -21,6 +22,66 @@ void checkAllocatable(std::uint64_t value, const char* what) {
         throw GraphException(GraphError::InvalidId, std::string(what) + " identity space is exhausted");
 }
 
+// Graph already validates its own edges. A network that also carries instance
+// input bindings has a combined dependency graph only this pass can check.
+// `candidates` restricts the sweep to the networks one transaction could have
+// reached; nullptr checks every network (deserialization and replacement).
+void validateBoundNetworkCycles(const Document& document, const std::set<NetworkId>* candidates) {
+    std::set<NetworkId> existing;
+    for (const Network& network : document.networks())
+        existing.insert(network.id());
+    std::map<NetworkId, std::vector<std::pair<NodeId, NodeId>>> bindings;
+    for (const auto& instance : document.instances()) {
+        if (candidates != nullptr && candidates->count(instance.parentNetwork) == 0)
+            continue;
+        for (const auto& [input, source] : instance.inputBindings) {
+            static_cast<void>(input);
+            bindings[instance.parentNetwork].emplace_back(source.node, instance.node);
+        }
+    }
+    for (const auto& [networkId, boundEdges] : bindings) {
+        if (existing.count(networkId) == 0)
+            continue;
+        struct Links {
+            std::size_t incoming{};
+            std::vector<NodeId> destinations;
+        };
+        const auto& graph = document.network(networkId).graph();
+        std::map<NodeId, Links> links;
+        for (const auto& node : graph.nodes())
+            links.emplace(node.id, Links{});
+        const auto add = [&](NodeId from, NodeId to) {
+            links.at(from).destinations.push_back(to);
+            ++links.at(to).incoming;
+        };
+        for (const auto& edge : graph.edges())
+            add(edge.from.node, edge.to.node);
+        for (const auto& [from, to] : boundEdges)
+            add(from, to);
+        std::vector<NodeId> ready;
+        ready.reserve(links.size());
+        for (const auto& [node, outgoing] : links)
+            if (outgoing.incoming == 0)
+                ready.push_back(node);
+        for (std::size_t index = 0; index < ready.size(); ++index)
+            for (const auto destination : links.at(ready[index]).destinations)
+                if (--links.at(destination).incoming == 0)
+                    ready.push_back(destination);
+        if (ready.size() != links.size()) {
+            for (const auto& [source, outgoing] : links) {
+                if (outgoing.incoming == 0)
+                    continue;
+                for (const auto destination : outgoing.destinations)
+                    if (links.at(destination).incoming != 0)
+                        throw GraphException(GraphError::Cycle, "network " + std::to_string(networkId) +
+                                                                    " contains a dependency cycle through node " +
+                                                                    std::to_string(source) + " -> node " +
+                                                                    std::to_string(destination));
+            }
+        }
+    }
+}
+
 void hashLayout(std::uint64_t& hash, LayoutPosition position) {
     hashMixWord(hash, std::bit_cast<std::uint64_t>(position.x));
     hashMixWord(hash, std::bit_cast<std::uint64_t>(position.y));
@@ -36,7 +97,16 @@ void hashFormalPort(std::uint64_t& hash, const FormalPort& port) {
     hashMixWord(hash, port.id);
     hashMixWord(hash, static_cast<std::uint64_t>(port.kind));
     hashMixText(hash, port.name);
+    hashLayout(hash, port.layout);
     hashMixWord(hash, port.allowFanOut ? 1 : 0);
+}
+
+void hashExposedParameter(std::uint64_t& hash, const ExposedParameter& parameter) {
+    hashMixWord(hash, parameter.id);
+    hashMixWord(hash, parameter.node);
+    hashMixText(hash, parameter.key);
+    hashMixText(hash, parameter.name);
+    hashMixWord(hash, static_cast<std::uint64_t>(parameter.type));
 }
 
 void hashPortRef(std::uint64_t& hash, PortRef ref) {
@@ -299,7 +369,7 @@ NetworkInstanceId Document::addInstance(NetworkId parentNetwork, NetworkId defin
 NetworkInstanceId Document::addInstanceWithId(NetworkInstanceId id, NetworkId parentNetwork, NetworkId definition,
                                               NodeId node, std::string name,
                                               std::map<InterfacePortId, PortRef> inputBindings,
-                                              std::map<NodeId, ParameterValues> params) {
+                                              std::map<NodeId, ParameterValues> params, bool ownsDefinition) {
     checkAllocatable(id, "network instance");
     if (instance(id))
         throw GraphException(GraphError::DuplicateId, "network instance id " + std::to_string(id) + " already exists");
@@ -385,21 +455,48 @@ NetworkInstanceId Document::addInstanceWithId(NetworkInstanceId id, NetworkId pa
                                          .definition = definition,
                                          .node = node,
                                          .name = std::move(name),
+                                         .ownsDefinition = ownsDefinition,
                                          .inputBindings = std::move(inputBindings),
                                          .params = std::move(params)});
     nextInstanceId_ = std::max(nextInstanceId_, static_cast<NetworkInstanceId>(id + 1));
     recordInstance(id);
     return id;
 }
+void Document::removeOwnedNetworkIfUnreferenced(NetworkId definitionId) {
+    if (definitionId == rootNetworkId_)
+        return;
+    if (std::any_of(instances_.begin(), instances_.end(),
+                    [definitionId](const NetworkInstance& value) { return value.definition == definitionId; }))
+        return;
+    std::vector<NetworkInstanceId> children;
+    for (const auto& occurrence : instances_)
+        if (occurrence.parentNetwork == definitionId)
+            children.push_back(occurrence.id);
+    for (const auto child : children)
+        removeInstance(child);
+    removeNetwork(definitionId);
+}
+
 void Document::removeInstance(NetworkInstanceId id) {
     NetworkInstance* target = findInstanceMutable(id);
     if (!target)
         throw GraphException(GraphError::UnknownInstance,
                              "cannot remove unknown network instance " + std::to_string(id));
-    const NetworkId parentNetwork = target->parentNetwork;
-    const NodeId node = target->node;
-    network(parentNetwork).graph().removeNode(node);
+    const NetworkId definition = target->definition;
+    const bool ownsDefinition = target->ownsDefinition;
+    network(target->parentNetwork).graph().removeNode(target->node);
     instances_.erase(instanceIndexOf(id));
+    recordInstance(id);
+    if (ownsDefinition)
+        removeOwnedNetworkIfUnreferenced(definition);
+}
+
+void Document::setInstanceOwnership(NetworkInstanceId id, bool ownsDefinition) {
+    auto* target = findInstanceMutable(id);
+    if (!target)
+        throw GraphException(GraphError::UnknownInstance,
+                             "cannot update unknown network instance " + std::to_string(id));
+    target->ownsDefinition = ownsDefinition;
     recordInstance(id);
 }
 
@@ -452,23 +549,99 @@ void Document::bindInstanceInput(NetworkInstanceId id, InterfacePortId input, Po
     }
     recordInstance(id);
 }
+void Document::bindInstanceInputToParentTerminal(NetworkInstanceId id, InterfacePortId input,
+                                                 InterfacePortId parentInput) {
+    NetworkInstance* target = findInstanceMutable(id);
+    if (!target)
+        throw GraphException(GraphError::UnknownInstance, "cannot bind unknown network instance " + std::to_string(id));
+    const Network& definition = network(target->definition);
+    const auto* formal = definition.input(input);
+    Network& parent = network(target->parentNetwork);
+    const auto* parentFormal = parent.input(parentInput);
+    if (!formal || !parentFormal)
+        throw GraphException(GraphError::PortType, "instance terminal binding references an unknown interface");
+    if (formal->kind != parentFormal->kind)
+        throw GraphException(GraphError::PortType, "instance terminal binding has incompatible port kinds");
+    const auto formalIndex = std::find_if(definition.inputs().begin(), definition.inputs().end(),
+                                          [input](const FormalPort& candidate) { return candidate.id == input; });
+    const PortRef destination{target->node,
+                              static_cast<std::uint32_t>(std::distance(definition.inputs().begin(), formalIndex))};
+    eraseInstanceInputBinding(id, input);
+    const auto connections = parent.inputConnections();
+    for (const auto& connection : connections)
+        if (connection.node == destination)
+            parent.disconnectInput(connection.terminal, destination);
+    parent.connectInput(parentInput, destination);
+}
+
 void Document::eraseInstanceInputBinding(NetworkInstanceId id, InterfacePortId input) {
     NetworkInstance* target = findInstanceMutable(id);
     if (!target)
         throw GraphException(GraphError::UnknownInstance, "cannot edit unknown network instance " + std::to_string(id));
     const Network& definition = network(target->definition);
     const auto formal = definition.input(input);
-    if (formal) {
+    if (formal && target->inputBindings.contains(input)) {
         const auto formalIndex = std::find_if(definition.inputs().begin(), definition.inputs().end(),
                                               [input](const FormalPort& candidate) { return candidate.id == input; });
-        if (formalIndex != definition.inputs().end())
-            network(target->parentNetwork)
-                .graph()
-                .releaseInput(PortRef{
-                    target->node, static_cast<std::uint32_t>(std::distance(definition.inputs().begin(), formalIndex))});
+        if (formalIndex != definition.inputs().end()) {
+            const PortRef destination{
+                target->node, static_cast<std::uint32_t>(std::distance(definition.inputs().begin(), formalIndex))};
+            if (network(target->parentNetwork).graph().inputReserved(destination))
+                network(target->parentNetwork).graph().releaseInput(destination);
+        }
     }
     target->inputBindings.erase(input);
     recordInstance(id);
+}
+
+void Document::reparentInstance(NetworkInstanceId id, NetworkId parentNetwork, NodeId node) {
+    NetworkInstance* target = findInstanceMutable(id);
+    if (!target)
+        throw GraphException(GraphError::UnknownInstance,
+                             "cannot reparent unknown network instance " + std::to_string(id));
+    Network& parent = network(parentNetwork);
+    const Network& definition = network(target->definition);
+    const NodeInstance* occurrence = parent.graph().node(node);
+    if (!occurrence || occurrence->instance != id || occurrence->definition != target->definition)
+        throw GraphException(GraphError::InvalidInstance, "reparent target node does not match network instance");
+    if (networkDependsOn(target->definition, parentNetwork))
+        throw GraphException(GraphError::Cycle, "reparenting network instance would create a dependency cycle");
+    target->parentNetwork = parentNetwork;
+    target->node = node;
+    for (const auto& binding : target->inputBindings) {
+        const auto formalIndex =
+            std::find_if(definition.inputs().begin(), definition.inputs().end(),
+                         [&](const FormalPort& candidate) { return candidate.id == binding.first; });
+        if (formalIndex != definition.inputs().end())
+            parent.graph().reserveInput(
+                PortRef{node, static_cast<std::uint32_t>(std::distance(definition.inputs().begin(), formalIndex))});
+    }
+}
+void Document::setInstanceDefinition(NetworkInstanceId id, NetworkId definition) {
+    NetworkInstance* target = findInstanceMutable(id);
+    if (!target)
+        throw GraphException(GraphError::UnknownInstance,
+                             "cannot update unknown network instance " + std::to_string(id));
+    const Network* newDefinition = findNetwork(definition);
+    if (!newDefinition)
+        throw GraphException(GraphError::UnknownNetwork,
+                             "cannot use unknown network definition " + std::to_string(definition));
+    if (networkDependsOn(definition, target->parentNetwork))
+        throw GraphException(GraphError::Cycle, "updating network instance would create a dependency cycle");
+    Network& parent = network(target->parentNetwork);
+    const NodeInstance* node = parent.graph().node(target->node);
+    if (!node || node->instance != id)
+        throw GraphException(GraphError::InvalidInstance, "network instance node does not match its occurrence record");
+    std::vector<PortSpec> inputs;
+    std::vector<PortSpec> outputs;
+    for (const auto& port : newDefinition->inputs())
+        inputs.push_back(PortSpec{port.kind, port.name});
+    for (const auto& port : newDefinition->outputs())
+        outputs.push_back(PortSpec{port.kind, port.name});
+    parent.graph().clearInputReservations(target->node);
+    parent.graph().setPortContract(target->node, std::move(inputs), std::move(outputs));
+    parent.graph().setInstanceDefinition(target->node, definition, target->id);
+    target->definition = definition;
 }
 
 void Document::setInstanceParam(NetworkInstanceId id, NodeId targetNode, std::string key, ParameterValue value) {
@@ -660,6 +833,62 @@ void Document::synchronizeReferences(const ChangeRecorder* touched) {
         }
     }
 
+    // Promoted parameters and terminal-bound cycles are document relationships
+    // the graph cannot validate on its own. Reconcile only the networks this
+    // transaction could have reached; the full pass (deserialization and
+    // whole-document replacement) visits every network.
+    std::set<NetworkId> affectedNetworks;
+    if (full) {
+        for (const Network& network : networks_)
+            affectedNetworks.insert(network.id());
+    } else {
+        for (const NetworkId id : touched->networks())
+            affectedNetworks.insert(id);
+        for (const auto& [networkId, nodeId] : touched->nodes()) {
+            static_cast<void>(nodeId);
+            affectedNetworks.insert(networkId);
+        }
+        for (const auto& [networkId, edgeId] : touched->edges()) {
+            static_cast<void>(edgeId);
+            affectedNetworks.insert(networkId);
+        }
+        for (const NetworkInstanceId id : touched->instances()) {
+            const NetworkInstance* value = instance(id);
+            if (value != nullptr)
+                affectedNetworks.insert(value->parentNetwork);
+        }
+    }
+    for (const NetworkId id : affectedNetworks) {
+        const std::size_t index = networkIndexOf(id);
+        if (index == networks_.size())
+            continue;
+        const Network& probe = networks_[index];
+        const auto staleOrChanged = [&](const ExposedParameter& parameter) {
+            const NodeInstance* node = probe.graph().node(parameter.node);
+            if (node == nullptr)
+                return true;
+            const ParameterSpec* spec = probe.graph().catalog().parameterSpec(node->type, parameter.key);
+            return spec == nullptr || spec->type != parameter.type;
+        };
+        const bool needsWrite = std::any_of(probe.exposedParameters().begin(), probe.exposedParameters().end(),
+                                            staleOrChanged);
+        if (!needsWrite)
+            continue;
+        Network& networkValue = networks_.mutableAt(index);
+        auto& exposed = networkValue.exposedParameters_;
+        for (auto parameter = exposed.begin(); parameter != exposed.end();) {
+            const NodeInstance* node = networkValue.graph().node(parameter->node);
+            const ParameterSpec* spec =
+                node == nullptr ? nullptr : networkValue.graph().catalog().parameterSpec(node->type, parameter->key);
+            if (node == nullptr || spec == nullptr)
+                parameter = exposed.erase(parameter);
+            else {
+                parameter->type = spec->type;
+                ++parameter;
+            }
+        }
+    }
+
     const auto channelStale = [&](const AnimationChannel& channel) {
         const auto& address = channel.address;
         const Network* network = findNetwork(address.network);
@@ -706,6 +935,8 @@ void Document::synchronizeReferences(const ChangeRecorder* touched) {
             recordAnimationChannel(id);
         }
     }
+
+    validateBoundNetworkCycles(*this, full ? nullptr : &affectedNetworks);
 }
 
 void Document::setSourceReference(const std::string& id, SourceReference value) {
@@ -782,6 +1013,52 @@ void Document::preserveIdentityHighWatermarksFrom(const Document& source) {
     nextKeyframeId_ = std::max(nextKeyframeId_, source.nextKeyframeId_);
 }
 
+void Document::remapAnimationChannels(NetworkId sourceNetwork, NetworkId destinationNetwork,
+                                      const std::map<NodeId, NodeId>& nodes,
+                                      std::optional<NetworkInstanceId> onlyInstance) {
+    for (std::size_t index = 0; index < animationChannels_.size(); ++index) {
+        const AnimationChannel& current = animationChannels_[index];
+        if (current.address.network != sourceNetwork ||
+            (onlyInstance && current.address.instance != *onlyInstance))
+            continue;
+        const auto mapped = nodes.find(current.address.node);
+        if (mapped == nodes.end())
+            continue;
+        AnimationChannel& channel = animationChannels_.mutableAt(index);
+        channel.address.network = destinationNetwork;
+        channel.address.node = mapped->second;
+        recordAnimationChannel(channel.id);
+    }
+}
+void Document::copyAnimationChannels(NetworkId sourceNetwork, NetworkId destinationNetwork,
+                                     const std::map<NodeId, NodeId>& nodes) {
+    std::vector<AnimationChannel> copies;
+    for (const auto& channel : animationChannels_) {
+        if (channel.address.network != sourceNetwork || channel.address.instance != kInvalidNetworkInstance)
+            continue;
+        const auto mapped = nodes.find(channel.address.node);
+        if (mapped == nodes.end())
+            continue;
+        if (nextAnimationChannelId_ == kInvalidAnimationChannel ||
+            nextAnimationChannelId_ == std::numeric_limits<AnimationChannelId>::max())
+            throw GraphException(GraphError::InvalidId, "animation channel identity space is exhausted");
+        AnimationChannel copy = channel;
+        copy.id = nextAnimationChannelId_++;
+        copy.address.network = destinationNetwork;
+        copy.address.node = mapped->second;
+        for (auto& key : copy.keys) {
+            if (nextKeyframeId_ == kInvalidKeyframe || nextKeyframeId_ == std::numeric_limits<KeyframeId>::max())
+                throw GraphException(GraphError::InvalidId, "keyframe identity space is exhausted");
+            key.id = nextKeyframeId_++;
+        }
+        copies.push_back(std::move(copy));
+    }
+    for (AnimationChannel& copy : copies) {
+        const AnimationChannelId id = copy.id;
+        animationChannels_.push_back(std::move(copy));
+        recordAnimationChannel(id);
+    }
+}
 std::uint64_t Document::stateRevision() const {
     std::uint64_t hash = kFnv1a64Basis;
     hashMixWord(hash, freshnessRevision_);
@@ -818,6 +1095,9 @@ std::uint64_t Document::stateRevision() const {
         for (const auto& port : networkValue.outputs())
             hashFormalPort(hash, port);
         hashMixWord(hash, static_cast<std::uint64_t>(networkValue.outputs().size()));
+        for (const auto& parameter : networkValue.exposedParameters())
+            hashExposedParameter(hash, parameter);
+        hashMixWord(hash, static_cast<std::uint64_t>(networkValue.exposedParameters().size()));
         for (const auto& terminal : networkValue.inputConnections()) {
             hashMixWord(hash, terminal.terminal);
             hashPortRef(hash, terminal.node);
@@ -825,6 +1105,10 @@ std::uint64_t Document::stateRevision() const {
         for (const auto& terminal : networkValue.outputConnections()) {
             hashMixWord(hash, terminal.terminal);
             hashPortRef(hash, terminal.node);
+        }
+        for (const auto& [output, input] : networkValue.outputInputBindings()) {
+            hashMixWord(hash, output);
+            hashMixWord(hash, input);
         }
         for (const auto& nodeValue : networkValue.graph().nodes()) {
             hashMixWord(hash, nodeValue.id);
@@ -871,6 +1155,7 @@ std::uint64_t Document::stateRevision() const {
         hashMixWord(hash, value.definition);
         hashMixWord(hash, value.node);
         hashMixText(hash, value.name);
+        hashMixWord(hash, value.ownsDefinition ? 1 : 0);
         for (const auto& [port, source] : value.inputBindings) {
             hashMixWord(hash, port);
             hashPortRef(hash, source);

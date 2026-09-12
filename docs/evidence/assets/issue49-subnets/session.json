@@ -1,0 +1,143 @@
+{
+  "issue": 49,
+  "branch": "issue/49-atomic-subnets",
+  "base_commit": "7a699b53c4507107f1428d59c7219dc0f6a459b8",
+  "status": "verified reachable backend and collapse/navigation; full issue remains open",
+  "source_sha256": {
+    "src/nemo/CMakeLists.txt": "c1ce0f28b0c03cd8b35ffaa59aef60c7b741dbd4cc25190daf61aa0c96bd52bb",
+    "tests/CMakeLists.txt": "d0307d42e8a4e8ea769f1f808a0bf38fd40e508c9b9795067f1991d8b222252c",
+    "src/nemo/core/document/Graph.hpp": "8b58678c5b599874b596f207b0a17145812b031f8db029779fb64ffa2b34dbb1",
+    "src/nemo/core/document/Graph.cpp": "058c33d63cf81b5e53466ba73a9852cfeb37563718ad1916f428dcfa5852f681",
+    "src/nemo/core/document/Document.hpp": "8a37e5190fa15befa05be6d31d7ea156e50ab898ad0e016a1f9b08d12a408469",
+    "src/nemo/core/document/Document.cpp": "98cac58109186a46b70ee86bd342f43e23625f372df5b9f7c2b88312b2637929",
+    "src/nemo/core/document/Serialization.cpp": "05cd627e40af9c0b6424ced4c7ff70fa3cb63284cce003c4ce9476e1958407d4",
+    "src/nemo/core/evaluation/CpuReference.cpp": "15a7ae6e053255781ebaf006e8653f3094381037bfe88613d7e6caae02e44754",
+    "src/nemo/core/commands/NetworkCommands.hpp": "bf6f94cb7b0e099b00012d2cc57dceab09be3a333d59eaf8ec256a2dd7fdd245",
+    "src/nemo/core/commands/NetworkCommands.cpp": "feddb2d900ce1ef7282438cc19da4b8b0df0f7d849afe1b40b9191833353eb43",
+    "apps/nemo-cli/ProjectSessionCommand.cpp": "6441b0d7b8c2c61159d50503e0f442f5be27b8a3e86288bd13c9c080c6012eb4",
+    "apps/nemo-ui/ViewerController.hpp": "d13c569e26a94d55bac71da646f74586eb80945e45a191b1e4b52288186f5bd2",
+    "apps/nemo-ui/ViewerController.cpp": "92af3d6432aaaa1d6b07e6b48b6e0d06b81e384fa01c533167fa782dc1a79d1c",
+    "apps/nemo-ui/GraphItem.hpp": "d00c5dc6c32ede7a6c9406267abae3d7c2b7a10b052144dc8b37af0c72ff2f78",
+    "apps/nemo-ui/GraphItem.cpp": "1e408214de8c43c306f507f0fe7b45d09027224940405e64569d4223d599d894",
+    "apps/nemo-ui/qml/GraphPanel.qml": "ecd1215bf22cf364e9c9a23d07659d3ffe37b82ed7be7f39f73d562d2d6e71d4",
+    "tests/NetworkCommandsTests.cpp": "19a96d977640d6581a85084fcefe1da9e806cff61f39ceea697a65c787dd182d",
+    "tests/InteractiveUiTests.cpp": "c4de8d242f10df405c0b4de43ed15840031b3c06fe234024f1b7c1c76a00ee99",
+    "tests/WorkspaceDragTests.cpp": "c6c46b2a0a925492f86408520a89b8865f4a6fc91c83c67b40d48243ab81e3ea",
+    "docs/agents/ownership.md": "f47ae7c43fd33fd2861457417c067a0abcc353543816e75a03c64162d715584b"
+  },
+  "verification": {
+    "debug": {
+      "command": "cmake --build --preset debug -j 2 && ctest --preset debug -j 4",
+      "passed": 366,
+      "failed": 0,
+      "log": "debug-ctest.log"
+    },
+    "release": {
+      "command": "cmake --build --preset release -j 2 && ctest --preset release -j 4",
+      "passed": 366,
+      "failed": 0,
+      "log": "release-ctest.log"
+    },
+    "asan_ubsan": {
+      "command": "cmake --build --preset asan -j 2 && ctest --preset asan -j 2 -R 'NetworkCommands|NetworkTest|EvaluationTest|GraphTest|CommandStack|Interactive|WorkspaceDragTest|PanelContextUiTest'",
+      "passed": 100,
+      "failed": 0,
+      "log": "asan-ctest.log"
+    },
+    "headless": {
+      "command": "cmake --preset headless && cmake --build --preset headless --target nemo_core_tests -j 2 && build/headless/tests/nemo_core_tests --gtest_filter='NetworkCommandsTest.*:NetworkTest.*:ProjectSessionTest.*:CommandStackTest.*'",
+      "passed": 51,
+      "failed": 0,
+      "note": "UI and GPU disabled; not GPU gate evidence. Cached configure reported toolchain-variable warning."
+    },
+    "core_smoke": "core-smoke.log: collapse, nested collapse, unpack, save/load and undo/redo preserve the existing evaluator result; no pixel-processing implementation was added",
+    "cli": "cli-session.json: real CLI scoped collapse/query, atomic rejection and history",
+    "native": "native-session.json: actual Qt 6.4.2 Wayland/Vulkan app; Qt-injected input, not physical-pointer acceptance"
+  },
+  "comparisons": [
+    {
+      "name": "menu",
+      "reference": "docs/evidence/assets/issue49-subnets/reference-collapse-menu.png",
+      "production": "docs/evidence/assets/issue49-subnets/production-collapse-menu.png",
+      "reference_crop": [
+        804,
+        477,
+        1559,
+        917
+      ],
+      "production_crop": [
+        774,
+        45,
+        1529,
+        485
+      ],
+      "size": [
+        755,
+        440
+      ],
+      "authority": "current byte-matched prototype runtime"
+    },
+    {
+      "name": "parent",
+      "reference": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz:issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/subnet-parent.png",
+      "production": "docs/evidence/assets/issue49-subnets/production-subnet-parent.png",
+      "reference_crop": [
+        804,
+        477,
+        1559,
+        917
+      ],
+      "production_crop": [
+        774,
+        45,
+        1529,
+        485
+      ],
+      "size": [
+        755,
+        440
+      ],
+      "authority": "archived subnet topology capture; later compact node style supersedes its older node height/colors"
+    },
+    {
+      "name": "inside",
+      "reference": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz:issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/subnet-inside.png",
+      "production": "docs/evidence/assets/issue49-subnets/production-subnet-inside.png",
+      "reference_crop": [
+        804,
+        477,
+        1559,
+        917
+      ],
+      "production_crop": [
+        774,
+        45,
+        1529,
+        485
+      ],
+      "size": [
+        755,
+        440
+      ],
+      "authority": "archived subnet topology capture; later compact node style supersedes its older node height/colors"
+    }
+  ],
+  "review_gates": {
+    "production_correctness": "Commands/model/query behavior covered by tests and native scenarios; new public model/command APIs still require owner review.",
+    "prototype_conformance": "Matched graph-pane comparisons retained and inspected. Current reference collapse handler fails due archived makeNode argument mismatch; no reference code modified. Historical subnet captures are topology/layout references with later compact node-style supersession. Not blanket pixel/interaction parity approval."
+  },
+  "remaining": [
+    "#46 shared Parameters panel is a native/body dependency for the owner-approved individual-parameter exposure popout. No private inspector or disconnected popout was created.",
+    "Real Graph/Parameters/Animation instance workflow awaits #46/#50. #50 already depends on #49; no cyclic blocker was added.",
+    "Graphical clipboard/reusable discovery/link-state controls and production-only interface UI are not implemented; their presentation authority remains to be resolved.",
+    "Formal binding wires currently have no authored reroute geometry; route edits reject those opaque binding IDs instead of faking persistence.",
+    "No Ctrl+Z UI shortcut was added; native undo checks invoke existing shared controller/history.",
+    "Owner API/visual review and OS-level pointer validation remain open. No Windows or TSan claim."
+  ],
+  "scope_note": "The existing CPU evaluator was used only as a subnet semantic regression oracle. Viewer/GPU fidelity exploration was stopped at owner request; accepted display-referred 4:2:0 replay is not a screenshot pixel-equality oracle.",
+  "warnings": [
+    "Existing Qt qmldir scanner warnings",
+    "Existing minizip-ng mktemp linker warning"
+  ],
+  "instrumentation": "External temporary observation bridge; no instrumentation compiled into application sources. Removed after capture."
+}

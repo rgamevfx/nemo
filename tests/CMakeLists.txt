@@ -13,6 +13,7 @@ add_executable(nemo_core_tests
     SessionPersistenceTests.cpp
     GraphTests.cpp
     NetworkTests.cpp
+    NetworkCommandsTests.cpp
     ViewerModelTests.cpp
     AnimationTests.cpp
 )

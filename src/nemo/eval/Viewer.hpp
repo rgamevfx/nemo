@@ -64,6 +64,10 @@ public:
     // Interactive callers use scheduler publication guards instead.
     void supersedeCache(std::uint64_t revision, std::uint64_t generation,
                         ViewerDestination destination = ViewerDestination::Interactive);
+    // Forgets a retired destination's publication freshness so a reused id
+    // starts clean and capacity is released back to the bounded destination
+    // table. Thread-safe; the scheduler already rejects its in-flight work.
+    void retireDestination(ViewerDestination destination);
 
     struct SourceProbe {
         media::ClipInfo info;

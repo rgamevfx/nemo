@@ -11,7 +11,9 @@
 // and every plan step records the resolved source/frame evidence.
 //
 // Readback policy: every test performs at most ONE declared diagnostic
-// readback; the production/worker path never reads back. Zero
+// readback; the production/worker path never reads back. The display-channel
+// isolation test is the one exception — the channel is a per-pass uniform, so
+// it reads a single 4-byte pixel per channel. Zero
 // validation-layer warnings is the bar (as in GpuTests/GpuEffectTests).
 //
 // Tests guard themselves: without a usable Vulkan device they skip; when
@@ -848,6 +850,64 @@ TEST(Viewer, PresentationQuantizesExactlyOnceWithoutTransfer) {
     // would silently change operation meaning.
     EXPECT_ANY_THROW((void)gpu::prepareViewerPresentation(*boot.device, *boot.allocator, *consumer, source,
                                                           ColorInterpretation::SceneLinear, spirv));
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Viewer, PresentationIsolatesDisplayChannels) {
+    const Bootstrap boot = createBootstrap({.externalSharing = true});
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    auto consumer = gpu::Device::create(*boot.instance, {.externalSharing = true, .physical = boot.device->physical()});
+    auto consumerAllocator = gpu::Allocator::create(*boot.instance, *consumer, {.max_device_bytes = 16u << 20});
+    auto& consumerQueue = consumer->submissions(consumer->graphics_family());
+
+    const std::vector<std::uint32_t> spirv = loadSpirv(slangSpvDir() / "viewerPresentation.spv");
+    auto& queue = boot.device->submissions(boot.device->graphics_family());
+
+    gpu::Image source = boot.allocator->create_image(1, 1, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                                     VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                     2);
+    const std::array<float, 4> display{0.5F, 0.25F, 1.0F, 0.5F};
+    gpu::uploadImage(queue, *boot.allocator, source, display.data(), display.size() * sizeof(float), 10'000'000'000ULL);
+    gpu::imageBarrier(queue, source, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                      VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, 10'000'000'000ULL);
+
+    // Channel isolation cannot be observed from one image: the selection is a
+    // per-pass uniform, so each channel gets its own external-memory
+    // presentation, consumer acquire, and 4-byte diagnostic readback.
+    const auto presented = [&](gpu::ViewerChannel channel) {
+        gpu::ViewerPresentation presentation = gpu::prepareViewerPresentation(
+            *boot.device, *boot.allocator, *consumer, source, ColorInterpretation::DisplayReferred, spirv, channel);
+        consumerQueue.submit_and_wait(
+            [&](VkCommandBuffer command) {
+                gpu::acquireViewerPresentation(*consumer, presentation, command);
+                gpu::recordImageBarrier(command, presentation.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                        VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                        VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                        VK_ACCESS_TRANSFER_READ_BIT);
+            },
+            10'000'000'000ULL);
+        std::array<std::uint8_t, 4> bytes{};
+        gpu::downloadImage(consumerQueue, *consumerAllocator, presentation.image, bytes.data(), bytes.size(),
+                           10'000'000'000ULL);
+        return bytes;
+    };
+    const auto expectChannel = [](const std::array<std::uint8_t, 4>& got, const std::array<std::uint8_t, 4>& want,
+                                  const char* label) {
+        for (std::size_t i = 0; i < got.size(); ++i)
+            EXPECT_EQ(got[i], want[i]) << label << " byte " << i;
+    };
+
+    // Independent oracle: round-nearest 8-bit of the saturated source
+    // (0.5, 0.25, 1.0, 0.5). RGBA stays premultiplied (64, 32, 128, 128);
+    // Red/Green/Blue replicate one channel over an opaque alpha; Alpha is
+    // opaque gray of the source alpha.
+    expectChannel(presented(gpu::ViewerChannel::RGBA), {64, 32, 128, 128}, "RGBA");
+    expectChannel(presented(gpu::ViewerChannel::Red), {128, 128, 128, 255}, "Red");
+    expectChannel(presented(gpu::ViewerChannel::Green), {64, 64, 64, 255}, "Green");
+    expectChannel(presented(gpu::ViewerChannel::Blue), {255, 255, 255, 255}, "Blue");
+    expectChannel(presented(gpu::ViewerChannel::Alpha), {128, 128, 128, 255}, "Alpha");
     expectValidationClean(*boot.instance);
 }
 

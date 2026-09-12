@@ -412,8 +412,7 @@ struct ParameterKeyState {
 }
 }  // namespace
 ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session)
-    : runtime_(runtime), session_(session), schedulerPoll_(this),
-      presentationState_(std::make_unique<WindowPresentationState>()) {
+    : runtime_(runtime), session_(session), schedulerPoll_(this), playback_(this) {
     connect(runtime_, &ViewerRuntime::resultReady, this, &ViewerController::receive, Qt::QueuedConnection);
     connect(
         runtime_, &ViewerRuntime::rangeFailed, this,
@@ -424,9 +423,22 @@ ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession&
             emit schedulerChanged();
         },
         Qt::QueuedConnection);
+    // Presentation is destination-scoped at the runtime: a panel re-emits only
+    // the frames its own destination presented. The runtime emits this from
+    // Qt's frameSwapped boundary on the render thread, so the relay is direct
+    // and only re-emits.
+    connect(
+        runtime_, &ViewerRuntime::framePresented, this,
+        [this](eval::ViewerDestination presented, int frame, int width, int height, bool cacheHit, double elapsed) {
+            if (!destination_ || *destination_ != presented)
+                return;
+            emit framePresented(frame, width, height, cacheHit, elapsed);
+        },
+        Qt::DirectConnection);
     schedulerPoll_.setInterval(200);
     connect(&schedulerPoll_, &QTimer::timeout, this, &ViewerController::pollScheduler);
     schedulerPoll_.start();
+    connect(&playback_, &QTimer::timeout, this, &ViewerController::playbackTick);
     sessionSubscription_ = session_.subscribe(this, &ViewerController::sessionDocumentChanged);
 }
 
@@ -441,6 +453,27 @@ void ViewerController::sessionDocumentChanged(void* context) noexcept {
 
 ViewerController::~ViewerController() = default;
 
+void ViewerController::setDestination(std::optional<eval::ViewerDestination> destination) {
+    if (destination_ == destination)
+        return;
+    // Stop publishing to the destination this panel is leaving: retirement is
+    // the runtime's, but its in-flight work must not become this panel's state.
+    if (destination_)
+        runtime_->cancel(generation_, *destination_);
+    destination_ = std::move(destination);
+    emit destinationChanged();
+    if (!destination_)
+        return;
+    refreshViewerTarget();
+    refreshContextTarget();
+    invalidateRequest();
+    refreshRequest();
+}
+
+qulonglong ViewerController::destinationId() const {
+    return destination_ ? static_cast<qulonglong>(*destination_) : 0ULL;
+}
+
 QString ViewerController::renderState() const {
     if (!error_.isEmpty())
         return QStringLiteral("failed");
@@ -450,6 +483,10 @@ QString ViewerController::renderState() const {
         return QStringLiteral("outdated");
     if (presentation_)
         return QStringLiteral("current");
+    // A routed context with no render target is unavailable, not idle: the
+    // panel must not present another group's output in its place.
+    if (!contextUnavailable_.isEmpty())
+        return QStringLiteral("unavailable");
     return QStringLiteral("idle");
 }
 
@@ -471,6 +508,50 @@ std::vector<NodeId> viewerNodeIds(const nemo::Document& document, NetworkId netw
     } catch (const std::exception&) {
         return {};
     }
+}
+}  // namespace
+
+namespace {
+// Resolves a routed media target — a catalog source key or a decimal catalog
+// entry id — to the root network's source node addressing that key. The lowest
+// matching NodeId wins so one target always resolves to one node. `reason`
+// names the failed relationship when no such node exists; the viewer then
+// reports an explicit unavailable state instead of another group's output.
+[[nodiscard]] NodeId mediaSourceNode(const nemo::Document& document, const QString& target, QString& reason) {
+    const auto trimmed = target.trimmed();
+    if (trimmed.isEmpty()) {
+        reason = QStringLiteral("Media source is unavailable: the panel context has no source target");
+        return kInvalidNode;
+    }
+    QString key = trimmed;
+    bool decimal = false;
+    const auto entryId = trimmed.toULongLong(&decimal);
+    if (decimal) {
+        if (const auto* entry = document.mediaCatalog.entry(static_cast<MediaSourceId>(entryId)))
+            key = QString::fromStdString(entry->sourceKey);
+    }
+    NodeId found = kInvalidNode;
+    try {
+        const auto& graph = document.network(document.rootNetworkId()).graph();
+        for (const auto& node : graph.nodes()) {
+            if (node.type != "source")
+                continue;
+            const auto parameter = node.params.find("source");
+            if (parameter == node.params.end())
+                continue;
+            const auto* value = std::get_if<std::string>(&parameter->second);
+            if (!value || *value != key.toStdString())
+                continue;
+            if (found == kInvalidNode || node.id < found)
+                found = node.id;
+        }
+    } catch (const std::exception&) {
+        reason = QStringLiteral("Media source '%1' cannot be resolved: the root network is unavailable").arg(trimmed);
+        return kInvalidNode;
+    }
+    if (found == kInvalidNode)
+        reason = QStringLiteral("Media source '%1' has no source node in the root network").arg(trimmed);
+    return found;
 }
 }  // namespace
 
@@ -726,6 +807,106 @@ void ViewerController::refreshViewerTarget() {
     emit viewerTargetChanged();
 }
 
+void ViewerController::setViewerContext(const QString& role, const QString& target, int clock) {
+    const auto name = role.trimmed().toLower();
+    const ContextRole nextRole = name == QStringLiteral("media")      ? ContextRole::Media
+                                 : name == QStringLiteral("timeline") ? ContextRole::Timeline
+                                                                      : ContextRole::Graph;
+    const auto nextTarget = target.trimmed();
+    const bool contextChanged = nextRole != contextRole_ || nextTarget != contextTarget_;
+    contextRole_ = nextRole;
+    contextTarget_ = nextTarget;
+    if (contextRole_ == ContextRole::Graph) {
+        // The graph role ignores the routed target: the controller renders its
+        // own Viewer attachment (the panel's active viewer index).
+        refreshViewerTarget();
+    }
+    refreshContextTarget();
+    bool frameMoved = false;
+    if (contextRole_ != ContextRole::Timeline) {
+        // The routed clock is this context's own time; the timeline role has no
+        // render target yet, so it has no frame to apply.
+        const int requested = clampFrame(clock);
+        if (requested != frame_) {
+            frame_ = requested;
+            emit frameChanged();
+            emit timelineChanged();
+            frameMoved = true;
+        }
+    }
+    if (!contextChanged && !frameMoved)
+        return;
+    invalidateRequest();
+    refreshRequest();
+}
+
+void ViewerController::refreshContextTarget() {
+    contextTargetNode_ = kInvalidNode;
+    contextUnavailable_.clear();
+    switch (contextRole_) {
+    case ContextRole::Media:
+        contextTargetNode_ = mediaSourceNode(session_.document(), contextTarget_, contextUnavailable_);
+        return;
+    case ContextRole::Timeline:
+        // Editorial timeline target wiring belongs to issue #54. This panel
+        // reports the deferral instead of presenting another group's output.
+        contextUnavailable_ =
+            contextTarget_.isEmpty()
+                ? QStringLiteral("Timeline viewer target is unavailable: issue #54 owns timeline viewer wiring")
+                : QStringLiteral("Timeline target '%1' is unavailable: issue #54 owns timeline viewer wiring")
+                      .arg(contextTarget_);
+        return;
+    case ContextRole::Graph:
+        return;
+    }
+}
+
+NodeId ViewerController::renderTargetNode() const {
+    switch (contextRole_) {
+    case ContextRole::Media:
+        return contextTargetNode_;
+    case ContextRole::Timeline:
+        return kInvalidNode;
+    case ContextRole::Graph:
+        return viewerTargetNode_;
+    }
+    return kInvalidNode;
+}
+
+QString ViewerController::unavailableStatus() const {
+    return contextUnavailable_.isEmpty() ? QStringLiteral("No viewer target") : contextUnavailable_;
+}
+
+int ViewerController::clampFrame(int frame) const {
+    frame = std::max(frame, 0);
+    if (frameCount_ > 0)
+        frame = std::min(frame, frameCount_ - 1);
+    return frame;
+}
+
+int ViewerController::frameDomainEnd() const {
+    return frameCount_ > 0 ? frameCount_ - 1 : kDefaultFrameCount - 1;
+}
+
+void ViewerController::applyFrameCount(int frameCount) {
+    frameCount_ = frameCount;
+    if (marksAuthored_) {
+        inFrame_ = std::clamp(inFrame_, 0, frameDomainEnd());
+        outFrame_ = std::clamp(outFrame_, inFrame_, frameDomainEnd());
+    } else {
+        // Unauthored marks cover the whole probed range.
+        inFrame_ = 0;
+        outFrame_ = frameDomainEnd();
+    }
+    const int clamped = clampFrame(frame_);
+    if (clamped != frame_) {
+        frame_ = clamped;
+        emit frameChanged();
+        emit timelineChanged();
+    }
+    emit marksChanged();
+}
+
 QVariantList ViewerController::timelineClips() const {
     QVariantList result;
     for (const auto& [key, source] : session_.document().sources) {
@@ -766,7 +947,13 @@ qulonglong ViewerController::completed() const {
 }
 
 void ViewerController::pollScheduler() {
-    auto counts = runtime_->counts();
+    // Counters are destination-scoped: a panel reports only its own queued,
+    // dropped, stale-rejected and completed work, with the global cache
+    // counters beside them. A destination-less facade reports nothing rather
+    // than another destination's activity.
+    if (!destination_)
+        return;
+    auto counts = runtime_->counts(*destination_);
     if (counts == schedulerCounts_)
         return;
     schedulerCounts_ = std::move(counts);
@@ -778,6 +965,9 @@ void ViewerController::documentChanged() {
     pending_ = false;
     outdated_ = static_cast<bool>(presentation_);
     refreshViewerTarget();
+    // A source node addressed by the routed media target may have appeared or
+    // disappeared with this revision.
+    refreshContextTarget();
     emit graphChanged();
     emit catalogChanged();
     emit timelineChanged();
@@ -795,7 +985,10 @@ void ViewerController::invalidateRequest() {
     rangeGeneration_ = 0;
     const bool hadRangeError = !rangeError_.isEmpty();
     rangeError_.clear();
-    runtime_->cancel(generation_);
+    // Destination-scoped: this panel drops only its own queued work and never
+    // moves the global cancel watermark, so sibling panels keep rendering.
+    if (destination_)
+        runtime_->cancel(generation_, *destination_);
     pollScheduler();
     if (hadRangeError)
         emit schedulerChanged();
@@ -1705,6 +1898,10 @@ void ViewerController::requestRange(int first, int last) {
         fail(QStringLiteral("cache range start must not exceed end"));
         return;
     }
+    if (!destination_) {
+        fail(QStringLiteral("cache range requires a viewer destination"));
+        return;
+    }
     if (!lastRequest_) {
         fail(QStringLiteral("cache range requires a current viewer request"));
         return;
@@ -1719,7 +1916,9 @@ void ViewerController::requestRange(int first, int last) {
     rangeGeneration_ = ++nextRequestId_;
     rangeError_.clear();
     emit schedulerChanged();
-    if (!runtime_->requestRange(session_.snapshot(), *lastRequest_, first, last, rangeGeneration_)) {
+    // Range work is represented as one lazy range per destination, so a panel
+    // range must not collide with the global Cache stream.
+    if (!runtime_->requestRange(session_.snapshot(), *lastRequest_, first, last, rangeGeneration_, *destination_)) {
         status_ = QStringLiteral("Cache range admission rejected; see scheduler drop count");
         emit statusChanged();
         pollScheduler();
@@ -1751,7 +1950,11 @@ void ViewerController::openSource(const QString& path) {
 }
 
 void ViewerController::receive() {
-    auto result = runtime_->takeResult();
+    // Without a destination the controller never submitted work: consuming a
+    // result here would steal the destination owner's publication.
+    if (!destination_)
+        return;
+    auto result = runtime_->takeResult(*destination_);
     if (!result)
         return;
     pollScheduler();
@@ -1766,7 +1969,16 @@ void ViewerController::receive() {
         pending_ = false;
         sourceSize_ = QSizeF(info.width, info.height);
         pixelAspect_ = info.pixelAspect;
-        frameCount_ = static_cast<int>(std::min<std::int64_t>(info.frameCount, std::numeric_limits<int>::max()));
+        applyFrameCount(static_cast<int>(std::min<std::int64_t>(info.frameCount, std::numeric_limits<int>::max())));
+        // Playback cadence follows the probed media rate; an unknown rate keeps
+        // the 24 fps default rather than inventing a timebase.
+        const double rate = info.frameRate > 0.0 ? info.frameRate : 24.0;
+        if (rate != frameRate_) {
+            frameRate_ = rate;
+            if (playing_)
+                playback_.setInterval(playbackInterval());
+            emit frameRateChanged();
+        }
         sourceDescription_ =
             QStringLiteral("%1x%2 %3; decode selection: %4")
                 .arg(info.width)
@@ -1809,20 +2021,25 @@ constexpr int kDefaultCompositionHeight = 1080;
 }  // namespace
 
 void ViewerController::refreshRequest() {
+    // Without a destination this controller is a pure command/metadata facade:
+    // it may not probe, submit, or cancel another panel's destination.
+    if (!destination_)
+        return;
     try {
         // Capture one immutable project state for the whole request. The
         // session remains owner-thread-only; workers receive this snapshot.
         const Document document = session_.snapshot();
-        // No attachment means an explicit empty viewer, never an Output
-        // fallback: the Output node still defines network consumption, but it
-        // is not what the interactive viewer displays.
-        if (viewerTargetNode_ == kInvalidNode) {
+        // No render target means an explicit empty viewer, never an Output
+        // fallback and never another group's target: the Output node still
+        // defines network consumption, but it is not what this panel displays.
+        const NodeId target = renderTargetNode();
+        if (target == kInvalidNode) {
             const bool hadPresentation = static_cast<bool>(presentation_);
             presentation_.reset();
             lastRequest_.reset();
             pending_ = false;
             outdated_ = false;
-            status_ = QStringLiteral("No viewer target");
+            status_ = unavailableStatus();
             emit statusChanged();
             if (hadPresentation)
                 emit frameArrived();
@@ -1854,7 +2071,7 @@ void ViewerController::refreshRequest() {
                 emit sourceChanged();
                 emit statusChanged();
                 generation_ = ++nextRequestId_;
-                if (!runtime_->probe(document, "src", generation_))
+                if (!runtime_->probe(document, "src", generation_, *destination_))
                     fail(QStringLiteral("Source probe admission rejected"));
                 return;
             }
@@ -1868,8 +2085,12 @@ void ViewerController::refreshRequest() {
                           : mode_ == "quarter" ? ViewerResolution::Quarter
                                                : ViewerResolution::Auto;
         EvaluationRequest request;
-        request.network = activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : document.rootNetworkId();
-        request.output = viewerTargetNode_;
+        // The media role addresses a source node in the root network; the graph
+        // role follows the active Viewer attachment's network.
+        const bool mediaContext = contextRole_ == ContextRole::Media;
+        request.network =
+            !mediaContext && activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : document.rootNetworkId();
+        request.output = target;
         request.localTime = frame_;
         request.samplingScale =
             policy_.resolve(mode, width, height, pixelAspect_, viewport_.width(), viewport_.height(), zoom_);
@@ -1893,7 +2114,7 @@ void ViewerController::refreshRequest() {
         lastRequest_ = request;
         lastRevision_ = revision;
         const auto id = generation_ = ++nextRequestId_;
-        if (!runtime_->submit(document, request, id))
+        if (!runtime_->submit(document, request, id, *destination_, viewerChannel_))
             pending_ = true;
         outdated_ = static_cast<bool>(presentation_);
         error_.clear();
@@ -1962,15 +2183,166 @@ void ViewerController::resetView() {
     refreshRequest();
 }
 void ViewerController::setFrame(int value) {
-    value = std::max(value, 0);
-    if (frameCount_ > 0)
-        value = std::min(value, frameCount_ - 1);
+    value = clampFrame(value);
     if (frame_ == value)
         return;
     frame_ = value;
     emit frameChanged();
     emit timelineChanged();
     refreshRequest();
+}
+void ViewerController::play() {
+    // Starting outside the marked range enters at the in mark, as the prototype
+    // does; every tick then advances exactly one frame.
+    if (frame_ < inFrame_ || frame_ > outFrame_)
+        setFrame(inFrame_);
+    if (playing_)
+        return;
+    playing_ = true;
+    playback_.setInterval(playbackInterval());
+    playback_.start();
+    emit playbackChanged();
+}
+void ViewerController::pause() {
+    if (!playing_)
+        return;
+    playing_ = false;
+    playback_.stop();
+    emit playbackChanged();
+}
+void ViewerController::togglePlay() {
+    if (playing_)
+        pause();
+    else
+        play();
+}
+void ViewerController::stop() {
+    pause();
+    setFrame(inFrame_);
+}
+void ViewerController::stepBy(int delta) {
+    setFrame(frame_ + delta);
+}
+void ViewerController::seekToIn() {
+    setFrame(inFrame_);
+}
+void ViewerController::seekToOut() {
+    setFrame(outFrame_);
+}
+void ViewerController::setMarkIn() {
+    setMarkInFrame(frame_);
+}
+void ViewerController::setMarkOut() {
+    setMarkOutFrame(frame_);
+}
+void ViewerController::setMarkInFrame(int frame) {
+    marksAuthored_ = true;
+    const int mark = std::clamp(clampFrame(frame), 0, std::min(outFrame_, frameDomainEnd()));
+    if (mark != inFrame_) {
+        inFrame_ = mark;
+        emit marksChanged();
+    }
+    if (frame_ < inFrame_)
+        setFrame(inFrame_);
+}
+void ViewerController::setMarkOutFrame(int frame) {
+    marksAuthored_ = true;
+    const int mark = std::clamp(clampFrame(frame), inFrame_, frameDomainEnd());
+    if (mark != outFrame_) {
+        outFrame_ = mark;
+        emit marksChanged();
+    }
+    if (frame_ > outFrame_)
+        setFrame(outFrame_);
+}
+void ViewerController::setChannel(const QString& channel) {
+    // Case-insensitive display names; values are the presentation-only gpu
+    // isolation applied in the presentation copy.
+    const auto name = channel.trimmed().toUpper();
+    gpu::ViewerChannel selection = gpu::ViewerChannel::RGBA;
+    if (name == QStringLiteral("RGBA"))
+        selection = gpu::ViewerChannel::RGBA;
+    else if (name == QStringLiteral("R"))
+        selection = gpu::ViewerChannel::Red;
+    else if (name == QStringLiteral("G"))
+        selection = gpu::ViewerChannel::Green;
+    else if (name == QStringLiteral("B"))
+        selection = gpu::ViewerChannel::Blue;
+    else if (name == QStringLiteral("A"))
+        selection = gpu::ViewerChannel::Alpha;
+    else {
+        fail(QStringLiteral("unknown viewer display channel '%1'").arg(channel));
+        return;
+    }
+    if (name == channel_)
+        return;
+    channel_ = name;
+    viewerChannel_ = selection;
+    emit displayChanged();
+    // Channel isolation is presentation-only: the evaluated request is
+    // byte-identical, so the identity early-return in refreshRequest would skip
+    // the resubmit that re-runs the presentation copy. Forget it deliberately.
+    lastRequest_.reset();
+    refreshRequest();
+}
+void ViewerController::setLayer(const QString& layer) {
+    const auto name = layer.trimmed().toLower();
+    if (name == layer_)
+        return;
+    if (name == QStringLiteral("depth")) {
+        // The runtime presents the display-referred composite only. Reporting
+        // the selection as unavailable is honest; applying it is not.
+        status_ = QStringLiteral("Display layer 'depth' is unavailable: the viewer presents the display-referred "
+                                 "RGB composite");
+        emit statusChanged();
+        return;
+    }
+    fail(QStringLiteral("unknown viewer display layer '%1'").arg(layer));
+}
+QString ViewerController::timecode() const {
+    return timecodeForFrame(frame_);
+}
+QString ViewerController::timecodeForFrame(int frame) const {
+    const double rate = frameRate_ > 0.0 ? frameRate_ : 24.0;
+    const int elapsed = clampFrame(frame);
+    const int totalSeconds = static_cast<int>(std::floor(static_cast<double>(elapsed) / rate));
+    const int frames = static_cast<int>(std::floor(static_cast<double>(elapsed) - totalSeconds * rate));
+    const int seconds = totalSeconds % 60;
+    const int totalMinutes = totalSeconds / 60;
+    const auto pad = [](int value) { return value < 10 ? QStringLiteral("0%1").arg(value) : QString::number(value); };
+    return QStringLiteral("%1:%2:%3:%4").arg(pad(totalMinutes / 60), pad(totalMinutes % 60), pad(seconds), pad(frames));
+}
+int ViewerController::frameForTimecode(const QString& text) const {
+    const auto parts = text.trimmed().split(QStringLiteral(":"));
+    if (parts.size() != 4)
+        return frame_;
+    const double rate = frameRate_ > 0.0 ? frameRate_ : 24.0;
+    int values[4] = {0, 0, 0, 0};
+    for (int index = 0; index < 4; ++index) {
+        bool parsed = false;
+        values[index] = parts.at(index).toInt(&parsed);
+        if (!parsed)
+            return frame_;
+    }
+    if (values[0] < 0 || values[1] < 0 || values[1] > 59 || values[2] < 0 || values[2] > 59 || values[3] < 0 ||
+        static_cast<double>(values[3]) >= rate)
+        return frame_;
+    const auto wholeHours = static_cast<double>((values[0] * 60 + values[1]) * 60 + values[2]);
+    const double total = wholeHours * rate + static_cast<double>(values[3]);
+    const auto bounded = std::llround(std::min(total, static_cast<double>(std::numeric_limits<int>::max())));
+    return clampFrame(static_cast<int>(bounded));
+}
+int ViewerController::playbackInterval() const {
+    const double rate = frameRate_ > 0.0 ? frameRate_ : 24.0;
+    return std::max(1, static_cast<int>(std::lround(1000.0 / rate)));
+}
+void ViewerController::playbackTick() {
+    // One frame per tick, one request per displayed frame: playback never
+    // queues work ahead of the panel.
+    if (frame_ >= outFrame_)
+        setFrame(inFrame_);
+    else
+        setFrame(frame_ + 1);
 }
 void ViewerController::viewportChanged(QSizeF pixels) {
     if (viewport_ == pixels)
@@ -1979,29 +2351,11 @@ void ViewerController::viewportChanged(QSizeF pixels) {
     refreshRequest();
 }
 void ViewerController::attachWindow(QQuickWindow* window) {
+    // The runtime owns the single window presentation host shared by every
+    // panel; this panel only surfaces the attach error.
     const auto error = runtime_->attachToWindow(window);
-    if (!error.isEmpty()) {
+    if (!error.isEmpty())
         fail(error);
-        return;
-    }
-    connect(
-        window, &QQuickWindow::beforeRendering, this,
-        [this, window] { presentationState_->beginFrame(window, runtime_->presentationDevice()); },
-        Qt::DirectConnection);
-    connect(
-        window, &QQuickWindow::frameSwapped, this,
-        [this] {
-            const auto result = presentationState_->takeNewPresentedFrame();
-            if (!result)
-                return;
-            const double elapsed =
-                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - result->requestedAt)
-                    .count();
-            emit framePresented(static_cast<int>(result->request.localTime), result->frame.width, result->frame.height,
-                                result->cacheHit, elapsed);
-        },
-        Qt::DirectConnection);
-    window->show();
 }
 void ViewerController::attachViewerItem(ViewerItem* item) {
     if (!items_.contains(item))

@@ -53,9 +53,11 @@ struct ViewerSchedulerCounts {
 };
 class ViewerScheduler final {
 public:
-    // `interactiveCapacity` bounds queued interactive/probe descriptors per
-    // destination. A range is represented by one descriptor per destination
-    // and therefore never allocates a vector proportional to its span.
+    // `interactiveCapacity` bounds the total queued interactive/probe
+    // descriptors across all destinations; a destination coalesces its own
+    // queued work into at most one descriptor. A range is represented by one
+    // descriptor per destination and therefore never allocates a vector
+    // proportional to its span.
     explicit ViewerScheduler(std::size_t interactiveCapacity = 1);
 
     ViewerScheduler(const ViewerScheduler&) = delete;
@@ -85,6 +87,20 @@ public:
     // clears queued descriptors, and never waits for in-flight GPU work.
     void cancel(std::uint64_t id);
 
+    // Destination-scoped cancellation. Drops queued interactive descriptors
+    // and the lazily represented range for `destination` whose id is at or
+    // below `id`, and clears that destination's publication identity when its
+    // state id is at or below `id`. Queued or in-flight work for every other
+    // destination is untouched and the global cancel watermark does not move.
+    // In-flight GPU work is never waited for.
+    void cancel(std::uint64_t id, ViewerDestination destination);
+
+    // Drops the queued interactive descriptors and the lazily represented
+    // range for a destination being retired, then forgets its publication
+    // state so an in-flight request for it is rejected at publication. No
+    // effect on any other destination; in-flight GPU work is not waited for.
+    void retireDestination(ViewerDestination destination);
+
     // `isCurrent` is a publication check. `complete` atomically accepts a
     // current result (or records a stale rejection) and returns whether it
     // was current. Callers must drop stale images; GPU ownership remains with
@@ -98,7 +114,15 @@ public:
     // Invalidates and drops all queued work. In-flight requests become stale.
     void clear();
 
+    // Global work/policy counters. `queued` counts live descriptors; the
+    // accumulated fields include work dropped while retiring a destination.
     [[nodiscard]] ViewerSchedulerCounts counts() const;
+
+    // Counters scoped to one destination. `queued` is that destination's live
+    // interactive descriptors plus its remaining lazily represented range
+    // frames; `dropped`, `staleRejected` and `completed` are that
+    // destination's accumulated values. An unknown destination reports zeros.
+    [[nodiscard]] ViewerSchedulerCounts counts(ViewerDestination destination) const;
 
 private:
     struct Range {
@@ -112,12 +136,17 @@ private:
         std::uint64_t token{};
         std::uint64_t revision{};
         std::uint64_t cacheFloor{};
+        // Per-destination cancellation watermark: publication must clear both
+        // this destination's floor/token and the global cancelFloor_/cancelToken_.
+        std::uint64_t cancelFloor{};
+        std::uint64_t cancelToken{};
     };
 
     bool enqueueInteractive(ViewerScheduledRequest work);
     [[nodiscard]] bool currentLocked(const ViewerScheduledRequest& request) const;
     [[nodiscard]] bool admissibleLocked(std::uint64_t id, ViewerDestination destination) const;
     [[nodiscard]] std::uint64_t remainingRangeLocked() const;
+    void dropLocked(ViewerDestination destination, std::uint64_t frames);
     void dropRangeLocked(ViewerDestination destination);
     [[nodiscard]] const DestinationState* stateLocked(ViewerDestination destination) const;
 
@@ -126,6 +155,9 @@ private:
     std::deque<ViewerScheduledRequest> interactive_;
     std::map<ViewerDestination, Range> ranges_;
     std::map<ViewerDestination, DestinationState> destinations_;
+    // Per-destination accumulation beside the global counters; `queued` is
+    // always recomputed from the live containers rather than accumulated.
+    std::map<ViewerDestination, ViewerSchedulerCounts> destinationCounts_;
     std::uint64_t nextToken_{1};
     std::uint64_t cancelFloor_{};
     std::uint64_t cancelToken_{};

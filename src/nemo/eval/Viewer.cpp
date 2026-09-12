@@ -114,6 +114,12 @@ void ViewerSession::supersedeCache(std::uint64_t revision, std::uint64_t generat
         cache_->supersede(revision, generation, destination);
 }
 
+void ViewerSession::retireDestination(ViewerDestination destination) {
+    std::lock_guard freshnessLock(freshnessMutex_);
+    latestRevisionByDestination_.erase(destination);
+    latestGenerationByDestination_.erase(destination);
+}
+
 ViewerSession::ViewingState& ViewerSession::viewingStateFor(const ColorPolicy& policy) {
     if (ocioConfigPath_.empty())
         ocioConfigPath_ = media::resolveConfigPath({});

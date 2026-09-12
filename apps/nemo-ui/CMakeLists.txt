@@ -15,7 +15,9 @@ if(NEMO_BUILD_UI)
     qt_add_executable(nemo-ui main.cpp PanelContextRouter.cpp PanelContextRouter.hpp
         ParameterEditorRegistry.cpp ParameterEditorRegistry.hpp
         WorkspaceController.cpp WorkspaceController.hpp
-        ViewerController.cpp ViewerController.hpp ViewerRuntime.cpp ViewerRuntime.hpp
+        ViewerController.cpp ViewerController.hpp
+        ViewerControllerRegistry.cpp ViewerControllerRegistry.hpp
+        ViewerRuntime.cpp ViewerRuntime.hpp
         ViewerItem.cpp ViewerItem.hpp GraphItem.cpp GraphItem.hpp TimelineItem.cpp TimelineItem.hpp)
     qt_add_qml_module(nemo-ui
         URI Nemo

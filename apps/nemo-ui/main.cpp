@@ -1,6 +1,7 @@
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
 #include "ViewerController.hpp"
+#include "ViewerControllerRegistry.hpp"
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
@@ -149,6 +150,14 @@ int main(int argc, char* argv[]) {
     nemo::ProjectSession projectSession;
     nemo::ui::PanelContextRouter panelContextRouter(projectSession);
     nemo::ui::ViewerController viewerController(&runtime, projectSession);
+    // The shared facade keeps serving the graph/parameters/timeline panels and
+    // the command-line source load. It owns a destination so source probing and
+    // metadata keep working, but it never renders: no ViewerItem attaches to
+    // it, so it has no viewport.
+    viewerController.setDestination(runtime.allocateDestination(QStringLiteral("shared-facade")));
+    // Panels own their renderers. Declared before the QML engine so the
+    // registry outlives every panel that borrowed a controller from it.
+    nemo::ui::ViewerControllerRegistry viewerControllers(&runtime, projectSession);
     QObject::connect(&viewerController, &nemo::ui::ViewerController::sourceChanged, &panelContextRouter, [&] {
         if (!viewerController.hasSource())
             return;
@@ -156,48 +165,6 @@ int main(int argc, char* argv[]) {
         panelContextRouter.openSource(QStringLiteral("A"), source);
         panelContextRouter.setTimelineTarget(QStringLiteral("A"), QStringLiteral("source:%1").arg(source));
     });
-    std::vector<double> swapLatencies;
-    if (benchmarkFrames > 0) {
-        viewerController.setResolutionMode("half");
-        QObject::connect(&viewerController, &nemo::ui::ViewerController::statusChanged, &app, [&] {
-            if (!viewerController.error().isEmpty()) {
-                std::cerr << "cache benchmark failed: " << viewerController.error().toStdString() << '\n';
-                app.exit(1);
-            }
-        });
-        QObject::connect(
-            &viewerController, &nemo::ui::ViewerController::framePresented, &app,
-            [&](int frame, int width, int height, bool cacheHit, double latency) {
-                const QJsonObject sample{{"event", "viewer_frame_swapped"},
-                                         {"frame", frame},
-                                         {"width", width},
-                                         {"height", height},
-                                         {"cache_hit", cacheHit},
-                                         {"request_to_swap_ms", latency}};
-                std::cout << QJsonDocument(sample).toJson(QJsonDocument::Compact).constData() << std::endl;
-                swapLatencies.push_back(latency);
-                if (static_cast<int>(swapLatencies.size()) >= benchmarkFrames) {
-                    std::sort(swapLatencies.begin(), swapLatencies.end());
-                    const auto p95 = static_cast<std::size_t>(std::ceil(swapLatencies.size() * 0.95)) - 1;
-                    const QJsonObject summary{{"event", "viewer_latency_summary"},
-                                              {"samples", benchmarkFrames},
-                                              {"p95_ms", swapLatencies[p95]},
-                                              {"boundary", "Qt frameSwapped; window-system handoff, not scanout"}};
-                    std::cout << QJsonDocument(summary).toJson(QJsonDocument::Compact).constData() << std::endl;
-                    app.quit();
-                } else if (viewerController.frameCount() > 0 && frame + 1 >= viewerController.frameCount()) {
-                    std::cerr << "cache benchmark failed: source has fewer frames than requested\n";
-                    app.exit(1);
-                } else {
-                    viewerController.setFrame(frame + 1);
-                }
-            },
-            Qt::QueuedConnection);
-        QTimer::singleShot(600'000, &app, [&] {
-            std::cerr << "cache benchmark failed: timed out waiting for rendered presentation\n";
-            app.exit(1);
-        });
-    }
 
     nemo::workspace::WorkspaceController workspace(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
                                                    QStringLiteral("/workspace.json"));
@@ -219,6 +186,7 @@ int main(int argc, char* argv[]) {
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &panelContextRouter);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
+        engine.rootContext()->setContextProperty(QStringLiteral("viewerControllers"), &viewerControllers);
         engine.rootContext()->setContextProperty(QStringLiteral("parameterEditors"), &parameterEditors);
         // Wayland Vulkan renders our QML chrome, not Qt's client decorations.
         // Set the window policy before creation so input and pixels share an origin.
@@ -233,13 +201,12 @@ int main(int argc, char* argv[]) {
         // validate surface support, then show it. Qt's device-wide waits
         // cannot race the independent execution device.
         auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
-        viewerController.attachWindow(window);
-        if (!viewerController.error().isEmpty()) {
-            std::cerr << "nemo-ui: presentation attach failed: " << viewerController.error().toStdString() << '\n';
+        const QString attachError = runtime.attachToWindow(window);
+        if (!attachError.isEmpty()) {
+            std::cerr << "nemo-ui: presentation attach failed: " << attachError.toStdString() << '\n';
             return 1;
         }
 
-        // Reproducible manual scenario from the command line.
         const QString sourcePath = parser.value(sourceOption);
         if (!sourcePath.isEmpty()) {
             QMetaObject::invokeMethod(
@@ -248,10 +215,80 @@ int main(int argc, char* argv[]) {
         }
         bool frameOk = false;
         const int initialFrame = parser.value(frameOption).toInt(&frameOk);
-        if (frameOk && initialFrame != 0) {
-            QMetaObject::invokeMethod(
-                &viewerController, [&viewerController, initialFrame] { viewerController.setFrame(initialFrame); },
-                Qt::QueuedConnection);
+        const bool wantsInitialFrame = frameOk && initialFrame != 0;
+        const bool needsPrimary = benchmarkFrames > 0 || wantsInitialFrame;
+
+        // Panel bodies load through Qt.callLater, so the first-created viewer
+        // controller does not exist until the first event-loop turns. Configure
+        // the benchmark/initial frame as soon as a panel owns a destination.
+        std::vector<double> swapLatencies;
+        bool primaryConfigured = false;
+        const auto configurePrimary = [&] {
+            if (primaryConfigured)
+                return;
+            auto* primary = qobject_cast<nemo::ui::ViewerController*>(viewerControllers.primary());
+            if (!primary || (needsPrimary && !primary->hasDestination()))
+                return;
+            primaryConfigured = true;
+            if (benchmarkFrames > 0) {
+                primary->setResolutionMode("half");
+                QObject::connect(primary, &nemo::ui::ViewerController::statusChanged, &app, [&, primary] {
+                    if (!primary->error().isEmpty()) {
+                        std::cerr << "cache benchmark failed: " << primary->error().toStdString() << '\n';
+                        app.exit(1);
+                    }
+                });
+                QObject::connect(
+                    primary, &nemo::ui::ViewerController::framePresented, &app,
+                    [&, primary](int frame, int width, int height, bool cacheHit, double latency) {
+                        const QJsonObject sample{{"event", "viewer_frame_swapped"},
+                                                 {"frame", frame},
+                                                 {"width", width},
+                                                 {"height", height},
+                                                 {"cache_hit", cacheHit},
+                                                 {"request_to_swap_ms", latency}};
+                        std::cout << QJsonDocument(sample).toJson(QJsonDocument::Compact).constData() << std::endl;
+                        swapLatencies.push_back(latency);
+                        if (static_cast<int>(swapLatencies.size()) >= benchmarkFrames) {
+                            std::sort(swapLatencies.begin(), swapLatencies.end());
+                            const auto p95 = static_cast<std::size_t>(std::ceil(swapLatencies.size() * 0.95)) - 1;
+                            const QJsonObject summary{
+                                {"event", "viewer_latency_summary"},
+                                {"samples", benchmarkFrames},
+                                {"p95_ms", swapLatencies[p95]},
+                                {"boundary", "Qt frameSwapped; window-system handoff, not scanout"}};
+                            std::cout << QJsonDocument(summary).toJson(QJsonDocument::Compact).constData() << std::endl;
+                            app.quit();
+                        } else if (primary->frameCount() > 0 && frame + 1 >= primary->frameCount()) {
+                            std::cerr << "cache benchmark failed: source has fewer frames than requested\n";
+                            app.exit(1);
+                        } else {
+                            primary->setFrame(frame + 1);
+                        }
+                    },
+                    Qt::QueuedConnection);
+                QTimer::singleShot(600'000, &app, [&] {
+                    std::cerr << "cache benchmark failed: timed out waiting for rendered presentation\n";
+                    app.exit(1);
+                });
+            }
+            if (wantsInitialFrame) {
+                QMetaObject::invokeMethod(
+                    primary, [primary, initialFrame] { primary->setFrame(initialFrame); }, Qt::QueuedConnection);
+            }
+        };
+        configurePrimary();
+        if (!primaryConfigured && needsPrimary) {
+            QObject::connect(&viewerControllers, &nemo::ui::ViewerControllerRegistry::controllersChanged, &app,
+                             [&] { configurePrimary(); });
+            QTimer::singleShot(5000, &app, [&] {
+                if (!primaryConfigured) {
+                    std::cerr << "nemo-ui: no viewer panel owns a render destination; the requested "
+                              << (benchmarkFrames > 0 ? "cache benchmark" : "initial frame")
+                              << " cannot be presented\n";
+                    app.exit(1);
+                }
+            });
         }
 
         result = app.exec();

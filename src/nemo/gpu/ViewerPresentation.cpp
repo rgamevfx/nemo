@@ -1,6 +1,8 @@
 #include "nemo/gpu/ViewerPresentation.hpp"
 #include "nemo/gpu/ExternalHandle.hpp"
 
+#include <cstring>
+
 namespace nemo::gpu {
 struct PresentationReady {
     VkDevice producer{};
@@ -86,7 +88,8 @@ std::shared_ptr<PresentationReady> shareReadiness(Device& producer, Device& cons
 
 ViewerPresentation prepareViewerPresentation(Device& producer, Allocator& allocator, Device& consumer,
                                              const Image& source, ColorInterpretation color,
-                                             const std::vector<std::uint32_t>& spirv, std::uint64_t timeout_ns) {
+                                             const std::vector<std::uint32_t>& spirv, ViewerChannel channel,
+                                             std::uint64_t timeout_ns) {
     if (color != ColorInterpretation::DisplayReferred)
         throw GpuException(GpuError::InvalidRequest, "viewer presentation requires the completed viewing transform");
     if (source.format() != VK_FORMAT_R32G32B32A32_SFLOAT || source.dimensions() != 2)
@@ -110,9 +113,19 @@ ViewerPresentation prepareViewerPresentation(Device& producer, Allocator& alloca
         consumer, extent.width, extent.height, VK_FORMAT_R8G8B8A8_UNORM,
         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     auto ready = shareReadiness(producer, consumer);
+    // Presentation-only channel selection. The host-mapped buffer is written
+    // before create() captures its owner token, and pass->retain() keeps the
+    // allocation alive through GPU completion.
+    constexpr VkDeviceSize channelBytes = 16;  // std140 uniform block, vec4-aligned
+    auto channelBuffer =
+        allocator.create_buffer(channelBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryPreference::HostMapped);
+    std::memset(channelBuffer.mapped(), 0, static_cast<std::size_t>(channelBytes));
+    const auto channelValue = static_cast<std::uint32_t>(channel);
+    std::memcpy(channelBuffer.mapped(), &channelValue, sizeof(channelValue));
     auto pass = ComputePass::create(producer, spirv,
                                     {{0, 0, DescriptorKind::StorageImage, nullptr, &source},
-                                     {0, 1, DescriptorKind::StorageImage, nullptr, &output}});
+                                     {0, 1, DescriptorKind::StorageImage, nullptr, &output},
+                                     {0, 2, DescriptorKind::UniformBuffer, &channelBuffer}});
     auto& queue = producer.submissions(producer.graphics_family());
     SubmissionQueue::TimelineSemaphores handoff;
     handoff.signal = {ready->signal};

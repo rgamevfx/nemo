@@ -110,6 +110,8 @@ if(NEMO_BUILD_UI)
         ../apps/nemo-ui/WorkspaceController.hpp
         ../apps/nemo-ui/ViewerController.cpp
         ../apps/nemo-ui/ViewerController.hpp
+        ../apps/nemo-ui/ViewerControllerRegistry.cpp
+        ../apps/nemo-ui/ViewerControllerRegistry.hpp
         ../apps/nemo-ui/ViewerRuntime.cpp
         ../apps/nemo-ui/ViewerRuntime.hpp
         ../apps/nemo-ui/ViewerItem.cpp

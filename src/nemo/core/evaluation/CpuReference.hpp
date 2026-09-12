@@ -59,6 +59,9 @@ struct EvaluationNodeId {
 struct ExpandedNode {
     EvaluationNodeId id;
     const NodeInstance* node{};
+    // One entry per declared input port, in port order. An absent optional
+    // input holds the invalid sentinel `EvaluationNodeId{}` (node ==
+    // kInvalidNode) so later stages keep declared-port alignment.
     std::vector<EvaluationNodeId> inputs;
     std::optional<EvaluationNodeId> alias;
 };

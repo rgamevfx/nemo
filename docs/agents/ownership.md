@@ -88,7 +88,8 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | Validated edits and history | `src/nemo/core/document/Document.hpp` command factories plus `src/nemo/core/commands/`; `Command`, `CommandStack`, and `ProjectSession` | `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()` maps JSON operations; `ProjectSession::submit()` is the commit seam |
 | CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned |
 | GPU primitives and resource lifetime | `src/nemo/gpu/` (`Device`, `Allocator`, `Submit`, `ComputePass`) | `src/nemo/eval/GpuExecutor.cpp` records/submits work; follow [`rendering.md`](rendering.md) for retained ownership and synchronization rather than copying those rules here |
-| Native effect execution | `src/nemo/eval/GpuExecutor.hpp`; `EffectProgram`, `EffectLibrary`, `loadSlangEffectLibrary`, `glslEffectLibrary`, `submitGpu`, `evaluateGpu` | `src/nemo/eval/Viewer.cpp::ViewerSession` loads the Slang library. The evaluator owns execution; effects never add Qt or persistent-model dependencies |
+| Native effect execution | `src/nemo/eval/GpuExecutor.hpp` (`EffectProgram`, `EffectLibrary`, `loadSlangEffectLibrary`, `glslEffectLibrary`, `submitGpu`, `evaluateGpu`) and the CPU reference [`NativeEffects.hpp`](../../src/nemo/core/evaluation/NativeEffects.hpp) (`evaluateNativeEffect`) | [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp) owns the typed effective parameters (`effectiveEffectMask`/`effectiveGrade`/`effectiveBlur`/`effectiveTransform`) both executors consume; `CpuReference.cpp` dispatches `grade`/`blur`/`transform` to `evaluateNativeEffect`. `ViewerSession` loads the Slang library. Numerical contract and spatial limits: [`rendering.md`](rendering.md) |
+| Optional input ports and absent slots | `src/nemo/core/nodes/NodeCatalog.hpp` (`PortSpec::optional`); `Plan.hpp` slot model with `CpuReference.cpp` expansion | An absent optional slot keeps its declared port position as `EvaluationNodeId{}` (node == `kInvalidNode`) in `ExpandedNode.inputs`/`PlanStep.inputs`; `Reuse.hpp` marks it in result identity with `kAbsentInputKeyHash`; `GpuExecutor` binds the main image as a valid dummy descriptor with `maskPresent=0`, never an allocated fallback. Grade/Blur/Transform's only optional input is port 1 `mask` |
 | Media and color adapters | `src/nemo/media/` public image/viewing contracts; external OIIO/OCIO/FFmpeg types stay behind `.cpp` adapters | CLI probe/render and `eval::SourceSession` consume the application media contract. `src/nemo/media/ImageSource.{hpp,cpp}` owns still/sequence `SourceReference` decode (pattern resolution, declared-color interpretation, scene-linear straight-alpha conversion, headless `ImageSourceProvider`) — reuse it rather than adding a second still reader |
 | Media import, probing and preview | `src/nemo/media/MediaImportService.hpp`; `MediaImportService`, `MediaImportRequest`/`MediaImportResult`, `inspectMediaSource` | One service worker decodes, probes and reduces a display-referred preview off the GUI thread; the queue is bounded and results carry request identity. `apps/nemo-ui/MediaLibraryModel.*` is the production consumer, requests previews within 160×90 bounds, and owns no decoder |
 | Media Bin catalog adapter | `apps/nemo-ui/MediaLibraryModel.*`; Qt/QML query/command surface over `Document`/`MediaCatalog` | Submits validated catalog commands through `ProjectSession`; owns transient probe results and the bounded display-referred `QImage` thumbnail cache/provider, not persistent catalog state. A runtime probe is a proposal until `applyProbe` commits it; `relink` copies the preserved `SourceReference` |
@@ -130,48 +131,66 @@ node/effect is a coordinated change to the existing catalog and executor seams:
    namespaced and descriptors free of runtime objects.
 2. Add the CPU reference implementation beside the existing implementations in
    `src/nemo/core/evaluation/CpuReference.cpp` and its explicit type dispatch in
-   `evaluateCpu` (for example, the `constcolor` branch).
+   `evaluateCpu` (for example, the `constcolor` branch). An effect with its own
+   numerical contract follows the Grade/Blur/Transform shape: shared typed
+   metadata and admissibility in `src/nemo/core/evaluation/Params.hpp`, pixel
+   math in `evaluateNativeEffect` (`NativeEffects.{hpp,cpp}`), dispatched from
+   the `grade`/`blur`/`transform` branch.
 3. For a native GPU effect, add the Slang kernel under
    `src/nemo/gpu/shaders/`, include its type in
    `eval::loadSlangEffectLibrary`; keep the runtime GLSL reference in
-   `src/nemo/eval/EffectShaders.hpp` and its type in `glslEffectLibrary`.
-   `EffectLibrary` is the current execution input, not a new public registry.
-4. Keep catalog ports/parameters, CPU behavior, GPU binding contract, and
-   implementation version aligned. A new node type, public interface, shader,
-   dependency, or image baseline requires owner review; passing an agent check
-   is not approval.
+   `src/nemo/eval/EffectShaders.hpp` and its type in `glslEffectLibrary`. A
+   multi-pass effect registers each pass as its own library key (`blurHorizontal`
+   is the internal first pass beside the node-visible `blur`). `EffectLibrary`
+   is the current execution input, not a new public registry.
+4. Keep catalog ports/parameters (including the optional mask port declared by
+   `effectInputs()`), CPU behavior, GPU binding contract, and implementation
+   version aligned, and update the numerical contract in
+   [`rendering.md`](rendering.md). A new node type, public interface, shader,
+   dependency, or image baseline requires owner review; a performance claim
+   additionally requires the #16 reference gate. Passing an agent check is not
+   approval.
 
 Current examples/use sites: `constColorDescriptor()` plus the `constcolor`
-CPU/GPU paths, and catalog-backed graph creation submitting `addNodeCommand(...)`.
-Unknown declared types fail explicitly when an executor has no implementation;
-do not silently substitute another effect.
+CPU/GPU paths; the #34 native effects — `gradeDescriptor()`/`blurDescriptor()`/
+`transformDescriptor()` with `evaluateNativeEffect`, `Params.hpp` metadata and
+the matching Slang kernels (contract in [`rendering.md`](rendering.md)); and
+catalog-backed graph creation submitting `addNodeCommand(...)`. Unknown declared
+types fail explicitly when an executor has no implementation; do not silently
+substitute another effect.
 
 #### Parameter and inspector boundary
 
 `ParameterSpec` in `NodeCatalog.hpp` owns name, type, typed default, optional
-numeric min/max and choice values. `ParameterValue.hpp` defines Boolean,
+numeric min/max, choice values, and optional presentation metadata (`label`,
+`section`, `step`, namespaced `editor`). `ParameterValue.hpp` defines Boolean,
 Integer, Float, Choice, Vector2, Vector3, Color and String values; serialization
 and shared parameter commands own conversion/validation, not QML. Use those
 definitions rather than maintaining a second parameter-type table.
 
-**Typed values are implemented; the generic Parameters inspector is not yet
-delivered.** [#46](https://github.com/rgamevfx/nemo/issues/46) owns reusable
-schema-to-control rendering, inspector cards/pinning/scrolling/keying and the
-custom-editor hosting interface. Its delivery must document which schema types
-and metadata select which host controls, unavailable-editor behavior and the
-stable query/gesture contract. [#37](https://github.com/rgamevfx/nemo/issues/37)
-then supplies ColorWarp's custom editor through that host. A schema field or
-editor selector not present in the current catalog is an API change, not an
-assumed existing capability.
+**Typed values and the generic inspector host are delivered.**
+[#46](https://github.com/rgamevfx/nemo/issues/46) is closed owner-accepted
+(including the `ParameterSpec` metadata addition, the `ParameterEditorRegistry`
+interface and the 2×2 default workspace baseline). The production host is
+`apps/nemo-ui/qml/ParametersPanel.qml` over the `ViewerController` parameter and
+animation surface (`parameterInspector`, key status, key/remove, network-scoped
+one-undo parameter gestures); a custom editor registers through the namespaced
+`ParameterEditorRegistry` and is selected from catalog `editor` metadata.
+#46's double-click activation was replaced by the group-based request in #60;
+the panel, accumulation, pinning, columns, keying and unavailable-state
+acceptance stand. [#37](https://github.com/rgamevfx/nemo/issues/37) supplies
+ColorWarp's custom editor through that same host. Generic controls stay usable
+when a registered editor is unavailable, and a schema field or namespaced
+editor selector not present in the current catalog remains an owner-reviewed
+public catalog change, not an assumed capability.
 
 For a new Glow-like effect, add schema plus real CPU/GPU execution through the
-steps above. The graph catalog discovers it and #46's generic inspector consumes
-its schema. The effect task does not change graph selection/wiring, inspector
-card layout, theme or docking, and does not add effect-name switches to QML.
-Until #46 lands, verify values/execution through shared commands and headless
-evaluation; do not claim ordinary inspector support or build a private editor
-to bypass that prerequisite. Backend effect implementation need not wait for
-#46; integrated inspector acceptance must use the real host.
+steps above. The graph catalog discovers it, and the existing generic inspector
+renders its schema through `parameterInspector` with no effect-name switches; a
+custom control goes through `ParameterEditorRegistry`, never a private QML
+editor. The effect task does not change graph selection/wiring, inspector card
+layout, theme or docking. Verify values and execution through shared commands,
+headless evaluation, and the native inspector host.
 
 ### Extend graph editing
 
@@ -198,9 +217,9 @@ an unrelated panel; workspace activation follows panel identity, not map changes
 
 Effect additions use the catalog entry point above, including the category
 metadata that drives shared colors and search. They do not extend this gesture
-machine. #46 consumes group-scoped graph double-click inspector requests that
-carry (group, network, node); #49 owns hierarchy navigation/collapse and
-owned-subnet lifecycle.
+machine. The delivered generic inspector consumes group-scoped graph
+double-click inspector requests that carry (group, network, node); #49 owns
+hierarchy navigation/collapse and owned-subnet lifecycle.
 Neither responsibility is simulated inside the graph editor.
 
 ### Add a panel

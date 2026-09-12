@@ -303,13 +303,15 @@ void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::K
             inputs.push_back(Json{{"name", port.name},
                                   {"kind", port.kind == nemo::PortKind::Image  ? "image"
                                            : port.kind == nemo::PortKind::Mask ? "mask"
-                                                                               : "media"}});
+                                                                               : "media"},
+                                  {"optional", port.optional}});
         Json outputs = Json::array();
         for (const auto& port : descriptor.outputs)
             outputs.push_back(Json{{"name", port.name},
                                    {"kind", port.kind == nemo::PortKind::Image  ? "image"
                                             : port.kind == nemo::PortKind::Mask ? "mask"
-                                                                                : "media"}});
+                                                                                : "media"},
+                                   {"optional", port.optional}});
         Json parameters = Json::array();
         for (const auto& parameter : descriptor.parameters) {
             Json value{{"name", parameter.name},

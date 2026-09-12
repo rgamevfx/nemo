@@ -9,6 +9,10 @@ nemo_add_slang_shaders(nemo_shaders ALL
         merge.slang
         output.slang
         source.slang
+        grade.slang
+        blur.slang
+        blurHorizontal.slang
+        transform.slang
         mediaConvert.slang
         viewerPresentation.slang
 )

@@ -142,7 +142,7 @@ TEST(GraphTest, FormalInputReservationRejectsBypassAndCanBeReleased) {
     network.disconnectInput(input, PortRef{merge, 0});
     EXPECT_FALSE(network.graph().validateEdge(PortRef{source, 0}, PortRef{merge, 0}).has_value());
 }
-TEST(GraphTest, ImageAndMaskPortsRejectIncompatibleConnections) {
+TEST(GraphTest, MaskInputsAcceptImageOrMaskButMaskCannotFeedImage) {
     NodeDescriptor descriptor{
         .type = "mask.fixture",
         .displayName = "Mask Fixture",
@@ -155,11 +155,19 @@ TEST(GraphTest, ImageAndMaskPortsRejectIncompatibleConnections) {
     const NodeId maskSource = g.addNode("mask.fixture", "mask-source");
     const NodeId maskSink = g.addNode("mask.fixture", "mask-sink");
     const NodeId imageSource = g.addNode("testpattern", "image-source");
+
+    // Mask outputs satisfy mask inputs.
     EXPECT_FALSE(g.validateEdge(PortRef{maskSource, 0}, PortRef{maskSink, 0}).has_value());
-    const auto incompatible = g.validateEdge(PortRef{imageSource, 0}, PortRef{maskSink, 0});
+    // An Image output is also a valid mask source: any stored channel can be
+    // addressed as coverage, so this direction is accepted.
+    EXPECT_FALSE(g.validateEdge(PortRef{imageSource, 0}, PortRef{maskSink, 0}).has_value());
+
+    // The reverse is not symmetric: a Mask output can never stand in for an
+    // Image input.
+    const NodeId imageSink = g.addNode("output", "image-sink");
+    const auto incompatible = g.validateEdge(PortRef{maskSource, 0}, PortRef{imageSink, 0});
     ASSERT_TRUE(incompatible.has_value());
     EXPECT_EQ(incompatible->code, GraphError::PortType);
-    EXPECT_NE(incompatible->message.find("does not match"), std::string::npos);
 }
 
 TEST(GraphTest, ViewerAcceptsOneImageInputAndProvidesNoOutput) {

@@ -235,7 +235,14 @@ std::vector<PortSpec> parsePorts(const nlohmann::json& value, const std::string&
         const auto& entry = value.at(index);
         if (!entry.is_object() || !entry.contains("kind") || !entry.contains("name") || !entry.at("name").is_string())
             throw DeserializeError(context + "[" + std::to_string(index) + "]: kind and string name are required");
-        ports.push_back(PortSpec{parseKind(entry.at("kind"), context), entry.at("name").get<std::string>()});
+        bool optional = false;
+        const auto optionalField = entry.find("optional");
+        if (optionalField != entry.end()) {
+            if (!optionalField->is_boolean())
+                throw DeserializeError(context + "[" + std::to_string(index) + "]: 'optional' must be a boolean");
+            optional = optionalField->get<bool>();
+        }
+        ports.push_back(PortSpec{parseKind(entry.at("kind"), context), entry.at("name").get<std::string>(), optional});
     }
 
     return ports;
@@ -1101,12 +1108,20 @@ nlohmann::json saveDocument(const Document& document) {
             if (node.instance != kInvalidNetworkInstance)
                 value["instance"] = node.instance;
             if (node.hasPortContract) {
+                const auto portJson = [](const PortSpec& port) {
+                    nlohmann::json value{{"kind", kindName(port.kind)}, {"name", port.name}};
+                    // Emit the flag only when set so existing contracts keep
+                    // byte-identical output; absence means required.
+                    if (port.optional)
+                        value["optional"] = true;
+                    return value;
+                };
                 value["inputPorts"] = nlohmann::json::array();
                 for (const auto& p : node.inputPorts)
-                    value["inputPorts"].push_back({{"kind", kindName(p.kind)}, {"name", p.name}});
+                    value["inputPorts"].push_back(portJson(p));
                 value["outputPorts"] = nlohmann::json::array();
                 for (const auto& p : node.outputPorts)
-                    value["outputPorts"].push_back({{"kind", kindName(p.kind)}, {"name", p.name}});
+                    value["outputPorts"].push_back(portJson(p));
             }
             applyUnknownFields(value, node.extension);
             nodes.push_back(std::move(value));

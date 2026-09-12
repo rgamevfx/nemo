@@ -4,6 +4,7 @@
 #include "nemo/media/ImageIO.hpp"
 #include "nemo/media/ImageSource.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -15,6 +16,16 @@ namespace {
 
 [[noreturn]] void failSource(const NodeInstance& node, const std::string& what) {
     throw EvaluationException(describeNode(node) + ": " + what, node.id, node.name);
+}
+
+// Actual source pixel aspect, validated: a non-finite or non-positive value
+// is a node error, never silently replaced by a square-pixel assumption
+// (issue #34: the transform honors real anamorphic media).
+[[nodiscard]] float validatedPixelAspect(double aspect, const NodeInstance& node, const std::string& context) {
+    if (!std::isfinite(aspect) || aspect <= 0.0) {
+        failSource(node, context + " reports an invalid pixel aspect (" + std::to_string(aspect) + ")");
+    }
+    return static_cast<float>(aspect);
 }
 
 // Strict enum parsing: every value must name a declared member; anything
@@ -90,13 +101,13 @@ SourceSession::DecoderState SourceSession::openState(const Document& document, c
 }
 
 void SourceSession::cachePut(const std::pair<std::string, std::int64_t>& cacheKey,
-                             std::shared_ptr<const gpu::Image> image) {
+                             std::shared_ptr<const gpu::Image> image, float pixelAspect) {
     while (frames_.size() >= kMaxCachedFrames) {
         const auto evicted = frameOrder_.front();
         frameOrder_.pop_front();
         frames_.erase(evicted);
     }
-    frames_[cacheKey] = std::move(image);
+    frames_[cacheKey] = {std::move(image), pixelAspect};
     frameOrder_.push_back(cacheKey);
 }
 
@@ -155,8 +166,8 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, Net
                 break;
             }
         }
-        return DecodedFrame{cached->second, static_cast<int>(cached->second->extent().width),
-                            static_cast<int>(cached->second->extent().height), frame};
+        return DecodedFrame{cached->second.first, static_cast<int>(cached->second.first->extent().width),
+                            static_cast<int>(cached->second.first->extent().height), frame, cached->second.second};
     }
 
     // Classify the reference once per runtime key (issue #62): a still or
@@ -181,6 +192,7 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, Net
         const media::ImageFrame decoded = media::readImageFrame(reference, frame, "source node '" + node.name + "'");
         const int width = decoded.image.width();
         const int height = decoded.image.height();
+        const float pixelAspect = validatedPixelAspect(decoded.info.pixelAspect, node, "source '" + key + "'");
         gpu::Image image = allocator_.create_image(
             static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1, VK_FORMAT_R32G32B32A32_SFLOAT,
             // SAMPLED is not used by the executor (it binds this as a storage
@@ -199,8 +211,8 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, Net
             VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT,
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, timeout_ns);
         std::shared_ptr<const gpu::Image> shared = std::make_shared<gpu::Image>(std::move(image));
-        cachePut(cacheKey, shared);
-        return DecodedFrame{std::move(shared), width, height, frame};
+        cachePut(cacheKey, shared, pixelAspect);
+        return DecodedFrame{std::move(shared), width, height, frame, pixelAspect};
     }
 
     // Open/position a decoder: a request behind the stream position
@@ -220,6 +232,11 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, Net
     std::erase(decoderOrder_, runtimeKey);
     decoderOrder_.push_back(runtimeKey);
 
+    // ClipInfo is stable for the open decoder; validate it once and carry it
+    // across every frame this decoder yields.
+    const float pixelAspect =
+        validatedPixelAspect(stateIt->second.decoder->info().pixelAspect, node, "source '" + key + "'");
+
     // Decode forward to the target frame; every intermediate frame enters
     // the bounded cache (scrubbing and sibling representations reuse it).
     while (true) {
@@ -234,10 +251,10 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, Net
         const std::int64_t decodedFrame = stateIt->second.nextFrame++;
         auto shared = std::shared_ptr<const gpu::Image>(std::move(image));
         if (decodedFrame == frame) {
-            cachePut(cacheKey, shared);
-            return DecodedFrame{std::move(shared), width, height, frame};
+            cachePut(cacheKey, shared, pixelAspect);
+            return DecodedFrame{std::move(shared), width, height, frame, pixelAspect};
         }
-        cachePut({runtimeKey, decodedFrame}, std::move(shared));
+        cachePut({runtimeKey, decodedFrame}, std::move(shared), pixelAspect);
     }
 }
 

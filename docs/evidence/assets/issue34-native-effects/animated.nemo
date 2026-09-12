@@ -1,0 +1,446 @@
+{
+  "animationChannels": [
+    {
+      "address": {
+        "key": "gamma",
+        "network": 1,
+        "node": 2
+      },
+      "id": 1,
+      "keys": [
+        {
+          "id": 1,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 0.0,
+          "value": {
+            "type": "color",
+            "value": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "id": 2,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 2.0,
+          "value": {
+            "type": "color",
+            "value": [
+              2.0,
+              2.0,
+              2.0,
+              1.0
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "color": {
+    "deliveryTransform": "sRGB/rec709",
+    "viewerTransform": "sRGB/rec709",
+    "workingSpace": "linear"
+  },
+  "colorConfig": "../../issue12-view.ocio",
+  "format": "nemo",
+  "instances": [],
+  "mediaCatalog": {
+    "bins": [],
+    "entries": [],
+    "nextBinId": 1,
+    "nextEntryId": 1
+  },
+  "name": "Issue 34 real native effects",
+  "networks": [
+    {
+      "defaultOutput": 8,
+      "edges": [
+        {
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "id": 1,
+          "to": {
+            "node": 2,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 2,
+            "port": 0
+          },
+          "id": 2,
+          "to": {
+            "node": 3,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "port": 0
+          },
+          "id": 3,
+          "to": {
+            "node": 4,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 6,
+            "port": 0
+          },
+          "id": 5,
+          "to": {
+            "node": 7,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "port": 0
+          },
+          "id": 6,
+          "to": {
+            "node": 8,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "port": 0
+          },
+          "id": 7,
+          "to": {
+            "node": 9,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "port": 0
+          },
+          "id": 8,
+          "to": {
+            "node": 2,
+            "port": 1
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "port": 0
+          },
+          "id": 9,
+          "to": {
+            "node": 3,
+            "port": 1
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "port": 0
+          },
+          "id": 10,
+          "to": {
+            "node": 4,
+            "port": 1
+          }
+        },
+        {
+          "from": {
+            "node": 4,
+            "port": 0
+          },
+          "id": 11,
+          "to": {
+            "node": 10,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "port": 0
+          },
+          "id": 12,
+          "to": {
+            "node": 7,
+            "port": 1
+          }
+        }
+      ],
+      "id": 1,
+      "inputConnections": [],
+      "inputs": [],
+      "name": "Root",
+      "nextEdgeId": 13,
+      "nextInterfacePortId": 1,
+      "nextNodeId": 11,
+      "nodes": [
+        {
+          "id": 1,
+          "layout": {
+            "x": 100.0,
+            "y": 50.0
+          },
+          "name": "plate",
+          "params": {
+            "source": {
+              "type": "string",
+              "value": "src"
+            }
+          },
+          "type": "source"
+        },
+        {
+          "id": 2,
+          "layout": {
+            "x": 100.0,
+            "y": 120.0
+          },
+          "name": "Grade1",
+          "params": {
+            "clampBlack": {
+              "type": "boolean",
+              "value": false
+            },
+            "gamma": {
+              "type": "color",
+              "value": [
+                1.100000023841858,
+                1.0499999523162842,
+                0.949999988079071,
+                1.0
+              ]
+            },
+            "invertMask": {
+              "type": "boolean",
+              "value": true
+            },
+            "maskChannel": {
+              "type": "choice",
+              "value": "B"
+            },
+            "multiply": {
+              "type": "color",
+              "value": [
+                1.2000000476837158,
+                0.8999999761581421,
+                1.100000023841858,
+                1.0
+              ]
+            },
+            "offset": {
+              "type": "color",
+              "value": [
+                0.05000000074505806,
+                -0.019999999552965164,
+                0.009999999776482582,
+                0.0
+              ]
+            },
+            "reverse": {
+              "type": "boolean",
+              "value": false
+            }
+          },
+          "type": "grade"
+        },
+        {
+          "id": 3,
+          "layout": {
+            "x": 100.0,
+            "y": 190.0
+          },
+          "name": "Blur1",
+          "params": {
+            "maskChannel": {
+              "type": "choice",
+              "value": "R"
+            },
+            "size": {
+              "type": "float",
+              "value": 9.0
+            }
+          },
+          "type": "blur"
+        },
+        {
+          "id": 4,
+          "layout": {
+            "x": 100.0,
+            "y": 260.0
+          },
+          "name": "Transform1",
+          "params": {
+            "maskChannel": {
+              "type": "choice",
+              "value": "R"
+            },
+            "rotate": {
+              "type": "float",
+              "value": 7.0
+            },
+            "scale": {
+              "type": "float",
+              "value": 0.8
+            },
+            "translateX": {
+              "type": "float",
+              "value": 24.0
+            },
+            "translateY": {
+              "type": "float",
+              "value": -12.0
+            }
+          },
+          "type": "transform"
+        },
+        {
+          "id": 5,
+          "layout": {
+            "x": 400.0,
+            "y": 120.0
+          },
+          "name": "mask",
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.25,
+                0.75,
+                0.5,
+                1.0
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 6,
+          "layout": {
+            "x": 400.0,
+            "y": 330.0
+          },
+          "name": "background",
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.02500000037252903,
+                0.03999999910593033,
+                0.07500000298023224,
+                1.0
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 7,
+          "layout": {
+            "x": 100.0,
+            "y": 395.0
+          },
+          "name": "composite",
+          "params": {},
+          "type": "merge"
+        },
+        {
+          "id": 8,
+          "layout": {
+            "x": 100.0,
+            "y": 465.0
+          },
+          "name": "out",
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 9,
+          "layout": {
+            "x": 100.0,
+            "y": 535.0
+          },
+          "name": "Viewer1",
+          "params": {},
+          "type": "viewer"
+        },
+        {
+          "id": 10,
+          "layout": {
+            "x": 100.0,
+            "y": 355.0
+          },
+          "name": "Blur2",
+          "params": {},
+          "type": "blur"
+        }
+      ],
+      "outputConnections": [],
+      "outputs": []
+    }
+  ],
+  "nextAnimationChannelId": 2,
+  "nextInstanceId": 1,
+  "nextKeyframeId": 3,
+  "nextNetworkId": 2,
+  "requiredFeatures": [
+    {
+      "id": "networks",
+      "version": 1
+    },
+    {
+      "id": "animation",
+      "version": 1
+    }
+  ],
+  "rootNetworkId": 1,
+  "schema": 4,
+  "sources": {
+    "src": {
+      "frameOffset": 0,
+      "frameStep": 1,
+      "interpretation": {},
+      "path": "plate.exr",
+      "revision": 1
+    }
+  }
+}

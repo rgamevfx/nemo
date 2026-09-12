@@ -15,8 +15,9 @@ constexpr std::size_t kRequestCapacity = 256;
 bool samePorts(const std::vector<PortSpec>& left, const std::vector<PortSpec>& right) {
     if (left.size() != right.size())
         return false;
-    return std::equal(left.begin(), left.end(), right.begin(),
-                      [](const PortSpec& a, const PortSpec& b) { return a.kind == b.kind && a.name == b.name; });
+    return std::equal(left.begin(), left.end(), right.begin(), [](const PortSpec& a, const PortSpec& b) {
+        return a.kind == b.kind && a.name == b.name && a.optional == b.optional;
+    });
 }
 
 bool sameNode(const NodeInstance& left, const NodeInstance& right) {

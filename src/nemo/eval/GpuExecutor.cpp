@@ -8,9 +8,11 @@
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Error.hpp"
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <numbers>
 #include <sstream>
 #include <utility>
 
@@ -72,12 +74,22 @@ void afterWriteBeforeRead(VkCommandBuffer command, const gpu::Image& image) {
 // execution never reparses parameter text.
 // `sourceFrame` supplies the decoded full-resolution frame for `source`
 // nodes (issue #11): it binds as set 1 input 0 and its dimensions feed the
-// fill kernel through param0.
+// fill kernel through param0. `maskPresent` reports whether the optional
+// mask input is connected (issue #34: absent binds a valid dummy descriptor
+// and reports coverage 1); `pixelAspect` is inherited from the main input
+// layout for the transform's physical-coordinate rotation.
+void fillMaskUniforms(const EffectMaskParameters& mask, bool maskPresent, EffectUniforms& uniforms) {
+    uniforms.mask[0] = static_cast<float>(mask.channel);
+    uniforms.mask[1] = mask.invert ? 1.0F : 0.0F;
+    uniforms.mask[2] = mask.mix;
+    uniforms.mask[3] = maskPresent ? 1.0F : 0.0F;
+}
+
 std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest& request,
-                                const EffectProgram& program, ParameterValues& effectiveParams,
-                                EffectUniforms& uniforms, std::vector<ComputeBinding>& bindings,
-                                gpu::Buffer& uniformBuffer, gpu::Allocator& allocator,
-                                const gpu::Image* sourceFrame = nullptr) {
+                                const EffectProgram& program, bool maskPresent, float pixelAspect,
+                                ParameterValues& effectiveParams, EffectUniforms& uniforms,
+                                std::vector<ComputeBinding>& bindings, gpu::Buffer& uniformBuffer,
+                                gpu::Allocator& allocator, const gpu::Image* sourceFrame = nullptr) {
     uniforms.misc[0] = static_cast<float>(request.localTime);
     // The request region stays FULL-RESOLUTION; the executed raster samples
     // it at samplingScale (issue #11). Both sets of numbers travel in the
@@ -130,6 +142,56 @@ std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const NodeInstance& 
                        "unsupported merge operation '" + operation + "' (this inventory implements 'over' only)");
         }
         inputs = 2;
+    } else if (node.type == "grade") {
+        // issue #34: per-channel Color parameters plus the enabled-channel
+        // bitmask, reverse, and the two clamps; mask controls are common.
+        const GradeParameters grade = effectiveGrade(catalog, node, effectiveParams);
+        for (int c = 0; c < 4; ++c) {
+            uniforms.gradeBlackpoint[c] = grade.blackpoint[c];
+            uniforms.gradeWhitepoint[c] = grade.whitepoint[c];
+            uniforms.gradeLift[c] = grade.lift[c];
+            uniforms.gradeGain[c] = grade.gain[c];
+            uniforms.gradeMultiply[c] = grade.multiply[c];
+            uniforms.gradeOffset[c] = grade.offset[c];
+            uniforms.gradeGamma[c] = grade.gamma[c];
+        }
+        uniforms.gradeFlags[0] = static_cast<float>(grade.channels);
+        uniforms.gradeFlags[1] = grade.reverse ? 1.0F : 0.0F;
+        uniforms.gradeFlags[2] = grade.clampBlack ? 1.0F : 0.0F;
+        uniforms.gradeFlags[3] = grade.clampWhite ? 1.0F : 0.0F;
+        fillMaskUniforms(effectiveEffectMask(catalog, node, effectiveParams), maskPresent, uniforms);
+        inputs = 2;
+    } else if (node.type == "blur") {
+        const BlurParameters blur = effectiveBlur(catalog, node, effectiveParams);
+        uniforms.blur[0] = blur.size;
+        uniforms.blur[1] = static_cast<float>(blur.channels);
+        // Raster support: size is a full-resolution radius, so a reduced
+        // raster needs ceil(size/samplingScale) taps per axis.
+        uniforms.blur[2] = static_cast<float>(static_cast<int>(std::ceil(blur.size / static_cast<float>(scale))));
+        fillMaskUniforms(effectiveEffectMask(catalog, node, effectiveParams), maskPresent, uniforms);
+        inputs = 2;
+    } else if (node.type == "transform") {
+        const TransformParameters transform = effectiveTransform(catalog, node, effectiveParams);
+        // The aspect travels from the main input layout; an unrepresentable
+        // aspect is a node+parameter error, never a silent fallback.
+        if (!std::isfinite(pixelAspect) || pixelAspect <= 0.0F) {
+            failEffect(node, program,
+                       "transform main input has an invalid pixel aspect (" + std::to_string(pixelAspect) + ")");
+        }
+        uniforms.transform[0] = transform.translateX;
+        uniforms.transform[1] = transform.translateY;
+        uniforms.transform[2] = transform.scale;
+        uniforms.transform[3] = transform.rotate;
+        // Rotation trig is computed once on the host in double precision so
+        // exact 90-degree ties stay exact in float; the kernels never
+        // evaluate radians/cos/sin per output pixel (issue #34 parity).
+        const double angleRadians = static_cast<double>(transform.rotate) * (std::numbers::pi / 180.0);
+        uniforms.transformFlags[0] = static_cast<float>(transform.filter);
+        uniforms.transformFlags[1] = pixelAspect;
+        uniforms.transformFlags[2] = static_cast<float>(std::cos(angleRadians));
+        uniforms.transformFlags[3] = static_cast<float>(std::sin(angleRadians));
+        fillMaskUniforms(effectiveEffectMask(catalog, node, effectiveParams), maskPresent, uniforms);
+        inputs = 2;
     } else {
         failEffect(node, program,
                    "type '" + node.type +
@@ -163,7 +225,11 @@ std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const NodeInstance& 
 }  // namespace
 
 EffectLibrary loadSlangEffectLibrary(const std::filesystem::path& spvDir, const std::filesystem::path& sourceDir) {
-    static const char* kEffects[] = {"testpattern", "constcolor", "merge", "output", "source"};
+    // Node-visible effects plus blur's internal first pass. Every program is
+    // loaded through this one library so the native and reference front ends
+    // share loading, fingerprinting, and diagnostics (issue #34).
+    static const char* kEffects[] = {"testpattern", "constcolor", "merge",          "output",   "source",
+                                     "grade",       "blur",       "blurHorizontal", "transform"};
     EffectLibrary library;
     for (const char* type : kEffects) {
         const std::filesystem::path spvPath = spvDir / (std::string(type) + ".spv");
@@ -184,10 +250,12 @@ EffectLibrary loadSlangEffectLibrary(const std::filesystem::path& spvDir, const 
 }
 
 EffectLibrary glslEffectLibrary() {
-    static const char* kEffects[] = {"testpattern", "constcolor", "merge", "output", "source"};
-    const char* sources[] = {kGlslTestpattern, kGlslConstcolor, kGlslMerge, kGlslOutput, kGlslSource};
+    static const char* kEffects[] = {"testpattern", "constcolor", "merge",          "output",   "source",
+                                     "grade",       "blur",       "blurHorizontal", "transform"};
+    const char* sources[] = {kGlslTestpattern, kGlslConstcolor, kGlslMerge,          kGlslOutput,   kGlslSource,
+                             kGlslGrade,       kGlslBlur,       kGlslBlurHorizontal, kGlslTransform};
     EffectLibrary library;
-    for (std::size_t i = 0; i < 5; ++i) {
+    for (std::size_t i = 0; i < 9; ++i) {
         EffectProgram program;
         program.glsl = std::string(kGlslPreamble) + sources[i];
         program.sourcePath = "runtime GLSL (glslang), EffectShaders.hpp:" + std::string(kEffects[i]);
@@ -219,8 +287,12 @@ ResultKey queryViewerResultKey(const Document& document, EvaluationRequest reque
         EvaluationRequest scopedRequest = request;
         scopedRequest.network = expandedNode.id.network;
         std::vector<std::uint64_t> inputHashes;
-        for (const auto& producer : expandedNode.inputs)
-            inputHashes.push_back(keys.at(producer).hash);
+        for (const auto& producer : expandedNode.inputs) {
+            // Absent optional slots keep their declared-port position in the
+            // key with the shared absent-input constant, so a missing mask
+            // and a connected mask never collide and both executors agree.
+            inputHashes.push_back(producer.node == kInvalidNode ? kAbsentInputKeyHash : keys.at(producer).hash);
+        }
         const auto key = nodeResultKey(document, *effectiveNode, inputHashes, scopedRequest, context);
         keys.emplace(expandedNode.id, key);
     }
@@ -285,11 +357,19 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
     std::map<EvaluationNodeId, ResultKey> keys;
 
     GpuEvaluation evaluation;
-    struct Dispatch {
+    // One recorded compute pass and the images it reads/writes. A node maps
+    // to one pass, except blur, whose two separable passes both live in this
+    // one submission (issue #34: no per-node wait, no readback between).
+    struct SubDispatch {
         std::unique_ptr<ComputePass> pass;
+        const gpu::Image* output;              // image this pass writes (fresh)
+        std::vector<const gpu::Image*> reads;  // images to barrier before record
+    };
+    struct Dispatch {
+        std::vector<SubDispatch> passes;
         std::shared_ptr<const GpuNodeImage> output;
-        std::vector<const gpu::Image*> inputs;
-        std::shared_ptr<const gpu::Image> externalInput;
+        std::shared_ptr<const gpu::Image> externalInput;  // decoded source frame
+        std::shared_ptr<gpu::Image> scratch;              // blur intermediate
     };
     std::vector<Dispatch> dispatches;
     gpu::SubmissionQueue::RetainedResources retained;
@@ -325,15 +405,30 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
         std::vector<std::uint64_t> inputKeyHashes;
         inputKeyHashes.reserve(expandedNode.inputs.size());
-        std::vector<const gpu::Image*> inputs;
+        std::vector<const gpu::Image*> inputs;      // declared-port aligned; null for absent optional
+        std::vector<const gpu::Image*> realInputs;  // connected images only (barrier set)
         inputs.reserve(expandedNode.inputs.size());
         for (const EvaluationNodeId& producer : expandedNode.inputs) {
+            if (producer.node == kInvalidNode) {
+                // Absent optional slot: keep declared-port alignment with an
+                // invalid/default entry (issue #34) and the shared absent
+                // constant in the content key. No producer key, image
+                // identity, or descriptor exists.
+                inputKeyHashes.push_back(kAbsentInputKeyHash);
+                step.inputs.push_back(kInvalidNode);
+                step.scopedInputs.push_back(ScopedPlanInput{});
+                step.inputImages.push_back(ImageIdentity{});
+                inputs.push_back(nullptr);
+                continue;
+            }
             inputKeyHashes.push_back(keys.at(producer).hash);
             step.inputs.push_back(producer.node);
             step.scopedInputs.push_back(ScopedPlanInput{producer.network, producer.instance, producer.node,
                                                         producer.outputPort, producer.path});
             step.inputImages.push_back(identities.at(producer));
-            inputs.push_back(&scopedImages.at(producer)->image);
+            const gpu::Image* image = &scopedImages.at(producer)->image;
+            inputs.push_back(image);
+            realInputs.push_back(image);
         }
         const ResultKey key = nodeResultKey(document, *effectiveNode, inputKeyHashes, scopedRequest, keyContext);
         keys.emplace(expandedNode.id, key);
@@ -372,7 +467,17 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                        availability + " (no effect package in the supplied effect library; no silent substitution)");
         }
         const EffectProgram& program = programIt->second;
+        // Connected/absent optional inputs (issue #34): port 0 is the
+        // required main image, port 1 the optional mask. An absent mask
+        // binds the main image as a valid dummy descriptor with
+        // maskPresent=0 (no allocated white fallback).
+        const gpu::Image* mainImage = inputs.empty() ? nullptr : inputs[0];
+        const gpu::Image* maskImage = inputs.size() > 1 ? inputs[1] : nullptr;
+        const bool maskPresent = maskImage != nullptr;
+        const gpu::Image* dummyMask = maskPresent ? maskImage : mainImage;
+
         std::shared_ptr<const gpu::Image> sourceFrame;
+        float pixelAspect = 1.0F;
         if (effectiveNode->type == "source") {
             if (sources == nullptr)
                 failEffect(*effectiveNode, program, "real-media source node evaluated without a SourceSession");
@@ -384,56 +489,203 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                                  timeout_ns.value_or(10'000'000'000ULL));
             sourceFrame = std::move(decoded.image);
             step.effectiveParams.emplace("frame", decoded.frame);
+            // The decoded frame's actual pixel aspect drives this node's
+            // output and propagates through every downstream node.
+            pixelAspect = decoded.pixelAspect;
+        }
+        // Pixel aspect travels with the main image layout (issue #34): the
+        // transform rotates physical coordinates, and consumers see the same
+        // propagated aspect in the produced identity.
+        if (!expandedNode.inputs.empty() && expandedNode.inputs[0].node != kInvalidNode) {
+            pixelAspect = scopedImages.at(expandedNode.inputs[0])->layout.pixelAspect;
         }
 
-        const std::vector<std::uint32_t>* spirv = &programIt->second.spirv;
-        if (!programIt->second.glsl.empty()) {
-            auto cached = compiled.find(effectiveNode->type);
-            if (cached == compiled.end()) {
-                try {
-                    cached =
-                        compiled.emplace(effectiveNode->type, gpu::compileGlslToSpirv(programIt->second.glsl)).first;
-                } catch (const gpu::CompileException& error) {
-                    failEffect(*effectiveNode, programIt->second,
-                               std::string("shader compile failed: ") + error.what());
+        // Resolves one program's SPIR-V: build-time Slang when precompiled,
+        // otherwise runtime GLSL compiled and cached by library key (issue
+        // #34: blur needs both of its pass programs through this seam).
+        auto spirvFor = [&](const std::string& type, const EffectProgram& effectProgram,
+                            const NodeInstance& failingNode) -> const std::vector<std::uint32_t>* {
+            if (!effectProgram.glsl.empty()) {
+                auto cached = compiled.find(type);
+                if (cached == compiled.end()) {
+                    try {
+                        cached = compiled.emplace(type, gpu::compileGlslToSpirv(effectProgram.glsl)).first;
+                    } catch (const gpu::CompileException& error) {
+                        failEffect(failingNode, effectProgram, std::string("shader compile failed: ") + error.what());
+                    }
                 }
+                return &cached->second;
             }
-            spirv = &cached->second;
-        }
+            return &effectProgram.spirv;
+        };
+        const std::vector<std::uint32_t>* spirv = spirvFor(effectiveNode->type, program, *effectiveNode);
+
         EffectUniforms uniforms{};
-        std::vector<ComputeBinding> bindings;
+        std::vector<ComputeBinding> baseBindings;
         gpu::Buffer uniformBuffer;
-        const std::uint32_t inputCount = prepareEffectStep(
-            document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest, program,
-            step.effectiveParams, uniforms, bindings, uniformBuffer, allocator, sourceFrame ? &*sourceFrame : nullptr);
+        const std::uint32_t inputCount =
+            prepareEffectStep(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
+                              program, maskPresent, pixelAspect, step.effectiveParams, uniforms, baseBindings,
+                              uniformBuffer, allocator, sourceFrame ? &*sourceFrame : nullptr);
         if (inputCount != inputs.size())
             failEffect(*effectiveNode, program,
                        "effect declares " + std::to_string(inputCount) + " inputs but the plan wires " +
                            std::to_string(inputs.size()));
-        for (std::uint32_t i = 0; i < inputCount; ++i)
-            bindings.push_back({1, i, DescriptorKind::StorageImage, nullptr, inputs[i], false});
 
+        ImageLayout nodeLayout = layout;
+        nodeLayout.pixelAspect = pixelAspect;
         auto resident = std::make_shared<GpuNodeImage>();
-        resident->layout = layout;
+        resident->layout = nodeLayout;
         try {
             resident->image = createEffectImage(allocator, scopedRequest);
         } catch (const gpu::GpuException& error) {
             failEffect(*effectiveNode, program, std::string("output image allocation failed: ") + error.what());
         }
-        bindings.push_back({2, 0, DescriptorKind::StorageImage, nullptr, &resident->image, false});
-        std::unique_ptr<ComputePass> pass;
-        try {
-            pass = ComputePass::create(device, *spirv, bindings);
-        } catch (const gpu::GpuException& error) {
-            failEffect(*effectiveNode, program, std::string("pipeline creation failed: ") + error.what());
+
+        Dispatch dispatch;
+        dispatch.output = resident;
+        dispatch.externalInput = std::move(sourceFrame);
+
+        if (effectiveNode->type == "blur") {
+            if (mainImage == nullptr)
+                failEffect(*effectiveNode, program, "blur requires a connected main image input");
+            const float blurSize = uniforms.blur[0];
+            const int support = static_cast<int>(uniforms.blur[2]);
+            if (blurSize <= 0.0F) {
+                // size 0 is an exact identity: ONE pass of the vertical
+                // program (its identity branch never reads the scratch slot)
+                // with no scratch raster and no horizontal pass. The scratch
+                // descriptor is the main image as a valid dummy and a
+                // single-float weight buffer satisfies the pipeline layout.
+                const float identityWeight = 1.0F;
+                gpu::Buffer weightBuffer = allocator.create_buffer(sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                                   gpu::MemoryPreference::HostMapped);
+                std::memcpy(weightBuffer.mapped(), &identityWeight, sizeof(float));
+                retained.push_back(weightBuffer.retain());
+
+                std::vector<ComputeBinding> bindings = baseBindings;
+                bindings.push_back({1, 0, DescriptorKind::StorageImage, nullptr, mainImage, false});
+                bindings.push_back({1, 1, DescriptorKind::StorageImage, nullptr, mainImage, false});
+                bindings.push_back({1, 2, DescriptorKind::StorageImage, nullptr, dummyMask, false});
+                bindings.push_back({2, 0, DescriptorKind::StorageImage, nullptr, &resident->image, false});
+                bindings.push_back({3, 0, DescriptorKind::StorageBuffer, &weightBuffer, nullptr, false});
+                std::unique_ptr<ComputePass> pass;
+                try {
+                    pass = ComputePass::create(device, *spirv, bindings);
+                } catch (const gpu::GpuException& error) {
+                    failEffect(*effectiveNode, program,
+                               std::string("blur identity pipeline creation failed: ") + error.what());
+                }
+                std::vector<const gpu::Image*> reads{mainImage};
+                if (maskPresent)
+                    reads.push_back(maskImage);
+                dispatch.passes.push_back({std::move(pass), &resident->image, std::move(reads)});
+            } else {
+                // Two separable passes, one submission: pass 1 (horizontal,
+                // internal program) main -> retained scratch; pass 2
+                // (vertical, the node-visible program) scratch -> output,
+                // applying the single mask/mix blend against the original
+                // main pixel.
+                const auto horizontalIt = effects.find("blurHorizontal");
+                if (horizontalIt == effects.end())
+                    failEffect(*effectiveNode, program,
+                               "internal blur pass 'blurHorizontal' is missing from the supplied effect library");
+                const std::vector<std::uint32_t>* horizontalSpirv =
+                    spirvFor("blurHorizontal", horizontalIt->second, *effectiveNode);
+                try {
+                    dispatch.scratch = std::make_shared<gpu::Image>(createEffectImage(allocator, scopedRequest));
+                } catch (const gpu::GpuException& error) {
+                    failEffect(*effectiveNode, program, std::string("blur scratch allocation failed: ") + error.what());
+                }
+
+                // Normalized Gaussian weights, precomputed once per Blur
+                // preparation (issue #34 perf: no exp()/normalization per
+                // output pixel). size is the full-res support radius,
+                // sigma = size/3, and raster sample i sits at full-res
+                // offset i*scale.
+                std::vector<float> weights(static_cast<std::size_t>(2 * support + 1), 1.0F);
+                const double sigma = static_cast<double>(blurSize) / 3.0;
+                double total = 0.0;
+                for (int i = -support; i <= support; ++i) {
+                    const double weight = std::exp(-0.5 * std::pow(static_cast<double>(i * scale) / sigma, 2.0));
+                    weights[static_cast<std::size_t>(i + support)] = static_cast<float>(weight);
+                    total += weight;
+                }
+                for (float& weight : weights)
+                    weight = static_cast<float>(static_cast<double>(weight) / total);
+                gpu::Buffer weightBuffer =
+                    allocator.create_buffer(weights.size() * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                            gpu::MemoryPreference::HostMapped);
+                std::memcpy(weightBuffer.mapped(), weights.data(), weights.size() * sizeof(float));
+                retained.push_back(weightBuffer.retain());
+
+                std::vector<ComputeBinding> horizontalBindings = baseBindings;
+                horizontalBindings.push_back({1, 0, DescriptorKind::StorageImage, nullptr, mainImage, false});
+                horizontalBindings.push_back(
+                    {2, 0, DescriptorKind::StorageImage, nullptr, dispatch.scratch.get(), false});
+                horizontalBindings.push_back({3, 0, DescriptorKind::StorageBuffer, &weightBuffer, nullptr, false});
+                std::unique_ptr<ComputePass> horizontalPass;
+                try {
+                    horizontalPass = ComputePass::create(device, *horizontalSpirv, horizontalBindings);
+                } catch (const gpu::GpuException& error) {
+                    failEffect(*effectiveNode, program,
+                               std::string("blur horizontal pipeline creation failed: ") + error.what());
+                }
+                dispatch.passes.push_back({std::move(horizontalPass), dispatch.scratch.get(), {mainImage}});
+
+                std::vector<ComputeBinding> verticalBindings = baseBindings;
+                verticalBindings.push_back(
+                    {1, 0, DescriptorKind::StorageImage, nullptr, dispatch.scratch.get(), false});
+                verticalBindings.push_back({1, 1, DescriptorKind::StorageImage, nullptr, mainImage, false});
+                verticalBindings.push_back({1, 2, DescriptorKind::StorageImage, nullptr, dummyMask, false});
+                verticalBindings.push_back({2, 0, DescriptorKind::StorageImage, nullptr, &resident->image, false});
+                verticalBindings.push_back({3, 0, DescriptorKind::StorageBuffer, &weightBuffer, nullptr, false});
+                std::unique_ptr<ComputePass> verticalPass;
+                try {
+                    verticalPass = ComputePass::create(device, *spirv, verticalBindings);
+                } catch (const gpu::GpuException& error) {
+                    failEffect(*effectiveNode, program,
+                               std::string("blur vertical pipeline creation failed: ") + error.what());
+                }
+                std::vector<const gpu::Image*> verticalReads{dispatch.scratch.get(), mainImage};
+                if (maskPresent)
+                    verticalReads.push_back(maskImage);
+                dispatch.passes.push_back({std::move(verticalPass), &resident->image, std::move(verticalReads)});
+            }
+        } else {
+            std::vector<ComputeBinding> bindings = baseBindings;
+            for (std::uint32_t i = 0; i < inputCount; ++i) {
+                const gpu::Image* bound = inputs[i];
+                if (bound == nullptr) {
+                    if (i == 1 && mainImage != nullptr) {
+                        bound = mainImage;  // absent optional mask: valid dummy descriptor
+                    } else {
+                        failEffect(*effectiveNode, program,
+                                   "input port " + std::to_string(i) + " is required but not connected");
+                    }
+                }
+                bindings.push_back({1, i, DescriptorKind::StorageImage, nullptr, bound, false});
+            }
+            bindings.push_back({2, 0, DescriptorKind::StorageImage, nullptr, &resident->image, false});
+            std::unique_ptr<ComputePass> pass;
+            try {
+                pass = ComputePass::create(device, *spirv, bindings);
+            } catch (const gpu::GpuException& error) {
+                failEffect(*effectiveNode, program, std::string("pipeline creation failed: ") + error.what());
+            }
+            dispatch.passes.push_back({std::move(pass), &resident->image, realInputs});
         }
-        retained.push_back(pass->retain());
-        dispatches.push_back({std::move(pass), resident, std::move(inputs), std::move(sourceFrame)});
-        if (dispatches.back().externalInput)
-            retained.push_back(dispatches.back().externalInput);
+
+        for (const auto& sub : dispatch.passes)
+            retained.push_back(sub.pass->retain());
+        if (dispatch.scratch)
+            retained.push_back(dispatch.scratch->retain());
+        if (dispatch.externalInput)
+            retained.push_back(dispatch.externalInput);
+        dispatches.push_back(std::move(dispatch));
 
         step.produced.contentHash = 0;
-        step.produced.layout = layout;
+        step.produced.layout = nodeLayout;
         step.produced.residency = Residency::GpuDevice;
         identities.emplace(expandedNode.id, step.produced);
         scopedImages.emplace(expandedNode.id, resident);
@@ -451,13 +703,15 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         const auto completion = queue.submit(
             [&](VkCommandBuffer command) {
                 for (const auto& dispatch : dispatches) {
-                    prepareFreshImage(command, dispatch.output->image);
-                    for (const auto* input : dispatch.inputs)
-                        afterWriteBeforeRead(command, *input);
                     if (dispatch.externalInput)
                         afterExternalWriteBeforeRead(command, *dispatch.externalInput);
-                    dispatch.pass->record(command, static_cast<uint32_t>((imageWidth + 7) / 8),
-                                          static_cast<uint32_t>((imageHeight + 7) / 8), 1);
+                    for (const auto& sub : dispatch.passes) {
+                        prepareFreshImage(command, *sub.output);
+                        for (const auto* input : sub.reads)
+                            afterWriteBeforeRead(command, *input);
+                        sub.pass->record(command, static_cast<uint32_t>((imageWidth + 7) / 8),
+                                         static_cast<uint32_t>((imageHeight + 7) / 8), 1);
+                    }
                 }
             },
             std::move(retained), {}, timeout_ns.value_or(0));

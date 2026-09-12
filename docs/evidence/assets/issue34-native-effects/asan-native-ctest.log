@@ -1,0 +1,11 @@
+[HANDLER_OUTPUT] 
+Test project /home/rgame/dev/Nemo_Dev2/build/asan
+
+    Start 345: Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion
+1/2 Test #345: Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion ...   Passed   11.33 sec
+    Start 346: Effect.NativeGradeBlurTransformMatchCpuReference
+2/2 Test #346: Effect.NativeGradeBlurTransformMatchCpuReference ..........   Passed   12.39 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =  23.73 sec

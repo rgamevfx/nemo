@@ -596,7 +596,17 @@ TEST(Effect, AnimatedParametersReachNativeGpuExecution) {
 TEST(Effect, DroppedAsyncGraphRetainsResourcesUntilCompletion) {
     auto boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
-    const auto composition = makeComposition();
+    auto composition = makeComposition();
+    // A nonzero-size Blur after the merge (before Output) adds the retained
+    // blur scratch and weight buffers to the submitted batch this test drops.
+    const NodeId blur = rootGraph(composition.doc).addNode("blur", "blur");
+    rootGraph(composition.doc).setParam(blur, "size", 2.0);
+    const auto intoOutput = rootGraph(composition.doc).edgesInto(composition.output);
+    ASSERT_EQ(intoOutput.size(), 1u);
+    const NodeId merge = intoOutput.front().from.node;
+    rootGraph(composition.doc).disconnect(intoOutput.front().id);
+    (void)rootGraph(composition.doc).connect({merge, 0}, {blur, 0});
+    (void)rootGraph(composition.doc).connect({blur, 0}, {composition.output, 0});
     const auto request = requestFor(composition.doc, {0, 0, 16, 16}, 0);
     const auto effects = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
     auto& queue = boot.device->submissions(boot.device->graphics_family());
@@ -649,5 +659,91 @@ TEST(Effect, DroppedAsyncGraphRetainsResourcesUntilCompletion) {
     expectImagesClose(evaluateCpuImage(composition.doc, request),
                       retry.readBack(request.output, *boot.device, *boot.allocator), kTolerance,
                       "retry after cancellation");
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #34: Grade, Blur, and Transform native kernels across both front
+// ends over one tiny shared fixture per effect. The connected mask on Grade
+// also exercises the optional mask slot binding (absent masks bind no
+// allocated fallback image).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Declared, operation-specific tolerances for the issue #34 inventory:
+//   grade:     1e-5 — a handful of float multiply/add/signed-pow ops; the
+//                      budget covers GPU pow/FMA rounding only.
+//   blur:      2e-4 — separable Gaussian with float exp weights; GPU exp and
+//                      tap accumulation differ from the CPU kernel.
+//   transform: 2e-4 — linear/Catmull-Rom interpolation with negative lobes.
+constexpr float kGradeTolerance34 = 1e-5F;
+constexpr float kBlurTolerance34 = 2e-4F;
+constexpr float kTransformTolerance34 = 2e-4F;
+
+}  // namespace
+
+TEST(Effect, NativeGradeBlurTransformMatchCpuReference) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const auto build = [](const char* type, ParameterValues params, bool withMask) {
+        Document doc;
+        rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+        doc.name = std::string{"native-"} + type;
+        const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
+        const NodeId effect = rootGraph(doc).addNode(type, "effect");
+        const NodeId output = rootGraph(doc).addNode("output", "result");
+        for (const auto& [key, value] : params)
+            rootGraph(doc).setParam(effect, key, value);
+        (void)rootGraph(doc).connect({plate, 0}, {effect, 0});
+        if (withMask) {
+            const NodeId mask = rootGraph(doc).addNode("constcolor", "mask");
+            rootGraph(doc).setParam(mask, "color", ColorValue{{0.25F, 0.5F, 0.75F, 0.6F}});
+            (void)rootGraph(doc).connect({mask, 0}, {effect, 1});
+        }
+        (void)rootGraph(doc).connect({effect, 0}, {output, 0});
+        return doc;
+    };
+
+    struct Case {
+        Document doc;
+        const char* label;
+        float tolerance;
+    };
+    const Case cases[] = {
+        {build("grade",
+               ParameterValues{{"gain", ColorValue{{1.5F, 0.75F, 1.25F, 1.0F}}},
+                               {"offset", ColorValue{{-0.1F, 0.05F, 0.0F, 0.0F}}},
+                               {"gamma", ColorValue{{1.2F, 1.0F, 2.0F, 1.0F}}},
+                               {"clampBlack", false},
+                               {"maskChannel", ChoiceValue{"G"}},
+                               {"mix", 0.5}},
+               true),
+         "grade", kGradeTolerance34},
+        {build("blur", ParameterValues{{"size", 4.0}, {"channels", ChoiceValue{"RGBA"}}}, false), "blur",
+         kBlurTolerance34},
+        {build("transform",
+               ParameterValues{{"translateX", 1.5F},
+                               {"translateY", -0.75F},
+                               {"rotate", 12.0F},
+                               {"scale", 1.25F},
+                               {"filter", ChoiceValue{"Cubic"}}},
+               false),
+         "transform", kTransformTolerance34},
+    };
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    for (const Case& testCase : cases) {
+        const EvaluationRequest request = requestFor(testCase.doc, {0, 0, 24, 17}, 2);
+        const CpuImage cpuImage = evaluateCpuImage(testCase.doc, request);
+        eval::GpuEvaluation slangEval = evaluateGpu(testCase.doc, request, slang, *boot.device, *boot.allocator);
+        expectImagesClose(cpuImage, slangEval.readBack(request.output, *boot.device, *boot.allocator),
+                          testCase.tolerance, testCase.label);
+        eval::GpuEvaluation glslEval = evaluateGpu(testCase.doc, request, glsl, *boot.device, *boot.allocator);
+        expectImagesClose(cpuImage, glslEval.readBack(request.output, *boot.device, *boot.allocator),
+                          testCase.tolerance, testCase.label);
+    }
     expectValidationClean(*boot.instance);
 }

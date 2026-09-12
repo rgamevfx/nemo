@@ -14,9 +14,22 @@ namespace nemo {
 
 enum class PortKind { Image, Mask, Media };
 
+// Directional compatibility between a source output kind and a destination
+// input kind. An Image output may feed a Mask input (a mask is a
+// single-channel interpretation of an image), but a Mask output never
+// satisfies an Image input. Every other pairing, including Media, must match
+// exactly. This is a schema fact, not an executor decision.
+[[nodiscard]] constexpr bool portKindsCompatible(PortKind from, PortKind to) {
+    return from == to || (from == PortKind::Image && to == PortKind::Mask);
+}
+
 struct PortSpec {
     PortKind kind;
     std::string name;
+    // Optional inputs may be left unconnected. An absent optional slot is
+    // represented by the evaluation sentinel, never by a manufactured source.
+    // Outputs and required inputs keep their existing contract.
+    bool optional{false};
 
     friend bool operator==(const PortSpec&, const PortSpec&) = default;
 };

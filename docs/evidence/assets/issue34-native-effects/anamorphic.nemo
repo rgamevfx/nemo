@@ -1,0 +1,102 @@
+{
+  "schema": 4,
+  "name": "Issue34 unclamped Grade roundtrip",
+  "rootNetworkId": 1,
+  "nextNetworkId": 2,
+  "nextInstanceId": 1,
+  "instances": [],
+  "networks": [
+    {
+      "id": 1,
+      "name": "Root",
+      "defaultOutput": 3,
+      "nextNodeId": 4,
+      "nextEdgeId": 3,
+      "nextInterfacePortId": 1,
+      "inputs": [],
+      "outputs": [],
+      "inputConnections": [],
+      "outputConnections": [],
+      "nodes": [
+        {
+          "id": 1,
+          "type": "source",
+          "name": "plate",
+          "layout": {
+            "x": 100,
+            "y": 50
+          },
+          "params": {
+            "source": {
+              "type": "string",
+              "value": "src"
+            }
+          }
+        },
+        {
+          "id": 2,
+          "type": "transform",
+          "name": "Transform1",
+          "layout": {
+            "x": 100,
+            "y": 120
+          },
+          "params": {
+            "rotate": {
+              "type": "float",
+              "value": 90.0
+            },
+            "filter": {
+              "type": "choice",
+              "value": "Nearest"
+            }
+          }
+        },
+        {
+          "id": 3,
+          "type": "output",
+          "name": "out",
+          "layout": {
+            "x": 100,
+            "y": 190
+          },
+          "params": {}
+        }
+      ],
+      "edges": [
+        {
+          "id": 1,
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "to": {
+            "node": 2,
+            "port": 0
+          }
+        },
+        {
+          "id": 2,
+          "from": {
+            "node": 2,
+            "port": 0
+          },
+          "to": {
+            "node": 3,
+            "port": 0
+          }
+        }
+      ]
+    }
+  ],
+  "colorConfig": "../../issue12-view.ocio",
+  "sources": {
+    "src": {
+      "path": "anamorphic.exr",
+      "frameOffset": 0,
+      "frameStep": 1,
+      "revision": 1,
+      "interpretation": {}
+    }
+  }
+}

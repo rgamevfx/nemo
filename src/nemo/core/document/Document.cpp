@@ -29,6 +29,7 @@ void hashLayout(std::uint64_t& hash, LayoutPosition position) {
 void hashPort(std::uint64_t& hash, const PortSpec& port) {
     hashMixWord(hash, static_cast<std::uint64_t>(port.kind));
     hashMixText(hash, port.name);
+    hashMixWord(hash, port.optional ? 1 : 0);
 }
 
 void hashFormalPort(std::uint64_t& hash, const FormalPort& port) {
@@ -287,7 +288,7 @@ NetworkInstanceId Document::addInstanceWithId(NetworkInstanceId id, NetworkId pa
                                  "instance binding references unknown source node " + std::to_string(source.node));
         const auto& sourcePorts = parent.graph().outputPorts(source.node);
         if (static_cast<std::size_t>(source.port) >= sourcePorts.size() ||
-            sourcePorts[source.port].kind != formal->kind)
+            !portKindsCompatible(sourcePorts[source.port].kind, formal->kind))
             throw GraphException(GraphError::PortType, "instance binding for formal input '" + formal->name +
                                                            "' has incompatible source node " +
                                                            std::to_string(source.node) + " port " +
@@ -368,7 +369,8 @@ void Document::bindInstanceInput(NetworkInstanceId id, InterfacePortId input, Po
         throw GraphException(GraphError::UnknownNode,
                              "instance binding references unknown source node " + std::to_string(source.node));
     const auto& sourcePorts = parent.graph().outputPorts(source.node);
-    if (static_cast<std::size_t>(source.port) >= sourcePorts.size() || sourcePorts[source.port].kind != formal->kind)
+    if (static_cast<std::size_t>(source.port) >= sourcePorts.size() ||
+        !portKindsCompatible(sourcePorts[source.port].kind, formal->kind))
         throw GraphException(GraphError::PortType, "instance binding for formal input '" + formal->name +
                                                        "' has incompatible source endpoint " + describePortRef(source));
     const auto sourceInstance =
@@ -524,7 +526,7 @@ void Document::synchronizeReferences() {
             const auto& sourcePorts = parent->graph().outputPorts(binding->second.node);
             const bool valid = formal && source && formalIndex != definition->inputs().end() &&
                                static_cast<std::size_t>(binding->second.port) < sourcePorts.size() &&
-                               sourcePorts[binding->second.port].kind == formal->kind;
+                               portKindsCompatible(sourcePorts[binding->second.port].kind, formal->kind);
             if (!valid) {
                 if (formalIndex != definition->inputs().end()) {
                     const PortRef destination{value.node, static_cast<std::uint32_t>(std::distance(

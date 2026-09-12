@@ -27,6 +27,21 @@ cbuffer EffectUniforms {
     // param0 = color
     float4 param0;
     float4 param1;
+    // issue #34 native effects: append-only extension shared by EVERY effect
+    // kernel (existing offsets unchanged, so preexisting kernels stay
+    // ABI-aligned with the C++ EffectUniforms mirror).
+    float4 mask;             // (maskChannel, invertMask, mix, maskPresent)
+    float4 gradeBlackpoint;
+    float4 gradeWhitepoint;
+    float4 gradeLift;
+    float4 gradeGain;
+    float4 gradeMultiply;
+    float4 gradeOffset;
+    float4 gradeGamma;
+    float4 gradeFlags;       // (channels bitmask, reverse, clampBlack, clampWhite)
+    float4 blur;             // (size full-res, channels bitmask, 0, 0)
+    float4 transform;        // (translateX, translateY, scale, rotate degrees)
+    float4 transformFlags;   // (filter, pixelAspect, cos, sin)
 }
 
 [[vk::binding(0, 2)]]

@@ -18,6 +18,9 @@ using MediaBinId = std::uint64_t;
 inline constexpr NetworkId kInvalidNetwork = 0;
 inline constexpr NetworkInstanceId kInvalidNetworkInstance = 0;
 inline constexpr InterfacePortId kInvalidInterfacePort = 0;
+// Node identity 0 is also the evaluation sentinel for an absent optional input
+// slot (`EvaluationNodeId{}`): a declared port with no producer. Plan arrays
+// keep this invalid entry to stay aligned with the schema.
 inline constexpr NodeId kInvalidNode = 0;
 inline constexpr EdgeId kInvalidEdge = 0;
 inline constexpr MediaSourceId kInvalidMediaSource = 0;

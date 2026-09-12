@@ -62,6 +62,13 @@ struct KeyContext {
     std::uint64_t implementationTag{0};
 };
 
+// Input-key contribution for a declared-but-absent optional input slot. It is
+// a fixed, executor-independent token that keeps the slot's position in the
+// key: a missing mask and a connected mask (even one whose maskChannel
+// selects none) always produce different keys, while the port order of real
+// producers is preserved.
+inline constexpr std::uint64_t kAbsentInputKeyHash = 0x1F3D5B79AB0C2E4DULL;
+
 // the key hashes of the node's effective inputs in declared port order (empty
 // for source nodes). The request's network scope is part of the identity.
 [[nodiscard]] ResultKey nodeResultKey(const Document& document, const NodeInstance& node,

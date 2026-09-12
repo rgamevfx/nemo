@@ -10,6 +10,7 @@
 #include <sstream>
 #include <utility>
 
+#include "nemo/core/evaluation/NativeEffects.hpp"
 #include "nemo/core/evaluation/Params.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
 namespace nemo {
@@ -196,11 +197,16 @@ void evalSource(const Document& document, const NodeInstance& node, const Evalua
                            std::to_string(expectedWidth) + "x" + std::to_string(expectedHeight) +
                            " (full-resolution region at sampling scale " + std::to_string(request.samplingScale) + ")");
     }
-    for (int y = 0; y < decoded.height(); ++y) {
-        for (int x = 0; x < decoded.width(); ++x) {
-            out.setPixel(x, y, decoded.pixel(x, y));
-        }
+    // Real source pixel aspect travels with the decoded frame so downstream
+    // coordinate math honors anamorphic media. A non-finite or non-positive
+    // value is a node error, never silently replaced by square pixels
+    // (mirrors the GPU source session's validation). Adopting the decoded
+    // layout by move keeps its pixel aspect and avoids a pixel copy.
+    const float pixelAspect = decoded.layout().pixelAspect;
+    if (!std::isfinite(pixelAspect) || pixelAspect <= 0.0F) {
+        failNode(node, "source '" + key + "' reports an invalid pixel aspect (" + std::to_string(pixelAspect) + ")");
     }
+    out = std::move(decoded);
 }
 
 const NodeInstance* findNode(const Document& document, NetworkId networkId, NodeId id) {
@@ -251,22 +257,38 @@ std::vector<ExpandedNode> expandDependencies(const Document& document, NetworkId
                     inputs.push_back(visit(scope, edge->from.node, edge->from.port));
                     continue;
                 }
+                const bool optional = ports[port].optional;
                 const auto terminal = std::find_if(network.inputConnections().begin(), network.inputConnections().end(),
                                                    [nodeId, port](const TerminalConnection& connection) {
                                                        return connection.node == PortRef{nodeId, port};
                                                    });
                 if (terminal == network.inputConnections().end()) {
+                    if (optional) {
+                        // Absent optional slot: keep the declared-port
+                        // position with the invalid sentinel. No source node
+                        // is manufactured or evaluated.
+                        inputs.push_back(EvaluationNodeId{});
+                        continue;
+                    }
                     std::ostringstream message;
                     message << "input port " << port << " ('" << ports[port].name << "') on node '" << node->name
                             << "' is not connected";
                     throw EvaluationException(message.str(), node->id, node->name);
                 }
                 if (scope.parent == nullptr) {
+                    if (optional) {
+                        inputs.push_back(EvaluationNodeId{});
+                        continue;
+                    }
                     throw EvaluationException("formal input '" + network.input(terminal->terminal)->name +
                                               "' has no instance binding for node '" + node->name + "'");
                 }
                 const auto external = scope.externalBindings.find(terminal->terminal);
                 if (external == scope.externalBindings.end()) {
+                    if (optional) {
+                        inputs.push_back(EvaluationNodeId{});
+                        continue;
+                    }
                     throw EvaluationException("formal input '" + network.input(terminal->terminal)->name +
                                               "' has no instance binding for node '" + node->name + "'");
                 }
@@ -534,6 +556,14 @@ std::vector<NodeId> resolveStepInputs(const Document& document, NetworkId networ
             }
         }
         if (edge == nullptr || !evaluated.contains(edge->from.node)) {
+            if (inPorts[port].optional) {
+                // Absent optional slot: preserve declared-port alignment with
+                // the invalid sentinel instead of a manufactured producer.
+                step.inputs.push_back(kInvalidNode);
+                step.inputImages.push_back(ImageIdentity{});
+                producers.push_back(kInvalidNode);
+                continue;
+            }
             std::ostringstream what;
             what << "input port " << port << " ('" << inPorts[port].name << "') is not connected";
             failNode(node, std::move(what).str());
@@ -580,6 +610,17 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         std::vector<std::uint64_t> inputKeyHashes;
         inputKeyHashes.reserve(expandedNode.inputs.size());
         for (const EvaluationNodeId& producer : expandedNode.inputs) {
+            if (producer.node == kInvalidNode) {
+                // Absent optional input: the slot keeps its declared position
+                // with a fixed sentinel token, so a missing mask and a
+                // connected mask (even with maskChannel none) never share a
+                // key while real producer hashes stay in port order.
+                inputKeyHashes.push_back(kAbsentInputKeyHash);
+                step.inputs.push_back(kInvalidNode);
+                step.inputImages.push_back(ImageIdentity{});
+                step.scopedInputs.push_back(ScopedPlanInput{});
+                continue;
+            }
             const auto key = keys.find(producer);
             if (key == keys.end())
                 throw EvaluationException("expanded evaluation plan has an unresolved input dependency");
@@ -610,31 +651,55 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         }
 
         if (!image) {
-            auto fresh =
-                std::make_shared<CpuImage>(scaledDimension(scopedRequest.region.width, scopedRequest.samplingScale),
-                                           scaledDimension(scopedRequest.region.height, scopedRequest.samplingScale));
             std::vector<const CpuImage*> inputs;
             inputs.reserve(expandedNode.inputs.size());
             for (const EvaluationNodeId& producer : expandedNode.inputs)
-                inputs.push_back(images.at(producer).get());
+                inputs.push_back(producer.node == kInvalidNode ? nullptr : images.at(producer).get());
 
-            if (effectiveNode->type == "testpattern") {
-                evalTestpattern(*effectiveNode, scopedRequest, step.effectiveParams, *fresh);
+            std::shared_ptr<CpuImage> fresh;
+            if (effectiveNode->type == "grade" || effectiveNode->type == "blur" || effectiveNode->type == "transform") {
+                if (inputs.empty() || inputs[0] == nullptr) {
+                    failNode(*effectiveNode, "native effect requires a connected main image input");
+                }
+                // Optional mask absent -> null; the effect owns coverage and
+                // never invents a white source. The effect allocates its own
+                // result raster, so no placeholder buffer is allocated here.
+                const CpuImage* maskImage = inputs.size() > 1 ? inputs[1] : nullptr;
+                fresh = std::make_shared<CpuImage>(
+                    evaluateNativeEffect(document.network(scopedRequest.network).graph().catalog(), *effectiveNode,
+                                         step.effectiveParams, scopedRequest, *inputs[0], maskImage));
             } else if (effectiveNode->type == "source") {
+                // The provider returns the decoded raster with its validated
+                // pixel aspect; adopt it directly instead of pre-allocating a
+                // buffer that the move would immediately discard.
+                fresh = std::make_shared<CpuImage>();
                 evalSource(document, *effectiveNode, scopedRequest, step.effectiveParams, *fresh, sources);
-            } else if (effectiveNode->type == "constcolor") {
-                evalConstcolor(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
-                               step.effectiveParams, *fresh);
-            } else if (effectiveNode->type == "merge") {
-                evalMerge(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
-                          step.effectiveParams, inputs, *fresh);
-            } else if (effectiveNode->type == "output") {
-                evalOutput(*effectiveNode, scopedRequest, step.effectiveParams, inputs, *fresh);
-            } else if (document.network(scopedRequest.network).graph().descriptor(effectiveNode->type) != nullptr) {
-                failNode(*effectiveNode,
-                         "declared node type has no CPU reference implementation (executor unavailable)");
             } else {
-                failNode(*effectiveNode, "unknown node type has no CPU reference implementation");
+                ImageLayout layout;
+                layout.width = scaledDimension(scopedRequest.region.width, scopedRequest.samplingScale);
+                layout.height = scaledDimension(scopedRequest.region.height, scopedRequest.samplingScale);
+                // Raster metadata follows the main input so pixel aspect is
+                // preserved through pass-through nodes; a node with no inputs
+                // keeps the square-pixel default.
+                if (!inputs.empty() && inputs[0] != nullptr)
+                    layout.pixelAspect = inputs[0]->layout().pixelAspect;
+                fresh = std::make_shared<CpuImage>(layout);
+                if (effectiveNode->type == "testpattern") {
+                    evalTestpattern(*effectiveNode, scopedRequest, step.effectiveParams, *fresh);
+                } else if (effectiveNode->type == "constcolor") {
+                    evalConstcolor(document.network(scopedRequest.network).graph().catalog(), *effectiveNode,
+                                   scopedRequest, step.effectiveParams, *fresh);
+                } else if (effectiveNode->type == "merge") {
+                    evalMerge(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
+                              step.effectiveParams, inputs, *fresh);
+                } else if (effectiveNode->type == "output") {
+                    evalOutput(*effectiveNode, scopedRequest, step.effectiveParams, inputs, *fresh);
+                } else if (document.network(scopedRequest.network).graph().descriptor(effectiveNode->type) != nullptr) {
+                    failNode(*effectiveNode,
+                             "declared node type has no CPU reference implementation (executor unavailable)");
+                } else {
+                    failNode(*effectiveNode, "unknown node type has no CPU reference implementation");
+                }
             }
             step.produced = identityOf(*fresh, Residency::HostCpuReference);
             image = fresh;

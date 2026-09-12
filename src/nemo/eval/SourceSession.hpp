@@ -64,6 +64,11 @@ public:
         int width{0};
         int height{0};
         std::int64_t frame{0};
+        // Actual source pixel aspect (display width / height of one pixel),
+        // carried from the decode metadata so downstream effect coordinate
+        // math honors anamorphic media (issue #34 transform). 1.0 for
+        // square-pixel sources; the image itself carries no metadata.
+        float pixelAspect{1.0F};
     };
 
     // `mediaConvertSpirv` is the compiled mediaConvert kernel (the
@@ -125,8 +130,11 @@ private:
                                          const SourceReference& reference) const;
 
     // Inserts a decoded frame into the bounded least-recently-used cache.
-    // target frame shares ownership with the returned DecodedFrame.
-    void cachePut(const std::pair<std::string, std::int64_t>& cacheKey, std::shared_ptr<const gpu::Image> image);
+    // target frame shares ownership with the returned DecodedFrame. The
+    // frame's actual pixel aspect is cached alongside it so a reused raster
+    // reports the same source metadata.
+    void cachePut(const std::pair<std::string, std::int64_t>& cacheKey, std::shared_ptr<const gpu::Image> image,
+                  float pixelAspect);
 
     gpu::Instance& instance_;
     gpu::Device& device_;
@@ -142,7 +150,8 @@ private:
     std::map<std::string, DecoderState> decoders_;
     std::deque<std::string> decoderOrder_;           // LRU: front = least recently used
     std::map<std::string, DecodeKind> decodeKinds_;  // memoized, guarded by mutex_
-    std::map<std::pair<std::string, std::int64_t>, std::shared_ptr<const gpu::Image>> frames_;
+    // cached image plus its actual source pixel aspect (see DecodedFrame).
+    std::map<std::pair<std::string, std::int64_t>, std::pair<std::shared_ptr<const gpu::Image>, float>> frames_;
     std::deque<std::pair<std::string, std::int64_t>> frameOrder_;  // LRU, same convention
 };
 

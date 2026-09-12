@@ -66,7 +66,10 @@ struct ScopedPlanInput {
 
 // One scheduled node: its identity, effective parameter/input state, the
 // images it consumes, and the image identity it produces. Inputs are in
-// declared port order; the dependency set of a step is exactly `inputs`.
+// declared port order; an absent optional input keeps its slot as the invalid
+// sentinel (`kInvalidNode` / default `ScopedPlanInput` / zero `ImageIdentity`)
+// and contributes no dependency. The dependency set of a step is exactly the
+// non-sentinel entries of `inputs`.
 struct PlanStep {
     NetworkId network{kInvalidNetwork};
     NetworkInstanceId instance{kInvalidNetworkInstance};

@@ -262,7 +262,8 @@ QVariantList portSnapshot(const std::vector<nemo::PortSpec>& ports) {
         const auto& port = ports.at(static_cast<std::size_t>(index));
         result.push_back(QVariantMap{{QStringLiteral("index"), static_cast<int>(index)},
                                      {QStringLiteral("name"), QString::fromStdString(port.name)},
-                                     {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))}});
+                                     {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))},
+                                     {QStringLiteral("optional"), port.optional}});
     }
     return result;
 }
@@ -704,11 +705,13 @@ QVariantList ViewerController::nodeCatalog() const {
         QVariantList inputs;
         for (const auto& port : descriptor.inputs)
             inputs.push_back(QVariantMap{{QStringLiteral("name"), QString::fromStdString(port.name)},
-                                         {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))}});
+                                         {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))},
+                                         {QStringLiteral("optional"), port.optional}});
         QVariantList outputs;
         for (const auto& port : descriptor.outputs)
             outputs.push_back(QVariantMap{{QStringLiteral("name"), QString::fromStdString(port.name)},
-                                          {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))}});
+                                          {QStringLiteral("kind"), QString::fromLatin1(portKindName(port.kind))},
+                                          {QStringLiteral("optional"), port.optional}});
         QVariantList parameters;
         for (const auto& parameter : descriptor.parameters) {
             QVariantMap value{{QStringLiteral("name"), QString::fromStdString(parameter.name)},

@@ -367,6 +367,217 @@ NodeDescriptor testPatternDescriptor() {
                           .capabilities = allBuiltinCapabilities(true)};
 }
 
+// Every native effect shares the same optional-mask contract: a required
+// image at input 0 and an optional mask at input 1, plus the mask controls
+// below. The pixel math lives in the executor; only the schema is shared.
+std::vector<PortSpec> effectInputs() {
+    return {{PortKind::Image, "image", false}, {PortKind::Mask, "mask", true}};
+}
+
+std::vector<ParameterSpec> maskParameterSpecs() {
+    return {
+        {.name = "maskChannel",
+         .type = ParameterType::Choice,
+         .defaultValue = ParameterValue{ChoiceValue{"A"}},
+         .choices = {"none", "R", "G", "B", "A"},
+         .label = "Mask Channel",
+         .section = "Mask",
+         .editor = {}},
+        {.name = "invertMask",
+         .type = ParameterType::Boolean,
+         .defaultValue = ParameterValue{false},
+         .label = "Invert Mask",
+         .section = "Mask",
+         .editor = {}},
+        {.name = "mix",
+         .type = ParameterType::Float,
+         .defaultValue = ParameterValue{1.0},
+         .minimum = 0.0,
+         .maximum = 1.0,
+         .label = "Mix",
+         .section = "Mask",
+         .editor = {}},
+    };
+}
+
+std::vector<ParameterSpec> withMaskParameters(std::vector<ParameterSpec> specific) {
+    auto mask = maskParameterSpecs();
+    specific.reserve(specific.size() + mask.size());
+    for (auto& parameter : mask)
+        specific.push_back(std::move(parameter));
+    return specific;
+}
+
+// Whole-image effects reject region requests through the existing capability
+// validation; their spatial parameters stay full-resolution.
+NodeCapabilities wholeImageCapabilities() {
+    NodeCapabilities capabilities = allBuiltinCapabilities();
+    capabilities.supportsRegion = false;
+    return capabilities;
+}
+
+NodeDescriptor gradeDescriptor() {
+    return NodeDescriptor{.type = "grade",
+                          .displayName = "Grade",
+                          .group = "Color",
+                          .implementationVersion = 1,
+                          .inputs = effectInputs(),
+                          .outputs = {{PortKind::Image, "out"}},
+                          .parameters = withMaskParameters({
+                              {.name = "blackpoint",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
+                               .label = "Blackpoint",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "whitepoint",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
+                               .label = "Whitepoint",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "lift",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
+                               .label = "Lift",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "gain",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
+                               .label = "Gain",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "multiply",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
+                               .label = "Multiply",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "offset",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
+                               .label = "Offset",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "gamma",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
+                               .label = "Gamma",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "channels",
+                               .type = ParameterType::Choice,
+                               .defaultValue = ParameterValue{ChoiceValue{"RGB"}},
+                               .choices = {"RGB", "RGBA", "R", "G", "B", "Alpha", "None"},
+                               .label = "Channels",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "reverse",
+                               .type = ParameterType::Boolean,
+                               .defaultValue = ParameterValue{false},
+                               .label = "Reverse",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "clampBlack",
+                               .type = ParameterType::Boolean,
+                               .defaultValue = ParameterValue{true},
+                               .label = "Clamp Black",
+                               .section = "Grade",
+                               .editor = {}},
+                              {.name = "clampWhite",
+                               .type = ParameterType::Boolean,
+                               .defaultValue = ParameterValue{false},
+                               .label = "Clamp White",
+                               .section = "Grade",
+                               .editor = {}},
+                          }),
+                          .capabilities = allBuiltinCapabilities()};
+}
+
+NodeDescriptor blurDescriptor() {
+    return NodeDescriptor{.type = "blur",
+                          .displayName = "Blur",
+                          .group = "Blur",
+                          .implementationVersion = 1,
+                          .inputs = effectInputs(),
+                          .outputs = {{PortKind::Image, "out"}},
+                          .parameters = withMaskParameters({
+                              {.name = "size",
+                               .type = ParameterType::Float,
+                               .defaultValue = ParameterValue{0.0},
+                               .minimum = 0.0,
+                               .maximum = 100.0,
+                               .step = 0.1,
+                               .label = "Size",
+                               .section = "Blur",
+                               .editor = {}},
+                              {.name = "channels",
+                               .type = ParameterType::Choice,
+                               .defaultValue = ParameterValue{ChoiceValue{"RGBA"}},
+                               .choices = {"RGBA", "RGB", "Alpha"},
+                               .label = "Channels",
+                               .section = "Blur",
+                               .editor = {}},
+                          }),
+                          .capabilities = wholeImageCapabilities()};
+}
+
+NodeDescriptor transformDescriptor() {
+    return NodeDescriptor{.type = "transform",
+                          .displayName = "Transform",
+                          .group = "Transform",
+                          .implementationVersion = 1,
+                          .inputs = effectInputs(),
+                          .outputs = {{PortKind::Image, "out"}},
+                          .parameters = withMaskParameters({
+                              {.name = "translateX",
+                               .type = ParameterType::Float,
+                               .defaultValue = ParameterValue{0.0},
+                               .minimum = -200.0,
+                               .maximum = 200.0,
+                               .step = 1.0,
+                               .label = "Translate X",
+                               .section = "Transform",
+                               .editor = {}},
+                              {.name = "translateY",
+                               .type = ParameterType::Float,
+                               .defaultValue = ParameterValue{0.0},
+                               .minimum = -200.0,
+                               .maximum = 200.0,
+                               .step = 1.0,
+                               .label = "Translate Y",
+                               .section = "Transform",
+                               .editor = {}},
+                              {.name = "scale",
+                               .type = ParameterType::Float,
+                               .defaultValue = ParameterValue{1.0},
+                               .minimum = 0.1,
+                               .maximum = 3.0,
+                               .step = 0.001,
+                               .label = "Scale",
+                               .section = "Transform",
+                               .editor = {}},
+                              {.name = "rotate",
+                               .type = ParameterType::Float,
+                               .defaultValue = ParameterValue{0.0},
+                               .minimum = -180.0,
+                               .maximum = 180.0,
+                               .step = 0.1,
+                               .label = "Rotate",
+                               .section = "Transform",
+                               .editor = {}},
+                              {.name = "filter",
+                               .type = ParameterType::Choice,
+                               .defaultValue = ParameterValue{ChoiceValue{"Cubic"}},
+                               .choices = {"Cubic", "Linear", "Nearest"},
+                               .label = "Filter",
+                               .section = "Sampling",
+                               .editor = {}},
+                          }),
+                          .capabilities = wholeImageCapabilities()};
+}
+
 }  // namespace
 NodeCatalog::NodeCatalog() {
     const auto append = [this](NodeDescriptor descriptor) {
@@ -375,11 +586,14 @@ NodeCatalog::NodeCatalog() {
             throw std::invalid_argument("duplicate node descriptor type '" + descriptor.type + "'");
         descriptors_.push_back(std::move(descriptor));
     };
+    append(blurDescriptor());
     append(constColorDescriptor());
+    append(gradeDescriptor());
     append(mergeDescriptor());
     append(outputDescriptor());
     append(sourceDescriptor());
     append(testPatternDescriptor());
+    append(transformDescriptor());
     append(viewerDescriptor());
 }
 

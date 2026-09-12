@@ -1,0 +1,415 @@
+{
+  "schema": 1,
+  "issue": "https://github.com/rgamevfx/nemo/issues/34",
+  "date_utc": "2026-09-12T19:34:03.843574+00:00",
+  "branch": "issue/34-native-effects",
+  "base_commit": "3d44373ad46672648715213bb86f959c237431f3",
+  "implementation_state": "local; owner approved issue34 controls/API/images in chat; commit/merge/push and ticket closure requested, not yet executed",
+  "owner_acceptance": {
+    "date_utc": "2026-09-12",
+    "scope": "issue34 native-effects controls/API/images",
+    "quote": "looks good. commit, merge, and push. then close the ticket",
+    "note": "Owner accepted in chat; publication and tracker closure requested but not performed by this evidence session."
+  },
+  "contract": "https://github.com/rgamevfx/nemo/issues/34#issuecomment-5647871183",
+  "numerical_contract": "../../../agents/rendering.md#native-effects--grade-blur-transform",
+  "environment": {
+    "os": "Linux/COSMIC Wayland",
+    "cpu": "Intel Core i7-8750H",
+    "gpu": "NVIDIA GeForce GTX 1070",
+    "driver": "580.173.02",
+    "vram_mib": 8192,
+    "gpu_metadata": {
+      "api_version": 4211000,
+      "device_id": 7137,
+      "driver_version": 2435530880,
+      "encode_queue_available": true,
+      "external_sharing_requested": true,
+      "name": "NVIDIA GeForce GTX 1070",
+      "vendor_id": 4318
+    },
+    "display_pixels": [
+      1920,
+      1080
+    ],
+    "client_pixels": [
+      1280,
+      720
+    ],
+    "dpr": 1,
+    "capture_crop": [
+      318,
+      134,
+      1604,
+      858
+    ],
+    "native_input": "temporary evdev/uinput pointer and keyboard through kernel/libinput/compositor; devices closed",
+    "capture": "cosmic-screenshot; retained crops exclude other desktop content",
+    "computer_facade_limitation": "computer.windows failed: Computer session is closed; native fallback used after that error",
+    "ocio": "../../issue12-view.ocio"
+  },
+  "source": {
+    "origin": "../issue59-production-cutover/source-640x360-bt709.mkv",
+    "origin_sha256": "d084793559a7eac290a9e1e3563f6bb2f8d9ccb3ded7f77b175f40a6b6fdda1a",
+    "interpretation": "First BT709 video frame converted by ffmpeg zscale transfer=linear to 32-bit float RGB EXR; lossless zip16 compression; scene-linear source, not viewer-cache replay",
+    "pixels": [
+      640,
+      360
+    ],
+    "pixel_aspect": 1,
+    "generation": "ffmpeg -i SOURCE -vf zscale=transfer=linear,format=gbrpf32le -c:v exr -compression zip16 -frames:v 1 plate.exr",
+    "anamorphic": "Identical EXR pixel data; independently changed standard pixelAspectRatio float attribute to 2.0"
+  },
+  "tests": {
+    "new_regressions": 8,
+    "existing_typing_cases_updated": 2,
+    "existing_retained_submission_case": "Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion now includes nonzero Blur before output; drop before GPU completion, drain, zero charged bytes, retry pixels",
+    "debug": {
+      "command": "ctest --preset debug -j 2 --output-log docs/evidence/assets/issue34-native-effects/debug-ctest.log",
+      "passed": 486,
+      "failed": 0,
+      "seconds": 38.53,
+      "full_suite_runs": 1,
+      "log": "debug-ctest.log"
+    },
+    "float_tolerances": {
+      "grade_inverse_absolute": 1e-05,
+      "native_grade_cpu_gpu_absolute": 1e-05,
+      "native_blur_cpu_gpu_absolute": 0.0002,
+      "native_transform_cpu_gpu_absolute": 0.0002,
+      "scope": "Representative fixtures; not a universal bound for ill-conditioned or extreme floating-point settings."
+    },
+    "asan_ubsan": {
+      "passed_checks": 9,
+      "failed_checks_after_shader_prerequisite": 0,
+      "first_run": {
+        "passed": 7,
+        "failed": 2,
+        "reason": "Target-only effect-test build did not build new Slang SPIR-V files. Explicit nemo_shaders target built afterward; only the two native cases rerun.",
+        "log": "asan-ctest.log"
+      },
+      "native_rerun": {
+        "passed": 2,
+        "failed": 0,
+        "seconds": 23.73,
+        "log": "asan-native-ctest.log"
+      },
+      "commands": [
+        "ctest --preset asan -j 1 -R 'NativeEffectTest\\.|Effect.NativeGradeBlurTransformMatchCpuReference|Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion'",
+        "ctest --preset asan -j 1 -R 'Effect.NativeGradeBlurTransformMatchCpuReference|Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion'"
+      ],
+      "leak_suppression": "Existing test preset LSAN_OPTIONS=tests/lsan_suppressions.txt; no new suppression."
+    }
+  },
+  "headless": {
+    "grade_roundtrip": {
+      "project": "roundtrip.nemo",
+      "source_project": "source.nemo",
+      "cpu_and_slang_ppm_max_byte_difference": 0,
+      "scope": "640x360 decoded plate, nonsingular forward plus identical reverse, no clamps/full coverage; PPM export is clamped/quantized, float correctness separately checked at 1e-5"
+    },
+    "workflow": {
+      "project": "workflow.nemo",
+      "cpu_slang_ppm_max_byte_difference": 1,
+      "stages": "source -> Grade -> Blur -> Transform -> default Blur inserted by native catalog -> Merge -> Output, plus Viewer; mask source feeds all three nonidentity effects",
+      "identity_insertion_cpu_ppm_max_byte_difference": 0
+    },
+    "pixel_aspect": {
+      "project": "anamorphic.nemo",
+      "cpu_slang_ppm_max_byte_difference": 0,
+      "check": "PAR2, rotate90 Nearest: output(320,50) equals independently mapped source(255,179) = RGB(255,221,0)",
+      "fix": "Compute double-precision radians and sin/cos once on CPU/host; round once to uniform float. No coordinate epsilon or tie shift.",
+      "pre_fix_rotation_bug_delta": 56
+    },
+    "animation": {
+      "project": "animated.nemo",
+      "expected_project": "animated-midpoint.nemo",
+      "construction": "Throwaway C++ driver used shared setKeyframesCommand for gamma keys at frames0 and2, values1 and2; independent static midpoint built through setParamCommand with gamma1.5",
+      "frame": 1,
+      "gpu_vs_static_cpu_ppm_max_byte_difference": 1,
+      "commands": [
+        [
+          "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-cli/nemo-cli",
+          "evaluate",
+          "docs/evidence/assets/issue34-native-effects/animated-midpoint.nemo",
+          "--out",
+          "/tmp/nemo34-smoke/animated-midpoint.ppm",
+          "--frame",
+          "1",
+          "--width",
+          "640",
+          "--height",
+          "360"
+        ],
+        [
+          "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-cli/nemo-cli",
+          "evaluate-gpu",
+          "docs/evidence/assets/issue34-native-effects/animated.nemo",
+          "--out",
+          "/tmp/nemo34-smoke/animated.ppm",
+          "--frame",
+          "1",
+          "--width",
+          "640",
+          "--height",
+          "360",
+          "--backend",
+          "slang"
+        ]
+      ],
+      "driver_removed": true
+    },
+    "portable_checks": [
+      {
+        "command": [
+          "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-cli/nemo-cli",
+          "evaluate",
+          "docs/evidence/assets/issue34-native-effects/source.nemo",
+          "--out",
+          "/tmp/nemo34-smoke/portable-source.ppm",
+          "--width",
+          "640",
+          "--height",
+          "360"
+        ],
+        "max_byte_difference_from_exercised_source": 0,
+        "exit_code": 0
+      },
+      {
+        "command": [
+          "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-cli/nemo-cli",
+          "evaluate-gpu",
+          "docs/evidence/assets/issue34-native-effects/workflow.nemo",
+          "--out",
+          "/tmp/nemo34-smoke/portable-workflow.ppm",
+          "--width",
+          "640",
+          "--height",
+          "360",
+          "--backend",
+          "slang"
+        ],
+        "max_byte_difference_from_exercised_source": 0,
+        "exit_code": 0
+      },
+      {
+        "command": [
+          "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-cli/nemo-cli",
+          "evaluate",
+          "docs/evidence/assets/issue34-native-effects/anamorphic.nemo",
+          "--out",
+          "/tmp/nemo34-smoke/portable-anamorphic.ppm",
+          "--width",
+          "640",
+          "--height",
+          "360"
+        ],
+        "max_byte_difference_from_exercised_source": 0,
+        "exit_code": 0
+      }
+    ],
+    "history": {
+      "values": [
+        "B",
+        "R",
+        "B",
+        "R"
+      ],
+      "ops": "query, set-param expected_revision2, query, undo expected_revision3, query, redo expected_revision4, query, save-as",
+      "all_eight_responses_ok": true,
+      "saved_redo_value": "R",
+      "requests": [
+        {
+          "op": "query",
+          "network_id": 1
+        },
+        {
+          "op": "set-param",
+          "network_id": 1,
+          "node_id": 2,
+          "key": "maskChannel",
+          "value": {
+            "type": "choice",
+            "value": "R"
+          },
+          "expected_revision": 2
+        },
+        {
+          "op": "query",
+          "network_id": 1
+        },
+        {
+          "op": "undo",
+          "expected_revision": 3
+        },
+        {
+          "op": "query",
+          "network_id": 1
+        },
+        {
+          "op": "redo",
+          "expected_revision": 4
+        },
+        {
+          "op": "query",
+          "network_id": 1
+        },
+        {
+          "op": "save-as",
+          "path": "/tmp/nemo34-smoke/history.nemo",
+          "backup": false
+        }
+      ]
+    }
+  },
+  "native": {
+    "project": "workflow.nemo",
+    "observed": [
+      "Double-click opens catalog-driven Grade, Blur, Transform cards",
+      "Grade reverse toggle changes native viewer; reset returns prior image",
+      "Mask channel menu exposes none/R/G/B/A; chooseB and invert; native Save persists both and reopen shows B/invert enabled",
+      "Blur size9 ->18 ->9 through numeric field changes viewer",
+      "Transform rotate7 ->30 ->7 through numeric field changes placement",
+      "Tab catalog search creates Blur2 after Transform, automatically rewires foreground chain, leaves mask unconnected, and viewer continues rendering",
+      "Ctrl+S saves created Blur2 with only input0 connected; portable saved project loads on native app"
+    ],
+    "viewer_byte_deltas": {
+      "grade_reverse": 53,
+      "blur_size9_18": 58,
+      "transform_rotate7_30": 141
+    },
+    "presentation_caveats": [
+      "Ctrl+Z in Parameters/Graph did not undo; existing surface has no such shortcut. Shared command undo/redo verified through CLI; no new shortcut added.",
+      "Native screenshot before/after identity insertion differed by max56 bytes; no byte-identical presentation claim. Full-quality CPU output was exact and CPU/Slang remained within1 byte.",
+      "Saved panel geometry restored; inspector cards reopened through graph double-click. No new panel-restoration acceptance claim."
+    ],
+    "prototype": {
+      "archive": "../issue25-prototype-reference-v1.tar.gz",
+      "source": "issue25-prototype-reference-v1/apps/nemo-ui/qml/StudioModel.qml:476-484 and ParametersPanel.qml",
+      "correction": "Native smoke exposed missing Transform numeric ranges: restored translate +/-200 step1, rotate +/-180 step0.1, and Sampling section directly from archive. No QML modification.",
+      "grade_scope": "Owner revision supersedes prototype exposure/contrast with Nuke-style Grade. No bitwise Nuke claim.",
+      "review": "Shared accepted host unchanged; physical native surface inspected, retained1280x720/DPR1 client captures owner-accepted in chat; no matched1568x926 baseline acceptance claim."
+    },
+    "captures": [
+      "grade.png",
+      "grade-reverse.png",
+      "mask-channel-menu.png",
+      "mask-restored.png",
+      "blur-size9.png",
+      "blur-size18.png",
+      "catalog-created-optional-mask.png",
+      "transform.png",
+      "transform-rotate30.png"
+    ]
+  },
+  "benchmark": {
+    "project": "simple-4k.nemo",
+    "report": "benchmark.json",
+    "command": [
+      "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-cli/nemo-cli",
+      "cache-viewer",
+      "docs/evidence/assets/issue34-native-effects/simple-4k.nemo",
+      "--cache-dir",
+      "/tmp/nemo34-smoke/cache-portable-4k",
+      "--frames",
+      "0",
+      "--chunk-frames",
+      "1",
+      "--width",
+      "3840",
+      "--height",
+      "2160",
+      "--scale",
+      "2"
+    ],
+    "graph_domain": [
+      3840,
+      2160
+    ],
+    "sampling_scale": 2,
+    "viewer_representation": [
+      1920,
+      1080
+    ],
+    "source_pixels": [
+      640,
+      360
+    ],
+    "frames": [
+      0
+    ],
+    "scope": "One-frame existing cache-viewer smoke using real Grade/Transform/Merge and upscaled diagnostic source. Display-referred cached representation, not full-quality output. Source is NOT the missing issue16 reference4K plate. Timings are diagnostic and were collected during release compilation; no performance pass.",
+    "gate": "Issue16 reference harness/200-frame plate workload and visible-latency/performance gate remain open.",
+    "fixed_cli_budget_limitation": "evaluate-gpu full4K graph hit its existing hardcoded256MiB allocation budget. Existing cache-viewer uses2GiB and executed the declared4K-domain/1080p representation; no budget override or new benchmark implementation.",
+    "vulkan_validation": []
+  },
+  "limitations": [
+    "Blur and Transform are whole-image-only; cropped requests explicitly rejected; no halo planner added.",
+    "Masks select existing stored RGBA only; no arbitrary channel names, luminance substitution or feathering.",
+    "Forward/reverse Grade does not generally recover clipped/singular or soft-masked/mixed results.",
+    "Initial PNG probe declared unsupported g24_rec709_display transfer; used an explicitly linear EXR fixture instead, with no decoder fallback or unrelated fix.",
+    "Linux evidence only; no Windows execution claim."
+  ],
+  "source_sha256": {
+    "src/nemo/core/nodes/NodeCatalog.hpp": "d7676c621a134113ca26f9f47d6197f2005724f29a87ff35672ee142f5a1133e",
+    "src/nemo/core/nodes/NodeCatalog.cpp": "66060a506b7e1c0024ab89082e92a656bfe43e3cadb7194d96511bf164e0d8ce",
+    "src/nemo/core/evaluation/Params.hpp": "eba3fbe491381172e2a28955644193962cdecea75f54b971aae213ba6b6b3ffd",
+    "src/nemo/core/evaluation/Plan.hpp": "2fedcd47a217ee82c2496ce03ae6efe6303d57d6b07b33d1de768f8acdbd89a3",
+    "src/nemo/core/evaluation/Reuse.hpp": "276adfc6ace5a6c8842ce31dccfdd2cab3ba5e362863ae4b2b02b890900c76fb",
+    "src/nemo/core/evaluation/CpuReference.cpp": "157026e6d35951093ede363a5bb166a0c6d91e11529d26affce7a139486adde2",
+    "src/nemo/core/evaluation/NativeEffects.cpp": "5a76c87ed1f14998209fb41554592e4e0da5ea6d6066645b786d9a0aea20e04d",
+    "src/nemo/eval/GpuExecutor.cpp": "7410ea25632a8bd9e00ef0b571cbfe727f41f7f389999c450844d61e69ff4a81",
+    "src/nemo/eval/EffectShaders.hpp": "78d53b86d62ac13b3d8f3c6ad083433ee25ce7ae0783a9ef23de6c2db404c225",
+    "src/nemo/eval/SourceSession.cpp": "69ae575da3b99fe9cc7ac141dfc7ccf1bd7179c7f6859d8b42f54418c335f3f5",
+    "src/nemo/gpu/shaders/grade.slang": "02a710cc2adb78389413b3bfdba622c38b3fddbb8299547ebc3f6c148413fe46",
+    "src/nemo/gpu/shaders/blur.slang": "5fa7f8e95a18d0d6c53414de3d5dda493ef8d2974482125feb9978937a90a032",
+    "src/nemo/gpu/shaders/blurHorizontal.slang": "051b93e2e3723563e2bcc75214426001e203912268a7131396a4ab649d8d220c",
+    "src/nemo/gpu/shaders/transform.slang": "c5b45ef449fd04ae55a352e6380d8cfa2fe2f0b8e0fad9f5f128f7663b4f25d8"
+  },
+  "fixture_sha256": {
+    "plate.exr": "31cb3542cc03dc5e9674c25690cd7bccb94da84153380435a52ed2036925f747",
+    "anamorphic.exr": "bc50d180fa8613b3d0182fd754a238121544ed5318d8fe4ecd038924cb96e09e",
+    "source.nemo": "c6f3e76596f419a41c3bd282354464293b7d2b0cf8969b24a53b1afe5e495c7e",
+    "roundtrip.nemo": "a9662a71a88357a2631d65b22629f2cd3815ea564abfddc8d0ad7907db7a7ff6",
+    "workflow.nemo": "bbfbfa65f75f0c6b9433bb70e0c894ad33f3b8e420d785c197b7568877588fe0",
+    "anamorphic.nemo": "765e4b4df184453f4e3fc63bf9a0cc53e57eb5f713825dbff01c6cd154593896",
+    "simple-4k.nemo": "342366ab3e8ce2188b52c7ac66057ea4140d4f48b708926c99cf4d50e52a3dc6",
+    "animated.nemo": "0966929fcbad6ca67c5eacbe4095bd3cc3920ebcdbd8bedd82ebbe124d52dfb6",
+    "animated-midpoint.nemo": "68f51ce04ff6d645113d970c825c3ae7971a65628d7101d4f0e2f853aaf77ee3"
+  },
+  "builds": {
+    "debug": {
+      "command": "cmake --build --preset debug -j 4",
+      "passed": true
+    },
+    "release": {
+      "command": "cmake --build --preset release -j 3",
+      "passed": true
+    },
+    "asan_ubsan": {
+      "commands": [
+        "cmake --build --preset asan --target nemo_core_tests nemo_effect_tests -j 3",
+        "cmake --build --preset asan --target nemo_shaders -j 3"
+      ],
+      "passed": true
+    },
+    "warnings": "Existing minizip-ng mktemp linker warning remains; no warning suppression added."
+  },
+  "cleanup": {
+    "native_process_stopped": true,
+    "virtual_input_devices_closed": true,
+    "temporary_directory_removed": "/tmp/nemo34-smoke",
+    "retained": "Portable projects, two EXR inputs, diagnostic images, cropped native captures, benchmark metadata and test logs only; no throwaway driver or test instrumentation."
+  },
+  "reproduction": {
+    "prepare": "mkdir -p /tmp/nemo34-smoke",
+    "native": "QT_QPA_PLATFORM=wayland XDG_CONFIG_HOME=/tmp/nemo34-smoke/config build/debug/apps/nemo-ui/nemo-ui --project docs/evidence/assets/issue34-native-effects/workflow.nemo --viewer-cache-dir /tmp/nemo34-smoke/viewer-cache",
+    "headless": "build/debug/apps/nemo-cli/nemo-cli evaluate-gpu docs/evidence/assets/issue34-native-effects/roundtrip.nemo --out /tmp/nemo34-smoke/roundtrip.ppm --width 640 --height 360 --backend slang",
+    "note": "Portable equivalents of exercised scenarios; create the scratch directory first. Retained fixtures contain relative media/OCIO paths."
+  },
+  "tracker": {
+    "completion": "https://github.com/rgamevfx/nemo/issues/34#issuecomment-5648229784",
+    "roadmap": "https://github.com/rgamevfx/nemo/issues/24",
+    "issue_state": "owner-approved; publication and issue closure requested, not yet executed"
+  }
+}

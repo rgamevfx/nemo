@@ -1,0 +1,84 @@
+[HANDLER_OUTPUT] 
+Test project /home/rgame/dev/Nemo_Dev2/build/asan
+
+    Start  23: NativeEffectTest.GradeForwardAppliesDeclaredControlsPerChannel
+1/9 Test  #23: NativeEffectTest.GradeForwardAppliesDeclaredControlsPerChannel .........   Passed    0.09 sec
+    Start  24: NativeEffectTest.GradeReverseRoundTripsSignedHdrWithoutClamps
+2/9 Test  #24: NativeEffectTest.GradeReverseRoundTripsSignedHdrWithoutClamps ..........   Passed    0.09 sec
+    Start  25: NativeEffectTest.GradeClampsAndRejectsInvalidCoefficients
+3/9 Test  #25: NativeEffectTest.GradeClampsAndRejectsInvalidCoefficients ..............   Passed    0.09 sec
+    Start  26: NativeEffectTest.EffectMaskSelectsChannelInvertsAndMixes
+4/9 Test  #26: NativeEffectTest.EffectMaskSelectsChannelInvertsAndMixes ...............   Passed    0.09 sec
+    Start  27: NativeEffectTest.OptionalMaskSlotChangesResultIdentityAndCacheKey
+5/9 Test  #27: NativeEffectTest.OptionalMaskSlotChangesResultIdentityAndCacheKey ......   Passed    0.09 sec
+    Start  28: NativeEffectTest.BlurIsExactGaussianWithEdgeClampAndChannelSelection
+6/9 Test  #28: NativeEffectTest.BlurIsExactGaussianWithEdgeClampAndChannelSelection ...   Passed    0.08 sec
+    Start  29: NativeEffectTest.TransformSelectsFiltersAndMapsCoordinates
+7/9 Test  #29: NativeEffectTest.TransformSelectsFiltersAndMapsCoordinates .............   Passed    0.09 sec
+    Start 345: Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion
+8/9 Test #345: Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion ................***Failed   11.37 sec
+Running main() from /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest_main.cc
+Note: Google Test filter = Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from Effect
+[ RUN      ] Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion
+unknown file: Failure
+C++ exception with description "effect 'grade': cannot open compiled shader: /home/rgame/dev/Nemo_Dev2/build/asan/src/nemo/gpu/shaders/spv/grade.spv" thrown in the test body.
+
+[  FAILED  ] Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion (10975 ms)
+[----------] 1 test from Effect (10975 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (10975 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion
+
+ 1 FAILED TEST
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+      3       2289 libdbus-1.so.3
+-----------------------------------------------------
+
+
+    Start 346: Effect.NativeGradeBlurTransformMatchCpuReference
+9/9 Test #346: Effect.NativeGradeBlurTransformMatchCpuReference .......................***Failed   11.34 sec
+Running main() from /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest_main.cc
+Note: Google Test filter = Effect.NativeGradeBlurTransformMatchCpuReference
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from Effect
+[ RUN      ] Effect.NativeGradeBlurTransformMatchCpuReference
+unknown file: Failure
+C++ exception with description "effect 'grade': cannot open compiled shader: /home/rgame/dev/Nemo_Dev2/build/asan/src/nemo/gpu/shaders/spv/grade.spv" thrown in the test body.
+
+[  FAILED  ] Effect.NativeGradeBlurTransformMatchCpuReference (10948 ms)
+[----------] 1 test from Effect (10948 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (10948 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] Effect.NativeGradeBlurTransformMatchCpuReference
+
+ 1 FAILED TEST
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+      3       2289 libdbus-1.so.3
+-----------------------------------------------------
+
+
+
+78% tests passed, 2 tests failed out of 9
+
+Total Test time (real) =  23.35 sec
+
+The following tests FAILED:
+	345 - Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion (Failed)
+	346 - Effect.NativeGradeBlurTransformMatchCpuReference (Failed)
+[ERROR_MESSAGE] 
+Errors while running CTest
+

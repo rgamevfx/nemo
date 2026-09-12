@@ -10,6 +10,19 @@
 //   set 1, binding n : input image2D  (rgba32f storage image, straight alpha)
 //   set 2, binding 0 : output image2D (rgba32f storage image)
 //
+// issue #34 native effects: grade/transform/blur bind their optional mask at
+// set 1 binding 1 (blur's final pass instead binds processed scratch at 0,
+// original main at 1, mask at 2, because the mask/mix blend happens once
+// after both separable passes). Blur's two passes additionally read the
+// precomputed normalized Gaussian weights from a retained read-only storage
+// buffer at set 3 binding 0 (index i+support). An unconnected optional slot
+// keeps its declared port index in the plan with an invalid sentinel; the
+// executor binds the main image as a valid dummy descriptor and sets
+// maskPresent=0 — no allocated white fallback. Blur's first (horizontal)
+// pass is an internal program held under the `blurHorizontal` library key;
+// the node-visible `blur` key is the final vertical pass. Both are recorded
+// into one submission with a retained scratch image and no per-node wait.
+//
 // Effects are packages keyed by node type; both front ends meet this
 // contract — build-time Slang SPIR-V (the native path) and runtime GLSL
 // (glslang, the reference-equivalence path, see EffectShaders.hpp).
@@ -63,12 +76,41 @@ class SourceSession;
 //   meta2 = (image width, image height, samplingScale, 0)     [raster]
 //   misc = (localTime, 0, 0, 0); param0/param1 are effect-specific
 //   declared parameters.
+//
+// The issue #34 block is an APPEND-ONLY extension shared by every effect
+// kernel: existing member offsets are unchanged, so preexisting kernels stay
+// ABI-aligned. Effect semantics:
+//   mask     = (maskChannel [-1 none,0R,1G,2B,3A], invertMask, mix,
+//               maskPresent) — an absent optional mask binds the main image
+//               as a valid dummy descriptor with maskPresent=0, never an
+//               allocated fallback.
+//   grade*   = per-channel Color parameters; gradeFlags = channels bitmask
+//               (R1/G2/B4/A8), reverse, clampBlack, clampWhite.
+//   blur     = (size full-res support radius, channels bitmask, raster
+//               support, 0); the normalized Gaussian weights are precomputed
+//               once per Blur preparation into a retained read-only storage
+//               buffer bound at set 3 binding 0 (index i+support).
+//   transform/transformFlags = (translateX, translateY, scale, rotate
+//               degrees) and (filter 0Cubic/1Linear/2Nearest, pixelAspect,
+//               host-precomputed cos, sin — double-precision radians).
 struct EffectUniforms {
     std::uint32_t meta[4]{};
     std::uint32_t meta2[4]{};
     float misc[4]{};
     float param0[4]{};
     float param1[4]{};
+    float mask[4]{};
+    float gradeBlackpoint[4]{};
+    float gradeWhitepoint[4]{};
+    float gradeLift[4]{};
+    float gradeGain[4]{};
+    float gradeMultiply[4]{};
+    float gradeOffset[4]{};
+    float gradeGamma[4]{};
+    float gradeFlags[4]{};
+    float blur[4]{};
+    float transform[4]{};
+    float transformFlags[4]{};
 };
 
 struct EffectProgram {
@@ -79,7 +121,10 @@ struct EffectProgram {
 
 // Effect packages keyed by node type (the initial inventory from #1:
 // testpattern, constcolor, merge, output; #11 adds the real-media
-// `source` fill).
+// `source` fill; #34 adds grade, blur, transform plus the internal
+// `blurHorizontal` first pass). Every package loads through this one
+// library; the internal key is registered alongside node types so blur's
+// two passes share the same loading, fingerprint, and diagnostics path.
 using EffectLibrary = std::map<std::string, EffectProgram>;
 
 // Loads the build-time Slang effect kernels (<type>.spv) from `spvDir`,

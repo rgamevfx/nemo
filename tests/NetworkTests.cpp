@@ -77,7 +77,7 @@ TEST(NetworkTest, UndoingNetworkCreationDoesNotLoseRetiredNodeWatermarks) {
     EXPECT_FALSE(history.canRedo());
 }
 
-TEST(NetworkTest, ImageAndMaskBoundariesAndNestedCyclesAreRejectedAtomically) {
+TEST(NetworkTest, ImageAndMaskBoundariesEnforceDirectionAndAtomicRejection) {
     Document document(typedCatalog());
     const auto parentId = document.rootNetworkId();
     const auto image = document.network(parentId).graph().addNode("testpattern", "image");
@@ -102,15 +102,19 @@ TEST(NetworkTest, ImageAndMaskBoundariesAndNestedCyclesAreRejectedAtomically) {
     CommandStack history(document);
     history.push(bindInstanceInputCommand(use, imageInput, {image, 0}));
     history.push(bindInstanceInputCommand(use, maskInput, {mask, 0}));
+    // An Image output is a valid mask source, so re-binding the Mask terminal
+    // to the image producer is accepted (and replaces the prior binding).
+    history.push(bindInstanceInputCommand(use, maskInput, {image, 0}));
     const auto before = saveDocument(document);
     const auto depth = history.depth();
-    EXPECT_THROW(history.push(bindInstanceInputCommand(use, maskInput, {image, 0})), GraphException);
+    // Mask -> Image stays a type error; the rejected edit and the nested-cycle
+    // edit are atomic.
     EXPECT_THROW(history.push(bindInstanceInputCommand(use, imageInput, {mask, 0})), GraphException);
     EXPECT_THROW(history.push(addInstanceCommand(definitionId, parentId, "cycle")), GraphException);
     EXPECT_EQ(saveDocument(document), before);
     EXPECT_EQ(history.depth(), depth);
     EXPECT_EQ(document.instance(use)->inputBindings.at(imageInput), (PortRef{image, 0}));
-    EXPECT_EQ(document.instance(use)->inputBindings.at(maskInput), (PortRef{mask, 0}));
+    EXPECT_EQ(document.instance(use)->inputBindings.at(maskInput), (PortRef{image, 0}));
     EXPECT_EQ(document.network(definitionId).inputConnections().size(), 3u);
     const auto& outputs = document.network(parentId).graph().outputPorts(node);
     ASSERT_EQ(outputs.size(), 2u);

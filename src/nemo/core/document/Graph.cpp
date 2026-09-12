@@ -163,7 +163,7 @@ void Graph::setPortContract(NodeId id, std::vector<PortSpec> inputs, std::vector
         const auto& sourcePorts = edge.from.node == id ? outputs : outputPorts(edge.from.node);
         const auto& destinationPorts = edge.to.node == id ? inputs : inputPorts(edge.to.node);
         if (edge.from.port >= sourcePorts.size() || edge.to.port >= destinationPorts.size() ||
-            sourcePorts[edge.from.port].kind != destinationPorts[edge.to.port].kind)
+            !portKindsCompatible(sourcePorts[edge.from.port].kind, destinationPorts[edge.to.port].kind))
             throw GraphException(GraphError::PortType, "port contract would invalidate edge " +
                                                            std::to_string(edge.id) + " (" + describe(edge.from) +
                                                            " -> " + describe(edge.to) + ")");
@@ -302,11 +302,11 @@ std::optional<GraphErrorDetails> Graph::validateEdge(PortRef from, PortRef to) c
         return GraphErrorDetails{GraphError::PortType, "cannot connect into " + describe(to) + ": node '" +
                                                            toNode->name + "' declares " +
                                                            std::to_string(toPorts->size()) + " input port(s)"};
-    if ((*fromPorts)[from.port].kind != (*toPorts)[to.port].kind)
+    if (!portKindsCompatible((*fromPorts)[from.port].kind, (*toPorts)[to.port].kind))
         return GraphErrorDetails{GraphError::PortType,
                                  "cannot connect " + describe(from) + " -> " + describe(to) + ": port kind " +
                                      std::to_string(static_cast<int>((*fromPorts)[from.port].kind)) +
-                                     " does not match port kind " +
+                                     " is not compatible with port kind " +
                                      std::to_string(static_cast<int>((*toPorts)[to.port].kind))};
     for (const auto& edge : edges_) {
         if (edge.to == to)
@@ -576,7 +576,7 @@ std::optional<GraphErrorDetails> Network::validateInputConnection(InterfacePortI
     if (static_cast<std::size_t>(destination.port) >= ports.size())
         return GraphErrorDetails{GraphError::PortType, "formal input '" + terminal->name + "' targets " +
                                                            describe(destination) + " outside its input contract"};
-    if (ports[destination.port].kind != terminal->kind)
+    if (!portKindsCompatible(terminal->kind, ports[destination.port].kind))
         return GraphErrorDetails{GraphError::PortType,
                                  "formal input '" + terminal->name + "' (" +
                                      std::to_string(static_cast<int>(terminal->kind)) + ") cannot feed " +
@@ -638,7 +638,7 @@ std::optional<GraphErrorDetails> Network::validateOutputConnection(PortRef sourc
     if (static_cast<std::size_t>(source.port) >= ports.size())
         return GraphErrorDetails{GraphError::PortType, "formal output '" + terminal->name + "' reads " +
                                                            describe(source) + " outside its output contract"};
-    if (ports[source.port].kind != terminal->kind)
+    if (!portKindsCompatible(ports[source.port].kind, terminal->kind))
         return GraphErrorDetails{GraphError::PortType, "formal output '" + terminal->name + "' (" +
                                                            std::to_string(static_cast<int>(terminal->kind)) +
                                                            ") cannot read " + describe(source) + " (" +

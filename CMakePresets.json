@@ -50,6 +50,18 @@
                 "NEMO_BUILD_GPU": "OFF",
                 "NEMO_BUILD_CLI": "OFF"
             }
+        },
+        {
+            "name": "analysis",
+            "displayName": "Focused clang-tidy 18 analysis (core only)",
+            "inherits": "headless",
+            "cacheVariables": {
+                "NEMO_BUILD_TESTS": "OFF",
+                "NEMO_BUILD_UI": "OFF",
+                "NEMO_BUILD_GPU": "OFF",
+                "NEMO_BUILD_CLI": "OFF",
+                "NEMO_ENABLE_CLANG_TIDY": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -57,7 +69,15 @@
         { "name": "release", "configurePreset": "release" },
         { "name": "asan", "configurePreset": "asan" },
         { "name": "headless", "configurePreset": "headless" },
-        { "name": "tsan", "configurePreset": "tsan" }
+        { "name": "tsan", "configurePreset": "tsan" },
+        {
+            "name": "analysis",
+            "configurePreset": "analysis",
+            "targets": ["nemo_core"],
+            "jobs": 2,
+            "cleanFirst": true,
+            "verbose": true
+        }
     ],
     "testPresets": [
         {
@@ -92,6 +112,16 @@
             "configurePreset": "headless",
             "output": { "outputOnFailure": true },
             "execution": { "jobs": 0 }
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "analysis",
+            "displayName": "Configure and clean-build the focused core analysis",
+            "steps": [
+                { "type": "configure", "name": "analysis" },
+                { "type": "build", "name": "analysis" }
+            ]
         }
     ]
 }

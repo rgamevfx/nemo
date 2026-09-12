@@ -1,18 +1,27 @@
-# Baseline checks: correctness, performance, modernization. Tune per module as
-# the codebase grows; do not add NOLINT without a reason in the same line.
+# Required core gate (clang-tidy 18): correctness and actionable copy/move checks.
+# Style and modernization are intentionally outside this gate.
+# Do not add NOLINT without a reason beside the finding.
 Checks: >
-    bugprone-*,
-    misc-*,
-    modernize-*,
-    performance-*,
-    readability-*,
-    clang-analyzer-*,
-    -modernize-use-trailing-return-type,
-    -readability-magic-numbers,
-    -readability-identifier-length,
-    -bugprone-easily-swappable-parameters,
-    -misc-include-cleaner
+    -*,
+    clang-analyzer-core.*,
+    clang-analyzer-cplusplus.*,
+    clang-analyzer-deadcode.*,
+    clang-analyzer-unix.*,
+    bugprone-dangling-handle,
+    bugprone-incorrect-roundings,
+    bugprone-integer-division,
+    bugprone-misplaced-widening-cast,
+    bugprone-sizeof-expression,
+    bugprone-undefined-memory-manipulation,
+    bugprone-unused-raii,
+    bugprone-use-after-move,
+    bugprone-virtual-near-miss,
+    performance-for-range-copy,
+    performance-move-const-arg,
+    performance-unnecessary-copy-initialization
 
-WarningsAsErrors: ''
-HeaderFilterRegex: 'src/nemo/.*'
+# This file is the sole warning-failure policy; the launcher does not override it.
+WarningsAsErrors: '*'
+# Match both src/nemo/core and the compiler's src/nemo/../nemo/core include paths.
+HeaderFilterRegex: '(^|/)nemo/core/.*'
 FormatStyle: file

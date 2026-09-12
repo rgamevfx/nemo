@@ -143,11 +143,13 @@ struct BlurKernel {
     BlurKernel kernel;
     const float sigma = sizePixels / 3.0F;
     kernel.support = static_cast<int>(std::ceil(sizePixels / static_cast<float>(samplingScale)));
-    kernel.weights.resize(static_cast<std::size_t>(2 * kernel.support + 1));
+    kernel.weights.resize(2 * static_cast<std::size_t>(kernel.support) + 1);
     float sum = 0.0F;
     for (int tap = -kernel.support; tap <= kernel.support; ++tap) {
         const float distance = static_cast<float>(tap * samplingScale) / sigma;
         const float weight = std::exp(-0.5F * distance * distance);
+        // effectiveBlur bounds support to [0, 100], so this index is within [0, 200].
+        // NOLINTNEXTLINE(bugprone-misplaced-widening-cast): bounded index
         kernel.weights[static_cast<std::size_t>(tap + kernel.support)] = weight;
         sum += weight;
     }
@@ -208,6 +210,8 @@ struct BlurKernel {
                         if (premultiplySource && channel != 3) {
                             value *= source[sampleIndex + 3];
                         }
+                        // effectiveBlur bounds support to [0, 100], so this index is within [0, 200].
+                        // NOLINTNEXTLINE(bugprone-misplaced-widening-cast): bounded index
                         sum += kernel.weights[static_cast<std::size_t>(tap + kernel.support)] * value;
                     }
                     target[base + channel] = sum;

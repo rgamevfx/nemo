@@ -1,0 +1,1068 @@
+{
+  "issue": "https://github.com/rgamevfx/nemo/issues/67",
+  "baseline": "a77d935787801a40d7d070e75652a5b44c02aa17",
+  "environment": {
+    "platform": "Ubuntu Linux local workstation; hosted CI not executed",
+    "analyzer": "Ubuntu LLVM version 18.1.3\n  Optimized build.",
+    "pin": "clang-tidy major 18 (Ubuntu 24.04 clang-tidy-18 package)",
+    "compiler": "GCC 13.3.0; installed clang-tidy uses local GCC 14 standard-library headers",
+    "VCPKG_ROOT": "/home/rgame/.local/share/vcpkg"
+  },
+  "gate": {
+    "command": "cmake --workflow --preset analysis",
+    "ci_job": ".github/workflows/ci.yml: analysis",
+    "scope": "nemo_core translation units and included nemo/core headers, including src/nemo/../nemo/core paths",
+    "executed_translation_units": [
+      "src/nemo/core/document/ParameterValue.cpp",
+      "src/nemo/core/document/ParameterValueJson.cpp",
+      "src/nemo/core/document/Animation.cpp",
+      "src/nemo/core/document/Graph.cpp",
+      "src/nemo/core/document/MediaCatalog.cpp",
+      "src/nemo/core/commands/AnimationCommands.cpp",
+      "src/nemo/core/commands/MediaCatalogCommands.cpp",
+      "src/nemo/core/document/Document.cpp",
+      "src/nemo/core/document/Serialization.cpp",
+      "src/nemo/core/session/ProjectFile.cpp",
+      "src/nemo/core/session/ProjectSession.cpp",
+      "src/nemo/core/nodes/NodeCatalog.cpp",
+      "src/nemo/core/evaluation/NativeEffects.cpp",
+      "src/nemo/core/evaluation/CpuReference.cpp",
+      "src/nemo/core/evaluation/Reuse.cpp"
+    ],
+    "selected_checks": [
+      "bugprone-dangling-handle",
+      "bugprone-incorrect-roundings",
+      "bugprone-integer-division",
+      "bugprone-misplaced-widening-cast",
+      "bugprone-sizeof-expression",
+      "bugprone-undefined-memory-manipulation",
+      "bugprone-unused-raii",
+      "bugprone-use-after-move",
+      "bugprone-virtual-near-miss",
+      "clang-analyzer-core.BitwiseShift",
+      "clang-analyzer-core.CallAndMessage",
+      "clang-analyzer-core.CallAndMessageModeling",
+      "clang-analyzer-core.DivideZero",
+      "clang-analyzer-core.DynamicTypePropagation",
+      "clang-analyzer-core.NonNullParamChecker",
+      "clang-analyzer-core.NonnilStringConstants",
+      "clang-analyzer-core.NullDereference",
+      "clang-analyzer-core.StackAddrEscapeBase",
+      "clang-analyzer-core.StackAddressEscape",
+      "clang-analyzer-core.UndefinedBinaryOperatorResult",
+      "clang-analyzer-core.VLASize",
+      "clang-analyzer-core.builtin.BuiltinFunctions",
+      "clang-analyzer-core.builtin.NoReturnFunctions",
+      "clang-analyzer-core.uninitialized.ArraySubscript",
+      "clang-analyzer-core.uninitialized.Assign",
+      "clang-analyzer-core.uninitialized.Branch",
+      "clang-analyzer-core.uninitialized.CapturedBlockVariable",
+      "clang-analyzer-core.uninitialized.NewArraySize",
+      "clang-analyzer-core.uninitialized.UndefReturn",
+      "clang-analyzer-cplusplus.InnerPointer",
+      "clang-analyzer-cplusplus.Move",
+      "clang-analyzer-cplusplus.NewDelete",
+      "clang-analyzer-cplusplus.NewDeleteLeaks",
+      "clang-analyzer-cplusplus.PlacementNew",
+      "clang-analyzer-cplusplus.PureVirtualCall",
+      "clang-analyzer-cplusplus.SelfAssignment",
+      "clang-analyzer-cplusplus.SmartPtrModeling",
+      "clang-analyzer-cplusplus.StringChecker",
+      "clang-analyzer-cplusplus.VirtualCallModeling",
+      "clang-analyzer-deadcode.DeadStores",
+      "clang-analyzer-unix.API",
+      "clang-analyzer-unix.DynamicMemoryModeling",
+      "clang-analyzer-unix.Errno",
+      "clang-analyzer-unix.Malloc",
+      "clang-analyzer-unix.MallocSizeof",
+      "clang-analyzer-unix.MismatchedDeallocator",
+      "clang-analyzer-unix.StdCLibraryFunctions",
+      "clang-analyzer-unix.Vfork",
+      "clang-analyzer-unix.cstring.BadSizeArg",
+      "clang-analyzer-unix.cstring.CStringModeling",
+      "clang-analyzer-unix.cstring.NullArg",
+      "performance-for-range-copy",
+      "performance-move-const-arg",
+      "performance-unnecessary-copy-initialization"
+    ],
+    "warning_policy": ".clang-tidy WarningsAsErrors; no launcher override",
+    "repeat_proof": "Clean restored run and unchanged-tree repeat each execute 15 clang-tidy invocations and exit 0."
+  },
+  "negative_probe": {
+    "file": "src/nemo/core/document/Ids.hpp",
+    "append": "\ninline double issue67AnalysisProbe(int value) { return 0.5 + value / 2; }\n",
+    "observed": "Ids.hpp:30:62: bugprone-integer-division promoted to error; workflow exit 1",
+    "restoration": "Original header restored byte-for-byte before both clean runs. No permanent test/harness added."
+  },
+  "findings": [
+    {
+      "file": "src/nemo/core/document/Document.cpp",
+      "check": "performance-unnecessary-copy-initialization",
+      "resolution": "Use const Edge& for insertExistingNodeOnEdgeCommand: only separate candidate is mutated before last read."
+    },
+    {
+      "file": "src/nemo/core/document/Document.cpp",
+      "check": "performance-unnecessary-copy-initialization",
+      "resolution": "Narrow suppression for insertNodeOnEdgeCommand: disconnect erases the source edge before subsequent endpoint reads; retain owning copy."
+    },
+    {
+      "file": "src/nemo/core/document/Document.cpp",
+      "check": "clang-analyzer-core.NullDereference",
+      "resolution": "Narrow clang-tidy 18 captured-structured-binding false-positive suppression; inputBindings is alive and unchanged through synchronous find_if."
+    },
+    {
+      "file": "src/nemo/core/evaluation/NativeEffects.cpp",
+      "check": "bugprone-misplaced-widening-cast",
+      "resolution": "Widen nonnegative support before calculating allocation size; two narrow index suppressions retain signed tap arithmetic. effectiveBlur restricts support to [0,100] and index to [0,200]."
+    },
+    {
+      "file": "src/nemo/core/document/Graph.hpp",
+      "check": "performance-move-const-arg",
+      "resolution": "Remove ineffective move into runtime_error const string& constructor; public signature unchanged."
+    },
+    {
+      "file": "src/nemo/core/evaluation/CpuReference.hpp",
+      "check": "performance-move-const-arg",
+      "resolution": "Remove ineffective move into runtime_error const string& constructor; nodeName move and public signature unchanged."
+    }
+  ],
+  "production_correctness": "Actual analysis execution, selected diagnostic failure, fail-closed tool/config checks and compatibility runs recorded below; no product behavior or schema/API/shader/image-baseline changes.",
+  "prototype_conformance": "Not applicable: internal build/CI system extension; no presentation changes.",
+  "hosted_ci": {
+    "status": "not_run",
+    "reason": "User requested local current-branch commit, not a push or remote workflow execution. Local job command is verified; hosted clean/negative job outcomes remain open acceptance gates."
+  },
+  "runs": [
+    {
+      "name": "missing-tool",
+      "command": [
+        "cmake",
+        "-S",
+        ".",
+        "-G",
+        "Ninja",
+        "-DNEMO_ENABLE_CLANG_TIDY=ON",
+        "-DNEMO_BUILD_GPU=OFF",
+        "-DNEMO_BUILD_UI=OFF",
+        "-DNEMO_BUILD_CLI=OFF",
+        "-DNEMO_BUILD_TESTS=OFF",
+        "-B",
+        "build/issue67-missing",
+        "-DCLANG_TIDY_PROGRAM=/nonexistent/clang-tidy-18"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 0.19,
+      "stdout_sha256": "4210f285a4b6be0fbf0e4b3cca722b80c8e3def2cbf090bec5695eaf193444b5",
+      "output_excerpt": [
+        "-- The CXX compiler identification is GNU 13.3.0",
+        "-- Detecting CXX compiler ABI info",
+        "-- Detecting CXX compiler ABI info - done",
+        "-- Check for working CXX compiler: /usr/bin/c++ - skipped",
+        "-- Detecting CXX compile features",
+        "-- Detecting CXX compile features - done",
+        "CMake Error at CMakeLists.txt:79 (message):",
+        "  NEMO_ENABLE_CLANG_TIDY=ON: the clang-tidy executable",
+        "  '/nonexistent/clang-tidy-18' cannot run, so clang-tidy 18 analysis cannot",
+        "  be guaranteed:",
+        "",
+        "",
+        "-- Configuring incomplete, errors occurred!"
+      ]
+    },
+    {
+      "name": "unrunnable-tool",
+      "command": [
+        "cmake",
+        "-S",
+        ".",
+        "-G",
+        "Ninja",
+        "-DNEMO_ENABLE_CLANG_TIDY=ON",
+        "-DNEMO_BUILD_GPU=OFF",
+        "-DNEMO_BUILD_UI=OFF",
+        "-DNEMO_BUILD_CLI=OFF",
+        "-DNEMO_BUILD_TESTS=OFF",
+        "-B",
+        "build/issue67-unrunnable",
+        "-DCLANG_TIDY_PROGRAM=/usr/bin/false"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 0.16,
+      "stdout_sha256": "d5a24597fe61c27f5d60fc7484df584e5bbbf6548163791f26560ed2519ab157",
+      "output_excerpt": [
+        "-- The CXX compiler identification is GNU 13.3.0",
+        "-- Detecting CXX compiler ABI info",
+        "-- Detecting CXX compiler ABI info - done",
+        "-- Check for working CXX compiler: /usr/bin/c++ - skipped",
+        "-- Detecting CXX compile features",
+        "-- Detecting CXX compile features - done",
+        "CMake Error at CMakeLists.txt:79 (message):",
+        "  NEMO_ENABLE_CLANG_TIDY=ON: the clang-tidy executable '/usr/bin/false'",
+        "  cannot run, so clang-tidy 18 analysis cannot be guaranteed:",
+        "",
+        "",
+        "-- Configuring incomplete, errors occurred!"
+      ]
+    },
+    {
+      "name": "mismatched-tool",
+      "command": [
+        "cmake",
+        "-S",
+        ".",
+        "-G",
+        "Ninja",
+        "-DNEMO_ENABLE_CLANG_TIDY=ON",
+        "-DNEMO_BUILD_GPU=OFF",
+        "-DNEMO_BUILD_UI=OFF",
+        "-DNEMO_BUILD_CLI=OFF",
+        "-DNEMO_BUILD_TESTS=OFF",
+        "-B",
+        "build/issue67-mismatched",
+        "-DCLANG_TIDY_PROGRAM=/home/rgame/dev/Nemo_Dev2/build/issue67-evidence/clang-tidy-wrong-version"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 0.17,
+      "stdout_sha256": "a81462e0b6a43decce1a1384a8c169d089296779e2718435e42a733266e76072",
+      "output_excerpt": [
+        "-- The CXX compiler identification is GNU 13.3.0",
+        "-- Detecting CXX compiler ABI info",
+        "-- Detecting CXX compiler ABI info - done",
+        "-- Check for working CXX compiler: /usr/bin/c++ - skipped",
+        "-- Detecting CXX compile features",
+        "-- Detecting CXX compile features - done",
+        "CMake Error at CMakeLists.txt:89 (message):",
+        "  NEMO_ENABLE_CLANG_TIDY=ON requires clang-tidy 18, but",
+        "  '/home/rgame/dev/Nemo_Dev2/build/issue67-evidence/clang-tidy-wrong-version'",
+        "  reports 'Ubuntu LLVM version 17.0.6",
+        "",
+        "  '.  Install clang-tidy-18 or point -DCLANG_TIDY_PROGRAM at a matching",
+        "  executable.",
+        "",
+        "",
+        "-- Configuring incomplete, errors occurred!"
+      ]
+    },
+    {
+      "name": "no-selected-checks",
+      "command": [
+        "cmake",
+        "--workflow",
+        "--preset",
+        "analysis"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 0.58,
+      "stdout_sha256": "b5bea87a7933b38e0180c26ad0d85f20de0fd520c76bd0afffd40bed41536bad",
+      "output_excerpt": [
+        "    find_package(VulkanMemoryAllocator CONFIG REQUIRED)",
+        "    target_link_libraries(main PRIVATE Vulkan::Headers GPUOpen::VulkanMemoryAllocator)",
+        "",
+        "or",
+        "",
+        "    find_package(VulkanHeaders CONFIG) # From the vulkan-headers port",
+        "    find_package(VulkanMemoryAllocator CONFIG REQUIRED)",
+        "    target_link_libraries(main PRIVATE Vulkan::Headers GPUOpen::VulkanMemoryAllocator)",
+        "",
+        "See the documentation for more information on setting up your project: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/index.html",
+        "",
+        "All requested installations completed successfully in: 250 us",
+        "-- Running vcpkg install - done",
+        "CMake Error at CMakeLists.txt:121 (message):",
+        "  NEMO_ENABLE_CLANG_TIDY=ON: '/home/rgame/dev/Nemo_Dev2/.clang-tidy' enables",
+        "  no checks: No checks enabled.",
+        "",
+        "",
+        "",
+        "-- Configuring incomplete, errors occurred!"
+      ]
+    },
+    {
+      "name": "malformed-config",
+      "command": [
+        "cmake",
+        "--workflow",
+        "--preset",
+        "analysis"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 0.54,
+      "stdout_sha256": "9814bd6490e00e99b326c4c957a4c6bcd45ac49278f36f8091606719352689b0",
+      "output_excerpt": [
+        "",
+        "All requested installations completed successfully in: 256 us",
+        "-- Running vcpkg install - done",
+        "CMake Error at CMakeLists.txt:109 (message):",
+        "  NEMO_ENABLE_CLANG_TIDY=ON: '/home/rgame/dev/Nemo_Dev2/.clang-tidy' is not a",
+        "  usable clang-tidy configuration:",
+        "  /home/rgame/dev/Nemo_Dev2/.clang-tidy:1:21: error: Could not find closing",
+        "  ]!",
+        "",
+        "  Checks: ['malformed'",
+        "",
+        "                      ^",
+        "",
+        "  Error: invalid configuration specified.",
+        "",
+        "  Invalid argument",
+        "",
+        "",
+        "",
+        "-- Configuring incomplete, errors occurred!"
+      ]
+    },
+    {
+      "name": "selected-header-diagnostic-confirmed",
+      "command": [
+        "cmake",
+        "--workflow",
+        "--preset",
+        "analysis"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 41.74,
+      "stdout_sha256": "526dce72e2cf6f58c53cc2a46508affb90e701d5660f405848b97bceb80cd2ce",
+      "output_excerpt": [
+        "/home/rgame/dev/Nemo_Dev2/src/nemo/../nemo/core/document/Ids.hpp:30:62: error: result of integer division used in a floating point context; possible loss of precision [bugprone-integer-division,-warnings-as-errors]",
+        "   30 | inline double issue67AnalysisProbe(int value) { return 0.5 + value / 2; }",
+        "1 warning treated as error",
+        "/home/rgame/dev/Nemo_Dev2/src/nemo/../nemo/core/document/Ids.hpp:30:62: error: result of integer division used in a floating point context; possible loss of precision [bugprone-integer-division,-warnings-as-errors]",
+        "   30 | inline double issue67AnalysisProbe(int value) { return 0.5 + value / 2; }",
+        "1 warning treated as error",
+        "ninja: build stopped: subcommand failed."
+      ]
+    },
+    {
+      "name": "analysis-restored-clean",
+      "command": [
+        "cmake",
+        "--workflow",
+        "--preset",
+        "analysis"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 163.2,
+      "stdout_sha256": "5774eb1453649b2abd9e2b276afad842998c4f39e46e69935cc3a40f66ad5e1b",
+      "output_excerpt": [
+        "[1/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/ParameterValue.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValue.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValue.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValue.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/ParameterValue.cpp",
+        "[2/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/ParameterValueJson.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValueJson.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValueJson.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValueJson.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/ParameterValueJson.cpp",
+        "[3/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Animation.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Animation.cpp",
+        "[4/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Graph.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Graph.cpp",
+        "[5/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/MediaCatalog.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/MediaCatalog.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/MediaCatalog.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/MediaCatalog.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/MediaCatalog.cpp",
+        "[6/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/commands/AnimationCommands.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/commands/AnimationCommands.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/commands/AnimationCommands.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/commands/AnimationCommands.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/commands/AnimationCommands.cpp",
+        "[7/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/commands/MediaCatalogCommands.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/commands/MediaCatalogCommands.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/commands/MediaCatalogCommands.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/commands/MediaCatalogCommands.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/commands/MediaCatalogCommands.cpp",
+        "[8/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Document.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/Document.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/Document.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/Document.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Document.cpp",
+        "[9/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Serialization.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Serialization.cpp",
+        "[10/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/session/ProjectFile.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/session/ProjectFile.cpp",
+        "[11/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/session/ProjectSession.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/session/ProjectSession.cpp",
+        "[12/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/nodes/NodeCatalog.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/nodes/NodeCatalog.cpp",
+        "[13/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/NativeEffects.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/NativeEffects.cpp",
+        "[14/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/CpuReference.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/CpuReference.cpp",
+        "[15/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/Reuse.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/Reuse.cpp",
+        "Cleaning... 2 files.",
+        "[16/16] : && /usr/bin/cmake -E rm -f src/nemo/libnemo_core.a && /usr/bin/ar qc src/nemo/libnemo_core.a  src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValue.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValueJson.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/MediaCatalog.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/Document.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/commands/AnimationCommands.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/commands/MediaCatalogCommands.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o && /usr/bin/ranlib src/nemo/libnemo_core.a && :"
+      ]
+    },
+    {
+      "name": "debug-configure",
+      "command": [
+        "cmake",
+        "--preset",
+        "debug"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.22,
+      "stdout_sha256": "752a1dc79a7f52d6bbd31433881059c1d840d986e80bca09d8b61bfcd3a8bf61",
+      "output_excerpt": [
+        "    target_link_libraries(main PRIVATE Vulkan::Headers GPUOpen::VulkanMemoryAllocator)",
+        "",
+        "See the documentation for more information on setting up your project: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/index.html",
+        "",
+        "All requested installations completed successfully in: 252 us",
+        "-- Running vcpkg install - done",
+        "-- Shader compilation: /home/rgame/dev/Nemo_Dev2/build/debug/_slang-toolchain-2026.17/bin/bin/slangc",
+        "-- Configuring done (1.1s)",
+        "-- Generating done (0.0s)",
+        "-- Build files have been written to: /home/rgame/dev/Nemo_Dev2/build/debug"
+      ]
+    },
+    {
+      "name": "release-configure",
+      "command": [
+        "cmake",
+        "--preset",
+        "release"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 2.34,
+      "stdout_sha256": "9651d4b7647019219e6a1a286b09d323409e307c6c25992e3b6fb21325d55cad",
+      "output_excerpt": [
+        "    target_link_libraries(main PRIVATE Vulkan::Headers GPUOpen::VulkanMemoryAllocator)",
+        "",
+        "See the documentation for more information on setting up your project: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/index.html",
+        "",
+        "All requested installations completed successfully in: 270 us",
+        "-- Running vcpkg install - done",
+        "-- Shader compilation: /home/rgame/dev/Nemo_Dev2/build/release/_slang-toolchain-2026.17/bin/bin/slangc",
+        "-- Configuring done (2.2s)",
+        "-- Generating done (0.0s)",
+        "-- Build files have been written to: /home/rgame/dev/Nemo_Dev2/build/release"
+      ]
+    },
+    {
+      "name": "analysis-unchanged-repeat",
+      "command": [
+        "cmake",
+        "--workflow",
+        "--preset",
+        "analysis"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 191.22,
+      "stdout_sha256": "951e1df874d2023de6eb46beca2edcbc91c15f028889d1547eac0f927cd3fb09",
+      "output_excerpt": [
+        "[1/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/ParameterValue.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValue.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValue.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValue.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/ParameterValue.cpp",
+        "[2/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/ParameterValueJson.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValueJson.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValueJson.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValueJson.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/ParameterValueJson.cpp",
+        "[3/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Animation.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Animation.cpp",
+        "[4/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Graph.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Graph.cpp",
+        "[5/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/MediaCatalog.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/MediaCatalog.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/MediaCatalog.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/MediaCatalog.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/MediaCatalog.cpp",
+        "[6/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/commands/AnimationCommands.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/commands/AnimationCommands.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/commands/AnimationCommands.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/commands/AnimationCommands.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/commands/AnimationCommands.cpp",
+        "[7/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/commands/MediaCatalogCommands.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/commands/MediaCatalogCommands.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/commands/MediaCatalogCommands.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/commands/MediaCatalogCommands.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/commands/MediaCatalogCommands.cpp",
+        "[8/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Serialization.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Serialization.cpp",
+        "[9/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Document.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/document/Document.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/document/Document.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/document/Document.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/document/Document.cpp",
+        "[10/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/session/ProjectFile.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/session/ProjectFile.cpp",
+        "[11/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/session/ProjectSession.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/session/ProjectSession.cpp",
+        "[12/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/nodes/NodeCatalog.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/nodes/NodeCatalog.cpp",
+        "[13/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/CpuReference.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/CpuReference.cpp",
+        "[14/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/NativeEffects.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/NativeEffects.cpp",
+        "[15/16] /usr/bin/cmake -E __run_co_compile --launcher=/usr/bin/ccache --tidy=\"/usr/bin/clang-tidy-18;--config-file=/home/rgame/dev/Nemo_Dev2/.clang-tidy;--extra-arg-before=--driver-mode=g++\" --source=/home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/Reuse.cpp -- /usr/bin/c++  -I/home/rgame/dev/Nemo_Dev2/src/nemo/.. -isystem /home/rgame/dev/Nemo_Dev2/build/analysis/vcpkg_installed/x64-linux/include -g -std=c++20 -Wall -Wextra -Wpedantic -MD -MT src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o -MF src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o.d -o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o -c /home/rgame/dev/Nemo_Dev2/src/nemo/core/evaluation/Reuse.cpp",
+        "Cleaning... 16 files.",
+        "[16/16] : && /usr/bin/cmake -E rm -f src/nemo/libnemo_core.a && /usr/bin/ar qc src/nemo/libnemo_core.a  src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValue.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/ParameterValueJson.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/MediaCatalog.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/Document.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/commands/AnimationCommands.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/commands/MediaCatalogCommands.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o && /usr/bin/ranlib src/nemo/libnemo_core.a && :"
+      ]
+    },
+    {
+      "name": "selected-checkset",
+      "command": [
+        "clang-tidy-18",
+        "--config-file=.clang-tidy",
+        "--list-checks"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 3.08,
+      "stdout_sha256": "b194f263ed7508e1eae618ad006b36ecd7bb58eaa10d6a12da4191d60fc6105a",
+      "output_excerpt": [
+        "Enabled checks:",
+        "    bugprone-dangling-handle",
+        "    bugprone-incorrect-roundings",
+        "    bugprone-integer-division",
+        "    bugprone-misplaced-widening-cast",
+        "    bugprone-sizeof-expression",
+        "    bugprone-undefined-memory-manipulation",
+        "    bugprone-unused-raii",
+        "    bugprone-use-after-move",
+        "    bugprone-virtual-near-miss",
+        "    clang-analyzer-core.BitwiseShift",
+        "    clang-analyzer-core.CallAndMessage",
+        "    clang-analyzer-core.CallAndMessageModeling",
+        "    clang-analyzer-core.DivideZero",
+        "    clang-analyzer-core.DynamicTypePropagation",
+        "    clang-analyzer-core.NonNullParamChecker",
+        "    clang-analyzer-core.NonnilStringConstants",
+        "    clang-analyzer-core.NullDereference",
+        "    clang-analyzer-core.StackAddrEscapeBase",
+        "    clang-analyzer-core.StackAddressEscape",
+        "    clang-analyzer-core.UndefinedBinaryOperatorResult",
+        "    clang-analyzer-core.VLASize",
+        "    clang-analyzer-core.builtin.BuiltinFunctions",
+        "    clang-analyzer-core.builtin.NoReturnFunctions",
+        "    clang-analyzer-core.uninitialized.ArraySubscript",
+        "    clang-analyzer-core.uninitialized.Assign",
+        "    clang-analyzer-core.uninitialized.Branch",
+        "    clang-analyzer-core.uninitialized.CapturedBlockVariable",
+        "    clang-analyzer-core.uninitialized.NewArraySize",
+        "    clang-analyzer-core.uninitialized.UndefReturn",
+        "    clang-analyzer-cplusplus.InnerPointer",
+        "    clang-analyzer-cplusplus.Move",
+        "    clang-analyzer-cplusplus.NewDelete",
+        "    clang-analyzer-cplusplus.NewDeleteLeaks",
+        "    clang-analyzer-cplusplus.PlacementNew",
+        "    clang-analyzer-cplusplus.PureVirtualCall",
+        "    clang-analyzer-cplusplus.SelfAssignment",
+        "    clang-analyzer-cplusplus.SmartPtrModeling",
+        "    clang-analyzer-cplusplus.StringChecker",
+        "    clang-analyzer-cplusplus.VirtualCallModeling",
+        "    clang-analyzer-deadcode.DeadStores",
+        "    clang-analyzer-unix.API",
+        "    clang-analyzer-unix.DynamicMemoryModeling",
+        "    clang-analyzer-unix.Errno",
+        "    clang-analyzer-unix.Malloc",
+        "    clang-analyzer-unix.MallocSizeof",
+        "    clang-analyzer-unix.MismatchedDeallocator",
+        "    clang-analyzer-unix.StdCLibraryFunctions",
+        "    clang-analyzer-unix.Vfork",
+        "    clang-analyzer-unix.cstring.BadSizeArg",
+        "    clang-analyzer-unix.cstring.CStringModeling",
+        "    clang-analyzer-unix.cstring.NullArg",
+        "    performance-for-range-copy",
+        "    performance-move-const-arg",
+        "    performance-unnecessary-copy-initialization",
+        ""
+      ]
+    },
+    {
+      "name": "analyzer-version",
+      "command": [
+        "clang-tidy-18",
+        "--version"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.04,
+      "stdout_sha256": "cfb9286322cccef53a692448cf4007a998d186dfb8e8313d317390a95eeb10f1",
+      "output_excerpt": [
+        "Ubuntu LLVM version 18.1.3",
+        "  Optimized build."
+      ]
+    },
+    {
+      "name": "debug-build",
+      "command": [
+        "cmake",
+        "--build",
+        "--preset",
+        "debug",
+        "-j",
+        "2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 344.46,
+      "stdout_sha256": "3e839a82bd6a4db8749beed08d8657409f5ab3cc16dbafb3fbb27a132f131483",
+      "output_excerpt": [
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[82/87] Linking CXX executable tests/nemo_media_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[83/87] Linking CXX executable tests/nemo_color_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[84/87] Linking CXX executable tests/nemo_hwmedia_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[85/87] Linking CXX executable tests/nemo_effect_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[86/87] Linking CXX executable tests/nemo_viewer_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[87/87] Linking CXX executable tests/nemo_workspace_ui_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'"
+      ]
+    },
+    {
+      "name": "release-build",
+      "command": [
+        "cmake",
+        "--build",
+        "--preset",
+        "release",
+        "-j",
+        "2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 398.53,
+      "stdout_sha256": "bdb9ca570b9a0902737657837d005f2eaa4b34c042c53bbcfc89cc57813832d4",
+      "output_excerpt": [
+        "mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[81/87] Linking CXX executable tests/nemo_media_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[82/87] Linking CXX executable tests/nemo_core_tests",
+        "[83/87] Linking CXX executable tests/nemo_color_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[84/87] Linking CXX executable tests/nemo_hwmedia_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[85/87] Linking CXX executable tests/nemo_effect_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[86/87] Linking CXX executable tests/nemo_viewer_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[87/87] Linking CXX executable tests/nemo_workspace_ui_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'"
+      ]
+    },
+    {
+      "name": "debug-tests",
+      "command": [
+        "ctest",
+        "--preset",
+        "debug",
+        "-j",
+        "2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 67.41,
+      "stdout_sha256": "25f9134e976562bd8055e6d74745508b361bf61310ee39fb7e9c9d0173a20f22",
+      "output_excerpt": [
+        "497/505 Test   #3: TimingTest.TrimAndSlipDoNotShiftLocalTime ...........................................................   Passed    0.00 sec",
+        "        Start 406: WorkspaceTest.MalformedLayoutThrows",
+        "498/505 Test #412: WorkspaceTest.ClosingLeafLastPanelCollapsesSplit ....................................................   Passed    0.00 sec",
+        "        Start   6: TimingTest.RoundTripIsStableForIntegerRates",
+        "499/505 Test #406: WorkspaceTest.MalformedLayoutThrows .................................................................   Passed    0.00 sec",
+        "        Start 411: WorkspaceTest.CloseLastPanelRejected",
+        "500/505 Test   #6: TimingTest.RoundTripIsStableForIntegerRates .........................................................   Passed    0.00 sec",
+        "        Start 421: WorkspaceTest.MovePanelSourceLeafCollapse",
+        "501/505 Test #411: WorkspaceTest.CloseLastPanelRejected ................................................................   Passed    0.00 sec",
+        "        Start   4: TimingTest.RetimeChangesSamplingRate",
+        "502/505 Test #421: WorkspaceTest.MovePanelSourceLeafCollapse ...........................................................   Passed    0.00 sec",
+        "        Start   2: TimingTest.MoveChangesPlacementOnly",
+        "503/505 Test   #4: TimingTest.RetimeChangesSamplingRate ................................................................   Passed    0.00 sec",
+        "        Start 419: WorkspaceTest.MovePanelCrossLeafTabAppend",
+        "504/505 Test   #2: TimingTest.MoveChangesPlacementOnly .................................................................   Passed    0.00 sec",
+        "505/505 Test #419: WorkspaceTest.MovePanelCrossLeafTabAppend ...........................................................   Passed    0.00 sec",
+        "",
+        "100% tests passed, 0 tests failed out of 505",
+        "",
+        "Total Test time (real) =  67.39 sec"
+      ]
+    },
+    {
+      "name": "asan-configure",
+      "command": [
+        "cmake",
+        "--preset",
+        "asan"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.84,
+      "stdout_sha256": "9905f8b5fafa4ad37970cd1260797c9186a5f6806943c0727770e344b7de3768",
+      "output_excerpt": [
+        "    target_link_libraries(main PRIVATE Vulkan::Headers GPUOpen::VulkanMemoryAllocator)",
+        "",
+        "See the documentation for more information on setting up your project: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/index.html",
+        "",
+        "All requested installations completed successfully in: 310 us",
+        "-- Running vcpkg install - done",
+        "-- Shader compilation: /home/rgame/dev/Nemo_Dev2/build/asan/_slang-toolchain-2026.17/bin/bin/slangc",
+        "-- Configuring done (1.7s)",
+        "-- Generating done (0.1s)",
+        "-- Build files have been written to: /home/rgame/dev/Nemo_Dev2/build/asan"
+      ]
+    },
+    {
+      "name": "release-tests",
+      "command": [
+        "ctest",
+        "--preset",
+        "release",
+        "-j",
+        "2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 35.83,
+      "stdout_sha256": "034ef7e8db06f8815fd3a62619adb0587415882c8137d975643688c95f99d8d9",
+      "output_excerpt": [
+        "485/493 Test #127: PersistenceTest.EdgeToMissingNodeDroppedWithWarning .................................................   Passed    0.00 sec",
+        "        Start  24: NativeEffectTest.GradeReverseRoundTripsSignedHdrWithoutClamps",
+        "486/493 Test  #23: NativeEffectTest.GradeForwardAppliesDeclaredControlsPerChannel ......................................   Passed    0.00 sec",
+        "        Start  25: NativeEffectTest.GradeClampsAndRejectsInvalidCoefficients",
+        "487/493 Test  #24: NativeEffectTest.GradeReverseRoundTripsSignedHdrWithoutClamps .......................................   Passed    0.00 sec",
+        "        Start  26: NativeEffectTest.EffectMaskSelectsChannelInvertsAndMixes",
+        "488/493 Test  #25: NativeEffectTest.GradeClampsAndRejectsInvalidCoefficients ...........................................   Passed    0.00 sec",
+        "        Start  27: NativeEffectTest.OptionalMaskSlotChangesResultIdentityAndCacheKey",
+        "489/493 Test  #26: NativeEffectTest.EffectMaskSelectsChannelInvertsAndMixes ............................................   Passed    0.00 sec",
+        "        Start  28: NativeEffectTest.BlurIsExactGaussianWithEdgeClampAndChannelSelection",
+        "490/493 Test  #27: NativeEffectTest.OptionalMaskSlotChangesResultIdentityAndCacheKey ...................................   Passed    0.00 sec",
+        "        Start  29: NativeEffectTest.TransformSelectsFiltersAndMapsCoordinates",
+        "491/493 Test  #28: NativeEffectTest.BlurIsExactGaussianWithEdgeClampAndChannelSelection ................................   Passed    0.00 sec",
+        "        Start 353: Effect.NativeGradeBlurTransformMatchCpuReference",
+        "492/493 Test  #29: NativeEffectTest.TransformSelectsFiltersAndMapsCoordinates ..........................................   Passed    0.00 sec",
+        "493/493 Test #353: Effect.NativeGradeBlurTransformMatchCpuReference ....................................................   Passed    0.64 sec",
+        "",
+        "100% tests passed, 0 tests failed out of 493",
+        "",
+        "Total Test time (real) =  35.81 sec"
+      ]
+    },
+    {
+      "name": "headless-configure",
+      "command": [
+        "cmake",
+        "--preset",
+        "headless"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.74,
+      "stdout_sha256": "a937a4b4f5a30dd6165fc6bd1ad84a6493e17e0282bbf5ce43a7ae2d6116709d",
+      "output_excerpt": [
+        "    target_link_libraries(main PRIVATE Vulkan::Headers GPUOpen::VulkanMemoryAllocator)",
+        "",
+        "See the documentation for more information on setting up your project: https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/index.html",
+        "",
+        "All requested installations completed successfully in: 475 us",
+        "-- Running vcpkg install - done",
+        "-- GPU shader compilation OMITTED: slangc not found and NEMO_DOWNLOAD_SLANGC=OFF. Set NEMO_SLANGC, install slangc, or configure with -D NEMO_DOWNLOAD_SLANGC=ON. This is a CPU-only configuration and is not GPU-gate evidence (see issue #8).",
+        "-- Configuring done (0.7s)",
+        "-- Generating done (0.0s)",
+        "-- Build files have been written to: /home/rgame/dev/Nemo_Dev2/build/headless"
+      ]
+    },
+    {
+      "name": "headless-build",
+      "command": [
+        "cmake",
+        "--build",
+        "--preset",
+        "headless",
+        "--target",
+        "nemo_core_tests",
+        "-j",
+        "2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 114.58,
+      "stdout_sha256": "8331d7e7a670b012cbccbf8c5182d5087bf8acf0b3225b1447ed4008442be023",
+      "output_excerpt": [
+        "[7/26] Building CXX object src/nemo/CMakeFiles/nemo_core.dir/core/document/Serialization.cpp.o",
+        "[8/26] Building CXX object src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectSession.cpp.o",
+        "[9/26] Building CXX object src/nemo/CMakeFiles/nemo_core.dir/core/nodes/NodeCatalog.cpp.o",
+        "[10/26] Building CXX object src/nemo/CMakeFiles/nemo_core.dir/core/session/ProjectFile.cpp.o",
+        "[11/26] Building CXX object src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/NativeEffects.cpp.o",
+        "[12/26] Building CXX object src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/CpuReference.cpp.o",
+        "[13/26] Building CXX object src/nemo/CMakeFiles/nemo_core.dir/core/evaluation/Reuse.cpp.o",
+        "[14/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/EvaluationTests.cpp.o",
+        "[15/26] Linking CXX static library src/nemo/libnemo_core.a",
+        "[16/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/ReuseTests.cpp.o",
+        "[17/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/CommandTests.cpp.o",
+        "[18/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/CatalogTests.cpp.o",
+        "[19/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/MediaCatalogTests.cpp.o",
+        "[20/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/PersistenceTests.cpp.o",
+        "[21/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/GraphTests.cpp.o",
+        "[22/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/SessionPersistenceTests.cpp.o",
+        "[23/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/NetworkTests.cpp.o",
+        "[24/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/ViewerModelTests.cpp.o",
+        "[25/26] Building CXX object tests/CMakeFiles/nemo_core_tests.dir/AnimationTests.cpp.o",
+        "[26/26] Linking CXX executable tests/nemo_core_tests"
+      ]
+    },
+    {
+      "name": "headless-tests",
+      "command": [
+        "build/headless/tests/nemo_core_tests"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 4.39,
+      "stdout_sha256": "3fd52db3375ec794dba02ac7eb4e62cd40285d50f6642abdfcac07d477d6494a",
+      "output_excerpt": [
+        "[       OK ] AnimationTest.BezierInsertionPreservesNonlinearCurveAndEndpointExtrapolation (0 ms)",
+        "[ RUN      ] AnimationTest.ContinuousValuesUseActualUnitsForScalarVectorAndColor",
+        "[       OK ] AnimationTest.ContinuousValuesUseActualUnitsForScalarVectorAndColor (0 ms)",
+        "[ RUN      ] AnimationTest.KeyedGestureRejectsResetValuesAndPreservesTransientPublication",
+        "[       OK ] AnimationTest.KeyedGestureRejectsResetValuesAndPreservesTransientPublication (0 ms)",
+        "[ RUN      ] AnimationTest.KeyedBeginRejectsStaleRevisionAndGroupUpdatesShareOneGesture",
+        "[       OK ] AnimationTest.KeyedBeginRejectsStaleRevisionAndGroupUpdatesShareOneGesture (0 ms)",
+        "[ RUN      ] AnimationTest.KeyQueryCursorUsesStableIdsRatherThanMutableTimeOrder",
+        "[       OK ] AnimationTest.KeyQueryCursorUsesStableIdsRatherThanMutableTimeOrder (0 ms)",
+        "[ RUN      ] AnimationTest.CollidingGroupMoveIsAtomicAndValidMoveIsOneHistoryEntry",
+        "[       OK ] AnimationTest.CollidingGroupMoveIsAtomicAndValidMoveIsOneHistoryEntry (0 ms)",
+        "[ RUN      ] AnimationTest.ExactBatchSwapsTimesAndRejectsEveryFieldOnTangentOrTargetConflicts",
+        "[       OK ] AnimationTest.ExactBatchSwapsTimesAndRejectsEveryFieldOnTangentOrTargetConflicts (0 ms)",
+        "[ RUN      ] AnimationTest.NodeDeletionPrunesAnimationQueriesAndUndoRestoresIdentity",
+        "[       OK ] AnimationTest.NodeDeletionPrunesAnimationQueriesAndUndoRestoresIdentity (0 ms)",
+        "[----------] 11 tests from AnimationTest (3 ms total)",
+        "",
+        "[----------] Global test environment tear-down",
+        "[==========] 260 tests from 23 test suites ran. (4382 ms total)",
+        "[  PASSED  ] 260 tests."
+      ]
+    },
+    {
+      "name": "missing-tool-discovery",
+      "command": [
+        "cmake",
+        "-S",
+        ".",
+        "-G",
+        "Ninja",
+        "-DNEMO_ENABLE_CLANG_TIDY=ON",
+        "-DNEMO_BUILD_GPU=OFF",
+        "-DNEMO_BUILD_UI=OFF",
+        "-DNEMO_BUILD_CLI=OFF",
+        "-DNEMO_BUILD_TESTS=OFF",
+        "-B",
+        "build/issue67-missing",
+        "-UCLANG_TIDY_PROGRAM",
+        "-DCMAKE_IGNORE_PATH=/usr/bin;/bin;/usr/lib/llvm-18/bin"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 0.02,
+      "stdout_sha256": "15e45209374cc535b37d52a0a5ac2784acafa88d35b0b46641b8bdeb26c8f166",
+      "output_excerpt": [
+        "CMake Error at CMakeLists.txt:64 (message):",
+        "  NEMO_ENABLE_CLANG_TIDY=ON requires clang-tidy 18, but clang-tidy-18 was not",
+        "  found on PATH.  Install it (Ubuntu 24.04: apt install clang-tidy-18) or",
+        "  pass -DCLANG_TIDY_PROGRAM=/path/to/clang-tidy-18.",
+        "",
+        "",
+        "-- Configuring incomplete, errors occurred!"
+      ]
+    },
+    {
+      "name": "asan-build",
+      "command": [
+        "cmake",
+        "--build",
+        "--preset",
+        "asan",
+        "-j",
+        "2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 485.04,
+      "stdout_sha256": "c45a3549737fa6579fc1abb0db8c4ad7cde16282a7168737a29740bac353bf60",
+      "output_excerpt": [
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[108/113] Linking CXX executable tests/nemo_color_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[109/113] Linking CXX executable tests/nemo_media_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[110/113] Linking CXX executable tests/nemo_hwmedia_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[111/113] Linking CXX executable tests/nemo_effect_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[112/113] Linking CXX executable tests/nemo_viewer_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'",
+        "[113/113] Linking CXX executable tests/nemo_workspace_ui_tests",
+        "/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':",
+        "/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'"
+      ]
+    },
+    {
+      "name": "asan-tests",
+      "command": [
+        "ctest",
+        "--preset",
+        "asan",
+        "-j",
+        "2"
+      ],
+      "exit_code": 8,
+      "elapsed_seconds": 368.82,
+      "stdout_sha256": "ce538055ed67198462d05706323217e044cb09bf8a26049481eb052c5195b0f0",
+      "output_excerpt": [
+        "\t377 - Viewer.StillImageFillMatchesCpuReference (Failed)",
+        "\t378 - Viewer.StillImageSamplingScaleNearestSourcePixel (Failed)",
+        "\t379 - Viewer.StillSequenceResolvesFramesThroughTimeMapping (Failed)",
+        "\t380 - Viewer.StillSequenceOutOfRangeFrameFailsNamingPath (Failed)",
+        "\t381 - Viewer.StillImageAmbiguousColorDeclarationFailsThroughGpu (Failed)",
+        "\t382 - Viewer.StillImageHandoffSurvivesDroppedEvaluation (Failed)",
+        "\t383 - Viewer.SiblingRepresentationReuseAcrossViewerRenders (Failed)",
+        "\t384 - Viewer.SourceReplacementAndWorkingPolicyCannotReplayRetiredDecode (Failed)",
+        "\t385 - Viewer.CroppedSourceReductionPreservesFullImageCoordinates (Failed)",
+        "\t386 - Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations (Failed)",
+        "\t393 - Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion (Failed)",
+        "\t397 - ViewerCache.SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform (Failed)",
+        "\t398 - ViewerCache.ViewEditsPreserveUpstreamReuseAndOnlyReplaceVisitedFrames (Failed)",
+        "\t399 - ViewerCache.StaleRequestsAndFailedMuxesNeverBecomeReplayable (Failed)",
+        "\t400 - ViewerCache.QueueContentionWaitsInsteadOfLosingARequestedFrame (Failed)",
+        "\t401 - ViewerCache.ActiveBatchConsumesAdmissionCapacity (Failed)",
+        "\t402 - ViewerCache.SupersessionDuringEncodingRejectsTheCompletedWrite (Failed)",
+        "\t403 - ViewerCache.StalePredecessorRetainsEncodedOffsetAcrossPersistence (Failed)",
+        "\t404 - ViewerCache.OddSizedRegionsReplayAtTheirExactRequestedExtent (Failed)",
+        "Errors while running CTest"
+      ]
+    },
+    {
+      "name": "asan-nvidia-driver-probe",
+      "command": [
+        "ctest",
+        "--preset",
+        "asan",
+        "-R",
+        "^Gpu.BootstrapCreateDestroy$",
+        "-j",
+        "1"
+      ],
+      "exit_code": 8,
+      "elapsed_seconds": 1.99,
+      "stdout_sha256": "15ee8870d928bb75d64774fa06a056fe8730f59317fcfb6f6f8c5d722697c0d6",
+      "output_excerpt": [
+        "    #7 0x7f4679f09efa  (<unknown module>)",
+        "    #8 0x7f467a06bb1d  (<unknown module>)",
+        "    #9 0x7ffde38319ef  ([stack]+0x229ef)",
+        "",
+        "-----------------------------------------------------",
+        "Suppressions used:",
+        "  count      bytes template",
+        "      3       2305 libdbus-1.so.3",
+        "-----------------------------------------------------",
+        "",
+        "SUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).",
+        "",
+        "",
+        "0% tests passed, 1 tests failed out of 1",
+        "",
+        "Total Test time (real) =   1.98 sec",
+        "",
+        "The following tests FAILED:",
+        "\t261 - Gpu.BootstrapCreateDestroy (Failed)",
+        "Errors while running CTest"
+      ],
+      "environment": {
+        "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/nvidia_icd.json"
+      }
+    },
+    {
+      "name": "vulkan-leak-probe-compile",
+      "command": [
+        "g++-13",
+        "-std=c++20",
+        "-fsanitize=address",
+        "-g",
+        "build/issue67-evidence/vulkan-leak-probe.cpp",
+        "-lvulkan",
+        "-o",
+        "build/issue67-evidence/vulkan-leak-probe"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.19,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "output_excerpt": []
+    },
+    {
+      "name": "vulkan-leak-probe",
+      "command": [
+        "build/issue67-evidence/vulkan-leak-probe"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 2.16,
+      "stdout_sha256": "ee63fee86f4b472684474c3dc8cd7680ad3bb506b4fabb9960cd72ad306ff474",
+      "output_excerpt": [
+        "",
+        "Indirect leak of 144 byte(s) in 1 object(s) allocated from:",
+        "    #0 0x769c78efd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77",
+        "    #1 0x769c78ca2f96  (/lib/x86_64-linux-gnu/libdrm.so.2+0x6f96) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)",
+        "    #2 0x769c78ca330b  (/lib/x86_64-linux-gnu/libdrm.so.2+0x730b) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)",
+        "    #3 0x769c78ca7e48 in drmGetDevices2 (/lib/x86_64-linux-gnu/libdrm.so.2+0xbe48) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)",
+        "    #4 0x769c779534cc  (<unknown module>)",
+        "    #5 0x769c7795366f  (<unknown module>)",
+        "    #6 0x769c7794777b  (<unknown module>)",
+        "    #7 0x769c77d0befa  (<unknown module>)",
+        "    #8 0x769c75574b1d  (<unknown module>)",
+        "    #9 0x7ffcd766683f  ([stack]+0x1883f)",
+        "",
+        "-----------------------------------------------------",
+        "Suppressions used:",
+        "  count      bytes template",
+        "      3       2305 libdbus-1.so.3",
+        "-----------------------------------------------------",
+        "",
+        "SUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s)."
+      ],
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt"
+      }
+    },
+    {
+      "name": "asan-core-only-tests",
+      "command": [
+        "ctest",
+        "--preset",
+        "asan",
+        "-I",
+        "1,260",
+        "-j",
+        "2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 12.74,
+      "stdout_sha256": "f6e086b0777c02c2f73f6964624b8457e9f16ea8a07adacf19232bca367c37ff",
+      "output_excerpt": [
+        "252/260 Test #136: PersistenceTest.UnknownNodeTypeIsRetainedWithWarning ................................................   Passed    0.08 sec",
+        "        Start 138: PersistenceTest.MalformedRootRejected",
+        "253/260 Test #137: PersistenceTest.NewerSchemaIsRejectedNotSilentlyMisread .............................................   Passed    0.09 sec",
+        "        Start   4: TimingTest.RetimeChangesSamplingRate",
+        "254/260 Test #138: PersistenceTest.MalformedRootRejected ...............................................................   Passed    0.08 sec",
+        "        Start   5: TimingTest.InternalSourceRetimeAppliesBeforeDownstream",
+        "255/260 Test   #4: TimingTest.RetimeChangesSamplingRate ................................................................   Passed    0.08 sec",
+        "        Start   6: TimingTest.RoundTripIsStableForIntegerRates",
+        "256/260 Test   #5: TimingTest.InternalSourceRetimeAppliesBeforeDownstream ..............................................   Passed    0.08 sec",
+        "        Start   3: TimingTest.TrimAndSlipDoNotShiftLocalTime",
+        "257/260 Test   #6: TimingTest.RoundTripIsStableForIntegerRates .........................................................   Passed    0.08 sec",
+        "        Start   2: TimingTest.MoveChangesPlacementOnly",
+        "258/260 Test   #3: TimingTest.TrimAndSlipDoNotShiftLocalTime ...........................................................   Passed    0.08 sec",
+        "        Start   1: TimingTest.AcceptanceScenario1_LocalOffsetsFromParentPlacement",
+        "259/260 Test   #2: TimingTest.MoveChangesPlacementOnly .................................................................   Passed    0.08 sec",
+        "260/260 Test   #1: TimingTest.AcceptanceScenario1_LocalOffsetsFromParentPlacement ......................................   Passed    0.08 sec",
+        "",
+        "100% tests passed, 0 tests failed out of 260",
+        "",
+        "Total Test time (real) =  12.73 sec"
+      ]
+    }
+  ],
+  "sanitizer_limitation": {
+    "full_suite": "444/505 passed; 61 GPU-process exits failed LeakSanitizer after test assertions passed.",
+    "observed_leak": "248 bytes: direct 104 + indirect 144, including libdrm drmGetDevices2.",
+    "isolation": "Same leak reproduced by vkCreateInstance/vkEnumeratePhysicalDevices/vkDestroyInstance in a standalone executable linking only Vulkan (no Nemo code). NVIDIA-only ICD selection did not remove it.",
+    "probe_source": "#include <vulkan/vulkan.h>\n#include <cstdio>\n\nint main() {\n    VkInstanceCreateInfo info{};\n    info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;\n    VkInstance instance{};\n    if (vkCreateInstance(&info, nullptr, &instance) != VK_SUCCESS)\n        return 1;\n    unsigned count = 0;\n    const VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);\n    std::printf(\"vkEnumeratePhysicalDevices: result=%d devices=%u\\n\", result, count);\n    vkDestroyInstance(instance, nullptr);\n    return result == VK_SUCCESS ? 0 : 1;\n}\n",
+    "environment": {
+      "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt"
+    },
+    "disposition": "No new suppression or application change. Full native ASan green remains blocked by the external Vulkan stack; original core tests 1-260 pass separately. The native nemo_core_tests executable also includes GPU tests, so it is not a core-only isolation command."
+  },
+  "compatibility": {
+    "debug": {
+      "configure": 0,
+      "build": 0,
+      "ctest": "505/505 passed"
+    },
+    "release": {
+      "configure": 0,
+      "build": 0,
+      "ctest": "493/493 passed; NDEBUG excludes 12 owner-thread death tests"
+    },
+    "asan": {
+      "configure": 0,
+      "build": 0,
+      "ctest": "444/505 passed; 61 failures from external Vulkan leak",
+      "core_only_ctest": "260/260 passed using -I 1,260"
+    },
+    "headless": {
+      "configure": 0,
+      "core_target_build": 0,
+      "core_executable": "260/260 passed"
+    },
+    "effective_existing_native_caches": {
+      "NEMO_BUILD_UI": "ON",
+      "NEMO_BUILD_GPU": "ON"
+    },
+    "format": "clang-format --dry-run --Werror on the four changed C++ files: exit 0"
+  },
+  "reviews": {
+    "fixed_point": "a77d935787801a40d7d070e75652a5b44c02aa17",
+    "diff": "git diff a77d935787801a40d7d070e75652a5b44c02aa17 (uncommitted implementation reviewed before commit)",
+    "standards": {
+      "findings": 0
+    },
+    "spec": {
+      "implementation_findings": 0,
+      "open_evidence_gates": [
+        "Hosted Linux CI clean and diagnostic-negative outcomes",
+        "Full native ASan green: isolated external Vulkan stack leak"
+      ]
+    }
+  },
+  "cleanup": "Injected Ids.hpp change restored byte-for-byte; wrong-version executable and standalone Vulkan probe source/binary removed. Existing issue34 autosaves preserved.",
+  "status": "Implemented and locally reviewed; issue remains open for hosted CI and full native ASan acceptance."
+}

@@ -423,10 +423,61 @@ cmake --preset headless -DNEMO_TEST_FORBIDDEN_DEPENDENCY=ON
 ```
 
 and observe configuration failure. Core, session, and catalog work must remain
-buildable with both `NEMO_BUILD_UI=OFF` and `NEMO_BUILD_GPU=OFF`. UI changes
-additionally require launching the native UI and human inspection of visible
-behavior; headless or model-only checks are not UI evidence. Image baselines,
-public APIs, new node types, and dependencies require explicit owner review.
+buildable with both `NEMO_BUILD_UI=OFF` and `NEMO_BUILD_GPU=OFF`.
+
+UI changes additionally require launching the native UI and human inspection of
+visible behavior; headless or model-only checks are not UI evidence. Image
+baselines, public APIs, new node types, and dependencies require explicit owner
+review.
+
+### Focused static analysis (clang-tidy 18)
+
+The required analysis gate covers the `nemo_core` target and the core headers
+selected by the root [`.clang-tidy`](../../.clang-tidy) `HeaderFilterRegex`
+scope: the module sources under `src/nemo/core/` and the headers they include.
+It does not analyze UI, GPU, media, runtime evaluation (`src/nemo/eval/`), CLI
+or test code.
+
+The pinned analyzer is **clang-tidy 18** (Ubuntu 24.04 package `clang-tidy-18`).
+The opt-in CMake switch `NEMO_ENABLE_CLANG_TIDY=ON` installs the analyzer as the
+`nemo_core`-only compile-time launcher with `--config-file=<root>/.clang-tidy`.
+Configuration fails with a message naming the tool when it is missing or its
+version does not match 18; explicit analysis never silently degrades to a clean
+result. Warning failure is owned by the root `.clang-tidy` `WarningsAsErrors`
+policy, which is the single authority, so a selected diagnostic fails the run.
+
+The gated check set is selected in the root `.clang-tidy` and is bounded to
+correctness-oriented families: the `clang-analyzer-core`, `-cplusplus`,
+`-deadcode` and `-unix` path checks, the correctness-oriented `bugprone-*`
+checks, plus `performance-for-range-copy`, `performance-move-const-arg` and
+`performance-unnecessary-copy-initialization`, whose findings are actionable in
+this scope. Style (`readability-*`) and modernization (`modernize-*`) checks are
+explicitly outside the required gate.
+
+Requirements: CMake 3.28+ with Ninja, a C++20 compiler (CI uses `g++-13`),
+`VCPKG_ROOT` exported to the pinned vcpkg toolchain, and clang-tidy 18 on the
+path. Qt, Vulkan and generated shaders are not needed because the preset keeps
+UI, GPU, CLI and tests off. Run the gate with the single command shared by local
+development and the `analysis` CI job:
+
+```bash
+cmake --workflow --preset analysis
+```
+
+The `analysis` workflow preset configures with the `analysis` configure preset
+(headless, plus `NEMO_ENABLE_CLANG_TIDY=ON`) and then builds only `nemo_core`
+with two build jobs. The build step is clean-first on purpose: clang-tidy runs
+as part of compilation, so an incremental build skips up-to-date translation
+units and can report success without analyzing anything. Cleaning first makes
+every invocation actually re-analyze the gated scope instead of no-op passing.
+
+The build is verbose, so the workflow log records the launcher, the
+`--config-file` it used and one clang-tidy command per analyzed core translation
+unit. That makes execution visible: an empty or missing invocation list is a
+failed run, not a clean result.
+
+For the initial gate's clean/negative execution and compatibility evidence,
+see [`issue67-static-analysis.json`](../evidence/issue67-static-analysis.json).
 
 External contributions remain behind the provisional gate in
 [`0004-provisional-licensing.md`](../decisions/0004-provisional-licensing.md):

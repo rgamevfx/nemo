@@ -19,6 +19,16 @@ add_library(nemo_core
 )
 add_library(nemo::core ALIAS nemo_core)
 
+# Focused analysis gate (issue #67): clang-tidy runs for this target only,
+# through the launcher validated in the root CMakeLists (pinned clang-tidy 18
+# plus the root .clang-tidy, whose WarningsAsErrors is the sole warning
+# policy). Target scope keeps analysis out of the gpu/media/cli/ui/test
+# targets while still checking the core module's headers.
+if(NEMO_ENABLE_CLANG_TIDY)
+    set_target_properties(nemo_core PROPERTIES
+        CXX_CLANG_TIDY "${NEMO_CLANG_TIDY_LAUNCHER}")
+endif()
+
 
 target_include_directories(nemo_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(nemo_core PUBLIC nlohmann_json::nlohmann_json)

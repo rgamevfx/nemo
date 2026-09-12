@@ -109,8 +109,8 @@ execution and image validation are the native execution gate (issue #8).
 ```bash
 # Format (CI enforces)
 clang-format -i <changed .cpp/.hpp files>
-# Static analysis (opt-in locally, required for new modules)
-cmake --preset debug -D NEMO_ENABLE_CLANG_TIDY=ON
+# Focused static analysis (clang-tidy 18; core module and its headers)
+cmake --workflow --preset analysis
 ```
 
 Headless verification — use for model, evaluation, and render-path changes:

@@ -474,6 +474,9 @@ bool Document::instanceBindingDependsOn(NetworkInstanceId origin, NetworkInstanc
         for (const auto& [unusedTerminal, source] : current->inputBindings) {
             const auto nested =
                 std::find_if(instances_.begin(), instances_.end(), [&](const NetworkInstance& candidate) {
+                    // clang-tidy 18 mis-models the captured structured binding `source`.
+                    // Its inputBindings entry stays alive and unchanged throughout find_if.
+                    // NOLINTNEXTLINE(clang-analyzer-core.NullDereference): structured-binding false positive
                     return candidate.parentNetwork == current->parentNetwork && candidate.node == source.node;
                 });
             if (nested == instances_.end())
@@ -1209,6 +1212,9 @@ Command insertNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, std::string ty
                        if (existing == graph.edges().end())
                            throw GraphException(GraphError::UnknownEdge,
                                                 "cannot insert on unknown edge " + std::to_string(edgeId));
+                       // The copy is required: graph.disconnect() below erases this edge from
+                       // edges_, invalidating both the iterator and *existing.
+                       // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): erase invalidates the source
                        const Edge original = *existing;
 
                        // Exercise all catalog, endpoint, cycle, name and identity
@@ -1256,7 +1262,7 @@ Command insertExistingNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, NodeId
                 throw GraphException(GraphError::PortType, "node " + std::to_string(nodeId) +
                                                                " must have primary input port 0 and output port 0");
 
-            const Edge original = *edge;
+            const Edge& original = *edge;
             Graph candidate = graph;
             candidate.setLayout(nodeId, position);
             candidate.disconnect(edgeId);

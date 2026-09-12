@@ -21,7 +21,7 @@ namespace nemo {
 // (repo rule: errors identify the offending relationship).
 struct EvaluationException : std::runtime_error {
     EvaluationException(std::string message, NodeId node = kInvalidNode, std::string nodeName = {})
-        : std::runtime_error(std::move(message)), node(node), nodeName(std::move(nodeName)) {}
+        : std::runtime_error(message), node(node), nodeName(std::move(nodeName)) {}
 
     [[nodiscard]] bool hasNode() const { return node != kInvalidNode; }
 

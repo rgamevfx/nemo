@@ -104,7 +104,7 @@ struct GraphErrorDetails {
 
 class GraphException : public std::runtime_error {
 public:
-    GraphException(GraphError code, std::string message) : std::runtime_error(std::move(message)), code(code) {}
+    GraphException(GraphError code, std::string message) : std::runtime_error(message), code(code) {}
 
     [[nodiscard]] GraphError errorCode() const { return code; }
 

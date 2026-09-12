@@ -55,6 +55,11 @@ const NodeInstance* Graph::findNode(NodeId id) const {
     return it == nodes_.end() ? nullptr : &*it;
 }
 
+NodeInstance* Graph::findNode(NodeId id) {
+    const auto it = std::find_if(nodes_.begin(), nodes_.end(), [id](const NodeInstance& n) { return n.id == id; });
+    return it == nodes_.end() ? nullptr : &*it;
+}
+
 void Graph::eraseIncomingEdge(const Edge& edge) noexcept {
     const auto cacheIt = incomingCache_.find(edge.to.node);
     if (cacheIt == incomingCache_.end())
@@ -106,7 +111,7 @@ NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, Param
 }
 
 void Graph::restoreNodeExtension(NodeId id, nlohmann::json extension, nlohmann::json opaqueParams) {
-    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    NodeInstance* node = findNode(id);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode,
                              "cannot attach preserved data to unknown node " + std::to_string(id));
@@ -115,7 +120,7 @@ void Graph::restoreNodeExtension(NodeId id, nlohmann::json extension, nlohmann::
 }
 
 void Graph::renameNode(NodeId id, std::string name) {
-    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    NodeInstance* node = findNode(id);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot rename unknown node " + std::to_string(id));
     if (name.empty())
@@ -147,7 +152,7 @@ void Graph::removeNode(NodeId id) {
 }
 
 void Graph::setPortContract(NodeId id, std::vector<PortSpec> inputs, std::vector<PortSpec> outputs) {
-    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    NodeInstance* node = findNode(id);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode,
                              "cannot set a port contract on unknown node " + std::to_string(id));
@@ -207,7 +212,7 @@ bool Graph::inputReserved(PortRef destination) const {
 }
 
 void Graph::setLayout(NodeId id, LayoutPosition position) {
-    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    NodeInstance* node = findNode(id);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot position unknown node " + std::to_string(id));
     if (node->layout == position)
@@ -259,16 +264,19 @@ const std::vector<PortSpec>& Graph::outputPorts(NodeId id) const {
 bool Graph::reachable(NodeId origin, NodeId target) const {
     if (origin == target)
         return true;
-    std::vector<NodeId> stack{origin};
-    while (!stack.empty()) {
-        const NodeId current = stack.back();
-        stack.pop_back();
-        for (const auto& edge : edges_) {
-            if (edge.from.node != current)
-                continue;
-            if (edge.to.node == target)
+    // Reverse traversal over the graph-owned incoming adjacency. Both the
+    // worklist and the visited set are query-local and sized by discovered
+    // nodes, never by an identity high-water mark: identities are sparse.
+    std::vector<NodeId> worklist{target};
+    std::set<NodeId> discovered{target};
+    while (!worklist.empty()) {
+        const NodeId current = worklist.back();
+        worklist.pop_back();
+        for (const auto& edge : edgesInto(current)) {
+            if (edge.from.node == origin)
                 return true;
-            stack.push_back(edge.to.node);
+            if (discovered.insert(edge.from.node).second)
+                worklist.push_back(edge.from.node);
         }
     }
     return false;
@@ -437,7 +445,7 @@ void Graph::setRoute(EdgeId id, std::vector<LayoutPosition> route) {
 }
 
 void Graph::setParam(NodeId id, const std::string& key, ParameterValue value) {
-    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    NodeInstance* node = findNode(id);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot set a parameter on unknown node " + std::to_string(id));
     if (const auto problem = catalog_->validateParameter(node->type, key, value))
@@ -448,7 +456,7 @@ void Graph::setParam(NodeId id, const std::string& key, ParameterValue value) {
 }
 
 void Graph::eraseParam(NodeId id, const std::string& key) {
-    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    NodeInstance* node = findNode(id);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot erase a parameter on unknown node " + std::to_string(id));
     node->params.erase(key);
@@ -510,6 +518,11 @@ const FormalPort* Network::findPort(const std::vector<FormalPort>& ports, std::s
     return it == ports.end() ? nullptr : &*it;
 }
 
+FormalPort* Network::findPort(std::vector<FormalPort>& ports, InterfacePortId id) {
+    const auto it = std::find_if(ports.begin(), ports.end(), [id](const FormalPort& port) { return port.id == id; });
+    return it == ports.end() ? nullptr : &*it;
+}
+
 const FormalPort* Network::input(InterfacePortId id) const {
     return findPort(inputs_, id);
 }
@@ -555,12 +568,12 @@ InterfacePortId Network::addFormalPort(PortDirection direction, std::string name
 }
 
 void Network::restorePortExtension(PortDirection direction, InterfacePortId id, nlohmann::json extension) {
-    const auto& ports = direction == PortDirection::Input ? inputs_ : outputs_;
-    const FormalPort* found = findPort(ports, id);
+    auto& ports = direction == PortDirection::Input ? inputs_ : outputs_;
+    FormalPort* found = findPort(ports, id);
     if (found == nullptr)
         throw GraphException(GraphError::InvalidId,
                              "cannot attach preserved data to unknown formal terminal " + std::to_string(id));
-    const_cast<FormalPort*>(found)->extension = std::move(extension);
+    found->extension = std::move(extension);
 }
 
 std::optional<GraphErrorDetails> Network::validateInputConnection(InterfacePortId input, PortRef destination) const {

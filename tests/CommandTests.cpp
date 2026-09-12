@@ -268,6 +268,108 @@ TEST(ProjectSessionTest, RequestReplayDeduplicatesAcrossLaterEdits) {
     EXPECT_EQ(rootGraph(session.document()).nodes().size(), 2u);
 }
 
+TEST(ProjectSessionTest, CycleRejectionKeepsDocumentRevisionEventsAndHistoryUnchanged) {
+    Document doc = emptyDocument();
+    auto& graph = rootGraph(doc);
+    const NodeId first = graph.addNode("merge", "first");
+    const NodeId second = graph.addNode("merge", "second");
+    const NodeId third = graph.addNode("merge", "third");
+    graph.connect({first, 0}, {second, 0});
+    graph.connect({second, 0}, {third, 0});
+
+    ProjectSession session(std::move(doc));
+    const NetworkId network = session.document().rootNetworkId();
+    ASSERT_TRUE(session.submit(renameNodeCommand(network, first, "alpha"), current(session)).committed);
+    const auto revisionBefore = session.revision();
+    const auto documentRevisionBefore = session.document().stateRevision();
+    const auto serializedBefore =
+        ProjectFile::serializeContent(session.document(), session.presentation(), session.colorConfigPath());
+
+    // Transitive cycle: third already depends on first through second.
+    const auto transitive =
+        session.submit(connectCommand(network, {third, 0}, {first, 0}), EditOptions{revisionBefore, "cycle-request"});
+    EXPECT_FALSE(transitive.committed);
+    ASSERT_TRUE(transitive.error.has_value());
+    EXPECT_EQ(transitive.error->graphError, GraphError::Cycle);
+    EXPECT_NE(transitive.error->message.find(std::to_string(first)), std::string::npos);
+
+    // Direct cycle: second already receives from first.
+    const auto direct = session.submit(connectCommand(network, {second, 0}, {first, 0}),
+                                       EditOptions{revisionBefore, "direct-cycle-request"});
+    EXPECT_FALSE(direct.committed);
+    ASSERT_TRUE(direct.error.has_value());
+    EXPECT_EQ(direct.error->graphError, GraphError::Cycle);
+
+    EXPECT_EQ(session.revision(), revisionBefore);
+    EXPECT_EQ(session.document().stateRevision(), documentRevisionBefore);
+    EXPECT_EQ(ProjectFile::serializeContent(session.document(), session.presentation(), session.colorConfigPath()),
+              serializedBefore);
+    EXPECT_TRUE(session.changesSince(revisionBefore).events.empty());
+    EXPECT_TRUE(session.canUndo());
+    EXPECT_FALSE(session.canRedo());
+    EXPECT_TRUE(rootGraph(session.document()).edgesInto(first).empty());
+
+    // The failed request identity is not retained: reusing it later commits the
+    // new payload instead of replaying the rejection.
+    const auto reused =
+        session.submit(renameNodeCommand(network, third, "gamma"), EditOptions{session.revision(), "cycle-request"});
+    ASSERT_TRUE(reused.committed);
+    EXPECT_EQ(rootGraph(session.document()).node(third)->name, "gamma");
+
+    // History holds exactly the two committed renames: exhausting undo steps
+    // over neither rejected cycle attempt.
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    EXPECT_EQ(rootGraph(session.document()).node(third)->name, "third");
+    EXPECT_EQ(rootGraph(session.document()).node(first)->name, "alpha");
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    EXPECT_EQ(rootGraph(session.document()).node(first)->name, "first");
+    EXPECT_FALSE(session.undo(current(session)).committed);
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    EXPECT_EQ(rootGraph(session.document()).node(first)->name, "alpha");
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    EXPECT_EQ(rootGraph(session.document()).node(third)->name, "gamma");
+    EXPECT_FALSE(session.redo(current(session)).committed);
+}
+
+TEST(ProjectSessionTest, ValidReconvergentConnectionUndoRedoRestoresTopologyAndIdentities) {
+    Document doc = emptyDocument();
+    auto& graph = rootGraph(doc);
+    const NodeId source = graph.addNode("testpattern", "source");
+    const NodeId left = graph.addNode("merge", "left");
+    const NodeId right = graph.addNode("merge", "right");
+    const NodeId join = graph.addNode("merge", "join");
+    graph.connect({source, 0}, {left, 0});
+    graph.connect({source, 0}, {right, 0});
+    const EdgeId fromLeft = graph.connect({left, 0}, {join, 0});
+
+    ProjectSession session(std::move(doc));
+    const NetworkId network = session.document().rootNetworkId();
+    const auto connected =
+        session.submit(connectCommand(network, {right, 0}, {join, 1}), EditOptions{session.revision(), "reconverge"});
+    ASSERT_TRUE(connected.committed);
+    ASSERT_EQ(connected.createdEdgeIds.size(), 1u);
+    const EdgeId added = connected.createdEdgeIds.front().id;
+    const auto watermarkAfter = rootGraph(session.document()).nextEdgeId();
+    EXPECT_EQ(watermarkAfter, added + 1);
+    EXPECT_TRUE(rootGraph(session.document()).reachable(source, join));
+    EXPECT_TRUE(rootGraph(session.document()).reachable(right, join));
+    ASSERT_EQ(rootGraph(session.document()).edgesInto(join).size(), 2u);
+    EXPECT_EQ(rootGraph(session.document()).edgesInto(join).front().id, fromLeft);
+    EXPECT_EQ(rootGraph(session.document()).edgesInto(join).back().id, added);
+
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    ASSERT_EQ(rootGraph(session.document()).edgesInto(join).size(), 1u);
+    EXPECT_EQ(rootGraph(session.document()).edgesInto(join).front().id, fromLeft);
+    // Undoing a connection never lowers or reuses the edge high-water mark.
+    EXPECT_EQ(rootGraph(session.document()).nextEdgeId(), watermarkAfter);
+
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    ASSERT_EQ(rootGraph(session.document()).edgesInto(join).size(), 2u);
+    EXPECT_EQ(rootGraph(session.document()).edgesInto(join).back().id, added);
+    EXPECT_EQ(rootGraph(session.document()).nextEdgeId(), watermarkAfter);
+    EXPECT_EQ(rootGraph(session.document()).edges().size(), 4u);
+}
+
 TEST(ProjectSessionTest, ChangesSinceReportsBoundedHistoryAndResync) {
     ProjectSession session({}, 2);
     ASSERT_TRUE(

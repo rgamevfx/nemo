@@ -164,7 +164,13 @@ public:
     void disconnect(EdgeId id);
     void setRoute(EdgeId id, std::vector<LayoutPosition> route);
     [[nodiscard]] std::optional<GraphErrorDetails> validateEdge(PortRef from, PortRef to) const;
+    // Incoming adjacency owned by this graph: every edge whose destination is
+    // `node`, in insertion order. Empty for an unknown or unfed node.
     [[nodiscard]] const std::vector<Edge>& edgesInto(NodeId node) const;
+    // True when `target` is reachable from `origin` by following directed
+    // edges. Walks the graph-owned incoming adjacency backward from `target`
+    // with query-local visited state, so each discovered node is expanded once.
+    // An origin equal to target is always reachable, including unknown ids.
     [[nodiscard]] bool reachable(NodeId origin, NodeId target) const;
     [[nodiscard]] const std::vector<NodeInstance>& nodes() const { return nodes_; }
     [[nodiscard]] const std::vector<Edge>& edges() const { return edges_; }
@@ -180,6 +186,9 @@ public:
 
 private:
     [[nodiscard]] const NodeInstance* findNode(NodeId id) const;
+    // Mutable lookup for this graph's own mutation helpers; callers never
+    // receive mutable node access.
+    [[nodiscard]] NodeInstance* findNode(NodeId id);
     void eraseIncomingEdge(const Edge& edge) noexcept;
     [[nodiscard]] const std::vector<PortSpec>* declaredInputs(const NodeInstance& node) const;
     [[nodiscard]] const std::vector<PortSpec>* declaredOutputs(const NodeInstance& node) const;
@@ -280,6 +289,9 @@ private:
                                                     InterfacePortId id, bool allowFanOut);
     [[nodiscard]] const FormalPort* findPort(const std::vector<FormalPort>& ports, InterfacePortId id) const;
     [[nodiscard]] const FormalPort* findPort(const std::vector<FormalPort>& ports, std::string_view name) const;
+    // Mutable lookup for this network's own mutation helpers; public terminal
+    // lookup stays read-only.
+    [[nodiscard]] FormalPort* findPort(std::vector<FormalPort>& ports, InterfacePortId id);
 
     NetworkId id_{kInvalidNetwork};
     std::string name_;

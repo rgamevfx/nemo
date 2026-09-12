@@ -1,0 +1,60 @@
+{
+  "issue": 65,
+  "classification": "Synthetic algorithm timings; not native UI latency; no CI timing threshold",
+  "baseline_commit": "fee41ba8d466deb4f6232183b53fee346024f886",
+  "implementation_commit": "1e3977d",
+  "machine": {
+    "system": "Linux-7.1.5-76070105-generic-x86_64-with-glibc2.39",
+    "cpu": "Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz",
+    "compiler": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+  },
+  "build": "Standalone Graph.cpp compiled with -std=c++20 -O2 -DNDEBUG, no sanitizer; dependencies linked from release libnemo_core.a. Same flags for both variants; saved baseline header overlay precedes src. Exact commands in benchmark.cpp.",
+  "method": "Fixed two-nodes-per-layer fully reconverging DAG plus isolated node; graph construction/warm-up excluded. Five steady_clock batches, baseline 3 queries/batch, corrected 10000; report min/median/max batch-average nanoseconds/query. Final measurements after compilation completed; no CPU pinning/frequency control. Baseline tiny-query batches are clock/noise sensitive. Both query results must be false, with printed observed-answer checksum.",
+  "interpretation": "root_to_isolated removes demonstrated exponential forward path enumeration. isolated_to_last deliberately exercises the reverse ancestor traversal; it costs more than the old isolated-origin early exit but stays bounded in these measured graphs. Code inserts discovered IDs before scheduling expansion; each node expands once and only via edgesInto. std::map adjacency and std::set visited lookups add logarithmic factors; not a strict linear-time claim.",
+  "before_stdout": "# issue65 graph reachability synthetic timing (context only, no CI threshold)\n# compiler=13.3.0 reps=3 batches=5\n== size=21 nodes=21 edges=36 layers=10 shape_ok=true ==\ntiming size=21  scenario=isolated_to_last  reps=3      batches=5 queries=15       min_ns=134.7        median_ns=135.0        max_ns=277.3        checksum=0\ntiming size=21  scenario=root_to_isolated  reps=3      batches=5 queries=15       min_ns=50851.3      median_ns=51506.0      max_ns=60568.3      checksum=0\n== size=37 nodes=37 edges=68 layers=18 shape_ok=true ==\ntiming size=37  scenario=isolated_to_last  reps=3      batches=5 queries=15       min_ns=152.3        median_ns=170.0        max_ns=226.7        checksum=0\ntiming size=37  scenario=root_to_isolated  reps=3      batches=5 queries=15       min_ns=7572889.3    median_ns=7879976.0    max_ns=9974698.3    checksum=0\n== size=45 nodes=45 edges=84 layers=22 shape_ok=true ==\ntiming size=45  scenario=isolated_to_last  reps=3      batches=5 queries=15       min_ns=50.7         median_ns=51.3         max_ns=61.3         checksum=0\ntiming size=45  scenario=root_to_isolated  reps=3      batches=5 queries=15       min_ns=150024400.3  median_ns=151918832.0  max_ns=158027053.3  checksum=0\nsummary failures=0 (checksum counts unexpected true answers)\n",
+  "after_stdout": "# issue65 graph reachability synthetic timing (context only, no CI threshold)\n# compiler=13.3.0 reps=10000 batches=5\n== size=21 nodes=21 edges=36 layers=10 shape_ok=true ==\ntiming size=21  scenario=isolated_to_last  reps=10000  batches=5 queries=50000    min_ns=929.5        median_ns=932.5        max_ns=942.8        checksum=0\ntiming size=21  scenario=root_to_isolated  reps=10000  batches=5 queries=50000    min_ns=44.5         median_ns=45.5         max_ns=59.4         checksum=0\n== size=37 nodes=37 edges=68 layers=18 shape_ok=true ==\ntiming size=37  scenario=isolated_to_last  reps=10000  batches=5 queries=50000    min_ns=1829.6       median_ns=1844.2       max_ns=1887.8       checksum=0\ntiming size=37  scenario=root_to_isolated  reps=10000  batches=5 queries=50000    min_ns=46.1         median_ns=47.9         max_ns=71.5         checksum=0\n== size=45 nodes=45 edges=84 layers=22 shape_ok=true ==\ntiming size=45  scenario=isolated_to_last  reps=10000  batches=5 queries=50000    min_ns=2296.2       median_ns=2350.4       max_ns=2504.2       checksum=0\ntiming size=45  scenario=root_to_isolated  reps=10000  batches=5 queries=50000    min_ns=46.8         median_ns=49.5         max_ns=55.8         checksum=0\nsummary failures=0 (checksum counts unexpected true answers)\n",
+  "source_sha256": {
+    "src/nemo/core/document/Graph.cpp": "3567588e80bf4f16e3f528f6a5f6299ac2e93d4df8b0f3a4c59d08bc25978284",
+    "src/nemo/core/document/Graph.hpp": "85d3af122a270562d54db545fcdcba41227bbb5df6a4bf82f6497dbdba519a83",
+    "tests/GraphTests.cpp": "abe44566b3992f3f9a6ff2d39ba02629e71eb871ebad06ba757a74eb76c8d69a",
+    "tests/CommandTests.cpp": "7df6145cd4b4aab6512fb39129113860f4acd1069112aa25a51ac59fda7820ee",
+    "docs/evidence/assets/issue65-graph-reachability/benchmark.cpp": "5586a919523d9568d11c1958fa58654c1a3e87c18529e72260731e8b34dc218c"
+  },
+  "verification": {
+    "configure": [
+      "debug",
+      "release",
+      "asan",
+      "headless"
+    ],
+    "build": [
+      "debug full",
+      "release full",
+      "asan nemo_core_tests",
+      "headless nemo_core_tests"
+    ],
+    "focused_filter": "^(GraphTest|ProjectSessionTest|CommandStackTest|NetworkTest)\\.",
+    "focused_results": {
+      "debug": "67/67",
+      "release": "67/67",
+      "asan_ubsan": "67/67",
+      "headless_gpu_ui_off": "67/67"
+    },
+    "build_warning": "Third-party minizip-ng linker warning about mktemp in debug/release; no changed-source warning observed.",
+    "native_ui": "Not applicable: backend-only; no UI surface or image changes.",
+    "windows": "Excluded by issue65/64 scope.",
+    "full_debug_suite": {
+      "command": "ctest --preset debug --no-tests=error -j 2",
+      "passed": 493,
+      "failed": 0,
+      "seconds": 39.53
+    }
+  },
+  "reviews": {
+    "baseline": "fee41ba",
+    "reviewed_commit": "1e3977d",
+    "standards": "No hard violations or actionable smell findings. Minor repeated rationale noted as documentation drift risk.",
+    "spec": "No missing/partial requirements, scope creep or incorrect behavior found."
+  },
+  "maintenance": "Existing ownership guide/spec/ADRs intentionally unchanged: no ownership or contribution interface changes. Retained benchmark is required evidence, not a temporary script. Task/roadmap record delivery. Known temporary measurement executables and baseline copies removed after verification."
+}

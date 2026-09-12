@@ -11,7 +11,11 @@ this file carries only the approved contracts that stay true across them.
   alone yields nonlinear R′G′B′ — matrix conversion is not linearization.
   Honor transfer, primaries, matrix, range, chroma location, bit depth, and
   project color policy; make ambiguous/unsupported interpretation explicit
-  rather than guessing silently.
+  rather than guessing silently. The project's authored color-config path is
+  passed per viewer session to `ViewerSession` (through
+  `ViewerRuntime`/`ViewerScheduler`, including the cache-viewer path); an empty
+  path keeps the existing `$OCIO` environment fallback resolved on the first
+  viewing request, and no process-global environment state is mutated.
 - **Display-referred replay**: viewer-cache chunks are the baked
   display-referred representation. Decode them without re-applying the
   source linearization or view transform; interpretation metadata

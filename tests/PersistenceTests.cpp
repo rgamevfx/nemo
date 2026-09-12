@@ -436,3 +436,311 @@ TEST(PersistenceTest, AnimationRejectsMalformedValuesAndTangentsInsteadOfDroppin
     unavailable["animationChannels"][0]["address"]["key"] = "missing-parameter";
     EXPECT_THROW(loadDocument(unavailable), DeserializeError);
 }
+
+TEST(PersistenceTest, MediaLibraryBinsEntriesAndWatermarksRoundTrip) {
+    Document original;
+    auto& catalog = original.mediaCatalog;
+    const auto shots = catalog.addBin("Shots");
+    const auto video = catalog.addBin("Video", shots, MediaQueryDescriptor{.text = "hero", .kind = MediaKind::Video});
+    MediaMetadata metadata;
+    metadata.userName = "Hero";
+    metadata.description = "plate";
+    metadata.tags = {"hero", "plate"};
+    metadata.label = "blue";
+    metadata.offline = true;
+    metadata.kind = MediaKind::Video;
+    MediaProbeMetadata probe;
+    probe.width = 1920;
+    probe.height = 1080;
+    probe.duration = 240;
+    probe.codec = "prores";
+    probe.colorPrimaries = "bt709";
+    probe.status = MediaProbeStatus::Ready;
+    metadata.committedProbe = probe;
+    MediaMarkRange mark;
+    mark.inFrame = 0;
+    mark.outFrame = 12;
+    const auto entry = catalog.addEntry("plate.mov", video, metadata, {mark});
+    const auto removed = catalog.addEntry("old.exr", shots, MediaMetadata{});
+    catalog.removeEntry(removed);
+
+    const auto encoded = saveDocument(original);
+    ASSERT_TRUE(encoded.contains("format"));
+    EXPECT_EQ(encoded.at("format"), "nemo");
+    const auto loaded = loadDocument(encoded);
+    ASSERT_TRUE(loaded.warnings.empty());
+    EXPECT_EQ(loaded.document.mediaCatalog.bins(), original.mediaCatalog.bins());
+    EXPECT_EQ(loaded.document.mediaCatalog.entries(), original.mediaCatalog.entries());
+    EXPECT_EQ(loaded.document.mediaCatalog.entry(entry)->marks, std::vector<MediaMarkRange>{mark});
+    EXPECT_EQ(loaded.document.nextMediaSourceId(), original.nextMediaSourceId());
+    EXPECT_EQ(loaded.document.nextMediaBinId(), original.nextMediaBinId());
+    EXPECT_EQ(saveDocument(loaded.document), encoded);
+}
+
+TEST(PersistenceTest, UnknownExtensionDataSurvivesRoundTripWithoutResurrection) {
+    Document document;
+    auto& network = root(document);
+    const NodeId plate = network.graph().addNode("testpattern", "plate");
+    const NodeId output = network.graph().nodeByName("Output")->id;
+
+    nlohmann::json saved = saveDocument(document);
+    auto& nodes = saved["networks"][0]["nodes"];
+    nodes.push_back({{"id", 77},
+                     {"type", "futurenode"},
+                     {"name", "future"},
+                     {"params", {{"mesh", {{"type", "mesh"}, {"value", {1, 2, 3}}}}}},
+                     {"futureOnly", {{"marker", 4242}}}});
+    auto plateNode = std::find_if(nodes.begin(), nodes.end(),
+                                  [](const auto& entry) { return entry.value("name", std::string{}) == "plate"; });
+    ASSERT_NE(plateNode, nodes.end());
+    (*plateNode)["mesh"] = {{"vertices", 3}};
+    (*plateNode)["implementation"] = {{"version", 2}};
+    saved["networks"][0]["futureNetwork"] = true;
+    saved["networks"][0]["edges"].push_back({{"id", 500},
+                                             {"from", {{"node", plate}, {"port", 0}}},
+                                             {"to", {{"node", 77}, {"port", 0}}},
+                                             {"style", "dashed"}});
+    saved["networks"][0]["edges"].push_back(
+        {{"id", 501}, {"from", {{"node", 77}, {"port", 0}}}, {"to", {{"node", output}, {"port", 0}}}});
+    saved["futureTop"] = {{"a", 1}};
+
+    const auto first = loadDocument(saved);
+    const auto* future = root(first.document).graph().nodeByName("future");
+    ASSERT_NE(future, nullptr);
+    // Connections authored against the unavailable node type survive exactly.
+    EXPECT_EQ(root(first.document).graph().edges().size(), 2u);
+    ASSERT_TRUE(future->opaqueParams.is_object());
+    EXPECT_EQ(future->opaqueParams.at("mesh").at("type"), "mesh");
+    bool warned = false;
+    for (const auto& warning : first.warnings)
+        warned = warned || warning.find("futurenode") != std::string::npos;
+    EXPECT_TRUE(warned);
+
+    const auto roundTripped = saveDocument(first.document);
+    EXPECT_EQ(roundTripped.at("futureTop").at("a"), 1);
+    EXPECT_TRUE(roundTripped.at("networks").at(0).at("futureNetwork").get<bool>());
+    const auto& encodedNodes = roundTripped.at("networks").at(0).at("nodes");
+    const auto plateIt = std::find_if(encodedNodes.begin(), encodedNodes.end(),
+                                      [](const auto& entry) { return entry.value("name", std::string{}) == "plate"; });
+    ASSERT_NE(plateIt, encodedNodes.end());
+    EXPECT_EQ(plateIt->at("mesh").at("vertices"), 3);
+    EXPECT_EQ(plateIt->at("implementation").at("version"), 2);
+    const auto futureIt = std::find_if(encodedNodes.begin(), encodedNodes.end(), [](const auto& entry) {
+        return entry.value("name", std::string{}) == "future";
+    });
+    ASSERT_NE(futureIt, encodedNodes.end());
+    EXPECT_EQ(futureIt->at("futureOnly").at("marker"), 4242);
+    EXPECT_EQ(futureIt->at("params").at("mesh").at("type"), "mesh");
+    const auto& encodedEdges = roundTripped.at("networks").at(0).at("edges");
+    const auto styledIt = std::find_if(encodedEdges.begin(), encodedEdges.end(), [](const auto& entry) {
+        return entry.is_object() && entry.value("id", std::uint64_t{0}) == 500;
+    });
+    ASSERT_NE(styledIt, encodedEdges.end());
+    EXPECT_EQ(styledIt->at("style"), "dashed");
+
+    // A second load/save is byte-stable and proves nothing was preserved twice.
+    EXPECT_EQ(saveDocument(loadDocument(roundTripped).document), roundTripped);
+
+    // Deleting the record drops its preserved data instead of resurrecting it.
+    Document trimmed = first.document;
+    root(trimmed).graph().removeNode(future->id);
+    EXPECT_EQ(saveDocument(trimmed).dump().find("4242"), std::string::npos);
+
+    // Animation channel/key extension fields survive the typed codec as well.
+    auto animated = saveDocument(animatedDocument());
+    animated["animationChannels"][0]["futureChannel"] = true;
+    animated["animationChannels"][0]["keys"][0]["futureKey"] = 7;
+    const auto animatedSaved = saveDocument(loadDocument(animated).document);
+    EXPECT_TRUE(animatedSaved.at("animationChannels").at(0).at("futureChannel").get<bool>());
+    EXPECT_EQ(animatedSaved.at("animationChannels").at(0).at("keys").at(0).at("futureKey"), 7);
+}
+
+TEST(PersistenceTest, ProjectFormatAndRequiredFeaturesAreEnforced) {
+    const auto encoded = saveDocument(sampleDocument());
+    ASSERT_TRUE(encoded.contains("format"));
+    EXPECT_EQ(encoded.at("format"), "nemo");
+    ASSERT_TRUE(encoded.at("requiredFeatures").is_array());
+
+    auto wrongFormat = encoded;
+    wrongFormat["format"] = "zip";
+    EXPECT_THROW(loadDocument(wrongFormat), DeserializeError);
+
+    auto unknownFeature = encoded;
+    unknownFeature["requiredFeatures"].push_back({{"id", "timeline"}, {"version", 1}});
+    try {
+        (void)loadDocument(unknownFeature);
+        FAIL() << "an unknown required feature must be rejected";
+    } catch (const DeserializeError& error) {
+        EXPECT_NE(std::string(error.what()).find("timeline"), std::string::npos);
+    }
+
+    auto newerFeature = encoded;
+    newerFeature["requiredFeatures"] = {{{"id", "networks"}, {"version", 2}}};
+    EXPECT_THROW(loadDocument(newerFeature), DeserializeError);
+
+    auto malformedFeature = encoded;
+    malformedFeature["requiredFeatures"] = nlohmann::json::array({nlohmann::json{{"id", "networks"}}});
+    EXPECT_THROW(loadDocument(malformedFeature), DeserializeError);
+
+    auto nonArray = encoded;
+    nonArray["requiredFeatures"] = 5;
+    EXPECT_THROW(loadDocument(nonArray), DeserializeError);
+
+    // Legacy files carry no discriminator and still migrate through schema.
+    auto legacy = encoded;
+    legacy.erase("format");
+    legacy.erase("requiredFeatures");
+    EXPECT_TRUE(loadDocument(legacy).warnings.empty());
+}
+
+TEST(PersistenceTest, MediaIdentityWatermarksSurviveRoundTrip) {
+    Document original;
+    auto& catalog = original.mediaCatalog;
+    const auto shots = catalog.addBin("Shots");
+    const auto scratch = catalog.addBin("Scratch");
+    catalog.removeBin(scratch, false);
+    const auto removed = catalog.addEntry("old.exr", shots, MediaMetadata{});
+    catalog.removeEntry(removed);
+
+    auto loaded = loadDocument(saveDocument(original));
+    EXPECT_EQ(loaded.document.nextMediaBinId(), original.nextMediaBinId());
+    EXPECT_EQ(loaded.document.nextMediaSourceId(), original.nextMediaSourceId());
+    EXPECT_GT(loaded.document.mediaCatalog.addBin("fresh"), scratch);
+    EXPECT_GT(loaded.document.mediaCatalog.addEntry("new.exr", shots, MediaMetadata{}), removed);
+}
+
+TEST(PersistenceTest, UnavailableNodeAnimationIsRetainedAndRecoversWithCatalog) {
+    nlohmann::json saved = saveDocument(Document{});
+    const auto rootId = saved.at("rootNetworkId").get<std::uint64_t>();
+    saved["networks"][0]["nodes"].push_back({{"id", 5},
+                                             {"type", "futuregrade"},
+                                             {"name", "future"},
+                                             {"params", {{"gain", {{"type", "float"}, {"value", 1.0}}}}}});
+    const nlohmann::json key = {{"id", 1},
+                                {"time", 0.0},
+                                {"value", {{"type", "float"}, {"value", 2.0}}},
+                                {"interpolation", "linear"},
+                                {"tangentMode", "smooth"},
+                                {"inSlope", {0, 0, 0, 0}},
+                                {"outSlope", {0, 0, 0, 0}}};
+    const nlohmann::json last = {{"id", 2},
+                                 {"time", 10.0},
+                                 {"value", {{"type", "float"}, {"value", 6.0}}},
+                                 {"interpolation", "hold"},
+                                 {"tangentMode", "smooth"},
+                                 {"inSlope", {0, 0, 0, 0}},
+                                 {"outSlope", {0, 0, 0, 0}}};
+    const nlohmann::json opaqueKey = {{"id", 3},
+                                      {"time", 0.0},
+                                      {"value", {{"type", "futurecurve"}, {"value", {{"samples", {1, 2, 3}}}}}},
+                                      {"interpolation", "hold"},
+                                      {"tangentMode", "smooth"},
+                                      {"inSlope", {0, 0, 0, 0}},
+                                      {"outSlope", {0, 0, 0, 0}}};
+    saved["animationChannels"] = nlohmann::json::array(
+        {{{"id", 1}, {"address", {{"network", rootId}, {"node", 5}, {"key", "gain"}}}, {"keys", {key, last}}},
+         {{"id", 2}, {"address", {{"network", rootId}, {"node", 5}, {"key", "shape"}}}, {"keys", {opaqueKey}}}});
+    saved["nextAnimationChannelId"] = 3;
+    saved["nextKeyframeId"] = 4;
+    saved["requiredFeatures"].push_back({{"id", "animation"}, {"version", 1}});
+
+    // Without the node's implementation the authored channel is retained as
+    // disabled data instead of rejecting the whole project.
+    const auto unavailable = loadDocument(saved);
+    ASSERT_NE(root(unavailable.document).graph().nodeByName("future"), nullptr);
+    ASSERT_EQ(unavailable.document.animationChannels().size(), 2u);
+    const auto* typed = unavailable.document.animationChannel(ParameterAddress{rootId, 5, "gain"});
+    ASSERT_NE(typed, nullptr);
+    ASSERT_EQ(typed->keys.size(), 2u);
+    EXPECT_EQ(typed->keys.front().value, ParameterValue{2.0});
+    const auto* opaque = unavailable.document.animationChannel(ParameterAddress{rootId, 5, "shape"});
+    ASSERT_NE(opaque, nullptr);
+    ASSERT_EQ(opaque->keys.size(), 1u);
+    EXPECT_FALSE(opaque->keys.front().opaqueValue.is_null());
+    EXPECT_FALSE(unavailable.warnings.empty());
+
+    const auto retained = saveDocument(unavailable.document);
+    const auto reopened = loadDocument(retained);
+    ASSERT_EQ(reopened.document.animationChannels().size(), 2u);
+    EXPECT_FALSE(
+        reopened.document.animationChannel(ParameterAddress{rootId, 5, "shape"})->keys.front().opaqueValue.is_null());
+    EXPECT_EQ(saveDocument(reopened.document), retained);
+
+    // Restoring the implementation recovers the authored animation.
+    NodeDescriptor descriptor;
+    descriptor.type = "futuregrade";
+    descriptor.displayName = "Future grade";
+    descriptor.outputs = {{PortKind::Image, "out"}};
+    ParameterSpec gain;
+    gain.name = "gain";
+    gain.type = ParameterType::Float;
+    gain.defaultValue = 1.0;
+    descriptor.parameters.push_back(gain);
+    const auto catalog = std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{descriptor});
+    const auto recovered = loadDocument(retained, catalog);
+    const auto* channel = recovered.document.animationChannel(ParameterAddress{rootId, 5, "gain"});
+    ASSERT_NE(channel, nullptr);
+    EXPECT_EQ(animatedParameterValue(recovered.document, ParameterAddress{rootId, 5, "gain"}, 0.0),
+              ParameterValue{2.0});
+    EXPECT_EQ(animatedParameterValue(recovered.document, ParameterAddress{rootId, 5, "gain"}, 10.0),
+              ParameterValue{6.0});
+    const auto* recoveredOpaque = recovered.document.animationChannel(ParameterAddress{rootId, 5, "shape"});
+    ASSERT_NE(recoveredOpaque, nullptr);
+    EXPECT_FALSE(recoveredOpaque->keys.front().opaqueValue.is_null());
+}
+
+TEST(PersistenceTest, OpaqueAnimatedValueMakesOnlyItsOwnEvaluationUnavailable) {
+    Document document;
+    auto& rootNetwork = root(document);
+    const auto opaqueRoot = rootNetwork.graph().addNode("constcolor", "opaque");
+    const auto clean = rootNetwork.graph().addNode("constcolor", "clean");
+    setKeyframesCommand({{ParameterAddress{document.rootNetworkId(), opaqueRoot, "color"},
+                          Keyframe{0, 0.0, ColorValue{{1.F, 0.F, 0.F, 1.F}}}}})
+        .apply(document);
+    setKeyframesCommand({{ParameterAddress{document.rootNetworkId(), clean, "color"},
+                          Keyframe{0, 0.0, ColorValue{{0.F, 0.F, 1.F, 1.F}}}}})
+        .apply(document);
+
+    const auto definition = document.addNetwork("shared-opaque");
+    const auto definitionNode = document.network(definition).graph().addNode("constcolor", "grade");
+    const auto instance = document.addInstance(document.rootNetworkId(), definition, "use-opaque");
+    setKeyframesCommand(
+        {{ParameterAddress{definition, definitionNode, "color"}, Keyframe{0, 0.0, ColorValue{{1.F, 0.F, 0.F, 1.F}}}}})
+        .apply(document);
+    setKeyframesCommand({{ParameterAddress{definition, definitionNode, "color", instance},
+                          Keyframe{0, 0.0, ColorValue{{0.F, 1.F, 0.F, 1.F}}}}})
+        .apply(document);
+
+    // Only the authored values of the two definition-level channels become
+    // uninterpretable; the occurrence override and the independent node stay typed.
+    auto encoded = saveDocument(document);
+    const auto rootId = document.rootNetworkId();
+    for (auto& channel : encoded["animationChannels"]) {
+        const auto& address = channel.at("address");
+        if (address.contains("instance"))
+            continue;
+        const auto network = address.at("network").get<std::uint64_t>();
+        const auto node = address.at("node").get<std::uint64_t>();
+        if ((network == rootId && node == opaqueRoot) || (network == definition && node == definitionNode))
+            channel["keys"][0]["value"] = {{"type", "futurecolor"}, {"value", {1, 2, 3, 4}}};
+    }
+    const auto loaded = loadDocument(encoded);
+    ASSERT_EQ(loaded.document.animationChannels().size(), 4u);
+
+    // The channel is still saved and reopened losslessly.
+    EXPECT_EQ(saveDocument(loadDocument(saveDocument(loaded.document)).document), saveDocument(loaded.document));
+
+    ParameterValues values;
+    EXPECT_THROW(animatedParameterValue(loaded.document, ParameterAddress{rootId, opaqueRoot, "color"}, 1.0),
+                 GraphException);
+    EXPECT_THROW(applyAnimationParameters(loaded.document, rootId, opaqueRoot, kInvalidNetworkInstance, 1.0, values),
+                 GraphException);
+    EXPECT_THROW(
+        applyAnimationParameters(loaded.document, definition, definitionNode, kInvalidNetworkInstance, 1.0, values),
+        GraphException);
+    // An independent node and an overridden occurrence still evaluate.
+    ASSERT_NO_THROW(applyAnimationParameters(loaded.document, rootId, clean, kInvalidNetworkInstance, 1.0, values));
+    EXPECT_EQ(values.at("color"), (ParameterValue{ColorValue{{0.F, 0.F, 1.F, 1.F}}}));
+    ASSERT_NO_THROW(applyAnimationParameters(loaded.document, definition, definitionNode, instance, 1.0, values));
+    EXPECT_EQ(values.at("color"), (ParameterValue{ColorValue{{0.F, 1.F, 0.F, 1.F}}}));
+}

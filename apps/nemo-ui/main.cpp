@@ -1,10 +1,12 @@
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
+#include "ProjectFileController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
+#include "nemo/media/ViewingTransform.hpp"
 
 #include <QCommandLineParser>
 #include <QGuiApplication>
@@ -89,9 +91,12 @@ int main(int argc, char* argv[]) {
     parser.addHelpOption();
     const QCommandLineOption sourceOption({"s", "source"}, QStringLiteral("Load tagged source media on startup."),
                                           QStringLiteral("source"));
+    const QCommandLineOption projectOption("project", QStringLiteral("Open a .nemo project on startup."),
+                                           QStringLiteral("path"));
     const QCommandLineOption frameOption({"f", "frame"}, QStringLiteral("Initial composition frame."),
                                          QStringLiteral("frame"), QStringLiteral("0"));
     parser.addOption(sourceOption);
+    parser.addOption(projectOption);
     const QCommandLineOption cacheDirectoryOption("viewer-cache-dir", "Viewer cache storage directory.", "path",
                                                   QStandardPaths::writableLocation(QStandardPaths::CacheLocation));
     const QCommandLineOption cacheCodecOption("viewer-cache-codec", "Provisional viewer replay encoder.", "codec",
@@ -148,6 +153,23 @@ int main(int argc, char* argv[]) {
     // The application composes one project owner; presentation facades may
     // come and go without taking the document or shared history with them.
     nemo::ProjectSession projectSession;
+    // A fresh project records the OCIO configuration the viewer resolves from
+    // the environment, so saving keeps the color configuration the app renders
+    // with. replaceDocument re-captures the saved baseline, so this does not
+    // make an otherwise-empty project dirty.
+    try {
+        const std::string environmentConfig = nemo::media::resolveConfigPath({});
+        if (!environmentConfig.empty()) {
+            const nemo::ProjectReplaceResult adopted =
+                projectSession.replaceDocument(projectSession.snapshot(), {}, {}, environmentConfig);
+            if (!adopted.replaced) {
+                std::cerr << "nemo-ui: could not record the environment color configuration\n";
+            }
+        }
+    } catch (const std::exception&) {
+        // No usable $OCIO: the viewer's lazy fallback and an empty project
+        // color configuration stay in effect.
+    }
     nemo::ui::PanelContextRouter panelContextRouter(projectSession);
     nemo::ui::ViewerController viewerController(&runtime, projectSession);
     // The shared facade keeps serving the graph/parameters/timeline panels and
@@ -180,11 +202,16 @@ int main(int argc, char* argv[]) {
     workspace.registerPanelType(QStringLiteral("parameters"), QStringLiteral("Parameters"),
                                 QStringLiteral("ParametersPanel.qml"), QString());
     nemo::ui::ParameterEditorRegistry parameterEditors;
+    // The project file adapter wraps the same ProjectSession and the existing
+    // workspace/context presentation owners; it is declared before the QML
+    // engine so the context property outlives every binding.
+    nemo::ui::ProjectFileController projectFile(projectSession, workspace, panelContextRouter);
     int result = 0;
     {
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &panelContextRouter);
+        engine.rootContext()->setContextProperty(QStringLiteral("projectFile"), &projectFile);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerControllers"), &viewerControllers);
         engine.rootContext()->setContextProperty(QStringLiteral("parameterEditors"), &parameterEditors);
@@ -211,6 +238,13 @@ int main(int argc, char* argv[]) {
         if (!sourcePath.isEmpty()) {
             QMetaObject::invokeMethod(
                 &viewerController, [&viewerController, sourcePath] { viewerController.openSource(sourcePath); },
+                Qt::QueuedConnection);
+        }
+        const QString projectPath = parser.value(projectOption);
+        if (!projectPath.isEmpty()) {
+            QMetaObject::invokeMethod(
+                &projectFile,
+                [&projectFile, projectPath] { projectFile.openProject(QUrl::fromLocalFile(projectPath)); },
                 Qt::QueuedConnection);
         }
         bool frameOk = false;

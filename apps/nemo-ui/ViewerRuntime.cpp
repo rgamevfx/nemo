@@ -41,12 +41,14 @@ void ViewerRuntime::bootstrap(const std::vector<std::string>& extensions, const 
 }
 
 bool ViewerRuntime::submit(Document document, EvaluationRequest request, std::uint64_t id,
-                           eval::ViewerDestination destination, gpu::ViewerChannel channel) {
+                           eval::ViewerDestination destination, gpu::ViewerChannel channel,
+                           std::string colorConfigPath) {
     bool accepted = false;
     {
         std::lock_guard lock(mutex_);
         if (!stopping_)
-            accepted = scheduler_.submit(std::move(document), std::move(request), id, destination);
+            accepted = scheduler_.submit(std::move(document), std::move(request), id, destination,
+                                         std::chrono::steady_clock::now(), std::move(colorConfigPath));
         // A fresh submission replaces the destination's old mailbox result. A
         // cache-range submission uses its own destination and must not erase
         // what that destination currently shows.
@@ -105,13 +107,14 @@ bool ViewerRuntime::retireDestination(eval::ViewerDestination destination) {
     return true;
 }
 
-bool ViewerRuntime::probe(Document document, std::string source, std::uint64_t id,
-                          eval::ViewerDestination destination) {
+bool ViewerRuntime::probe(Document document, std::string source, std::uint64_t id, eval::ViewerDestination destination,
+                          std::string colorConfigPath) {
     bool accepted = false;
     {
         std::lock_guard lock(mutex_);
         if (!stopping_)
-            accepted = scheduler_.probe(std::move(document), std::move(source), id, destination);
+            accepted = scheduler_.probe(std::move(document), std::move(source), id, destination,
+                                        std::chrono::steady_clock::now(), std::move(colorConfigPath));
         if (accepted)
             results_.erase(destination);
     }
@@ -121,12 +124,13 @@ bool ViewerRuntime::probe(Document document, std::string source, std::uint64_t i
 }
 
 bool ViewerRuntime::requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
-                                 eval::ViewerDestination destination) {
+                                 eval::ViewerDestination destination, std::string colorConfigPath) {
     bool accepted = false;
     {
         std::lock_guard lock(mutex_);
         if (!stopping_)
-            accepted = scheduler_.requestRange(std::move(document), std::move(request), first, last, id, destination);
+            accepted = scheduler_.requestRange(std::move(document), std::move(request), first, last, id, destination,
+                                               std::chrono::steady_clock::now(), std::move(colorConfigPath));
     }
     if (accepted)
         ready_.notify_one();
@@ -225,6 +229,9 @@ void ViewerRuntime::finishRange(const Pending& pending, bool cacheAccepted) {
 
 void ViewerRuntime::run(const std::filesystem::path& shaders) {
     std::unique_ptr<eval::ViewerSession> session;
+    // Authored color configuration the current worker session was built with;
+    // a different request config replaces the session, never the environment.
+    std::string sessionColorConfig;
     std::vector<std::uint32_t> presentationShader;
     for (;;) {
         Pending pending;
@@ -251,10 +258,16 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
         if (!hasPending)
             continue;
         try {
-            if (!session) {
-                auto configured = std::make_unique<eval::ViewerSession>(*instance_, *device_, *allocator_, shaders);
+            if (!session || sessionColorConfig != pending.colorConfigPath) {
+                // The project's authored config replaces the worker-owned
+                // ViewerSession; an empty path keeps the OCIO environment
+                // fallback. No process-global state is mutated and the GUI
+                // thread never waits for the swap.
+                auto configured = std::make_unique<eval::ViewerSession>(*instance_, *device_, *allocator_, shaders,
+                                                                        pending.colorConfigPath);
                 configured->configureCache(cacheOptions_);
                 session = std::move(configured);
+                sessionColorConfig = pending.colorConfigPath;
                 std::lock_guard lock(mutex_);
                 session_ = session.get();
             }

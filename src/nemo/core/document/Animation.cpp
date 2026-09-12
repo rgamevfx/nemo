@@ -67,7 +67,19 @@ void validateChannel(const Document& document, const AnimationChannel& channel) 
         invalid("channel must have a nonzero identity and at least one key");
     const auto& node = addressNode(document, channel.address);
     const auto& catalog = document.network(channel.address.network).graph().catalog();
-    const auto& spec = addressSpec(document, channel.address, node);
+    // A node type this build does not model has no catalog contract. Its channel
+    // is preserved as authored disabled data: structure, identities and times
+    // are still validated, but spec-dependent checks are skipped. A known node
+    // type with an unknown parameter remains an error.
+    const ParameterSpec* spec = catalog.parameterSpec(node.type, channel.address.key);
+    const bool unavailable = catalog.find(node.type) == nullptr;
+    // A future parameter record this build cannot type is preserved even when
+    // the node type is known but the parameter is not; typed keys referencing an
+    // unknown parameter on a known type remain an error.
+    const bool hasOpaqueValue = std::any_of(channel.keys.begin(), channel.keys.end(),
+                                            [](const Keyframe& key) { return !key.opaqueValue.is_null(); });
+    if (spec == nullptr && !unavailable && !hasOpaqueValue)
+        invalid("animation address references unknown parameter '" + channel.address.key + "'");
     double previous = -std::numeric_limits<double>::infinity();
     for (const auto& key : channel.keys) {
         const auto fail = [&](const std::string& message) {
@@ -83,19 +95,34 @@ void validateChannel(const Document& document, const AnimationChannel& channel) 
             fail("unknown interpolation mode");
         if (key.tangentMode != TangentMode::Smooth && key.tangentMode != TangentMode::Broken)
             fail("unknown tangent mode");
-        if (const auto problem = catalog.validateParameter(node.type, channel.address.key, key.value))
-            fail(*problem);
-        const auto count = animation_detail::componentCount(spec.type);
-        if (count == 0 && key.interpolation != KeyInterpolation::Hold)
-            fail("discrete parameters require Hold interpolation");
         for (std::size_t i = 0; i < key.inSlope.size(); ++i) {
             if (!std::isfinite(key.inSlope[i]) || !std::isfinite(key.outSlope[i]))
                 fail("tangent slopes must be finite");
-            if (i >= count && (key.inSlope[i] != 0.0 || key.outSlope[i] != 0.0))
-                fail("unused tangent components must be zero");
-            if (key.tangentMode == TangentMode::Smooth && key.inSlope[i] != key.outSlope[i])
-                fail("Smooth tangents require equal incoming and outgoing slopes");
         }
+        if (!key.opaqueValue.is_null()) {
+            // Preserved authored value this build cannot type; the codec already
+            // validated its tagged shape. No catalog or interpolation semantics
+            // can be applied to it.
+            continue;
+        }
+        if (spec != nullptr) {
+            if (const auto problem = catalog.validateParameter(node.type, channel.address.key, key.value))
+                fail(*problem);
+            const auto count = animation_detail::componentCount(spec->type);
+            if (count == 0 && key.interpolation != KeyInterpolation::Hold)
+                fail("discrete parameters require Hold interpolation");
+            for (std::size_t i = 0; i < key.inSlope.size(); ++i) {
+                if (i >= count && (key.inSlope[i] != 0.0 || key.outSlope[i] != 0.0))
+                    fail("unused tangent components must be zero");
+                if (key.tangentMode == TangentMode::Smooth && key.inSlope[i] != key.outSlope[i])
+                    fail("Smooth tangents require equal incoming and outgoing slopes");
+            }
+            continue;
+        }
+        // Unavailable node type with a standard typed value: the representation
+        // is still checked so malformed data cannot silently survive.
+        if (const auto problem = validateParameterValueRepresentation(key.value))
+            fail(*problem);
     }
 }
 
@@ -170,8 +197,15 @@ ParameterValue animatedParameterValue(const Document& document, const ParameterA
         invalid("animation query time must be finite");
     const auto& node = addressNode(document, address);
     const auto& spec = addressSpec(document, address, node);
+    const auto evaluate = [&](const AnimationChannel& channel) {
+        if (std::any_of(channel.keys.begin(), channel.keys.end(),
+                        [](const Keyframe& key) { return !key.opaqueValue.is_null(); }))
+            invalid("animation channel " + std::to_string(channel.id) + " parameter '" + address.key +
+                    "' has values this build cannot interpret");
+        return evaluateChannel(channel, spec.type, time);
+    };
     if (const auto* channel = document.animationChannel(address))
-        return evaluateChannel(*channel, spec.type, time);
+        return evaluate(*channel);
     if (address.instance != kInvalidNetworkInstance) {
         const auto* occurrence = document.instance(address.instance);
         const auto overrideNode = occurrence->params.find(address.node);
@@ -181,7 +215,7 @@ ParameterValue animatedParameterValue(const Document& document, const ParameterA
             const ParameterAddress definitionAddress{address.network, address.node, address.key,
                                                      kInvalidNetworkInstance};
             if (const auto* definitionChannel = document.animationChannel(definitionAddress))
-                return evaluateChannel(*definitionChannel, spec.type, time);
+                return evaluate(*definitionChannel);
         }
     }
     return staticValue(document, address);
@@ -214,6 +248,16 @@ void applyAnimationParameters(const Document& document, NetworkId network, NodeI
                     }))
                     continue;
             }
+            // Only a channel that is actually active for this evaluation is
+            // checked. Authored values this build cannot interpret must make the
+            // affected evaluation unavailable; silently leaving the static
+            // parameter would render a wrong image as success.
+            if (std::any_of(channel.keys.begin(), channel.keys.end(),
+                            [](const Keyframe& key) { return !key.opaqueValue.is_null(); }))
+                invalid("animation channel " + std::to_string(channel.id) + " address network " +
+                        std::to_string(channel.address.network) + " node " + std::to_string(channel.address.node) +
+                        " instance " + std::to_string(channel.address.instance) + " parameter '" + channel.address.key +
+                        "' has values this build cannot interpret; unsupported authored animation cannot be evaluated");
             const auto* nodeValue = document.network(network).graph().node(node);
             if (!nodeValue)
                 continue;

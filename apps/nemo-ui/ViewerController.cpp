@@ -1918,7 +1918,8 @@ void ViewerController::requestRange(int first, int last) {
     emit schedulerChanged();
     // Range work is represented as one lazy range per destination, so a panel
     // range must not collide with the global Cache stream.
-    if (!runtime_->requestRange(session_.snapshot(), *lastRequest_, first, last, rangeGeneration_, *destination_)) {
+    if (!runtime_->requestRange(session_.snapshot(), *lastRequest_, first, last, rangeGeneration_, *destination_,
+                                session_.colorConfigPath())) {
         status_ = QStringLiteral("Cache range admission rejected; see scheduler drop count");
         emit statusChanged();
         pollScheduler();
@@ -2071,7 +2072,7 @@ void ViewerController::refreshRequest() {
                 emit sourceChanged();
                 emit statusChanged();
                 generation_ = ++nextRequestId_;
-                if (!runtime_->probe(document, "src", generation_, *destination_))
+                if (!runtime_->probe(document, "src", generation_, *destination_, session_.colorConfigPath()))
                     fail(QStringLiteral("Source probe admission rejected"));
                 return;
             }
@@ -2114,7 +2115,7 @@ void ViewerController::refreshRequest() {
         lastRequest_ = request;
         lastRevision_ = revision;
         const auto id = generation_ = ++nextRequestId_;
-        if (!runtime_->submit(document, request, id, *destination_, viewerChannel_))
+        if (!runtime_->submit(document, request, id, *destination_, viewerChannel_, session_.colorConfigPath()))
             pending_ = true;
         outdated_ = static_cast<bool>(presentation_);
         error_.clear();

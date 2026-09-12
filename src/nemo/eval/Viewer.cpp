@@ -43,9 +43,9 @@ namespace {
 }  // namespace
 
 ViewerSession::ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                             const std::filesystem::path& shaderDirectory)
-    : instance_(instance), device_(device), allocator_(allocator), replayShader_(shaderDirectory / "mediaConvert.spv"),
-      sources_(instance, device, allocator, replayShader_),
+                             const std::filesystem::path& shaderDirectory, std::string ocioConfigPath)
+    : instance_(instance), device_(device), allocator_(allocator), ocioConfigPath_(std::move(ocioConfigPath)),
+      replayShader_(shaderDirectory / "mediaConvert.spv"), sources_(instance, device, allocator, replayShader_),
       effects_(loadSlangEffectLibrary(shaderDirectory, shaderDirectory)), reuse_(16) {}
 
 ViewerSession::~ViewerSession() = default;

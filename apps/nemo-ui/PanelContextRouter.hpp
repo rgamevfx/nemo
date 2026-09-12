@@ -11,6 +11,8 @@
 #include <map>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 namespace nemo::workspace {
 class WorkspaceController;
 }
@@ -48,6 +50,19 @@ public:
     Q_INVOKABLE bool requestInspector(const QString& group, const QString& network, const QString& nodeId);
 
     [[nodiscard]] QString activePanel() const { return activePanel_; }
+
+    // Project-associated context records: the group-scoped target selections
+    // that are not already carried by panel state. Applying validates every
+    // restored identity against the replaced document, so a target that no
+    // longer exists is dropped instead of fabricating a stale reference.
+    [[nodiscard]] nlohmann::json contextPresentation() const;
+    [[nodiscard]] bool applyContextPresentation(const nlohmann::json& presentation);
+    // Drops every document-bound selection (timeline/source targets and both
+    // playheads). Called when the published document is replaced: integer
+    // identities are only comparable within one project, so retaining an old
+    // target that happens to share an ID would route to the wrong context.
+    // Panel group/role bindings are presentation preferences and stay.
+    void resetDocumentContexts();
 
 signals:
     void panelContextChanged(const QString& panelId);

@@ -1,9 +1,11 @@
 #include "PanelContextRouter.hpp"
+#include "ProjectFileController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
+#include <QFile>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -12,9 +14,11 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUrl>
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <functional>
 #include <stdexcept>
 
@@ -64,6 +68,28 @@ QVariantList panels(const QVariantMap& node) {
     return result;
 }
 
+bool waitForSaveSignal(QSignalSpy& spy) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (spy.isEmpty() && std::chrono::steady_clock::now() < deadline) {
+        QTest::qWait(10);
+    }
+    return !spy.isEmpty();
+}
+
+QString firstSplitId(const QVariantMap& node) {
+    if (node.value(QStringLiteral("kind")).toString() == QStringLiteral("split")) {
+        const auto id = node.value(QStringLiteral("id")).toString();
+        if (!id.isEmpty())
+            return id;
+    }
+    for (const auto& value : node.value(QStringLiteral("children")).toList()) {
+        const auto found = firstSplitId(value.toMap());
+        if (!found.isEmpty())
+            return found;
+    }
+    return {};
+}
+
 }  // namespace
 
 class PanelContextUiTest : public testing::Test {
@@ -74,6 +100,9 @@ protected:
     nemo::ui::ViewerRuntime viewerRuntime;
     nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
     nemo::ui::PanelContextRouter router{projectSession};
+    // Main.qml reads the project file state; the harness injects the same
+    // adapter the application composes.
+    nemo::ui::ProjectFileController projectFile{projectSession, workspace, router};
     QQmlApplicationEngine engine;
     QQuickWindow* window = nullptr;
 
@@ -90,6 +119,7 @@ protected:
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &router);
+        engine.rootContext()->setContextProperty(QStringLiteral("projectFile"), &projectFile);
         engine.load(QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/Main.qml")));
         ASSERT_FALSE(engine.rootObjects().isEmpty());
         window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
@@ -291,4 +321,98 @@ TEST_F(PanelContextUiTest, InspectorRequestsAreGroupScopedAndMediaFree) {
     // The relay is media-free and never mutates the document.
     EXPECT_EQ(projectSession.revision(), revision);
     EXPECT_TRUE(projectSession.document().mediaCatalog.entries().empty());
+}
+
+TEST_F(PanelContextUiTest, PresentationEditRacingProjectWriteKeepsProjectDirtyAndFileUnchangedByIt) {
+    const auto viewer = panelByType(root(), QStringLiteral("viewer"));
+    ASSERT_FALSE(viewer.isEmpty());
+    const auto viewerId = viewer.value(QStringLiteral("id")).toString();
+    const QString file = directory.filePath(QStringLiteral("race.nemo"));
+
+    // saveAs captures the owned document snapshot and presentation
+    // synchronously; its worker completion is queued and cannot publish before
+    // the presentation edit below runs.
+    const nlohmann::json preEditWorkspace = workspace.projectPresentation();
+    QSignalSpy firstSave(&projectFile, &nemo::ui::ProjectFileController::saveFinished);
+    projectFile.saveAs(QUrl::fromLocalFile(file));
+    workspace.setGroup(viewerId, QStringLiteral("B"));
+    ASSERT_TRUE(workspace.error().isEmpty()) << workspace.error().toStdString();
+
+    ASSERT_TRUE(waitForSaveSignal(firstSave));
+    EXPECT_TRUE(firstSave.takeLast().at(0).toBool()) << projectFile.error().toStdString();
+    // The edit that raced the write was not saved: still dirty, and the file
+    // carries exactly the presentation the write captured.
+    EXPECT_TRUE(projectFile.dirty());
+    QFile written(file);
+    ASSERT_TRUE(written.open(QIODevice::ReadOnly));
+    const auto writtenJson = nlohmann::json::parse(written.readAll().constData());
+    const auto writtenData = nemo::presentationData(writtenJson.at("presentation"));
+    ASSERT_TRUE(writtenData.is_object());
+    EXPECT_EQ(writtenData.at("workspace"), preEditWorkspace);
+
+    // A following save records the current presentation and returns clean.
+    QSignalSpy secondSave(&projectFile, &nemo::ui::ProjectFileController::saveFinished);
+    projectFile.saveAs(QUrl::fromLocalFile(file));
+    ASSERT_TRUE(waitForSaveSignal(secondSave));
+    EXPECT_TRUE(secondSave.takeLast().at(0).toBool()) << projectFile.error().toStdString();
+    EXPECT_FALSE(projectFile.dirty());
+}
+
+TEST_F(PanelContextUiTest, SplitRatioChangeAfterSaveMarksProjectDirtyAndSecondSaveClearsIt) {
+    const QString file = directory.filePath(QStringLiteral("ratio.nemo"));
+    QSignalSpy firstSave(&projectFile, &nemo::ui::ProjectFileController::saveFinished);
+    projectFile.saveAs(QUrl::fromLocalFile(file));
+    ASSERT_TRUE(waitForSaveSignal(firstSave));
+    EXPECT_TRUE(firstSave.takeLast().at(0).toBool()) << projectFile.error().toStdString();
+    EXPECT_FALSE(projectFile.dirty());
+
+    const QString splitId = firstSplitId(root());
+    ASSERT_FALSE(splitId.isEmpty());
+    // A splitter drag persists a ratio and deliberately skips rootChanged so
+    // the QML tree is not rebuilt; the project must still become dirty.
+    workspace.setRatio(splitId, 0.371);
+    ASSERT_TRUE(workspace.error().isEmpty()) << workspace.error().toStdString();
+    EXPECT_TRUE(projectFile.dirty());
+
+    QSignalSpy secondSave(&projectFile, &nemo::ui::ProjectFileController::saveFinished);
+    projectFile.saveAs(QUrl::fromLocalFile(file));
+    ASSERT_TRUE(waitForSaveSignal(secondSave));
+    EXPECT_TRUE(secondSave.takeLast().at(0).toBool()) << projectFile.error().toStdString();
+    EXPECT_FALSE(projectFile.dirty());
+}
+
+TEST_F(PanelContextUiTest, SaveAsToExtensionlessPathNeverRewritesAnExistingSiblingProject) {
+    const QString target = directory.filePath(QStringLiteral("shot"));
+    const QString sibling = target + QStringLiteral(".nemo");
+
+    // A real, valid sibling project the native chooser never confirmed
+    // replacing: saving to the exact extensionless path must not rewrite it.
+    QSignalSpy siblingSave(&projectFile, &nemo::ui::ProjectFileController::saveFinished);
+    projectFile.saveAs(QUrl::fromLocalFile(sibling));
+    ASSERT_TRUE(waitForSaveSignal(siblingSave));
+    ASSERT_TRUE(siblingSave.takeLast().at(0).toBool()) << projectFile.error().toStdString();
+    QFile siblingFile(sibling);
+    ASSERT_TRUE(siblingFile.open(QIODevice::ReadOnly));
+    const QByteArray siblingBytes = siblingFile.readAll();
+    ASSERT_FALSE(siblingBytes.isEmpty());
+
+    // Change the presentation so the next write's content differs from the
+    // sibling's; a suffix rewrite would visibly clobber it.
+    const auto viewer = panelByType(root(), QStringLiteral("viewer"));
+    ASSERT_FALSE(viewer.isEmpty());
+    workspace.setGroup(viewer.value(QStringLiteral("id")).toString(), QStringLiteral("B"));
+    ASSERT_TRUE(workspace.error().isEmpty()) << workspace.error().toStdString();
+
+    QSignalSpy targetSave(&projectFile, &nemo::ui::ProjectFileController::saveFinished);
+    projectFile.saveAs(QUrl::fromLocalFile(target));
+    ASSERT_TRUE(waitForSaveSignal(targetSave));
+    EXPECT_TRUE(targetSave.takeLast().at(0).toBool()) << projectFile.error().toStdString();
+
+    // The exact chosen path was written, not <path>.nemo...
+    EXPECT_TRUE(QFile::exists(target));
+    EXPECT_EQ(projectFile.filePath(), target);
+    // ...and the sibling project is byte-identical.
+    QFile unchanged(sibling);
+    ASSERT_TRUE(unchanged.open(QIODevice::ReadOnly));
+    EXPECT_EQ(unchanged.readAll(), siblingBytes);
 }

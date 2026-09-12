@@ -11,6 +11,7 @@ add_library(nemo_core
     core/commands/MediaCatalogCommands.cpp
     core/document/Serialization.cpp
     core/session/ProjectSession.cpp
+    core/session/ProjectFile.cpp
     core/nodes/NodeCatalog.cpp
     core/evaluation/CpuReference.cpp
     core/evaluation/Reuse.cpp

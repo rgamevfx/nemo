@@ -13,6 +13,117 @@
 namespace nemo {
 namespace {
 
+// ---------------------------------------------------------------------------
+// Format discriminator and required-feature metadata.
+// ---------------------------------------------------------------------------
+
+struct SupportedFeature {
+    std::string_view id;
+    int version;
+};
+
+// Authored processing features this build reads. A project file records the
+// features it uses in "requiredFeatures"; an unknown id or a newer version is
+// rejected rather than guessed.
+constexpr std::array<SupportedFeature, 4> kSupportedFeatures{
+    {{"networks", 1}, {"instances", 1}, {"animation", 1}, {"mediaLibrary", 1}}};
+
+const SupportedFeature* supportedFeature(std::string_view id) {
+    for (const auto& feature : kSupportedFeatures)
+        if (feature.id == id)
+            return &feature;
+    return nullptr;
+}
+
+std::string supportedFeatureList() {
+    std::string result;
+    for (const auto& feature : kSupportedFeatures) {
+        if (!result.empty())
+            result += ", ";
+        result += std::string(feature.id) + " v" + std::to_string(feature.version);
+    }
+    return result;
+}
+
+nlohmann::json requiredFeaturesJson(const Document& document) {
+    nlohmann::json features = nlohmann::json::array();
+    features.push_back({{"id", "networks"}, {"version", 1}});
+    if (!document.instances().empty())
+        features.push_back({{"id", "instances"}, {"version", 1}});
+    if (!document.animationChannels().empty())
+        features.push_back({{"id", "animation"}, {"version", 1}});
+    if (!document.mediaCatalog.entries().empty() || !document.mediaCatalog.bins().empty() ||
+        document.mediaCatalog.nextEntryId() > 1 || document.mediaCatalog.nextBinId() > 1)
+        features.push_back({{"id", "mediaLibrary"}, {"version", 1}});
+    return features;
+}
+
+void checkRequiredFeatures(const nlohmann::json& json) {
+    const auto it = json.find("requiredFeatures");
+    if (it == json.end())
+        return;
+    if (!it->is_array())
+        throw DeserializeError("document 'requiredFeatures' must be an array");
+    std::set<std::string> seen;
+    for (std::size_t index = 0; index < it->size(); ++index) {
+        const auto& entry = it->at(index);
+        const std::string context = "document requiredFeatures[" + std::to_string(index) + "]";
+        if (!entry.is_object() || !entry.contains("id") || !entry.at("id").is_string() ||
+            entry.at("id").get<std::string>().empty())
+            throw DeserializeError(context + ": 'id' must be a nonempty string");
+        if (!entry.contains("version") || !entry.at("version").is_number_integer())
+            throw DeserializeError(context + ": 'version' must be a positive integer");
+        const auto id = entry.at("id").get<std::string>();
+        const auto version = entry.at("version").get<std::int64_t>();
+        if (version <= 0)
+            throw DeserializeError(context + ": 'version' must be a positive integer");
+        if (!seen.insert(id).second)
+            throw DeserializeError(context + ": duplicate feature '" + id + "'");
+        const SupportedFeature* feature = supportedFeature(id);
+        if (feature == nullptr)
+            throw DeserializeError("document requires unsupported project feature '" + id + "' version " +
+                                   std::to_string(version) + "; this build supports " + supportedFeatureList());
+        if (version > feature->version)
+            throw DeserializeError("document requires project feature '" + id + "' version " + std::to_string(version) +
+                                   ", but this build supports version " + std::to_string(feature->version));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Lossless preservation of authored JSON this build does not model.
+// ---------------------------------------------------------------------------
+
+// Returns null when nothing is preserved so a record with no unrecognized
+// fields compares equal to its default-constructed model counterpart.
+nlohmann::json collectUnknownFields(const nlohmann::json& object, std::initializer_list<std::string_view> known) {
+    nlohmann::json result;
+    if (!object.is_object())
+        return result;
+    for (auto it = object.begin(); it != object.end(); ++it) {
+        bool recognized = false;
+        for (const auto key : known) {
+            if (it.key() == key) {
+                recognized = true;
+                break;
+            }
+        }
+        if (!recognized)
+            result[it.key()] = it.value();
+    }
+    return result;
+}
+
+void applyUnknownFields(nlohmann::json& target, const nlohmann::json& unknown) {
+    if (!unknown.is_object())
+        return;
+    for (auto it = unknown.begin(); it != unknown.end(); ++it)
+        target[it.key()] = it.value();
+}
+
+// ---------------------------------------------------------------------------
+// Scalar helpers.
+// ---------------------------------------------------------------------------
+
 std::uint64_t requiredId(const nlohmann::json& object, const char* field, const std::string& context) {
     const auto it = object.find(field);
     if (it == object.end() || (!it->is_number_unsigned() && (!it->is_number_integer() || it->get<std::int64_t>() < 0)))
@@ -27,6 +138,15 @@ std::optional<std::uint64_t> optionalId(const nlohmann::json& object, const char
     if (!object.contains(field))
         return std::nullopt;
     return requiredId(object, field, context);
+}
+
+std::string stringField(const nlohmann::json& object, const char* field, const std::string& context) {
+    const auto it = object.find(field);
+    if (it == object.end())
+        return {};
+    if (!it->is_string())
+        throw DeserializeError(context + ": '" + field + "' must be a string");
+    return it->get<std::string>();
 }
 
 std::uint32_t port(const nlohmann::json& endpoint, const std::string& context) {
@@ -44,10 +164,10 @@ std::uint64_t endpointNode(const nlohmann::json& endpoint, const std::string& co
     return requiredId(endpoint, "node", context);
 }
 
-std::optional<std::uint64_t> watermark(const nlohmann::json& object, const char* field) {
+std::optional<std::uint64_t> watermark(const nlohmann::json& object, const char* field, const char* context) {
     if (!object.contains(field))
         return std::nullopt;
-    return requiredId(object, field, "document");
+    return requiredId(object, field, context);
 }
 
 PortKind parseKind(const nlohmann::json& value, const std::string& context) {
@@ -149,6 +269,51 @@ ParameterValues parseParameterValues(const nlohmann::json& value, int schema, st
     return params;
 }
 
+// Parameter records of an unavailable node type. Records this build cannot type
+// are kept verbatim in `opaque` instead of failing the load, so missing node
+// state survives a save/reopen rather than silently disappearing.
+ParameterValues parseUnavailableParameterValues(const nlohmann::json& value, int schema, std::string_view type,
+                                                const NodeCatalog& catalog, const std::string& context,
+                                                nlohmann::json& opaque) {
+    if (!value.is_object())
+        throw DeserializeError(context + ": 'params' must be an object");
+    ParameterValues params;
+    for (auto it = value.begin(); it != value.end(); ++it) {
+        if (schema >= 3) {
+            const auto& raw = it.value();
+            // A tag this build does not know is preserved verbatim; a known tag
+            // with a malformed payload stays an error even for an unavailable
+            // type so unsafe data cannot silently survive.
+            if (raw.is_object() && raw.contains("type") && raw.at("type").is_string() &&
+                !parameterValueTypeTagKnown(raw.at("type").get<std::string>())) {
+                opaque[it.key()] = raw;
+                continue;
+            }
+            ParameterValue parsed;
+            try {
+                parsed = parameterValueFromJson(raw);
+            } catch (const std::exception& error) {
+                throw DeserializeError(context + " key '" + it.key() + "': " + error.what());
+            }
+            if (const auto problem = catalog.validateParameter(type, it.key(), parsed))
+                throw DeserializeError(context + " key '" + it.key() + "': " + *problem);
+            params.emplace(it.key(), std::move(parsed));
+            continue;
+        }
+        try {
+            if (!it.value().is_string())
+                throw std::invalid_argument("legacy parameter must be a string");
+            const ParameterValue parsed = catalog.parseParameterText(type, it.key(), it.value().get<std::string>());
+            if (const auto problem = catalog.validateParameter(type, it.key(), parsed))
+                throw std::invalid_argument(*problem);
+            params.emplace(it.key(), parsed);
+        } catch (const std::exception&) {
+            opaque[it.key()] = it.value();
+        }
+    }
+    return params;
+}
+
 nlohmann::json parameterValuesJson(const ParameterValues& params) {
     nlohmann::json result = nlohmann::json::object();
     for (const auto& [key, value] : params)
@@ -186,7 +351,340 @@ std::array<double, 4> animationSlopes(const nlohmann::json& value, const std::st
     return slopes;
 }
 
-void loadAnimation(const nlohmann::json& json, Document& document, int schema) {
+// ---------------------------------------------------------------------------
+// Media library.
+// ---------------------------------------------------------------------------
+
+const char* mediaKindName(MediaKind kind) {
+    switch (kind) {
+    case MediaKind::Unknown:
+        return "unknown";
+    case MediaKind::Image:
+        return "image";
+    case MediaKind::Video:
+        return "video";
+    case MediaKind::Audio:
+        return "audio";
+    case MediaKind::Sequence:
+        return "sequence";
+    case MediaKind::Other:
+        return "other";
+    }
+    return "unknown";
+}
+
+MediaKind parseMediaKind(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_string())
+        throw DeserializeError(context + ": media kind must be a string");
+    const auto kind = value.get<std::string>();
+    if (kind == "unknown")
+        return MediaKind::Unknown;
+    if (kind == "image")
+        return MediaKind::Image;
+    if (kind == "video")
+        return MediaKind::Video;
+    if (kind == "audio")
+        return MediaKind::Audio;
+    if (kind == "sequence")
+        return MediaKind::Sequence;
+    if (kind == "other")
+        return MediaKind::Other;
+    throw DeserializeError(context + ": unknown media kind '" + kind + "'");
+}
+
+const char* probeStatusName(MediaProbeStatus status) {
+    switch (status) {
+    case MediaProbeStatus::Unknown:
+        return "unknown";
+    case MediaProbeStatus::Pending:
+        return "pending";
+    case MediaProbeStatus::Ready:
+        return "ready";
+    case MediaProbeStatus::Failed:
+        return "failed";
+    }
+    return "unknown";
+}
+
+MediaProbeStatus parseProbeStatus(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_string())
+        throw DeserializeError(context + ": probe status must be a string");
+    const auto status = value.get<std::string>();
+    if (status == "unknown")
+        return MediaProbeStatus::Unknown;
+    if (status == "pending")
+        return MediaProbeStatus::Pending;
+    if (status == "ready")
+        return MediaProbeStatus::Ready;
+    if (status == "failed")
+        return MediaProbeStatus::Failed;
+    throw DeserializeError(context + ": unknown probe status '" + status + "'");
+}
+
+nlohmann::json probeJson(const MediaProbeMetadata& probe) {
+    nlohmann::json value{{"width", probe.width},
+                         {"height", probe.height},
+                         {"duration", probe.duration},
+                         {"codec", probe.codec},
+                         {"colorPrimaries", probe.colorPrimaries},
+                         {"colorTransfer", probe.colorTransfer},
+                         {"colorMatrix", probe.colorMatrix},
+                         {"provenance", probe.provenance},
+                         {"status", probeStatusName(probe.status)}};
+    applyUnknownFields(value, probe.extension);
+    return value;
+}
+
+MediaProbeMetadata parseProbe(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    MediaProbeMetadata probe;
+    if (value.contains("width"))
+        probe.width = signedValue(value.at("width"), context + " width");
+    if (value.contains("height"))
+        probe.height = signedValue(value.at("height"), context + " height");
+    if (value.contains("duration"))
+        probe.duration = signedValue(value.at("duration"), context + " duration");
+    probe.codec = stringField(value, "codec", context);
+    probe.colorPrimaries = stringField(value, "colorPrimaries", context);
+    probe.colorTransfer = stringField(value, "colorTransfer", context);
+    probe.colorMatrix = stringField(value, "colorMatrix", context);
+    probe.provenance = stringField(value, "provenance", context);
+    if (value.contains("status"))
+        probe.status = parseProbeStatus(value.at("status"), context + " status");
+    probe.extension = collectUnknownFields(value, {"width", "height", "duration", "codec", "colorPrimaries",
+                                                   "colorTransfer", "colorMatrix", "provenance", "status"});
+    return probe;
+}
+
+nlohmann::json metadataJson(const MediaMetadata& metadata) {
+    nlohmann::json value{{"userName", metadata.userName}, {"description", metadata.description},
+                         {"tags", metadata.tags},         {"label", metadata.label},
+                         {"offline", metadata.offline},   {"kind", mediaKindName(metadata.kind)}};
+    if (metadata.committedProbe)
+        value["committedProbe"] = probeJson(*metadata.committedProbe);
+    applyUnknownFields(value, metadata.extension);
+    return value;
+}
+
+MediaMetadata parseMetadata(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    MediaMetadata metadata;
+    metadata.userName = stringField(value, "userName", context);
+    metadata.description = stringField(value, "description", context);
+    metadata.label = stringField(value, "label", context);
+    if (value.contains("tags")) {
+        if (!value.at("tags").is_array())
+            throw DeserializeError(context + ": tags must be an array");
+        for (const auto& tag : value.at("tags")) {
+            if (!tag.is_string())
+                throw DeserializeError(context + ": tags must be strings");
+            metadata.tags.push_back(tag.get<std::string>());
+        }
+    }
+    if (value.contains("offline")) {
+        if (!value.at("offline").is_boolean())
+            throw DeserializeError(context + ": offline must be boolean");
+        metadata.offline = value.at("offline").get<bool>();
+    }
+    if (value.contains("kind"))
+        metadata.kind = parseMediaKind(value.at("kind"), context + " kind");
+    if (value.contains("committedProbe"))
+        metadata.committedProbe = parseProbe(value.at("committedProbe"), context + " committedProbe");
+    metadata.extension =
+        collectUnknownFields(value, {"userName", "description", "tags", "label", "offline", "kind", "committedProbe"});
+    return metadata;
+}
+
+nlohmann::json queryJson(const MediaQueryDescriptor& query) {
+    nlohmann::json value{{"text", query.text}};
+    if (query.kind)
+        value["kind"] = mediaKindName(*query.kind);
+    if (query.offline)
+        value["offline"] = *query.offline;
+    if (query.unused)
+        value["unused"] = *query.unused;
+    applyUnknownFields(value, query.extension);
+    return value;
+}
+
+std::optional<MediaQueryDescriptor> parseQuery(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    MediaQueryDescriptor query;
+    query.text = stringField(value, "text", context);
+    if (value.contains("kind"))
+        query.kind = parseMediaKind(value.at("kind"), context + " kind");
+    const auto optionalBool = [&](const char* field) -> std::optional<bool> {
+        const auto it = value.find(field);
+        if (it == value.end())
+            return std::nullopt;
+        if (!it->is_boolean())
+            throw DeserializeError(context + ": '" + field + "' must be boolean");
+        return it->get<bool>();
+    };
+    query.offline = optionalBool("offline");
+    query.unused = optionalBool("unused");
+    query.extension = collectUnknownFields(value, {"text", "kind", "offline", "unused"});
+    return query;
+}
+
+MediaMarkRange parseMark(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    MediaMarkRange mark;
+    if (value.contains("inFrame"))
+        mark.inFrame = signedValue(value.at("inFrame"), context + " inFrame");
+    if (value.contains("outFrame"))
+        mark.outFrame = signedValue(value.at("outFrame"), context + " outFrame");
+    mark.extension = collectUnknownFields(value, {"inFrame", "outFrame"});
+    return mark;
+}
+
+nlohmann::json mediaCatalogJson(const MediaCatalog& catalog) {
+    nlohmann::json entries = nlohmann::json::array();
+    for (const auto& entry : catalog.entries()) {
+        nlohmann::json value{{"id", entry.id},
+                             {"sourceKey", entry.sourceKey},
+                             {"metadata", metadataJson(entry.metadata)}};
+        if (entry.parent != kInvalidMediaBin)
+            value["parent"] = entry.parent;
+        value["marks"] = nlohmann::json::array();
+        for (const auto& mark : entry.marks) {
+            nlohmann::json encoded = nlohmann::json::object();
+            if (mark.inFrame)
+                encoded["inFrame"] = *mark.inFrame;
+            if (mark.outFrame)
+                encoded["outFrame"] = *mark.outFrame;
+            applyUnknownFields(encoded, mark.extension);
+            value["marks"].push_back(std::move(encoded));
+        }
+        applyUnknownFields(value, entry.extension);
+        entries.push_back(std::move(value));
+    }
+    nlohmann::json bins = nlohmann::json::array();
+    for (const auto& bin : catalog.bins()) {
+        nlohmann::json value{{"id", bin.id}, {"name", bin.name}};
+        if (bin.parent != kInvalidMediaBin)
+            value["parent"] = bin.parent;
+        if (bin.query)
+            value["query"] = queryJson(*bin.query);
+        applyUnknownFields(value, bin.extension);
+        bins.push_back(std::move(value));
+    }
+    return {{"entries", std::move(entries)},
+            {"bins", std::move(bins)},
+            {"nextEntryId", catalog.nextEntryId()},
+            {"nextBinId", catalog.nextBinId()}};
+}
+
+void loadMediaCatalog(const nlohmann::json& value, Document& document) {
+    if (!value.is_object())
+        throw DeserializeError("document 'mediaCatalog' must be an object");
+    auto& catalog = document.mediaCatalog;
+    if (value.contains("bins")) {
+        const auto& entries = value.at("bins");
+        if (!entries.is_array())
+            throw DeserializeError("document mediaCatalog 'bins' must be an array");
+        struct PendingBin {
+            MediaBinId id{kInvalidMediaBin};
+            std::string name;
+            MediaBinId parent{kInvalidMediaBin};
+            std::optional<MediaQueryDescriptor> query;
+            nlohmann::json extension;
+        };
+        std::vector<PendingBin> pending;
+        pending.reserve(entries.size());
+        for (std::size_t index = 0; index < entries.size(); ++index) {
+            const auto& b = entries.at(index);
+            const std::string context = "mediaCatalog bins[" + std::to_string(index) + "]";
+            if (!b.is_object())
+                throw DeserializeError(context + " must be an object");
+            PendingBin bin;
+            bin.id = requiredId(b, "id", context);
+            bin.name = stringField(b, "name", context);
+            if (bin.name.empty())
+                throw DeserializeError(context + ": 'name' must not be empty");
+            bin.parent = optionalId(b, "parent", context).value_or(kInvalidMediaBin);
+            if (b.contains("query"))
+                bin.query = parseQuery(b.at("query"), context + " query");
+            bin.extension = collectUnknownFields(b, {"id", "name", "parent", "query"});
+            pending.push_back(std::move(bin));
+        }
+        // Bins may be authored in any order; parents are inserted first because
+        // the catalog validates that a parent already exists. A residual entry
+        // means the file has a missing or cyclic parent.
+        while (!pending.empty()) {
+            bool progress = false;
+            for (auto it = pending.begin(); it != pending.end();) {
+                if (it->parent != kInvalidMediaBin && catalog.bin(it->parent) == nullptr) {
+                    ++it;
+                    continue;
+                }
+                try {
+                    (void)catalog.addBin(it->name, it->parent, std::move(it->query), it->id);
+                } catch (const std::exception& error) {
+                    throw DeserializeError("mediaCatalog bin " + std::to_string(it->id) + ": " + error.what());
+                }
+                catalog.bin(it->id)->extension = std::move(it->extension);
+                it = pending.erase(it);
+                progress = true;
+            }
+            if (!progress)
+                throw DeserializeError("mediaCatalog bins reference a missing or cyclic parent bin");
+        }
+    }
+    if (value.contains("entries")) {
+        const auto& entries = value.at("entries");
+        if (!entries.is_array())
+            throw DeserializeError("document mediaCatalog 'entries' must be an array");
+        for (std::size_t index = 0; index < entries.size(); ++index) {
+            const auto& e = entries.at(index);
+            const std::string context = "mediaCatalog entries[" + std::to_string(index) + "]";
+            if (!e.is_object())
+                throw DeserializeError(context + " must be an object");
+            const auto id = requiredId(e, "id", context);
+            const auto sourceKey = stringField(e, "sourceKey", context);
+            if (sourceKey.empty())
+                throw DeserializeError(context + ": 'sourceKey' must be a nonempty string");
+            const auto parent = optionalId(e, "parent", context).value_or(kInvalidMediaBin);
+            MediaMetadata metadata;
+            if (e.contains("metadata"))
+                metadata = parseMetadata(e.at("metadata"), context + " metadata");
+            std::vector<MediaMarkRange> marks;
+            if (e.contains("marks")) {
+                if (!e.at("marks").is_array())
+                    throw DeserializeError(context + ": marks must be an array");
+                for (std::size_t m = 0; m < e.at("marks").size(); ++m)
+                    marks.push_back(parseMark(e.at("marks").at(m), context + " mark " + std::to_string(m)));
+            }
+            nlohmann::json extension = collectUnknownFields(e, {"id", "sourceKey", "parent", "metadata", "marks"});
+            try {
+                (void)catalog.addEntry(sourceKey, parent, std::move(metadata), std::move(marks), id);
+            } catch (const std::exception& error) {
+                throw DeserializeError(context + ": " + error.what());
+            }
+            catalog.entry(id)->extension = std::move(extension);
+        }
+    }
+    const auto nextEntry =
+        value.contains("nextEntryId") ? requiredId(value, "nextEntryId", "mediaCatalog") : catalog.nextEntryId();
+    const auto nextBin =
+        value.contains("nextBinId") ? requiredId(value, "nextBinId", "mediaCatalog") : catalog.nextBinId();
+    try {
+        document.restoreMediaIdentityHighWatermarks(nextEntry, nextBin);
+    } catch (const std::exception& error) {
+        throw DeserializeError("mediaCatalog: " + std::string(error.what()));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Networks.
+// ---------------------------------------------------------------------------
+
+void loadAnimation(const nlohmann::json& json, LoadResult& result, int schema) {
+    Document& document = result.document;
     if (schema < 4) {
         if (json.contains("animationChannels") || json.contains("nextAnimationChannelId") ||
             json.contains("nextKeyframeId"))
@@ -215,12 +713,26 @@ void loadAnimation(const nlohmann::json& json, Document& document, int schema) {
                 if (!keys.is_array())
                     throw DeserializeError("keys must be an array");
                 channel.keys.reserve(keys.size());
+                bool hasOpaqueValue = false;
                 for (const auto& value : keys) {
                     Keyframe key;
                     key.id = requiredId(value, "id", context + " key");
                     const auto keyContext = context + " key " + std::to_string(key.id);
                     key.time = animationNumber(value.at("time"), keyContext + " time");
-                    key.value = parameterValueFromJson(value.at("value"));
+                    const auto& rawValue = value.at("value");
+                    if (!rawValue.is_object() || !rawValue.contains("type") || !rawValue.at("type").is_string() ||
+                        !rawValue.contains("value"))
+                        throw DeserializeError(keyContext +
+                                               ": value must be a tagged object containing type and value");
+                    // A known tag is parsed strictly (malformed payloads are an
+                    // error); an unknown tag is preserved verbatim so authored
+                    // animation survives for a node type this build cannot read.
+                    if (parameterValueTypeTagKnown(rawValue.at("type").get<std::string>())) {
+                        key.value = parameterValueFromJson(rawValue);
+                    } else {
+                        key.opaqueValue = rawValue;
+                        hasOpaqueValue = true;
+                    }
                     const auto interpolation = value.at("interpolation").get<std::string>();
                     if (interpolation == "hold")
                         key.interpolation = KeyInterpolation::Hold;
@@ -239,8 +751,14 @@ void loadAnimation(const nlohmann::json& json, Document& document, int schema) {
                         throw DeserializeError(keyContext + ": unknown tangent mode '" + mode + "'");
                     key.inSlope = animationSlopes(value.at("inSlope"), keyContext + " incoming tangent");
                     key.outSlope = animationSlopes(value.at("outSlope"), keyContext + " outgoing tangent");
+                    key.extension = collectUnknownFields(
+                        value, {"id", "time", "value", "interpolation", "tangentMode", "inSlope", "outSlope"});
                     channel.keys.push_back(std::move(key));
                 }
+                channel.extension = collectUnknownFields(entry, {"id", "address", "keys"});
+                if (hasOpaqueValue)
+                    result.warnings.push_back(context +
+                                              " has key values this build cannot interpret; preserved verbatim");
                 channels.push_back(std::move(channel));
             } catch (const std::exception& error) {
                 throw DeserializeError(context + ": " + error.what());
@@ -295,8 +813,11 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             if (p.contains("allowFanOut") && !p.at("allowFanOut").is_boolean())
                 throw DeserializeError(context + ": allowFanOut must be boolean");
             const bool allowFanOut = p.value("allowFanOut", true);
-            (void)network.addInput(p.at("name").get<std::string>(), parseKind(p.at("kind"), context + " input"),
-                                   requiredId(p, "id", context + " input"), allowFanOut);
+            const auto terminalId =
+                network.addInput(p.at("name").get<std::string>(), parseKind(p.at("kind"), context + " input"),
+                                 requiredId(p, "id", context + " input"), allowFanOut);
+            network.restorePortExtension(PortDirection::Input, terminalId,
+                                         collectUnknownFields(p, {"id", "name", "kind", "allowFanOut"}));
         }
     }
     if (entry.contains("outputs")) {
@@ -310,8 +831,11 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             if (p.contains("allowFanOut") && !p.at("allowFanOut").is_boolean())
                 throw DeserializeError(context + ": allowFanOut must be boolean");
             const bool allowFanOut = p.value("allowFanOut", true);
-            (void)network.addOutput(p.at("name").get<std::string>(), parseKind(p.at("kind"), context + " output"),
-                                    requiredId(p, "id", context + " output"), allowFanOut);
+            const auto terminalId =
+                network.addOutput(p.at("name").get<std::string>(), parseKind(p.at("kind"), context + " output"),
+                                  requiredId(p, "id", context + " output"), allowFanOut);
+            network.restorePortExtension(PortDirection::Output, terminalId,
+                                         collectUnknownFields(p, {"id", "name", "kind", "allowFanOut"}));
         }
     }
     const auto nodes = entry.find("nodes");
@@ -338,6 +862,7 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
         if (!n.is_object() || !n.contains("type") || !n.contains("name") || !n.at("type").is_string() ||
             !n.at("name").is_string())
             throw DeserializeError(nc + ": string 'type' and 'name' are required");
+        const std::string type = n.at("type").get<std::string>();
         std::optional<NodeId> persistedId;
         if (n.contains("id"))
             persistedId = requiredId(n, "id", nc);
@@ -350,32 +875,44 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
         if (!seenNodes.insert(id).second)
             throw DeserializeError("duplicate node id in file: " + std::to_string(id));
         ParameterValues params;
-        if (n.contains("params"))
-            params = parseParameterValues(n.at("params"), schema, n.at("type").get<std::string>(),
-                                          network.graph().catalog(), nc + " id " + std::to_string(id) + " parameters");
+        nlohmann::json opaqueParams = nlohmann::json::object();
+        if (n.contains("params")) {
+            const std::string paramContext = nc + " id " + std::to_string(id) + " parameters";
+            if (network.graph().descriptor(type) != nullptr)
+                params = parseParameterValues(n.at("params"), schema, type, network.graph().catalog(), paramContext);
+            else
+                params = parseUnavailableParameterValues(n.at("params"), schema, type, network.graph().catalog(),
+                                                         paramContext, opaqueParams);
+        }
         LayoutPosition layout;
         if (n.contains("layout"))
             layout = parseLayout(n.at("layout"), nc);
         const auto definition = n.contains("definition") ? requiredId(n, "definition", nc) : kInvalidNetwork;
         const auto instance = n.contains("instance") ? requiredId(n, "instance", nc) : kInvalidNetworkInstance;
+        nlohmann::json extension = collectUnknownFields(
+            n, {"id", "type", "name", "params", "layout", "definition", "instance", "inputPorts", "outputPorts"});
+        const bool hasOpaqueParams = !opaqueParams.empty();
         try {
-            (void)network.graph().addNodeWithId(id, n.at("type").get<std::string>(), n.at("name").get<std::string>(),
-                                                std::move(params), layout, definition, instance);
+            (void)network.graph().addNodeWithId(id, type, n.at("name").get<std::string>(), std::move(params), layout,
+                                                definition, instance);
             if (n.contains("inputPorts") || n.contains("outputPorts")) {
                 if (!n.contains("inputPorts") || !n.contains("outputPorts"))
                     throw DeserializeError(nc + ": both inputPorts and outputPorts are required");
                 network.graph().setPortContract(id, parsePorts(n.at("inputPorts"), nc + " inputPorts"),
                                                 parsePorts(n.at("outputPorts"), nc + " outputPorts"));
             }
+            network.graph().restoreNodeExtension(id, std::move(extension), std::move(opaqueParams));
         } catch (const GraphException& error) {
             throw DeserializeError(nc + ": " + error.what());
         }
         idMap.emplace(persistedId.value_or(id), id);
         if (!persistedId)
             result.warnings.push_back(nc + " has no id; allocated a stable identity");
-        if (!network.graph().descriptor(n.at("type").get<std::string>()) && definition == kInvalidNetwork)
-            result.warnings.push_back("unknown node type '" + n.at("type").get<std::string>() + "' (node '" +
-                                      n.at("name").get<std::string>() + "'); retained as data, not evaluated");
+        if (!network.graph().descriptor(type) && definition == kInvalidNetwork)
+            result.warnings.push_back("unknown node type '" + type + "' (node '" + n.at("name").get<std::string>() +
+                                      "'); retained as data, not evaluated");
+        if (hasOpaqueParams)
+            result.warnings.push_back(nc + " has parameters this build cannot interpret; preserved verbatim");
     }
     const auto& edgeEntries = edges == entry.end() ? nlohmann::json::array() : *edges;
     std::set<EdgeId> declaredEdges;
@@ -408,10 +945,20 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             result.warnings.push_back(ec + " references a node that is not present in the file; dropped");
             continue;
         }
-        PortRef source{sourceIt->second, port(from, ec + " from")};
-        PortRef destination{destinationIt->second, port(to, ec + " to")};
+        const PortRef source{sourceIt->second, port(from, ec + " from")};
+        const PortRef destination{destinationIt->second, port(to, ec + " to")};
+        const NodeInstance* sourceNode = network.graph().node(source.node);
+        const NodeInstance* destinationNode = network.graph().node(destination.node);
+        const bool unavailableEndpoint =
+            (sourceNode != nullptr && network.graph().descriptor(sourceNode->type) == nullptr) ||
+            (destinationNode != nullptr && network.graph().descriptor(destinationNode->type) == nullptr);
         try {
-            (void)network.graph().connectWithId(id, source, destination);
+            // A connection authored against an unavailable node type cannot be
+            // port-validated here; it is restored exactly instead of dropped.
+            if (unavailableEndpoint)
+                (void)network.graph().restoreEdgeWithId(id, source, destination);
+            else
+                (void)network.graph().connectWithId(id, source, destination);
             if (e.contains("route")) {
                 if (!e.at("route").is_array())
                     throw DeserializeError(ec + ": route must be an array");
@@ -420,6 +967,7 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
                     route.push_back(parseLayout(e.at("route").at(r), ec + " route"));
                 network.graph().setRoute(id, std::move(route));
             }
+            network.graph().restoreEdgeExtension(id, collectUnknownFields(e, {"id", "from", "to", "route"}));
         } catch (const GraphException& error) {
             result.warnings.push_back(ec + " rejected: " + error.what());
         }
@@ -467,10 +1015,25 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             }
         }
     }
+    network.setExtension(
+        collectUnknownFields(entry, {"id", "name", "defaultOutput", "nextNodeId", "nextEdgeId", "nextInterfacePortId",
+                                     "inputs", "outputs", "nodes", "edges", "inputConnections", "outputConnections"}));
     network.restoreIdentityHighWatermarks(
-        watermark(entry, "nextNodeId").value_or(network.graph().nextNodeId()),
-        watermark(entry, "nextEdgeId").value_or(network.graph().nextEdgeId()),
-        watermark(entry, "nextInterfacePortId").value_or(network.nextInterfacePortId()));
+        watermark(entry, "nextNodeId", "network").value_or(network.graph().nextNodeId()),
+        watermark(entry, "nextEdgeId", "network").value_or(network.graph().nextEdgeId()),
+        watermark(entry, "nextInterfacePortId", "network").value_or(network.nextInterfacePortId()));
+}
+
+// Merges opaque parameter records under typed ones; a later typed edit of the
+// same key wins so an authoring change is never overridden by preserved state.
+nlohmann::json mergedParameterJson(const ParameterValues& params, const nlohmann::json& opaque) {
+    nlohmann::json result = parameterValuesJson(params);
+    if (!opaque.is_object())
+        return result;
+    for (auto it = opaque.begin(); it != opaque.end(); ++it)
+        if (!result.contains(it.key()))
+            result[it.key()] = it.value();
+    return result;
 }
 
 }  // namespace
@@ -483,7 +1046,7 @@ nlohmann::json saveDocument(const Document& document) {
             nlohmann::json value{{"id", node.id},
                                  {"type", node.type},
                                  {"name", node.name},
-                                 {"params", parameterValuesJson(node.params)},
+                                 {"params", mergedParameterJson(node.params, node.opaqueParams)},
                                  {"layout", layoutJson(node.layout)}};
             if (node.definition != kInvalidNetwork)
                 value["definition"] = node.definition;
@@ -497,6 +1060,7 @@ nlohmann::json saveDocument(const Document& document) {
                 for (const auto& p : node.outputPorts)
                     value["outputPorts"].push_back({{"kind", kindName(p.kind)}, {"name", p.name}});
             }
+            applyUnknownFields(value, node.extension);
             nodes.push_back(std::move(value));
         }
         nlohmann::json edges = nlohmann::json::array();
@@ -509,13 +1073,19 @@ nlohmann::json saveDocument(const Document& document) {
                 for (const auto& p : edge.route)
                     value["route"].push_back(layoutJson(p));
             }
+            applyUnknownFields(value, edge.extension);
             edges.push_back(std::move(value));
         }
         auto formal = [](const std::vector<FormalPort>& ports) {
             nlohmann::json result = nlohmann::json::array();
-            for (const auto& p : ports)
-                result.push_back(
-                    {{"id", p.id}, {"name", p.name}, {"kind", kindName(p.kind)}, {"allowFanOut", p.allowFanOut}});
+            for (const auto& p : ports) {
+                nlohmann::json value{{"id", p.id},
+                                     {"name", p.name},
+                                     {"kind", kindName(p.kind)},
+                                     {"allowFanOut", p.allowFanOut}};
+                applyUnknownFields(value, p.extension);
+                result.push_back(std::move(value));
+            }
             return result;
         };
         nlohmann::json value{{"id", network.id()},
@@ -536,21 +1106,32 @@ nlohmann::json saveDocument(const Document& document) {
         for (const auto& c : network.outputConnections())
             value["outputConnections"].push_back(
                 {{"terminal", c.terminal}, {"node", {{"node", c.node.node}, {"port", c.node.port}}}});
+        applyUnknownFields(value, network.extension());
         networks.push_back(std::move(value));
     }
     nlohmann::json sources = nlohmann::json::object();
     for (const auto& [key, source] : document.sources) {
-        sources[key] = {{"path", source.path},
-                        {"frameOffset", source.frameOffset},
-                        {"frameStep", source.frameStep},
-                        {"revision", source.revision},
-                        {"interpretation", source.interpretation}};
+        nlohmann::json value{{"path", source.path},
+                             {"frameOffset", source.frameOffset},
+                             {"frameStep", source.frameStep},
+                             {"revision", source.revision},
+                             {"interpretation", source.interpretation}};
+        applyUnknownFields(value, source.extension);
+        sources[key] = std::move(value);
     }
     nlohmann::json instances = nlohmann::json::array();
     for (const auto& instance : document.instances()) {
         nlohmann::json instanceParams = nlohmann::json::object();
         for (const auto& [target, values] : instance.params)
             instanceParams[std::to_string(target)] = parameterValuesJson(values);
+        for (const auto& [target, opaque] : instance.opaqueParams) {
+            nlohmann::json& merged = instanceParams[std::to_string(target)];
+            if (!merged.is_object())
+                merged = nlohmann::json::object();
+            for (auto it = opaque.begin(); it != opaque.end(); ++it)
+                if (!merged.contains(it.key()))
+                    merged[it.key()] = it.value();
+        }
         nlohmann::json value{{"id", instance.id},
                              {"parentNetwork", instance.parentNetwork},
                              {"definition", instance.definition},
@@ -561,6 +1142,7 @@ nlohmann::json saveDocument(const Document& document) {
         for (const auto& [terminal, source] : instance.inputBindings)
             value["inputBindings"].push_back(
                 {{"terminal", terminal}, {"node", {{"node", source.node}, {"port", source.port}}}});
+        applyUnknownFields(value, instance.extension);
         instances.push_back(std::move(value));
     }
     nlohmann::json animation = nlohmann::json::array();
@@ -571,43 +1153,86 @@ nlohmann::json saveDocument(const Document& document) {
         if (channel.address.instance != kInvalidNetworkInstance)
             address["instance"] = channel.address.instance;
         nlohmann::json keys = nlohmann::json::array();
-        for (const auto& key : channel.keys)
-            keys.push_back({{"id", key.id},
-                            {"time", key.time},
-                            {"value", parameterValueToJson(key.value)},
-                            {"interpolation", interpolationName(key.interpolation)},
-                            {"tangentMode", key.tangentMode == TangentMode::Smooth ? "smooth" : "broken"},
-                            {"inSlope", key.inSlope},
-                            {"outSlope", key.outSlope}});
-        animation.push_back({{"id", channel.id}, {"address", std::move(address)}, {"keys", std::move(keys)}});
+        for (const auto& key : channel.keys) {
+            nlohmann::json encoded{
+                {"id", key.id},
+                {"time", key.time},
+                {"value", key.opaqueValue.is_null() ? parameterValueToJson(key.value) : key.opaqueValue},
+                {"interpolation", interpolationName(key.interpolation)},
+                {"tangentMode", key.tangentMode == TangentMode::Smooth ? "smooth" : "broken"},
+                {"inSlope", key.inSlope},
+                {"outSlope", key.outSlope}};
+            applyUnknownFields(encoded, key.extension);
+            keys.push_back(std::move(encoded));
+        }
+        nlohmann::json encoded{{"id", channel.id}, {"address", std::move(address)}, {"keys", std::move(keys)}};
+        applyUnknownFields(encoded, channel.extension);
+        animation.push_back(std::move(encoded));
     }
-    return {{"schema", Document::kSchemaVersion},
-            {"name", document.name},
-            {"color",
-             {{"workingSpace", document.color.workingSpace},
-              {"viewerTransform", document.color.viewerTransform},
-              {"deliveryTransform", document.color.deliveryTransform}}},
-            {"sources", sources},
-            {"rootNetworkId", document.rootNetworkId()},
-            {"nextNetworkId", document.nextNetworkId()},
-            {"nextInstanceId", document.nextInstanceId()},
-            {"networks", networks},
-            {"instances", instances},
-            {"animationChannels", std::move(animation)},
-            {"nextAnimationChannelId", document.nextAnimationChannelId()},
-            {"nextKeyframeId", document.nextKeyframeId()}};
+    nlohmann::json color{{"workingSpace", document.color.workingSpace},
+                         {"viewerTransform", document.color.viewerTransform},
+                         {"deliveryTransform", document.color.deliveryTransform}};
+    applyUnknownFields(color, document.color.extension);
+    nlohmann::json result{{"format", std::string(kProjectFormat)},
+                          {"schema", Document::kSchemaVersion},
+                          {"requiredFeatures", requiredFeaturesJson(document)},
+                          {"name", document.name},
+                          {"color", std::move(color)},
+                          {"sources", std::move(sources)},
+                          {"mediaCatalog", mediaCatalogJson(document.mediaCatalog)},
+                          {"rootNetworkId", document.rootNetworkId()},
+                          {"nextNetworkId", document.nextNetworkId()},
+                          {"nextInstanceId", document.nextInstanceId()},
+                          {"networks", std::move(networks)},
+                          {"instances", std::move(instances)},
+                          {"animationChannels", std::move(animation)},
+                          {"nextAnimationChannelId", document.nextAnimationChannelId()},
+                          {"nextKeyframeId", document.nextKeyframeId()}};
+    applyUnknownFields(result, document.extension);
+    return result;
 }
 
 LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCatalog> catalog) {
     if (!json.is_object())
         throw DeserializeError("document root is not an object");
+    if (json.contains("format")) {
+        if (!json.at("format").is_string())
+            throw DeserializeError("document 'format' must be a string");
+        const auto format = json.at("format").get<std::string>();
+        if (format != kProjectFormat)
+            throw DeserializeError("unsupported project format '" + format + "'; this build reads '" +
+                                   std::string(kProjectFormat) + "'");
+    }
     if (!json.contains("schema") || !json.at("schema").is_number_integer())
         throw DeserializeError("document has no integer 'schema' field");
     const int schema = json.at("schema").get<int>();
     if (schema > Document::kSchemaVersion)
         throw DeserializeError("document schema " + std::to_string(schema) + " is newer than this build supports (" +
                                std::to_string(Document::kSchemaVersion) + ")");
+    checkRequiredFeatures(json);
     LoadResult result{Document(std::move(catalog)), {}};
+    // "presentation" belongs to the session/file envelope; the codec neither
+    // reads, preserves nor writes it.
+    result.document.extension = collectUnknownFields(json, {"format",
+                                                            "schema",
+                                                            "requiredFeatures",
+                                                            "presentation",
+                                                            "name",
+                                                            "color",
+                                                            "sources",
+                                                            "mediaCatalog",
+                                                            "rootNetworkId",
+                                                            "nextNetworkId",
+                                                            "nextInstanceId",
+                                                            "networks",
+                                                            "instances",
+                                                            "animationChannels",
+                                                            "nextAnimationChannelId",
+                                                            "nextKeyframeId",
+                                                            "nodes",
+                                                            "edges",
+                                                            "nextNodeId",
+                                                            "nextEdgeId"});
     result.document.name = json.value("name", std::string{});
     if (auto color = json.find("color"); color != json.end()) {
         if (!color->is_object()) {
@@ -618,6 +1243,8 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                 color->value("viewerTransform", result.document.color.viewerTransform);
             result.document.color.deliveryTransform =
                 color->value("deliveryTransform", result.document.color.deliveryTransform);
+            result.document.color.extension =
+                collectUnknownFields(*color, {"workingSpace", "viewerTransform", "deliveryTransform"});
         }
     }
     if (auto sources = json.find("sources"); sources != json.end()) {
@@ -648,9 +1275,13 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                     source.interpretation[tag.key()] = tag.value().get<std::string>();
                 }
             }
+            source.extension =
+                collectUnknownFields(e, {"path", "frameOffset", "frameStep", "revision", "interpretation"});
             result.document.sources[it.key()] = std::move(source);
         }
     }
+    if (auto mediaCatalog = json.find("mediaCatalog"); mediaCatalog != json.end())
+        loadMediaCatalog(*mediaCatalog, result.document);
     if (json.contains("networks")) {
         const auto& entries = json.at("networks");
         if (!entries.is_array() || entries.empty())
@@ -728,6 +1359,7 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                 }
             }
             std::map<NodeId, ParameterValues> params;
+            std::map<NodeId, nlohmann::json> opaqueParams;
             if (e.contains("params")) {
                 if (!e.at("params").is_object())
                     throw DeserializeError(context + ": params must be an object");
@@ -751,20 +1383,37 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                     } catch (const std::exception&) {
                     }
                     const std::string type = targetNode == nullptr ? std::string{} : targetNode->type;
-                    params.emplace(
-                        target,
-                        parseParameterValues(p.value(), schema, type,
-                                             result.document.network(result.document.rootNetworkId()).graph().catalog(),
-                                             context + " id " + std::to_string(id) + " node " + std::to_string(target) +
-                                                 " parameters"));
+                    const auto& targetCatalog =
+                        result.document.network(result.document.rootNetworkId()).graph().catalog();
+                    const std::string paramContext =
+                        context + " id " + std::to_string(id) + " node " + std::to_string(target) + " parameters";
+                    const bool unavailable =
+                        targetNode != nullptr &&
+                        result.document.network(definition).graph().descriptor(targetNode->type) == nullptr;
+                    if (unavailable) {
+                        nlohmann::json opaque = nlohmann::json::object();
+                        params.emplace(target, parseUnavailableParameterValues(p.value(), schema, type, targetCatalog,
+                                                                               paramContext, opaque));
+                        if (!opaque.empty())
+                            opaqueParams.emplace(target, std::move(opaque));
+                    } else {
+                        params.emplace(target,
+                                       parseParameterValues(p.value(), schema, type, targetCatalog, paramContext));
+                    }
                 }
             }
+            nlohmann::json extension = collectUnknownFields(
+                e, {"id", "parentNetwork", "definition", "node", "name", "params", "inputBindings"});
+            const bool hasOpaqueParams = !opaqueParams.empty();
             try {
                 (void)result.document.addInstanceWithId(id, parent, definition, node, e.at("name").get<std::string>(),
                                                         std::move(bindings), std::move(params));
+                result.document.restoreInstanceExtension(id, std::move(extension), std::move(opaqueParams));
             } catch (const std::exception& error) {
                 throw DeserializeError(context + ": " + error.what());
             }
+            if (hasOpaqueParams)
+                result.warnings.push_back(context + " has parameters this build cannot interpret; preserved verbatim");
         }
     }
     for (const auto& network : result.document.networks()) {
@@ -778,11 +1427,11 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                                        " references an invalid instance " + std::to_string(node.instance));
         }
     }
-    loadAnimation(json, result.document, schema);
+    loadAnimation(json, result, schema);
     result.document.synchronizeReferences();
     result.document.restoreIdentityHighWatermarks(
-        watermark(json, "nextNetworkId").value_or(result.document.nextNetworkId()),
-        watermark(json, "nextInstanceId").value_or(result.document.nextInstanceId()));
+        watermark(json, "nextNetworkId", "document").value_or(result.document.nextNetworkId()),
+        watermark(json, "nextInstanceId", "document").value_or(result.document.nextInstanceId()));
     return result;
 }
 

@@ -39,8 +39,12 @@ class ViewerSession {
 public:
     using CachePublicationGuard = std::function<bool()>;
 
+    // `ocioConfigPath` is the project's authored color configuration. Empty
+    // keeps the OCIO application default: the $OCIO environment variable is
+    // resolved on the first viewing request. A non-empty path overrides it for
+    // this session only, without mutating process-global environment state.
     ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                  const std::filesystem::path& shaderDirectory);
+                  const std::filesystem::path& shaderDirectory, std::string ocioConfigPath = {});
     ~ViewerSession();
     ViewerSession(const ViewerSession&) = delete;
     ViewerSession& operator=(const ViewerSession&) = delete;

@@ -81,6 +81,7 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | Responsibility | Owner and interface | Concrete use site / boundary |
 | --- | --- | --- |
 | Persistent document, graph, IDs, serialization | `src/nemo/core/document/Document.hpp`, `Graph.hpp`, `Serialization.hpp`; `Document`, `Graph`, and `NodeCatalog` own persistent state | `apps/nemo-ui/ViewerController.cpp` submits commands; UI and automation do not mutate graph primitives directly |
+| Project file persistence, autosave, recovery | `src/nemo/core/session/ProjectFile.hpp`; `ProjectFile` owns read/write, path policy, file envelope and reference state; `AutosaveStore` owns bounded slots; `ProjectSession::prepareSave`/`commitSave` own path, dirty baseline and recovery guard | `apps/nemo-ui/ProjectFileController.*` and the CLI `file-state`/`open`/`save`/`save-as`/`autosave`/`recover` ops are the only callers; both go through this owner, never a second codec |
 | Node schemas and discovery | `src/nemo/core/nodes/NodeCatalog.hpp`; immutable `NodeDescriptor` records and `NodeCatalog(std::vector<NodeDescriptor>)` | Built-ins are assembled in `NodeCatalog.cpp`; `Graph::catalog()` and evaluation query the catalog. There is no unregister operation |
 | Validated edits and history | `src/nemo/core/document/Document.hpp` command factories plus `src/nemo/core/commands/`; `Command`, `CommandStack`, and `ProjectSession` | `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()` maps JSON operations; `ProjectSession::submit()` is the commit seam |
 | CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned |
@@ -271,6 +272,61 @@ headless operation only through `apps/nemo-cli/ProjectSessionCommand.cpp::makeCo
 use the existing `transactionCommand` for an atomic multi-edit. The concrete
 existing example is `addNodeCommand(...)` used by both `makeCommand()` and
 the catalog-backed graph creation controller.
+
+### Change project file persistence (`.nemo`)
+
+`.nemo` is plain versioned JSON: the core codec's authored document plus a
+file-owned `presentation`/`colorConfig` envelope the codec never sees. Keep
+ownership layered rather than adding a UI or CLI codec — `ProjectFile` owns
+read/write, path policy, version/envelope handling and reference state;
+`ProjectSession` owns the path, dirty baseline, save-completion generation and
+recovery guard; the `Document` codec owns the authored schema and
+required-feature metadata. `ProjectFileController` and the CLI file ops call
+these owners; the File menu and pending-quit prompt bind
+`ProjectFileController`'s chooser/open/save/saveAs/recover invokables, and
+headless automation uses the CLI `file-state`/`open`/`save`/`save-as`/
+`autosave`/`recover` ops, so neither re-implements the protocol.
+
+- **Unknown data.** Unknown authored fields and records in supported schemas
+  are retained as JSON values, so a load/save round-trip preserves them. An
+  unknown or newer required feature, or a newer `schema`, is rejected with an
+  actionable diagnostic rather than guessed. The presentation envelope is
+  versioned independently and headless callers never interpret it; a newer
+  envelope is retained verbatim with a warning, not rewritten from guesswork.
+- **External references.** Authored sources and the color configuration resolve
+  to absolute in-memory targets at read time; the write path policy is
+  `KeepStored`, portable `RebaseRelative` (Save As) or `RebaseAbsolute`. A
+  normal Save never packages media, and unknown opaque presentation paths are
+  never resolved. Missing or unresolved references are reported with
+  identity+path for relink or media-owned sequence resolution.
+- **Atomic write.** `ProjectFile::writeAtomic` writes a temp sibling, flushes
+  and fsyncs, replaces, and keeps a previous-good backup; a failure never
+  destroys the last valid target.
+- **Save lifecycle.** `prepareSave` captures an owned immutable snapshot plus
+  session file state on the owner thread with no I/O; a worker performs the
+  write; `commitSave` publishes the outcome and makes the written snapshot the
+  baseline. A save that finishes for an older snapshot stays dirty, and saving
+  never creates an undo entry. The native chooser only suggests the `.nemo`
+  name: the application honors the exact destination it returns and never
+  appends or alters a suffix after overwrite confirmation, so an extensionless
+  Save As cannot silently overwrite a different `<stem>.nemo`.
+- **Autosave and recovery.** The UI-owned timer runs every 120 seconds while
+  the document or presentation is dirty and retains 3 slots; `AutosaveStore`
+  only enforces storage and never writes the project target. A recovery copy
+  is an unsaved project with no source path and a protected original, so it is
+  kept only by saving elsewhere (Save As) and can never silently replace its
+  original. Slots holding newer-schema or unknown-required-feature data are
+  preserved rather than recycled, and the store fails visibly when no safe slot
+  remains.
+- **Project color configuration.** A non-empty authored `colorConfig` reaches
+  `ViewerSession` (through `ViewerRuntime`/`ViewerScheduler` and the
+  cache-viewer path) as that session's OCIO config; an empty path keeps the
+  existing `$OCIO` environment fallback. No process-global state is mutated.
+- **#58 scope.** `.nemonet`/`.nemopreset`/`.nemoworkspace` custom asset formats
+  are not implemented here; they must reuse this `.nemo` owner rather than add
+  parallel format codecs.
+
+Issue #35 evidence: [`issue35-persistence.json`](../evidence/issue35-persistence.json).
 
 ## Verification and review gates
 

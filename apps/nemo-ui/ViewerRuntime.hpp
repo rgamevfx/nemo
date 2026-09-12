@@ -98,14 +98,16 @@ public:
     bool retireDestination(eval::ViewerDestination destination);
 
     bool submit(Document document, EvaluationRequest request, std::uint64_t id, eval::ViewerDestination destination,
-                gpu::ViewerChannel channel = gpu::ViewerChannel::RGBA);
+                gpu::ViewerChannel channel = gpu::ViewerChannel::RGBA, std::string colorConfigPath = {});
     bool probe(Document document, std::string source, std::uint64_t id,
-               eval::ViewerDestination destination = eval::ViewerDestination::Interactive);
+               eval::ViewerDestination destination = eval::ViewerDestination::Interactive,
+               std::string colorConfigPath = {});
     // `first` and `last` are inclusive local-time frames. The range is held
     // as one lazy descriptor per destination and produces cache publications
     // only; it never replaces that destination's interactive viewer result.
     bool requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
-                      eval::ViewerDestination destination = eval::ViewerDestination::Cache);
+                      eval::ViewerDestination destination = eval::ViewerDestination::Cache,
+                      std::string colorConfigPath = {});
     // Nonblocking cancellation. `id` is a generation watermark: queued work
     // is dropped immediately and in-flight work is rejected at publication.
     // The global form moves the shared watermark; the destination form only

@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include <cstdint>
-#include <fstream>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -16,6 +15,7 @@
 
 #include "nemo/core/document/ParameterValueJson.hpp"
 #include "nemo/core/document/Serialization.hpp"
+#include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
 namespace {
@@ -169,6 +169,8 @@ template <typename T>
         return "unavailable";
     case nemo::EditErrorCode::ReentrantMutation:
         return "reentrant_mutation";
+    case nemo::EditErrorCode::IoError:
+        return "io_error";
     }
     throw std::logic_error("unrecognized edit error code");
 }
@@ -335,21 +337,248 @@ void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::K
     return Json{{"revision", session.revision()}, {"descriptors", std::move(descriptors)}};
 }
 
+[[nodiscard]] const char* projectErrorCode(nemo::ProjectFileError::Code code) {
+    switch (code) {
+    case nemo::ProjectFileError::Code::None:
+        return "none";
+    case nemo::ProjectFileError::Code::InvalidArgument:
+        return "invalid_argument";
+    case nemo::ProjectFileError::Code::NotFound:
+        return "not_found";
+    case nemo::ProjectFileError::Code::NotAFile:
+        return "not_a_file";
+    case nemo::ProjectFileError::Code::ReadFailed:
+        return "read_failed";
+    case nemo::ProjectFileError::Code::ParseFailed:
+        return "parse_failed";
+    case nemo::ProjectFileError::Code::Unsupported:
+        return "unsupported";
+    case nemo::ProjectFileError::Code::WriteFailed:
+        return "write_failed";
+    case nemo::ProjectFileError::Code::ReplaceFailed:
+        return "replace_failed";
+    case nemo::ProjectFileError::Code::BackupFailed:
+        return "backup_failed";
+    case nemo::ProjectFileError::Code::TargetIsDirectory:
+        return "target_is_directory";
+    case nemo::ProjectFileError::Code::ProtectedTarget:
+        return "protected_target";
+    case nemo::ProjectFileError::Code::UnsupportedTarget:
+        return "unsupported_target";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] const char* referenceStateName(nemo::ReferenceState state) {
+    switch (state) {
+    case nemo::ReferenceState::Present:
+        return "present";
+    case nemo::ReferenceState::Missing:
+        return "missing";
+    case nemo::ReferenceState::Unresolved:
+        return "unresolved";
+    }
+    return "unknown";
+}
+
+// Explicit relative/absolute policy for how stored external references are
+// written. Headless processing never interprets presentation records; it only
+// preserves them across open/save.
+[[nodiscard]] nemo::PathPolicy pathPolicyAt(const Json& request) {
+    const std::string policy = request.value("path_policy", std::string{"relative"});
+    if (policy == "relative")
+        return nemo::PathPolicy::RebaseRelative;
+    if (policy == "absolute")
+        return nemo::PathPolicy::RebaseAbsolute;
+    if (policy == "keep")
+        return nemo::PathPolicy::KeepStored;
+    throw std::invalid_argument("path_policy must be relative, absolute or keep");
+}
+
+[[nodiscard]] Json projectErrorJson(const char* code, const std::string& message, std::uint64_t revision) {
+    return Json{{"ok", false}, {"error", Json{{"code", code}, {"message", message}}}, {"revision", revision}};
+}
+
+[[nodiscard]] Json referenceListJson(const std::vector<nemo::ExternalReference>& references) {
+    Json output = Json::array();
+    for (const auto& reference : references)
+        output.push_back(Json{{"identity", reference.identity},
+                              {"stored_path", reference.storedPath},
+                              {"resolved_path", reference.resolvedPath},
+                              {"state", referenceStateName(reference.state)},
+                              {"relative_capable", reference.relativeCapable}});
+    return output;
+}
+
+// Missing and unresolved reference diagnostics from the shared owner; used to
+// refresh warnings after a save without duplicating dependency classification.
+[[nodiscard]] std::vector<std::string> dependencyWarnings(const nemo::Document& document,
+                                                          const std::string& colorConfigPath,
+                                                          const std::filesystem::path& projectBase) {
+    const std::vector<nemo::ExternalReference> references =
+        nemo::ProjectFile::referenceState(document, colorConfigPath, projectBase);
+    std::vector<std::string> warnings = nemo::ProjectFile::missingDependencyWarnings(references);
+    const std::vector<std::string> unresolved = nemo::ProjectFile::unresolvedDependencyWarnings(references);
+    warnings.insert(warnings.end(), unresolved.begin(), unresolved.end());
+    return warnings;
+}
+
+[[nodiscard]] Json fileStateJson(const nemo::ProjectSession& session, const std::vector<std::string>& warnings) {
+    Json output{{"ok", true},
+                {"op", "file-state"},
+                {"dirty", session.isDirty()},
+                {"revision", session.revision()},
+                {"saved_revision", session.savedRevision()},
+                {"can_undo", session.canUndo()},
+                {"can_redo", session.canRedo()},
+                {"path", session.projectPath().string()},
+                {"recovered", session.recovered()},
+                {"recovery_original", session.recoveryOriginal().string()},
+                {"color_config", session.colorConfigPath()},
+                {"has_presentation", !session.presentation().is_null()},
+                {"warnings", warnings}};
+    if (!session.lastFileError().empty())
+        output["error"] = Json{{"code", "file_error"}, {"message", session.lastFileError()}};
+    return output;
+}
+
+// Open or recover a project as an explicit revision replacement: the caller
+// must state the live revision it intends to discard, so a stale client cannot
+// silently replace a document that advanced.
+[[nodiscard]] Json openProjectJson(nemo::ProjectSession& session, const Json& request, bool recovery,
+                                   std::vector<std::string>& warnings) {
+    const std::string path = request.at(recovery ? "slot" : "path").get<std::string>();
+    if (path.empty())
+        throw std::invalid_argument(std::string{recovery ? "slot" : "path"} + " must not be empty");
+    const std::uint64_t expected = unsignedValue<std::uint64_t>(request, "expected_revision");
+    if (expected != session.revision()) {
+        return projectErrorJson("revision_conflict",
+                                "expected revision " + std::to_string(expected) + " but session is at " +
+                                    std::to_string(session.revision()),
+                                session.revision());
+    }
+    nemo::ProjectReadResult loaded = recovery ? nemo::ProjectFile::readRecovery(path) : nemo::ProjectFile::read(path);
+    if (!loaded.ok) {
+        session.setLastFileError(loaded.error.message);
+        return projectErrorJson(projectErrorCode(loaded.error.code), loaded.error.message, session.revision());
+    }
+    warnings = loaded.warnings;
+    Json references = referenceListJson(loaded.references);
+    const nemo::ProjectReplaceResult replaced = session.open(std::move(loaded));
+    if (!replaced.replaced) {
+        const std::string message =
+            replaced.error ? replaced.error->message : std::string{"project replacement failed"};
+        session.setLastFileError(message);
+        return projectErrorJson(replaced.error ? errorCode(replaced.error->code) : "replace_failed", message,
+                                replaced.revision);
+    }
+    return Json{{"ok", true},
+                {"op", recovery ? "recover" : "open"},
+                {"revision", replaced.revision},
+                {"path", session.projectPath().string()},
+                {"recovered", session.recovered()},
+                {"recovery_original", session.recoveryOriginal().string()},
+                {"color_config", session.colorConfigPath()},
+                {"has_presentation", !session.presentation().is_null()},
+                {"references", std::move(references)},
+                {"warnings", warnings}};
+}
+
+// Save or Save As through the shared file owner: prepareSave captures an owned
+// snapshot and the session file state, writeAtomic performs the worker write,
+// commitSave publishes the outcome on the owner thread. A failed write never
+// replaces the document and never clears newer edits.
+[[nodiscard]] Json saveProjectJson(nemo::ProjectSession& session, const Json& request, bool saveAs,
+                                   std::vector<std::string>& warnings) {
+    std::filesystem::path target;
+    if (saveAs) {
+        target = request.at("path").get<std::string>();
+        if (target.empty())
+            throw std::invalid_argument("save-as requires a nonempty path");
+    } else {
+        target = session.projectPath();
+        if (target.empty())
+            throw std::invalid_argument("session has no project path; use save-as");
+    }
+    nemo::ProjectWriteRequest writeRequest =
+        session.prepareSave(target, pathPolicyAt(request), request.value("backup", true));
+    const nemo::ProjectWriteResult writeResult = nemo::ProjectFile::writeAtomic(writeRequest);
+    const nemo::EditResult saved = session.commitSave(writeRequest, writeResult);
+    if (!saved.committed) {
+        // A file-level failure keeps its specific machine-readable code; the
+        // session's generic io_error is reserved for a post-write rejection
+        // such as a stale project generation.
+        if (!writeResult.ok) {
+            const std::string message =
+                writeResult.error.message.empty() ? std::string{"save failed"} : writeResult.error.message;
+            return projectErrorJson(projectErrorCode(writeResult.error.code), message, saved.revision);
+        }
+        const std::string message = saved.error ? saved.error->message : std::string{"save failed"};
+        return projectErrorJson(saved.error ? errorCode(saved.error->code) : "io_error", message, saved.revision);
+    }
+    warnings = dependencyWarnings(session.document(), session.colorConfigPath(), writeResult.target.parent_path());
+    return Json{{"ok", true},
+                {"op", saveAs ? "save-as" : "save"},
+                {"path", writeResult.target.string()},
+                {"backup", writeResult.backup.string()},
+                {"revision", saved.revision},
+                {"saved_revision", session.savedRevision()},
+                {"dirty", session.isDirty()},
+                {"recovered", session.recovered()},
+                {"recovery_original", session.recoveryOriginal().string()},
+                {"warnings", warnings}};
+}
+
+// Bounded autosave: writes a sibling copy, never the project target, and does
+// not commit a save baseline, so the session stays dirty.
+[[nodiscard]] Json autosaveJson(nemo::ProjectSession& session, const Json& request,
+                                std::vector<std::string>& warnings) {
+    if (session.projectPath().empty())
+        throw std::invalid_argument("autosave requires a project path; save the project first");
+    const std::size_t slots =
+        request.contains("slots") ? unsignedValue<std::size_t>(request, "slots") : nemo::kDefaultAutosaveSlots;
+    if (slots == 0)
+        throw std::invalid_argument("slots must be at least 1");
+    nemo::AutosaveStore store(session.projectPath(), slots);
+    const nemo::ProjectWriteRequest writeRequest =
+        session.prepareSave(session.projectPath(), pathPolicyAt(request), false);
+    const nemo::ProjectWriteResult result = store.write(writeRequest);
+    if (!result.ok) {
+        session.setLastFileError(result.error.message);
+        return projectErrorJson(projectErrorCode(result.error.code), result.error.message, session.revision());
+    }
+    warnings = dependencyWarnings(session.document(), session.colorConfigPath(), session.projectPath().parent_path());
+    return Json{{"ok", true},
+                {"op", "autosave"},
+                {"slot", result.target.string()},
+                {"bound", store.slotLimit()},
+                {"slot_count", store.existingSlots().size()},
+                {"revision", session.revision()},
+                {"dirty", session.isDirty()},
+                {"warnings", warnings}};
+}
+
 }  // namespace
 int commandProjectSession(const std::vector<std::string>& args) {
     if (args.size() != 1) {
         std::cerr << "usage: nemo-cli project-session <project.json> "
-                     "(graph queries and edits require network_id)\n";
+                     "(graph queries and edits require network_id)\n"
+                     "  file ops: file-state | open {path,expected_revision} | save {path_policy,backup} | "
+                     "save-as {path,path_policy,backup} | autosave {slots} | recover {slot,expected_revision}\n";
         return 2;
     }
     try {
-        std::ifstream input(args.front());
-        if (!input)
-            throw std::runtime_error("cannot open project: " + args.front());
-        const auto loaded = nemo::loadDocument(nlohmann::json::parse(input));
-        for (const auto& warning : loaded.warnings)
+        nemo::ProjectReadResult loaded = nemo::ProjectFile::read(args.front());
+        if (!loaded.ok)
+            throw std::runtime_error(loaded.error.message.empty() ? "cannot open project: " + args.front()
+                                                                  : loaded.error.message);
+        std::vector<std::string> warnings = loaded.warnings;
+        for (const auto& warning : warnings)
             std::cerr << "project-session: warning: " << warning << '\n';
-        nemo::ProjectSession session(loaded.document);
+        nemo::ProjectSession session;
+        const nemo::ProjectReplaceResult opened = session.open(std::move(loaded));
+        if (!opened.replaced)
+            throw std::runtime_error(opened.error ? opened.error->message : "cannot open project: " + args.front());
         std::string line;
         while (std::getline(std::cin, line)) {
             if (line.empty())
@@ -400,12 +629,25 @@ int commandProjectSession(const std::vector<std::string>& args) {
                     response = editResultJson(session.undo(editOptions(request)));
                 } else if (op == "redo") {
                     response = editResultJson(session.redo(editOptions(request)));
+                } else if (op == "file-state") {
+                    response = fileStateJson(session, warnings);
+                } else if (op == "open") {
+                    response = openProjectJson(session, request, false, warnings);
+                } else if (op == "recover") {
+                    response = openProjectJson(session, request, true, warnings);
+                } else if (op == "save") {
+                    response = saveProjectJson(session, request, false, warnings);
+                } else if (op == "save-as") {
+                    response = saveProjectJson(session, request, true, warnings);
+                } else if (op == "autosave") {
+                    response = autosaveJson(session, request, warnings);
                 } else {
                     response = editResultJson(session.submit(makeCommand(session, request), editOptions(request)));
                 }
-                response["ok"] = response.contains("preview_only")
-                                     ? !response.contains("error")
-                                     : (!response.contains("committed") || response.at("committed").get<bool>());
+                if (!response.contains("ok"))
+                    response["ok"] = response.contains("preview_only")
+                                         ? !response.contains("error")
+                                         : (!response.contains("committed") || response.at("committed").get<bool>());
                 std::cout << response.dump() << '\n' << std::flush;
             } catch (const std::exception& error) {
                 std::cout << Json{{"ok", false},

@@ -9,6 +9,7 @@ add_executable(nemo_core_tests
     CatalogTests.cpp
     MediaCatalogTests.cpp
     PersistenceTests.cpp
+    SessionPersistenceTests.cpp
     GraphTests.cpp
     NetworkTests.cpp
     ViewerModelTests.cpp
@@ -97,6 +98,10 @@ gtest_discover_tests(nemo_workspace_tests)
 
 if(NEMO_BUILD_UI)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2 Test)
+    if(UNIX AND NOT APPLE)
+        # ProjectFileController's native xdg-desktop-portal chooser client.
+        find_package(Qt6 6.4 REQUIRED COMPONENTS DBus)
+    endif()
     add_executable(nemo_workspace_ui_tests
         WorkspaceDragTests.cpp
         InteractiveUiTests.cpp
@@ -106,6 +111,8 @@ if(NEMO_BUILD_UI)
         ../apps/nemo-ui/PanelContextRouter.hpp
         ../apps/nemo-ui/ParameterEditorRegistry.cpp
         ../apps/nemo-ui/ParameterEditorRegistry.hpp
+        ../apps/nemo-ui/ProjectFileController.cpp
+        ../apps/nemo-ui/ProjectFileController.hpp
         ../apps/nemo-ui/WorkspaceController.cpp
         ../apps/nemo-ui/WorkspaceController.hpp
         ../apps/nemo-ui/ViewerController.cpp
@@ -131,5 +138,10 @@ if(NEMO_BUILD_UI)
     target_link_libraries(nemo_workspace_ui_tests PRIVATE
         nemo::workspace nemo::eval GTest::gtest Qt6::Quick Qt6::QuickControls2 Qt6::Test
     )
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(nemo_workspace_ui_tests PRIVATE Qt6::DBus)
+    elseif(WIN32)
+        target_link_libraries(nemo_workspace_ui_tests PRIVATE ole32 shell32 uuid)
+    endif()
     gtest_discover_tests(nemo_workspace_ui_tests)
 endif()

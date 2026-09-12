@@ -5,6 +5,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -61,6 +62,11 @@ std::array<float, N> vectorValue(const nlohmann::json& value, const char* contex
 
 }  // namespace
 
+bool parameterValueTypeTagKnown(std::string_view tag) {
+    return tag == "boolean" || tag == "integer" || tag == "float" || tag == "string" || tag == "choice" ||
+           tag == "vector2" || tag == "vector3" || tag == "color";
+}
+
 nlohmann::json parameterValueToJson(const ParameterValue& value) {
     if (const auto problem = validateParameterValueRepresentation(value))
         malformed(*problem);
@@ -92,6 +98,8 @@ ParameterValue parameterValueFromJson(const nlohmann::json& value) {
         !value.at("type").is_string())
         malformed("value must be a tagged object containing only type and value");
     const std::string type = value.at("type").get<std::string>();
+    if (!parameterValueTypeTagKnown(type))
+        malformed("unknown type tag '" + type + "'");
     const auto& payload = value.at("value");
     if (type == "boolean") {
         if (!payload.is_boolean())
@@ -116,9 +124,7 @@ ParameterValue parameterValueFromJson(const nlohmann::json& value) {
         return Vector2Value{vectorValue<2>(payload, "vector2")};
     if (type == "vector3")
         return Vector3Value{vectorValue<3>(payload, "vector3")};
-    if (type == "color")
-        return ColorValue{vectorValue<4>(payload, "color")};
-    malformed("unknown type tag '" + type + "'");
+    return ColorValue{vectorValue<4>(payload, "color")};
 }
 
 }  // namespace nemo

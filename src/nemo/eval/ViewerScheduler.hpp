@@ -40,6 +40,11 @@ struct ViewerScheduledRequest {
     ViewerRequestKind kind{ViewerRequestKind::Render};
     ViewerDestination destination{ViewerDestination::Interactive};
     std::chrono::steady_clock::time_point requestedAt{};
+    // Color configuration the worker's ViewerSession must use for this request
+    // (empty = the OCIO application default). Carried with the immutable
+    // document so a project's authored config replaces the worker session
+    // without touching process-global environment state.
+    std::string colorConfigPath;
 };
 
 struct ViewerSchedulerCounts {
@@ -69,13 +74,16 @@ public:
     // retained by the evaluator/GPU and is rejected at publication.
     bool submit(Document document, EvaluationRequest request, std::uint64_t id,
                 ViewerDestination destination = ViewerDestination::Interactive,
-                std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now());
+                std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),
+                std::string colorConfigPath = {});
     bool probe(Document document, std::string source, std::uint64_t id,
                ViewerDestination destination = ViewerDestination::Interactive,
-               std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now());
+               std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),
+               std::string colorConfigPath = {});
     bool requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
                       ViewerDestination destination = ViewerDestination::Cache,
-                      std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now());
+                      std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),
+                      std::string colorConfigPath = {});
 
     // Returns the highest-priority queued item: interactive/probe before the
     // next lazily admitted range frame. The returned request retains the

@@ -81,23 +81,50 @@ ProjectSession::Subscription::~Subscription() {
     reset();
 }
 
-ProjectSession::Subscription::Subscription(Subscription&& other) noexcept
-    : session_(std::exchange(other.session_, nullptr)), id_(std::exchange(other.id_, 0)) {}
+ProjectSession::Subscription::Subscription(Subscription&& other) noexcept {
+    // Validate the live source session before either handle's identity is
+    // exchanged.
+    if (other.session_)
+        other.session_->assertOwnerThread();
+    session_ = other.session_;
+    id_ = other.id_;
+    other.session_ = nullptr;
+    other.id_ = 0;
+}
 
 ProjectSession::Subscription& ProjectSession::Subscription::operator=(Subscription&& other) noexcept {
+    // Both live sessions are validated before anything is mutated, including a
+    // self-move, which is a no-op after the diagnostic.
+    if (session_)
+        session_->assertOwnerThread();
+    if (other.session_)
+        other.session_->assertOwnerThread();
     if (this == &other)
         return *this;
+    // reset() unsubscribes from this handle's session; the handle then adopts
+    // the other session.
     reset();
-    session_ = std::exchange(other.session_, nullptr);
-    id_ = std::exchange(other.id_, 0);
+    session_ = other.session_;
+    id_ = other.id_;
+    other.session_ = nullptr;
+    other.id_ = 0;
     return *this;
 }
 
 void ProjectSession::Subscription::reset() noexcept {
+    if (session_)
+        session_->assertOwnerThread();
     ProjectSession* const session = std::exchange(session_, nullptr);
     const std::uint64_t id = std::exchange(id_, 0);
     if (session)
         session->unsubscribe(id);
+}
+
+ProjectSession::~ProjectSession() {
+    // Diagnosed before any member is torn down, so off-owner teardown is
+    // reported against a fully constructed session. The destructor stays
+    // implicitly noexcept: no member destructor is potentially throwing.
+    assertOwnerThread();
 }
 
 ProjectSession::ProjectSession(Document document, std::size_t historyCapacity)
@@ -106,6 +133,7 @@ ProjectSession::ProjectSession(Document document, std::size_t historyCapacity)
 }
 
 ProjectSession::Subscription ProjectSession::subscribe(void* context, ObserverCallback callback) {
+    assertOwnerThread();
     if (!callback)
         throw std::invalid_argument("project session observer callback must not be null");
     if (nextObserverId_ == std::numeric_limits<std::uint64_t>::max())
@@ -116,6 +144,7 @@ ProjectSession::Subscription ProjectSession::subscribe(void* context, ObserverCa
 }
 
 void ProjectSession::unsubscribe(std::uint64_t id) noexcept {
+    assertOwnerThread();
     observers_.erase(id);
 }
 
@@ -376,6 +405,7 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
 }
 
 EditResult ProjectSession::execute(Operation operation, Command* command, const EditOptions& options) {
+    assertOwnerThread();
     if (mutating_ || notifying_)
         return failure("project session mutation is not allowed during an edit or notification",
                        EditErrorCode::ReentrantMutation);
@@ -479,6 +509,7 @@ ParameterGestureResult ProjectSession::previewFailure(const GraphException& erro
 ParameterGestureResult ProjectSession::beginParameterGestureInternal(std::vector<ParameterEdit> edits,
                                                                      EditOptions options,
                                                                      std::optional<double> keyedTime) {
+    assertOwnerThread();
     if (keyedTime && !std::isfinite(*keyedTime))
         return gestureFailure("keyed parameter gesture time must be finite");
     if (edits.empty())
@@ -543,6 +574,7 @@ ParameterGestureResult ProjectSession::previewFailure(const std::exception& erro
 
 ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureToken token,
                                                               std::vector<ParameterEdit> edits) {
+    assertOwnerThread();
     if (mutating_ || notifying_)
         return gestureFailure("project session mutation is not allowed during an edit or notification",
                               EditErrorCode::ReentrantMutation);
@@ -590,12 +622,14 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
 
 ParameterGestureResult ProjectSession::updateKeyedParameterGesture(ParameterGestureToken token,
                                                                    std::vector<ParameterEdit> edits) {
+    assertOwnerThread();
     if (!gesture_ || !gesture_->keyed)
         return gestureFailure("unknown keyed parameter gesture token", EditErrorCode::Unavailable);
     return updateParameterGesture(token, std::move(edits));
 }
 
 EditResult ProjectSession::commitParameterGesture(ParameterGestureToken token, EditOptions options) {
+    assertOwnerThread();
     if (mutating_ || notifying_)
         return failure("project session mutation is not allowed during an edit or notification",
                        EditErrorCode::ReentrantMutation);
@@ -624,6 +658,7 @@ EditResult ProjectSession::commitParameterGesture(ParameterGestureToken token, E
 }
 
 EditResult ProjectSession::cancelParameterGesture(ParameterGestureToken token) {
+    assertOwnerThread();
     if (mutating_ || notifying_)
         return failure("project session mutation is not allowed during an edit or notification",
                        EditErrorCode::ReentrantMutation);
@@ -640,6 +675,7 @@ EditResult ProjectSession::redo(EditOptions options) {
 
 std::vector<NodeQueryResult> ProjectSession::queryNodes(NetworkId network, std::string_view filter, std::size_t limit,
                                                         NodeId after) const {
+    assertOwnerThread();
     limit = std::min<std::size_t>(limit, 256);
     const auto& graph = document_.network(network).graph();
     std::vector<const NodeInstance*> selected;
@@ -665,6 +701,7 @@ std::vector<NodeQueryResult> ProjectSession::queryNodes(NetworkId network, std::
 
 std::vector<ValueQueryResult> ProjectSession::queryValues(NetworkId network, NodeId nodeId, std::string_view keyFilter,
                                                           std::size_t limit, std::string_view after) const {
+    assertOwnerThread();
     limit = std::min<std::size_t>(limit, 256);
     std::vector<ValueQueryResult> result;
     if (limit == 0)
@@ -705,6 +742,7 @@ std::vector<ValueQueryResult> ProjectSession::queryValues(NetworkId network, Nod
 
 std::vector<EdgeQueryResult> ProjectSession::queryEdges(NetworkId network, NodeId touching, std::size_t limit,
                                                         EdgeId after) const {
+    assertOwnerThread();
     limit = std::min<std::size_t>(limit, 256);
     std::vector<EdgeQueryResult> result;
     for (const auto& edge : document_.network(network).graph().edges()) {
@@ -723,6 +761,7 @@ std::vector<EdgeQueryResult> ProjectSession::queryEdges(NetworkId network, NodeI
 }
 std::vector<AnimationChannelQueryResult> ProjectSession::queryAnimationChannels(std::size_t limit,
                                                                                 AnimationChannelId after) const {
+    assertOwnerThread();
     limit = std::min<std::size_t>(limit, 256);
     std::vector<AnimationChannelQueryResult> result;
     if (limit == 0)
@@ -739,6 +778,7 @@ std::vector<AnimationChannelQueryResult> ProjectSession::queryAnimationChannels(
 
 std::vector<AnimationKeyQueryResult> ProjectSession::queryAnimationKeys(AnimationChannelId channelId, std::size_t limit,
                                                                         KeyframeId after) const {
+    assertOwnerThread();
     limit = std::min<std::size_t>(limit, 256);
     std::vector<AnimationKeyQueryResult> result;
     if (limit == 0)
@@ -762,6 +802,7 @@ std::vector<AnimationKeyQueryResult> ProjectSession::queryAnimationKeys(Animatio
 }
 
 ChangeHistory ProjectSession::changesSince(std::uint64_t revision) const {
+    assertOwnerThread();
     ChangeHistory result;
     result.currentRevision = revision_;
     result.oldestRevision = events_.empty() ? revision_ : events_.front().revision;
@@ -776,6 +817,7 @@ ChangeHistory ProjectSession::changesSince(std::uint64_t revision) const {
 
 std::vector<SourceQueryResult> ProjectSession::querySources(std::string_view filter, std::size_t limit,
                                                             std::string_view after) const {
+    assertOwnerThread();
     limit = std::min<std::size_t>(limit, 256);
     std::vector<SourceQueryResult> result;
     if (limit == 0)
@@ -793,6 +835,7 @@ std::vector<MediaQueryResult> ProjectSession::queryMedia(std::string_view filter
                                                          std::optional<bool> offline, std::optional<bool> unused,
                                                          MediaBinId scope, std::size_t limit,
                                                          MediaSourceId after) const {
+    assertOwnerThread();
     limit = std::min<std::size_t>(limit, 256);
     std::vector<MediaQueryResult> result;
     if (limit == 0)
@@ -809,6 +852,7 @@ std::vector<MediaQueryResult> ProjectSession::queryMedia(std::string_view filter
 }
 
 std::vector<MediaBin> ProjectSession::queryMediaBins(MediaBinId parent, std::size_t limit, MediaBinId after) const {
+    assertOwnerThread();
     limit = std::min<std::size_t>(limit, 256);
     std::vector<MediaBin> result;
     if (limit == 0)
@@ -835,6 +879,7 @@ void ProjectSession::captureSavedBaseline() noexcept {
 }
 
 bool ProjectSession::isDirty() const {
+    assertOwnerThread();
     if (dirtyCacheStamp_ == stateStamp_)
         return dirtyCacheValue_;
     if (savedContentValid_)
@@ -846,21 +891,25 @@ bool ProjectSession::isDirty() const {
 }
 
 void ProjectSession::setPresentation(nlohmann::json presentation) {
+    assertOwnerThread();
     presentation_ = std::move(presentation);
     invalidateDirtyCache();
 }
 
 void ProjectSession::setColorConfigPath(std::string colorConfigPath) {
+    assertOwnerThread();
     colorConfigPath_ = std::move(colorConfigPath);
     invalidateDirtyCache();
 }
 
 void ProjectSession::setLastFileError(std::string message) {
+    assertOwnerThread();
     lastFileError_ = std::move(message);
 }
 
 ProjectWriteRequest ProjectSession::prepareSave(std::filesystem::path target, PathPolicy pathPolicy,
                                                 bool backup) const {
+    assertOwnerThread();
     ProjectWriteRequest request;
     request.snapshot = std::make_shared<const Document>(document_);
     request.target = std::move(target);
@@ -877,6 +926,7 @@ ProjectWriteRequest ProjectSession::prepareSave(std::filesystem::path target, Pa
 }
 
 EditResult ProjectSession::commitSave(const ProjectWriteRequest& request, const ProjectWriteResult& result) {
+    assertOwnerThread();
     if (mutating_ || notifying_)
         return failure("project session mutation is not allowed during an edit or notification",
                        EditErrorCode::ReentrantMutation);
@@ -919,6 +969,7 @@ EditResult ProjectSession::commitSave(const ProjectWriteRequest& request, const 
 ProjectReplaceResult ProjectSession::replaceInternal(Document document, std::filesystem::path path,
                                                      nlohmann::json presentation, std::string colorConfigPath,
                                                      bool recovered, std::filesystem::path recoveryOriginal) {
+    assertOwnerThread();
     if (mutating_ || notifying_)
         return {false, revision_,
                 EditError{"project session mutation is not allowed during an edit or notification",
@@ -968,6 +1019,7 @@ ProjectReplaceResult ProjectSession::replaceDocument(Document document, std::fil
 }
 
 ProjectReplaceResult ProjectSession::replaceDocument(ProjectReadResult result, bool recovered) {
+    assertOwnerThread();
     if (!result.ok) {
         const std::string message =
             result.error.message.empty() ? std::string("project read failed") : result.error.message;

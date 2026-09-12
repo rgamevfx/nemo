@@ -101,10 +101,14 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 
 ### State and threading boundaries
 
-- `ProjectSession` methods and subscriptions are owner-thread-only. Its
-  callbacks run synchronously after publication and must not block or mutate
-  during notification. Workers receive `ProjectSession::snapshot()` copies,
-  never the session object.
+- `ProjectSession` methods and subscriptions are owner-thread-only; the session
+  must outlive its subscriptions. Development builds diagnose off-owner access,
+  subscription moves/removal and session/subscription destruction before touching
+  owned state. Ownership stays with the constructing thread across document
+  replacement/opening. `NDEBUG` removes the assertions, not the contract; no
+  synchronization or cross-thread dispatch is added. Callbacks run synchronously
+  after publication and must not block or mutate during notification. Workers
+  receive `ProjectSession::snapshot()` copies, never the session object.
 - `NodeCatalog` is an immutable snapshot after construction. Descriptors contain
   schema facts only: no Qt, Vulkan, plugin, executor, or image objects.
 - Evaluation consumes an immutable document view. `ViewerScheduler` is the

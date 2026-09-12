@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <deque>
 #include <exception>
@@ -9,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -183,9 +185,16 @@ public:
     ProjectSession& operator=(const ProjectSession&) = delete;
     ProjectSession(ProjectSession&&) = delete;
     ProjectSession& operator=(ProjectSession&&) = delete;
+    ~ProjectSession();
 
-    [[nodiscard]] const Document& document() const noexcept { return document_; }
-    [[nodiscard]] Document snapshot() const { return document_; }
+    [[nodiscard]] const Document& document() const noexcept {
+        assertOwnerThread();
+        return document_;
+    }
+    [[nodiscard]] Document snapshot() const {
+        assertOwnerThread();
+        return document_;
+    }
 
     [[nodiscard]] Subscription subscribe(void* context, ObserverCallback callback);
 
@@ -217,9 +226,18 @@ public:
     [[nodiscard]] EditResult commitParameterGesture(ParameterGestureToken token, EditOptions options);
     [[nodiscard]] EditResult cancelParameterGesture(ParameterGestureToken token);
 
-    [[nodiscard]] bool canUndo() const noexcept { return commands_.canUndo(); }
-    [[nodiscard]] bool canRedo() const noexcept { return commands_.canRedo(); }
-    [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
+    [[nodiscard]] bool canUndo() const noexcept {
+        assertOwnerThread();
+        return commands_.canUndo();
+    }
+    [[nodiscard]] bool canRedo() const noexcept {
+        assertOwnerThread();
+        return commands_.canRedo();
+    }
+    [[nodiscard]] std::uint64_t revision() const noexcept {
+        assertOwnerThread();
+        return revision_;
+    }
 
     // File ownership. Opening or saving a project never creates an undo entry
     // and never mutates the document outside replaceDocument(). All accessors
@@ -233,24 +251,48 @@ public:
     // stamp; isDirty() is not noexcept because serializing the baseline can
     // throw.
     [[nodiscard]] bool isDirty() const;
-    [[nodiscard]] std::uint64_t savedRevision() const noexcept { return savedRevision_; }
+    [[nodiscard]] std::uint64_t savedRevision() const noexcept {
+        assertOwnerThread();
+        return savedRevision_;
+    }
     // Identity of the currently published project. Replacement/opening advances
     // it so a save prepared against an earlier project cannot publish into the
     // newly opened one.
-    [[nodiscard]] std::uint64_t projectGeneration() const noexcept { return projectGeneration_; }
-    [[nodiscard]] const std::filesystem::path& projectPath() const noexcept { return projectPath_; }
-    [[nodiscard]] const nlohmann::json& presentation() const noexcept { return presentation_; }
+    [[nodiscard]] std::uint64_t projectGeneration() const noexcept {
+        assertOwnerThread();
+        return projectGeneration_;
+    }
+    [[nodiscard]] const std::filesystem::path& projectPath() const noexcept {
+        assertOwnerThread();
+        return projectPath_;
+    }
+    [[nodiscard]] const nlohmann::json& presentation() const noexcept {
+        assertOwnerThread();
+        return presentation_;
+    }
     // Presentation is versioned independently and never interpreted by headless
     // callers. Changing it is not an undoable document edit.
     void setPresentation(nlohmann::json presentation);
-    [[nodiscard]] const std::string& colorConfigPath() const noexcept { return colorConfigPath_; }
+    [[nodiscard]] const std::string& colorConfigPath() const noexcept {
+        assertOwnerThread();
+        return colorConfigPath_;
+    }
     void setColorConfigPath(std::string colorConfigPath);
-    [[nodiscard]] const std::string& lastFileError() const noexcept { return lastFileError_; }
+    [[nodiscard]] const std::string& lastFileError() const noexcept {
+        assertOwnerThread();
+        return lastFileError_;
+    }
     void setLastFileError(std::string message);
-    [[nodiscard]] bool recovered() const noexcept { return recovered_; }
+    [[nodiscard]] bool recovered() const noexcept {
+        assertOwnerThread();
+        return recovered_;
+    }
     // Original project file an autosave recovery copy came from; empty unless
     // recovered().
-    [[nodiscard]] const std::filesystem::path& recoveryOriginal() const noexcept { return recoveryOriginal_; }
+    [[nodiscard]] const std::filesystem::path& recoveryOriginal() const noexcept {
+        assertOwnerThread();
+        return recoveryOriginal_;
+    }
 
     // Captures an owned immutable snapshot plus the session file state for a
     // worker write. Pure owner-thread work; no I/O and no document mutation.
@@ -297,6 +339,18 @@ public:
                                                        MediaBinId after = kInvalidMediaBin) const;
 
 private:
+    // Development-only owner-thread diagnostic, reused by every session entry
+    // point that touches session-owned state. The constructing thread is
+    // captured once and never reassigned, so replacing or opening a document
+    // does not transfer session ownership. With NDEBUG the check compiles to
+    // nothing, so release builds keep the documented single-owner contract and
+    // add no synchronization.
+    void assertOwnerThread() const noexcept {
+#ifndef NDEBUG
+        assert(ownerThread_ == std::this_thread::get_id() && "ProjectSession state accessed from a non-owner thread");
+#endif
+    }
+
     struct Observer {
         void* context;
         ObserverCallback callback;
@@ -365,6 +419,15 @@ private:
     std::uint64_t stateStamp_{1};
     mutable std::uint64_t dirtyCacheStamp_{0};
     mutable bool dirtyCacheValue_{false};
+
+    // Always present so the class layout is identical with and without NDEBUG.
+    // Debug captures the constructing thread; release keeps the default
+    // identity and performs no thread lookup.
+#ifndef NDEBUG
+    const std::thread::id ownerThread_{std::this_thread::get_id()};
+#else
+    const std::thread::id ownerThread_{};
+#endif
 };
 
 }  // namespace nemo

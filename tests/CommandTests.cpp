@@ -3,6 +3,7 @@
 
 #include <array>
 #include <barrier>
+#include <cstdlib>
 #include <thread>
 
 #include "nemo/core/commands/AnimationCommands.hpp"
@@ -683,6 +684,211 @@ TEST(ProjectSessionTest, SharedWorkerSnapshotsRemainImmutableAcrossOwnerEdits) {
     EXPECT_EQ(rootGraph(session.document()).node(id)->name, "renamed");
     EXPECT_NE(session.document().stateRevision(), expected);
 }
+
+// Owner-thread diagnostics exist only in development builds (NDEBUG removes
+// them). Death tests fork before running the statement, so the off-owner
+// worker is created inside the child: the session is constructed on the
+// child's only thread and no mutation runs concurrently with the diagnosed
+// access.
+#if defined(__linux__) && !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
+
+namespace {
+// Match the ownership diagnosis, not a helper name, source location or unrelated
+// process failure.
+constexpr char kOwnerThreadDiagnostic[] = "(ProjectSession.*owner thread|owner thread.*ProjectSession)";
+}  // namespace
+
+TEST(ProjectSessionTest, OffOwnerDocumentReadIsDiagnosedBeforeStateAccess) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            std::thread offOwner([&session] { static_cast<void>(session.document()); });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+TEST(ProjectSessionTest, OffOwnerSnapshotIsDiagnosedBeforeStateAccess) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            std::thread offOwner([&session] { static_cast<void>(session.snapshot()); });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+TEST(ProjectSessionTest, OffOwnerMutationIsDiagnosedBeforeStateAccess) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            const NetworkId network = session.document().rootNetworkId();
+            Command command = addNodeCommand(network, "testpattern", "offOwner");
+            const EditOptions options = current(session);
+            std::thread offOwner([&] { static_cast<void>(session.submit(std::move(command), options)); });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+TEST(ProjectSessionTest, OffOwnerSubscriptionRegistrationIsDiagnosedBeforeStateAccess) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            ObserverCount count;
+            std::thread offOwner([&] {
+                auto subscription = session.subscribe(&count, &countObserver);
+                // A missing registration guard must not pass this test because
+                // the returned subscription is later destroyed off-owner.
+                std::_Exit(0);
+            });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+// Moving a live subscription off the owner thread must be diagnosed before the
+// handle is mutated. The moved-to handle is destroyed back on the owner thread,
+// so only the move construction itself can end the child.
+TEST(ProjectSessionTest, OffOwnerSubscriptionMoveConstructionIsDiagnosed) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            ObserverCount count;
+            auto subscription = session.subscribe(&count, &countObserver);
+            std::unique_ptr<ProjectSession::Subscription> moved;
+            std::thread offOwner(
+                [&] { moved = std::make_unique<ProjectSession::Subscription>(std::move(subscription)); });
+            offOwner.join();
+            moved.reset();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+// Releasing a live subscription by move-assigning from an empty handle is a
+// subscription removal and is owner-thread-only.
+TEST(ProjectSessionTest, OffOwnerSubscriptionReleaseByMoveAssignmentIsDiagnosed) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            ObserverCount count;
+            auto destination = session.subscribe(&count, &countObserver);
+            std::thread offOwner([&] {
+                ProjectSession::Subscription source;
+                destination = std::move(source);
+            });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+// Move-assigning a live source into an empty destination must validate the
+// source's session even though the destination holds nothing.
+TEST(ProjectSessionTest, OffOwnerSubscriptionMoveAssignmentOfEmptyDestinationIsDiagnosed) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            ObserverCount count;
+            auto source = session.subscribe(&count, &countObserver);
+            ProjectSession::Subscription destination;
+            std::thread offOwner([&] { destination = std::move(source); });
+            offOwner.join();
+            destination = ProjectSession::Subscription{};
+        },
+        kOwnerThreadDiagnostic);
+}
+
+// Self move-assignment is still an off-owner operation on the handle's own
+// session and must be diagnosed before any no-op transfer short-circuit.
+TEST(ProjectSessionTest, OffOwnerSelfMoveAssignmentIsDiagnosed) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            ObserverCount count;
+            auto subscription = session.subscribe(&count, &countObserver);
+            std::thread offOwner([&] {
+                // Through a reference so the deliberate self-move is not
+                // folded away by the compiler's self-move warning.
+                ProjectSession::Subscription& same = subscription;
+                subscription = std::move(same);
+            });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+// Destroying a live subscription off the owner thread releases it through the
+// same registration/removal contract; the session is destroyed on the owner so
+// only the subscription lifetime can end the child.
+TEST(ProjectSessionTest, OffOwnerSubscriptionDestructionIsDiagnosed) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            ObserverCount count;
+            auto owned = std::make_unique<ProjectSession::Subscription>(session.subscribe(&count, &countObserver));
+            std::thread offOwner([&] { owned.reset(); });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+// A move between subscriptions of two sessions must validate both owners: the
+// destination belongs to the constructing thread while the source belongs to
+// another thread.
+TEST(ProjectSessionTest, OffOwnerSubscriptionMoveAssignmentValidatesBothSessions) {
+    EXPECT_DEATH(
+        {
+            ProjectSession localSession(emptyDocument());
+            ObserverCount localCount;
+            auto local = localSession.subscribe(&localCount, &countObserver);
+
+            ObserverCount remoteCount;
+            std::unique_ptr<ProjectSession::Subscription> remote;
+            std::barrier ready(2);
+            std::barrier finish(2);
+            std::thread ownerB([&] {
+                ProjectSession remoteSession(emptyDocument());
+                remote = std::make_unique<ProjectSession::Subscription>(
+                    remoteSession.subscribe(&remoteCount, &countObserver));
+                ready.arrive_and_wait();
+                finish.arrive_and_wait();
+                // Only reached when the guard is missing: reclaim the stolen
+                // handle on its owner before the remote session is torn down.
+                *remote = std::move(local);
+                *remote = ProjectSession::Subscription{};
+                local = ProjectSession::Subscription{};
+            });
+            ready.arrive_and_wait();
+            local = std::move(*remote);
+            finish.arrive_and_wait();
+            ownerB.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+// Session destruction is itself an owner-only lifetime operation.
+TEST(ProjectSessionTest, OffOwnerSessionDestructionIsDiagnosedBeforeMemberTeardown) {
+    EXPECT_DEATH(
+        {
+            auto session = std::make_unique<ProjectSession>(emptyDocument());
+            std::thread offOwner([&] { session.reset(); });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+TEST(ProjectSessionTest, OffOwnerSnapshotAfterDocumentReplacementIsDiagnosed) {
+    EXPECT_DEATH(
+        {
+            ProjectSession session(emptyDocument());
+            static_cast<void>(session.replaceDocument(emptyDocument()));
+            std::thread offOwner([&session] { static_cast<void>(session.snapshot()); });
+            offOwner.join();
+        },
+        kOwnerThreadDiagnostic);
+}
+
+#endif
 
 TEST(CommandStackTest, GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt) {
     Document document = emptyDocument();

@@ -1,3 +1,5 @@
+#include "MediaLibraryModel.hpp"
+#include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
 #include "ProjectFileController.hpp"
@@ -6,6 +8,7 @@
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
+#include "nemo/media/MediaImportService.hpp"
 #include "nemo/media/ViewingTransform.hpp"
 
 #include <QCommandLineParser>
@@ -201,20 +204,38 @@ int main(int argc, char* argv[]) {
                                 QStringLiteral("TimelinePanel.qml"), QString());
     workspace.registerPanelType(QStringLiteral("parameters"), QStringLiteral("Parameters"),
                                 QStringLiteral("ParametersPanel.qml"), QString());
+    workspace.registerPanelType(QStringLiteral("media"), QStringLiteral("Media Bin"),
+                                QStringLiteral("MediaBinPanel.qml"), QString());
+    // The media library adapter owns the QML-facing catalog surface, the
+    // asynchronous import/probe service and the bounded thumbnail provider.
+    // Declared before the QML engine and after the workspace/router it reveals
+    // and routes through, so the engine and every panel body are destroyed
+    // while the model, its provider cache and the import worker are alive.
+    nemo::ui::NativeFileChooser nativeFileChooser;
+    nemo::media::MediaImportService mediaImportService;
+    nemo::ui::MediaLibraryModel mediaLibrary(projectSession, mediaImportService, &panelContextRouter, &workspace);
+    mediaLibrary.setNativeFileChooser(&nativeFileChooser);
     nemo::ui::ParameterEditorRegistry parameterEditors;
     // The project file adapter wraps the same ProjectSession and the existing
     // workspace/context presentation owners; it is declared before the QML
-    // engine so the context property outlives every binding.
-    nemo::ui::ProjectFileController projectFile(projectSession, workspace, panelContextRouter);
+    // engine so the context property outlives every binding. Both file-choosing
+    // workflows share the one native chooser, so the application can never have
+    // two platform dialogs outstanding.
+    nemo::ui::ProjectFileController projectFile(projectSession, workspace, panelContextRouter, nativeFileChooser);
     int result = 0;
     {
         QQmlApplicationEngine engine;
+        // The engine takes ownership of the provider. The provider shares the
+        // model's bounded thumbnail cache and is released with the engine,
+        // before the model and its import worker.
+        engine.addImageProvider(QStringLiteral("nemo-media"), mediaLibrary.createThumbnailProvider());
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &panelContextRouter);
         engine.rootContext()->setContextProperty(QStringLiteral("projectFile"), &projectFile);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerControllers"), &viewerControllers);
         engine.rootContext()->setContextProperty(QStringLiteral("parameterEditors"), &parameterEditors);
+        engine.rootContext()->setContextProperty(QStringLiteral("mediaLibrary"), &mediaLibrary);
         // Wayland Vulkan renders our QML chrome, not Qt's client decorations.
         // Set the window policy before creation so input and pixels share an origin.
         engine.setInitialProperties(

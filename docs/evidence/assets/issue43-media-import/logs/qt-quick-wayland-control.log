@@ -1,0 +1,148 @@
+wayland-control-ready
+
+=================================================================
+==1916905==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 256 byte(s) in 4 object(s) allocated from:
+    #0 0x7745886fd9c7 in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:69
+    #1 0x774577f1c4e1  (/lib/x86_64-linux-gnu/libEGL_nvidia.so.0+0xc94e1) (BuildId: 5fb827a064227ad6ef9ad1a5c91815f165455b43)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817bfbff in QtWayland::wl_compositor::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9ebff) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7745817966ec in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x756ec) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817b79bf in QtWayland::zwp_pointer_gestures_v1::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x969bf) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7745817a8830 in QtWaylandClient::QWaylandPointerGestures::QWaylandPointerGestures(QtWaylandClient::QWaylandDisplay*, unsigned int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x87830) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7745817971ad in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x761ad) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7745819497a7 in wl_proxy_marshal_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb7a7) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x77458178d06b in QtWaylandClient::QWaylandDisplay::QWaylandDisplay(QtWaylandClient::QWaylandIntegration*) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x6c06b) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7745817a96b8 in QtWaylandClient::QWaylandIntegration::QWaylandIntegration() (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x886b8) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x774581971531  (/usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-generic.so+0x2531) (BuildId: d0965df69ace3c852f1b649b4c38e7137a9d8050)
+    #7 0x774587793141 in QGuiApplicationPrivate::createPlatformIntegration() (/lib/x86_64-linux-gnu/libQt6Gui.so.6+0x193141) (BuildId: 500dda7095f45c8cd1ba0bf43fd4bb9448174ad5)
+    #8 0x77458779485f in QGuiApplicationPrivate::createEventDispatcher() (/lib/x86_64-linux-gnu/libQt6Gui.so.6+0x19485f) (BuildId: 500dda7095f45c8cd1ba0bf43fd4bb9448174ad5)
+    #9 0x77458693c8b5 in QCoreApplicationPrivate::init() (/lib/x86_64-linux-gnu/libQt6Core.so.6+0x13c8b5) (BuildId: 9b85b15d08445ceca32a75ffedf3453d8c6fab47)
+    #10 0x7745877948fe in QGuiApplicationPrivate::init() (/lib/x86_64-linux-gnu/libQt6Gui.so.6+0x1948fe) (BuildId: 500dda7095f45c8cd1ba0bf43fd4bb9448174ad5)
+    #11 0x77458778fd34 in QGuiApplication::QGuiApplication(int&, char**, int) (/lib/x86_64-linux-gnu/libQt6Gui.so.6+0x18fd34) (BuildId: 500dda7095f45c8cd1ba0bf43fd4bb9448174ad5)
+    #12 0x5d0c6e259a9d in main /tmp/nemo43-wayland-control.cpp:6
+    #13 0x77458582a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #14 0x77458582a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #15 0x5d0c6e259584 in _start (/tmp/nemo43-wayland-control+0x6584) (BuildId: 5e6695f41fe5d9b89737e5b6208faf14d6370d84)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817c278f in QtWayland::zwp_primary_selection_device_manager_v1::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa178f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x774581797242 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x76242) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817c002f in QtWayland::wl_shm::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9f02f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7745817ae6c6 in QtWaylandClient::QWaylandShm::QWaylandShm(QtWaylandClient::QWaylandDisplay*, int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x8d6c6) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x774581796bf6 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x75bf6) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817c2fbf in QtWayland::zxdg_output_manager_v1::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa1fbf) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7745817adba2 in QtWaylandClient::QWaylandXdgOutputManagerV1::QWaylandXdgOutputManagerV1(QtWaylandClient::QWaylandDisplay*, unsigned int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x8cba2) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x774581797610 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x76610) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817b7eaf in QtWayland::zwp_tablet_manager_v2::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x96eaf) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7745817c4af5 in QtWaylandClient::QWaylandTabletManagerV2::QWaylandTabletManagerV2(QtWaylandClient::QWaylandDisplay*, unsigned int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa3af5) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x774581795ded in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x74ded) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817c20bf in QtWayland::wl_output::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa10bf) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7745817ae05e in QtWaylandClient::QWaylandScreen::QWaylandScreen(QtWaylandClient::QWaylandDisplay*, int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x8d05e) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x774581795e7f in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x74e7f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817c1a1f in QtWayland::wl_seat::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa0a1f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7745817a0b50 in QtWaylandClient::QWaylandInputDevice::QWaylandInputDevice(QtWaylandClient::QWaylandDisplay*, int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x7fb50) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7745817a9c19 in QtWaylandClient::QWaylandIntegration::createInputDevice(QtWaylandClient::QWaylandDisplay*, int, unsigned int) const (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x88c19) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x774581796a76 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x75a76) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #9 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7745819497a7 in wl_proxy_marshal_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb7a7) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x77458179cd9f in QtWaylandClient::QWaylandInputDevice::seat_capabilities(unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x7bd9f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7745819497a7 in wl_proxy_marshal_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb7a7) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x77458179cd20 in QtWaylandClient::QWaylandInputDevice::seat_capabilities(unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x7bd20) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7745886fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7745819486ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7745819488a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x77458194968e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7745817c238f in QtWayland::wl_subcompositor::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa138f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x774581797094 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x76094) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7745817be154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x774584f6cb15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+      3       2369 libdbus-1.so.3
+-----------------------------------------------------
+
+SUMMARY: AddressSanitizer: 1408 byte(s) leaked in 16 allocation(s).
+[nemo43-wayland-quick-control: failed; cursor=19227]

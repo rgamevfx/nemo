@@ -24,6 +24,9 @@ struct ImageFrameInfo {
     std::string path;
     std::string formatName;
     std::string declaredColorSpace;
+    // Native storage precision of the source samples (e.g. "half", "uint8",
+    // "float"), reported so probe/import consumers do not re-derive it.
+    std::string nativePrecision;
     int width{0};
     int height{0};
     double pixelAspect{1.0};
@@ -36,7 +39,12 @@ struct ImageFrame {
     CpuImage image;  // scene-linear, straight alpha, float32 RGBA
 };
 [[nodiscard]] bool isImagePath(const std::string& path);
-[[nodiscard]] ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::string& context);
+// Header-only facts for the frame a source-local time maps to. `localTime`
+// is mapped through the reference's offset/step (frameAt) exactly once, so a
+// sequence reference with a non-identity mapping probes the frame it will
+// decode; the default 0 preserves the original head-frame probe.
+[[nodiscard]] ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::string& context,
+                                             std::int64_t localTime = 0);
 [[nodiscard]] ImageFrame readImageFrame(const SourceReference& reference, std::int64_t frame,
                                         const std::string& context);
 // Headless CPU-reference provider over the still/sequence path: resolves a

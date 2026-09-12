@@ -1,0 +1,3 @@
+nemo43-native-evidence: wrote /tmp/nemo43-smoke/final-dialog/evidence.json
+nemo43-native-evidence {"attached":true,"captures":["media-import-still","media-import-sequence","media-relink-sequence"],"elapsedMs":29945,"errors":[],"event":"stage_ready","evidence":"/tmp/nemo43-smoke/final-dialog/evidence.json","lingerMs":1200,"phase":"final-dialog","readyFile":"/tmp/nemo43-smoke/final-dialog/ready.json"}
+[nemo43-dialog-v1: exited; cursor=403]

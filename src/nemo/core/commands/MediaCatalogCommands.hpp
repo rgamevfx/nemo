@@ -27,6 +27,7 @@ namespace nemo {
 [[nodiscard]] Command moveMediaCommand(MediaSourceId entry, MediaBinId parent);
 [[nodiscard]] Command moveBinCommand(MediaBinId bin, MediaBinId parent);
 [[nodiscard]] Command setMediaMetadataCommand(MediaSourceId entry, MediaMetadata metadata);
+[[nodiscard]] Command setMediaBinMetadataCommand(MediaBinId bin, MediaBinMetadata metadata);
 [[nodiscard]] Command setMediaMarksCommand(MediaSourceId entry, std::vector<MediaMarkRange> marks);
 [[nodiscard]] Command removeMediaEntryCommand(MediaSourceId entry);
 [[nodiscard]] Command removeBinCommand(MediaBinId bin, bool keepContents = true);
@@ -34,6 +35,18 @@ namespace nemo {
                                                    std::shared_ptr<MediaSourceId> createdId = {});
 [[nodiscard]] Command duplicateCatalogEntryCommand(MediaSourceId entry, std::shared_ptr<MediaSourceId> createdId);
 [[nodiscard]] Command setMediaQueryCommand(MediaBinId bin, std::optional<MediaQueryDescriptor> query);
-[[nodiscard]] Command commitMediaProbeCommand(MediaSourceId entry, MediaProbeMetadata probe);
+// Publishes decoded probe metadata onto a catalog entry. `expectedSource` must
+// equal the entry's current Document::sources reference or the command rejects
+// with GraphError::StaleMediaSource, so a probe result cannot overwrite a
+// reference that was relinked or reinterpreted after the probe was requested.
+// Only the entry's committedProbe changes; user metadata is preserved.
+[[nodiscard]] Command commitMediaProbeCommand(MediaSourceId entry, SourceReference expectedSource,
+                                              MediaProbeMetadata probe);
+// Points the entry's existing source key at `path` while preserving the source
+// identity, frame offset/step mapping and interpretation. The source revision
+// advances by one, and the now-obsolete committed probe is cleared on every
+// catalog entry that shares the source key. `expectedSource` must still match
+// the current reference or the command rejects with GraphError::StaleMediaSource.
+[[nodiscard]] Command relinkMediaSourceCommand(MediaSourceId entry, SourceReference expectedSource, std::string path);
 
 }  // namespace nemo

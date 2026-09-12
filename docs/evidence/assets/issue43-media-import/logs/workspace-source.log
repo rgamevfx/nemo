@@ -1,0 +1,28 @@
+nemo43-step-start {"index":0,"kind":"attach","request":{"engineFound":true,"windowObjectName":"mainWindow"},"startedMs":133}
+nemo43-step-start {"index":1,"kind":"invoke","request":{"args":["A"],"kind":"invoke","method":"revealMediaPanel","target":"mediaLibrary"},"startedMs":133}
+nemo43-step-start {"index":2,"kind":"waitForPanel","request":{"group":"A","kind":"waitForPanel","panelType":"media","timeoutMs":500},"startedMs":137}
+nemo43-step-start {"index":3,"kind":"invoke","request":{"args":["panel-1"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":646}
+nemo43-step-start {"index":4,"kind":"invoke","request":{"args":["panel-3"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":680}
+nemo43-step-start {"index":5,"kind":"invoke","request":{"args":["panel-8"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":711}
+nemo43-step-start {"index":6,"kind":"invoke","request":{"args":["panel-6"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":736}
+nemo43-step-start {"index":7,"kind":"resizeWindow","request":{"height":640,"kind":"resizeWindow","width":1274},"startedMs":737}
+nemo43-step-start {"index":8,"kind":"setPanelState","request":{"group":"A","kind":"setPanelState","panelType":"media","state":{"projectScope":true,"viewMode":"list"}},"startedMs":737}
+nemo43-step-start {"index":9,"kind":"wait","request":{"kind":"wait","ms":400},"startedMs":738}
+nemo43-step-start {"index":10,"kind":"invoke","request":{"args":[["/tmp/nemo43-smoke/still.png","/tmp/nemo43-smoke/tagged.mkv"],"root",0],"kind":"invoke","method":"importPaths","target":"mediaLibrary"},"startedMs":1147}
+nemo43-step-start {"index":11,"kind":"invoke","request":{"args":[["/tmp/nemo43-smoke/shot.####.exr"],"root",1001],"kind":"invoke","method":"importPaths","target":"mediaLibrary"},"startedMs":1169}
+nemo43-step-start {"index":12,"kind":"probe","request":{"intervalMs":16,"kind":"probe","ticks":90},"startedMs":1193}
+nemo43-step-start {"index":13,"kind":"createPanel","request":{"group":"A","inLeafOf":"media","kind":"createPanel","placement":"bottom","ratio":0.58,"type":"timeline"},"startedMs":2709}
+nemo43-step-start {"index":14,"kind":"createViewer","request":{"group":"A","inLeafOf":"media","kind":"createViewer","placement":"right","ratio":0.36,"role":"media"},"startedMs":2747}
+nemo43-step-start {"index":15,"kind":"setPanelState","request":{"group":"A","kind":"setPanelState","panelType":"media","state":{"projectScope":false,"viewMode":"list"}},"startedMs":3070}
+nemo43-step-start {"index":16,"kind":"wait","request":{"kind":"wait","ms":600},"startedMs":3072}
+nemo43-step-start {"index":17,"kind":"read","request":{"kind":"read","name":"timeline-before-open","property":"routedClock","target":{"group":"A","panelType":"timeline"}},"startedMs":3675}
+nemo43-step-start {"index":18,"kind":"capture","request":{"kind":"capture","name":"media-workspace"},"startedMs":3677}
+nemo43-step-start {"index":19,"kind":"click","request":{"count":2,"kind":"click","target":{"objectName":"mediaInput_media-1"}},"startedMs":4344}
+nemo43-step-start {"index":20,"kind":"wait","request":{"kind":"wait","ms":1400},"startedMs":4349}
+nemo43-step-start {"index":21,"kind":"read","request":{"kind":"read","name":"still-render-state","property":"renderState","target":{"group":"A","panelType":"viewer","property":"controller"}},"startedMs":5758}
+nemo43-step-start {"index":22,"kind":"read","request":{"kind":"read","name":"still-error","property":"error","target":{"group":"A","panelType":"viewer","property":"controller"}},"startedMs":5761}
+nemo43-step-start {"index":23,"kind":"read","request":{"kind":"read","name":"timeline-after-open","property":"routedClock","target":{"group":"A","panelType":"timeline"}},"startedMs":5763}
+nemo43-step-start {"index":24,"kind":"capture","request":{"kind":"capture","name":"media-source-view"},"startedMs":5765}
+nemo43-native-evidence: wrote /tmp/nemo43-smoke/final-workspace-source/evidence.json
+nemo43-native-evidence {"attached":true,"captures":["media-workspace","media-source-view"],"elapsedMs":6425,"errors":[],"event":"stage_ready","evidence":"/tmp/nemo43-smoke/final-workspace-source/evidence.json","lingerMs":800,"phase":"final-workspace-source","readyFile":"/tmp/nemo43-smoke/final-workspace-source/ready.json"}
+[nemo43-workspace-source: ready; cursor=4305]

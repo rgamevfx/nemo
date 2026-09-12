@@ -1,0 +1,2340 @@
+{
+    "attachError": "",
+    "attached": true,
+    "captures": [
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-nested-collection",
+            "path": "/tmp/nemo43-smoke/final-organization/shots-media-nested-collection.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        },
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-bin-metadata",
+            "path": "/tmp/nemo43-smoke/final-organization/shots-media-bin-metadata.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        },
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-delete-keep-contents",
+            "path": "/tmp/nemo43-smoke/final-organization/shots-media-delete-keep-contents.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        },
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-smart-membership",
+            "path": "/tmp/nemo43-smoke/final-organization/shots-media-smart-membership.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        }
+    ],
+    "deadlineMs": 180000,
+    "elapsedMs": 35464,
+    "environment": {
+        "engine": {
+            "className": "QQmlApplicationEngine",
+            "contextProperties": {
+                "mediaLibrary": true,
+                "panelContextRouter": true,
+                "parameterEditors": true,
+                "projectFile": true,
+                "viewerController": true,
+                "viewerControllers": true,
+                "workspace": true
+            },
+            "found": true
+        },
+        "mediaLibrary": {
+            "className": "nemo::ui::MediaLibraryModel",
+            "found": true,
+            "revision": 15
+        },
+        "process": {
+            "applicationName": "nemo-ui",
+            "arguments": [
+                "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+            ],
+            "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+            "pid": 1903732,
+            "platform": "wayland",
+            "qtVersion": "6.4.2"
+        },
+        "workspace": {
+            "found": true,
+            "panelTypes": [
+                {
+                    "headerSource": "",
+                    "source": "ViewerPanel.qml",
+                    "title": "Viewer",
+                    "typeId": "viewer"
+                },
+                {
+                    "headerSource": "",
+                    "source": "GraphPanel.qml",
+                    "title": "Node graph",
+                    "typeId": "nodegraph"
+                },
+                {
+                    "headerSource": "",
+                    "source": "TimelinePanel.qml",
+                    "title": "Timeline",
+                    "typeId": "timeline"
+                },
+                {
+                    "headerSource": "",
+                    "source": "ParametersPanel.qml",
+                    "title": "Parameters",
+                    "typeId": "parameters"
+                },
+                {
+                    "headerSource": "",
+                    "source": "MediaBinPanel.qml",
+                    "title": "Media Bin",
+                    "typeId": "media"
+                }
+            ],
+            "panels": [
+                {
+                    "group": "A",
+                    "id": "panel-12",
+                    "state": {
+                        "anchorId": "",
+                        "currentParentId": "project",
+                        "currentSmartBinId": "bin-4",
+                        "expandedBins": {
+                            "bin-1": true,
+                            "root": true
+                        },
+                        "kindFilter": "all",
+                        "offlineOnly": false,
+                        "projectScope": true,
+                        "searchText": "hero",
+                        "selectedIds": [
+                        ],
+                        "sortDescending": false,
+                        "sortField": "name",
+                        "treeCollapsed": false,
+                        "treeWidth": 184,
+                        "unusedOnly": false,
+                        "viewMode": "list"
+                    },
+                    "title": "",
+                    "type": "media"
+                }
+            ]
+        }
+    },
+    "errors": [
+    ],
+    "geometry": [
+        {
+            "className": "MediaBinPanel_QMLTYPE_93",
+            "devicePixelRatio": 1,
+            "deviceRect": {
+                "height": 550,
+                "width": 1256,
+                "x": 9,
+                "y": 81
+            },
+            "effectiveVisible": true,
+            "found": true,
+            "globalCaveat": "mapToGlobal is window-relative under Wayland; the compositor owns absolute placement",
+            "globalRect": {
+                "height": 550,
+                "width": 1256,
+                "x": 9,
+                "y": 81
+            },
+            "height": 550,
+            "objectName": "mediaBinPanel",
+            "opacity": 1,
+            "panelId": "panel-12",
+            "role": "panel-body",
+            "sceneRect": {
+                "height": 550,
+                "width": 1256,
+                "x": 9,
+                "y": 81
+            },
+            "visible": true,
+            "width": 1256,
+            "windowRect": {
+                "height": 550,
+                "width": 1256,
+                "x": 9,
+                "y": 81
+            }
+        }
+    ],
+    "grabWindowEnabled": true,
+    "helper": "nemo43-native-evidence/1",
+    "lingerMs": 1200,
+    "observations": [
+    ],
+    "phase": "final-organization",
+    "readyFile": "/tmp/nemo43-smoke/final-organization/ready.json",
+    "responsiveness": {
+        "baseTickMs": 16,
+        "frameSwapped": 299,
+        "maxBaseTickGapMs": 232
+    },
+    "scenarioLoaded": true,
+    "scenarioPath": "/tmp/nemo43-smoke/scenario-final-organization.json",
+    "steps": [
+        {
+            "index": 0,
+            "kind": "attach",
+            "request": {
+                "engineFound": true,
+                "windowObjectName": "mainWindow"
+            }
+        },
+        {
+            "index": 1,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "A"
+                ],
+                "kind": "invoke",
+                "method": "revealMediaPanel",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "revealMediaPanel",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            }
+        },
+        {
+            "index": 2,
+            "kind": "waitForPanel",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "kind": "waitForPanel",
+                "panelType": "media",
+                "timeoutMs": 20000
+            },
+            "result": {
+                "bodyClassName": "MediaBinPanel_QMLTYPE_93",
+                "bodyFound": true,
+                "bodyHeight": 121,
+                "bodyObjectName": "mediaBinPanel",
+                "bodyWidth": 626,
+                "panelId": "panel-12"
+            }
+        },
+        {
+            "index": 3,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-1"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 4,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-3"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 5,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-8"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 6,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-6"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 7,
+            "kind": "resizeWindow",
+            "ok": true,
+            "request": {
+                "height": 640,
+                "kind": "resizeWindow",
+                "width": 1274
+            },
+            "result": {
+                "height": 640,
+                "width": 1274
+            }
+        },
+        {
+            "index": 8,
+            "kind": "setPanelState",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "kind": "setPanelState",
+                "panelType": "media",
+                "state": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                }
+            },
+            "result": {
+                "panelId": "panel-12",
+                "readBackState": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                },
+                "requestedState": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                }
+            }
+        },
+        {
+            "index": 9,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 10,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    [
+                        "/tmp/nemo43-smoke/still.png",
+                        "/tmp/nemo43-smoke/tagged.mkv"
+                    ],
+                    "root",
+                    0
+                ],
+                "kind": "invoke",
+                "method": "importPaths",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "importPaths",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            }
+        },
+        {
+            "index": 11,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    [
+                        "/tmp/nemo43-smoke/shot.####.exr"
+                    ],
+                    "root",
+                    1001
+                ],
+                "kind": "invoke",
+                "method": "importPaths",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "importPaths",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            }
+        },
+        {
+            "index": 12,
+            "kind": "probe",
+            "ok": true,
+            "request": {
+                "intervalMs": 16,
+                "kind": "probe",
+                "ticks": 90
+            },
+            "result": {
+                "intervalMs": 16,
+                "maxGapMs": 108,
+                "meanGapMs": 17.044444444444444,
+                "minGapMs": 15,
+                "note": "GUI-thread QTimer cadence; jitter/ordering only, not render or scanout timing",
+                "p95GapMs": 17,
+                "samples": [
+                    17,
+                    16,
+                    16,
+                    108,
+                    17,
+                    16,
+                    15,
+                    16,
+                    17,
+                    15,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16
+                ],
+                "ticks": 90
+            }
+        },
+        {
+            "index": 13,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 14,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "root",
+                    false
+                ],
+                "kind": "invoke",
+                "method": "beginCreate",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "beginCreate",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 15,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 16,
+            "kind": "setProperty",
+            "ok": true,
+            "request": {
+                "kind": "setProperty",
+                "property": "text",
+                "target": {
+                    "objectName": "mediaCreateBinDialog",
+                    "property": "contentItem"
+                },
+                "value": "Footage"
+            },
+            "result": {
+                "after": "Footage",
+                "before": "New bin",
+                "property": "text",
+                "requested": "Footage",
+                "resolvedVia": "objectName:mediaCreateBinDialog.property:contentItem"
+            }
+        },
+        {
+            "index": 17,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "Return",
+                "kind": "key"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "Return"
+            }
+        },
+        {
+            "index": 18,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 19,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-1",
+                    false
+                ],
+                "kind": "invoke",
+                "method": "beginCreate",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "beginCreate",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 20,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 21,
+            "kind": "setProperty",
+            "ok": true,
+            "request": {
+                "kind": "setProperty",
+                "property": "text",
+                "target": {
+                    "objectName": "mediaCreateBinDialog",
+                    "property": "contentItem"
+                },
+                "value": "Video"
+            },
+            "result": {
+                "after": "Video",
+                "before": "New bin",
+                "property": "text",
+                "requested": "Video",
+                "resolvedVia": "objectName:mediaCreateBinDialog.property:contentItem"
+            }
+        },
+        {
+            "index": 22,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "Return",
+                "kind": "key"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "Return"
+            }
+        },
+        {
+            "index": 23,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 24,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "root"
+                ],
+                "kind": "invoke",
+                "method": "openBin",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openBin",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 25,
+            "kind": "selectEntries",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "ids": [
+                    "media-2",
+                    "media-1"
+                ],
+                "kind": "selectEntries",
+                "panelType": "media"
+            },
+            "result": {
+                "names": [
+                    "tagged",
+                    "still"
+                ],
+                "panelId": "panel-12",
+                "selectedIds": [
+                    "media-2",
+                    "media-1"
+                ]
+            }
+        },
+        {
+            "index": 26,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "root",
+                    true
+                ],
+                "kind": "invoke",
+                "method": "beginCreate",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "beginCreate",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 27,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 28,
+            "kind": "setProperty",
+            "ok": true,
+            "request": {
+                "kind": "setProperty",
+                "property": "text",
+                "target": {
+                    "objectName": "mediaCreateBinDialog",
+                    "property": "contentItem"
+                },
+                "value": "Collected"
+            },
+            "result": {
+                "after": "Collected",
+                "before": "New bin",
+                "property": "text",
+                "requested": "Collected",
+                "resolvedVia": "objectName:mediaCreateBinDialog.property:contentItem"
+            }
+        },
+        {
+            "index": 29,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "Return",
+                "kind": "key"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "Return"
+            }
+        },
+        {
+            "index": 30,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 31,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-3"
+                ],
+                "kind": "invoke",
+                "method": "children",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "children",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": [
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 1,
+                        "frameOffset": 0,
+                        "id": "media-1",
+                        "kind": "still",
+                        "marks": [
+                        ],
+                        "mediaKind": "image",
+                        "name": "still",
+                        "offline": false,
+                        "parentId": "bin-3",
+                        "probe": {
+                            "codec": "png",
+                            "colorMatrix": "",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "srgb",
+                            "duration": 1,
+                            "height": 180,
+                            "provenance": "oiio",
+                            "status": "ready",
+                            "width": 320
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 8,
+                            "chromaLocation": "",
+                            "colorRange": "",
+                            "fallbackReason": "software: still/sequence read on the CPU reference path (OpenImageIO)",
+                            "frameRate": 0,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "uint8",
+                            "planeCount": 1,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "still",
+                        "tags": [
+                        ],
+                        "thumbnailUrl": "image://nemo-media/3"
+                    },
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 0,
+                        "frameOffset": 0,
+                        "id": "media-2",
+                        "kind": "video",
+                        "marks": [
+                        ],
+                        "mediaKind": "video",
+                        "name": "tagged",
+                        "offline": false,
+                        "parentId": "bin-3",
+                        "probe": {
+                            "codec": "ffv1",
+                            "colorMatrix": "bt709",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "bt709",
+                            "duration": 0,
+                            "height": 180,
+                            "provenance": "ffmpeg-software",
+                            "status": "ready",
+                            "width": 320
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 8,
+                            "chromaLocation": "left",
+                            "colorRange": "limited",
+                            "fallbackReason": "software: import/probe decodes on the CPU reference path (no GPU device owned by the import worker)",
+                            "frameRate": 24,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "yuv420p",
+                            "planeCount": 3,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "tagged",
+                        "tags": [
+                        ],
+                        "thumbnailUrl": "image://nemo-media/4"
+                    }
+                ],
+                "resultSummary": "QVariantList"
+            }
+        },
+        {
+            "index": 32,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-1"
+                ],
+                "kind": "invoke",
+                "method": "openBin",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openBin",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 33,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "root"
+                ],
+                "kind": "invoke",
+                "method": "openBin",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openBin",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 34,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 35,
+            "kind": "selectEntries",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "ids": [
+                    "bin-3"
+                ],
+                "kind": "selectEntries",
+                "panelType": "media"
+            },
+            "result": {
+                "names": [
+                    "Collected"
+                ],
+                "panelId": "panel-12",
+                "selectedIds": [
+                    "bin-3"
+                ]
+            }
+        },
+        {
+            "index": 36,
+            "kind": "drag",
+            "ok": true,
+            "request": {
+                "from": {
+                    "objectName": "mediaInput_bin-3"
+                },
+                "kind": "drag",
+                "settleMs": 700,
+                "spacingMs": 70,
+                "steps": 8,
+                "to": {
+                    "objectName": "mediaTreeDrop_bin-2"
+                }
+            },
+            "result": {
+                "cancel": false,
+                "dropAreasAtRelease": [
+                ],
+                "eventSource": "QTest synthesized Qt events across separate GUI ticks; not OS-pointer parity",
+                "from": {
+                    "x": 736,
+                    "y": 186
+                },
+                "holdMs": 0,
+                "moveTarget": {
+                    "x": 107,
+                    "y": 217
+                },
+                "moveVia": "objectName:mediaTreeDrop_bin-2",
+                "release": {
+                    "x": 107,
+                    "y": 217
+                },
+                "releaseEvent": true,
+                "steps": 8
+            }
+        },
+        {
+            "index": 37,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-3"
+                ],
+                "kind": "invoke",
+                "method": "item",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "item",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": {
+                    "color": "",
+                    "description": "",
+                    "duration": 0,
+                    "id": "bin-3",
+                    "kind": "bin",
+                    "name": "Collected",
+                    "offline": false,
+                    "parentId": "bin-2",
+                    "smart": false,
+                    "sourceId": "",
+                    "tags": [
+                    ]
+                },
+                "resultSummary": "QVariantMap"
+            }
+        },
+        {
+            "index": 38,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-nested-collection"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-nested-collection",
+                "path": "/tmp/nemo43-smoke/final-organization/shots-media-nested-collection.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            }
+        },
+        {
+            "index": 39,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-1"
+                ],
+                "kind": "invoke",
+                "method": "openMetadata",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openMetadata",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 40,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 41,
+            "kind": "setProperty",
+            "ok": true,
+            "request": {
+                "kind": "setProperty",
+                "property": "text",
+                "target": "mediaTagsField",
+                "value": "plates, approved"
+            },
+            "result": {
+                "after": "plates, approved",
+                "before": "",
+                "property": "text",
+                "requested": "plates, approved",
+                "resolvedVia": "objectName:mediaTagsField"
+            }
+        },
+        {
+            "index": 42,
+            "kind": "setProperty",
+            "ok": true,
+            "request": {
+                "kind": "setProperty",
+                "property": "text",
+                "target": "mediaDescriptionField",
+                "value": "Nested catalog organization"
+            },
+            "result": {
+                "after": "Nested catalog organization",
+                "before": "",
+                "property": "text",
+                "requested": "Nested catalog organization",
+                "resolvedVia": "objectName:mediaDescriptionField"
+            }
+        },
+        {
+            "index": 43,
+            "kind": "setProperty",
+            "ok": true,
+            "request": {
+                "kind": "setProperty",
+                "property": "currentIndex",
+                "target": "mediaLabelCombo",
+                "value": 2
+            },
+            "result": {
+                "after": 2,
+                "before": 0,
+                "property": "currentIndex",
+                "requested": 2,
+                "resolvedVia": "objectName:mediaLabelCombo"
+            }
+        },
+        {
+            "index": 44,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-bin-metadata"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-bin-metadata",
+                "path": "/tmp/nemo43-smoke/final-organization/shots-media-bin-metadata.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            }
+        },
+        {
+            "index": 45,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                ],
+                "kind": "invoke",
+                "method": "accept",
+                "target": "mediaMetadataDialog"
+            },
+            "result": {
+                "className": "Dialog_QMLTYPE_35_QML_106",
+                "method": "accept",
+                "resolvedVia": "objectName:mediaMetadataDialog",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 46,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 47,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-1"
+                ],
+                "kind": "invoke",
+                "method": "item",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "item",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": {
+                    "color": "#d6b65d",
+                    "description": "Nested catalog organization",
+                    "duration": 0,
+                    "id": "bin-1",
+                    "kind": "bin",
+                    "name": "Footage",
+                    "offline": false,
+                    "parentId": "root",
+                    "smart": false,
+                    "sourceId": "",
+                    "tags": [
+                        "approved",
+                        "plates"
+                    ]
+                },
+                "resultSummary": "QVariantMap"
+            }
+        },
+        {
+            "index": 48,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    [
+                        "bin-1"
+                    ]
+                ],
+                "kind": "invoke",
+                "method": "requestDelete",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "requestDelete",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 49,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 50,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-delete-keep-contents"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-delete-keep-contents",
+                "path": "/tmp/nemo43-smoke/final-organization/shots-media-delete-keep-contents.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            }
+        },
+        {
+            "index": 51,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaDeleteKeepContents"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaDeleteKeepContents",
+                "x": 95,
+                "y": 200
+            }
+        },
+        {
+            "index": 52,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 53,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "project",
+                    "",
+                    true,
+                    {
+                    }
+                ],
+                "kind": "invoke",
+                "method": "query",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "query",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": [
+                    {
+                        "color": "",
+                        "description": "",
+                        "duration": 0,
+                        "id": "bin-3",
+                        "kind": "bin",
+                        "name": "Collected",
+                        "offline": false,
+                        "parentId": "root",
+                        "smart": false,
+                        "sourceId": "",
+                        "tags": [
+                        ]
+                    },
+                    {
+                        "color": "",
+                        "description": "",
+                        "duration": 0,
+                        "id": "bin-2",
+                        "kind": "bin",
+                        "name": "Video",
+                        "offline": false,
+                        "parentId": "root",
+                        "smart": false,
+                        "sourceId": "",
+                        "tags": [
+                        ]
+                    },
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 0,
+                        "frameOffset": 1001,
+                        "id": "media-3",
+                        "kind": "still",
+                        "marks": [
+                        ],
+                        "mediaKind": "sequence",
+                        "name": "shot.####",
+                        "offline": false,
+                        "parentId": "root",
+                        "probe": {
+                            "codec": "openexr",
+                            "colorMatrix": "",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "linear",
+                            "duration": 0,
+                            "height": 48,
+                            "provenance": "oiio",
+                            "status": "ready",
+                            "width": 64
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 32,
+                            "chromaLocation": "",
+                            "colorRange": "",
+                            "fallbackReason": "software: still/sequence read on the CPU reference path (OpenImageIO)",
+                            "frameRate": 0,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "float",
+                            "planeCount": 1,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "shot.____",
+                        "tags": [
+                        ],
+                        "thumbnailUrl": "image://nemo-media/6"
+                    },
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 1,
+                        "frameOffset": 0,
+                        "id": "media-1",
+                        "kind": "still",
+                        "marks": [
+                        ],
+                        "mediaKind": "image",
+                        "name": "still",
+                        "offline": false,
+                        "parentId": "root",
+                        "probe": {
+                            "codec": "png",
+                            "colorMatrix": "",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "srgb",
+                            "duration": 1,
+                            "height": 180,
+                            "provenance": "oiio",
+                            "status": "ready",
+                            "width": 320
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 8,
+                            "chromaLocation": "",
+                            "colorRange": "",
+                            "fallbackReason": "software: still/sequence read on the CPU reference path (OpenImageIO)",
+                            "frameRate": 0,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "uint8",
+                            "planeCount": 1,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "still",
+                        "tags": [
+                        ],
+                        "thumbnailUrl": "image://nemo-media/3"
+                    },
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 0,
+                        "frameOffset": 0,
+                        "id": "media-2",
+                        "kind": "video",
+                        "marks": [
+                        ],
+                        "mediaKind": "video",
+                        "name": "tagged",
+                        "offline": false,
+                        "parentId": "root",
+                        "probe": {
+                            "codec": "ffv1",
+                            "colorMatrix": "bt709",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "bt709",
+                            "duration": 0,
+                            "height": 180,
+                            "provenance": "ffmpeg-software",
+                            "status": "ready",
+                            "width": 320
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 8,
+                            "chromaLocation": "left",
+                            "colorRange": "limited",
+                            "fallbackReason": "software: import/probe decodes on the CPU reference path (no GPU device owned by the import worker)",
+                            "frameRate": 24,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "yuv420p",
+                            "planeCount": 3,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "tagged",
+                        "tags": [
+                        ],
+                        "thumbnailUrl": "image://nemo-media/4"
+                    }
+                ],
+                "resultSummary": "QVariantList"
+            }
+        },
+        {
+            "index": 54,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "root"
+                ],
+                "kind": "invoke",
+                "method": "openBin",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openBin",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 55,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "Z",
+                "kind": "key",
+                "modifiers": "Ctrl"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "Z"
+            }
+        },
+        {
+            "index": 56,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 57,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "project",
+                    "",
+                    true,
+                    {
+                    }
+                ],
+                "kind": "invoke",
+                "method": "query",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "query",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": [
+                    {
+                        "color": "#d6b65d",
+                        "description": "Nested catalog organization",
+                        "duration": 0,
+                        "id": "bin-1",
+                        "kind": "bin",
+                        "name": "Footage",
+                        "offline": false,
+                        "parentId": "root",
+                        "smart": false,
+                        "sourceId": "",
+                        "tags": [
+                            "approved",
+                            "plates"
+                        ]
+                    },
+                    {
+                        "color": "",
+                        "description": "",
+                        "duration": 0,
+                        "id": "bin-2",
+                        "kind": "bin",
+                        "name": "Video",
+                        "offline": false,
+                        "parentId": "bin-1",
+                        "smart": false,
+                        "sourceId": "",
+                        "tags": [
+                        ]
+                    },
+                    {
+                        "color": "",
+                        "description": "",
+                        "duration": 0,
+                        "id": "bin-3",
+                        "kind": "bin",
+                        "name": "Collected",
+                        "offline": false,
+                        "parentId": "bin-2",
+                        "smart": false,
+                        "sourceId": "",
+                        "tags": [
+                        ]
+                    },
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 0,
+                        "frameOffset": 1001,
+                        "id": "media-3",
+                        "kind": "still",
+                        "marks": [
+                        ],
+                        "mediaKind": "sequence",
+                        "name": "shot.####",
+                        "offline": false,
+                        "parentId": "root",
+                        "probe": {
+                            "codec": "openexr",
+                            "colorMatrix": "",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "linear",
+                            "duration": 0,
+                            "height": 48,
+                            "provenance": "oiio",
+                            "status": "ready",
+                            "width": 64
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 32,
+                            "chromaLocation": "",
+                            "colorRange": "",
+                            "fallbackReason": "software: still/sequence read on the CPU reference path (OpenImageIO)",
+                            "frameRate": 0,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "float",
+                            "planeCount": 1,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "shot.____",
+                        "tags": [
+                        ],
+                        "thumbnailUrl": "image://nemo-media/6"
+                    },
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 1,
+                        "frameOffset": 0,
+                        "id": "media-1",
+                        "kind": "still",
+                        "marks": [
+                        ],
+                        "mediaKind": "image",
+                        "name": "still",
+                        "offline": false,
+                        "parentId": "bin-3",
+                        "probe": {
+                            "codec": "png",
+                            "colorMatrix": "",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "srgb",
+                            "duration": 1,
+                            "height": 180,
+                            "provenance": "oiio",
+                            "status": "ready",
+                            "width": 320
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 8,
+                            "chromaLocation": "",
+                            "colorRange": "",
+                            "fallbackReason": "software: still/sequence read on the CPU reference path (OpenImageIO)",
+                            "frameRate": 0,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "uint8",
+                            "planeCount": 1,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "still",
+                        "tags": [
+                        ],
+                        "thumbnailUrl": "image://nemo-media/3"
+                    },
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 0,
+                        "frameOffset": 0,
+                        "id": "media-2",
+                        "kind": "video",
+                        "marks": [
+                        ],
+                        "mediaKind": "video",
+                        "name": "tagged",
+                        "offline": false,
+                        "parentId": "bin-3",
+                        "probe": {
+                            "codec": "ffv1",
+                            "colorMatrix": "bt709",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "bt709",
+                            "duration": 0,
+                            "height": 180,
+                            "provenance": "ffmpeg-software",
+                            "status": "ready",
+                            "width": 320
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 8,
+                            "chromaLocation": "left",
+                            "colorRange": "limited",
+                            "fallbackReason": "software: import/probe decodes on the CPU reference path (no GPU device owned by the import worker)",
+                            "frameRate": 24,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "yuv420p",
+                            "planeCount": 3,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "tagged",
+                        "tags": [
+                        ],
+                        "thumbnailUrl": "image://nemo-media/4"
+                    }
+                ],
+                "resultSummary": "QVariantList"
+            }
+        },
+        {
+            "index": 58,
+            "kind": "setPanelState",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "kind": "setPanelState",
+                "panelType": "media",
+                "state": {
+                    "currentParentId": "project",
+                    "projectScope": true,
+                    "searchText": "hero"
+                }
+            },
+            "result": {
+                "panelId": "panel-12",
+                "readBackState": {
+                    "currentParentId": "project",
+                    "projectScope": true,
+                    "searchText": "hero"
+                },
+                "requestedState": {
+                    "currentParentId": "project",
+                    "projectScope": true,
+                    "searchText": "hero"
+                }
+            }
+        },
+        {
+            "index": 59,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 60,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                ],
+                "kind": "invoke",
+                "method": "beginSaveSmartBin",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "beginSaveSmartBin",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 61,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 62,
+            "kind": "setProperty",
+            "ok": true,
+            "request": {
+                "kind": "setProperty",
+                "property": "text",
+                "target": "mediaSmartBinNameField",
+                "value": "Hero"
+            },
+            "result": {
+                "after": "Hero",
+                "before": "Saved search",
+                "property": "text",
+                "requested": "Hero",
+                "resolvedVia": "objectName:mediaSmartBinNameField"
+            }
+        },
+        {
+            "index": 63,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                ],
+                "kind": "invoke",
+                "method": "accept",
+                "target": "mediaSmartBinDialog"
+            },
+            "result": {
+                "className": "Dialog_QMLTYPE_35_QML_107",
+                "method": "accept",
+                "resolvedVia": "objectName:mediaSmartBinDialog",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 64,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 65,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-4"
+                ],
+                "kind": "invoke",
+                "method": "openSmartBin",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openSmartBin",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 66,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                ],
+                "kind": "invoke",
+                "method": "visibleItems",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "visibleItems",
+                "resolvedVia": "panelType:media/A",
+                "resultJson": [
+                ],
+                "resultSummary": "QJSValue"
+            }
+        },
+        {
+            "index": 67,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaSearchField"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaSearchField",
+                "x": 580,
+                "y": 100
+            }
+        },
+        {
+            "index": 68,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "A",
+                "kind": "key",
+                "modifiers": "Ctrl"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "A"
+            }
+        },
+        {
+            "index": 69,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "Backspace",
+                "kind": "key"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "Backspace"
+            }
+        },
+        {
+            "index": 70,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 71,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "media-1"
+                ],
+                "kind": "invoke",
+                "method": "openMetadata",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openMetadata",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 72,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 73,
+            "kind": "setProperty",
+            "ok": true,
+            "request": {
+                "kind": "setProperty",
+                "property": "text",
+                "target": "mediaTagsField",
+                "value": "hero"
+            },
+            "result": {
+                "after": "hero",
+                "before": "",
+                "property": "text",
+                "requested": "hero",
+                "resolvedVia": "objectName:mediaTagsField"
+            }
+        },
+        {
+            "index": 74,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                ],
+                "kind": "invoke",
+                "method": "accept",
+                "target": "mediaMetadataDialog"
+            },
+            "result": {
+                "className": "Dialog_QMLTYPE_35_QML_106",
+                "method": "accept",
+                "resolvedVia": "objectName:mediaMetadataDialog",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 75,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 76,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-4"
+                ],
+                "kind": "invoke",
+                "method": "openSmartBin",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openSmartBin",
+                "resolvedVia": "panelType:media/A",
+                "resultSummary": "void"
+            }
+        },
+        {
+            "index": 77,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                ],
+                "kind": "invoke",
+                "method": "visibleItems",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "visibleItems",
+                "resolvedVia": "panelType:media/A",
+                "resultJson": [
+                    {
+                        "authoredKind": "unknown",
+                        "authoredOffline": false,
+                        "color": "",
+                        "committedProbe": null,
+                        "description": "",
+                        "duration": 1,
+                        "frameOffset": 0,
+                        "id": "media-1",
+                        "kind": "still",
+                        "marks": [
+                        ],
+                        "mediaKind": "image",
+                        "name": "still",
+                        "offline": false,
+                        "parentId": "bin-3",
+                        "probe": {
+                            "codec": "png",
+                            "colorMatrix": "",
+                            "colorPrimaries": "bt709",
+                            "colorTransfer": "srgb",
+                            "duration": 1,
+                            "height": 180,
+                            "provenance": "oiio",
+                            "status": "ready",
+                            "width": 320
+                        },
+                        "probeStatus": "ready",
+                        "runtime": {
+                            "bitDepth": 8,
+                            "chromaLocation": "",
+                            "colorRange": "",
+                            "fallbackReason": "software: still/sequence read on the CPU reference path (OpenImageIO)",
+                            "frameRate": 0,
+                            "hardware": false,
+                            "pixelAspect": 1,
+                            "pixelFormat": "uint8",
+                            "planeCount": 1,
+                            "profile": "",
+                            "streamIndex": 0
+                        },
+                        "sourceId": "still",
+                        "tags": [
+                            "hero"
+                        ],
+                        "thumbnailUrl": "image://nemo-media/3"
+                    }
+                ],
+                "resultSummary": "QJSValue"
+            }
+        },
+        {
+            "index": 78,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-smart-membership"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-smart-membership",
+                "path": "/tmp/nemo43-smoke/final-organization/shots-media-smart-membership.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            }
+        },
+        {
+            "index": 79,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "Z",
+                "kind": "key",
+                "modifiers": "Ctrl"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "Z"
+            }
+        },
+        {
+            "index": 80,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            }
+        },
+        {
+            "index": 81,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                ],
+                "kind": "invoke",
+                "method": "visibleItems",
+                "target": {
+                    "group": "A",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "visibleItems",
+                "resolvedVia": "panelType:media/A",
+                "resultJson": [
+                ],
+                "resultSummary": "QJSValue"
+            }
+        },
+        {
+            "index": 82,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "file:///tmp/nemo43-smoke/final-organization-saved.nemo"
+                ],
+                "kind": "invoke",
+                "method": "saveAs",
+                "target": "projectFile"
+            },
+            "result": {
+                "className": "nemo::ui::ProjectFileController",
+                "method": "saveAs",
+                "resolvedVia": "contextProperty:projectFile",
+                "resultSummary": "void"
+            }
+        }
+    ],
+    "timeUtc": "2026-09-12T16:26:46.948Z",
+    "window": {
+        "active": true,
+        "className": "Main_QMLTYPE_37",
+        "contentItem": {
+            "height": 640,
+            "width": 1274
+        },
+        "devicePixelRatio": 1,
+        "exposed": true,
+        "found": true,
+        "frameSwapped": 299,
+        "objectName": "mainWindow",
+        "position": {
+            "x": 0,
+            "y": 0
+        },
+        "positionCaveat": "Wayland does not expose an absolute window position; x/y is the compositor value (usually 0,0)",
+        "screen": {
+            "availableGeometry": {
+                "height": 1080,
+                "width": 1920,
+                "x": 0,
+                "y": 0
+            },
+            "devicePixelRatio": 1,
+            "geometry": {
+                "height": 1080,
+                "width": 1920,
+                "x": 0,
+                "y": 0
+            },
+            "name": "eDP-1"
+        },
+        "size": {
+            "height": 640,
+            "width": 1274
+        },
+        "title": "Untitled* — Nemo",
+        "visible": true
+    }
+}

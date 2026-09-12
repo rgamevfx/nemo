@@ -90,7 +90,11 @@ enum class GraphError {
     MediaSourceInUse,
     InvalidMediaMark,
     InvalidMediaQuery,
-    MissingMediaSource
+    MissingMediaSource,
+    // A command carried an expected SourceReference that no longer matches the
+    // document's current reference (path, revision, interpretation, or frame
+    // mapping changed underneath it), so the edit would publish stale data.
+    StaleMediaSource
 };
 
 struct GraphErrorDetails {

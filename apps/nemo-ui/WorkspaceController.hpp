@@ -103,6 +103,15 @@ private:
     };
 
     void change(const std::function<void()>& operation, bool notify = true);
+    // Sole owner helper for rootChanged. WorkspaceController owns the root
+    // snapshot and its notification; QML handlers reached by an in-flight
+    // delivery (panels persist synchronously on identity change/teardown) can
+    // request another root change while that delivery is still running.
+    // Emitting nested would re-notify a QML binding that is mid-update (Qt
+    // reports that as a binding loop), so nested requests are coalesced and the
+    // latest snapshot is delivered synchronously once the outer delivery
+    // returns. Requests made while no delivery is active emit immediately.
+    void notifyRootChanged();
     void setError(QString message);
     void snapshotActiveWorkspace();
     [[nodiscard]] int workspaceIndex(const QString& id) const;
@@ -117,6 +126,10 @@ private:
     QString path_;
     QString error_;
     bool preserveUnreadableFile_ = false;
+    // True while notifyRootChanged() is executing its signal emission; a
+    // nested request sets rootChangePending_ instead of re-entering.
+    bool deliveringRootChanged_ = false;
+    bool rootChangePending_ = false;
     std::vector<PanelDescriptor> panelDescriptors_;
     std::vector<Preset> presets_;
     QString activeWorkspaceId_;

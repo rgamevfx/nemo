@@ -1,0 +1,270 @@
+{
+  "phase": "final-dialog",
+  "steps": [
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "revealMediaPanel",
+      "args": [
+        "A"
+      ]
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "A",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-8"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-6"
+      ]
+    },
+    {
+      "kind": "resizeWindow",
+      "width": 1274,
+      "height": 640
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "viewMode": "list",
+        "projectScope": true
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginImport",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaImportPathField",
+      "property": "text",
+      "value": "/tmp/nemo43-smoke/still.png"
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaImportStartFrameField",
+      "property": "text",
+      "value": "0"
+    },
+    {
+      "kind": "capture",
+      "name": "media-import-still"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaImportConfirmButton"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginImport",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaImportPathField",
+      "property": "text",
+      "value": "/tmp/nemo43-smoke/shot.####.exr"
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaImportStartFrameField",
+      "property": "text",
+      "value": "1001"
+    },
+    {
+      "kind": "capture",
+      "name": "media-import-sequence"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaImportConfirmButton"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginImport",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaImportPathField",
+      "property": "text",
+      "value": "/tmp/nemo43-smoke/missing.####.exr"
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaImportStartFrameField",
+      "property": "text",
+      "value": "1001"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaImportConfirmButton"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "probe",
+      "ticks": 90,
+      "intervalMs": 16
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "media-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginRelink",
+      "args": [
+        "media-3"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaRelinkPathField",
+      "property": "text",
+      "value": "/tmp/nemo43-smoke/shot.####.exr"
+    },
+    {
+      "kind": "capture",
+      "name": "media-relink-sequence"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaRelinkConfirmButton"
+      }
+    },
+    {
+      "kind": "probe",
+      "ticks": 90,
+      "intervalMs": 16
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "media-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "query",
+      "args": [
+        "project",
+        "",
+        true,
+        {}
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "projectFile",
+      "method": "saveAs",
+      "args": [
+        "file:///tmp/nemo43-smoke/final-dialog-saved.nemo"
+      ]
+    }
+  ],
+  "lingerMs": 1200,
+  "quit": true
+}

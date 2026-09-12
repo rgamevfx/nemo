@@ -1,0 +1,585 @@
+{
+  "phase": "final-organization",
+  "group": "A",
+  "panelType": "media",
+  "settleMs": 500,
+  "grabWindow": true,
+  "quit": true,
+  "lingerMs": 1200,
+  "steps": [
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "revealMediaPanel",
+      "args": [
+        "A"
+      ]
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "A",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-8"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-6"
+      ]
+    },
+    {
+      "kind": "resizeWindow",
+      "width": 1274,
+      "height": 640
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "viewMode": "list",
+        "projectScope": true
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/still.png",
+          "/tmp/nemo43-smoke/tagged.mkv"
+        ],
+        "root",
+        0
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/shot.####.exr"
+        ],
+        "root",
+        1001
+      ]
+    },
+    {
+      "kind": "probe",
+      "ticks": 90,
+      "intervalMs": 16
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginCreate",
+      "args": [
+        "root",
+        false
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": {
+        "objectName": "mediaCreateBinDialog",
+        "property": "contentItem"
+      },
+      "property": "text",
+      "value": "Footage"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginCreate",
+      "args": [
+        "bin-1",
+        false
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": {
+        "objectName": "mediaCreateBinDialog",
+        "property": "contentItem"
+      },
+      "property": "text",
+      "value": "Video"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openBin",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "selectEntries",
+      "panelType": "media",
+      "group": "A",
+      "ids": [
+        "media-2",
+        "media-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginCreate",
+      "args": [
+        "root",
+        true
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": {
+        "objectName": "mediaCreateBinDialog",
+        "property": "contentItem"
+      },
+      "property": "text",
+      "value": "Collected"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "children",
+      "args": [
+        "bin-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openBin",
+      "args": [
+        "bin-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openBin",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "selectEntries",
+      "panelType": "media",
+      "group": "A",
+      "ids": [
+        "bin-3"
+      ]
+    },
+    {
+      "kind": "drag",
+      "from": {
+        "objectName": "mediaInput_bin-3"
+      },
+      "to": {
+        "objectName": "mediaTreeDrop_bin-2"
+      },
+      "steps": 8,
+      "spacingMs": 70,
+      "settleMs": 700
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "bin-3"
+      ]
+    },
+    {
+      "kind": "capture",
+      "name": "media-nested-collection"
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openMetadata",
+      "args": [
+        "bin-1"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaTagsField",
+      "property": "text",
+      "value": "plates, approved"
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaDescriptionField",
+      "property": "text",
+      "value": "Nested catalog organization"
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaLabelCombo",
+      "property": "currentIndex",
+      "value": 2
+    },
+    {
+      "kind": "capture",
+      "name": "media-bin-metadata"
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaMetadataDialog",
+      "method": "accept",
+      "args": []
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "bin-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "requestDelete",
+      "args": [
+        [
+          "bin-1"
+        ]
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "capture",
+      "name": "media-delete-keep-contents"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaDeleteKeepContents"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "query",
+      "args": [
+        "project",
+        "",
+        true,
+        {}
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openBin",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "key",
+      "key": "Z",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "query",
+      "args": [
+        "project",
+        "",
+        true,
+        {}
+      ]
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "currentParentId": "project",
+        "projectScope": true,
+        "searchText": "hero"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginSaveSmartBin",
+      "args": []
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaSmartBinNameField",
+      "property": "text",
+      "value": "Hero"
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaSmartBinDialog",
+      "method": "accept",
+      "args": []
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openSmartBin",
+      "args": [
+        "bin-4"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "visibleItems",
+      "args": []
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaSearchField"
+      }
+    },
+    {
+      "kind": "key",
+      "key": "A",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "key",
+      "key": "Backspace"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openMetadata",
+      "args": [
+        "media-1"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaTagsField",
+      "property": "text",
+      "value": "hero"
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaMetadataDialog",
+      "method": "accept",
+      "args": []
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openSmartBin",
+      "args": [
+        "bin-4"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "visibleItems",
+      "args": []
+    },
+    {
+      "kind": "capture",
+      "name": "media-smart-membership"
+    },
+    {
+      "kind": "key",
+      "key": "Z",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "visibleItems",
+      "args": []
+    },
+    {
+      "kind": "invoke",
+      "target": "projectFile",
+      "method": "saveAs",
+      "args": [
+        "file:///tmp/nemo43-smoke/final-organization-saved.nemo"
+      ]
+    }
+  ]
+}

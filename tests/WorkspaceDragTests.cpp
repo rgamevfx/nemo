@@ -66,8 +66,9 @@ protected:
     // Rendering and document ownership remain in their existing objects.
     nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
     // Main.qml reads the project file state; the harness injects the same
-    // adapter the application composes.
-    nemo::ui::ProjectFileController projectFile{projectSession, controller, panelContextRouter};
+    // adapter and shared native chooser the application composes.
+    nemo::ui::NativeFileChooser chooser;
+    nemo::ui::ProjectFileController projectFile{projectSession, controller, panelContextRouter, chooser};
     QQmlApplicationEngine engine;
     QSignalSpy warnings{&engine, &QQmlEngine::warnings};
     QQuickWindow* window = nullptr;
@@ -614,6 +615,48 @@ TEST(WorkspaceControllerTest, UnreadableWorkspaceIsPreservedUntilExplicitReset) 
     ASSERT_TRUE(controller.save());
     ASSERT_TRUE(preserved.open(QIODevice::ReadOnly));
     EXPECT_NE(preserved.readAll(), invalid);
+}
+
+TEST(WorkspaceControllerTest, NestedPanelStatePublicationIsCoalescedWithoutDroppingState) {
+    QTemporaryDir directory;
+    nemo::workspace::WorkspaceController controller(directory.filePath("workspace.json"));
+    const QString panelId = [](const nemo::workspace::WorkspaceController& value) {
+        const Json root = Json::parse(QJsonDocument::fromVariant(value.root()).toJson().toStdString());
+        return QString::fromStdString(root["children"][0]["children"][0]["panels"][0]["id"]);
+    }(controller);
+    ASSERT_FALSE(panelId.isEmpty());
+    const auto limitOf = [&] { return controller.panelState(panelId).value(QStringLiteral("limit")).toInt(); };
+
+    bool delivering = false;
+    bool reentered = false;
+    QVariantList observed;
+    QObject::connect(&controller, &nemo::workspace::WorkspaceController::rootChanged, &controller, [&] {
+        reentered = reentered || delivering;
+        delivering = true;
+        const int limit = limitOf();
+        observed.append(limit);
+        // Persists a panel edit while the root notification is still being
+        // delivered, as a panel does synchronously on identity change and
+        // teardown. It writes only while the stored state differs, matching the
+        // panel's own equality guard, so the publication settles once the edit
+        // lands.
+        if (limit != 7) {
+            controller.setPanelState(panelId, QVariantMap{{QStringLiteral("limit"), 7}});
+        }
+        delivering = false;
+    });
+
+    controller.setPanelState(panelId, QVariantMap{{QStringLiteral("limit"), 3}});
+
+    // Everything above runs without spinning an event loop: the coalesced
+    // delivery is synchronous, before this call returns.
+    // A delivery must never run inside another delivery: that re-notifies a QML
+    // binding that is still updating and Qt reports it as a binding loop.
+    EXPECT_FALSE(reentered);
+    // The nested edit is not dropped: the delivery that follows the outer one
+    // carries the latest snapshot, and the final state keeps the edit.
+    EXPECT_EQ(observed.last().toInt(), 7);
+    EXPECT_EQ(limitOf(), 7);
 }
 }  // namespace
 

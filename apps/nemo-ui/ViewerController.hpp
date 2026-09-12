@@ -301,8 +301,21 @@ private:
     // displays and the catalog target it addresses.
     ContextRole contextRole_{ContextRole::Graph};
     QString contextTarget_;
+    // Document source key the routed media target resolves to. A decimal
+    // target is a catalog entry id and resolves through its persistent source
+    // key; a non-decimal target is the key itself. Empty when the target names
+    // no decodable Document source.
+    std::string contextSourceKey_;
     NodeId contextTargetNode_{kInvalidNode};
     QString contextUnavailable_;
+    // Source key of the probe this panel submitted. `generation_` already
+    // rejects superseded probes; the key is carried so the accepted result
+    // publishes exactly the reference that was probed.
+    std::string probeSourceKey_{"src"};
+    // Revision of the exact snapshot handed to the last submission. A result
+    // carries that snapshot's revision, which is the authored revision except
+    // when the media role added its request-owned node.
+    std::uint64_t submittedRevision_{};
     SourceReference probedSource_;
     ViewerResolutionPolicy policy_;
     QSizeF sourceSize_;

@@ -1,0 +1,209 @@
+{
+  "phase": "final-dense-narrow",
+  "group": "A",
+  "panelType": "media",
+  "settleMs": 500,
+  "grabWindow": true,
+  "quit": true,
+  "lingerMs": 1200,
+  "steps": [
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "revealMediaPanel",
+      "args": [
+        "A"
+      ]
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "A",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-8"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-6"
+      ]
+    },
+    {
+      "kind": "resizeWindow",
+      "width": 1274,
+      "height": 640
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "viewMode": "list",
+        "projectScope": true
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/still.png",
+          "/tmp/nemo43-smoke/tagged.mkv",
+          "/tmp/nemo43-smoke/ambiguous.mkv",
+          "/tmp/nemo43-smoke/unsupported.png",
+          "/tmp/nemo43-smoke/corrupt.exr",
+          "/tmp/nemo43-smoke/offline.png"
+        ],
+        "root",
+        0
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/shot.####.exr"
+        ],
+        "root",
+        1001
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 1800
+    },
+    {
+      "kind": "duplicateEntries",
+      "parentId": "root"
+    },
+    {
+      "kind": "duplicateEntries",
+      "parentId": "root"
+    },
+    {
+      "kind": "duplicateEntries",
+      "parentId": "root"
+    },
+    {
+      "kind": "wait",
+      "ms": 1200
+    },
+    {
+      "kind": "capture",
+      "name": "media-dense"
+    },
+    {
+      "kind": "scroll",
+      "objectName": "mediaListView",
+      "dy": 1400
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "capture",
+      "name": "media-dense-scrolled"
+    },
+    {
+      "kind": "scroll",
+      "objectName": "mediaListView",
+      "contentY": 0
+    },
+    {
+      "kind": "createViewer",
+      "group": "A",
+      "role": "media",
+      "inLeafOf": "media",
+      "placement": "right",
+      "ratio": 0.29
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "A",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "openMediaSource",
+      "args": [
+        "A",
+        "still"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 1800
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "projectScope": false
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "capture",
+      "name": "media-narrow"
+    },
+    {
+      "kind": "objectGeometry",
+      "panelType": "media",
+      "group": "A",
+      "role": "media-narrow"
+    },
+    {
+      "kind": "read",
+      "name": "narrow-layout",
+      "target": "workspace",
+      "property": "root"
+    },
+    {
+      "kind": "invoke",
+      "target": "projectFile",
+      "method": "saveAs",
+      "args": [
+        "file:///tmp/nemo43-smoke/final-dense-narrow-saved.nemo"
+      ]
+    }
+  ]
+}

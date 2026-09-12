@@ -2,6 +2,7 @@
 
 #include "nemo/eval/ViewerDestination.hpp"
 
+#include <QPointer>
 #include <QQuickItem>
 #include <QtQml/qqmlregistration.h>
 #include <cstdint>
@@ -78,7 +79,12 @@ protected:
 
 private:
     void reportViewport();
-    ViewerController* controller_{};
+    // Borrowed from ViewerControllerRegistry. The registry retires a panel's
+    // controller with deleteLater() when the panel is removed, while this
+    // item may still be destroyed on a later event-loop pass; a weak pointer
+    // keeps that destruction (and setController) from dereferencing a
+    // controller that has already been retired.
+    QPointer<ViewerController> controller_;
     QRectF displayRect_;
     bool primary_{};
 };

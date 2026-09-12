@@ -497,6 +497,31 @@ MediaMetadata parseMetadata(const nlohmann::json& value, const std::string& cont
     return metadata;
 }
 
+nlohmann::json binMetadataJson(const MediaBinMetadata& metadata) {
+    nlohmann::json value{{"description", metadata.description}, {"tags", metadata.tags}, {"label", metadata.label}};
+    applyUnknownFields(value, metadata.extension);
+    return value;
+}
+
+MediaBinMetadata parseBinMetadata(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    MediaBinMetadata metadata;
+    metadata.description = stringField(value, "description", context);
+    metadata.label = stringField(value, "label", context);
+    if (value.contains("tags")) {
+        if (!value.at("tags").is_array())
+            throw DeserializeError(context + ": tags must be an array");
+        for (const auto& tag : value.at("tags")) {
+            if (!tag.is_string())
+                throw DeserializeError(context + ": tags must be strings");
+            metadata.tags.push_back(tag.get<std::string>());
+        }
+    }
+    metadata.extension = collectUnknownFields(value, {"description", "tags", "label"});
+    return metadata;
+}
+
 nlohmann::json queryJson(const MediaQueryDescriptor& query) {
     nlohmann::json value{{"text", query.text}};
     if (query.kind)
@@ -505,6 +530,14 @@ nlohmann::json queryJson(const MediaQueryDescriptor& query) {
         value["offline"] = *query.offline;
     if (query.unused)
         value["unused"] = *query.unused;
+    if (query.scope)
+        value["scope"] = *query.scope;
+    if (!query.recursive)
+        value["recursive"] = false;
+    if (query.includeImageSequences)
+        value["includeImageSequences"] = true;
+    if (query.binsOnly)
+        value["binsOnly"] = true;
     applyUnknownFields(value, query.extension);
     return value;
 }
@@ -526,7 +559,18 @@ std::optional<MediaQueryDescriptor> parseQuery(const nlohmann::json& value, cons
     };
     query.offline = optionalBool("offline");
     query.unused = optionalBool("unused");
-    query.extension = collectUnknownFields(value, {"text", "kind", "offline", "unused"});
+    // Scope 0 is the root scope and stays engaged; only an absent field means
+    // the whole project.
+    if (value.contains("scope"))
+        query.scope = unsignedValue(value.at("scope"), context + " scope");
+    if (const auto recursive = optionalBool("recursive"))
+        query.recursive = *recursive;
+    if (const auto includeImageSequences = optionalBool("includeImageSequences"))
+        query.includeImageSequences = *includeImageSequences;
+    if (const auto binsOnly = optionalBool("binsOnly"))
+        query.binsOnly = *binsOnly;
+    query.extension = collectUnknownFields(
+        value, {"text", "kind", "offline", "unused", "scope", "recursive", "includeImageSequences", "binsOnly"});
     return query;
 }
 
@@ -565,7 +609,7 @@ nlohmann::json mediaCatalogJson(const MediaCatalog& catalog) {
     }
     nlohmann::json bins = nlohmann::json::array();
     for (const auto& bin : catalog.bins()) {
-        nlohmann::json value{{"id", bin.id}, {"name", bin.name}};
+        nlohmann::json value{{"id", bin.id}, {"name", bin.name}, {"metadata", binMetadataJson(bin.metadata)}};
         if (bin.parent != kInvalidMediaBin)
             value["parent"] = bin.parent;
         if (bin.query)
@@ -592,6 +636,7 @@ void loadMediaCatalog(const nlohmann::json& value, Document& document) {
             std::string name;
             MediaBinId parent{kInvalidMediaBin};
             std::optional<MediaQueryDescriptor> query;
+            MediaBinMetadata metadata;
             nlohmann::json extension;
         };
         std::vector<PendingBin> pending;
@@ -609,7 +654,9 @@ void loadMediaCatalog(const nlohmann::json& value, Document& document) {
             bin.parent = optionalId(b, "parent", context).value_or(kInvalidMediaBin);
             if (b.contains("query"))
                 bin.query = parseQuery(b.at("query"), context + " query");
-            bin.extension = collectUnknownFields(b, {"id", "name", "parent", "query"});
+            if (b.contains("metadata"))
+                bin.metadata = parseBinMetadata(b.at("metadata"), context + " metadata");
+            bin.extension = collectUnknownFields(b, {"id", "name", "parent", "query", "metadata"});
             pending.push_back(std::move(bin));
         }
         // Bins may be authored in any order; parents are inserted first because
@@ -628,6 +675,7 @@ void loadMediaCatalog(const nlohmann::json& value, Document& document) {
                     throw DeserializeError("mediaCatalog bin " + std::to_string(it->id) + ": " + error.what());
                 }
                 catalog.bin(it->id)->extension = std::move(it->extension);
+                catalog.setBinMetadata(it->id, std::move(it->metadata));
                 it = pending.erase(it);
                 progress = true;
             }

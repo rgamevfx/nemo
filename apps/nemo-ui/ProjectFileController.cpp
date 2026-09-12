@@ -12,105 +12,8 @@
 #include <exception>
 #include <utility>
 
-#if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-
-#include <objbase.h>
-#include <shobjidl.h>
-#elif defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-#include <QDBusArgument>
-#include <QDBusConnection>
-#include <QDBusMessage>
-#include <QDBusMetaType>
-#include <QDBusObjectPath>
-#include <QDBusPendingCall>
-#include <QDBusPendingCallWatcher>
-#endif
-
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-// org.freedesktop.portal.FileChooser filters: a(sa(us)), each entry a label
-// plus (type, pattern) pairs where type 0 is a glob. A default-constructed
-// QDBusArgument is a demarshaller and cannot be marshalled into, so the shapes
-// are declared metatypes and registered with QtDBus instead; the suffix is a
-// chooser convenience only and never a format check. Q_DECLARE_METATYPE
-// specializes a global template, so these live at file scope.
-struct NemoPortalFilterPattern {
-    uint type{0};
-    QString pattern;
-};
-
-struct NemoPortalFilter {
-    QString name;
-    QList<NemoPortalFilterPattern> patterns;
-};
-
-Q_DECLARE_METATYPE(NemoPortalFilterPattern)
-Q_DECLARE_METATYPE(NemoPortalFilter)
-
-QDBusArgument& operator<<(QDBusArgument& argument, const NemoPortalFilterPattern& pattern) {
-    argument.beginStructure();
-    argument << pattern.type << pattern.pattern;
-    argument.endStructure();
-    return argument;
-}
-
-const QDBusArgument& operator>>(const QDBusArgument& argument, NemoPortalFilterPattern& pattern) {
-    argument.beginStructure();
-    argument >> pattern.type >> pattern.pattern;
-    argument.endStructure();
-    return argument;
-}
-
-QDBusArgument& operator<<(QDBusArgument& argument, const NemoPortalFilter& filter) {
-    argument.beginStructure();
-    argument << filter.name << filter.patterns;
-    argument.endStructure();
-    return argument;
-}
-
-const QDBusArgument& operator>>(const QDBusArgument& argument, NemoPortalFilter& filter) {
-    argument.beginStructure();
-    argument >> filter.name >> filter.patterns;
-    argument.endStructure();
-    return argument;
-}
-
-static QVariant nemoPortalFilters(const std::vector<std::pair<QString, QStringList>>& entries) {
-    static const bool registered = [] {
-        qDBusRegisterMetaType<NemoPortalFilterPattern>();
-        qDBusRegisterMetaType<NemoPortalFilter>();
-        qDBusRegisterMetaType<QList<NemoPortalFilter>>();
-        return true;
-    }();
-    (void)registered;
-    QList<NemoPortalFilter> filters;
-    for (const auto& entry : entries) {
-        NemoPortalFilter filter;
-        filter.name = entry.first;
-        for (const QString& pattern : entry.second) {
-            filter.patterns.append(NemoPortalFilterPattern{0U, pattern});
-        }
-        filters.append(std::move(filter));
-    }
-    return QVariant::fromValue(filters);
-}
-#endif
-
 namespace nemo::ui {
 namespace {
-
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-constexpr auto kPortalService = "org.freedesktop.portal.Desktop";
-constexpr auto kPortalPath = "/org/freedesktop/portal/desktop";
-constexpr auto kPortalInterface = "org.freedesktop.portal.FileChooser";
-constexpr auto kPortalRequestInterface = "org.freedesktop.portal.Request";
-#endif
 
 QVariantList toVariantList(const std::vector<std::string>& values) {
     QVariantList list;
@@ -189,127 +92,19 @@ bool isKnownPresentationEnvelope(const nlohmann::json& envelope) {
            version->get<int>() == nemo::kPresentationEnvelopeVersion;
 }
 
-#if defined(_WIN32)
-struct NativeDialogResult {
-    bool ok{false};
-    bool cancelled{false};
-    QString path;
-    QString error;
-};
-
-QString hresultText(HRESULT result) {
-    return QStringLiteral("0x%1").arg(static_cast<qulonglong>(static_cast<unsigned long>(result)), 8, 16,
-                                      QLatin1Char('0'));
-}
-
-// Worker-thread Win32 common item dialog (IFileOpenDialog/IFileSaveDialog).
-// The thread that calls Show() owns the dialog's modal loop and message pump;
-// the owner HWND comes from the app window on the GUI thread.
-NativeDialogResult runWindowsDialog(bool save, bool recover, const QString& title, const std::filesystem::path& folder,
-                                    const QString& suggestedName, HWND owner) {
-    NativeDialogResult result;
-    const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-    const bool uninitialize = SUCCEEDED(initialized);
-
-    IFileDialog* dialog = nullptr;
-    HRESULT status = CoCreateInstance(save ? CLSID_FileSaveDialog : CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
-                                      IID_PPV_ARGS(&dialog));
-    if (FAILED(status) || dialog == nullptr) {
-        result.error = QStringLiteral("The Windows file dialog is unavailable (%1).").arg(hresultText(status));
-        if (uninitialize) {
-            CoUninitialize();
-        }
-        return result;
-    }
-
-    DWORD options = 0;
-    dialog->GetOptions(&options);
-    options |= FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
-    options |= save ? FOS_OVERWRITEPROMPT : FOS_FILEMUSTEXIST;
-    dialog->SetOptions(options);
-    if (!title.isEmpty()) {
-        dialog->SetTitle(reinterpret_cast<LPCWSTR>(title.utf16()));
-    }
-
-    // The suffix is a chooser convenience and never a format check. Recovery
-    // keeps autosave slots and previous-good backups reachable.
-    std::vector<COMDLG_FILTERSPEC> types;
-    std::vector<std::wstring> typeNames;
-    std::vector<std::wstring> typeSpecs;
-    const auto addType = [&](const wchar_t* name, const wchar_t* spec) {
-        typeNames.emplace_back(name);
-        typeSpecs.emplace_back(spec);
-    };
-    if (recover) {
-        addType(L"Nemo project or recovery copy", L"*.nemo;*.autosave*;*.bak");
-        addType(L"All files", L"*.*");
-    } else if (save) {
-        addType(L"Nemo project", L"*.nemo");
-    } else {
-        addType(L"Nemo project", L"*.nemo");
-        addType(L"All files", L"*.*");
-    }
-    types.reserve(typeNames.size());
-    for (std::size_t index = 0; index < typeNames.size(); ++index) {
-        types.push_back({typeNames[index].c_str(), typeSpecs[index].c_str()});
-    }
-    dialog->SetFileTypes(static_cast<UINT>(types.size()), types.data());
-    dialog->SetFileTypeIndex(1);
-
-    if (!folder.empty()) {
-        const std::wstring wide = folder.wstring();
-        IShellItem* folderItem = nullptr;
-        if (SUCCEEDED(SHCreateItemFromParsingName(wide.c_str(), nullptr, IID_PPV_ARGS(&folderItem))) &&
-            folderItem != nullptr) {
-            dialog->SetFolder(folderItem);
-            folderItem->Release();
-        }
-    }
-    if (save) {
-        dialog->SetDefaultExtension(L"nemo");
-        if (!suggestedName.isEmpty()) {
-            dialog->SetFileName(reinterpret_cast<LPCWSTR>(suggestedName.utf16()));
-        }
-    }
-
-    status = dialog->Show(owner);
-    if (status == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
-        result.cancelled = true;
-    } else if (FAILED(status)) {
-        result.error = QStringLiteral("The Windows file dialog failed (%1).").arg(hresultText(status));
-    } else {
-        IShellItem* item = nullptr;
-        if (SUCCEEDED(dialog->GetResult(&item)) && item != nullptr) {
-            PWSTR path = nullptr;
-            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path != nullptr) {
-                result.path = QString::fromWCharArray(path);
-                result.ok = !result.path.isEmpty();
-                CoTaskMemFree(path);
-            }
-            item->Release();
-        }
-        if (!result.ok) {
-            result.error = QStringLiteral("The Windows file dialog returned no file path.");
-        }
-    }
-    dialog->Release();
-    if (uninitialize) {
-        CoUninitialize();
-    }
-    return result;
-}
-#endif
-
 }  // namespace
 
 ProjectFileController::ProjectFileController(nemo::ProjectSession& session,
                                              nemo::workspace::WorkspaceController& workspace,
-                                             PanelContextRouter& router, QObject* parent)
-    : QObject(parent), session_(session), workspace_(workspace), router_(router) {
+                                             PanelContextRouter& router, NativeFileChooser& chooser, QObject* parent)
+    : QObject(parent), session_(session), workspace_(workspace), router_(router), chooser_(chooser) {
     appDataDirectory_ = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     ioWorker_.moveToThread(&ioThread_);
     ioThread_.start();
     sessionSubscription_ = session_.subscribe(this, &ProjectFileController::sessionChanged);
+    // Each choose* entry point hands the chooser a handler that carries that
+    // request's purpose, so an outcome can only ever be read as the action this
+    // workflow actually asked for.
     autosaveTimer_.setInterval(static_cast<int>(
         std::chrono::duration_cast<std::chrono::milliseconds>(nemo::kDefaultAutosaveInterval).count()));
     autosaveTimer_.setSingleShot(false);
@@ -542,150 +337,48 @@ void ProjectFileController::failFileDialog(QString message) {
 
 void ProjectFileController::startDialog(DialogPurpose purpose, const QString& title,
                                         const std::filesystem::path& folder, const QString& suggestedName) {
-    if (dialogInFlight_) {
+    // The purpose lives in this request's outcome handler, never in a member:
+    // an outcome the chooser delivers here belongs to the dialog this call
+    // started, and no stale purpose can exist. Every project dialog is
+    // single-select, so a chosen outcome carries exactly one URL. The chooser
+    // refuses a second request while one is outstanding; that refusal reaches
+    // no one (this handler is not registered) and leaves the outstanding
+    // request's owner untouched.
+    NativeFileChooser::OutcomeHandler onOutcome = [this, purpose](NativeFileChooser::Outcome outcome) {
+        switch (outcome.status) {
+        case NativeFileChooser::Outcome::Status::Chosen:
+            emitChosen(purpose, outcome.urls.constFirst());
+            return;
+        case NativeFileChooser::Outcome::Status::Cancelled:
+            emit fileDialogCancelled();
+            return;
+        case NativeFileChooser::Outcome::Status::Failed:
+            failFileDialog(std::move(outcome.message));
+            return;
+        }
+    };
+    switch (purpose) {
+    case DialogPurpose::Open:
+        static_cast<void>(chooser_.openFiles(this, std::move(onOutcome), title, false,
+                                             {{QStringLiteral("Nemo project"), {QStringLiteral("*.nemo")}},
+                                              {QStringLiteral("All files"), {QStringLiteral("*")}}},
+                                             folder));
         return;
-    }
-    dialogInFlight_ = true;
-    chooserPurpose_ = purpose;
-#if defined(_WIN32)
-    startWindowsDialog(purpose, title, folder, suggestedName);
-#elif defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    startPortalDialog(purpose, title, folder, suggestedName);
-#else
-    dialogInFlight_ = false;
-    failFileDialog(QStringLiteral("No native file chooser is implemented for this platform."));
-#endif
-}
-
-#if defined(_WIN32)
-void ProjectFileController::startWindowsDialog(DialogPurpose purpose, const QString& title,
-                                               const std::filesystem::path& folder, const QString& suggestedName) {
-    // The Win32 common dialog runs its own modal loop, so it runs on the I/O
-    // worker thread with the app window as owner: the Qt event loop stays free
-    // and completion arrives exactly like the portal path.
-    const HWND owner = GetActiveWindow();
-    const bool save = purpose == DialogPurpose::SaveAs;
-    const bool recover = purpose == DialogPurpose::Recovery;
-    QMetaObject::invokeMethod(
-        &ioWorker_,
-        [this, purpose, save, recover, title, folder, suggestedName, owner] {
-            const NativeDialogResult result = runWindowsDialog(save, recover, title, folder, suggestedName, owner);
-            QMetaObject::invokeMethod(
-                this,
-                [this, purpose, result] {
-                    dialogInFlight_ = false;
-                    if (result.ok) {
-                        emitChosen(purpose, QUrl::fromLocalFile(result.path));
-                    } else if (result.cancelled) {
-                        emit fileDialogCancelled();
-                    } else {
-                        failFileDialog(result.error);
-                    }
-                },
-                Qt::QueuedConnection);
-        },
-        Qt::QueuedConnection);
-}
-#elif defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-void ProjectFileController::startPortalDialog(DialogPurpose purpose, const QString& title,
-                                              const std::filesystem::path& folder, const QString& suggestedName) {
-    const QString token = QStringLiteral("nemo35_dialog_%1").arg(++portalTokenCounter_);
-    QVariantMap options;
-    options.insert(QStringLiteral("handle_token"), token);
-    options.insert(QStringLiteral("multiple"), false);
-    options.insert(QStringLiteral("accept_label"),
-                   purpose == DialogPurpose::SaveAs ? QStringLiteral("Save") : QStringLiteral("Open"));
-    if (!folder.empty() && folder != std::filesystem::path(".")) {
-        QByteArray bytes = QByteArray::fromStdString(folder.string());
-        bytes.append('\0');
-        options.insert(QStringLiteral("current_folder"), bytes);
-    }
-    if (!suggestedName.isEmpty()) {
-        options.insert(QStringLiteral("current_name"), suggestedName);
-    }
-    if (purpose == DialogPurpose::Recovery) {
+    case DialogPurpose::Recovery:
         // Keep autosave slots and previous-good backups reachable.
-        options.insert(
-            QStringLiteral("filters"),
-            ::nemoPortalFilters({{QStringLiteral("Nemo project or recovery copy"),
-                                  {QStringLiteral("*.nemo"), QStringLiteral("*.autosave*"), QStringLiteral("*.bak")}},
-                                 {QStringLiteral("All files"), {QStringLiteral("*")}}}));
-    } else if (purpose == DialogPurpose::SaveAs) {
-        options.insert(QStringLiteral("filters"),
-                       ::nemoPortalFilters({{QStringLiteral("Nemo project"), {QStringLiteral("*.nemo")}}}));
-    } else {
-        options.insert(QStringLiteral("filters"),
-                       ::nemoPortalFilters({{QStringLiteral("Nemo project"), {QStringLiteral("*.nemo")}},
-                                            {QStringLiteral("All files"), {QStringLiteral("*")}}}));
-    }
-
-    const QString method = purpose == DialogPurpose::SaveAs ? QStringLiteral("SaveFile") : QStringLiteral("OpenFile");
-    QDBusMessage message =
-        QDBusMessage::createMethodCall(QString::fromLatin1(kPortalService), QString::fromLatin1(kPortalPath),
-                                       QString::fromLatin1(kPortalInterface), method);
-    message << QString() << title << options;
-
-    auto* watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(message), this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, purpose](QDBusPendingCallWatcher* call) {
-        const QDBusMessage reply = call->reply();
-        call->deleteLater();
-        if (reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty()) {
-            dialogInFlight_ = false;
-            portalHandle_.clear();
-            failFileDialog(purpose == DialogPurpose::SaveAs
-                               ? QStringLiteral("The system save dialog is unavailable: %1").arg(reply.errorMessage())
-                               : QStringLiteral("The system file dialog is unavailable: %1").arg(reply.errorMessage()));
-            return;
-        }
-        const QString handle = reply.arguments().constFirst().value<QDBusObjectPath>().path();
-        if (handle.isEmpty()) {
-            dialogInFlight_ = false;
-            failFileDialog(QStringLiteral("The system file dialog returned no request handle."));
-            return;
-        }
-        portalHandle_ = handle;
-        const bool connected = QDBusConnection::sessionBus().connect(
-            QString(), handle, QString::fromLatin1(kPortalRequestInterface), QStringLiteral("Response"), this,
-            SLOT(onPortalResponse(uint, QVariantMap)));
-        if (!connected) {
-            dialogInFlight_ = false;
-            portalHandle_.clear();
-            failFileDialog(QStringLiteral("Cannot observe the system file dialog response."));
-        }
-    });
-}
-#endif
-
-void ProjectFileController::onPortalResponse(uint response, const QVariantMap& results) {
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    const QString handle = portalHandle_;
-    portalHandle_.clear();
-    dialogInFlight_ = false;
-    if (!handle.isEmpty()) {
-        QDBusConnection::sessionBus().disconnect(QString(), handle, QString::fromLatin1(kPortalRequestInterface),
-                                                 QStringLiteral("Response"), this,
-                                                 SLOT(onPortalResponse(uint, QVariantMap)));
-    }
-    // org.freedesktop.portal.Request.Response: 0 success, 1 cancelled by the
-    // user, 2+ the portal or the application side failed.
-    if (response == 1) {
-        emit fileDialogCancelled();
+        static_cast<void>(
+            chooser_.openFiles(this, std::move(onOutcome), title, false,
+                               {{QStringLiteral("Nemo project or recovery copy"),
+                                 {QStringLiteral("*.nemo"), QStringLiteral("*.autosave*"), QStringLiteral("*.bak")}},
+                                {QStringLiteral("All files"), {QStringLiteral("*")}}},
+                               folder, suggestedName));
+        return;
+    case DialogPurpose::SaveAs:
+        static_cast<void>(chooser_.saveFile(this, std::move(onOutcome), title,
+                                            {{QStringLiteral("Nemo project"), {QStringLiteral("*.nemo")}}}, folder,
+                                            suggestedName, QStringLiteral("nemo")));
         return;
     }
-    if (response != 0) {
-        failFileDialog(QStringLiteral("The system file dialog failed (portal response %1).").arg(response));
-        return;
-    }
-    const QStringList uris = results.value(QStringLiteral("uris")).toStringList();
-    if (uris.isEmpty()) {
-        emit fileDialogCancelled();
-        return;
-    }
-    emitChosen(chooserPurpose_, QUrl(uris.constFirst()));
-#else
-    Q_UNUSED(response);
-    Q_UNUSED(results);
-#endif
 }
 
 void ProjectFileController::emitChosen(DialogPurpose purpose, const QUrl& url) {

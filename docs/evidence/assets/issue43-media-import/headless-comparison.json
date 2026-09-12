@@ -1,0 +1,62 @@
+[
+  {
+    "media": "still",
+    "frame": 0,
+    "size": [
+      320,
+      180
+    ],
+    "identical": true,
+    "maximumChannelDelta": 0,
+    "cpuFirstPixel": [
+      54,
+      0,
+      253
+    ],
+    "gpuFirstPixel": [
+      54,
+      0,
+      253
+    ]
+  },
+  {
+    "media": "sequence",
+    "frame": 0,
+    "size": [
+      64,
+      48
+    ],
+    "identical": true,
+    "maximumChannelDelta": 0,
+    "cpuFirstPixel": [
+      253,
+      0,
+      0
+    ],
+    "gpuFirstPixel": [
+      253,
+      0,
+      0
+    ]
+  },
+  {
+    "media": "sequence",
+    "frame": 1,
+    "size": [
+      64,
+      48
+    ],
+    "identical": true,
+    "maximumChannelDelta": 0,
+    "cpuFirstPixel": [
+      1,
+      128,
+      1
+    ],
+    "gpuFirstPixel": [
+      1,
+      128,
+      1
+    ]
+  }
+]

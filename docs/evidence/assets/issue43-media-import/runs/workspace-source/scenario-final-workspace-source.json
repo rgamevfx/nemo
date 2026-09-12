@@ -1,0 +1,191 @@
+{
+  "phase": "final-workspace-source",
+  "group": "A",
+  "panelType": "media",
+  "settleMs": 500,
+  "grabWindow": true,
+  "quit": true,
+  "lingerMs": 800,
+  "steps": [
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "revealMediaPanel",
+      "args": [
+        "A"
+      ]
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "A",
+      "timeoutMs": 500
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-8"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-6"
+      ]
+    },
+    {
+      "kind": "resizeWindow",
+      "width": 1274,
+      "height": 640
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "viewMode": "list",
+        "projectScope": true
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/still.png",
+          "/tmp/nemo43-smoke/tagged.mkv"
+        ],
+        "root",
+        0
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/shot.####.exr"
+        ],
+        "root",
+        1001
+      ]
+    },
+    {
+      "kind": "probe",
+      "ticks": 90,
+      "intervalMs": 16
+    },
+    {
+      "kind": "createPanel",
+      "type": "timeline",
+      "group": "A",
+      "inLeafOf": "media",
+      "placement": "bottom",
+      "ratio": 0.58
+    },
+    {
+      "kind": "createViewer",
+      "group": "A",
+      "role": "media",
+      "inLeafOf": "media",
+      "placement": "right",
+      "ratio": 0.36
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "viewMode": "list",
+        "projectScope": false
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 600
+    },
+    {
+      "kind": "read",
+      "name": "timeline-before-open",
+      "target": {
+        "panelType": "timeline",
+        "group": "A"
+      },
+      "property": "routedClock"
+    },
+    {
+      "kind": "capture",
+      "name": "media-workspace"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-1"
+      },
+      "count": 2
+    },
+    {
+      "kind": "wait",
+      "ms": 1400
+    },
+    {
+      "kind": "read",
+      "name": "still-render-state",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "renderState"
+    },
+    {
+      "kind": "read",
+      "name": "still-error",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "error"
+    },
+    {
+      "kind": "read",
+      "name": "timeline-after-open",
+      "target": {
+        "panelType": "timeline",
+        "group": "A"
+      },
+      "property": "routedClock"
+    },
+    {
+      "kind": "capture",
+      "name": "media-source-view"
+    }
+  ]
+}

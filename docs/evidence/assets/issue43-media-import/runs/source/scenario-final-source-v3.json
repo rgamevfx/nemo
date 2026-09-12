@@ -1,0 +1,443 @@
+{
+  "phase": "final-source",
+  "group": "A",
+  "panelType": "media",
+  "settleMs": 500,
+  "grabWindow": true,
+  "quit": true,
+  "lingerMs": 1200,
+  "steps": [
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "revealMediaPanel",
+      "args": [
+        "A"
+      ]
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "A",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-8"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-6"
+      ]
+    },
+    {
+      "kind": "resizeWindow",
+      "width": 1274,
+      "height": 640
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "viewMode": "list",
+        "projectScope": true
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/still.png",
+          "/tmp/nemo43-smoke/tagged.mkv"
+        ],
+        "root",
+        0
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/shot.####.exr"
+        ],
+        "root",
+        1001
+      ]
+    },
+    {
+      "kind": "probe",
+      "ticks": 90,
+      "intervalMs": 16
+    },
+    {
+      "kind": "createViewer",
+      "group": "A",
+      "role": "media",
+      "inLeafOf": "media",
+      "placement": "right",
+      "ratio": 0.25
+    },
+    {
+      "kind": "wait",
+      "ms": 800
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-1"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 200
+    },
+    {
+      "kind": "read",
+      "name": "single-selection-context",
+      "target": {
+        "panelType": "viewer",
+        "group": "A"
+      },
+      "property": "panelContext"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-1"
+      },
+      "count": 2
+    },
+    {
+      "kind": "wait",
+      "ms": 1800
+    },
+    {
+      "kind": "read",
+      "name": "still-render-state",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "renderState"
+    },
+    {
+      "kind": "read",
+      "name": "still-error",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "error"
+    },
+    {
+      "kind": "read",
+      "name": "still-domain",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "compositionSize"
+    },
+    {
+      "kind": "capture",
+      "name": "media-source-still"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-3"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 200
+    },
+    {
+      "kind": "read",
+      "name": "sequence-selection-does-not-open",
+      "target": {
+        "panelType": "viewer",
+        "group": "A"
+      },
+      "property": "panelContext"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-3"
+      },
+      "count": 2
+    },
+    {
+      "kind": "wait",
+      "ms": 1600
+    },
+    {
+      "kind": "read",
+      "name": "sequence-frame-zero",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "frame"
+    },
+    {
+      "kind": "read",
+      "name": "sequence-error",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "error"
+    },
+    {
+      "kind": "capture",
+      "name": "media-source-sequence-1001"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "viewerFrame_panel-13"
+      }
+    },
+    {
+      "kind": "read",
+      "name": "focused-viewerFrame_panel-13",
+      "target": {
+        "objectName": "viewerFrame_panel-13"
+      },
+      "property": "text"
+    },
+    {
+      "kind": "key",
+      "key": "A",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "key",
+      "key": "1"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 1600
+    },
+    {
+      "kind": "read",
+      "name": "sequence-frame-one",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "frame"
+    },
+    {
+      "kind": "capture",
+      "name": "media-source-sequence-1002"
+    },
+    {
+      "kind": "createViewer",
+      "group": "B",
+      "role": "media",
+      "inLeafOf": "viewer",
+      "placement": "right",
+      "ratio": 0.5
+    },
+    {
+      "kind": "wait",
+      "ms": 800
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "revealMediaPanel",
+      "args": [
+        "B"
+      ]
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "B",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "wait",
+      "ms": 500
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-2"
+      }
+    },
+    {
+      "kind": "read",
+      "name": "B-selection-does-not-open",
+      "target": {
+        "panelType": "viewer",
+        "group": "B"
+      },
+      "property": "panelContext"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-2"
+      },
+      "count": 2
+    },
+    {
+      "kind": "wait",
+      "ms": 1800
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "viewerFrame_panel-16"
+      }
+    },
+    {
+      "kind": "read",
+      "name": "focused-viewerFrame_panel-16",
+      "target": {
+        "objectName": "viewerFrame_panel-16"
+      },
+      "property": "text"
+    },
+    {
+      "kind": "key",
+      "key": "A",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "key",
+      "key": "5"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 1800
+    },
+    {
+      "kind": "read",
+      "name": "A-after-B-seek",
+      "target": {
+        "panelType": "viewer",
+        "group": "A"
+      },
+      "property": "panelContext"
+    },
+    {
+      "kind": "read",
+      "name": "A-frame-after-B-seek",
+      "target": {
+        "panelType": "viewer",
+        "group": "A",
+        "property": "controller"
+      },
+      "property": "frame"
+    },
+    {
+      "kind": "read",
+      "name": "B-after-seek",
+      "target": {
+        "panelType": "viewer",
+        "group": "B"
+      },
+      "property": "panelContext"
+    },
+    {
+      "kind": "read",
+      "name": "B-frame",
+      "target": {
+        "panelType": "viewer",
+        "group": "B",
+        "property": "controller"
+      },
+      "property": "frame"
+    },
+    {
+      "kind": "read",
+      "name": "B-error",
+      "target": {
+        "panelType": "viewer",
+        "group": "B",
+        "property": "controller"
+      },
+      "property": "error"
+    },
+    {
+      "kind": "capture",
+      "name": "media-two-viewers"
+    },
+    {
+      "kind": "read",
+      "name": "timecode-A",
+      "target": {
+        "objectName": "viewerTimecode_panel-13"
+      },
+      "property": "text"
+    },
+    {
+      "kind": "read",
+      "name": "timecode-B",
+      "target": {
+        "objectName": "viewerTimecode_panel-16"
+      },
+      "property": "text"
+    },
+    {
+      "kind": "invoke",
+      "target": "projectFile",
+      "method": "saveAs",
+      "args": [
+        "file:///tmp/nemo43-smoke/final-source-saved.nemo"
+      ]
+    }
+  ]
+}

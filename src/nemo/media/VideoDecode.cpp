@@ -159,21 +159,45 @@ constexpr const char* kSupportedFormatNames =
     }
 }
 
+// Plane count of a supported format: gray is one plane, NV12 is two
+// (luma + interleaved chroma), planar 4:2:0/4:4:4 is three.
+[[nodiscard]] constexpr int planeCountOf(const ChromaKind kind) {
+    switch (kind) {
+    case ChromaKind::Gray:
+        return 1;
+    case ChromaKind::Nv12:
+        return 2;
+    case ChromaKind::Yuv420:
+    case ChromaKind::Yuv444:
+        return 3;
+    }
+    return 3;
+}
+
 // One decoded frame → RGBA float32. `linearize` selects the contract: the
 // source path inverts the declared transfer into scene-linear Rec.709;
 // viewer replay keeps the baked display-referred R′G′B′ untouched. The
-// frame's actual pixel format is validated BEFORE any plane access.
+// frame's actual pixel format is validated BEFORE any plane access. When
+// `decodedFormat`/`decodedPlanes` are non-null they receive that validated
+// format name and plane count, so callers do not re-derive them.
 [[nodiscard]] CpuImage convertDecodedFrame(const AVFrame* frame, const MediaColorMetadata& color,
-                                           const std::string& clip, bool linearize, int width = 0, int height = 0) {
+                                           const std::string& clip, bool linearize, int width = 0, int height = 0,
+                                           std::string* decodedFormat = nullptr, int* decodedPlanes = nullptr) {
     const FormatSpec* spec = requireFormatSpec(static_cast<AVPixelFormat>(frame->format), clip);
     const std::string formatName = pixelFormatName(spec->format);
+    if (decodedFormat != nullptr) {
+        *decodedFormat = formatName;
+    }
+    const int planes = planeCountOf(spec->kind);
+    if (decodedPlanes != nullptr) {
+        *decodedPlanes = planes;
+    }
     if (frame->width <= 0 || frame->height <= 0 || av_image_check_size(frame->width, frame->height, 0, nullptr) < 0) {
         fail(clip, formatName, "decoded frame has invalid dimensions");
     }
     const bool subsampled = spec->kind == ChromaKind::Yuv420 || spec->kind == ChromaKind::Nv12;
     const int chromaWidth = subsampled ? (frame->width + 1) / 2 : frame->width;
     const int chromaHeight = subsampled ? (frame->height + 1) / 2 : frame->height;
-    const int planes = spec->kind == ChromaKind::Gray ? 1 : spec->kind == ChromaKind::Nv12 ? 2 : 3;
     for (int plane = 0; plane < planes; ++plane) {
         const int components = plane == 1 && spec->kind == ChromaKind::Nv12 ? 2 : 1;
         const int rowBytes = (plane == 0 ? frame->width : chromaWidth) * components * (spec->depth > 8 ? 2 : 1);
@@ -1018,12 +1042,16 @@ namespace {
 
 // One software decode owner for both collection APIs and incremental
 // reference preparation. No second interpretation or packet-pump policy.
+// `width`/`height` are exact output dimensions unless `fitBounds` is set, in
+// which case they are MAXIMUM preview bounds and the output is fitted to the
+// decoded frame's displayed shape (see fitPreview).
 class SoftwareReader {
 public:
     SoftwareReader(const std::string& path, bool linearize, const ColorPolicy& policy, const ColorOverride& overrides,
-                   int width = 0, int height = 0)
+                   int width = 0, int height = 0, bool fitBounds = false)
         : prepared_(path), info_(prepared_.openCodec(path)), policy_(policy), overrides_(overrides),
-          linearize_(linearize), width_(width), height_(height) {
+          linearize_(linearize), width_(width), height_(height), fitBounds_(fitBounds),
+          profile_(declaredProfile(prepared_.stream->codecpar)) {
         metadata_ = resolveColor(prepared_.stream->codecpar, path, policy_, overrides_);
         if (!packet_.packet || !decoded_.frame)
             failStatus(path, "av_packet_alloc/av_frame_alloc failed");
@@ -1031,6 +1059,14 @@ public:
 
     [[nodiscard]] const ClipInfo& info() const { return info_; }
     [[nodiscard]] const MediaColorMetadata& metadata() const { return metadata_; }
+    // Actual decoded pixel format of the last produced frame ("" before the
+    // first frame), validated from the frame itself.
+    [[nodiscard]] const std::string& pixelFormat() const { return pixelFormat_; }
+    // Plane count of that validated format (0 before the first frame).
+    [[nodiscard]] int planeCount() const { return planeCount_; }
+    // Container facts resolved at open time.
+    [[nodiscard]] int streamIndex() const { return prepared_.streamIndex; }
+    [[nodiscard]] const std::string& profile() const { return profile_; }
     [[nodiscard]] std::optional<CpuImage> next() {
         const auto& path = info_.path;
         while (true) {
@@ -1049,7 +1085,11 @@ public:
                     failStatus(path, "changing frame dimensions within a clip is unsupported");
                 metadata_ = color;
                 seenFrame_ = true;
-                auto image = convertDecodedFrame(decoded_.frame, color, path, linearize_, width_, height_);
+                resolveOutputSize();
+                const int outWidth = outputResolved_ ? outputWidth_ : width_;
+                const int outHeight = outputResolved_ ? outputHeight_ : height_;
+                auto image = convertDecodedFrame(decoded_.frame, color, path, linearize_, outWidth, outHeight,
+                                                 &pixelFormat_, &planeCount_);
                 av_frame_unref(decoded_.frame);
                 return image;
             }
@@ -1081,6 +1121,46 @@ public:
     }
 
 private:
+    // Bounded preview: fit the DISPLAYED image (decoded pixels widened by
+    // SAR) inside the maximum bounds, emitting a square-pixel raster whose
+    // dimensions carry the displayed shape. Identical to the still preview
+    // fit in MediaImportService; both are leaf formulas for their own decode
+    // path rather than a shared abstraction.
+    static void fitPreview(const int sourceWidth, const int sourceHeight, const double pixelAspect, const int maxWidth,
+                           const int maxHeight, int& outWidth, int& outHeight) {
+        const double aspect = (static_cast<double>(std::max(sourceWidth, 1)) * std::max(pixelAspect, 1e-6)) /
+                              static_cast<double>(std::max(sourceHeight, 1));
+        const auto rounded = [](const double value) {
+            return static_cast<int>(std::llround(std::clamp(value, 0.0, 1.0e9)));
+        };
+        int width = maxWidth;
+        int height = rounded(static_cast<double>(maxWidth) / aspect);
+        if (height > maxHeight) {
+            height = maxHeight;
+            width = rounded(static_cast<double>(maxHeight) * aspect);
+        }
+        outWidth = std::clamp(width, 1, maxWidth);
+        outHeight = std::clamp(height, 1, maxHeight);
+    }
+
+    // Resolve the fitted output size once, from the actual decoded frame's
+    // width/height/SAR; a clip's dimensions are validated constant for the
+    // whole stream.
+    void resolveOutputSize() {
+        if (outputResolved_ || !fitBounds_ || width_ <= 0 || height_ <= 0 || decoded_.frame == nullptr ||
+            decoded_.frame->width <= 0 || decoded_.frame->height <= 0) {
+            return;
+        }
+        double pixelAspect = info_.pixelAspect;
+        const AVRational sar = decoded_.frame->sample_aspect_ratio;
+        if (sar.num > 0 && sar.den > 0) {
+            pixelAspect = av_q2d(sar);
+        }
+        fitPreview(decoded_.frame->width, decoded_.frame->height, pixelAspect, width_, height_, outputWidth_,
+                   outputHeight_);
+        outputResolved_ = true;
+    }
+
     PreparedDecoder prepared_;
     ClipInfo info_;
     ColorPolicy policy_;
@@ -1091,6 +1171,13 @@ private:
     bool linearize_;
     int width_;
     int height_;
+    bool fitBounds_{false};
+    bool outputResolved_{false};
+    int outputWidth_{0};
+    int outputHeight_{0};
+    std::string pixelFormat_;
+    int planeCount_{0};
+    std::string profile_;
     bool seenFrame_ = false;
     bool flushed_ = false;
 };
@@ -1101,12 +1188,43 @@ private:
     SoftwareClip result;
     result.info = reader.info();
     result.metadata = reader.metadata();
+    result.streamIndex = reader.streamIndex();
+    result.profile = reader.profile();
     while (maxFrames < 0 || static_cast<int64_t>(result.frames.size()) < maxFrames) {
         auto frame = reader.next();
         if (!frame)
             break;
         result.metadata = reader.metadata();
+        result.pixelFormat = reader.pixelFormat();
+        result.planeCount = reader.planeCount();
         result.frames.push_back(std::move(*frame));
+    }
+    return result;
+}
+
+// Bounded single-frame read: discards frames before `frameIndex`, retains
+// only the requested frame, and never holds more than one decoded frame.
+// With `fitBounds`, `width`/`height` are maximum preview bounds.
+[[nodiscard]] SoftwareClip decodeSoftwareFrame(const std::string& path, int64_t frameIndex, bool linearize,
+                                               const ColorPolicy& policy, const ColorOverride& overrides, int width,
+                                               int height, bool fitBounds) {
+    if (frameIndex < 0)
+        failStatus(path, "frame index must be >= 0");
+    SoftwareReader reader(path, linearize, policy, overrides, width, height, fitBounds);
+    SoftwareClip result;
+    result.info = reader.info();
+    result.metadata = reader.metadata();
+    result.streamIndex = reader.streamIndex();
+    result.profile = reader.profile();
+    for (int64_t index = 0; index <= frameIndex; ++index) {
+        auto frame = reader.next();
+        if (!frame)
+            return result;  // stream ended before the requested frame
+        result.metadata = reader.metadata();
+        result.pixelFormat = reader.pixelFormat();
+        result.planeCount = reader.planeCount();
+        if (index == frameIndex)
+            result.frames.push_back(std::move(*frame));
     }
     return result;
 }
@@ -1133,6 +1251,60 @@ std::optional<CpuImage> ViewerReferenceDecoder::next() {
 SoftwareClip decodeClipSoftware(const std::string& path, int64_t maxFrames, const ColorPolicy& policy,
                                 const ColorOverride& overrides) {
     return decodeSoftware(path, maxFrames, /*linearize=*/true, policy, overrides);
+}
+
+SoftwareClip decodeClipFrameSoftware(const std::string& path, int64_t frameIndex, int width, int height,
+                                     const ColorPolicy& policy, const ColorOverride& overrides) {
+    if (!((width == 0 && height == 0) || (width > 0 && height > 0)))
+        failStatus(path, "bounded frame dimensions must both be zero (native) or both positive");
+    return decodeSoftwareFrame(path, frameIndex, /*linearize=*/true, policy, overrides, width, height,
+                               /*fitBounds=*/true);
+}
+
+ColorOverride colorOverrideFromInterpretation(const std::map<std::string, std::string>& interpretation,
+                                              const std::string& context) {
+    // The error text names the field, the value, and the supported set; the
+    // runtime source session rethrows it as its own exception type without
+    // rewriting the message.
+    const auto parseField = [&context](const std::string& value, const auto& byName, const std::string& field,
+                                       const std::string& supported) {
+        const auto it = byName.find(value);
+        if (it == byName.end()) {
+            throw std::invalid_argument("source interpretation field '" + field + "' has unsupported value '" + value +
+                                        "' (context: " + context + "; supported: " + supported + ")");
+        }
+        return it->second;
+    };
+    ColorOverride overrides;
+    for (const auto& [field, value] : interpretation) {
+        if (field == "transfer") {
+            static const std::map<std::string, gpu::MediaTransfer> byName{{"bt709", gpu::MediaTransfer::Bt709},
+                                                                          {"srgb", gpu::MediaTransfer::Srgb},
+                                                                          {"gamma22", gpu::MediaTransfer::Gamma22},
+                                                                          {"gamma28", gpu::MediaTransfer::Gamma28},
+                                                                          {"linear", gpu::MediaTransfer::Linear}};
+            overrides.transfer = parseField(value, byName, field, "bt709, srgb, gamma22, gamma28, linear");
+        } else if (field == "primaries") {
+            static const std::map<std::string, gpu::MediaPrimaries> byName{{"bt709", gpu::MediaPrimaries::Bt709}};
+            overrides.primaries = parseField(value, byName, field, "bt709");
+        } else if (field == "matrix") {
+            static const std::map<std::string, gpu::MediaMatrix> byName{{"bt709", gpu::MediaMatrix::Bt709},
+                                                                        {"bt601", gpu::MediaMatrix::Bt601}};
+            overrides.matrix = parseField(value, byName, field, "bt709, bt601");
+        } else if (field == "range") {
+            static const std::map<std::string, gpu::MediaYuvRange> byName{{"limited", gpu::MediaYuvRange::Limited},
+                                                                          {"full", gpu::MediaYuvRange::Full}};
+            overrides.range = parseField(value, byName, field, "limited, full");
+        } else if (field == "chromaLocation") {
+            static const std::map<std::string, gpu::MediaChromaLocation> byName{
+                {"left", gpu::MediaChromaLocation::Left}};
+            overrides.chromaLocation = parseField(value, byName, field, "left");
+        } else {
+            throw std::invalid_argument("source interpretation has unknown field '" + field + "' (context: " + context +
+                                        "; known fields: transfer, primaries, matrix, range, chromaLocation)");
+        }
+    }
+    return overrides;
 }
 
 SoftwareClip decodeViewerChunkSoftware(const std::string& path, int64_t maxFrames) {

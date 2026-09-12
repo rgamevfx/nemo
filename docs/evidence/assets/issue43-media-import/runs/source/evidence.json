@@ -1,0 +1,2135 @@
+{
+    "attachError": "",
+    "attached": true,
+    "captures": [
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-source-still",
+            "path": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-still.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        },
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-source-sequence-1001",
+            "path": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-sequence-1001.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        },
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-source-sequence-1002",
+            "path": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-sequence-1002.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        },
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-two-viewers",
+            "path": "/tmp/nemo43-smoke/final-source-v3/shots-media-two-viewers.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        }
+    ],
+    "deadlineMs": 180000,
+    "elapsedMs": 57033,
+    "environment": {
+        "engine": {
+            "className": "QQmlApplicationEngine",
+            "contextProperties": {
+                "mediaLibrary": true,
+                "panelContextRouter": true,
+                "parameterEditors": true,
+                "projectFile": true,
+                "viewerController": true,
+                "viewerControllers": true,
+                "workspace": true
+            },
+            "found": true
+        },
+        "mediaLibrary": {
+            "className": "nemo::ui::MediaLibraryModel",
+            "found": true,
+            "revision": 5
+        },
+        "process": {
+            "applicationName": "nemo-ui",
+            "arguments": [
+                "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+            ],
+            "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+            "pid": 1909120,
+            "platform": "wayland",
+            "qtVersion": "6.4.2"
+        },
+        "workspace": {
+            "found": true,
+            "panelTypes": [
+                {
+                    "headerSource": "",
+                    "source": "ViewerPanel.qml",
+                    "title": "Viewer",
+                    "typeId": "viewer"
+                },
+                {
+                    "headerSource": "",
+                    "source": "GraphPanel.qml",
+                    "title": "Node graph",
+                    "typeId": "nodegraph"
+                },
+                {
+                    "headerSource": "",
+                    "source": "TimelinePanel.qml",
+                    "title": "Timeline",
+                    "typeId": "timeline"
+                },
+                {
+                    "headerSource": "",
+                    "source": "ParametersPanel.qml",
+                    "title": "Parameters",
+                    "typeId": "parameters"
+                },
+                {
+                    "headerSource": "",
+                    "source": "MediaBinPanel.qml",
+                    "title": "Media Bin",
+                    "typeId": "media"
+                }
+            ],
+            "panels": [
+                {
+                    "group": "A",
+                    "id": "panel-12",
+                    "state": {
+                        "anchorId": "media-3",
+                        "currentParentId": "root",
+                        "currentSmartBinId": "",
+                        "expandedBins": {
+                            "root": true
+                        },
+                        "kindFilter": "all",
+                        "offlineOnly": false,
+                        "projectScope": true,
+                        "searchText": "",
+                        "selectedIds": [
+                            "media-3"
+                        ],
+                        "sortDescending": false,
+                        "sortField": "name",
+                        "treeCollapsed": false,
+                        "treeWidth": 184,
+                        "unusedOnly": false,
+                        "viewMode": "list"
+                    },
+                    "title": "",
+                    "type": "media"
+                },
+                {
+                    "group": "B",
+                    "id": "panel-19",
+                    "state": {
+                        "anchorId": "media-2",
+                        "currentParentId": "root",
+                        "currentSmartBinId": "",
+                        "expandedBins": {
+                            "root": true
+                        },
+                        "kindFilter": "all",
+                        "offlineOnly": false,
+                        "projectScope": true,
+                        "searchText": "",
+                        "selectedIds": [
+                            "media-2"
+                        ],
+                        "sortDescending": false,
+                        "sortField": "name",
+                        "treeCollapsed": false,
+                        "treeWidth": 184,
+                        "unusedOnly": false,
+                        "viewMode": "list"
+                    },
+                    "title": "",
+                    "type": "media"
+                },
+                {
+                    "group": "A",
+                    "id": "panel-13",
+                    "state": {
+                        "viewerRole": "media"
+                    },
+                    "title": "",
+                    "type": "viewer"
+                },
+                {
+                    "group": "B",
+                    "id": "panel-16",
+                    "state": {
+                        "viewerRole": "media"
+                    },
+                    "title": "",
+                    "type": "viewer"
+                }
+            ]
+        }
+    },
+    "errors": [
+    ],
+    "geometry": [
+        {
+            "found": false,
+            "panelId": "panel-12",
+            "role": "panel-body"
+        },
+        {
+            "className": "MediaBinPanel_QMLTYPE_93",
+            "devicePixelRatio": 1,
+            "deviceRect": {
+                "height": 524,
+                "width": 311,
+                "x": 9,
+                "y": 107
+            },
+            "effectiveVisible": true,
+            "found": true,
+            "globalCaveat": "mapToGlobal is window-relative under Wayland; the compositor owns absolute placement",
+            "globalRect": {
+                "height": 524,
+                "width": 311,
+                "x": 9,
+                "y": 107
+            },
+            "height": 524,
+            "objectName": "mediaBinPanel",
+            "opacity": 1,
+            "panelId": "panel-19",
+            "role": "panel-body",
+            "sceneRect": {
+                "height": 524,
+                "width": 311,
+                "x": 9,
+                "y": 107
+            },
+            "visible": true,
+            "width": 311,
+            "windowRect": {
+                "height": 524,
+                "width": 311,
+                "x": 9,
+                "y": 107
+            }
+        }
+    ],
+    "grabWindowEnabled": true,
+    "helper": "nemo43-native-evidence/1",
+    "lingerMs": 1200,
+    "observations": [
+        {
+            "className": "ViewerPanel_QMLTYPE_82",
+            "name": "single-selection-context",
+            "property": "panelContext",
+            "resolvedVia": "panelType:viewer/A",
+            "valid": true,
+            "value": {
+                "available": false,
+                "group": "A",
+                "panelId": "panel-13",
+                "sourceClock": 0,
+                "sourceMarks": [
+                ],
+                "sourceTarget": "",
+                "timelineClock": 0,
+                "timelineTarget": "",
+                "unavailableReason": "source target is unavailable",
+                "viewerRole": "media"
+            },
+            "valueType": "QJSValue"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "still-render-state",
+            "property": "renderState",
+            "resolvedVia": "panelType:viewer/A.property:controller",
+            "summary": "current",
+            "valid": true,
+            "value": "current",
+            "valueType": "QString"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "still-error",
+            "property": "error",
+            "resolvedVia": "panelType:viewer/A.property:controller",
+            "summary": "",
+            "valid": true,
+            "value": "",
+            "valueType": "QString"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "still-domain",
+            "property": "compositionSize",
+            "resolvedVia": "panelType:viewer/A.property:controller",
+            "valid": true,
+            "value": "QSizeF",
+            "valueType": "QSizeF"
+        },
+        {
+            "className": "ViewerPanel_QMLTYPE_82",
+            "name": "sequence-selection-does-not-open",
+            "property": "panelContext",
+            "resolvedVia": "panelType:viewer/A",
+            "valid": true,
+            "value": {
+                "available": true,
+                "group": "A",
+                "panelId": "panel-13",
+                "sourceClock": 0,
+                "sourceMarks": [
+                ],
+                "sourceTarget": "still",
+                "timelineClock": 0,
+                "timelineTarget": "",
+                "unavailableReason": "",
+                "viewerRole": "media"
+            },
+            "valueType": "QJSValue"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "sequence-frame-zero",
+            "property": "frame",
+            "resolvedVia": "panelType:viewer/A.property:controller",
+            "summary": "0",
+            "valid": true,
+            "value": 0,
+            "valueType": "int"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "sequence-error",
+            "property": "error",
+            "resolvedVia": "panelType:viewer/A.property:controller",
+            "summary": "",
+            "valid": true,
+            "value": "",
+            "valueType": "QString"
+        },
+        {
+            "className": "TextField_QMLTYPE_14",
+            "name": "focused-viewerFrame_panel-13",
+            "property": "text",
+            "resolvedVia": "objectName:viewerFrame_panel-13",
+            "summary": "0",
+            "valid": true,
+            "value": "0",
+            "valueType": "QString"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "sequence-frame-one",
+            "property": "frame",
+            "resolvedVia": "panelType:viewer/A.property:controller",
+            "summary": "1",
+            "valid": true,
+            "value": 1,
+            "valueType": "int"
+        },
+        {
+            "className": "ViewerPanel_QMLTYPE_82",
+            "name": "B-selection-does-not-open",
+            "property": "panelContext",
+            "resolvedVia": "panelType:viewer/B",
+            "valid": true,
+            "value": {
+                "available": false,
+                "group": "B",
+                "panelId": "panel-16",
+                "sourceClock": 0,
+                "sourceMarks": [
+                ],
+                "sourceTarget": "",
+                "timelineClock": 0,
+                "timelineTarget": "",
+                "unavailableReason": "source target is unavailable",
+                "viewerRole": "media"
+            },
+            "valueType": "QJSValue"
+        },
+        {
+            "className": "TextField_QMLTYPE_14",
+            "name": "focused-viewerFrame_panel-16",
+            "property": "text",
+            "resolvedVia": "objectName:viewerFrame_panel-16",
+            "summary": "0",
+            "valid": true,
+            "value": "0",
+            "valueType": "QString"
+        },
+        {
+            "className": "ViewerPanel_QMLTYPE_82",
+            "name": "A-after-B-seek",
+            "property": "panelContext",
+            "resolvedVia": "panelType:viewer/A",
+            "valid": true,
+            "value": {
+                "available": true,
+                "group": "A",
+                "panelId": "panel-13",
+                "sourceClock": 1,
+                "sourceMarks": [
+                ],
+                "sourceTarget": "shot.____",
+                "timelineClock": 0,
+                "timelineTarget": "",
+                "unavailableReason": "",
+                "viewerRole": "media"
+            },
+            "valueType": "QJSValue"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "A-frame-after-B-seek",
+            "property": "frame",
+            "resolvedVia": "panelType:viewer/A.property:controller",
+            "summary": "1",
+            "valid": true,
+            "value": 1,
+            "valueType": "int"
+        },
+        {
+            "className": "ViewerPanel_QMLTYPE_82",
+            "name": "B-after-seek",
+            "property": "panelContext",
+            "resolvedVia": "panelType:viewer/B",
+            "valid": true,
+            "value": {
+                "available": true,
+                "group": "B",
+                "panelId": "panel-16",
+                "sourceClock": 5,
+                "sourceMarks": [
+                ],
+                "sourceTarget": "tagged",
+                "timelineClock": 0,
+                "timelineTarget": "",
+                "unavailableReason": "",
+                "viewerRole": "media"
+            },
+            "valueType": "QJSValue"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "B-frame",
+            "property": "frame",
+            "resolvedVia": "panelType:viewer/B.property:controller",
+            "summary": "5",
+            "valid": true,
+            "value": 5,
+            "valueType": "int"
+        },
+        {
+            "className": "nemo::ui::ViewerController",
+            "name": "B-error",
+            "property": "error",
+            "resolvedVia": "panelType:viewer/B.property:controller",
+            "summary": "",
+            "valid": true,
+            "value": "",
+            "valueType": "QString"
+        },
+        {
+            "className": "TextField_QMLTYPE_14",
+            "name": "timecode-A",
+            "property": "text",
+            "resolvedVia": "objectName:viewerTimecode_panel-13",
+            "summary": "00:00:00:01",
+            "valid": true,
+            "value": "00:00:00:01",
+            "valueType": "QString"
+        },
+        {
+            "className": "TextField_QMLTYPE_14",
+            "name": "timecode-B",
+            "property": "text",
+            "resolvedVia": "objectName:viewerTimecode_panel-16",
+            "summary": "00:00:00:05",
+            "valid": true,
+            "value": "00:00:00:05",
+            "valueType": "QString"
+        }
+    ],
+    "phase": "final-source",
+    "readyFile": "/tmp/nemo43-smoke/final-source-v3/ready.json",
+    "responsiveness": {
+        "baseTickMs": 16,
+        "frameSwapped": 246,
+        "maxBaseTickGapMs": 210
+    },
+    "scenarioLoaded": true,
+    "scenarioPath": "/tmp/nemo43-smoke/scenario-final-source-v3.json",
+    "steps": [
+        {
+            "index": 0,
+            "kind": "attach",
+            "request": {
+                "engineFound": true,
+                "windowObjectName": "mainWindow"
+            },
+            "startedMs": 179
+        },
+        {
+            "finishedMs": 185,
+            "index": 1,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "A"
+                ],
+                "kind": "invoke",
+                "method": "revealMediaPanel",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "revealMediaPanel",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            },
+            "startedMs": 179
+        },
+        {
+            "finishedMs": 20194,
+            "index": 2,
+            "kind": "waitForPanel",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "kind": "waitForPanel",
+                "panelType": "media",
+                "timeoutMs": 20000
+            },
+            "result": {
+                "bodyClassName": "MediaBinPanel_QMLTYPE_93",
+                "bodyFound": true,
+                "bodyHeight": 121,
+                "bodyObjectName": "mediaBinPanel",
+                "bodyWidth": 626,
+                "panelId": "panel-12"
+            },
+            "startedMs": 185
+        },
+        {
+            "finishedMs": 20249,
+            "index": 3,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-1"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            },
+            "startedMs": 20194
+        },
+        {
+            "finishedMs": 20278,
+            "index": 4,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-3"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            },
+            "startedMs": 20249
+        },
+        {
+            "finishedMs": 20305,
+            "index": 5,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-8"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            },
+            "startedMs": 20278
+        },
+        {
+            "finishedMs": 20306,
+            "index": 6,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-6"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            },
+            "startedMs": 20305
+        },
+        {
+            "finishedMs": 20306,
+            "index": 7,
+            "kind": "resizeWindow",
+            "ok": true,
+            "request": {
+                "height": 640,
+                "kind": "resizeWindow",
+                "width": 1274
+            },
+            "result": {
+                "height": 640,
+                "width": 1274
+            },
+            "startedMs": 20306
+        },
+        {
+            "finishedMs": 20307,
+            "index": 8,
+            "kind": "setPanelState",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "kind": "setPanelState",
+                "panelType": "media",
+                "state": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                }
+            },
+            "result": {
+                "panelId": "panel-12",
+                "readBackState": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                },
+                "requestedState": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                }
+            },
+            "startedMs": 20306
+        },
+        {
+            "index": 9,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            },
+            "startedMs": 20307
+        },
+        {
+            "finishedMs": 20747,
+            "index": 10,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    [
+                        "/tmp/nemo43-smoke/still.png",
+                        "/tmp/nemo43-smoke/tagged.mkv"
+                    ],
+                    "root",
+                    0
+                ],
+                "kind": "invoke",
+                "method": "importPaths",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "importPaths",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            },
+            "startedMs": 20715
+        },
+        {
+            "finishedMs": 20778,
+            "index": 11,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    [
+                        "/tmp/nemo43-smoke/shot.####.exr"
+                    ],
+                    "root",
+                    1001
+                ],
+                "kind": "invoke",
+                "method": "importPaths",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "importPaths",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            },
+            "startedMs": 20747
+        },
+        {
+            "finishedMs": 22312,
+            "index": 12,
+            "kind": "probe",
+            "ok": true,
+            "request": {
+                "intervalMs": 16,
+                "kind": "probe",
+                "ticks": 90
+            },
+            "result": {
+                "intervalMs": 16,
+                "maxGapMs": 109,
+                "meanGapMs": 17.044444444444444,
+                "minGapMs": 15,
+                "note": "GUI-thread QTimer cadence; jitter/ordering only, not render or scanout timing",
+                "p95GapMs": 17,
+                "samples": [
+                    17,
+                    15,
+                    16,
+                    109,
+                    16,
+                    17,
+                    16,
+                    15,
+                    16,
+                    16,
+                    17,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    18,
+                    15,
+                    15,
+                    17,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    16,
+                    17,
+                    16,
+                    16,
+                    16,
+                    15,
+                    16,
+                    16,
+                    17,
+                    16,
+                    16
+                ],
+                "ticks": 90
+            },
+            "startedMs": 20778
+        },
+        {
+            "finishedMs": 22670,
+            "index": 13,
+            "kind": "createViewer",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "inLeafOf": "media",
+                "kind": "createViewer",
+                "placement": "right",
+                "ratio": 0.25,
+                "role": "media"
+            },
+            "result": {
+                "applied": true,
+                "leafId": "leaf-14",
+                "originalLeafId": "leaf-7",
+                "panelId": "panel-13",
+                "placement": "right",
+                "ratio": 0.25,
+                "role": "media",
+                "rootAfterPlacement": {
+                    "children": [
+                        {
+                            "active": "panel-12",
+                            "id": "leaf-7",
+                            "kind": "tabs",
+                            "panels": [
+                                {
+                                    "group": "A",
+                                    "id": "panel-12",
+                                    "state": {
+                                        "projectScope": true,
+                                        "viewMode": "list"
+                                    },
+                                    "type": "media"
+                                }
+                            ]
+                        },
+                        {
+                            "active": "panel-13",
+                            "id": "leaf-14",
+                            "kind": "tabs",
+                            "panels": [
+                                {
+                                    "group": "A",
+                                    "id": "panel-13",
+                                    "type": "viewer"
+                                }
+                            ]
+                        }
+                    ],
+                    "id": "split-15",
+                    "kind": "split",
+                    "orientation": "horizontal",
+                    "ratio": 0.5
+                },
+                "splitId": "split-15",
+                "viewerRole": "media"
+            },
+            "startedMs": 22328
+        },
+        {
+            "index": 14,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 800
+            },
+            "startedMs": 22670
+        },
+        {
+            "finishedMs": 23514,
+            "index": 15,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaInput_media-1"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaInput_media-1",
+                "x": 234,
+                "y": 200
+            },
+            "startedMs": 23484
+        },
+        {
+            "index": 16,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 200
+            },
+            "startedMs": 23514
+        },
+        {
+            "finishedMs": 23725,
+            "index": 17,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "single-selection-context",
+                "property": "panelContext",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer"
+                }
+            },
+            "result": {
+                "className": "ViewerPanel_QMLTYPE_82",
+                "name": "single-selection-context",
+                "property": "panelContext",
+                "resolvedVia": "panelType:viewer/A",
+                "valid": true,
+                "value": {
+                    "available": false,
+                    "group": "A",
+                    "panelId": "panel-13",
+                    "sourceClock": 0,
+                    "sourceMarks": [
+                    ],
+                    "sourceTarget": "",
+                    "timelineClock": 0,
+                    "timelineTarget": "",
+                    "unavailableReason": "source target is unavailable",
+                    "viewerRole": "media"
+                },
+                "valueType": "QJSValue"
+            },
+            "startedMs": 23723
+        },
+        {
+            "finishedMs": 23737,
+            "index": 18,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "count": 2,
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaInput_media-1"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaInput_media-1",
+                "x": 234,
+                "y": 200
+            },
+            "startedMs": 23725
+        },
+        {
+            "index": 19,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 1800
+            },
+            "startedMs": 23737
+        },
+        {
+            "finishedMs": 25549,
+            "index": 20,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "still-render-state",
+                "property": "renderState",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "still-render-state",
+                "property": "renderState",
+                "resolvedVia": "panelType:viewer/A.property:controller",
+                "summary": "current",
+                "valid": true,
+                "value": "current",
+                "valueType": "QString"
+            },
+            "startedMs": 25548
+        },
+        {
+            "finishedMs": 25549,
+            "index": 21,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "still-error",
+                "property": "error",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "still-error",
+                "property": "error",
+                "resolvedVia": "panelType:viewer/A.property:controller",
+                "summary": "",
+                "valid": true,
+                "value": "",
+                "valueType": "QString"
+            },
+            "startedMs": 25549
+        },
+        {
+            "finishedMs": 25550,
+            "index": 22,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "still-domain",
+                "property": "compositionSize",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "still-domain",
+                "property": "compositionSize",
+                "resolvedVia": "panelType:viewer/A.property:controller",
+                "valid": true,
+                "value": "QSizeF",
+                "valueType": "QSizeF"
+            },
+            "startedMs": 25549
+        },
+        {
+            "finishedMs": 26241,
+            "index": 23,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-source-still"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-source-still",
+                "path": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-still.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            },
+            "startedMs": 25550
+        },
+        {
+            "finishedMs": 26252,
+            "index": 24,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaInput_media-3"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaInput_media-3",
+                "x": 234,
+                "y": 166
+            },
+            "startedMs": 26241
+        },
+        {
+            "index": 25,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 200
+            },
+            "startedMs": 26252
+        },
+        {
+            "finishedMs": 26463,
+            "index": 26,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "sequence-selection-does-not-open",
+                "property": "panelContext",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer"
+                }
+            },
+            "result": {
+                "className": "ViewerPanel_QMLTYPE_82",
+                "name": "sequence-selection-does-not-open",
+                "property": "panelContext",
+                "resolvedVia": "panelType:viewer/A",
+                "valid": true,
+                "value": {
+                    "available": true,
+                    "group": "A",
+                    "panelId": "panel-13",
+                    "sourceClock": 0,
+                    "sourceMarks": [
+                    ],
+                    "sourceTarget": "still",
+                    "timelineClock": 0,
+                    "timelineTarget": "",
+                    "unavailableReason": "",
+                    "viewerRole": "media"
+                },
+                "valueType": "QJSValue"
+            },
+            "startedMs": 26460
+        },
+        {
+            "finishedMs": 26481,
+            "index": 27,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "count": 2,
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaInput_media-3"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaInput_media-3",
+                "x": 234,
+                "y": 166
+            },
+            "startedMs": 26463
+        },
+        {
+            "index": 28,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 1600
+            },
+            "startedMs": 26481
+        },
+        {
+            "finishedMs": 28095,
+            "index": 29,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "sequence-frame-zero",
+                "property": "frame",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "sequence-frame-zero",
+                "property": "frame",
+                "resolvedVia": "panelType:viewer/A.property:controller",
+                "summary": "0",
+                "valid": true,
+                "value": 0,
+                "valueType": "int"
+            },
+            "startedMs": 28093
+        },
+        {
+            "finishedMs": 28098,
+            "index": 30,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "sequence-error",
+                "property": "error",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "sequence-error",
+                "property": "error",
+                "resolvedVia": "panelType:viewer/A.property:controller",
+                "summary": "",
+                "valid": true,
+                "value": "",
+                "valueType": "QString"
+            },
+            "startedMs": 28095
+        },
+        {
+            "finishedMs": 28743,
+            "index": 31,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-source-sequence-1001"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-source-sequence-1001",
+                "path": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-sequence-1001.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            },
+            "startedMs": 28098
+        },
+        {
+            "finishedMs": 28744,
+            "index": 32,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "viewerFrame_panel-13"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:viewerFrame_panel-13",
+                "x": 604,
+                "y": 613
+            },
+            "startedMs": 28743
+        },
+        {
+            "finishedMs": 28744,
+            "index": 33,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "focused-viewerFrame_panel-13",
+                "property": "text",
+                "target": {
+                    "objectName": "viewerFrame_panel-13"
+                }
+            },
+            "result": {
+                "className": "TextField_QMLTYPE_14",
+                "name": "focused-viewerFrame_panel-13",
+                "property": "text",
+                "resolvedVia": "objectName:viewerFrame_panel-13",
+                "summary": "0",
+                "valid": true,
+                "value": "0",
+                "valueType": "QString"
+            },
+            "startedMs": 28744
+        },
+        {
+            "finishedMs": 28746,
+            "index": 34,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "A",
+                "kind": "key",
+                "modifiers": "Ctrl"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "A"
+            },
+            "startedMs": 28744
+        },
+        {
+            "finishedMs": 28746,
+            "index": 35,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "1",
+                "kind": "key"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "1"
+            },
+            "startedMs": 28746
+        },
+        {
+            "finishedMs": 28746,
+            "index": 36,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "Return",
+                "kind": "key"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "Return"
+            },
+            "startedMs": 28746
+        },
+        {
+            "index": 37,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 1600
+            },
+            "startedMs": 28746
+        },
+        {
+            "finishedMs": 30362,
+            "index": 38,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "sequence-frame-one",
+                "property": "frame",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "sequence-frame-one",
+                "property": "frame",
+                "resolvedVia": "panelType:viewer/A.property:controller",
+                "summary": "1",
+                "valid": true,
+                "value": 1,
+                "valueType": "int"
+            },
+            "startedMs": 30360
+        },
+        {
+            "finishedMs": 31012,
+            "index": 39,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-source-sequence-1002"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-source-sequence-1002",
+                "path": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-sequence-1002.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            },
+            "startedMs": 30362
+        },
+        {
+            "finishedMs": 31368,
+            "index": 40,
+            "kind": "createViewer",
+            "ok": true,
+            "request": {
+                "group": "B",
+                "inLeafOf": "viewer",
+                "kind": "createViewer",
+                "placement": "right",
+                "ratio": 0.5,
+                "role": "media"
+            },
+            "result": {
+                "applied": true,
+                "leafId": "leaf-17",
+                "originalLeafId": "leaf-14",
+                "panelId": "panel-16",
+                "placement": "right",
+                "ratio": 0.5,
+                "role": "media",
+                "rootAfterPlacement": {
+                    "children": [
+                        {
+                            "active": "panel-12",
+                            "id": "leaf-7",
+                            "kind": "tabs",
+                            "panels": [
+                                {
+                                    "group": "A",
+                                    "id": "panel-12",
+                                    "state": {
+                                        "anchorId": "media-3",
+                                        "currentParentId": "root",
+                                        "currentSmartBinId": "",
+                                        "expandedBins": {
+                                            "root": true
+                                        },
+                                        "kindFilter": "all",
+                                        "offlineOnly": false,
+                                        "projectScope": true,
+                                        "searchText": "",
+                                        "selectedIds": [
+                                            "media-3"
+                                        ],
+                                        "sortDescending": false,
+                                        "sortField": "name",
+                                        "treeCollapsed": false,
+                                        "treeWidth": 184,
+                                        "unusedOnly": false,
+                                        "viewMode": "list"
+                                    },
+                                    "type": "media"
+                                }
+                            ]
+                        },
+                        {
+                            "children": [
+                                {
+                                    "active": "panel-13",
+                                    "id": "leaf-14",
+                                    "kind": "tabs",
+                                    "panels": [
+                                        {
+                                            "group": "A",
+                                            "id": "panel-13",
+                                            "state": {
+                                                "viewerRole": "media"
+                                            },
+                                            "type": "viewer"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "active": "panel-16",
+                                    "id": "leaf-17",
+                                    "kind": "tabs",
+                                    "panels": [
+                                        {
+                                            "group": "B",
+                                            "id": "panel-16",
+                                            "type": "viewer"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "id": "split-18",
+                            "kind": "split",
+                            "orientation": "horizontal",
+                            "ratio": 0.5
+                        }
+                    ],
+                    "id": "split-15",
+                    "kind": "split",
+                    "orientation": "horizontal",
+                    "ratio": 0.25
+                },
+                "splitId": "split-18",
+                "viewerRole": "media"
+            },
+            "startedMs": 31012
+        },
+        {
+            "index": 41,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 800
+            },
+            "startedMs": 31368
+        },
+        {
+            "finishedMs": 32177,
+            "index": 42,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "B"
+                ],
+                "kind": "invoke",
+                "method": "revealMediaPanel",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "revealMediaPanel",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            },
+            "startedMs": 32169
+        },
+        {
+            "finishedMs": 52186,
+            "index": 43,
+            "kind": "waitForPanel",
+            "ok": true,
+            "request": {
+                "group": "B",
+                "kind": "waitForPanel",
+                "panelType": "media",
+                "timeoutMs": 20000
+            },
+            "result": {
+                "bodyClassName": "MediaBinPanel_QMLTYPE_93",
+                "bodyFound": true,
+                "bodyHeight": 524,
+                "bodyObjectName": "mediaBinPanel",
+                "bodyWidth": 311,
+                "panelId": "panel-19"
+            },
+            "startedMs": 32177
+        },
+        {
+            "index": 44,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 500
+            },
+            "startedMs": 52186
+        },
+        {
+            "finishedMs": 52723,
+            "index": 45,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaInput_media-2"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaInput_media-2",
+                "x": 234,
+                "y": 260
+            },
+            "startedMs": 52696
+        },
+        {
+            "finishedMs": 52724,
+            "index": 46,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "B-selection-does-not-open",
+                "property": "panelContext",
+                "target": {
+                    "group": "B",
+                    "panelType": "viewer"
+                }
+            },
+            "result": {
+                "className": "ViewerPanel_QMLTYPE_82",
+                "name": "B-selection-does-not-open",
+                "property": "panelContext",
+                "resolvedVia": "panelType:viewer/B",
+                "valid": true,
+                "value": {
+                    "available": false,
+                    "group": "B",
+                    "panelId": "panel-16",
+                    "sourceClock": 0,
+                    "sourceMarks": [
+                    ],
+                    "sourceTarget": "",
+                    "timelineClock": 0,
+                    "timelineTarget": "",
+                    "unavailableReason": "source target is unavailable",
+                    "viewerRole": "media"
+                },
+                "valueType": "QJSValue"
+            },
+            "startedMs": 52723
+        },
+        {
+            "finishedMs": 52730,
+            "index": 47,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "count": 2,
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaInput_media-2"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaInput_media-2",
+                "x": 234,
+                "y": 260
+            },
+            "startedMs": 52724
+        },
+        {
+            "index": 48,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 1800
+            },
+            "startedMs": 52730
+        },
+        {
+            "finishedMs": 54539,
+            "index": 49,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "viewerFrame_panel-16"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:viewerFrame_panel-16",
+                "x": 997,
+                "y": 615
+            },
+            "startedMs": 54537
+        },
+        {
+            "finishedMs": 54539,
+            "index": 50,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "focused-viewerFrame_panel-16",
+                "property": "text",
+                "target": {
+                    "objectName": "viewerFrame_panel-16"
+                }
+            },
+            "result": {
+                "className": "TextField_QMLTYPE_14",
+                "name": "focused-viewerFrame_panel-16",
+                "property": "text",
+                "resolvedVia": "objectName:viewerFrame_panel-16",
+                "summary": "0",
+                "valid": true,
+                "value": "0",
+                "valueType": "QString"
+            },
+            "startedMs": 54539
+        },
+        {
+            "finishedMs": 54546,
+            "index": 51,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "A",
+                "kind": "key",
+                "modifiers": "Ctrl"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "A"
+            },
+            "startedMs": 54539
+        },
+        {
+            "finishedMs": 54546,
+            "index": 52,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "5",
+                "kind": "key"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "5"
+            },
+            "startedMs": 54546
+        },
+        {
+            "finishedMs": 54556,
+            "index": 53,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "Return",
+                "kind": "key"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "Return"
+            },
+            "startedMs": 54546
+        },
+        {
+            "index": 54,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 1800
+            },
+            "startedMs": 54556
+        },
+        {
+            "finishedMs": 56363,
+            "index": 55,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "A-after-B-seek",
+                "property": "panelContext",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer"
+                }
+            },
+            "result": {
+                "className": "ViewerPanel_QMLTYPE_82",
+                "name": "A-after-B-seek",
+                "property": "panelContext",
+                "resolvedVia": "panelType:viewer/A",
+                "valid": true,
+                "value": {
+                    "available": true,
+                    "group": "A",
+                    "panelId": "panel-13",
+                    "sourceClock": 1,
+                    "sourceMarks": [
+                    ],
+                    "sourceTarget": "shot.____",
+                    "timelineClock": 0,
+                    "timelineTarget": "",
+                    "unavailableReason": "",
+                    "viewerRole": "media"
+                },
+                "valueType": "QJSValue"
+            },
+            "startedMs": 56360
+        },
+        {
+            "finishedMs": 56365,
+            "index": 56,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "A-frame-after-B-seek",
+                "property": "frame",
+                "target": {
+                    "group": "A",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "A-frame-after-B-seek",
+                "property": "frame",
+                "resolvedVia": "panelType:viewer/A.property:controller",
+                "summary": "1",
+                "valid": true,
+                "value": 1,
+                "valueType": "int"
+            },
+            "startedMs": 56363
+        },
+        {
+            "finishedMs": 56367,
+            "index": 57,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "B-after-seek",
+                "property": "panelContext",
+                "target": {
+                    "group": "B",
+                    "panelType": "viewer"
+                }
+            },
+            "result": {
+                "className": "ViewerPanel_QMLTYPE_82",
+                "name": "B-after-seek",
+                "property": "panelContext",
+                "resolvedVia": "panelType:viewer/B",
+                "valid": true,
+                "value": {
+                    "available": true,
+                    "group": "B",
+                    "panelId": "panel-16",
+                    "sourceClock": 5,
+                    "sourceMarks": [
+                    ],
+                    "sourceTarget": "tagged",
+                    "timelineClock": 0,
+                    "timelineTarget": "",
+                    "unavailableReason": "",
+                    "viewerRole": "media"
+                },
+                "valueType": "QJSValue"
+            },
+            "startedMs": 56365
+        },
+        {
+            "finishedMs": 56369,
+            "index": 58,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "B-frame",
+                "property": "frame",
+                "target": {
+                    "group": "B",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "B-frame",
+                "property": "frame",
+                "resolvedVia": "panelType:viewer/B.property:controller",
+                "summary": "5",
+                "valid": true,
+                "value": 5,
+                "valueType": "int"
+            },
+            "startedMs": 56367
+        },
+        {
+            "finishedMs": 56371,
+            "index": 59,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "B-error",
+                "property": "error",
+                "target": {
+                    "group": "B",
+                    "panelType": "viewer",
+                    "property": "controller"
+                }
+            },
+            "result": {
+                "className": "nemo::ui::ViewerController",
+                "name": "B-error",
+                "property": "error",
+                "resolvedVia": "panelType:viewer/B.property:controller",
+                "summary": "",
+                "valid": true,
+                "value": "",
+                "valueType": "QString"
+            },
+            "startedMs": 56369
+        },
+        {
+            "finishedMs": 57030,
+            "index": 60,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-two-viewers"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-two-viewers",
+                "path": "/tmp/nemo43-smoke/final-source-v3/shots-media-two-viewers.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            },
+            "startedMs": 56371
+        },
+        {
+            "finishedMs": 57030,
+            "index": 61,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "timecode-A",
+                "property": "text",
+                "target": {
+                    "objectName": "viewerTimecode_panel-13"
+                }
+            },
+            "result": {
+                "className": "TextField_QMLTYPE_14",
+                "name": "timecode-A",
+                "property": "text",
+                "resolvedVia": "objectName:viewerTimecode_panel-13",
+                "summary": "00:00:00:01",
+                "valid": true,
+                "value": "00:00:00:01",
+                "valueType": "QString"
+            },
+            "startedMs": 57030
+        },
+        {
+            "finishedMs": 57030,
+            "index": 62,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "timecode-B",
+                "property": "text",
+                "target": {
+                    "objectName": "viewerTimecode_panel-16"
+                }
+            },
+            "result": {
+                "className": "TextField_QMLTYPE_14",
+                "name": "timecode-B",
+                "property": "text",
+                "resolvedVia": "objectName:viewerTimecode_panel-16",
+                "summary": "00:00:00:05",
+                "valid": true,
+                "value": "00:00:00:05",
+                "valueType": "QString"
+            },
+            "startedMs": 57030
+        },
+        {
+            "finishedMs": 57031,
+            "index": 63,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "file:///tmp/nemo43-smoke/final-source-saved.nemo"
+                ],
+                "kind": "invoke",
+                "method": "saveAs",
+                "target": "projectFile"
+            },
+            "result": {
+                "className": "nemo::ui::ProjectFileController",
+                "method": "saveAs",
+                "resolvedVia": "contextProperty:projectFile",
+                "resultSummary": "void"
+            },
+            "startedMs": 57030
+        }
+    ],
+    "timeUtc": "2026-09-12T16:45:17.381Z",
+    "window": {
+        "active": true,
+        "className": "Main_QMLTYPE_37",
+        "contentItem": {
+            "height": 640,
+            "width": 1274
+        },
+        "devicePixelRatio": 1,
+        "exposed": true,
+        "found": true,
+        "frameSwapped": 246,
+        "objectName": "mainWindow",
+        "position": {
+            "x": 0,
+            "y": 0
+        },
+        "positionCaveat": "Wayland does not expose an absolute window position; x/y is the compositor value (usually 0,0)",
+        "screen": {
+            "availableGeometry": {
+                "height": 1080,
+                "width": 1920,
+                "x": 0,
+                "y": 0
+            },
+            "devicePixelRatio": 1,
+            "geometry": {
+                "height": 1080,
+                "width": 1920,
+                "x": 0,
+                "y": 0
+            },
+            "name": "eDP-1"
+        },
+        "size": {
+            "height": 640,
+            "width": 1274
+        },
+        "title": "Untitled* — Nemo",
+        "visible": true
+    }
+}

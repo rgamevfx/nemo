@@ -22,6 +22,29 @@ this file carries only the approved contracts that stay true across them.
   (transfer and primaries included) travels inside the chunk and round-trips
   through pixel verification.
 
+## Media import previews
+
+A Media Bin thumbnail is display-referred, but does not use the compressed
+viewer-cache representation. `MediaImportService` decodes through the existing
+`ImageSource`/`VideoDecode` adapters and applies the existing OCIO viewing
+transform; previews are never fed back through source linearization or
+synthesized. The source-linear decode contract above still owns interpretation.
+`MediaLibraryModel` requests a reduction within 160×90 bounds.
+
+- The service owns the bounded queue: outstanding sources (queued, decoding or
+  awaiting collection) are capped, a repeat submission for an outstanding source
+  coalesces to the newest reference, and the caller retries at the bound. Work
+  happens off the GUI thread; there are no worker callbacks.
+- A result is consumed only while its identity is current: `requestId`,
+  `sourceKey` and `reference.revision`, together with the viewing transforms and
+  color config. A result whose source or transform moved on is reported stale
+  and never committed; the commit is an explicit catalog command.
+- Import polling preserves synchronous publication. The adapter finishes its
+  internal cache/index updates before emitting notifications, then re-checks
+  result identity after a slot may have edited or reset the project.
+
+Issue #43 evidence: [`session.json`](../evidence/assets/issue43-media-import/session.json).
+
 ## Validate capabilities and formats — never assume
 
 - Registration is not usability: init-verify codecs/decoders against the

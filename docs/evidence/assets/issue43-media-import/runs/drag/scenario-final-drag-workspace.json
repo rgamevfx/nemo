@@ -1,0 +1,364 @@
+{
+  "phase": "final-drag-workspace",
+  "group": "A",
+  "panelType": "media",
+  "settleMs": 500,
+  "grabWindow": true,
+  "quit": true,
+  "lingerMs": 1200,
+  "steps": [
+    {
+      "kind": "invoke",
+      "target": "projectFile",
+      "method": "openProject",
+      "args": [
+        "file:///tmp/nemo43-smoke/marked-catalog.json"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 600
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "projectWarningsDismissButton"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 300
+    },
+    {
+      "kind": "resizeWindow",
+      "width": 1274,
+      "height": 640
+    },
+    {
+      "kind": "invoke",
+      "target": "panelContextRouter",
+      "method": "setGroupContext",
+      "args": [
+        "A",
+        {
+          "timelineClock": 37
+        }
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "revealMediaPanel",
+      "args": [
+        "B"
+      ]
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "B",
+      "timeoutMs": 500
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-8"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-6"
+      ]
+    },
+    {
+      "kind": "createPanel",
+      "type": "timeline",
+      "group": "A",
+      "inLeafOf": "media",
+      "placement": "bottom",
+      "ratio": 0.58
+    },
+    {
+      "kind": "createViewer",
+      "group": "A",
+      "role": "media",
+      "inLeafOf": "media",
+      "placement": "right",
+      "ratio": 0.36
+    },
+    {
+      "kind": "wait",
+      "ms": 300
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "B",
+      "state": {
+        "viewMode": "list",
+        "projectScope": true
+      }
+    },
+    {
+      "kind": "probe",
+      "ticks": 90,
+      "intervalMs": 16
+    },
+    {
+      "kind": "spySignal",
+      "target": "mediaLibrary",
+      "signal": "timelineInsertRequested",
+      "name": "insertIntent"
+    },
+    {
+      "kind": "read",
+      "name": "timeline-clock-before",
+      "target": {
+        "panelType": "timeline",
+        "group": "A"
+      },
+      "property": "routedClock"
+    },
+    {
+      "kind": "selectEntries",
+      "panelType": "media",
+      "group": "B",
+      "ids": [
+        "media-3",
+        "media-2",
+        "media-1"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 200
+    },
+    {
+      "kind": "read",
+      "name": "visible-source-order",
+      "target": {
+        "objectName": "mediaInput_media-1",
+        "property": "parent"
+      },
+      "property": "sourceIds"
+    },
+    {
+      "kind": "read",
+      "name": "per-occurrence-marks",
+      "target": {
+        "objectName": "mediaInput_media-1",
+        "property": "parent"
+      },
+      "property": "marks"
+    },
+    {
+      "kind": "read",
+      "name": "origin-group",
+      "target": {
+        "objectName": "mediaInput_media-1",
+        "property": "parent"
+      },
+      "property": "sourceGroup"
+    },
+    {
+      "kind": "drag",
+      "from": {
+        "objectName": "mediaInput_media-1"
+      },
+      "to": {
+        "objectName": "timelineInsertDrop"
+      },
+      "steps": 12,
+      "holdMs": 80,
+      "spacingMs": 80,
+      "settleMs": 700
+    },
+    {
+      "kind": "spyRead",
+      "name": "insertIntent"
+    },
+    {
+      "kind": "read",
+      "name": "timeline-clock-after-drop",
+      "target": {
+        "panelType": "timeline",
+        "group": "A"
+      },
+      "property": "routedClock"
+    },
+    {
+      "kind": "capture",
+      "name": "media-timeline-drag"
+    },
+    {
+      "kind": "drag",
+      "from": {
+        "objectName": "mediaInput_media-1"
+      },
+      "over": {
+        "objectName": "timelineInsertDrop"
+      },
+      "cancel": true,
+      "steps": 8,
+      "spacingMs": 70,
+      "settleMs": 500
+    },
+    {
+      "kind": "spyRead",
+      "name": "insertIntent"
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "apply",
+      "args": [
+        {
+          "type": "createBin",
+          "name": "Destination",
+          "parentId": "root"
+        }
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 500
+    },
+    {
+      "kind": "selectEntries",
+      "panelType": "media",
+      "group": "B",
+      "ids": [
+        "media-3",
+        "media-2",
+        "media-1"
+      ]
+    },
+    {
+      "kind": "drag",
+      "from": {
+        "objectName": "mediaInput_media-1"
+      },
+      "to": {
+        "objectName": "mediaTreeDrop_bin-1"
+      },
+      "steps": 8,
+      "spacingMs": 70,
+      "settleMs": 700
+    },
+    {
+      "kind": "spyRead",
+      "name": "insertIntent"
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "media-1"
+      ]
+    },
+    {
+      "kind": "selectEntries",
+      "panelType": "media",
+      "group": "B",
+      "ids": [
+        "bin-1"
+      ]
+    },
+    {
+      "kind": "drag",
+      "from": {
+        "objectName": "mediaInput_bin-1"
+      },
+      "to": {
+        "objectName": "timelineInsertDrop"
+      },
+      "steps": 8,
+      "spacingMs": 70,
+      "settleMs": 500
+    },
+    {
+      "kind": "spyRead",
+      "name": "insertIntent"
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "B"
+      },
+      "method": "openBin",
+      "args": [
+        "bin-1"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-1"
+      }
+    },
+    {
+      "kind": "key",
+      "key": "A",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "B"
+      },
+      "method": "requestInsert",
+      "args": [
+        "overwrite"
+      ]
+    },
+    {
+      "kind": "spyRead",
+      "name": "insertIntent"
+    },
+    {
+      "kind": "read",
+      "name": "timeline-clock-final",
+      "target": {
+        "panelType": "timeline",
+        "group": "A"
+      },
+      "property": "routedClock"
+    },
+    {
+      "kind": "invoke",
+      "target": "projectFile",
+      "method": "saveAs",
+      "args": [
+        "file:///tmp/nemo43-smoke/final-drag-saved.nemo"
+      ]
+    }
+  ]
+}

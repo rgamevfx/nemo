@@ -18,16 +18,17 @@ namespace {
 }
 
 // Strict enum parsing: every value must name a declared member; anything
-// else is an error naming the field, the value, and the supported set.
-template <typename Enum>
-[[nodiscard]] Enum parseField(const std::string& value, const std::map<std::string, Enum>& byName,
-                              const std::string& field, const std::string& context, const std::string& supported) {
-    const auto it = byName.find(value);
-    if (it == byName.end()) {
-        throw EvaluationException("source interpretation field '" + field + "' has unsupported value '" + value +
-                                  "' (context: " + context + "; supported: " + supported + ")");
+// else is an error naming the field, the value, and the supported set. The
+// interpretation vocabulary itself lives in the media module
+// (media::colorOverrideFromInterpretation) so the runtime session and the
+// import service cannot drift; this wrapper only translates the error type.
+[[nodiscard]] media::ColorOverride colorOverride(const std::map<std::string, std::string>& map,
+                                                 const std::string& context) {
+    try {
+        return media::colorOverrideFromInterpretation(map, context);
+    } catch (const std::invalid_argument& error) {
+        throw EvaluationException(error.what());
     }
-    return it->second;
 }
 
 // A reference whose resolved path names still-image data (issue #62) takes
@@ -41,36 +42,7 @@ template <typename Enum>
 
 media::ColorOverride SourceSession::interpretationOverride(const std::map<std::string, std::string>& map,
                                                            const std::string& context) {
-    media::ColorOverride overrides;
-    for (const auto& [field, value] : map) {
-        if (field == "transfer") {
-            static const std::map<std::string, gpu::MediaTransfer> byName{{"bt709", gpu::MediaTransfer::Bt709},
-                                                                          {"srgb", gpu::MediaTransfer::Srgb},
-                                                                          {"gamma22", gpu::MediaTransfer::Gamma22},
-                                                                          {"gamma28", gpu::MediaTransfer::Gamma28},
-                                                                          {"linear", gpu::MediaTransfer::Linear}};
-            overrides.transfer = parseField(value, byName, field, context, "bt709, srgb, gamma22, gamma28, linear");
-        } else if (field == "primaries") {
-            static const std::map<std::string, gpu::MediaPrimaries> byName{{"bt709", gpu::MediaPrimaries::Bt709}};
-            overrides.primaries = parseField(value, byName, field, context, "bt709");
-        } else if (field == "matrix") {
-            static const std::map<std::string, gpu::MediaMatrix> byName{{"bt709", gpu::MediaMatrix::Bt709},
-                                                                        {"bt601", gpu::MediaMatrix::Bt601}};
-            overrides.matrix = parseField(value, byName, field, context, "bt709, bt601");
-        } else if (field == "range") {
-            static const std::map<std::string, gpu::MediaYuvRange> byName{{"limited", gpu::MediaYuvRange::Limited},
-                                                                          {"full", gpu::MediaYuvRange::Full}};
-            overrides.range = parseField(value, byName, field, context, "limited, full");
-        } else if (field == "chromaLocation") {
-            static const std::map<std::string, gpu::MediaChromaLocation> byName{
-                {"left", gpu::MediaChromaLocation::Left}};
-            overrides.chromaLocation = parseField(value, byName, field, context, "left");
-        } else {
-            throw EvaluationException("source interpretation has unknown field '" + field + "' (context: " + context +
-                                      "; known fields: transfer, primaries, matrix, range, chromaLocation)");
-        }
-    }
-    return overrides;
+    return colorOverride(map, context);
 }
 
 SourceSession::SourceSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,

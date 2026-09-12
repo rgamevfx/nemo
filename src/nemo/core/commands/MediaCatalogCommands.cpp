@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace nemo {
@@ -23,6 +24,28 @@ void requireProbe(const MediaProbeMetadata& probe) {
         reject(GraphError::InvalidMediaQuery, "probe dimensions and duration must be nonnegative");
     if (probe.provenance.empty())
         reject(GraphError::InvalidMediaQuery, "committed probe metadata must identify its provenance");
+}
+
+const MediaCatalogEntry& requireEntry(const Document& document, MediaSourceId id, std::string_view action) {
+    const auto* entry = document.mediaCatalog.entry(id);
+    if (!entry)
+        reject(GraphError::UnknownMediaEntry, std::string(action) + " unknown media entry " + std::to_string(id));
+    return *entry;
+}
+
+// Guards a revision-aware publication against a source reference that changed
+// after the caller snapshotted it.
+const SourceReference& requireExpectedSource(const Document& document, const MediaCatalogEntry& entry,
+                                             const SourceReference& expected, std::string_view action) {
+    const auto source = document.sources.find(entry.sourceKey);
+    if (source == document.sources.end())
+        reject(GraphError::MissingMediaSource, std::string(action) + ": media entry " + std::to_string(entry.id) +
+                                                   " source '" + entry.sourceKey + "' is not in Document::sources");
+    if (source->second != expected)
+        reject(GraphError::StaleMediaSource, std::string(action) + ": media entry " + std::to_string(entry.id) +
+                                                 " source '" + entry.sourceKey +
+                                                 "' no longer matches the expected reference");
+    return source->second;
 }
 
 }  // namespace
@@ -101,6 +124,13 @@ Command setMediaMetadataCommand(MediaSourceId id, MediaMetadata metadata) {
                    }};
 }
 
+Command setMediaBinMetadataCommand(MediaBinId id, MediaBinMetadata metadata) {
+    return Command{"set metadata on media bin " + std::to_string(id),
+                   [id, metadata = std::move(metadata)](Document& document) mutable {
+                       document.mediaCatalog.setBinMetadata(id, std::move(metadata));
+                   }};
+}
+
 Command setMediaMarksCommand(MediaSourceId id, std::vector<MediaMarkRange> marks) {
     return Command{"set marks on media entry " + std::to_string(id),
                    [id, marks = std::move(marks)](Document& document) { document.mediaCatalog.setMarks(id, marks); }};
@@ -146,22 +176,61 @@ Command duplicateCatalogEntryCommand(MediaSourceId id, std::shared_ptr<MediaSour
 }
 Command setMediaQueryCommand(MediaBinId id, std::optional<MediaQueryDescriptor> query) {
     return Command{"set query on media bin " + std::to_string(id),
-                   [id, query = std::move(query)](Document& document) { document.mediaCatalog.setQuery(id, query); }};
+                   [id, query = std::move(query)](Document& document) mutable {
+                       // A query authored against a missing bin is rejected up
+                       // front; a scope removed later leaves the query
+                       // unavailable rather than silently project-wide.
+                       if (query && !document.mediaCatalog.queryScopeAvailable(*query))
+                           reject(GraphError::UnknownMediaBin,
+                                  "smart query scope bin " + std::to_string(*query->scope) + " does not exist");
+                       document.mediaCatalog.setQuery(id, std::move(query));
+                   }};
 }
 
-Command commitMediaProbeCommand(MediaSourceId id, MediaProbeMetadata probe) {
+Command commitMediaProbeCommand(MediaSourceId id, SourceReference expectedSource, MediaProbeMetadata probe) {
     requireProbe(probe);
     return Command{"commit probe metadata on media entry " + std::to_string(id),
-                   [id, probe = std::move(probe)](Document& document) {
+                   [id, expectedSource = std::move(expectedSource), probe = std::move(probe)](Document& document) {
                        requireProbe(probe);
-                       const auto* entry = document.mediaCatalog.entry(id);
-                       if (!entry)
-                           reject(GraphError::UnknownMediaEntry,
-                                  "cannot commit probe on unknown media entry " + std::to_string(id));
-                       MediaMetadata metadata = entry->metadata;
+                       const MediaCatalogEntry& entry = requireEntry(document, id, "cannot commit probe on");
+                       requireExpectedSource(document, entry, expectedSource, "cannot commit probe on");
+                       MediaMetadata metadata = entry.metadata;
                        metadata.committedProbe = probe;
                        document.mediaCatalog.setMetadata(id, std::move(metadata));
                    }};
+}
+
+Command relinkMediaSourceCommand(MediaSourceId id, SourceReference expectedSource, std::string path) {
+    if (path.empty())
+        throw std::invalid_argument("relink media source: media entry " + std::to_string(id) +
+                                    " must reference a non-empty path");
+    return Command{
+        "relink media source of entry " + std::to_string(id),
+        [id, expectedSource = std::move(expectedSource), path = std::move(path)](Document& document) {
+            const MediaCatalogEntry& entry = requireEntry(document, id, "cannot relink");
+            const SourceReference& current = requireExpectedSource(document, entry, expectedSource, "cannot relink");
+            SourceReference relinked = current;
+            relinked.path = path;
+            if (relinked.frameStep == 0)
+                throw std::invalid_argument("relink media source: source '" + entry.sourceKey +
+                                            "' frameStep must not be zero");
+            if (relinked.revision == std::numeric_limits<std::uint64_t>::max())
+                throw std::overflow_error("relink media source: source '" + entry.sourceKey + "' revision exhausted");
+            ++relinked.revision;
+            document.sources[entry.sourceKey] = std::move(relinked);
+
+            // The committed probe described the previous file; it is
+            // obsolete for every entry that shares this source key.
+            std::vector<MediaSourceId> obsoleteProbes;
+            for (const auto& candidate : document.mediaCatalog.entries())
+                if (candidate.sourceKey == entry.sourceKey && candidate.metadata.committedProbe)
+                    obsoleteProbes.push_back(candidate.id);
+            for (const MediaSourceId candidate : obsoleteProbes) {
+                MediaMetadata metadata = document.mediaCatalog.entry(candidate)->metadata;
+                metadata.committedProbe.reset();
+                document.mediaCatalog.setMetadata(candidate, std::move(metadata));
+            }
+        }};
 }
 
 }  // namespace nemo

@@ -177,7 +177,10 @@ Rectangle {
                     implicitWidth: contentItem.implicitWidth + 16
                     implicitHeight: 24
                     font.pixelSize: 12
+                    // Reserve the fixed group badge and the row gap so a long
+                    // title can never push the A-E selector out of the header.
                     Layout.maximumWidth: Math.max(0, header.width
+                                                  - groupButton.implicitWidth - 2
                                                   - (headerTools.visible && !headerTools.fillHeader ? headerTools.implicitWidth : 0) - 8)
                     text: panelRoot.title
                     background: Rectangle {
@@ -238,6 +241,60 @@ Rectangle {
                         MenuItem {
                             text: "Reset Layout"
                             onTriggered: panelRoot.workspace.reset()
+                        }
+                    }
+                }
+
+                // Restored prototype group badge: the persisted workspace group
+                // is the panel's context key, so it stays visible and selectable
+                // from every contextual header. The menu writes through the
+                // existing workspace API; the router follows the binding.
+                Button {
+                    id: groupButton
+                    flat: true
+                    padding: 6
+                    implicitWidth: 26
+                    implicitHeight: 24
+                    // Never let the layout squeeze the badge out on narrow and
+                    // compact headers.
+                    Layout.minimumWidth: implicitWidth
+                    font.pixelSize: 12
+                    text: panelRoot.panelGroup
+                    background: Rectangle {
+                        radius: panelRoot.theme ? panelRoot.theme.smallRadius : 4
+                        color: groupButton.hovered
+                               ? (panelRoot.theme ? panelRoot.theme.hover : "#343940")
+                               : "transparent"
+                    }
+                    contentItem: Text {
+                        text: groupButton.text
+                        color: panelRoot.theme ? panelRoot.theme.muted : "#979ea8"
+                        font.pixelSize: 10
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: groupMenu.open()
+                    Accessible.name: "Panel display group. Opens the group menu."
+                    objectName: "panelGroup_" + panelRoot.panelId
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Panel group"
+
+                    Menu {
+                        id: groupMenu
+                        objectName: "panelGroupMenu_" + panelRoot.panelId
+                        x: 0
+                        y: parent.height
+
+                        Repeater {
+                            model: ["A", "B", "C", "D", "E"]
+                            delegate: MenuItem {
+                                required property var modelData
+                                text: modelData
+                                checkable: true
+                                checked: panelRoot.panelGroup === modelData
+                                objectName: "panelGroupChoice_" + modelData + "_" + panelRoot.panelId
+                                onTriggered: panelRoot.workspace.setGroup(panelRoot.panelId, modelData)
+                            }
                         }
                     }
                 }

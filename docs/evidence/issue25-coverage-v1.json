@@ -160,6 +160,10 @@
     "57": {
       "title": "Convert selected editorial occurrences into one ordinary artist-editable composition",
       "url": "https://github.com/rgamevfx/nemo/issues/57"
+    },
+    "63": {
+      "title": "Restore the visible A\u2013E group selector on panel headers",
+      "url": "https://github.com/rgamevfx/nemo/issues/63"
     }
   },
   "records": [
@@ -6244,7 +6248,8 @@
         43,
         47,
         52,
-        54
+        54,
+        63
       ],
       "ticket_links": [
         "https://github.com/rgamevfx/nemo/issues/39",
@@ -6253,7 +6258,8 @@
         "https://github.com/rgamevfx/nemo/issues/43",
         "https://github.com/rgamevfx/nemo/issues/47",
         "https://github.com/rgamevfx/nemo/issues/52",
-        "https://github.com/rgamevfx/nemo/issues/54"
+        "https://github.com/rgamevfx/nemo/issues/54",
+        "https://github.com/rgamevfx/nemo/issues/63"
       ],
       "asset_names": [
         "media-workspace.png",
@@ -7872,7 +7878,8 @@
             43,
             47,
             52,
-            54
+            54,
+            63
           ],
           "ticket_links": [
             "https://github.com/rgamevfx/nemo/issues/39",
@@ -7881,7 +7888,8 @@
             "https://github.com/rgamevfx/nemo/issues/43",
             "https://github.com/rgamevfx/nemo/issues/47",
             "https://github.com/rgamevfx/nemo/issues/52",
-            "https://github.com/rgamevfx/nemo/issues/54"
+            "https://github.com/rgamevfx/nemo/issues/54",
+            "https://github.com/rgamevfx/nemo/issues/63"
           ]
         },
         {

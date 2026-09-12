@@ -25,8 +25,12 @@ details still assigned to later tasks. Spec/ADRs define production ownership;
 prototype fixture models are reference behavior, not production architecture.
 
 Baseline #40/#59 supplies the shared shell and existing panel presentation.
-Context routing is group-only: a panel's context is always its own A-E group.
-Functional ports #44/#46/#50/#47/#43 extend those owners. Read the live owning
+Context routing is group-only: a panel's context is always its own A–E group,
+and every panel header keeps the visible A–E selector required by spec §6 and
+the approved prototype. The `follow`/`pinned` panel-routing modes retired by #60
+do not return; the visible selector was restored by #63; inspector-card pinning
+is separate and remains valid. Functional ports
+#44/#46/#50/#47/#43 extend those owners. Read the live owning
 issue to distinguish implemented capabilities from planned ones before using an
 extension path.
 
@@ -211,7 +215,10 @@ The existing `Nemo` QML module owns the shared UI library alongside its panels:
 and `StudioComboBox.qml` require an explicit `theme`. Appearance defaults,
 validation, independent accent/category resets and persistence stay in the
 controller. `Main.qml` composes workspace navigation and settings; `Panel.qml`
-owns headers. Panel bodies declare a `theme` property, supplied
+owns headers, including the visible A–E group selector. Selecting a group
+submits `WorkspaceController::setGroup(panelId, group)`; the `panelGroup`
+binding and context-router synchronization follow that write. Panel bodies
+declare a `theme` property, supplied
 by `Loader.setSource` before construction so nested shared controls never read
 an uninitialized theme. Other panel context bindings are supplied by `configureLoaded`.
 Panel-specific header controls live in the body's optional `headerTools` Component;

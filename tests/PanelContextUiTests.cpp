@@ -49,6 +49,21 @@ QVariantMap panelByType(const QVariantMap& node, const QString& type) {
     return {};
 }
 
+QVariantList panels(const QVariantMap& node) {
+    QVariantList result;
+    if (node.value(QStringLiteral("kind")).toString() == QStringLiteral("tabs")) {
+        for (const auto& value : node.value(QStringLiteral("panels")).toList()) {
+            const auto panel = value.toMap();
+            if (!panel.isEmpty())
+                result.append(panel);
+        }
+        return result;
+    }
+    for (const auto& value : node.value(QStringLiteral("children")).toList())
+        result.append(panels(value.toMap()));
+    return result;
+}
+
 }  // namespace
 
 class PanelContextUiTest : public testing::Test {
@@ -98,6 +113,11 @@ protected:
         return found;
     }
 
+    QPoint center(const QString& name) const {
+        auto* found = item(name);
+        return found->mapToScene(QPointF(found->width() / 2, found->height() / 2)).toPoint();
+    }
+
     QQuickItem* panelBody(const QString& objectName, const QString& panelId) const {
         std::function<QQuickItem*(QQuickItem*)> walk = [&](QQuickItem* node) -> QQuickItem* {
             if (node->objectName() == objectName && node->property("panelId").toString() == panelId)
@@ -121,6 +141,84 @@ TEST_F(PanelContextUiTest, RetiredBindingChromeIsGoneFromPanelHeaders) {
     EXPECT_NE(item(QStringLiteral("panelType_") + id), nullptr);
     EXPECT_EQ(visual(window->contentItem(), QStringLiteral("panelBinding_") + id), nullptr);
     EXPECT_EQ(visual(window->contentItem(), QStringLiteral("panelBindingMenu_") + id), nullptr);
+}
+
+TEST_F(PanelContextUiTest, GroupBadgeMenuRetargetsRoutingWithoutTouchingOtherGroups) {
+    const auto viewer = panelByType(root(), QStringLiteral("viewer"));
+    const auto graph = panelByType(root(), QStringLiteral("nodegraph"));
+    ASSERT_FALSE(viewer.isEmpty());
+    ASSERT_FALSE(graph.isEmpty());
+    const auto viewerId = viewer.value(QStringLiteral("id")).toString();
+    const auto graphId = graph.value(QStringLiteral("id")).toString();
+    ASSERT_EQ(viewer.value(QStringLiteral("group")).toString(), QStringLiteral("A"));
+    ASSERT_EQ(graph.value(QStringLiteral("group")).toString(), QStringLiteral("A"));
+
+    // Every contextual header carries the visible A-E badge with the
+    // prototype's compact 26x24 geometry.
+    auto* badge = item(QStringLiteral("panelGroup_") + viewerId);
+    EXPECT_TRUE(badge->isVisible());
+    EXPECT_EQ(badge->property("text").toString(), QStringLiteral("A"));
+    EXPECT_EQ(badge->implicitWidth(), 26.0);
+    EXPECT_EQ(badge->implicitHeight(), 24.0);
+    EXPECT_GE(badge->width(), 26.0);
+
+    // Select the group through the real opened menu, not through the API.
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(QStringLiteral("panelGroup_") + viewerId));
+    QTest::qWait(30);
+    auto* menu = window->findChild<QObject*>(QStringLiteral("panelGroupMenu_") + viewerId);
+    ASSERT_NE(menu, nullptr);
+    EXPECT_TRUE(menu->property("visible").toBool());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(QStringLiteral("panelGroupChoice_C_") + viewerId));
+    for (int attempt = 0; attempt < 40; ++attempt) {
+        if (item(QStringLiteral("panelGroup_") + viewerId)->property("text").toString() == QStringLiteral("C"))
+            break;
+        QTest::qWait(25);
+    }
+
+    // The visible letter, the persisted workspace group and the routed panel
+    // context all follow the selection...
+    EXPECT_EQ(item(QStringLiteral("panelGroup_") + viewerId)->property("text").toString(), QStringLiteral("C"));
+    EXPECT_EQ(panelByType(root(), QStringLiteral("viewer")).value(QStringLiteral("group")).toString(),
+              QStringLiteral("C"));
+    EXPECT_EQ(context(viewerId).value(QStringLiteral("group")).toString(), QStringLiteral("C"));
+
+    // ... unrelated panels keep their own group and their own badge letter ...
+    EXPECT_EQ(panelByType(root(), QStringLiteral("nodegraph")).value(QStringLiteral("group")).toString(),
+              QStringLiteral("A"));
+    EXPECT_EQ(context(graphId).value(QStringLiteral("group")).toString(), QStringLiteral("A"));
+    for (const auto& value : panels(root())) {
+        const auto entry = value.toMap();
+        const auto id = entry.value(QStringLiteral("id")).toString();
+        EXPECT_EQ(item(QStringLiteral("panelGroup_") + id)->property("text").toString(),
+                  entry.value(QStringLiteral("group")).toString())
+            << "panel " << id.toStdString() << " must show its own group letter";
+    }
+
+    // ... and a group-scoped context write reaches only panels that selected it.
+    ASSERT_TRUE(router.setGroupContext(QStringLiteral("C"),
+                                       QVariantMap{{QStringLiteral("sourceTarget"), QStringLiteral("source-c")}}));
+    EXPECT_EQ(context(viewerId).value(QStringLiteral("sourceTarget")).toString(), QStringLiteral("source-c"));
+    EXPECT_TRUE(context(graphId).value(QStringLiteral("sourceTarget")).toString().isEmpty());
+
+    // The selection is what the existing workspace file persists.
+    ASSERT_TRUE(workspace.save());
+    nemo::workspace::WorkspaceController restored(directory.filePath(QStringLiteral("workspace.json")));
+    const auto restoredViewer = panelByType(restored.root(), QStringLiteral("viewer"));
+    ASSERT_FALSE(restoredViewer.isEmpty());
+    EXPECT_EQ(restoredViewer.value(QStringLiteral("id")).toString(), viewerId);
+    EXPECT_EQ(restoredViewer.value(QStringLiteral("group")).toString(), QStringLiteral("C"));
+
+    // Narrowing the window into the viewer's compact layout must not cost the
+    // header its group badge.
+    window->resize(960, 700);
+    QTest::qWait(150);
+    auto* header = item(QStringLiteral("panelHeader_") + viewerId);
+    ASSERT_TRUE(badge->isVisible());
+    EXPECT_LT(header->width(), 530.0) << "the narrowed viewer must use its compact header allocation";
+    EXPECT_GE(badge->width(), 26.0);
+    const auto badgeRect = QRectF(badge->mapToItem(header, QPointF(0, 0)), badge->size());
+    EXPECT_GE(badgeRect.left(), 0.0);
+    EXPECT_LE(badgeRect.right(), header->width());
 }
 
 TEST_F(PanelContextUiTest, GroupContextsStayIsolatedWithoutLinkModes) {

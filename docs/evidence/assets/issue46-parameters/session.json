@@ -1,0 +1,100 @@
+{
+  "issue": 46,
+  "title": "Build schema-driven parameter inspectors and keying controls",
+  "reference": "docs/evidence/issue25-prototype-acceptance-v1.md",
+  "reference_archive_sha256": "0027b39f6ba20fc2168f83215f8ba036fcc408284e6b3a2702a21c2c37b8e57e",
+  "accepted_production_base": "7a699b5 (#44 graph editing, on the accepted #40/#59/#41 chain)",
+  "branch": "issue/46-parameter-inspectors",
+  "work_class": {
+    "prototype_port": "Parameters card layout, inspector accumulation (newest-first, dedup, pin/eviction/limit), one/two columns, collapsed cards, shared scroll + return-to-top, number/choice/toggle rows, Alt/right-click keying with circle/hollow/filled diamond status, keyed-slider drag as one undo.",
+    "system_extension": "Schema-driven control selection and custom-editor hosting from NodeCatalog/ParameterSpec; keying and value gestures through ProjectSession and AnimationCommands; panel delivery through WorkspaceController and Panel.qml.",
+    "owner_approved_new_design": "Typed controls for Integer/Vector2/Vector3/Color/String; per-panel-id panel state; ParameterEditorRegistry + namespaced catalog `editor` selector; unavailable-card presentation; 2x2 default workspace."
+  },
+  "environment": {
+    "platform": "native Linux Wayland / COSMIC",
+    "qt": "6.4.2",
+    "dpr": 1,
+    "production_rendering": "Vulkan QSG, actual build/debug nemo-ui executable",
+    "capture_window_pixels": [1280, 720]
+  },
+  "launch": [
+    "OCIO=docs/evidence/issue12-view.ocio QT_QPA_PLATFORM=wayland XDG_CONFIG_HOME=/tmp/nemo46-native-config build/debug/apps/nemo-ui/nemo-ui --source docs/evidence/assets/issue59-production-cutover/source-640x360-bt709.mkv --viewer-cache-dir /tmp/nemo46-native-cache"
+  ],
+  "capture_method": "QQuickWindow::grabWindow inside a read-only temporary observation driver in apps/nemo-ui/main.cpp, gated by NEMO46_PROBE and removed before commit. Input was driven through the real production path: PanelContextRouter::requestInspector (the exact call GraphPanel's double-click handler makes), the ParametersPanel QML functions, and ViewerController's public Q_INVOKABLE surface. This is not a compositor/OS-level pointer pass.",
+  "source_sha256": {
+    "apps/nemo-ui/ViewerController.cpp": "c1cb1275e70887fdcf1c7055efbf76f6dcc3dc497ff41c1cb665d98e23b8a798",
+    "apps/nemo-ui/ViewerController.hpp": "f89601d0acb821cb7290eaf1a8e5f138e7e4c62cfeb8f337f99cf56aeed97358",
+    "apps/nemo-ui/ParameterEditorRegistry.cpp": "1e2289fb0c2c3d91bf4024ba02c257d446cab11bdc3bf1d076a881748f532c29",
+    "apps/nemo-ui/ParameterEditorRegistry.hpp": "98f2af14576f98e5d392e78b5adda624d9a54d4a5311a3dc8d00d1a402fc50d5",
+    "apps/nemo-ui/PanelContextRouter.cpp": "f7ebebb8e8e101c17ce7f0a57c5041401a79606f4b42fa02ac7505f37a92924c",
+    "apps/nemo-ui/PanelContextRouter.hpp": "39e9d3eef257fa4f6c7eff48056ffdf3e06d999b33dcb5909f21d4d695c72bf6",
+    "apps/nemo-ui/qml/ParametersPanel.qml": "4ea41bb79d37c663f2ddc9083cd4ded147a348138733df75988cfda79aa68f1c",
+    "apps/nemo-ui/qml/GraphPanel.qml": "009b31a3839643913774fd8942ac77a1f8dab3dd2f83c1cd49f0dcb378e41446",
+    "apps/nemo-ui/Workspace.cpp": "fbc9ac7ef6be7a462fbaee59b1904e55e3ba86428d177f0a9c4d26d0a900c0c2",
+    "apps/nemo-ui/main.cpp": "cd43fa4a7507df997e824486e6ce4bc8682ae6e997b005cc9036297f4d9f2d70",
+    "src/nemo/core/nodes/NodeCatalog.hpp": "5d4d1a1756fac3bb5828baafde2179b41e4aade086feff5d1828ccacb1b7e7a7",
+    "src/nemo/core/nodes/NodeCatalog.cpp": "93222c6826d689db5f5dda53f6f3626efae1b6d45813cddc898ef66fde64f8a5",
+    "tests/InteractiveUiTests.cpp": "2ce095e701dd7f2620709d638b267a67f09e9b5b83d03d28432b16314f3edf04",
+    "tests/CatalogTests.cpp": "763f974dbd79b832c52d8f0807220a0170326aef4e87d19320056b59d9cfe5ba"
+  },
+  "native_checks": {
+    "parametersPanelFound": true,
+    "rootNetwork": "1",
+    "nodesByType": {"output": "1", "source": "2", "constcolor": "3", "merge": "4"},
+    "inspectorsAfterTwoRequests": 2,
+    "newestFirstIsLatestRequest": true,
+    "inspectorsAfterDuplicateRequest": 2,
+    "inspectorsAfterLimit": 2,
+    "pinnedSurvivedEviction": true,
+    "gestureOpened": true,
+    "gestureUpdated": true,
+    "gestureCommitted": true,
+    "valueAfterCommit": [0.25, 0.5, 0.75, 1],
+    "valueChangedByGesture": true,
+    "undoApplied": true,
+    "valueRestoredByUndo": true,
+    "keyCreated": true,
+    "keyStatus": "key",
+    "keyRemoved": true,
+    "keyStatusAfterRemove": "none",
+    "deletedTarget": true,
+    "deletedInspectorAvailable": false,
+    "deletedInspectorReason": "node '2' does not exist in network '1'",
+    "undoRestoredNode": true,
+    "restoredInspectorAvailable": true,
+    "persistedInspectorCount": 2
+  },
+  "captures": [
+    "01-default-layout.png",
+    "02-two-inspectors.png",
+    "03-pinned-eviction.png",
+    "04-single-column.png",
+    "05-edited-value.png",
+    "06-keyed.png",
+    "07-deleted-unavailable.png",
+    "08-restored.png"
+  ],
+  "defect_found_and_fixed": {
+    "summary": "Native verification proved every vector/color edit failed: QML passes JS arrays as QJSValue, while ViewerController::parameterValueFromVariant only accepted QVariantList.",
+    "fix": "Accept a QJSValue array in addition to QVariantList; regression test Interactive.JavaScriptArrayEditsConvertVectorAndColorParameters.",
+    "pre_fix_evidence": "probe-report.json valueChangedByGesture=false, updateError=\"vector and color parameters require a numeric list\"",
+    "post_fix_evidence": "valueChangedByGesture=true, valueAfterCommit=[0.25,0.5,0.75,1]"
+  },
+  "verification": {
+    "debug": "cmake --build --preset debug -j; ctest --preset debug -j (360/360)",
+    "release": "cmake --build --preset release -j; ctest --preset release -j (360/360)",
+    "asan": "cmake --build --preset asan -j; ctest --preset asan -j2 -R 'Catalog|Interactive|Workspace|PanelContext'"
+  },
+  "remaining_review": [
+    "Owner visual/interaction review of the retained captures (this session had no image-vision capability; the captures were not visually inspected by the agent).",
+    "Compositor/OS-level physical-pointer pass: the smoke used the production request/gesture API, not injected OS input.",
+    "Matched reference-size comparison: production grabs are 1280x720; a matched 1568x926 full/narrow pair against the prototype Parameters captures is still required.",
+    "Public API review for the ParameterSpec metadata addition (label/section/step/editor) and the ParameterEditorRegistry host interface.",
+    "Image-baseline review for the 2x2 default workspace arrangement (owner-approved in chat, changes the #59 baseline)."
+  ],
+  "no_claims": [
+    "No Windows or mixed-DPR run.",
+    "No TSan run.",
+    "No claim of complete prototype-exact visual parity; owner review is pending."
+  ]
+}

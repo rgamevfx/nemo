@@ -92,6 +92,22 @@ public:
     Q_INVOKABLE void setNodeParameterText(const QVariant& nodeId, const QString& key, const QString& text);
     Q_INVOKABLE void resetNodeParameter(const QVariant& nodeId, const QString& key);
     Q_INVOKABLE void setNodeParameters(const QVariantList& edits);
+    // Schema-driven parameter inspector: one map with the node identity, its
+    // descriptor metadata, and sectioned parameter rows carrying the value
+    // evaluated at the current frame plus animation/key state.
+    Q_INVOKABLE QVariantMap parameterInspector(const QString& networkId, const QVariant& nodeId) const;
+    // Keying at the current frame. Single validated commands through the
+    // session; authored values are never mutated directly.
+    Q_INVOKABLE QString nodeParameterKeyStatus(const QString& networkId, const QVariant& nodeId,
+                                               const QString& key) const;
+    Q_INVOKABLE bool keyNodeParameter(const QString& networkId, const QVariant& nodeId, const QString& key);
+    Q_INVOKABLE bool removeNodeParameterKey(const QString& networkId, const QVariant& nodeId, const QString& key);
+    // Continuous edit gesture: begin returns a decimal token ("" on failure),
+    // update previews, commit publishes one history entry, cancel discards.
+    Q_INVOKABLE QString beginNodeParameterEdit(const QString& networkId, const QVariant& nodeId, const QString& key);
+    Q_INVOKABLE bool updateNodeParameterEdit(const QString& token, const QVariant& value);
+    Q_INVOKABLE bool commitNodeParameterEdit(const QString& token);
+    Q_INVOKABLE bool cancelNodeParameterEdit(const QString& token);
     // The current persistent model exposes source timing, not timeline clip
     // occurrences. These edit SourceReference through the command API.
     Q_INVOKABLE void slipTimelineClip(const QString& source, int delta);
@@ -212,5 +228,10 @@ private:
     // completion, including when a viewer panel is closed during a frame.
     std::unique_ptr<WindowPresentationState> presentationState_;
     nemo::ProjectSession::Subscription sessionSubscription_;
+    // One continuous parameter gesture at a time, owner-thread-only. The
+    // token is the session's; this facade only remembers its scope.
+    std::optional<nemo::ParameterAddress> parameterGestureAddress_;
+    nemo::ParameterGestureToken parameterGestureToken_{};
+    bool parameterGestureKeyed_{false};
 };
 }  // namespace nemo::ui

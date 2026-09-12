@@ -1,15 +1,19 @@
 #include "ViewerController.hpp"
 #include "ViewerItem.hpp"
+#include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
 #include <QFileInfo>
+#include <QJSValue>
 #include <QMetaType>
 #include <QQuickWindow>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_set>
@@ -174,11 +178,17 @@ std::optional<nemo::ParameterValue> parameterValueFromVariant(const nemo::NodeCa
     case nemo::ParameterType::Vector2:
     case nemo::ParameterType::Vector3:
     case nemo::ParameterType::Color: {
-        if (value.metaType().id() != QMetaType::QVariantList) {
+        // QML passes JS arrays as QJSValue; accept both that and a native
+        // QVariantList so scripted and presentation callers behave identically.
+        QVariantList list;
+        if (value.metaType().id() == QMetaType::QVariantList) {
+            list = value.toList();
+        } else if (value.metaType().id() == qMetaTypeId<QJSValue>() && value.value<QJSValue>().isArray()) {
+            list = value.value<QJSValue>().toVariant().toList();
+        } else {
             error = QStringLiteral("vector and color parameters require a numeric list");
             return std::nullopt;
         }
-        const auto list = value.toList();
         const int expected = spec->type == nemo::ParameterType::Vector2   ? 2
                              : spec->type == nemo::ParameterType::Vector3 ? 3
                                                                           : 4;
@@ -263,6 +273,142 @@ QVariantList routeSnapshot(const std::vector<nemo::LayoutPosition>& route) {
     for (const auto& point : route)
         result.push_back(QVariantMap{{QStringLiteral("x"), point.x}, {QStringLiteral("y"), point.y}});
     return result;
+}
+
+// The inspector control family for a schema type. It is deliberately a
+// presentation fact, not a new parameter model.
+const char* parameterKindName(nemo::ParameterType type) {
+    switch (type) {
+    case nemo::ParameterType::Boolean:
+        return "toggle";
+    case nemo::ParameterType::Integer:
+    case nemo::ParameterType::Float:
+        return "number";
+    case nemo::ParameterType::Choice:
+        return "choice";
+    case nemo::ParameterType::Vector2:
+        return "vector2";
+    case nemo::ParameterType::Vector3:
+        return "vector3";
+    case nemo::ParameterType::Color:
+        return "color";
+    case nemo::ParameterType::String:
+        return "string";
+    }
+    return "string";
+}
+
+// Empty schema labels fall back to a readable form of the persisted key:
+// underscores/dots become word breaks and camelCase gains a space.
+[[nodiscard]] QString humanizedParameterLabel(std::string_view name) {
+    std::string result;
+    result.reserve(name.size() + 4);
+    bool capitalize = true;
+    for (std::size_t index = 0; index < name.size(); ++index) {
+        const char character = name[index];
+        if (character == '_' || character == '-' || character == '.') {
+            if (!result.empty() && result.back() != ' ')
+                result.push_back(' ');
+            capitalize = true;
+            continue;
+        }
+        if (capitalize) {
+            result.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(character))));
+            capitalize = false;
+            continue;
+        }
+        const auto previous = static_cast<unsigned char>(name[index - 1]);
+        if (std::isupper(static_cast<unsigned char>(character)) && (std::islower(previous) || std::isdigit(previous))) {
+            result.push_back(' ');
+            result.push_back(character);
+            continue;
+        }
+        result.push_back(character);
+    }
+    return QString::fromStdString(result);
+}
+
+struct InspectorTarget {
+    nemo::NetworkId network{nemo::kInvalidNetwork};
+    nemo::NodeId node{nemo::kInvalidNode};
+    const nemo::NodeInstance* instance{};
+    const nemo::NodeDescriptor* descriptor{};
+    const nemo::ParameterSpec* spec{};
+    nemo::ParameterAddress address{};
+};
+
+// Resolves a network/node (and optionally a parameter key) to live document
+// objects. `error` always names the relationship that failed.
+std::optional<InspectorTarget> resolveInspectorTarget(const nemo::Document& document, const QString& networkValue,
+                                                      const QVariant& nodeValue, std::string_view key, QString& error) {
+    const auto network = networkIdentity(networkValue);
+    if (!network) {
+        error = QStringLiteral("network '%1' is not a valid identity").arg(networkValue);
+        return std::nullopt;
+    }
+    const auto node = graphIdentity(nodeValue);
+    if (!node) {
+        error = QStringLiteral("node '%1' is not a valid identity").arg(nodeValue.toString());
+        return std::nullopt;
+    }
+    const nemo::Network* resolved = nullptr;
+    try {
+        resolved = &document.network(*network);
+    } catch (const std::exception&) {
+        error = QStringLiteral("network '%1' does not exist").arg(QString::number(*network));
+        return std::nullopt;
+    }
+    const auto id = static_cast<nemo::NodeId>(*node);
+    const auto* instance = resolved->graph().node(id);
+    if (!instance) {
+        error = QStringLiteral("node '%1' does not exist in network '%2'")
+                    .arg(QString::number(id), QString::number(*network));
+        return std::nullopt;
+    }
+    const auto* descriptor = resolved->graph().descriptor(instance->type);
+    if (!descriptor) {
+        error = QStringLiteral("node '%1' has no descriptor for type '%2'")
+                    .arg(QString::fromStdString(instance->name), QString::fromStdString(instance->type));
+        return std::nullopt;
+    }
+    InspectorTarget target{*network, id,
+                           instance, descriptor,
+                           nullptr,  nemo::ParameterAddress{*network, id, std::string(key), instance->instance}};
+    if (!key.empty()) {
+        target.spec = resolved->graph().catalog().parameterSpec(instance->type, key);
+        if (!target.spec) {
+            error = QStringLiteral("node '%1' has no parameter '%2'")
+                        .arg(QString::fromStdString(instance->name), QString::fromStdString(std::string(key)));
+            return std::nullopt;
+        }
+    }
+    return target;
+}
+
+struct ParameterKeyState {
+    nemo::AnimationChannelId channel{nemo::kInvalidAnimationChannel};
+    std::size_t keyCount{};
+    nemo::KeyframeId keyAtFrame{nemo::kInvalidKeyframe};
+    bool animated{false};
+    bool keyed{false};
+};
+
+[[nodiscard]] ParameterKeyState parameterKeyState(const nemo::Document& document, const nemo::ParameterAddress& address,
+                                                  double frame) {
+    ParameterKeyState state;
+    const auto* channel = document.animationChannel(address);
+    if (!channel)
+        return state;
+    state.channel = channel->id;
+    state.keyCount = channel->keys.size();
+    state.animated = !channel->keys.empty();
+    const auto found = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                    [frame](const nemo::Keyframe& key) { return key.time == frame; });
+    if (found != channel->keys.end()) {
+        state.keyAtFrame = found->id;
+        state.keyed = true;
+    }
+    return state;
 }
 }  // namespace
 ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session)
@@ -429,11 +575,16 @@ QVariantList ViewerController::nodeCatalog() const {
         for (const auto& parameter : descriptor.parameters) {
             QVariantMap value{{QStringLiteral("name"), QString::fromStdString(parameter.name)},
                               {QStringLiteral("type"), QString::fromLatin1(parameterTypeName(parameter.type))},
-                              {QStringLiteral("defaultValue"), parameterValueVariant(parameter.defaultValue)}};
+                              {QStringLiteral("defaultValue"), parameterValueVariant(parameter.defaultValue)},
+                              {QStringLiteral("label"), QString::fromStdString(parameter.label)},
+                              {QStringLiteral("section"), QString::fromStdString(parameter.section)},
+                              {QStringLiteral("editor"), QString::fromStdString(parameter.editor)}};
             if (parameter.minimum)
                 value.insert(QStringLiteral("minimum"), *parameter.minimum);
             if (parameter.maximum)
                 value.insert(QStringLiteral("maximum"), *parameter.maximum);
+            if (parameter.step)
+                value.insert(QStringLiteral("step"), *parameter.step);
             QVariantList choices;
             for (const auto& choice : parameter.choices)
                 choices.push_back(QString::fromStdString(choice));
@@ -1107,6 +1258,292 @@ void ViewerController::setNodeParameters(const QVariantList& edits) {
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
+}
+
+QVariantMap ViewerController::parameterInspector(const QString& networkValue, const QVariant& nodeValue) const {
+    const auto unavailable = [&networkValue, &nodeValue](const QString& reason) {
+        return QVariantMap{
+            {QStringLiteral("available"), false},        {QStringLiteral("reason"), reason},
+            {QStringLiteral("networkId"), networkValue}, {QStringLiteral("nodeId"), nodeValue.toString()},
+            {QStringLiteral("instanceId"), QString{}},   {QStringLiteral("name"), QString{}},
+            {QStringLiteral("type"), QString{}},         {QStringLiteral("category"), QString{}},
+            {QStringLiteral("sections"), QVariantList{}}};
+    };
+    QString error;
+    const auto target = resolveInspectorTarget(session_.document(), networkValue, nodeValue, {}, error);
+    if (!target)
+        return unavailable(error);
+    try {
+        const auto frame = static_cast<double>(frame_);
+        const auto allValues = session_.queryValues(target->network, target->node);
+        std::vector<std::pair<QString, QVariantList>> sections;
+        for (const auto& spec : target->descriptor->parameters) {
+            const auto sectionName =
+                spec.section.empty() ? QStringLiteral("Properties") : QString::fromStdString(spec.section);
+            auto section = std::find_if(sections.begin(), sections.end(),
+                                        [&sectionName](const auto& entry) { return entry.first == sectionName; });
+            if (section == sections.end()) {
+                sections.emplace_back(sectionName, QVariantList{});
+                section = std::prev(sections.end());
+            }
+            const nemo::ParameterAddress address{target->network, target->node, spec.name, target->instance->instance};
+            const auto keyState = parameterKeyState(session_.document(), address, frame);
+            QVariant value;
+            if (keyState.animated) {
+                value = parameterValueVariant(nemo::animatedParameterValue(session_.document(), address, frame));
+            } else {
+                const auto authored = std::find_if(allValues.begin(), allValues.end(),
+                                                   [&spec](const auto& entry) { return entry.key == spec.name; });
+                value = authored != allValues.end() ? parameterValueVariant(authored->value)
+                                                    : parameterValueVariant(spec.defaultValue);
+            }
+            QVariantMap row{{QStringLiteral("key"), QString::fromStdString(spec.name)},
+                            {QStringLiteral("label"), spec.label.empty() ? humanizedParameterLabel(spec.name)
+                                                                         : QString::fromStdString(spec.label)},
+                            {QStringLiteral("type"), QString::fromLatin1(parameterTypeName(spec.type))},
+                            {QStringLiteral("kind"), QString::fromLatin1(parameterKindName(spec.type))},
+                            {QStringLiteral("value"), value},
+                            {QStringLiteral("animated"), keyState.animated},
+                            {QStringLiteral("keyed"), keyState.keyed},
+                            {QStringLiteral("editor"), QString::fromStdString(spec.editor)}};
+            if (spec.minimum)
+                row.insert(QStringLiteral("minimum"), *spec.minimum);
+            if (spec.maximum)
+                row.insert(QStringLiteral("maximum"), *spec.maximum);
+            if (spec.step)
+                row.insert(QStringLiteral("step"), *spec.step);
+            QVariantList choices;
+            for (const auto& choice : spec.choices)
+                choices.push_back(QString::fromStdString(choice));
+            row.insert(QStringLiteral("choices"), choices);
+            section->second.push_back(row);
+        }
+        QVariantList sectionList;
+        sectionList.reserve(static_cast<qsizetype>(sections.size()));
+        for (auto& section : sections)
+            sectionList.push_back(
+                QVariantMap{{QStringLiteral("name"), section.first}, {QStringLiteral("parameters"), section.second}});
+        return QVariantMap{{QStringLiteral("available"), true},
+                           {QStringLiteral("reason"), QString{}},
+                           {QStringLiteral("networkId"), QString::number(target->network)},
+                           {QStringLiteral("nodeId"), QString::number(target->node)},
+                           {QStringLiteral("instanceId"), QString::number(target->instance->instance)},
+                           {QStringLiteral("name"), QString::fromStdString(target->instance->name)},
+                           {QStringLiteral("type"), QString::fromStdString(target->instance->type)},
+                           {QStringLiteral("category"), QString::fromStdString(target->descriptor->group)},
+                           {QStringLiteral("sections"), sectionList}};
+    } catch (const std::exception& failure) {
+        return unavailable(QString::fromUtf8(failure.what()));
+    }
+}
+
+QString ViewerController::nodeParameterKeyStatus(const QString& networkValue, const QVariant& nodeValue,
+                                                 const QString& keyValue) const {
+    QString error;
+    const auto target =
+        resolveInspectorTarget(session_.document(), networkValue, nodeValue, keyValue.trimmed().toStdString(), error);
+    if (!target)
+        return QStringLiteral("none");
+    const auto state = parameterKeyState(session_.document(), target->address, static_cast<double>(frame_));
+    if (!state.animated)
+        return QStringLiteral("none");
+    return state.keyed ? QStringLiteral("key") : QStringLiteral("animated");
+}
+
+bool ViewerController::keyNodeParameter(const QString& networkValue, const QVariant& nodeValue,
+                                        const QString& keyValue) {
+    QString error;
+    const auto target =
+        resolveInspectorTarget(session_.document(), networkValue, nodeValue, keyValue.trimmed().toStdString(), error);
+    if (!target) {
+        fail(error);
+        return false;
+    }
+    if (!target->spec) {
+        fail(QStringLiteral("node parameter key must not be empty"));
+        return false;
+    }
+    try {
+        const auto frame = static_cast<double>(frame_);
+        const auto state = parameterKeyState(session_.document(), target->address, frame);
+        const auto current = nemo::animatedParameterValue(session_.document(), target->address, frame);
+        nemo::Keyframe replacement;
+        replacement.time = frame;
+        replacement.value = current;
+        if (state.keyed) {
+            const auto keys = session_.queryAnimationKeys(state.channel);
+            const auto existing =
+                std::find_if(keys.begin(), keys.end(),
+                             [frame](const nemo::AnimationKeyQueryResult& value) { return value.key.time == frame; });
+            if (existing == keys.end()) {
+                fail(QStringLiteral("animation channel '%1' lost its key at frame %2").arg(state.channel).arg(frame));
+                return false;
+            }
+            if (existing->key.value == current) {
+                clearError();
+                return true;
+            }
+            replacement = existing->key;
+        } else {
+            replacement.interpolation = nemo::animation_detail::componentCount(target->spec->type) == 0
+                                            ? nemo::KeyInterpolation::Hold
+                                            : nemo::KeyInterpolation::Linear;
+        }
+        return applyEdit(session_.submit(
+            nemo::setKeyframesCommand({nemo::KeyframeEdit{target->address, std::move(replacement)}}), editOptions()));
+    } catch (const std::exception& failure) {
+        fail(QString::fromUtf8(failure.what()));
+        return false;
+    }
+}
+
+bool ViewerController::removeNodeParameterKey(const QString& networkValue, const QVariant& nodeValue,
+                                              const QString& keyValue) {
+    QString error;
+    const auto target =
+        resolveInspectorTarget(session_.document(), networkValue, nodeValue, keyValue.trimmed().toStdString(), error);
+    if (!target) {
+        fail(error);
+        return false;
+    }
+    if (!target->spec) {
+        fail(QStringLiteral("node parameter key must not be empty"));
+        return false;
+    }
+    try {
+        const auto frame = static_cast<double>(frame_);
+        const auto state = parameterKeyState(session_.document(), target->address, frame);
+        if (!state.keyed) {
+            clearError();
+            return false;
+        }
+        const auto keys = session_.queryAnimationKeys(state.channel);
+        const auto existing =
+            std::find_if(keys.begin(), keys.end(),
+                         [frame](const nemo::AnimationKeyQueryResult& value) { return value.key.time == frame; });
+        if (existing == keys.end()) {
+            fail(QStringLiteral("animation channel '%1' lost its key at frame %2").arg(state.channel).arg(frame));
+            return false;
+        }
+        return applyEdit(session_.submit(
+            nemo::removeKeyframesCommand({nemo::KeyframeRef{state.channel, existing->key.id}}), editOptions()));
+    } catch (const std::exception& failure) {
+        fail(QString::fromUtf8(failure.what()));
+        return false;
+    }
+}
+
+QString ViewerController::beginNodeParameterEdit(const QString& networkValue, const QVariant& nodeValue,
+                                                 const QString& keyValue) {
+    if (parameterGestureToken_ != 0) {
+        fail(QStringLiteral("a node parameter edit is already in progress"));
+        return {};
+    }
+    QString error;
+    const auto target =
+        resolveInspectorTarget(session_.document(), networkValue, nodeValue, keyValue.trimmed().toStdString(), error);
+    if (!target) {
+        fail(error);
+        return {};
+    }
+    if (!target->spec) {
+        fail(QStringLiteral("node parameter edit requires a parameter key"));
+        return {};
+    }
+    try {
+        const auto frame = static_cast<double>(frame_);
+        const auto state = parameterKeyState(session_.document(), target->address, frame);
+        const nemo::ParameterEdit edit{target->address,
+                                       nemo::animatedParameterValue(session_.document(), target->address, frame)};
+        const auto gesture = state.keyed ? session_.beginKeyedParameterGesture(frame, {edit}, editOptions())
+                                         : session_.beginParameterGesture({edit}, editOptions());
+        if (gesture.token == 0) {
+            applyEdit(gesture.result);
+            return {};
+        }
+        parameterGestureAddress_ = target->address;
+        parameterGestureToken_ = gesture.token;
+        parameterGestureKeyed_ = state.keyed;
+        clearError();
+        return QString::number(gesture.token);
+    } catch (const std::exception& failure) {
+        fail(QString::fromUtf8(failure.what()));
+        return {};
+    }
+}
+
+bool ViewerController::updateNodeParameterEdit(const QString& tokenValue, const QVariant& value) {
+    bool valid = false;
+    const auto token = tokenValue.trimmed().toULongLong(&valid);
+    if (!valid || token == 0 || !parameterGestureAddress_ || token != parameterGestureToken_) {
+        fail(QStringLiteral("node parameter edit update requires the active gesture token"));
+        return false;
+    }
+    try {
+        const auto& graph = session_.document().network(parameterGestureAddress_->network).graph();
+        const auto* node = graph.node(parameterGestureAddress_->node);
+        if (!node) {
+            fail(QStringLiteral("node parameter edit target no longer exists"));
+            return false;
+        }
+        QString conversionError;
+        const auto converted = parameterValueFromVariant(graph.catalog(), graph.descriptor(node->type),
+                                                         parameterGestureAddress_->key, value, conversionError);
+        if (!converted) {
+            fail(conversionError);
+            return false;
+        }
+        const std::vector<nemo::ParameterEdit> edits{{*parameterGestureAddress_, *converted}};
+        const auto gesture = parameterGestureKeyed_
+                                 ? session_.updateKeyedParameterGesture(parameterGestureToken_, edits)
+                                 : session_.updateParameterGesture(parameterGestureToken_, edits);
+        if (gesture.token == 0) {
+            applyEdit(gesture.result);
+            return false;
+        }
+        clearError();
+        return true;
+    } catch (const std::exception& failure) {
+        fail(QString::fromUtf8(failure.what()));
+        return false;
+    }
+}
+
+bool ViewerController::commitNodeParameterEdit(const QString& tokenValue) {
+    bool valid = false;
+    const auto token = tokenValue.trimmed().toULongLong(&valid);
+    if (!valid || token == 0 || !parameterGestureAddress_ || token != parameterGestureToken_) {
+        fail(QStringLiteral("node parameter edit commit requires the active gesture token"));
+        return false;
+    }
+    const auto result = session_.commitParameterGesture(parameterGestureToken_, editOptions());
+    if (!result.committed && result.error)
+        // A conflict leaves the session gesture registered; release it so the
+        // next gesture is not blocked by a stale preview.
+        static_cast<void>(session_.cancelParameterGesture(parameterGestureToken_));
+    parameterGestureAddress_.reset();
+    parameterGestureToken_ = 0;
+    parameterGestureKeyed_ = false;
+    return applyEdit(result);
+}
+
+bool ViewerController::cancelNodeParameterEdit(const QString& tokenValue) {
+    bool valid = false;
+    const auto token = tokenValue.trimmed().toULongLong(&valid);
+    if (!valid || token == 0 || !parameterGestureAddress_ || token != parameterGestureToken_) {
+        fail(QStringLiteral("node parameter edit cancel requires the active gesture token"));
+        return false;
+    }
+    const auto result = session_.cancelParameterGesture(parameterGestureToken_);
+    parameterGestureAddress_.reset();
+    parameterGestureToken_ = 0;
+    parameterGestureKeyed_ = false;
+    if (result.error) {
+        fail(QString::fromStdString(result.error->message));
+        return false;
+    }
+    clearError();
+    return true;
 }
 
 void ViewerController::slipTimelineClip(const QString& source, int delta) {

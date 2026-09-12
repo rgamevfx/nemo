@@ -30,6 +30,14 @@ struct ParameterSpec {
     std::optional<double> minimum{};
     std::optional<double> maximum{};
     std::vector<std::string> choices{};
+    // Presentation metadata. `step` is an incremental step for numeric
+    // controls; `label`/`section` are display text (empty means the presenter
+    // derives them); `editor` names a namespaced custom-editor id (empty
+    // means the generic control).
+    std::optional<double> step{};
+    std::string label;
+    std::string section;
+    std::string editor;
 };
 
 // Capabilities are schema facts only. They do not contain executor, Qt,

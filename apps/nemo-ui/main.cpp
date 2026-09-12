@@ -1,4 +1,5 @@
 #include "PanelContextRouter.hpp"
+#include "ParameterEditorRegistry.hpp"
 #include "ViewerController.hpp"
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
@@ -212,12 +213,16 @@ int main(int argc, char* argv[]) {
                                 QStringLiteral("GraphPanel.qml"), QString());
     workspace.registerPanelType(QStringLiteral("timeline"), QStringLiteral("Timeline"),
                                 QStringLiteral("TimelinePanel.qml"), QString());
+    workspace.registerPanelType(QStringLiteral("parameters"), QStringLiteral("Parameters"),
+                                QStringLiteral("ParametersPanel.qml"), QString());
+    nemo::ui::ParameterEditorRegistry parameterEditors;
     int result = 0;
     {
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &panelContextRouter);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
+        engine.rootContext()->setContextProperty(QStringLiteral("parameterEditors"), &parameterEditors);
         // Wayland Vulkan renders our QML chrome, not Qt's client decorations.
         // Set the window policy before creation so input and pixels share an origin.
         engine.setInitialProperties(

@@ -170,3 +170,108 @@ TEST(CatalogTest, TaggedIntegerRejectsUnsignedOverflowAndNonfiniteValues) {
     EXPECT_THROW(static_cast<void>(parameterValueToJson(ParameterValue{std::numeric_limits<double>::quiet_NaN()})),
                  std::invalid_argument);
 }
+
+namespace {
+NodeDescriptor inspectorParameters(ParameterSpec parameter) {
+    NodeDescriptor descriptor = fixtureDescriptor();
+    descriptor.parameters = {std::move(parameter)};
+    return descriptor;
+}
+
+[[nodiscard]] bool rejectsInspectorParameter(const ParameterSpec& parameter) {
+    try {
+        static_cast<void>(NodeCatalog(std::vector<NodeDescriptor>{inspectorParameters(parameter)}));
+    } catch (const std::invalid_argument&) {
+        return true;
+    }
+    return false;
+}
+}  // namespace
+
+TEST(CatalogTest, BuiltinDescriptorsPublishInspectorMetadata) {
+    const auto& catalog = builtinNodeCatalog();
+
+    const auto* color = catalog.parameterSpec("constcolor", "color");
+    ASSERT_NE(color, nullptr);
+    EXPECT_EQ(color->type, ParameterType::Color);
+    EXPECT_EQ(color->defaultValue, (ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}}));
+    EXPECT_FALSE(color->minimum.has_value());
+    EXPECT_FALSE(color->maximum.has_value());
+    EXPECT_FALSE(color->step.has_value());
+    EXPECT_EQ(color->label, "Color");
+    EXPECT_EQ(color->section, "Color");
+    EXPECT_TRUE(color->editor.empty());
+
+    const auto* operation = catalog.parameterSpec("merge", "operation");
+    ASSERT_NE(operation, nullptr);
+    EXPECT_EQ(operation->type, ParameterType::Choice);
+    EXPECT_EQ(operation->choices, (std::vector<std::string>{"over"}));
+    EXPECT_EQ(operation->label, "Operation");
+    EXPECT_EQ(operation->section, "Composite");
+
+    const auto* source = catalog.parameterSpec("source", "source");
+    ASSERT_NE(source, nullptr);
+    EXPECT_EQ(source->type, ParameterType::String);
+    EXPECT_EQ(source->defaultValue, (ParameterValue{std::string{}}));
+    EXPECT_EQ(source->label, "Source");
+    EXPECT_EQ(source->section, "Source");
+}
+
+TEST(CatalogTest, InspectorMetadataIsValidatedBeforeSnapshotPublication) {
+    // A step is numeric-only and must be finite and positive.
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::String,
+                                                        .defaultValue = ParameterValue{std::string{}},
+                                                        .step = 0.5}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .step = 0.0}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .step = std::numeric_limits<double>::quiet_NaN()}));
+
+    // Labels and sections allow spaces but never control characters.
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .label = std::string{"Bad\nLabel"}}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .section = std::string{"Bad\tsection"}}));
+
+    // Custom editor ids are namespaced and free of whitespace/control characters.
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .editor = "nemo"}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .editor = "nemo.linear slider"}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .editor = std::string{"nemo.linear\t"}}));
+
+    // A fully specified numeric parameter is accepted with its metadata intact.
+    auto catalog =
+        NodeCatalog(std::vector<NodeDescriptor>{inspectorParameters(ParameterSpec{.name = "value",
+                                                                                  .type = ParameterType::Float,
+                                                                                  .defaultValue = ParameterValue{0.0},
+                                                                                  .minimum = -1.0,
+                                                                                  .maximum = 1.0,
+                                                                                  .step = 0.25,
+                                                                                  .label = "Exposure",
+                                                                                  .section = "Tone Map",
+                                                                                  .editor = "nemo.exposure"})});
+    const auto* spec = catalog.parameterSpec("fixture.catalog", "value");
+    ASSERT_NE(spec, nullptr);
+    ASSERT_TRUE(spec->step.has_value());
+    EXPECT_DOUBLE_EQ(*spec->step, 0.25);
+    EXPECT_EQ(spec->label, "Exposure");
+    EXPECT_EQ(spec->section, "Tone Map");
+    EXPECT_EQ(spec->editor, "nemo.exposure");
+}

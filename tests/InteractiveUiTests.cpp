@@ -1,8 +1,12 @@
+#include "ParameterEditorRegistry.hpp"
 #include "ScopedEnvironment.hpp"
 #include "ViewerController.hpp"
+#include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 #include "nemo/gpu/Error.hpp"
 
+#include <QJSEngine>
+#include <QJSValue>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -412,6 +416,406 @@ TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
     EXPECT_EQ(counts.cachePublished, 0u);
     EXPECT_FALSE(counts.cacheError.empty()) << "Asynchronous failure must remain observable after evaluation";
 #endif
+}
+
+struct InspectorFixture {
+    std::shared_ptr<nemo::NodeCatalog> catalog;
+    nemo::Document document;
+    nemo::NodeId node{nemo::kInvalidNode};
+};
+
+// One schema with every parameter type; the inspector must describe each.
+InspectorFixture inspectorFixture() {
+    nemo::NodeDescriptor descriptor{
+        .type = "test.inspector",
+        .displayName = "Inspector Fixture",
+        .group = "Tests",
+        .parameters = {
+            {.name = "enabled",
+             .type = nemo::ParameterType::Boolean,
+             .defaultValue = nemo::ParameterValue{true},
+             .label = "Enabled",
+             .section = "General"},
+            {.name = "count",
+             .type = nemo::ParameterType::Integer,
+             .defaultValue = nemo::ParameterValue{std::int64_t{0}},
+             .minimum = 0.0,
+             .maximum = 10.0,
+             .step = 1.0},
+            {.name = "gain",
+             .type = nemo::ParameterType::Float,
+             .defaultValue = nemo::ParameterValue{1.0},
+             .minimum = 0.0,
+             .maximum = 4.0,
+             .step = 0.1},
+            {.name = "mode",
+             .type = nemo::ParameterType::Choice,
+             .defaultValue = nemo::ParameterValue{nemo::ChoiceValue{"linear"}},
+             .choices = {"linear", "constant"}},
+            {.name = "offset",
+             .type = nemo::ParameterType::Vector2,
+             .defaultValue = nemo::ParameterValue{nemo::Vector2Value{{0.0F, 0.0F}}}},
+            {.name = "position",
+             .type = nemo::ParameterType::Vector3,
+             .defaultValue = nemo::ParameterValue{nemo::Vector3Value{{0.0F, 0.0F, 0.0F}}}},
+            {.name = "tint",
+             .type = nemo::ParameterType::Color,
+             .defaultValue = nemo::ParameterValue{nemo::ColorValue{{0.0F, 0.0F, 0.0F, 1.0F}}}},
+            {.name = "note",
+             .type = nemo::ParameterType::String,
+             .defaultValue = nemo::ParameterValue{std::string{}},
+             .editor = "nemo.text"},
+        }};
+    InspectorFixture fixture;
+    fixture.catalog = std::make_shared<nemo::NodeCatalog>(std::vector<nemo::NodeDescriptor>{descriptor});
+    fixture.document = nemo::Document{fixture.catalog};
+    const auto network = fixture.document.rootNetworkId();
+    fixture.node = fixture.document.network(network).graph().addNode("test.inspector", "inspector");
+    return fixture;
+}
+
+QVariantMap inspectorRow(const QVariantMap& inspector, const QString& key) {
+    for (const auto& section : inspector.value(QStringLiteral("sections")).toList()) {
+        for (const auto& parameter : section.toMap().value(QStringLiteral("parameters")).toList()) {
+            const auto row = parameter.toMap();
+            if (row.value(QStringLiteral("key")).toString() == key)
+                return row;
+        }
+    }
+    return {};
+}
+
+QStringList inspectorSectionNames(const QVariantMap& inspector) {
+    QStringList names;
+    for (const auto& section : inspector.value(QStringLiteral("sections")).toList())
+        names.push_back(section.toMap().value(QStringLiteral("name")).toString());
+    return names;
+}
+
+QVariantMap inspectorCatalogEntry(const nemo::ui::ViewerController& controller, const QString& type) {
+    for (const auto& value : controller.nodeCatalog()) {
+        if (value.toMap().value(QStringLiteral("type")).toString() == type)
+            return value.toMap();
+    }
+    return {};
+}
+
+TEST(Interactive, ParameterInspectorPublishesSchemaMetadataAndValues) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto network = QString::number(session.document().rootNetworkId());
+    const auto node = QString::number(fixture.node);
+
+    const auto inspector = controller.parameterInspector(network, node);
+    ASSERT_TRUE(inspector.value(QStringLiteral("available")).toBool())
+        << inspector.value(QStringLiteral("reason")).toString().toStdString();
+    EXPECT_EQ(inspector.value(QStringLiteral("networkId")).toString(), network);
+    EXPECT_EQ(inspector.value(QStringLiteral("nodeId")).toString(), node);
+    EXPECT_EQ(inspector.value(QStringLiteral("instanceId")).toString(), QStringLiteral("0"));
+    EXPECT_EQ(inspector.value(QStringLiteral("name")).toString(), QStringLiteral("inspector"));
+    EXPECT_EQ(inspector.value(QStringLiteral("type")).toString(), QStringLiteral("test.inspector"));
+    EXPECT_EQ(inspector.value(QStringLiteral("category")).toString(), QStringLiteral("Tests"));
+    EXPECT_EQ(inspectorSectionNames(inspector), QStringList({QStringLiteral("General"), QStringLiteral("Properties")}));
+
+    const auto enabled = inspectorRow(inspector, QStringLiteral("enabled"));
+    EXPECT_EQ(enabled.value(QStringLiteral("type")).toString(), QStringLiteral("boolean"));
+    EXPECT_EQ(enabled.value(QStringLiteral("kind")).toString(), QStringLiteral("toggle"));
+    EXPECT_EQ(enabled.value(QStringLiteral("label")).toString(), QStringLiteral("Enabled"));
+    EXPECT_EQ(enabled.value(QStringLiteral("value")).metaType().id(), QMetaType::Bool);
+    EXPECT_TRUE(enabled.value(QStringLiteral("value")).toBool());
+    EXPECT_FALSE(enabled.contains(QStringLiteral("minimum")));
+    EXPECT_FALSE(enabled.contains(QStringLiteral("maximum")));
+    EXPECT_FALSE(enabled.contains(QStringLiteral("step")));
+    EXPECT_FALSE(enabled.value(QStringLiteral("animated")).toBool());
+    EXPECT_FALSE(enabled.value(QStringLiteral("keyed")).toBool());
+    EXPECT_TRUE(enabled.value(QStringLiteral("editor")).toString().isEmpty());
+    EXPECT_TRUE(enabled.value(QStringLiteral("choices")).toList().isEmpty());
+
+    const auto count = inspectorRow(inspector, QStringLiteral("count"));
+    EXPECT_EQ(count.value(QStringLiteral("kind")).toString(), QStringLiteral("number"));
+    EXPECT_EQ(count.value(QStringLiteral("label")).toString(), QStringLiteral("Count"));
+    EXPECT_EQ(count.value(QStringLiteral("value")).metaType().id(), QMetaType::LongLong);
+    EXPECT_EQ(count.value(QStringLiteral("value")).toLongLong(), 0);
+    EXPECT_DOUBLE_EQ(count.value(QStringLiteral("minimum")).toDouble(), 0.0);
+    EXPECT_DOUBLE_EQ(count.value(QStringLiteral("maximum")).toDouble(), 10.0);
+    EXPECT_DOUBLE_EQ(count.value(QStringLiteral("step")).toDouble(), 1.0);
+
+    const auto gain = inspectorRow(inspector, QStringLiteral("gain"));
+    EXPECT_EQ(gain.value(QStringLiteral("kind")).toString(), QStringLiteral("number"));
+    EXPECT_EQ(gain.value(QStringLiteral("label")).toString(), QStringLiteral("Gain"));
+    EXPECT_EQ(gain.value(QStringLiteral("value")).metaType().id(), QMetaType::Double);
+    EXPECT_DOUBLE_EQ(gain.value(QStringLiteral("value")).toDouble(), 1.0);
+    EXPECT_DOUBLE_EQ(gain.value(QStringLiteral("step")).toDouble(), 0.1);
+
+    const auto mode = inspectorRow(inspector, QStringLiteral("mode"));
+    EXPECT_EQ(mode.value(QStringLiteral("kind")).toString(), QStringLiteral("choice"));
+    EXPECT_EQ(mode.value(QStringLiteral("type")).toString(), QStringLiteral("choice"));
+    EXPECT_EQ(mode.value(QStringLiteral("value")).toString(), QStringLiteral("linear"));
+    EXPECT_EQ(mode.value(QStringLiteral("choices")).toList(),
+              QVariantList({QVariant(QStringLiteral("linear")), QVariant(QStringLiteral("constant"))}));
+
+    const auto offset = inspectorRow(inspector, QStringLiteral("offset"));
+    EXPECT_EQ(offset.value(QStringLiteral("kind")).toString(), QStringLiteral("vector2"));
+    ASSERT_EQ(offset.value(QStringLiteral("value")).toList().size(), 2);
+    EXPECT_FLOAT_EQ(offset.value(QStringLiteral("value")).toList().at(0).toFloat(), 0.0F);
+
+    const auto position = inspectorRow(inspector, QStringLiteral("position"));
+    EXPECT_EQ(position.value(QStringLiteral("kind")).toString(), QStringLiteral("vector3"));
+    ASSERT_EQ(position.value(QStringLiteral("value")).toList().size(), 3);
+
+    const auto tint = inspectorRow(inspector, QStringLiteral("tint"));
+    EXPECT_EQ(tint.value(QStringLiteral("kind")).toString(), QStringLiteral("color"));
+    ASSERT_EQ(tint.value(QStringLiteral("value")).toList().size(), 4);
+    EXPECT_FLOAT_EQ(tint.value(QStringLiteral("value")).toList().at(3).toFloat(), 1.0F);
+
+    const auto note = inspectorRow(inspector, QStringLiteral("note"));
+    EXPECT_EQ(note.value(QStringLiteral("kind")).toString(), QStringLiteral("string"));
+    EXPECT_EQ(note.value(QStringLiteral("editor")).toString(), QStringLiteral("nemo.text"));
+    EXPECT_EQ(note.value(QStringLiteral("value")).toString(), QString{});
+
+    // The same metadata is published through the catalog snapshot, with the
+    // step only present when the schema declares one.
+    const auto catalogEntry = inspectorCatalogEntry(controller, QStringLiteral("test.inspector"));
+    ASSERT_FALSE(catalogEntry.isEmpty());
+    for (const auto& parameter : catalogEntry.value(QStringLiteral("parameters")).toList()) {
+        const auto map = parameter.toMap();
+        if (map.value(QStringLiteral("name")).toString() == QStringLiteral("enabled")) {
+            EXPECT_EQ(map.value(QStringLiteral("label")).toString(), QStringLiteral("Enabled"));
+            EXPECT_EQ(map.value(QStringLiteral("section")).toString(), QStringLiteral("General"));
+            EXPECT_FALSE(map.contains(QStringLiteral("step")));
+            EXPECT_TRUE(map.value(QStringLiteral("editor")).toString().isEmpty());
+        }
+        if (map.value(QStringLiteral("name")).toString() == QStringLiteral("gain")) {
+            EXPECT_TRUE(map.value(QStringLiteral("label")).toString().isEmpty());
+            EXPECT_TRUE(map.value(QStringLiteral("section")).toString().isEmpty());
+            EXPECT_DOUBLE_EQ(map.value(QStringLiteral("step")).toDouble(), 0.1);
+        }
+        if (map.value(QStringLiteral("name")).toString() == QStringLiteral("note"))
+            EXPECT_EQ(map.value(QStringLiteral("editor")).toString(), QStringLiteral("nemo.text"));
+    }
+}
+
+TEST(Interactive, ParameterInspectorReportsUnavailableTargets) {
+    auto fixture = inspectorFixture();
+    const auto networkId = fixture.document.rootNetworkId();
+    // A node whose type has no descriptor is retained as data; the inspector
+    // must report the missing schema instead of throwing.
+    const auto orphan = fixture.document.network(networkId).graph().addNode("test.unregistered", "orphan");
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto network = QString::number(networkId);
+
+    const auto missingNetwork = controller.parameterInspector(QStringLiteral("424242"), QString::number(fixture.node));
+    EXPECT_FALSE(missingNetwork.value(QStringLiteral("available")).toBool());
+    EXPECT_FALSE(missingNetwork.value(QStringLiteral("reason")).toString().isEmpty());
+    EXPECT_EQ(missingNetwork.value(QStringLiteral("networkId")).toString(), QStringLiteral("424242"));
+
+    const auto missingNode = controller.parameterInspector(network, QStringLiteral("424242"));
+    EXPECT_FALSE(missingNode.value(QStringLiteral("available")).toBool());
+    EXPECT_FALSE(missingNode.value(QStringLiteral("reason")).toString().isEmpty());
+    EXPECT_EQ(missingNode.value(QStringLiteral("nodeId")).toString(), QStringLiteral("424242"));
+    EXPECT_TRUE(missingNode.value(QStringLiteral("sections")).toList().isEmpty());
+
+    const auto unknownType = controller.parameterInspector(network, QString::number(orphan));
+    EXPECT_FALSE(unknownType.value(QStringLiteral("available")).toBool());
+    EXPECT_FALSE(unknownType.value(QStringLiteral("reason")).toString().isEmpty());
+    EXPECT_TRUE(unknownType.value(QStringLiteral("sections")).toList().isEmpty());
+}
+
+TEST(Interactive, NodeParameterKeyingUpsertsRemovesAndReportsStatus) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto networkId = session.document().rootNetworkId();
+    const auto network = QString::number(networkId);
+    const auto node = QString::number(fixture.node);
+    const nemo::ParameterAddress gainAddress{networkId, fixture.node, "gain", nemo::kInvalidNetworkInstance};
+
+    EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("none"));
+    ASSERT_TRUE(session
+                    .submit(nemo::setKeyframesCommand({nemo::KeyframeEdit{gainAddress, nemo::Keyframe{0, 0.0, 2.0}},
+                                                       nemo::KeyframeEdit{gainAddress, nemo::Keyframe{0, 10.0, 4.0}}}),
+                            nemo::EditOptions{.expectedRevision = session.revision()})
+                    .committed);
+
+    controller.setFrame(0);
+    EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("key"));
+    auto gain = inspectorRow(controller.parameterInspector(network, node), QStringLiteral("gain"));
+    EXPECT_TRUE(gain.value(QStringLiteral("animated")).toBool());
+    EXPECT_TRUE(gain.value(QStringLiteral("keyed")).toBool());
+    EXPECT_DOUBLE_EQ(gain.value(QStringLiteral("value")).toDouble(), 2.0);
+
+    controller.setFrame(5);
+    EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("animated"));
+    gain = inspectorRow(controller.parameterInspector(network, node), QStringLiteral("gain"));
+    EXPECT_TRUE(gain.value(QStringLiteral("animated")).toBool());
+    EXPECT_FALSE(gain.value(QStringLiteral("keyed")).toBool());
+    EXPECT_DOUBLE_EQ(gain.value(QStringLiteral("value")).toDouble(), 3.0);
+
+    // Upserting a key uses the value evaluated at the current frame and is
+    // idempotent while that value is already keyed.
+    const auto revision = session.revision();
+    EXPECT_TRUE(controller.keyNodeParameter(network, node, QStringLiteral("gain")));
+    EXPECT_EQ(session.revision(), revision + 1);
+    EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("key"));
+    gain = inspectorRow(controller.parameterInspector(network, node), QStringLiteral("gain"));
+    EXPECT_TRUE(gain.value(QStringLiteral("keyed")).toBool());
+    EXPECT_DOUBLE_EQ(gain.value(QStringLiteral("value")).toDouble(), 3.0);
+    EXPECT_TRUE(controller.keyNodeParameter(network, node, QStringLiteral("gain")));
+    EXPECT_EQ(session.revision(), revision + 1);
+
+    ASSERT_TRUE(controller.undo());
+    EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("animated"));
+    ASSERT_TRUE(controller.redo());
+    EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("key"));
+
+    EXPECT_TRUE(controller.removeNodeParameterKey(network, node, QStringLiteral("gain")));
+    EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("animated"));
+    gain = inspectorRow(controller.parameterInspector(network, node), QStringLiteral("gain"));
+    EXPECT_TRUE(gain.value(QStringLiteral("animated")).toBool());
+    EXPECT_FALSE(gain.value(QStringLiteral("keyed")).toBool());
+    EXPECT_FALSE(controller.removeNodeParameterKey(network, node, QStringLiteral("gain")));
+
+    // Keying requires a schema parameter.
+    EXPECT_FALSE(controller.keyNodeParameter(network, node, QStringLiteral("missing")));
+}
+
+TEST(Interactive, ParameterEditsDefineSingleUndoEntryAndRespectKeying) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto networkId = session.document().rootNetworkId();
+    const auto network = QString::number(networkId);
+    const auto node = QString::number(fixture.node);
+
+    // A continuous unkeyed edit is one history entry and creates no channel.
+    const auto startRevision = session.revision();
+    const auto token = controller.beginNodeParameterEdit(network, node, QStringLiteral("gain"));
+    ASSERT_FALSE(token.isEmpty()) << controller.error().toStdString();
+    EXPECT_TRUE(controller.updateNodeParameterEdit(token, 2.0));
+    EXPECT_TRUE(controller.updateNodeParameterEdit(token, 3.5));
+    EXPECT_TRUE(controller.commitNodeParameterEdit(token));
+    EXPECT_EQ(session.revision(), startRevision + 1);
+    auto values = session.queryValues(networkId, fixture.node, "gain");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(values.front().value, nemo::ParameterValue{3.5});
+    EXPECT_TRUE(session.queryAnimationChannels().empty());
+    EXPECT_TRUE(controller.undo());
+    values = session.queryValues(networkId, fixture.node, "gain");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(values.front().value, nemo::ParameterValue{1.0});
+
+    // Cancel leaves the document and history untouched.
+    const auto revision = session.revision();
+    const auto cancelled = controller.beginNodeParameterEdit(network, node, QStringLiteral("count"));
+    ASSERT_FALSE(cancelled.isEmpty());
+    EXPECT_TRUE(controller.updateNodeParameterEdit(cancelled, 4));
+    EXPECT_TRUE(controller.cancelNodeParameterEdit(cancelled));
+    EXPECT_EQ(session.revision(), revision);
+    values = session.queryValues(networkId, fixture.node, "count");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(values.front().value, nemo::ParameterValue{std::int64_t{0}});
+
+    // Only one gesture may be active at a time.
+    const auto active = controller.beginNodeParameterEdit(network, node, QStringLiteral("count"));
+    ASSERT_FALSE(active.isEmpty());
+    EXPECT_TRUE(controller.beginNodeParameterEdit(network, node, QStringLiteral("count")).isEmpty());
+    EXPECT_TRUE(controller.cancelNodeParameterEdit(active));
+
+    // A key already at the current frame is updated in place.
+    const nemo::ParameterAddress gainAddress{networkId, fixture.node, "gain", nemo::kInvalidNetworkInstance};
+    ASSERT_TRUE(session
+                    .submit(nemo::setKeyframesCommand({nemo::KeyframeEdit{gainAddress, nemo::Keyframe{0, 0.0, 1.0}}}),
+                            nemo::EditOptions{.expectedRevision = session.revision()})
+                    .committed);
+    controller.setFrame(0);
+    const auto keyedRevision = session.revision();
+    const auto keyed = controller.beginNodeParameterEdit(network, node, QStringLiteral("gain"));
+    ASSERT_FALSE(keyed.isEmpty()) << controller.error().toStdString();
+    EXPECT_TRUE(controller.updateNodeParameterEdit(keyed, 3.25));
+    EXPECT_TRUE(controller.commitNodeParameterEdit(keyed));
+    EXPECT_EQ(session.revision(), keyedRevision + 1);
+    const auto* channel = session.document().animationChannel(gainAddress);
+    ASSERT_NE(channel, nullptr);
+    ASSERT_EQ(channel->keys.size(), 1U);
+    EXPECT_EQ(channel->keys.front().value, nemo::ParameterValue{3.25});
+}
+
+TEST(Interactive, JavaScriptArrayEditsConvertVectorAndColorParameters) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto networkId = session.document().rootNetworkId();
+    const auto network = QString::number(networkId);
+    const auto node = QString::number(fixture.node);
+
+    // QML delivers a JS array as a QJSValue, not a QVariantList: both must
+    // convert identically, or every vector/color control silently rejects edits.
+    QJSEngine engine;
+    const QJSValue tint = engine.evaluate("[0.25, 0.5, 0.75, 1]");
+    ASSERT_TRUE(tint.isArray());
+    controller.setNodeParameter(node, QStringLiteral("tint"), QVariant::fromValue(tint));
+    ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    const auto colors = session.queryValues(networkId, fixture.node, "tint");
+    ASSERT_FALSE(colors.empty());
+    EXPECT_EQ(std::get<nemo::ColorValue>(colors.front().value), (nemo::ColorValue{{0.25F, 0.5F, 0.75F, 1.0F}}));
+
+    // The one-undo-step gesture path converts the same JS array shape.
+    const auto token = controller.beginNodeParameterEdit(network, node, QStringLiteral("position"));
+    ASSERT_FALSE(token.isEmpty()) << controller.error().toStdString();
+    const QJSValue position = engine.evaluate("[1, 2, 3]");
+    ASSERT_TRUE(position.isArray());
+    EXPECT_TRUE(controller.updateNodeParameterEdit(token, QVariant::fromValue(position)));
+    EXPECT_TRUE(controller.commitNodeParameterEdit(token));
+    const auto positions = session.queryValues(networkId, fixture.node, "position");
+    ASSERT_FALSE(positions.empty());
+    EXPECT_EQ(std::get<nemo::Vector3Value>(positions.front().value), (nemo::Vector3Value{{1.0F, 2.0F, 3.0F}}));
+}
+
+TEST(Interactive, ParameterEditorRegistryRegistersAndResolvesEditors) {
+    nemo::ui::ParameterEditorRegistry registry;
+    QSignalSpy changed(&registry, &nemo::ui::ParameterEditorRegistry::editorsChanged);
+
+    const auto missing = registry.editor(QStringLiteral("nemo.missing"));
+    EXPECT_FALSE(missing.value(QStringLiteral("available")).toBool());
+    EXPECT_TRUE(missing.value(QStringLiteral("source")).toString().isEmpty());
+    EXPECT_EQ(missing.value(QStringLiteral("reason")).toString(),
+              QStringLiteral("No parameter editor registered for 'nemo.missing'"));
+    EXPECT_EQ(registry.reason(QStringLiteral("nemo.missing")),
+              QStringLiteral("No parameter editor registered for 'nemo.missing'"));
+
+    EXPECT_FALSE(
+        registry.registerEditor(QStringLiteral("unnamespaced"), QUrl(QStringLiteral("qrc:/Nemo/Unnamed.qml"))));
+    EXPECT_FALSE(registry.registerEditor(QString{}, QUrl(QStringLiteral("qrc:/Nemo/Unnamed.qml"))));
+    EXPECT_FALSE(registry.registerEditor(QStringLiteral("nemo.blank"), QUrl{}));
+    EXPECT_EQ(changed.count(), 0);
+
+    const QUrl source{QStringLiteral("qrc:/Nemo/Linear.qml")};
+    EXPECT_TRUE(registry.registerEditor(QStringLiteral("nemo.linear"), source));
+    EXPECT_EQ(changed.count(), 1);
+    const auto registered = registry.editor(QStringLiteral("nemo.linear"));
+    EXPECT_TRUE(registered.value(QStringLiteral("available")).toBool());
+    EXPECT_EQ(registered.value(QStringLiteral("source")).toUrl(), source);
+    EXPECT_TRUE(registered.value(QStringLiteral("reason")).toString().isEmpty());
+    EXPECT_TRUE(registry.reason(QStringLiteral("nemo.linear")).isEmpty());
+
+    // Re-registering replaces the source and keeps the registration usable.
+    const QUrl replacement{QStringLiteral("qrc:/Nemo/LinearV2.qml")};
+    EXPECT_TRUE(registry.registerEditor(QStringLiteral("nemo.linear"), replacement));
+    EXPECT_EQ(registry.editor(QStringLiteral("nemo.linear")).value(QStringLiteral("source")).toUrl(), replacement);
+    EXPECT_EQ(changed.count(), 2);
+
+    EXPECT_TRUE(registry.unregisterEditor(QStringLiteral("nemo.linear")));
+    EXPECT_EQ(changed.count(), 3);
+    EXPECT_FALSE(registry.editor(QStringLiteral("nemo.linear")).value(QStringLiteral("available")).toBool());
+    EXPECT_FALSE(registry.unregisterEditor(QStringLiteral("nemo.linear")));
+    EXPECT_EQ(changed.count(), 3);
 }
 
 }  // namespace

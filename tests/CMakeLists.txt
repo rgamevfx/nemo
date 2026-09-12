@@ -104,6 +104,8 @@ if(NEMO_BUILD_UI)
         PanelContextUiTests.cpp
         ../apps/nemo-ui/PanelContextRouter.cpp
         ../apps/nemo-ui/PanelContextRouter.hpp
+        ../apps/nemo-ui/ParameterEditorRegistry.cpp
+        ../apps/nemo-ui/ParameterEditorRegistry.hpp
         ../apps/nemo-ui/WorkspaceController.cpp
         ../apps/nemo-ui/WorkspaceController.hpp
         ../apps/nemo-ui/ViewerController.cpp

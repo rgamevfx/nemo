@@ -45,6 +45,9 @@ public:
     Q_INVOKABLE bool setTimelineTarget(const QString& group, const QString& target);
     Q_INVOKABLE bool openSource(const QString& group, const QString& source);
     Q_INVOKABLE bool setGroupContext(const QString& group, const QVariantMap& changes);
+    // Presentation-only inspector relay: validates and re-broadcasts a
+    // request to open a node's parameter inspector. No Document access.
+    Q_INVOKABLE bool requestInspector(const QString& graphTarget, const QString& nodeId);
 
     [[nodiscard]] QString activePanel() const { return activePanel_; }
 
@@ -53,6 +56,7 @@ signals:
     void groupContextChanged(const QString& group);
     void activePanelChanged(const QString& panelId);
     void panelBindingChanged(const QString& panelId);
+    void inspectorRequested(const QString& graphTarget, const QString& nodeId);
 
 private:
     struct GroupContext {

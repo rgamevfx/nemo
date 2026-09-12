@@ -1,0 +1,215 @@
+Test project /home/rgame/dev/Nemo_Dev2/build/asan
+        Start 342: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure
+        Start 281: Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion
+  1/105 Test #281: Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion ......................   Passed   11.97 sec
+        Start 274: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations
+  2/105 Test #342: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure ................................   Passed   18.66 sec
+        Start 321: WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks
+  3/105 Test #321: WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks ................................   Passed    1.21 sec
+        Start 324: WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress
+  4/105 Test #324: WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress ...............................   Passed    1.17 sec
+        Start 322: WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets
+  5/105 Test #322: WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets ................................   Passed    1.13 sec
+        Start 323: WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease
+  6/105 Test #323: WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease ..................   Passed    1.12 sec
+        Start 320: WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer
+  7/105 Test #320: WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer ...................................   Passed    1.05 sec
+        Start 326: WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy
+  8/105 Test #274: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations ........................   Passed   13.32 sec
+        Start 325: WorkspaceDragTest.GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText
+  9/105 Test #326: WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy ...................   Passed    1.12 sec
+        Start 327: WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance
+ 10/105 Test #325: WorkspaceDragTest.GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText ..........   Passed    1.06 sec
+        Start 358: PanelContextUiTest.BindingAndRoleMenusExposePresentationChoices
+ 11/105 Test #327: WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance .............................   Passed    0.97 sec
+        Start 359: PanelContextUiTest.FollowActiveTracksPointerActivatedPanel
+ 12/105 Test #358: PanelContextUiTest.BindingAndRoleMenusExposePresentationChoices ..............................   Passed    0.90 sec
+        Start 360: PanelContextUiTest.GroupClocksAreIsolatedAndPinnedContextStaysFixed
+ 13/105 Test #359: PanelContextUiTest.FollowActiveTracksPointerActivatedPanel ...................................   Passed    0.91 sec
+        Start 319: WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges
+ 14/105 Test #360: PanelContextUiTest.GroupClocksAreIsolatedAndPinnedContextStaysFixed ..........................   Passed    0.83 sec
+        Start 317: WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures
+ 15/105 Test #319: WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges ........................   Passed    1.82 sec
+        Start 316: WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct
+ 16/105 Test #317: WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures ................................   Passed    1.16 sec
+        Start 318: WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits
+ 17/105 Test #318: WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits .............................   Passed    1.01 sec
+        Start 328: WorkspaceControllerTest.WorkspaceOrderMovementValidatesAndPersists
+ 18/105 Test #316: WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct ...........................   Passed    1.10 sec
+        Start 352: PanelContextRouter.PinnedSnapshotSurvivesWorkspaceReload
+ 19/105 Test #328: WorkspaceControllerTest.WorkspaceOrderMovementValidatesAndPersists ...........................   Passed    0.20 sec
+        Start 333: Interactive.GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds
+ 20/105 Test #352: PanelContextRouter.PinnedSnapshotSurvivesWorkspaceReload .....................................   Passed    0.20 sec
+        Start 332: Interactive.GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically
+ 21/105 Test #333: Interactive.GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds ...................   Passed    0.18 sec
+        Start 334: Interactive.GraphScopeEditsDoNotFallBackToRoot
+ 22/105 Test #332: Interactive.GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically .........................   Passed    0.18 sec
+        Start 335: Interactive.DisconnectedProcessingNodeDropsOntoWireAtomically
+ 23/105 Test #334: Interactive.GraphScopeEditsDoNotFallBackToRoot ...............................................   Passed    0.17 sec
+        Start 354: PanelContextRouter.FollowActiveSwitchesResolvedGroupWithoutChangingItsOwnBinding
+ 24/105 Test #335: Interactive.DisconnectedProcessingNodeDropsOntoWireAtomically ................................   Passed    0.17 sec
+        Start 356: PanelContextRouter.MediaAvailabilityAndMarksFollowTheDocumentCatalog
+ 25/105 Test #354: PanelContextRouter.FollowActiveSwitchesResolvedGroupWithoutChangingItsOwnBinding .............   Passed    0.17 sec
+        Start 345: Interactive.NodeParameterKeyingUpsertsRemovesAndReportsStatus
+ 26/105 Test #356: PanelContextRouter.MediaAvailabilityAndMarksFollowTheDocumentCatalog .........................   Passed    0.17 sec
+        Start 347: Interactive.JavaScriptArrayEditsConvertVectorAndColorParameters
+ 27/105 Test #345: Interactive.NodeParameterKeyingUpsertsRemovesAndReportsStatus ................................   Passed    0.18 sec
+        Start 357: PanelContextRouter.ExplicitSourceOpenIsGroupScopedAndDoesNotMutateTheDocument
+ 28/105 Test #347: Interactive.JavaScriptArrayEditsConvertVectorAndColorParameters ..............................   Passed    0.17 sec
+        Start 343: Interactive.ParameterInspectorPublishesSchemaMetadataAndValues
+ 29/105 Test #357: PanelContextRouter.ExplicitSourceOpenIsGroupScopedAndDoesNotMutateTheDocument ................   Passed    0.16 sec
+        Start 353: PanelContextRouter.FollowReportsUnavailableWithoutActivePanel
+ 30/105 Test #343: Interactive.ParameterInspectorPublishesSchemaMetadataAndValues ...............................   Passed    0.17 sec
+        Start 344: Interactive.ParameterInspectorReportsUnavailableTargets
+ 31/105 Test #353: PanelContextRouter.FollowReportsUnavailableWithoutActivePanel ................................   Passed    0.17 sec
+        Start 355: PanelContextRouter.ViewerRoleSelectsTargetWithoutRepurposingGroupContext
+ 32/105 Test #344: Interactive.ParameterInspectorReportsUnavailableTargets ......................................   Passed    0.16 sec
+        Start 350: PanelContextRouter.GroupClocksAreIndependentAndNotifyOnlyAffectedPanels
+ 33/105 Test #355: PanelContextRouter.ViewerRoleSelectsTargetWithoutRepurposingGroupContext .....................   Passed    0.18 sec
+        Start 348: Interactive.ParameterEditorRegistryRegistersAndResolvesEditors
+ 34/105 Test #350: PanelContextRouter.GroupClocksAreIndependentAndNotifyOnlyAffectedPanels ......................   Passed    0.17 sec
+        Start 341: Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically
+ 35/105 Test #341: Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically .....................   Passed    0.16 sec
+        Start 339: Interactive.OutputSelectionUsesCatalogDeclaration
+ 36/105 Test #348: Interactive.ParameterEditorRegistryRegistersAndResolvesEditors ...............................   Passed    0.17 sec
+        Start 346: Interactive.ParameterEditsDefineSingleUndoEntryAndRespectKeying
+ 37/105 Test #339: Interactive.OutputSelectionUsesCatalogDeclaration ............................................   Passed    0.16 sec
+        Start 329: WorkspaceControllerTest.CategoryResetDoesNotResetOtherAppearanceSettings
+ 38/105 Test #346: Interactive.ParameterEditsDefineSingleUndoEntryAndRespectKeying ..............................   Passed    0.17 sec
+        Start 351: PanelContextRouter.PinnedSnapshotDoesNotBorrowLaterGroupUpdates
+ 39/105 Test #329: WorkspaceControllerTest.CategoryResetDoesNotResetOtherAppearanceSettings .....................   Passed    0.17 sec
+        Start 349: PanelContextRouter.RejectsInvalidValuesWithoutChangingBinding
+ 40/105 Test #351: PanelContextRouter.PinnedSnapshotDoesNotBorrowLaterGroupUpdates ..............................   Passed    0.16 sec
+        Start 340: Interactive.PresentationConsumersShareSessionHistoryAndLifetime
+ 41/105 Test #349: PanelContextRouter.RejectsInvalidValuesWithoutChangingBinding ................................   Passed    0.16 sec
+        Start 330: WorkspaceControllerTest.PresetsAppearanceAndIndependentLayoutsPersistTogether
+ 42/105 Test #340: Interactive.PresentationConsumersShareSessionHistoryAndLifetime ..............................   Passed    0.17 sec
+        Start 336: Interactive.GraphCreationUndoPreservesExistingConnections
+ 43/105 Test #336: Interactive.GraphCreationUndoPreservesExistingConnections ....................................   Passed    0.18 sec
+        Start 331: WorkspaceControllerTest.UnreadableWorkspaceIsPreservedUntilExplicitReset
+ 44/105 Test #330: WorkspaceControllerTest.PresetsAppearanceAndIndependentLayoutsPersistTogether ................   Passed    0.21 sec
+        Start 337: Interactive.TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently
+ 45/105 Test #331: WorkspaceControllerTest.UnreadableWorkspaceIsPreservedUntilExplicitReset .....................   Passed    0.18 sec
+        Start 338: Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata
+ 46/105 Test #337: Interactive.TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently ........................   Passed    0.17 sec
+        Start  81: MediaCatalogTest.DuplicateCommandAllocatesNewIdentityAndRetainsSourceKey
+ 47/105 Test  #81: MediaCatalogTest.DuplicateCommandAllocatesNewIdentityAndRetainsSourceKey .....................   Passed    0.06 sec
+        Start 277: Interactive.CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken
+ 48/105 Test #277: Interactive.CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken .......................   Passed    0.09 sec
+        Start 278: Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot
+ 49/105 Test #338: Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata ......................   Passed    0.17 sec
+        Start  84: MediaCatalogTest.NestedTraversalSearchAndMetadataFiltersAreDeterministic
+ 50/105 Test  #84: MediaCatalogTest.NestedTraversalSearchAndMetadataFiltersAreDeterministic .....................   Passed    0.06 sec
+        Start 276: Interactive.CacheHistorySurvivesScrubButCancellationCannotBeResurrected
+ 51/105 Test #278: Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot .........................   Passed    0.09 sec
+        Start 279: Interactive.CancellationRejectsInflightAndSupersededBacklogIsCounted
+ 52/105 Test #276: Interactive.CacheHistorySurvivesScrubButCancellationCannotBeResurrected ......................   Passed    0.09 sec
+        Start 280: Interactive.RangeAtLastRepresentableFrameTerminatesWithoutWrapping
+ 53/105 Test #279: Interactive.CancellationRejectsInflightAndSupersededBacklogIsCounted .........................   Passed    0.09 sec
+        Start 275: Interactive.FullQueueReportsBackpressureWithoutDroppingAnotherViewer
+ 54/105 Test #280: Interactive.RangeAtLastRepresentableFrameTerminatesWithoutWrapping ...........................   Passed    0.09 sec
+        Start  79: CatalogTest.InspectorMetadataIsValidatedBeforeSnapshotPublication
+ 55/105 Test #275: Interactive.FullQueueReportsBackpressureWithoutDroppingAnotherViewer .........................   Passed    0.09 sec
+        Start  90: MediaCatalogTest.CatalogCommandsHaveExactUndoRedoAndClearRedoBranch
+ 56/105 Test  #79: CatalogTest.InspectorMetadataIsValidatedBeforeSnapshotPublication ............................   Passed    0.08 sec
+        Start  82: MediaCatalogTest.InvalidMarksAreRejectedWithoutMutationOrHistory
+ 57/105 Test  #90: MediaCatalogTest.CatalogCommandsHaveExactUndoRedoAndClearRedoBranch ..........................   Passed    0.07 sec
+        Start  87: MediaCatalogTest.InvalidMovesAndDuplicateNamesAreAtomicAndDoNotConsumeHistory
+ 58/105 Test  #82: MediaCatalogTest.InvalidMarksAreRejectedWithoutMutationOrHistory .............................   Passed    0.06 sec
+        Start  78: CatalogTest.BuiltinDescriptorsPublishInspectorMetadata
+ 59/105 Test  #87: MediaCatalogTest.InvalidMovesAndDuplicateNamesAreAtomicAndDoNotConsumeHistory ................   Passed    0.08 sec
+        Start  91: MediaCatalogTest.SmartMembershipUpdatesWithMetadataAndUndo
+ 60/105 Test  #78: CatalogTest.BuiltinDescriptorsPublishInspectorMetadata .......................................   Passed    0.06 sec
+        Start  85: MediaCatalogTest.ProjectSessionForwardsCatalogSearchAndBinQueries
+ 61/105 Test  #91: MediaCatalogTest.SmartMembershipUpdatesWithMetadataAndUndo ...................................   Passed    0.06 sec
+        Start  89: MediaCatalogTest.RemovingBinWithKeepContentsReparentsEntriesAndUndoRestoresHierarchy
+ 62/105 Test  #85: MediaCatalogTest.ProjectSessionForwardsCatalogSearchAndBinQueries ............................   Passed    0.06 sec
+        Start  92: MediaCatalogTest.CatalogOnlyEditsLeaveSourceReferencesAndGraphOccurrencesUntouched
+ 63/105 Test  #89: MediaCatalogTest.RemovingBinWithKeepContentsReparentsEntriesAndUndoRestoresHierarchy .........   Passed    0.07 sec
+        Start  93: MediaCatalogTest.ProbeProposalIsNotCommittedUntilExplicitProvenanceBearingCommit
+ 64/105 Test  #92: MediaCatalogTest.CatalogOnlyEditsLeaveSourceReferencesAndGraphOccurrencesUntouched ...........   Passed    0.07 sec
+        Start  88: MediaCatalogTest.UsedSourceCannotBeRemovedAndFailureLeavesGraphAndCatalogUntouched
+ 65/105 Test  #93: MediaCatalogTest.ProbeProposalIsNotCommittedUntilExplicitProvenanceBearingCommit .............   Passed    0.07 sec
+        Start  86: MediaCatalogTest.ProjectSessionReportsCatalogIdentityChanges
+ 66/105 Test  #88: MediaCatalogTest.UsedSourceCannotBeRemovedAndFailureLeavesGraphAndCatalogUntouched ...........   Passed    0.06 sec
+        Start  80: MediaCatalogTest.DuplicateEntriesHaveIndependentIdentityAndMetadataButShareSourceReference
+ 67/105 Test  #86: MediaCatalogTest.ProjectSessionReportsCatalogIdentityChanges .................................   Passed    0.07 sec
+        Start  83: MediaCatalogTest.BinRenamePreservesStableIdentityAcrossUndoAndRedo
+ 68/105 Test  #80: MediaCatalogTest.DuplicateEntriesHaveIndependentIdentityAndMetadataButShareSourceReference ...   Passed    0.06 sec
+        Start  97: PersistenceTest.LegacyKnownParameterTextMigratesThroughCatalog
+ 69/105 Test  #83: MediaCatalogTest.BinRenamePreservesStableIdentityAcrossUndoAndRedo ...........................   Passed    0.06 sec
+        Start  67: ProjectSessionTest.ValueQueriesIncludeTypedCatalogDefaults
+ 70/105 Test  #97: PersistenceTest.LegacyKnownParameterTextMigratesThroughCatalog ...............................   Passed    0.07 sec
+        Start  77: CatalogTest.TaggedIntegerRejectsUnsignedOverflowAndNonfiniteValues
+ 71/105 Test  #67: ProjectSessionTest.ValueQueriesIncludeTypedCatalogDefaults ...................................   Passed    0.06 sec
+        Start 311: WorkspaceTest.MovePanelDepthBoundAfterSourceCollapseAllowed
+ 72/105 Test  #77: CatalogTest.TaggedIntegerRejectsUnsignedOverflowAndNonfiniteValues ...........................   Passed    0.07 sec
+        Start 310: WorkspaceTest.MovePanelDepthBoundRejected
+ 73/105 Test #311: WorkspaceTest.MovePanelDepthBoundAfterSourceCollapseAllowed ..................................   Passed    0.18 sec
+        Start  76: CatalogTest.UnboundedColorPreservesHdrAndNegativeValues
+ 74/105 Test #310: WorkspaceTest.MovePanelDepthBoundRejected ....................................................   Passed    0.17 sec
+        Start  74: CatalogTest.InvalidDescriptorSchemaIsRejectedBeforeSnapshotPublication
+ 75/105 Test  #76: CatalogTest.UnboundedColorPreservesHdrAndNegativeValues ......................................   Passed    0.06 sec
+        Start  75: CatalogTest.ColorEditsRespectDeclaredBoundsAndFloatStorageAtomically
+ 76/105 Test  #74: CatalogTest.InvalidDescriptorSchemaIsRejectedBeforeSnapshotPublication .......................   Passed    0.06 sec
+        Start 293: WorkspaceTest.ExcessiveDepthRejected
+ 77/105 Test  #75: CatalogTest.ColorEditsRespectDeclaredBoundsAndFloatStorageAtomically .........................   Passed    0.07 sec
+        Start  72: CatalogTest.DeclaredFixtureReportsUnavailableExecutor
+ 78/105 Test  #72: CatalogTest.DeclaredFixtureReportsUnavailableExecutor ........................................   Passed    0.07 sec
+        Start  71: CatalogTest.RegisteredFixtureSnapshotIsDiscoverableAndTyped
+ 79/105 Test #293: WorkspaceTest.ExcessiveDepthRejected .........................................................   Passed    0.16 sec
+        Start  73: CatalogTest.InvalidDeclaredParametersIdentifyNodeAndPreserveState
+ 80/105 Test  #71: CatalogTest.RegisteredFixtureSnapshotIsDiscoverableAndTyped ..................................   Passed    0.07 sec
+        Start 103: PersistenceTest.ActiveCatalogRestoresContributedPortValidation
+ 81/105 Test  #73: CatalogTest.InvalidDeclaredParametersIdentifyNodeAndPreserveState ............................   Passed    0.06 sec
+        Start 298: WorkspaceTest.SplitRespectsMaxDepth
+ 82/105 Test #103: PersistenceTest.ActiveCatalogRestoresContributedPortValidation ...............................   Passed    0.07 sec
+        Start 315: WorkspaceTest.DuplicateRemapsEveryIdentityAndPreservesPanelState
+ 83/105 Test #315: WorkspaceTest.DuplicateRemapsEveryIdentityAndPreservesPanelState .............................   Passed    0.02 sec
+        Start 314: WorkspaceTest.UnknownPanelTypeAndMetadataRoundTripForRecovery
+ 84/105 Test #314: WorkspaceTest.UnknownPanelTypeAndMetadataRoundTripForRecovery ................................   Passed    0.02 sec
+        Start 307: WorkspaceTest.MovePanelEdgeSplitsAllDirections
+ 85/105 Test #307: WorkspaceTest.MovePanelEdgeSplitsAllDirections ...............................................   Passed    0.03 sec
+        Start 292: WorkspaceTest.MalformedNodeThrows
+ 86/105 Test #292: WorkspaceTest.MalformedNodeThrows ............................................................   Passed    0.03 sec
+        Start 313: WorkspaceTest.MovePanelMultipleMovesReload
+ 87/105 Test #298: WorkspaceTest.SplitRespectsMaxDepth ..........................................................   Passed    0.14 sec
+        Start 302: WorkspaceTest.MovePanelSameLeafReorderNoOp
+ 88/105 Test #313: WorkspaceTest.MovePanelMultipleMovesReload ...................................................   Passed    0.02 sec
+        Start 290: WorkspaceTest.NonDefaultRoundTripPreservesStructure
+ 89/105 Test #302: WorkspaceTest.MovePanelSameLeafReorderNoOp ...................................................   Passed    0.03 sec
+        Start 301: WorkspaceTest.MovePanelSameLeafReorderShiftsIndex
+ 90/105 Test #290: WorkspaceTest.NonDefaultRoundTripPreservesStructure ..........................................   Passed    0.02 sec
+        Start 303: WorkspaceTest.MovePanelCrossLeafTabInsert
+ 91/105 Test #301: WorkspaceTest.MovePanelSameLeafReorderShiftsIndex ............................................   Passed    0.02 sec
+        Start 308: WorkspaceTest.MovePanelSameLeafEdgeSplit
+ 92/105 Test #303: WorkspaceTest.MovePanelCrossLeafTabInsert ....................................................   Passed    0.02 sec
+        Start 305: WorkspaceTest.MovePanelSoleOwnTileNoOp
+ 93/105 Test #308: WorkspaceTest.MovePanelSameLeafEdgeSplit .....................................................   Passed    0.02 sec
+        Start 312: WorkspaceTest.MovePanelPreservesIdentityAndUnaffectedRatios
+ 94/105 Test #305: WorkspaceTest.MovePanelSoleOwnTileNoOp .......................................................   Passed    0.02 sec
+        Start 300: WorkspaceTest.RatioTypeGroupAndActivationApply
+ 95/105 Test #312: WorkspaceTest.MovePanelPreservesIdentityAndUnaffectedRatios ..................................   Passed    0.02 sec
+        Start 309: WorkspaceTest.MovePanelInvalidRejectedNoPartialState
+ 96/105 Test #300: WorkspaceTest.RatioTypeGroupAndActivationApply ...............................................   Passed    0.02 sec
+        Start 295: WorkspaceTest.ClosePanelRemovesAndReactivates
+ 97/105 Test #309: WorkspaceTest.MovePanelInvalidRejectedNoPartialState .........................................   Passed    0.02 sec
+        Start 294: WorkspaceTest.SplitCreatesNestedSplitAndPreservesOriginalLeaf
+ 98/105 Test #294: WorkspaceTest.SplitCreatesNestedSplitAndPreservesOriginalLeaf ................................   Passed    0.02 sec
+        Start 304: WorkspaceTest.MovePanelCrossLeafTabAppend
+ 99/105 Test #295: WorkspaceTest.ClosePanelRemovesAndReactivates ................................................   Passed    0.03 sec
+        Start 306: WorkspaceTest.MovePanelSourceLeafCollapse
+100/105 Test #304: WorkspaceTest.MovePanelCrossLeafTabAppend ....................................................   Passed    0.02 sec
+        Start 299: WorkspaceTest.InvalidOperationsDoNotModifyState
+101/105 Test #306: WorkspaceTest.MovePanelSourceLeafCollapse ....................................................   Passed    0.02 sec
+        Start 297: WorkspaceTest.ClosingLeafLastPanelCollapsesSplit
+102/105 Test #299: WorkspaceTest.InvalidOperationsDoNotModifyState ..............................................   Passed    0.02 sec
+        Start 296: WorkspaceTest.CloseLastPanelRejected
+103/105 Test #297: WorkspaceTest.ClosingLeafLastPanelCollapsesSplit .............................................   Passed    0.02 sec
+        Start 291: WorkspaceTest.MalformedLayoutThrows
+104/105 Test #296: WorkspaceTest.CloseLastPanelRejected .........................................................   Passed    0.02 sec
+105/105 Test #291: WorkspaceTest.MalformedLayoutThrows ..........................................................   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 105
+
+Total Test time (real) =  34.53 sec

@@ -369,12 +369,27 @@ Workspace::Workspace() {
     timelineLeaf.active = timeline.id;
     timelineLeaf.panels.push_back(std::move(timeline));
 
+    Panel parameters{newId("panel"), "parameters", "A", nlohmann::json::object(), std::nullopt};
+    Node parametersLeaf;
+    parametersLeaf.kind = "tabs";
+    parametersLeaf.id = newId("leaf");
+    parametersLeaf.active = parameters.id;
+    parametersLeaf.panels.push_back(std::move(parameters));
+
+    Node bottomSplit;
+    bottomSplit.kind = "split";
+    bottomSplit.orientation = "horizontal";
+    bottomSplit.ratio = 0.5;
+    bottomSplit.id = newId("split");
+    bottomSplit.children.push_back(std::move(parametersLeaf));
+    bottomSplit.children.push_back(std::move(timelineLeaf));
+
     root_.kind = "split";
     root_.orientation = "vertical";
     root_.ratio = 0.72;
     root_.id = newId("split");
     root_.children.push_back(std::move(topSplit));
-    root_.children.push_back(std::move(timelineLeaf));
+    root_.children.push_back(std::move(bottomSplit));
 }
 
 Workspace Workspace::fromJson(const nlohmann::json& json) {

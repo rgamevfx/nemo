@@ -152,6 +152,15 @@ template <std::size_t N>
     throw std::invalid_argument("has an invalid type");
 }
 
+[[nodiscard]] bool hasControlCharacters(std::string_view text) {
+    for (const char character : text) {
+        const auto value = static_cast<unsigned char>(character);
+        if (value < 0x20 || value == 0x7F)
+            return true;
+    }
+    return false;
+}
+
 void validateDescriptor(const NodeDescriptor& descriptor) {
     const std::string context = "node descriptor '" + descriptor.type + "'";
     if (descriptor.type.empty())
@@ -194,6 +203,34 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
         if (!numeric && (parameter.minimum || parameter.maximum))
             throw std::invalid_argument(context + ": parameter '" + parameter.name +
                                         "' declares a range for a non-numeric type");
+        if (parameter.step && !numeric)
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' declares a step for a non-numeric type");
+        if (parameter.step && (!std::isfinite(*parameter.step) || *parameter.step <= 0.0))
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' has a step that is not finite and positive");
+        if (!parameter.label.empty() && hasControlCharacters(parameter.label))
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' has a label containing control characters");
+        if (!parameter.section.empty() && hasControlCharacters(parameter.section))
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' has a section containing control characters");
+        if (!parameter.editor.empty()) {
+            if (parameter.editor.find('.') == std::string::npos)
+                throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                            "' has an editor id without a namespace separator");
+            bool malformed = false;
+            for (const char character : parameter.editor) {
+                const auto value = static_cast<unsigned char>(character);
+                if (std::isspace(value) || value < 0x20 || value == 0x7F) {
+                    malformed = true;
+                    break;
+                }
+            }
+            if (malformed)
+                throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                            "' has an editor id containing whitespace or control characters");
+        }
         if (parameter.type != ParameterType::Choice && !parameter.choices.empty())
             throw std::invalid_argument(context + ": only choice parameters may declare choices");
         if (parameter.type == ParameterType::Choice && parameter.choices.empty())
@@ -255,7 +292,10 @@ NodeDescriptor constColorDescriptor() {
                           .outputs = {{PortKind::Image, "color"}},
                           .parameters = {{.name = "color",
                                           .type = ParameterType::Color,
-                                          .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}}}},
+                                          .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
+                                          .label = "Color",
+                                          .section = "Color",
+                                          .editor = {}}},
                           .capabilities = allBuiltinCapabilities()};
 }
 
@@ -269,7 +309,10 @@ NodeDescriptor mergeDescriptor() {
                           .parameters = {{.name = "operation",
                                           .type = ParameterType::Choice,
                                           .defaultValue = ParameterValue{ChoiceValue{"over"}},
-                                          .choices = {"over"}}},
+                                          .choices = {"over"},
+                                          .label = "Operation",
+                                          .section = "Composite",
+                                          .editor = {}}},
                           .capabilities = allBuiltinCapabilities()};
 }
 
@@ -294,7 +337,10 @@ NodeDescriptor sourceDescriptor() {
                           .outputs = {{PortKind::Image, "color"}},
                           .parameters = {{.name = "source",
                                           .type = ParameterType::String,
-                                          .defaultValue = ParameterValue{std::string{}}}},
+                                          .defaultValue = ParameterValue{std::string{}},
+                                          .label = "Source",
+                                          .section = "Source",
+                                          .editor = {}}},
                           .capabilities = allBuiltinCapabilities(true)};
 }
 

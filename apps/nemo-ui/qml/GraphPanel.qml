@@ -39,7 +39,6 @@ FocusScope {
     property var graphSelections: ({})
     property var graphViews: ({})
     property bool stateReady: false
-    signal inspectorRequested(string nodeId)
 
     property real zoom: 1
     property real panX: 0
@@ -1362,8 +1361,8 @@ FocusScope {
                     if (mouse.button !== Qt.LeftButton || lastClickMoved)
                         return;
                     var id = nodeAt(mouse.x, mouse.y);
-                    if (id)
-                        inspectorRequested(String(id));
+                    if (id && contextRouter && panelContext && panelContext.graphTarget)
+                        contextRouter.requestInspector(String(panelContext.graphTarget), String(id));
                 }
                 onWheel: function (wheel) {
                     if (gesture === "wire") {

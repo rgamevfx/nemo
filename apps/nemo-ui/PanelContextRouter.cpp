@@ -551,6 +551,15 @@ bool PanelContextRouter::setGroupContext(const QString& rawGroup, const QVariant
     return true;
 }
 
+bool PanelContextRouter::requestInspector(const QString& graphTarget, const QString& nodeId) {
+    const auto target = normalized(graphTarget);
+    const auto node = normalized(nodeId);
+    if (target.isEmpty() || node.isEmpty())
+        return false;
+    emit inspectorRequested(target, node);
+    return true;
+}
+
 void PanelContextRouter::sessionChanged(void* context) noexcept {
     static_cast<PanelContextRouter*>(context)->documentChanged();
 }

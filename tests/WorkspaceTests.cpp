@@ -270,8 +270,8 @@ TEST(WorkspaceTest, ClosePanelRemovesAndReactivates) {
     Workspace ws;
     const nlohmann::json original = ws.toJson();
     const nlohmann::json& root = original.at("root");
-    const std::string timelineLeaf = root.at("children").at(1).at("id");
-    const std::string timelinePanel = root.at("children").at(1).at("panels").at(0).at("id");
+    const std::string timelineLeaf = root.at("children").at(1).at("children").at(1).at("id");
+    const std::string timelinePanel = root.at("children").at(1).at("children").at(1).at("panels").at(0).at("id");
 
     ws.addTab(timelineLeaf, "nodegraph");
     const nlohmann::json added = ws.toJson();
@@ -314,7 +314,7 @@ TEST(WorkspaceTest, ClosingLeafLastPanelCollapsesSplit) {
     const std::string viewerLeaf = root.at("children").at(0).at("children").at(0).at("id");
     const std::string viewerPanel = root.at("children").at(0).at("children").at(0).at("panels").at(0).at("id");
     const std::string nodegraphPanel = root.at("children").at(0).at("children").at(1).at("panels").at(0).at("id");
-    const std::string timelinePanel = root.at("children").at(1).at("panels").at(0).at("id");
+    const std::string timelinePanel = root.at("children").at(1).at("children").at(1).at("panels").at(0).at("id");
 
     // Closing the only panel of the viewer leaf is allowed (other panels
     // remain); the emptied leaf is removed and the top horizontal split
@@ -557,8 +557,8 @@ TEST(WorkspaceTest, MovePanelSourceLeafCollapse) {
     const nlohmann::json& root = original.at("root");
     const std::string nodegraphLeaf = root.at("children").at(0).at("children").at(1).at("id");
     const std::string nodegraphPanel = root.at("children").at(0).at("children").at(1).at("panels").at(0).at("id");
-    const std::string timelineLeaf = root.at("children").at(1).at("id");
-    const std::string timelinePanel = root.at("children").at(1).at("panels").at(0).at("id");
+    const std::string timelineLeaf = root.at("children").at(1).at("children").at(1).at("id");
+    const std::string timelinePanel = root.at("children").at(1).at("children").at(1).at("panels").at(0).at("id");
 
     // The nodegraph leaf holds a sole panel; moving it to the timeline leaf
     // empties it, the inner horizontal split collapses, and nodegraph is
@@ -596,7 +596,7 @@ TEST(WorkspaceTest, MovePanelEdgeSplitsAllDirections) {
         Workspace ws;
         const nlohmann::json original = ws.toJson();
         const nlohmann::json& root = original.at("root");
-        const std::string timelineLeaf = root.at("children").at(1).at("id");
+        const std::string timelineLeaf = root.at("children").at(1).at("children").at(1).at("id");
         const std::string nodegraphLeaf = root.at("children").at(0).at("children").at(1).at("id");
         const std::string nodegraphPanel = root.at("children").at(0).at("children").at(1).at("panels").at(0).at("id");
 
@@ -795,7 +795,7 @@ TEST(WorkspaceTest, MovePanelMultipleMovesReload) {
     const nlohmann::json& root = original.at("root");
     const std::string viewerLeaf = root.at("children").at(0).at("children").at(0).at("id");
     const std::string nodegraphLeaf = root.at("children").at(0).at("children").at(1).at("id");
-    const std::string timelineLeaf = root.at("children").at(1).at("id");
+    const std::string timelineLeaf = root.at("children").at(1).at("children").at(1).at("id");
     const std::string viewerPanel = root.at("children").at(0).at("children").at(0).at("panels").at(0).at("id");
     const std::string nodegraphPanel = root.at("children").at(0).at("children").at(1).at("panels").at(0).at("id");
 

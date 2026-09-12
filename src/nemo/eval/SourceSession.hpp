@@ -6,9 +6,16 @@
 // The persistent model carries source identity and time mapping as plain
 // data (Document::sources, set through setSourceCommand) — never GPU or
 // decoder objects. This session is the execution layer that owns the
-// runtime counterpart: one decoder per open source key plus a bounded
-// cache of decoded device-resident frames, consumed by the native GPU
-// executor through the SAME dependency plan synthetic fixtures use.
+// runtime counterpart: one open decode context per source key plus a
+// bounded cache of decoded device-resident frames, consumed by the native
+// GPU executor through the SAME dependency plan synthetic fixtures use.
+//
+// Two decode kinds (issue #62): a clip reference is served by a
+// ClipDecoder, and a still image or image-sequence pattern is served by a
+// validated media::readImageFrame read uploaded as one scene-linear rgba32f
+// device image. The kind is classified from the resolved reference path
+// once per runtime key; both kinds produce the SAME DecodedFrame contract
+// described below.
 //
 // Ownership handoff (issue #11): the decoded frame is GPU-complete on
 // return (every decode path waits its own completion) and GENERAL-laid-out,
@@ -25,7 +32,8 @@
 // decoded-frame cache are bounded; eviction is least-recently-used.
 //
 // Thread-confined decoders: all decode state is serialized on one mutex;
-// `probe` opens an independent transient decoder and needs no lock.
+// `probe` needs no lock, reading the reference directly (a transient
+// decoder for a clip, the shared image read for a still/sequence).
 
 #include <cstdint>
 #include <deque>
@@ -80,7 +88,9 @@ public:
     // Decode-path evidence for `key`'s reference without touching session
     // decode state: opens a transient decoder and reports its ClipInfo plus
     // the measured DecodeDecision (empty reason exactly when the hardware
-    // path was selected). Thread-safe against concurrent acquire calls.
+    // path was selected). A still/sequence reference instead reports the
+    // image read: hardware false with reason "image read (OpenImageIO)".
+    // Thread-safe against concurrent acquire calls.
     struct Probe {
         media::ClipInfo info;
         media::DecodeDecision decision;
@@ -105,6 +115,12 @@ private:
         std::int64_t nextFrame{0};
     };
 
+    // Which shared source-fill path a runtime key resolves to (issue #62):
+    // classified from the resolved reference path and memoized, because the
+    // runtime key already changes whenever the reference path or its
+    // interpretation changes.
+    enum class DecodeKind { Clip, Image };
+
     [[nodiscard]] DecoderState openState(const Document& document, const NodeInstance& node,
                                          const SourceReference& reference) const;
 
@@ -124,7 +140,8 @@ private:
     static constexpr std::size_t kMaxCachedFrames = 4;
     mutable std::mutex mutex_;
     std::map<std::string, DecoderState> decoders_;
-    std::deque<std::string> decoderOrder_;  // LRU: front = least recently used
+    std::deque<std::string> decoderOrder_;           // LRU: front = least recently used
+    std::map<std::string, DecodeKind> decodeKinds_;  // memoized, guarded by mutex_
     std::map<std::pair<std::string, std::int64_t>, std::shared_ptr<const gpu::Image>> frames_;
     std::deque<std::pair<std::string, std::int64_t>> frameOrder_;  // LRU, same convention
 };

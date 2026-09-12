@@ -1,6 +1,7 @@
 #include "ParameterEditorRegistry.hpp"
 #include "ScopedEnvironment.hpp"
 #include "ViewerController.hpp"
+#include "ViewerControllerRegistry.hpp"
 #include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 #include "nemo/gpu/Error.hpp"
@@ -204,6 +205,9 @@ TEST(Interactive, UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
+    // A probe/render consumer owns a scheduler destination (issue #47); an
+    // unassigned controller is a command-only facade and never probes.
+    controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     ASSERT_TRUE(controller.pending());
     ASSERT_TRUE(controller.undo());
@@ -286,6 +290,7 @@ TEST(Interactive, ViewerDetachAndNodeDeletionLeaveEmptyWithoutOutputFallback) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
+    controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto colorId = controller.createGraphNode(scope, "constcolor", "detachColor", 0.0, 0.0, {}, {});
     const auto outputId = controller.createGraphNode(scope, "output", "detachOutput", 220.0, 0.0, {}, {});
@@ -338,6 +343,8 @@ TEST(Interactive, MediaFreeViewerRendersAttachedComposite) {
     // A media-free graph: no source is imported, only generators and a merge.
     nemo::ProjectSession session{emptyDocument()};
     nemo::ui::ViewerController controller(&runtime, session);
+    // The render consumer owns a scheduler destination (issue #47).
+    controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto colorA = controller.createGraphNode(scope, "constcolor", "canvasA", 0.0, 0.0, {}, {});
     const auto colorB = controller.createGraphNode(scope, "constcolor", "canvasB", 0.0, 80.0, {}, {});
@@ -363,6 +370,145 @@ TEST(Interactive, MediaFreeViewerRendersAttachedComposite) {
     EXPECT_EQ(controller.presentation()->request.imageHeight(), 1080);
     EXPECT_FALSE(controller.presentation()->frame.width <= 0);
 #endif
+}
+
+// Issue #47's focused multi-destination scenario: two viewer panels submit
+// different targets through one runtime, a result for destination A cannot
+// replace B's display, rapid supersession keeps only the newest request per
+// destination, and retiring A leaves B rendering.
+TEST(Interactive, TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement) {
+#ifndef NEMO_SLANG_SPV_DIR
+    GTEST_SKIP() << "Native multi-destination evidence requires compiled Slang shaders";
+#else
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const auto config = std::filesystem::path(NEMO_UI_QML_DIR).parent_path().parent_path().parent_path() /
+                        "docs/evidence/issue12-view.ocio";
+    const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
+    nemo::ui::ViewerRuntime runtime;
+    nemo::eval::ViewerCacheOptions options;
+    options.directory = directory.path().toStdString();
+    options.encoding.codec = "libx264-cpu";
+    options.chunkFrames = 1;
+    try {
+        runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
+    } catch (const nemo::gpu::GpuException& error) {
+        if (error.errorCode() == nemo::gpu::GpuError::NoDevice)
+            GTEST_SKIP() << error.what();
+        throw;
+    }
+
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController viewerA(&runtime, session);
+    nemo::ui::ViewerController viewerB(&runtime, session);
+    const auto destinationA = runtime.allocateDestination(QStringLiteral("scenario-a"));
+    const auto destinationB = runtime.allocateDestination(QStringLiteral("scenario-b"));
+    ASSERT_TRUE(destinationA.has_value());
+    ASSERT_TRUE(destinationB.has_value());
+    EXPECT_NE(*destinationA, *destinationB);
+    // Both destinations are panel instances, never the reserved defaults.
+    EXPECT_NE(*destinationA, nemo::eval::ViewerDestination::Interactive);
+    EXPECT_NE(*destinationA, nemo::eval::ViewerDestination::Cache);
+    viewerA.setDestination(*destinationA);
+    viewerB.setDestination(*destinationB);
+
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto colorA = viewerA.createGraphNode(scope, "constcolor", "destColorA", 0.0, 0.0, {}, {});
+    const auto colorB = viewerA.createGraphNode(scope, "constcolor", "destColorB", 0.0, 80.0, {}, {});
+    const auto viewerNodeA = viewerA.createGraphNode(scope, "viewer", "DestViewerA", 0.0, 160.0, {}, {});
+    const auto viewerNodeB = viewerA.createGraphNode(scope, "viewer", "DestViewerB", 0.0, 240.0, {}, {});
+    ASSERT_FALSE(colorA.isEmpty());
+    ASSERT_FALSE(colorB.isEmpty());
+    ASSERT_FALSE(viewerNodeA.isEmpty());
+    ASSERT_FALSE(viewerNodeB.isEmpty());
+    ASSERT_TRUE(viewerA.connectOrReplaceGraph(scope, colorA, 0, viewerNodeA, 0));
+    ASSERT_TRUE(viewerA.connectOrReplaceGraph(scope, colorB, 0, viewerNodeB, 0));
+    // Viewer nodes are addressed in ascending NodeId order, so panel A renders
+    // the first viewer's upstream node and panel B the second's.
+    viewerA.setActiveViewer(scope, 0);
+    viewerB.setActiveViewer(scope, 1);
+    viewerA.setResolutionMode("quarter");
+    viewerB.setResolutionMode("quarter");
+    viewerA.viewportChanged(QSizeF(320.0, 240.0));
+    viewerB.viewportChanged(QSizeF(200.0, 160.0));
+
+    const auto settle = [](nemo::ui::ViewerController& viewer, int frame) {
+        QElapsedTimer deadline;
+        deadline.start();
+        while ((!viewer.presentation() || viewer.presentation()->request.localTime != frame) &&
+               viewer.error().isEmpty() && deadline.elapsed() < 60000)
+            QTest::qWait(10);
+    };
+    settle(viewerA, 0);
+    settle(viewerB, 0);
+    ASSERT_TRUE(viewerA.error().isEmpty()) << viewerA.error().toStdString();
+    ASSERT_TRUE(viewerB.error().isEmpty()) << viewerB.error().toStdString();
+    ASSERT_TRUE(viewerA.presentation());
+    ASSERT_TRUE(viewerB.presentation());
+    EXPECT_EQ(viewerA.presentation()->request.output, static_cast<nemo::NodeId>(colorA.toULongLong()));
+    EXPECT_EQ(viewerB.presentation()->request.output, static_cast<nemo::NodeId>(colorB.toULongLong()));
+    const auto bRequestId = viewerB.presentation()->requestId;
+
+    // Rapid supersession on one destination must leave the other untouched and
+    // publish only the newest request for the edited destination.
+    viewerA.setFrame(1);
+    viewerA.setFrame(2);
+    viewerA.setFrame(3);
+    settle(viewerA, 3);
+    ASSERT_TRUE(viewerA.presentation());
+    EXPECT_EQ(viewerA.presentation()->request.localTime, 3);
+    ASSERT_TRUE(viewerB.presentation());
+    EXPECT_EQ(viewerB.presentation()->requestId, bRequestId);
+
+    // Closing panel A retires only its destination: B's presentation survives
+    // and B can still render a new frame afterwards.
+    ASSERT_TRUE(runtime.retireDestination(*destinationA));
+    viewerA.setDestination(std::nullopt);
+    ASSERT_TRUE(viewerB.presentation());
+    // Retiring A's destination must not disturb B's current presentation.
+    EXPECT_EQ(viewerB.presentation()->requestId, bRequestId);
+    viewerB.setFrame(1);
+    settle(viewerB, 1);
+    ASSERT_TRUE(viewerB.error().isEmpty()) << viewerB.error().toStdString();
+    ASSERT_TRUE(viewerB.presentation());
+    EXPECT_EQ(viewerB.presentation()->request.localTime, 1);
+    EXPECT_NE(viewerB.presentation()->requestId, bRequestId);
+#endif
+}
+
+TEST(Interactive, ViewerControllerRegistryAllocatesIndependentDestinations) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerControllerRegistry registry(&runtime, session);
+    auto* first = qobject_cast<nemo::ui::ViewerController*>(registry.controller(QStringLiteral("panel-a")));
+    auto* second = qobject_cast<nemo::ui::ViewerController*>(registry.controller(QStringLiteral("panel-b")));
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    EXPECT_NE(first, second);
+    EXPECT_EQ(registry.activeCount(), 2);
+    // The same panel always resolves to the same controller.
+    EXPECT_EQ(registry.controller(QStringLiteral("panel-a")), first);
+    ASSERT_TRUE(first->destination().has_value());
+    ASSERT_TRUE(second->destination().has_value());
+    EXPECT_NE(*first->destination(), *second->destination());
+    // Panel destinations are distinct from the reserved scheduler streams.
+    EXPECT_NE(*first->destination(), nemo::eval::ViewerDestination::Interactive);
+    EXPECT_NE(*first->destination(), nemo::eval::ViewerDestination::Cache);
+    EXPECT_NE(*second->destination(), nemo::eval::ViewerDestination::Interactive);
+    EXPECT_NE(*second->destination(), nemo::eval::ViewerDestination::Cache);
+    EXPECT_EQ(registry.primary(), first);
+
+    // Retiring one panel leaves the other's controller and destination live.
+    registry.release(QStringLiteral("panel-a"));
+    EXPECT_EQ(registry.activeCount(), 1);
+    EXPECT_EQ(registry.primary(), second);
+    EXPECT_FALSE(first->destination().has_value());
+    EXPECT_TRUE(second->destination().has_value());
+
+    registry.release(QStringLiteral("panel-b"));
+    EXPECT_EQ(registry.activeCount(), 0);
+    EXPECT_EQ(registry.primary(), nullptr);
+    EXPECT_FALSE(second->destination().has_value());
 }
 
 TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {

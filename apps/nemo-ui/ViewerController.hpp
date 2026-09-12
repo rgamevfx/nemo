@@ -4,6 +4,8 @@
 #include "nemo/core/evaluation/ViewerResolution.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
+#include "nemo/eval/ViewerDestination.hpp"
+#include "nemo/gpu/ViewerPresentation.hpp"
 #include <QPointer>
 #include <QRectF>
 #include <QSizeF>
@@ -59,9 +61,26 @@ class ViewerController final : public QObject {
     Q_PROPERTY(qulonglong cacheErrors READ cacheErrors NOTIFY schedulerChanged)
     Q_PROPERTY(qulonglong cachePublished READ cachePublished NOTIFY schedulerChanged)
     Q_PROPERTY(QString cacheError READ cacheError NOTIFY schedulerChanged)
+    // Panel-instance routing and transport (issue #47). Every one of these is
+    // panel-local: it reads and writes only this controller's destination.
+    Q_PROPERTY(bool hasDestination READ hasDestination NOTIFY destinationChanged)
+    Q_PROPERTY(qulonglong destinationId READ destinationId NOTIFY destinationChanged)
+    Q_PROPERTY(bool playing READ playing NOTIFY playbackChanged)
+    Q_PROPERTY(int inFrame READ inFrame NOTIFY marksChanged)
+    Q_PROPERTY(int outFrame READ outFrame NOTIFY marksChanged)
+    Q_PROPERTY(double frameRate READ frameRate NOTIFY frameRateChanged)
+    Q_PROPERTY(QString channel READ channel NOTIFY displayChanged)
+    Q_PROPERTY(QString layer READ layer NOTIFY displayChanged)
+    Q_PROPERTY(QString timecode READ timecode NOTIFY frameChanged)
 public:
     explicit ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session);
     ~ViewerController() override;
+    // Panel-instance scheduler destination. Panel destinations are values >= 2;
+    // Interactive and Cache stay reserved. Without a destination this
+    // controller is a pure command/metadata facade: it never probes, submits,
+    // or consumes a result.
+    void setDestination(std::optional<eval::ViewerDestination> destination);
+    [[nodiscard]] std::optional<eval::ViewerDestination> destination() const { return destination_; }
     Q_INVOKABLE void openSource(const QString& path);
     Q_INVOKABLE void setResolutionMode(const QString& mode);
     Q_INVOKABLE void setZoom(double zoom);
@@ -128,6 +147,33 @@ public:
     Q_INVOKABLE bool redo();
     Q_INVOKABLE void cancelRender();
     Q_INVOKABLE void requestRange(int first, int last);
+    // Panel transport. Playback is a QTimer at 1000/frameRate that advances one
+    // frame per tick through the existing setFrame path: one request per
+    // displayed frame, never render-ahead, looping inclusively within
+    // [inFrame_, outFrame_].
+    Q_INVOKABLE void play();
+    Q_INVOKABLE void pause();
+    Q_INVOKABLE void togglePlay();
+    // Pauses and seeks to inFrame_.
+    Q_INVOKABLE void stop();
+    Q_INVOKABLE void stepBy(int delta);
+    Q_INVOKABLE void seekToIn();
+    Q_INVOKABLE void seekToOut();
+    // Mark commands clamp into the current frame range and never invert.
+    Q_INVOKABLE void setMarkIn();
+    Q_INVOKABLE void setMarkOut();
+    Q_INVOKABLE void setMarkInFrame(int frame);
+    Q_INVOKABLE void setMarkOutFrame(int frame);
+    // Presentation-only display isolation: "RGBA", "R", "G", "B", "A".
+    Q_INVOKABLE void setChannel(const QString& channel);
+    // "rgb" selects the display-referred composite. "depth" has no runtime
+    // implementation and is reported as unavailable rather than fabricated.
+    Q_INVOKABLE void setLayer(const QString& layer);
+    Q_INVOKABLE QString timecodeForFrame(int frame) const;
+    Q_INVOKABLE int frameForTimecode(const QString& text) const;
+    // Forwards the resolved panel context (PanelContextRouter) into the render
+    // target: role is "graph", "timeline", or "media".
+    Q_INVOKABLE void setViewerContext(const QString& role, const QString& target, int clock);
     void attachWindow(QQuickWindow* window);
     void attachViewerItem(ViewerItem* item);
     void detachViewerItem(ViewerItem* item);
@@ -170,8 +216,19 @@ public:
     }
     [[nodiscard]] QRectF presentedRegion() const;
     [[nodiscard]] QSizeF compositionSize() const;
+    [[nodiscard]] bool hasDestination() const { return destination_.has_value(); }
+    [[nodiscard]] qulonglong destinationId() const;
+    [[nodiscard]] bool playing() const { return playing_; }
+    [[nodiscard]] int inFrame() const { return inFrame_; }
+    [[nodiscard]] int outFrame() const { return outFrame_; }
+    [[nodiscard]] double frameRate() const { return frameRate_; }
+    [[nodiscard]] QString channel() const { return channel_; }
+    [[nodiscard]] QString layer() const { return layer_; }
+    [[nodiscard]] QString timecode() const;
     [[nodiscard]] std::shared_ptr<const ViewerResult> presentation() const { return presentation_; }
-    [[nodiscard]] WindowPresentationState& presentationState() const { return *presentationState_; }
+    // The one retained presentation host shared by every panel; the runtime
+    // owns its lifetime across panels and Qt teardown.
+    [[nodiscard]] WindowPresentationState& presentationState() const { return runtime_->windowPresentation(); }
     [[nodiscard]] bool filterLinear() const { return runtime_->presentationFilterLinear(); }
 
 signals:
@@ -189,14 +246,38 @@ signals:
     void historyChanged();
     void schedulerChanged();
     void frameArrived();
+    void destinationChanged();
+    void playbackChanged();
+    void marksChanged();
+    void frameRateChanged();
+    void displayChanged();
     // Qt handed the rendered frame to the window system. This is not a
     // physical scanout timestamp; benchmark reports name that boundary.
     void framePresented(int frame, int width, int height, bool cacheHit, double requestToSwapMs);
 
 private:
+    // Which routed panel context this controller renders. The graph role
+    // renders this controller's own Viewer attachment; the media role renders
+    // the root-network source node addressing the routed catalog target; the
+    // timeline role is deferred to issue #54 and renders nothing.
+    enum class ContextRole { Graph, Media, Timeline };
+    // Frame domain for a document with no probed media length. The viewer
+    // panel's ruler uses the same 240-frame (0..239) fallback, so marks and
+    // playback cover exactly the domain the ruler paints.
+    static constexpr int kDefaultFrameCount = 240;
     static void sessionDocumentChanged(void* context) noexcept;
     void documentChanged();
     void refreshViewerTarget();
+    // Re-resolves contextRole_/contextTarget_ against the live document and
+    // records the reason a routed target has no render target.
+    void refreshContextTarget();
+    [[nodiscard]] NodeId renderTargetNode() const;
+    [[nodiscard]] QString unavailableStatus() const;
+    // Clamps into the same frame domain as setFrame: [0, frameCount - 1].
+    [[nodiscard]] int clampFrame(int frame) const;
+    // Inclusive last frame of the current domain. Unknown media length has no
+    // authored upper bound.
+    [[nodiscard]] int frameDomainEnd() const;
     void buildGraph(const SourceReference& reference);
     void refreshRequest();
     void invalidateRequest();
@@ -206,8 +287,22 @@ private:
     bool applyEdit(const nemo::EditResult& result);
     void clearError();
     [[nodiscard]] nemo::EditOptions editOptions() const;
+    // Applies a probed frame count to the frame domain, the authored marks, and
+    // the current frame.
+    void applyFrameCount(int frameCount);
+    [[nodiscard]] int playbackInterval() const;
+    void playbackTick();
     ViewerRuntime* runtime_;
     nemo::ProjectSession& session_;
+    // The scheduler destination this panel owns. Unset, the controller is a
+    // pure command/metadata facade.
+    std::optional<eval::ViewerDestination> destination_;
+    // Routed panel context (PanelContextRouter): which target family this panel
+    // displays and the catalog target it addresses.
+    ContextRole contextRole_{ContextRole::Graph};
+    QString contextTarget_;
+    NodeId contextTargetNode_{kInvalidNode};
+    QString contextUnavailable_;
     SourceReference probedSource_;
     ViewerResolutionPolicy policy_;
     QSizeF sourceSize_;
@@ -238,12 +333,20 @@ private:
     std::uint64_t lastRevision_{};
     std::optional<EvaluationRequest> lastRequest_;
     std::shared_ptr<const ViewerResult> presentation_;
+    // Panel-local display selection. `channel_` is the display name; the
+    // presentation-only isolation travels with each submission.
+    QString channel_{QStringLiteral("RGBA")};
+    gpu::ViewerChannel viewerChannel_{gpu::ViewerChannel::RGBA};
+    QString layer_{QStringLiteral("rgb")};
+    double frameRate_{24.0};
+    bool playing_{false};
+    bool marksAuthored_{false};
+    int inFrame_{0};
+    int outFrame_{kDefaultFrameCount - 1};
     QList<QPointer<ViewerItem>> items_;
     QPointer<ViewerItem> primary_;
     QTimer schedulerPoll_;
-    // Outlives all QML nodes and retains their images through Qt frame-slot
-    // completion, including when a viewer panel is closed during a frame.
-    std::unique_ptr<WindowPresentationState> presentationState_;
+    QTimer playback_;
     nemo::ProjectSession::Subscription sessionSubscription_;
     // One continuous parameter gesture at a time, owner-thread-only. The
     // token is the session's; this facade only remembers its scope.

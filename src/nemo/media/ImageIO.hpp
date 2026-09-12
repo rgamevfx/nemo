@@ -51,6 +51,10 @@ struct ImageReadResult {
     std::vector<std::string> channelNames;  // all channels in storage order
     std::string nativePrecision;            // e.g. "half"
     std::string formatName;                 // e.g. "openexr"
+    // Declared color metadata (issue #62): what the file itself says its
+    // samples mean. Both empty exactly when the file declares nothing.
+    std::string declaredColorSpace;     // OpenImageIO `oiio:ColorSpace`, e.g. "srgb_rec709_scene"
+    std::vector<float> chromaticities;  // 8 values (rx,ry,gx,gy,bx,by,wx,wy) when declared, else empty
 };
 
 // Media I/O failures always identify the offending file (repo rule: errors

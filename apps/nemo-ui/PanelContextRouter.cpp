@@ -363,6 +363,109 @@ bool PanelContextRouter::requestInspector(const QString& rawGroup, const QString
     return true;
 }
 
+nlohmann::json PanelContextRouter::contextPresentation() const {
+    nlohmann::json groups = nlohmann::json::object();
+    for (int index = 0; index < 5; ++index) {
+        const GroupContext& context = groups_[static_cast<std::size_t>(index)];
+        if (context.timelineTarget.isEmpty() && context.sourceTarget.isEmpty() && context.timelineClock == 0.0 &&
+            context.sourceClock == 0.0) {
+            continue;
+        }
+        const auto letter = QString(QChar(u'A' + index)).toStdString();
+        groups[letter] = {{"timelineTarget", context.timelineTarget.toStdString()},
+                          {"sourceTarget", context.sourceTarget.toStdString()},
+                          {"timelineClock", context.timelineClock},
+                          {"sourceClock", context.sourceClock}};
+    }
+    return {{"groups", std::move(groups)}};
+}
+
+void PanelContextRouter::resetDocumentContexts() {
+    for (int index = 0; index < 5; ++index) {
+        GroupContext& context = groups_[static_cast<std::size_t>(index)];
+        if (context.timelineTarget.isEmpty() && context.sourceTarget.isEmpty() && context.timelineClock == 0.0 &&
+            context.sourceClock == 0.0) {
+            continue;
+        }
+        context = GroupContext{};
+        const QString letter = QString(QChar(u'A' + index));
+        emit groupContextChanged(letter);
+        for (const auto& [panelId, binding] : panels_) {
+            if (binding.group != letter) {
+                continue;
+            }
+            const auto before = lastContexts_.at(panelId);
+            const auto now = contextFor(panelId);
+            lastContexts_[panelId] = now;
+            if (now != before) {
+                emit panelContextChanged(panelId);
+            }
+        }
+    }
+}
+
+bool PanelContextRouter::applyContextPresentation(const nlohmann::json& presentation) {
+    if (!presentation.is_object()) {
+        return false;
+    }
+    const auto groups = presentation.find("groups");
+    if (groups == presentation.end() || !groups->is_object()) {
+        return false;
+    }
+    for (int index = 0; index < 5; ++index) {
+        const QString letter = QString(QChar(u'A' + index));
+        const auto entry = groups->find(letter.toStdString());
+        if (entry == groups->end() || !entry->is_object()) {
+            continue;
+        }
+        GroupContext next = groups_[static_cast<std::size_t>(index)];
+        const auto readTarget = [&](const char* key, const QString& kind, QString* output) {
+            const auto value = entry->find(key);
+            if (value == entry->end() || !value->is_string()) {
+                return;
+            }
+            const QString target = normalized(QString::fromStdString(value->get<std::string>()));
+            // A restored target the replaced document cannot address is a stale
+            // project-context identity: clear it rather than display or resolve
+            // against a different document's identity.
+            *output = target.isEmpty() || targetAvailable(kind, target) ? target : QString{};
+        };
+        readTarget("timelineTarget", QStringLiteral("timeline"), &next.timelineTarget);
+        readTarget("sourceTarget", QStringLiteral("source"), &next.sourceTarget);
+        const auto readClock = [&](const char* key, double* output) {
+            const auto value = entry->find(key);
+            if (value == entry->end() || !value->is_number()) {
+                return;
+            }
+            const double parsed = value->get<double>();
+            if (std::isfinite(parsed)) {
+                *output = parsed;
+            }
+        };
+        readClock("timelineClock", &next.timelineClock);
+        readClock("sourceClock", &next.sourceClock);
+        GroupContext& current = groups_[static_cast<std::size_t>(index)];
+        if (next.timelineTarget == current.timelineTarget && next.sourceTarget == current.sourceTarget &&
+            next.timelineClock == current.timelineClock && next.sourceClock == current.sourceClock) {
+            continue;
+        }
+        current = std::move(next);
+        emit groupContextChanged(letter);
+        for (const auto& [panelId, binding] : panels_) {
+            if (binding.group != letter) {
+                continue;
+            }
+            const auto before = lastContexts_.at(panelId);
+            const auto now = contextFor(panelId);
+            lastContexts_[panelId] = now;
+            if (now != before) {
+                emit panelContextChanged(panelId);
+            }
+        }
+    }
+    return true;
+}
+
 void PanelContextRouter::sessionChanged(void* context) noexcept {
     static_cast<PanelContextRouter*>(context)->documentChanged();
 }

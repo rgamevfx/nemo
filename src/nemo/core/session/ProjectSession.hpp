@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <deque>
 #include <exception>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <optional>
@@ -10,7 +11,10 @@
 #include <string_view>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "nemo/core/document/Document.hpp"
+#include "nemo/core/session/ProjectFile.hpp"
 
 namespace nemo {
 
@@ -19,7 +23,7 @@ struct EditOptions {
     std::string requestId{};
 };
 
-enum class EditErrorCode { InvalidArgument, MissingObject, RevisionConflict, Unavailable, ReentrantMutation };
+enum class EditErrorCode { InvalidArgument, MissingObject, RevisionConflict, Unavailable, ReentrantMutation, IoError };
 
 struct EditError {
     std::string message;
@@ -72,6 +76,12 @@ struct EditResult {
     std::vector<AnimationChannelId> changedAnimationChannelIds;
     std::vector<KeyframeRef> changedAnimationKeyIds;
     bool colorPolicyChanged{false};
+};
+
+struct ProjectReplaceResult {
+    bool replaced{false};
+    std::uint64_t revision{1};
+    std::optional<EditError> error;
 };
 
 struct ChangeEvent {
@@ -211,6 +221,60 @@ public:
     [[nodiscard]] bool canRedo() const noexcept { return commands_.canRedo(); }
     [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
 
+    // File ownership. Opening or saving a project never creates an undo entry
+    // and never mutates the document outside replaceDocument(). All accessors
+    // are owner-thread-only.
+    //
+    // Dirty is authored-content equality: the current document, presentation
+    // envelope and color configuration serialize identically to the baseline
+    // captured when the project was last opened or written. Undoing back to the
+    // saved state therefore returns clean, and a save that completes for an
+    // older snapshot never clears newer edits. The result is cached per state
+    // stamp; isDirty() is not noexcept because serializing the baseline can
+    // throw.
+    [[nodiscard]] bool isDirty() const;
+    [[nodiscard]] std::uint64_t savedRevision() const noexcept { return savedRevision_; }
+    // Identity of the currently published project. Replacement/opening advances
+    // it so a save prepared against an earlier project cannot publish into the
+    // newly opened one.
+    [[nodiscard]] std::uint64_t projectGeneration() const noexcept { return projectGeneration_; }
+    [[nodiscard]] const std::filesystem::path& projectPath() const noexcept { return projectPath_; }
+    [[nodiscard]] const nlohmann::json& presentation() const noexcept { return presentation_; }
+    // Presentation is versioned independently and never interpreted by headless
+    // callers. Changing it is not an undoable document edit.
+    void setPresentation(nlohmann::json presentation);
+    [[nodiscard]] const std::string& colorConfigPath() const noexcept { return colorConfigPath_; }
+    void setColorConfigPath(std::string colorConfigPath);
+    [[nodiscard]] const std::string& lastFileError() const noexcept { return lastFileError_; }
+    void setLastFileError(std::string message);
+    [[nodiscard]] bool recovered() const noexcept { return recovered_; }
+    // Original project file an autosave recovery copy came from; empty unless
+    // recovered().
+    [[nodiscard]] const std::filesystem::path& recoveryOriginal() const noexcept { return recoveryOriginal_; }
+
+    // Captures an owned immutable snapshot plus the session file state for a
+    // worker write. Pure owner-thread work; no I/O and no document mutation.
+    [[nodiscard]] ProjectWriteRequest prepareSave(std::filesystem::path target,
+                                                  PathPolicy pathPolicy = PathPolicy::RebaseRelative,
+                                                  bool backup = true) const;
+    // Publishes the outcome of a prepared write on the owner thread. The
+    // written snapshot becomes the saved baseline; if the session advanced past
+    // it the session stays dirty. Never creates an undo entry.
+    [[nodiscard]] EditResult commitSave(const ProjectWriteRequest& request, const ProjectWriteResult& result);
+
+    // Replaces the published document in place, keeping observer
+    // registrations. Session-local history, gestures and request dedup are
+    // cleared, the revision advances and changesSince() reports a resync.
+    [[nodiscard]] ProjectReplaceResult replaceDocument(Document document, std::filesystem::path path = {},
+                                                       nlohmann::json presentation = nlohmann::json{},
+                                                       std::string colorConfigPath = {});
+    // Replacement from a read result. The recovery guard is preserved whenever
+    // either flag or result.recovered is set, so a recovered copy can never
+    // silently replace its original target.
+    [[nodiscard]] ProjectReplaceResult replaceDocument(ProjectReadResult result, bool recovered = false);
+    // Opens a read result and adopts its recovery state.
+    [[nodiscard]] ProjectReplaceResult open(ProjectReadResult result);
+
     [[nodiscard]] ChangeHistory changesSince(std::uint64_t revision) const;
     // Filters match label/type or parameter/source key substrings. Limits are
     // clamped to 256; zero is empty. Cursor IDs/keys are exclusive. Every
@@ -265,6 +329,11 @@ private:
     [[nodiscard]] std::optional<EditResult> duplicate(const std::string& requestId) const;
     void preparePublication(const Document& before, const Document& after, EditResult& result,
                             const std::string& requestId);
+    [[nodiscard]] ProjectReplaceResult replaceInternal(Document document, std::filesystem::path path,
+                                                       nlohmann::json presentation, std::string colorConfigPath,
+                                                       bool recovered, std::filesystem::path recoveryOriginal);
+    void captureSavedBaseline() noexcept;
+    void invalidateDirtyCache() noexcept { ++stateStamp_; }
 
     Document document_;
     CommandStack commands_;
@@ -282,6 +351,20 @@ private:
     std::deque<RequestRecord> requests_;
     std::optional<ParameterGestureState> gesture_;
     ParameterGestureToken nextGestureToken_{1};
+
+    std::filesystem::path projectPath_;
+    std::filesystem::path recoveryOriginal_;
+    nlohmann::json presentation_;
+    std::string colorConfigPath_;
+    std::string lastFileError_;
+    std::string savedContent_;
+    bool savedContentValid_{false};
+    bool recovered_{false};
+    std::uint64_t savedRevision_{1};
+    std::uint64_t projectGeneration_{1};
+    std::uint64_t stateStamp_{1};
+    mutable std::uint64_t dirtyCacheStamp_{0};
+    mutable bool dirtyCacheValue_{false};
 };
 
 }  // namespace nemo

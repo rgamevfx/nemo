@@ -1,5 +1,6 @@
 #include "GraphItem.hpp"
 #include "PanelContextRouter.hpp"
+#include "ProjectFileController.hpp"
 #include "TimelineItem.hpp"
 #include "ViewerController.hpp"
 #include "ViewerItem.hpp"
@@ -64,6 +65,9 @@ protected:
     // Context bindings persist through the same workspace presentation state.
     // Rendering and document ownership remain in their existing objects.
     nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
+    // Main.qml reads the project file state; the harness injects the same
+    // adapter the application composes.
+    nemo::ui::ProjectFileController projectFile{projectSession, controller, panelContextRouter};
     QQmlApplicationEngine engine;
     QSignalSpy warnings{&engine, &QQmlEngine::warnings};
     QQuickWindow* window = nullptr;
@@ -81,6 +85,7 @@ protected:
         panelContextRouter.setWorkspaceController(&controller);
         engine.rootContext()->setContextProperty("workspace", &controller);
         engine.rootContext()->setContextProperty("panelContextRouter", &panelContextRouter);
+        engine.rootContext()->setContextProperty("projectFile", &projectFile);
         engine.rootContext()->setContextProperty("viewerController", &viewerController);
         engine.load(QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/Main.qml")));
         ASSERT_FALSE(engine.rootObjects().isEmpty());

@@ -1,0 +1,1765 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import Nemo
+
+// The graph surface is deliberately the only gesture owner. Document topology,
+// authored positions, and routes are changed only by ViewerController commands;
+// every other value in this item is presentation state.
+FocusScope {
+    id: graphPanel
+    objectName: "graphPanel"
+    focus: true
+    activeFocusOnTab: true
+    clip: true
+
+    property string panelId: ""
+    property string panelGroup: "A"
+    property var panelState: ({})
+    property var panelContext: ({})
+    property var contextRouter: null
+    property var theme
+    property var workspace
+    property bool toolsOpen: false
+    readonly property var controller: viewerController
+    property var categories: []
+    property var catalogByType: ({})
+    property var portPresentationById: ({})
+    property var displayNodes: []
+    property var displayEdges: []
+    property var selectedNodeIds: []
+    property string hoveredNodeId: ""
+    property string hoveredEdgeId: ""
+    property var hoveredEndpoint: ({})
+    property var hoveredReroute: ({})
+    property var wirePreview: ({})
+    property var graphSnapshotData: ({})
+    property string graphNetworkId: ""
+    property bool graphAvailable: false
+    // A scope path is explicit occurrence ancestry. Definitions can be used
+    // by multiple instances, so navigation never infers a parent from a
+    // definition identity.
+    property var scopePath: []
+    property var scopeBreadcrumbs: []
+    property var graphSelections: ({})
+    property var graphViews: ({})
+    property bool stateReady: false
+    signal inspectorRequested(string nodeId)
+
+    property real zoom: 1
+    property real panX: 0
+    property real panY: 0
+    property bool lastClickValid: false
+    property real lastClickX: 0
+    property real lastClickY: 0
+    readonly property real nodeWidth: 112
+    readonly property real nodeHeight: 28
+    readonly property real portGlyphSize: 8
+    readonly property real portHitRadius: 14
+    readonly property real sceneWidth: 2600
+    readonly property real sceneHeight: 1500
+
+    property string gesture: ""
+    property bool gestureMoved: false
+    property real gesturePressX: 0
+    property real gesturePressY: 0
+    property real pressSceneX: 0
+    property real pressSceneY: 0
+    property real pointerX: 0
+    property real pointerY: 0
+    property bool shiftHeld: false
+    property real panOriginX: 0
+    property real panOriginY: 0
+    property real boxStartX: 0
+    property real boxStartY: 0
+    property var boxSelectionBase: []
+    property var dragIds: []
+    property var dragStartPositions: ({})
+    property string disconnectedInsertId: ""
+    property real dragDeltaX: 0
+    property real dragDeltaY: 0
+    property string wireFromId: ""
+    property int wireFromPort: 0
+    property string wireToId: ""
+    property int wireToPort: 0
+    property bool wireFromInput: false
+    property var wireOldEdge: null
+    property bool pipePullPending: false
+    property var pipePullEdge: null
+    property bool pipePullDestination: false
+    property var rerouteEdge: null
+    property var reroutePoints: []
+    property int rerouteIndex: -1
+    property bool rerouteRemove: false
+    property bool rerouteInserted: false
+    property var creationContext: ({})
+    property point searchAnchor: Qt.point(0, 0)
+    property string contextNodeId: ""
+    property real contextMenuX: 0
+    property real contextMenuY: 0
+    property bool lastClickMoved: false
+    property int positionEpoch: 0
+
+    property Component headerTools: Component {
+        RowLayout {
+            spacing: 4
+            ChromeButton {
+                objectName: "graphFrameAll"
+                theme: graphPanel.theme
+                text: "Frame all"
+                implicitHeight: 24
+                implicitWidth: 67
+                padding: 5
+                onClicked: graphPanel.frameAll()
+            }
+            ChromeButton {
+                id: toolsButton
+                objectName: "graphToolsButton"
+                theme: graphPanel.theme
+                text: "Tools"
+                implicitHeight: 24
+                implicitWidth: 49
+                padding: 5
+                onClicked: graphPanel.toolsOpen = !graphPanel.toolsOpen
+                background: Rectangle {
+                    radius: 4
+                    color: toolsButton.down ? graphPanel.theme.hover : toolsButton.hovered ? graphPanel.theme.raised : graphPanel.theme.panel
+                    border.color: graphPanel.toolsOpen ? graphPanel.theme.accent : graphPanel.theme.border
+                }
+            }
+            Item {
+                Layout.fillWidth: true
+            }
+            Text {
+                objectName: "graphZoomLabel"
+                text: Math.round(graphPanel.zoom * 100) + "%"
+                color: graphPanel.theme.muted
+                font.pixelSize: 11
+                verticalAlignment: Text.AlignVCenter
+                Layout.preferredWidth: 38
+                horizontalAlignment: Text.AlignRight
+            }
+        }
+    }
+
+    // GraphItem consumes this plain map on the GUI thread; no Theme QObject is
+    // handed to the render thread.
+    readonly property var presentationStyle: ({
+            "accent": graphPanel.theme ? graphPanel.theme.accent : "#3485f6",
+            "border": graphPanel.theme ? graphPanel.theme.border : "#30343a",
+            "muted": graphPanel.theme ? graphPanel.theme.muted : "#979ea8",
+            "panel": graphPanel.theme ? graphPanel.theme.panel : "#1e2023",
+            "node": graphPanel.theme ? graphPanel.theme.node : "#2a2e33",
+            "fontSize": graphPanel.theme ? graphPanel.theme.fontSize : 11
+        })
+
+    function clampZoom(value) {
+        return Math.max(0.2, Math.min(2.5, Number(value) || 1));
+    }
+    function baseNetworkId() {
+        var target = panelContext && panelContext.graphTarget !== undefined ? String(panelContext.graphTarget || "") : "";
+        if (!target.length)
+            return controller && controller.rootNetworkId !== undefined ? String(controller.rootNetworkId || "") : "";
+        return target.indexOf("network:") === 0 ? target.slice(8) : "";
+    }
+    function targetNetworkId() {
+        if (scopePath.length)
+            return String(scopePath[scopePath.length - 1].networkId || "");
+        return baseNetworkId();
+    }
+    function pathRootMatchesBase(path) {
+        if (!path || !path.length)
+            return true;
+        return String(path[0].parentNetworkId || baseNetworkId()) === baseNetworkId();
+    }
+    function scopeKey(id) {
+        return String(id || "");
+    }
+    function networkSnapshot() {
+        return graphSnapshotData || ({});
+    }
+    function activeNodes() {
+        return graphAvailable ? (networkSnapshot().nodes || []) : [];
+    }
+    function activeEdges() {
+        return graphAvailable ? (networkSnapshot().edges || []) : [];
+    }
+    function nodeById(value) {
+        var id = String(value), nodes = activeNodes();
+        for (var i = 0; i < nodes.length; ++i)
+            if (String(nodes[i].id) === id)
+                return nodes[i];
+        return null;
+    }
+    function edgeById(value) {
+        var id = String(value), edges = activeEdges();
+        for (var i = 0; i < edges.length; ++i)
+            if (String(edges[i].id) === id)
+                return edges[i];
+        return null;
+    }
+    function nodeLabel(node) {
+        return node && String(node.name || node.type || "Node");
+    }
+    function isSubnet(node) {
+        return !!node && (String(node.definition || "") !== "" || String(node.instance || "") !== "" ||
+                          String(node.type || "").toLowerCase() === "subnet");
+    }
+    function subnetAt(px, py) {
+        var id = nodeAt(px, py), node = id ? nodeById(id) : null;
+        if (!isSubnet(node))
+            return "";
+        var point = scenePoint(px, py), x = nodeX(node), y = nodeY(node);
+        return point.x >= x + nodeWidth - 24 && point.x <= x + nodeWidth - 3 && point.y >= y + 3 &&
+                point.y <= y + 24 ? id : "";
+    }
+    function enterSubnet(id) {
+        var node = nodeById(id);
+        if (!isSubnet(node) || !node.definition || !node.instance)
+            return false;
+        var next = scopePath.slice();
+        next.push({
+                "parentNetworkId": graphNetworkId,
+                "networkId": String(node.definition),
+                "instanceId": String(node.instance),
+                "nodeId": String(node.id),
+                "name": nodeLabel(node)
+            });
+        scopePath = next;
+        switchNetwork();
+        return true;
+    }
+    function navigateBreadcrumb(index) {
+        var target = Number(index);
+        if (!isFinite(target) || target < 0)
+            return;
+        if (target === 0)
+            scopePath = [];
+        else
+            scopePath = scopePath.slice(0, target);
+        switchNetwork();
+    }
+    function collapseSelection() {
+        if (!graphAvailable || !selectedNodeIds.length || !controller || !controller.collapseSelection)
+            return "";
+        var created = controller.collapseSelection(graphNetworkId, selectedNodeIds.slice(), "Subnet");
+        if (created) {
+            setSelection([String(created)]);
+            savePanelState();
+        }
+        return String(created || "");
+    }
+    function selected(id) {
+        return selectedNodeIds.indexOf(String(id)) >= 0;
+    }
+    function setSelection(ids) {
+        var next = [], nodes = activeNodes();
+        for (var i = 0; i < (ids || []).length; ++i) {
+            var id = String(ids[i]), exists = false;
+            for (var j = 0; j < nodes.length; ++j)
+                if (String(nodes[j].id) === id) {
+                    exists = true;
+                    break;
+                }
+            if (exists && next.indexOf(id) < 0)
+                next.push(id);
+        }
+        selectedNodeIds = next;
+        graphSelections[scopeKey(graphNetworkId)] = next.slice();
+        graphItem.selectedNodeIds = next;
+    }
+    function toggleSelection(id) {
+        var next = selectedNodeIds.slice(), wanted = String(id), at = next.indexOf(wanted);
+        if (at >= 0)
+            next.splice(at, 1);
+        else
+            next.push(wanted);
+        setSelection(next);
+    }
+    function portSide(port, output) {
+        return output ? "bottom" : (String(port && port.kind || "") === "mask" ? "right" : "top");
+    }
+    function portLocal(node, output, index) {
+        var ports = output ? (node.outputs || []) : (node.inputs || []), port = ports[index] || ({});
+        var side = portSide(port, output), sideCount = 0, sideIndex = 0;
+        for (var i = 0; i < ports.length; ++i) {
+            if (portSide(ports[i], output) !== side)
+                continue;
+            if (i === index)
+                sideIndex = sideCount;
+            ++sideCount;
+        }
+        var fraction = sideCount <= 1 ? 0.5 : (sideIndex + 1) / (sideCount + 1);
+        if (side === "right")
+            return {
+                "x": nodeWidth,
+                "y": nodeHeight * fraction
+            };
+        if (side === "bottom")
+            return {
+                "x": nodeWidth * fraction,
+                "y": nodeHeight
+            };
+        return {
+            "x": nodeWidth * fraction,
+            "y": 0
+        };
+    }
+    function decoratePorts(node, output) {
+        var ports = output ? (node.outputs || []) : (node.inputs || []), result = [];
+        for (var i = 0; i < ports.length; ++i) {
+            var source = ports[i], copy = {};
+            for (var key in source)
+                copy[key] = source[key];
+            copy.index = source.index !== undefined ? source.index : i;
+            copy.id = source.id !== undefined ? String(source.id) : String(copy.index);
+            var local = portLocal(node, output, i);
+            copy.x = local.x;
+            copy.y = local.y;
+            result.push(copy);
+        }
+        return result;
+    }
+    function copyNode(node) {
+        var copy = {};
+        for (var field in node)
+            copy[field] = node[field];
+        copy.x = nodeX(node);
+        copy.y = nodeY(node);
+        var id = String(node.id), ports = portPresentationById[id];
+        if (!ports) {
+            ports = {
+                "inputs": decoratePorts(node, false),
+                "outputs": decoratePorts(node, true)
+            };
+            portPresentationById[id] = ports;
+        }
+        copy.inputs = ports.inputs;
+        copy.outputs = ports.outputs;
+        var descriptor = catalogByType[String(node.type)];
+        copy.category = descriptor ? displayCategory(descriptor.group) : (node.category || "Utility");
+        return copy;
+    }
+    function displayCategory(group) {
+        if (group === "I/O")
+            return "IO";
+        if (group === "Compositing")
+            return "Merge";
+        return theme && theme.nodeCategoryColors && theme.nodeCategoryColors[group] !== undefined ? group : "Utility";
+    }
+    function refreshDisplayNodes() {
+        var source = activeNodes(), next = [];
+        for (var i = 0; i < source.length; ++i) {
+            var copy = copyNode(source[i]);
+            copy.category = copy.category || "Utility";
+            next.push(copy);
+        }
+        displayNodes = next;
+        var valid = [];
+        for (var s = 0; s < selectedNodeIds.length; ++s)
+            if (nodeById(selectedNodeIds[s]))
+                valid.push(String(selectedNodeIds[s]));
+        selectedNodeIds = valid;
+        graphItem.nodes = next;
+        graphItem.selectedNodeIds = valid;
+    }
+    function updateDisplayEdges() {
+        var source = activeEdges(), next = [];
+        for (var i = 0; i < source.length; ++i) {
+            var edge = source[i], copy = {};
+            for (var field in edge)
+                copy[field] = edge[field];
+            if (rerouteEdge && String(edge.id) === String(rerouteEdge.id) && gesture === "reroute")
+                copy.route = reroutePoints.slice();
+            next.push(copy);
+        }
+        displayEdges = next;
+        graphItem.edges = next;
+    }
+    function refreshSnapshots() {
+        var catalog = controller.nodeCatalog || [], byType = {}, groups = {};
+        for (var i = 0; i < catalog.length; ++i) {
+            var descriptor = catalog[i];
+            byType[String(descriptor.type)] = descriptor;
+            var label = displayCategory(descriptor.group);
+            if (!groups[label])
+                groups[label] = {
+                    "label": label,
+                    "nodes": []
+                };
+            groups[label].nodes.push(descriptor);
+        }
+        catalogByType = byType;
+        var ordered = ["Color", "Distort", "Filter", "Utility", "Merge", "IO"], nextGroups = [];
+        for (var g = 0; g < ordered.length; ++g)
+            if (groups[ordered[g]])
+                nextGroups.push(groups[ordered[g]]);
+        for (var key in groups)
+            if (ordered.indexOf(key) < 0)
+                nextGroups.push(groups[key]);
+        categories = nextGroups;
+        refreshDisplayNodes();
+        updateDisplayEdges();
+        graphItem.hoveredNodeId = hoveredNodeId;
+        graphItem.hoveredEdgeId = hoveredEdgeId;
+        graphItem.hoveredEndpoint = hoveredEndpoint;
+        graphItem.hoveredReroute = hoveredReroute;
+        graphItem.wirePreview = wirePreview;
+    }
+    function scenePoint(px, py) {
+        return {
+            "x": (px - panX) / zoom,
+            "y": (py - panY) / zoom
+        };
+    }
+    function canvasPoint(x, y) {
+        return {
+            "x": panX + x * zoom,
+            "y": panY + y * zoom
+        };
+    }
+    function nodeX(node) {
+        var start = dragStartPositions[String(node.id)];
+        return start ? start.x + dragDeltaX : Number(node.x) || 0;
+    }
+    function nodeY(node) {
+        var start = dragStartPositions[String(node.id)];
+        return start ? start.y + dragDeltaY : Number(node.y) || 0;
+    }
+    function portScene(node, output, index) {
+        var local = portLocal(node, output, index);
+        return {
+            "x": nodeX(node) + local.x,
+            "y": nodeY(node) + local.y
+        };
+    }
+    function portHitAllowed(node, port, output, px, py) {
+        var side = portSide(port, output), left = panX + nodeX(node) * zoom, top = panY + nodeY(node) * zoom;
+        var width = nodeWidth * zoom, height = nodeHeight * zoom;
+        if (side === "right")
+            return px >= left + width * 0.55;
+        if (side === "bottom")
+            return py >= top + height * 0.55;
+        return py <= top + height * 0.45;
+    }
+    function portAt(px, py, output) {
+        var best = null, bestDistance = portHitRadius, nodes = activeNodes();
+        for (var i = 0; i < nodes.length; ++i) {
+            var node = nodes[i], ports = output ? (node.outputs || []) : (node.inputs || []);
+            for (var p = 0; p < ports.length; ++p) {
+                if (!portHitAllowed(node, ports[p], output, px, py))
+                    continue;
+                var scene = portScene(node, output, p), point = canvasPoint(scene.x, scene.y);
+                var distance = Math.hypot(px - point.x, py - point.y);
+                if (distance <= bestDistance) {
+                    bestDistance = distance;
+                    best = {
+                        "node": String(node.id),
+                        "port": p,
+                        "direction": output ? "output" : "input",
+                        "x": point.x,
+                        "y": point.y,
+                        "distance": distance
+                    };
+                }
+            }
+        }
+        return best;
+    }
+    function anyPortAt(px, py) {
+        var output = portAt(px, py, true), input = portAt(px, py, false);
+        return !output ? input : (!input || output.distance <= input.distance ? output : input);
+    }
+    function nodeAt(px, py) {
+        var point = scenePoint(px, py), nodes = activeNodes();
+        for (var i = nodes.length - 1; i >= 0; --i) {
+            var node = nodes[i], x = nodeX(node), y = nodeY(node);
+            if (point.x >= x && point.x <= x + nodeWidth && point.y >= y && point.y <= y + nodeHeight)
+                return String(node.id);
+        }
+        return "";
+    }
+    function edgePoints(edge) {
+        var from = nodeById(edge.fromNode), to = nodeById(edge.toNode);
+        if (!from || !to)
+            return [];
+        var source = portScene(from, true, Number(edge.fromPort) || 0);
+        var points = [canvasPoint(source.x, source.y)], route = edge.route || [];
+        for (var i = 0; i < route.length; ++i)
+            points.push(canvasPoint(Number(route[i].x), Number(route[i].y)));
+        var end = portScene(to, false, Number(edge.toPort) || 0);
+        points.push(canvasPoint(end.x, end.y));
+        return points;
+    }
+    function projection(edge, px, py) {
+        var points = edgePoints(edge), best = null;
+        for (var i = 0; i + 1 < points.length; ++i) {
+            var a = points[i], b = points[i + 1], dx = b.x - a.x, dy = b.y - a.y;
+            var length = dx * dx + dy * dy, along = length ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / length)) : 0;
+            var x = a.x + along * dx, y = a.y + along * dy, distance = Math.hypot(px - x, py - y);
+            if (!best || distance < best.distance)
+                best = {
+                    "distance": distance,
+                    "segment": i,
+                    "x": x,
+                    "y": y
+                };
+        }
+        return best;
+    }
+    function edgeAt(px, py) {
+        var best = null, distance = 12;
+        for (var i = 0; i < activeEdges().length; ++i) {
+            var edge = activeEdges()[i], hit = projection(edge, px, py);
+            if (hit && hit.distance <= distance) {
+                distance = hit.distance;
+                best = edge;
+            }
+        }
+        return best;
+    }
+    function rerouteAt(px, py) {
+        var best = null, distance = 9;
+        for (var i = 0; i < activeEdges().length; ++i) {
+            var edge = activeEdges()[i], points = edgePoints(edge);
+            for (var p = 1; p + 1 < points.length; ++p) {
+                var d = Math.hypot(px - points[p].x, py - points[p].y);
+                if (d <= distance) {
+                    distance = d;
+                    best = {
+                        "edge": edge,
+                        "index": p - 1,
+                        "x": points[p].x,
+                        "y": points[p].y
+                    };
+                }
+            }
+        }
+        return best;
+    }
+    function endpointAt(px, py) {
+        var best = null, distance = portHitRadius;
+        for (var i = 0; i < activeEdges().length; ++i) {
+            var edge = activeEdges()[i], points = edgePoints(edge);
+            if (points.length < 2)
+                continue;
+            var sourceDistance = Math.hypot(px - points[0].x, py - points[0].y);
+            if (sourceDistance <= distance) {
+                distance = sourceDistance;
+                best = {
+                    "edge": edge,
+                    "output": true
+                };
+            }
+            var targetDistance = Math.hypot(px - points[points.length - 1].x, py - points[points.length - 1].y);
+            if (targetDistance <= distance) {
+                distance = targetDistance;
+                best = {
+                    "edge": edge,
+                    "output": false
+                };
+            }
+        }
+        return best;
+    }
+    function edgeForInput(node, port) {
+        var edges = activeEdges();
+        for (var i = 0; i < edges.length; ++i)
+            if (String(edges[i].toNode) === String(node) && Number(edges[i].toPort) === Number(port))
+                return edges[i];
+        return null;
+    }
+    function insideSurface(px, py) {
+        return px >= 0 && py >= 0 && px <= graphSurface.width && py <= graphSurface.height;
+    }
+    function pipeBodyAt(px, py) {
+        return anyPortAt(px, py) || endpointAt(px, py) || nodeAt(px, py) ? null : edgeAt(px, py);
+    }
+
+    function panelStateCopy() {
+        var source = panelState || ({});
+        if (workspace && panelId && workspace.panelState)
+            source = workspace.panelState(panelId) || source;
+        var copy = {};
+        for (var key in source)
+            copy[key] = source[key];
+        return copy;
+    }
+    function savePanelState() {
+        if (!workspace || !panelId || !workspace.setPanelState || !stateReady)
+            return;
+        var merged = panelStateCopy(), views = {}, selections = {};
+        var savedViews = merged.graphViews || ({}), savedSelections = merged.graphSelections || ({});
+        for (var key in savedViews)
+            views[key] = savedViews[key];
+        for (var selectedKey in savedSelections)
+            selections[selectedKey] = savedSelections[selectedKey];
+        views[scopeKey(graphNetworkId)] = {
+            "zoom": Number(zoom),
+            "panX": Number(panX),
+            "panY": Number(panY),
+            "lastClickValid": lastClickValid,
+            "lastClickX": Number(lastClickX),
+            "lastClickY": Number(lastClickY)
+        };
+        selections[scopeKey(graphNetworkId)] = selectedNodeIds.slice();
+        merged.graphViews = views;
+        merged.graphSelections = selections;
+        merged.scopeRootNetworkId = baseNetworkId();
+        merged.scopePath = scopePath.slice();
+        // Migrate the former root-only view record into the scoped record.
+        delete merged.zoom;
+        delete merged.panX;
+        delete merged.panY;
+        delete merged.lastClickValid;
+        delete merged.lastClickX;
+        delete merged.lastClickY;
+        if (JSON.stringify(merged) === JSON.stringify(panelStateCopy()))
+            return;
+        workspace.setPanelState(panelId, merged);
+
+    }
+    function restoreScopePath() {
+        var state = panelStateCopy(), saved = state.scopePath || [];
+        if (!Array.isArray(saved) || !pathRootMatchesBase(saved)) {
+            scopePath = [];
+            return;
+        }
+        var restored = [], parentNetwork = baseNetworkId();
+        for (var i = 0; i < saved.length; ++i) {
+            var entry = saved[i] || ({});
+            if (!entry.networkId || !entry.instanceId || !entry.name ||
+                String(entry.parentNetworkId || parentNetwork) !== parentNetwork)
+                break;
+            restored.push({
+                    "parentNetworkId": parentNetwork,
+                    "networkId": String(entry.networkId),
+                    "instanceId": String(entry.instanceId),
+                    "nodeId": String(entry.nodeId || ""),
+                    "name": String(entry.name)
+                });
+            parentNetwork = String(entry.networkId);
+        }
+        scopePath = restored;
+    }
+    function reconcileScopePath() {
+        var scope = controller.graphScope(baseNetworkId(), scopePath);
+        var valid = scope.path || [];
+        if (JSON.stringify(valid) !== JSON.stringify(scopePath))
+            scopePath = valid;
+        scopeBreadcrumbs = scope.breadcrumbs || [];
+    }
+    function restoreScopeState() {
+        var state = panelState || ({}), views = state.graphViews || ({}), selections = state.graphSelections || ({});
+        var view = views[scopeKey(graphNetworkId)];
+        if (!view && graphNetworkId === String(controller.rootNetworkId) && state.zoom !== undefined)
+            view = state;
+        if (view && isFinite(Number(view.zoom)) && isFinite(Number(view.panX)) && isFinite(Number(view.panY))) {
+            zoom = clampZoom(Number(view.zoom));
+            panX = Number(view.panX);
+            panY = Number(view.panY);
+            lastClickValid = view.lastClickValid === true;
+            lastClickX = Number(view.lastClickX) || 0;
+            lastClickY = Number(view.lastClickY) || 0;
+        } else {
+            lastClickValid = false;
+            lastClickX = 0;
+            lastClickY = 0;
+            Qt.callLater(function () {
+                    if (graphAvailable)
+                        graphPanel.frameAll(false);
+                });
+        }
+        selectedNodeIds = [];
+        var saved = selections[scopeKey(graphNetworkId)] || [];
+        for (var i = 0; i < saved.length; ++i)
+            if (nodeById(saved[i]))
+                selectedNodeIds.push(String(saved[i]));
+        graphItem.selectedNodeIds = selectedNodeIds;
+    }
+    function switchNetwork() {
+        reconcileScopePath();
+        var nextNetwork = targetNetworkId();
+        if (stateReady && nextNetwork === graphNetworkId) {
+            graphSnapshotData = graphNetworkId.length ? controller.graphSnapshot(graphNetworkId) : ({});
+            graphAvailable = graphSnapshotData.available === true;
+            // Undo can remove the active child definition. Walk the explicit
+            // occurrence path back to its surviving parent rather than
+            // falling through to an unrelated definition or root graph.
+            if (!graphAvailable && scopePath.length) {
+                scopePath = scopePath.slice(0, scopePath.length - 1);
+                switchNetwork();
+                return;
+            }
+            refreshSnapshots();
+            return;
+        }
+        if (stateReady && graphNetworkId.length)
+            savePanelState();
+        cancelInteraction();
+        graphSearchPopup.close();
+        graphContextMenu.close();
+        graphNetworkId = nextNetwork;
+        graphAvailable = false;
+        graphSnapshotData = ({});
+        if (graphNetworkId.length && controller && controller.graphSnapshot) {
+            graphSnapshotData = controller.graphSnapshot(graphNetworkId) || ({});
+            graphAvailable = graphSnapshotData.available === true;
+        }
+        while (!graphAvailable && scopePath.length) {
+            scopePath = scopePath.slice(0, scopePath.length - 1);
+            graphNetworkId = targetNetworkId();
+            graphSnapshotData = controller.graphSnapshot(graphNetworkId) || ({});
+            graphAvailable = graphSnapshotData.available === true;
+        }
+        stateReady = false;
+        reconcileScopePath();
+        restoreScopeState();
+        refreshSnapshots();
+        stateReady = true;
+    }
+    function creationPoint() {
+        if (lastClickValid)
+            return {
+                "x": lastClickX - nodeWidth / 2,
+                "y": lastClickY - nodeHeight / 2
+            };
+        var center = scenePoint(graphSurface.width / 2, graphSurface.height / 2);
+        return {
+            "x": center.x - nodeWidth / 2,
+            "y": center.y - nodeHeight / 2
+        };
+    }
+    function captureCreationContext() {
+        var point = creationPoint(), anchor = selectedNodeIds.length ? String(selectedNodeIds[selectedNodeIds.length - 1]) : "";
+        creationContext = {
+            "x": point.x,
+            "y": point.y,
+            "anchor": anchor,
+            "networkId": graphNetworkId
+        };
+    }
+    function uniqueName(descriptor) {
+        var base = String(descriptor.displayName || descriptor.type).replace(/\s+/g, "");
+        var names = activeNodes().map(function (node) {
+                return String(node.name);
+            }), suffix = 1;
+        while (names.indexOf(base + suffix) >= 0)
+            ++suffix;
+        return base + suffix;
+    }
+    function descendantsFrom(anchorId) {
+        var result = {}, pending = [], edges = activeEdges();
+        for (var i = 0; i < edges.length; ++i)
+            if (String(edges[i].fromNode) === String(anchorId) && Number(edges[i].fromPort) === 0)
+                pending.push(String(edges[i].toNode));
+        while (pending.length) {
+            var id = pending.pop();
+            if (result[id])
+                continue;
+            result[id] = true;
+            for (var j = 0; j < edges.length; ++j)
+                if (String(edges[j].fromNode) === id)
+                    pending.push(String(edges[j].toNode));
+        }
+        return result;
+    }
+    function creationPlan(descriptor) {
+        var point = creationPoint(), plan = {
+            "x": point.x,
+            "y": point.y,
+            "anchor": "",
+            "shiftedNodes": []
+        };
+        var anchor = creationContext && creationContext.anchor ? nodeById(creationContext.anchor) : null;
+        var inputs = descriptor.inputs || [], outputs = descriptor.outputs || [];
+        if (!anchor || !inputs.length || !(anchor.outputs || []).length || String(anchor.outputs[0].kind) !== String(inputs[0].kind))
+            return plan;
+        var valid = true, anchorId = String(anchor.id);
+        if (outputs.length) {
+            var outgoing = activeEdges();
+            for (var i = 0; i < outgoing.length; ++i) {
+                var edge = outgoing[i];
+                if (String(edge.fromNode) !== anchorId || Number(edge.fromPort) !== 0)
+                    continue;
+                var destination = nodeById(edge.toNode), destinationPort = destination && (destination.inputs || [])[Number(edge.toPort) || 0];
+                if (!destinationPort || String(destinationPort.kind) !== String(outputs[0].kind)) {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        if (!valid)
+            return plan;
+        plan.anchor = anchorId;
+        plan.x = Number(anchor.x) || 0;
+        plan.y = (Number(anchor.y) || 0) + 95;
+        var downstream = descendantsFrom(anchorId), bottom = plan.y + nodeHeight + 12, delta = 0, nodes = activeNodes();
+        for (var n = 0; n < nodes.length; ++n) {
+            var candidate = nodes[n];
+            if (!downstream[String(candidate.id)])
+                continue;
+            var x = Number(candidate.x) || 0, y = Number(candidate.y) || 0;
+            if (x < plan.x + nodeWidth && x + nodeWidth > plan.x && y < bottom)
+                delta = Math.max(delta, bottom - y);
+        }
+        if (delta > 0) {
+            for (var shifted = 0; shifted < nodes.length; ++shifted) {
+                var item = nodes[shifted];
+                if (downstream[String(item.id)])
+                    plan.shiftedNodes.push({
+                            "id": String(item.id),
+                            "x": Number(item.x) || 0,
+                            "y": (Number(item.y) || 0) + delta
+                        });
+            }
+        }
+        return plan;
+    }
+    function createFromDescriptor(descriptor) {
+        if (!descriptor || !graphAvailable || !graphNetworkId.length)
+            return;
+        if (!creationContext || creationContext.networkId !== graphNetworkId)
+            captureCreationContext();
+        var plan = creationPlan(descriptor), id = controller.createGraphNode(graphNetworkId, String(descriptor.type), uniqueName(descriptor), plan.x, plan.y, plan.anchor, plan.shiftedNodes);
+        if (id)
+            setSelection([String(id)]);
+        forceActiveFocus();
+    }
+    function filteredCatalog(needle) {
+        var result = [], value = String(needle || "").toLowerCase(), catalog = controller.nodeCatalog || [];
+        for (var i = 0; i < catalog.length; ++i)
+            if (String(catalog[i].displayName || catalog[i].type).toLowerCase().indexOf(value) >= 0)
+                result.push(catalog[i]);
+        return result;
+    }
+    function nodeIsDisconnectedProcessing(id) {
+        var node = nodeById(id);
+        if (!node || node.deletable === false || !(node.inputs || []).length || !(node.outputs || []).length)
+            return false;
+        var edges = activeEdges();
+        for (var i = 0; i < edges.length; ++i)
+            if (String(edges[i].fromNode) === String(id) || String(edges[i].toNode) === String(id))
+                return false;
+        return true;
+    }
+    function snapDelta(rawX, rawY) {
+        var threshold = 6 / zoom, bestX = rawX, bestY = rawY, dx = threshold + 0.001, dy = threshold + 0.001;
+        var moving = dragIds, nodes = activeNodes();
+        for (var m = 0; m < moving.length; ++m) {
+            var start = dragStartPositions[String(moving[m])];
+            if (!start)
+                continue;
+            var candidateX = start.x + rawX, candidateY = start.y + rawY;
+            for (var n = 0; n < nodes.length; ++n) {
+                if (moving.indexOf(String(nodes[n].id)) >= 0)
+                    continue;
+                var xDistance = Math.abs(Number(nodes[n].x) - candidateX);
+                if (xDistance < dx) {
+                    dx = xDistance;
+                    bestX = rawX + Number(nodes[n].x) - candidateX;
+                }
+                var yDistance = Math.abs(Number(nodes[n].y) - candidateY);
+                if (yDistance < dy) {
+                    dy = yDistance;
+                    bestY = rawY + Number(nodes[n].y) - candidateY;
+                }
+            }
+        }
+        dragDeltaX = bestX;
+        dragDeltaY = bestY;
+    }
+    function beginNodeDrag(id) {
+        var ids = selected(id) ? selectedNodeIds.slice() : [String(id)], starts = {};
+        for (var i = 0; i < ids.length; ++i) {
+            var node = nodeById(ids[i]);
+            if (node)
+                starts[String(ids[i])] = {
+                    "x": Number(node.x) || 0,
+                    "y": Number(node.y) || 0
+                };
+        }
+        dragIds = ids;
+        dragStartPositions = starts;
+        dragDeltaX = 0;
+        dragDeltaY = 0;
+        disconnectedInsertId = ids.length === 1 && nodeIsDisconnectedProcessing(ids[0]) ? String(ids[0]) : "";
+        gesture = "nodes";
+    }
+    function beginWire(port, oldEdge) {
+        wireFromInput = port.direction === "input";
+        if (wireFromInput) {
+            wireToId = String(port.node);
+            wireToPort = Number(port.port);
+            wireOldEdge = oldEdge || edgeForInput(port.node, port.port);
+        } else {
+            wireFromId = String(port.node);
+            wireFromPort = Number(port.port);
+            wireOldEdge = oldEdge || null;
+        }
+        gesture = "wire";
+        updateWirePreview();
+    }
+    function updateWirePreview() {
+        if (gesture !== "wire") {
+            wirePreview = ({});
+            graphItem.wirePreview = ({});
+            return;
+        }
+        var target = wireFromInput ? portAt(pointerX, pointerY, true) : portAt(pointerX, pointerY, false);
+        var point = target ? {
+            "x": (target.x - panX) / zoom,
+            "y": (target.y - panY) / zoom
+        } : scenePoint(pointerX, pointerY);
+        var fromId = wireFromInput ? (target ? target.node : "") : wireFromId;
+        var fromPort = wireFromInput ? (target ? target.port : 0) : wireFromPort;
+        var toId = wireFromInput ? wireToId : (target ? target.node : "");
+        var toPort = wireFromInput ? wireToPort : (target ? target.port : 0);
+        wirePreview = {
+            "fromNode": fromId,
+            "fromPort": fromPort,
+            "toNode": toId,
+            "toPort": toPort,
+            "fromInput": wireFromInput,
+            "x": point.x,
+            "y": point.y,
+            "hiddenEdge": wireOldEdge ? String(wireOldEdge.id) : ""
+        };
+        graphItem.wirePreview = wirePreview;
+    }
+    function finishWire() {
+        if (Math.hypot(pointerX - gesturePressX, pointerY - gesturePressY) < 3 || !insideSurface(pointerX, pointerY)) {
+            clearInteraction();
+            return;
+        }
+        var target = wireFromInput ? portAt(pointerX, pointerY, true) : portAt(pointerX, pointerY, false);
+        var onNode = nodeAt(pointerX, pointerY);
+        if (target) {
+            var fromId = wireFromInput ? target.node : wireFromId, fromPort = wireFromInput ? target.port : wireFromPort;
+            var toId = wireFromInput ? wireToId : target.node, toPort = wireFromInput ? wireToPort : target.port;
+            if (wireOldEdge)
+                controller.rewireGraphEdge(graphNetworkId, String(wireOldEdge.id), fromId, fromPort, toId, toPort);
+            else
+                controller.connectOrReplaceGraph(graphNetworkId, fromId, fromPort, toId, toPort);
+        } else if (!onNode) {
+            // An existing edge disconnects only when a moved pull is released on
+            // empty surface; invalid node/outside drops preserve topology.
+            if (wireOldEdge)
+                controller.disconnectGraphEdge(graphNetworkId, String(wireOldEdge.id));
+        }
+        clearInteraction();
+    }
+    function clearInteraction() {
+        gesture = "";
+        gestureMoved = false;
+        dragIds = [];
+        dragStartPositions = ({});
+        disconnectedInsertId = "";
+        dragDeltaX = 0;
+        dragDeltaY = 0;
+        wireFromId = "";
+        wireToId = "";
+        wireOldEdge = null;
+        wirePreview = ({});
+        pipePullPending = false;
+        pipePullEdge = null;
+        pipePullDestination = false;
+        rerouteEdge = null;
+        reroutePoints = [];
+        rerouteIndex = -1;
+        rerouteRemove = false;
+        rerouteInserted = false;
+        hoveredEndpoint = ({});
+        hoveredReroute = ({});
+        graphItem.hoveredEndpoint = ({});
+        graphItem.hoveredReroute = ({});
+        graphItem.wirePreview = ({});
+        refreshDisplayNodes();
+        updateDisplayEdges();
+    }
+    function beginReroute(edge, index, remove) {
+        rerouteEdge = edge;
+        reroutePoints = [];
+        var source = edge.route || [];
+        for (var i = 0; i < source.length; ++i)
+            reroutePoints.push({
+                    "x": Number(source[i].x),
+                    "y": Number(source[i].y)
+                });
+        rerouteIndex = Number(index);
+        rerouteRemove = !!remove;
+        rerouteInserted = false;
+        gesture = "reroute";
+    }
+    function finishReroute() {
+        if (!rerouteEdge) {
+            clearInteraction();
+            return;
+        }
+        var points = reroutePoints.slice();
+        if (rerouteRemove && !gestureMoved && rerouteIndex >= 0 && rerouteIndex < points.length)
+            points.splice(rerouteIndex, 1);
+        if ((rerouteRemove && !gestureMoved) || gestureMoved || rerouteInserted)
+            controller.commitGraphRoute(graphNetworkId, String(rerouteEdge.id), points);
+        clearInteraction();
+    }
+    function beginRerouteSegment(edge, hit) {
+        var point = scenePoint(hit.x, hit.y), route = [];
+        for (var i = 0; i < (edge.route || []).length; ++i)
+            route.push({
+                    "x": Number(edge.route[i].x),
+                    "y": Number(edge.route[i].y)
+                });
+        route.splice(hit.segment, 0, point);
+        rerouteEdge = edge;
+        reroutePoints = route;
+        rerouteIndex = hit.segment;
+        rerouteInserted = true;
+        rerouteRemove = false;
+        gesture = "reroute";
+    }
+    function pipeEndpoint(edge, output) {
+        return output ? {
+            "node": String(edge.fromNode),
+            "port": Number(edge.fromPort),
+            "direction": "output",
+            "edge": String(edge.id)
+        } : {
+            "node": String(edge.toNode),
+            "port": Number(edge.toPort),
+            "direction": "input",
+            "edge": String(edge.id)
+        };
+    }
+    function updateHover() {
+        var node = nodeAt(pointerX, pointerY), edge = edgeAt(pointerX, pointerY), port = anyPortAt(pointerX, pointerY);
+        hoveredNodeId = node;
+        hoveredEdgeId = edge ? String(edge.id) : "";
+        var pipe = edge && !port && !node ? edge : null;
+        var pipeOutput = gesture === "pipe" ? !pipePullDestination : !shiftHeld;
+        hoveredEndpoint = port || (pipe ? pipeEndpoint(pipe, pipeOutput) : ({}));
+        var dot = rerouteAt(pointerX, pointerY);
+        hoveredReroute = dot ? {
+            "edge": String(dot.edge.id),
+            "index": dot.index,
+            "dragging": gesture === "reroute"
+        } : ({});
+        graphItem.hoveredNodeId = hoveredNodeId;
+        graphItem.hoveredEdgeId = hoveredEdgeId;
+        graphItem.hoveredEndpoint = hoveredEndpoint;
+        graphItem.hoveredReroute = hoveredReroute;
+        if (gesture === "wire")
+            updateWirePreview();
+    }
+    function cancelInteraction() {
+        clearInteraction();
+        positionEpoch++;
+        refreshDisplayNodes();
+    }
+    function frameAll(persistView) {
+        var nodes = activeNodes();
+        if (!nodes.length || graphSurface.width < 3 || graphSurface.height < 3)
+            return;
+        var minX = Number.POSITIVE_INFINITY, minY = Number.POSITIVE_INFINITY, maxX = Number.NEGATIVE_INFINITY, maxY = Number.NEGATIVE_INFINITY;
+        for (var i = 0; i < nodes.length; ++i) {
+            minX = Math.min(minX, Number(nodes[i].x) || 0);
+            minY = Math.min(minY, Number(nodes[i].y) || 0);
+            maxX = Math.max(maxX, (Number(nodes[i].x) || 0) + nodeWidth);
+            maxY = Math.max(maxY, (Number(nodes[i].y) || 0) + nodeHeight);
+        }
+        var edges = activeEdges();
+        for (var e = 0; e < edges.length; ++e) {
+            var route = edges[e].route || [];
+            for (var r = 0; r < route.length; ++r) {
+                minX = Math.min(minX, Number(route[r].x) || 0);
+                minY = Math.min(minY, Number(route[r].y) || 0);
+                maxX = Math.max(maxX, Number(route[r].x) || 0);
+                maxY = Math.max(maxY, Number(route[r].y) || 0);
+            }
+        }
+        zoom = clampZoom(Math.min((graphSurface.width - 42) / Math.max(nodeWidth, maxX - minX), (graphSurface.height - 42) / Math.max(nodeHeight, maxY - minY)));
+        panX = (graphSurface.width - (maxX - minX) * zoom) / 2 - minX * zoom;
+        panY = (graphSurface.height - (maxY - minY) * zoom) / 2 - minY * zoom;
+        if (persistView !== false)
+            savePanelState();
+        grid.requestPaint();
+    }
+
+    Connections {
+        target: controller
+        function onGraphChanged() {
+            graphPanel.switchNetwork();
+        }
+        function onCatalogChanged() {
+            graphPanel.refreshSnapshots();
+        }
+    }
+    onPanelContextChanged: {
+        if (!pathRootMatchesBase(scopePath))
+            scopePath = [];
+        switchNetwork();
+    }
+    onPanelStateChanged: {
+        if (!graphPanel.gesture) {
+            if (!graphPanel.stateReady)
+                graphPanel.restoreScopePath();
+            graphPanel.restoreScopeState();
+            graphPanel.refreshSnapshots();
+        }
+    }
+    Component.onCompleted: {
+        restoreScopePath();
+        switchNetwork();
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: graphPanel.theme.background
+        objectName: "graphCanvas"
+
+        Rectangle {
+            id: toolsBar
+            objectName: "graphToolsBar"
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: categoryFlow.implicitHeight + 8
+            visible: graphPanel.toolsOpen
+            z: 20
+            color: Qt.rgba(graphPanel.theme.panel.r, graphPanel.theme.panel.g, graphPanel.theme.panel.b, 0.97)
+            border.color: graphPanel.theme.border
+            Flow {
+                id: categoryFlow
+                anchors.fill: parent
+                anchors.margins: 4
+                spacing: 3
+                Repeater {
+                    model: graphPanel.categories
+                    delegate: ChromeButton {
+                        required property var modelData
+                        theme: graphPanel.theme
+                        objectName: "toolCategory_" + modelData.label
+                        text: modelData.label === "IO" ? "I/O" : modelData.label
+                        enabled: modelData.nodes.length > 0
+                        implicitHeight: 23
+                        implicitWidth: Math.max(48, text.length * 7 + 18)
+                        padding: 4
+                        onClicked: {
+                            graphPanel.captureCreationContext();
+                            categoryMenu.open();
+                        }
+                        Menu {
+                            id: categoryMenu
+                            y: parent.height
+                            Repeater {
+                                model: modelData.nodes
+                                delegate: MenuItem {
+                                    required property var modelData
+                                    objectName: "toolNode_" + modelData.type
+                                    text: modelData.displayName
+                                    onTriggered: graphPanel.createFromDescriptor(modelData)
+                                }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        Rectangle {
+            id: breadcrumb
+            objectName: "graphBreadcrumbBar"
+            anchors.top: toolsBar.visible ? toolsBar.bottom : parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 27
+            color: Qt.rgba(graphPanel.theme.panel.r, graphPanel.theme.panel.g, graphPanel.theme.panel.b, 0.94)
+            border.color: graphPanel.theme.border
+            Row {
+                anchors.fill: parent
+                anchors.leftMargin: 6
+                spacing: 2
+                Repeater {
+                    model: graphPanel.scopeBreadcrumbs
+                    delegate: ChromeButton {
+                        required property var modelData
+                        required property int index
+                        objectName: "graphBreadcrumb_" + String(modelData.networkId)
+                        theme: graphPanel.theme
+                        text: (index > 0 ? "›  " : "") + String(modelData.name || modelData.networkId)
+                        flat: true
+                        padding: 4
+                        implicitHeight: 25
+                        onClicked: graphPanel.navigateBreadcrumb(index)
+                        background: Rectangle {
+                            radius: 3
+                            color: parent.hovered ? graphPanel.theme.hover : "transparent"
+                        }
+                    }
+                }
+            }
+        }
+        Item {
+            id: graphSurface
+            objectName: "graphSurface"
+            anchors.top: breadcrumb.bottom
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            clip: true
+            Canvas {
+                id: grid
+                anchors.fill: parent
+                renderTarget: Canvas.FramebufferObject
+                onPaint: {
+                    var ctx = getContext("2d");
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.strokeStyle = Qt.rgba(graphPanel.theme.border.r, graphPanel.theme.border.g, graphPanel.theme.border.b, 0.24);
+                    ctx.lineWidth = 1;
+                    var step = 24, sx = ((graphPanel.panX % step) + step) % step, sy = ((graphPanel.panY % step) + step) % step;
+                    ctx.beginPath();
+                    for (var x = sx; x < width; x += step) {
+                        ctx.moveTo(Math.round(x) + 0.5, 0);
+                        ctx.lineTo(Math.round(x) + 0.5, height);
+                    }
+                    ;
+                    for (var y = sy; y < height; y += step) {
+                        ctx.moveTo(0, Math.round(y) + 0.5);
+                        ctx.lineTo(width, Math.round(y) + 0.5);
+                    }
+                    ;
+                    ctx.stroke();
+                }
+            }
+            GraphItem {
+                id: graphItem
+                objectName: "graphItem"
+                x: graphPanel.panX
+                y: graphPanel.panY
+                width: graphPanel.sceneWidth
+                height: graphPanel.sceneHeight
+                scale: graphPanel.zoom
+                transformOrigin: Item.TopLeft
+                nodes: graphPanel.displayNodes
+                edges: graphPanel.displayEdges
+                categoryColors: graphPanel.theme.nodeCategoryColors
+                visibleRect: Qt.rect(-graphPanel.panX / graphPanel.zoom, -graphPanel.panY / graphPanel.zoom, graphSurface.width / graphPanel.zoom, graphSurface.height / graphPanel.zoom)
+                selectedNodeIds: graphPanel.selectedNodeIds
+                hoveredNodeId: graphPanel.hoveredNodeId
+                hoveredEdgeId: graphPanel.hoveredEdgeId
+                hoveredEndpoint: graphPanel.hoveredEndpoint
+                hoveredReroute: graphPanel.hoveredReroute
+                wirePreview: graphPanel.wirePreview
+                presentationStyle: graphPanel.presentationStyle
+                viewScale: graphPanel.zoom
+            }
+            Repeater {
+                model: graphPanel.displayNodes
+                delegate: Rectangle {
+                    required property var modelData
+                    objectName: "graphEnterAffordance_" + String(modelData.id)
+                    visible: graphPanel.isSubnet(modelData)
+                    enabled: false
+                    x: graphPanel.panX + (graphPanel.nodeX(modelData) + graphPanel.nodeWidth - 24) * graphPanel.zoom
+                    y: graphPanel.panY + (graphPanel.nodeY(modelData) + 4) * graphPanel.zoom
+                    width: 20 * graphPanel.zoom
+                    height: 20 * graphPanel.zoom
+                    radius: 3
+                    color: graphPanel.theme.raised
+                    border.color: graphPanel.theme.border
+                    border.width: 1
+                    z: 6
+                    Text {
+                        anchors.centerIn: parent
+                        text: ">"
+                        color: graphPanel.theme.text
+                        font.pixelSize: 13 * graphPanel.zoom
+                        font.bold: true
+                        visible: parent.width > 8
+                    }
+                }
+            }
+            Rectangle {
+                id: selectionBox
+                objectName: "graphSelectionBox"
+                visible: graphPanel.gesture === "box"
+                x: Math.min(graphPanel.boxStartX, graphPanel.pointerX)
+                y: Math.min(graphPanel.boxStartY, graphPanel.pointerY)
+                width: Math.abs(graphPanel.pointerX - graphPanel.boxStartX)
+                height: Math.abs(graphPanel.pointerY - graphPanel.boxStartY)
+                color: Qt.rgba(graphPanel.theme.accent.r, graphPanel.theme.accent.g, graphPanel.theme.accent.b, 0.12)
+                border.color: graphPanel.theme.accent
+                border.width: 1
+                z: 5
+            }
+            MouseArea {
+                id: canvasMouse
+                objectName: "graphCanvasSurface"
+                anchors.fill: parent
+                z: 10
+                acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+                hoverEnabled: true
+                preventStealing: true
+                onEntered: {
+                    updateHover();
+                }
+                onExited: {
+                    if (!graphPanel.gesture) {
+                        hoveredNodeId = "";
+                        hoveredEdgeId = "";
+                        hoveredEndpoint = ({});
+                        hoveredReroute = ({});
+                        graphItem.hoveredNodeId = "";
+                        graphItem.hoveredEdgeId = "";
+                        graphItem.hoveredEndpoint = ({});
+                        graphItem.hoveredReroute = ({});
+                    }
+                }
+                onPressed: function (mouse) {
+                    if (contextRouter && panelId)
+                        contextRouter.setActivePanel(panelId);
+                    shiftHeld = (mouse.modifiers & Qt.ShiftModifier) !== 0;
+                    forceActiveFocus();
+                    pointerX = mouse.x;
+                    pointerY = mouse.y;
+                    gesturePressX = mouse.x;
+                    gesturePressY = mouse.y;
+                    var pressedScene = scenePoint(mouse.x, mouse.y);
+                    pressSceneX = pressedScene.x;
+                    pressSceneY = pressedScene.y;
+                    gestureMoved = false;
+                    lastClickMoved = false;
+                    updateHover();
+                    if (mouse.button === Qt.RightButton) {
+                        if (gesture)
+                            cancelInteraction();
+                        else {
+                            contextNodeId = nodeAt(mouse.x, mouse.y);
+                            if (contextNodeId && !selected(contextNodeId))
+                                setSelection([contextNodeId]);
+                            contextMenuX = Math.max(2, Math.min(graphSurface.width - 190, mouse.x));
+                            contextMenuY = Math.max(2, Math.min(graphSurface.height - 120, mouse.y));
+                            graphContextMenu.x = contextMenuX;
+                            graphContextMenu.y = contextMenuY;
+                            graphContextMenu.open();
+                        }
+                        mouse.accepted = true;
+                        return;
+                    }
+                    if (mouse.button === Qt.MiddleButton) {
+                        gesture = "pan";
+                        panOriginX = panX;
+                        panOriginY = panY;
+                        mouse.accepted = true;
+                        return;
+                    }
+                    if (mouse.button !== Qt.LeftButton)
+                        return;
+                    var enterId = subnetAt(mouse.x, mouse.y);
+                    if (enterId) {
+                        contextNodeId = enterId;
+                        gesture = "enter";
+                        mouse.accepted = true;
+                        return;
+                    }
+                    var port = anyPortAt(mouse.x, mouse.y), endpoint = port ? null : endpointAt(mouse.x, mouse.y), dot = (!port && !endpoint) ? rerouteAt(mouse.x, mouse.y) : null;
+                    if (port) {
+                        if (!selected(port.node))
+                            setSelection([port.node]);
+                        beginWire(port, null);
+                    } else if (endpoint) {
+                        var ep = endpoint.edge;
+                        beginWire(endpoint.output ? {
+                                "node": ep.fromNode,
+                                "port": ep.fromPort,
+                                "direction": "output"
+                            } : {
+                                "node": ep.toNode,
+                                "port": ep.toPort,
+                                "direction": "input"
+                            }, ep);
+                    } else if (dot)
+                        beginReroute(dot.edge, dot.index, (mouse.modifiers & Qt.AltModifier) !== 0);
+                    else {
+                        var nodeId = nodeAt(mouse.x, mouse.y), pipe = pipeBodyAt(mouse.x, mouse.y), shift = (mouse.modifiers & Qt.ShiftModifier) !== 0, alt = (mouse.modifiers & Qt.AltModifier) !== 0;
+                        if (nodeId) {
+                            if (shift) {
+                                toggleSelection(nodeId);
+                                gesture = "toggle";
+                            } else {
+                                if (!selected(nodeId))
+                                    setSelection([nodeId]);
+                                beginNodeDrag(nodeId);
+                            }
+                        } else if (alt && pipe) {
+                            var hit = projection(pipe, mouse.x, mouse.y);
+                            if (hit)
+                                beginRerouteSegment(pipe, hit);
+                        } else if (pipe) {
+                            pipePullPending = true;
+                            pipePullEdge = pipe;
+                            pipePullDestination = shift;
+                            gesture = "pipe";
+                            updateHover();
+                        } else if (shift) {
+                            gesture = "box";
+                            boxStartX = mouse.x;
+                            boxStartY = mouse.y;
+                            boxSelectionBase = selectedNodeIds.slice();
+                        } else {
+                            gesture = "pan";
+                            panOriginX = panX;
+                            panOriginY = panY;
+                        }
+                    }
+                    mouse.accepted = true;
+                }
+                onPositionChanged: function (mouse) {
+                    shiftHeld = (mouse.modifiers & Qt.ShiftModifier) !== 0;
+                    pointerX = mouse.x;
+                    pointerY = mouse.y;
+                    if (Math.hypot(mouse.x - gesturePressX, mouse.y - gesturePressY) > 3)
+                        gestureMoved = true;
+                    updateHover();
+                    if (!(mouse.buttons & Qt.LeftButton) && !(mouse.buttons & Qt.MiddleButton))
+                        return;
+                    if (gesture === "pipe" && pipePullPending && gestureMoved) {
+                        var edge = pipePullEdge;
+                        pipePullPending = false;
+                        beginWire(!pipePullDestination ? {
+                                "node": edge.toNode,
+                                "port": edge.toPort,
+                                "direction": "input"
+                            } : {
+                                "node": edge.fromNode,
+                                "port": edge.fromPort,
+                                "direction": "output"
+                            }, edge);
+                    } else if (gesture === "nodes") {
+                        var rawX = (mouse.x - gesturePressX) / zoom, rawY = (mouse.y - gesturePressY) / zoom;
+                        if (gestureMoved)
+                            snapDelta(rawX, rawY);
+                        refreshDisplayNodes();
+                        updateDisplayEdges();
+                    } else if (gesture === "reroute") {
+                        if (rerouteIndex >= 0 && rerouteIndex < reroutePoints.length) {
+                            var p = scenePoint(mouse.x, mouse.y);
+                            reroutePoints[rerouteIndex] = {
+                                "x": p.x,
+                                "y": p.y
+                            };
+                            graphItem.hoveredReroute = {
+                                "edge": String(rerouteEdge.id),
+                                "index": rerouteIndex,
+                                "dragging": true
+                            };
+                            updateDisplayEdges();
+                        }
+                    } else if (gesture === "pan") {
+                        panX = panOriginX + mouse.x - gesturePressX;
+                        panY = panOriginY + mouse.y - gesturePressY;
+                        grid.requestPaint();
+                    }
+                }
+                onReleased: function (mouse) {
+                    pointerX = mouse.x;
+                    pointerY = mouse.y;
+                    updateHover();
+                    lastClickMoved = gestureMoved;
+                    if (mouse.button === Qt.LeftButton && (gesture !== "pan" || !gestureMoved)) {
+                        lastClickValid = true;
+                        lastClickX = pressSceneX;
+                        lastClickY = pressSceneY;
+                    }
+                    if (mouse.button === Qt.LeftButton) {
+                        if (gesture === "enter") {
+                            var entered = contextNodeId;
+                            var shouldEnter = subnetAt(mouse.x, mouse.y) === entered;
+                            clearInteraction();
+                            if (shouldEnter)
+                                enterSubnet(entered);
+                        } else if (gesture === "wire") {
+                            finishWire();
+                            savePanelState();
+                        } else if (gesture === "pipe" && pipePullPending) {
+                            clearInteraction();
+                            savePanelState();
+                        } else if (gesture === "reroute") {
+                            finishReroute();
+                            savePanelState();
+                        } else if (gesture === "nodes") {
+                            var moves = [], ids = dragIds.slice();
+                            for (var i = 0; i < ids.length; ++i) {
+                                var id = String(ids[i]), start = dragStartPositions[id];
+                                if (start)
+                                    moves.push({
+                                            "id": id,
+                                            "x": start.x + dragDeltaX,
+                                            "y": start.y + dragDeltaY
+                                        });
+                            }
+                            var targetEdge = disconnectedInsertId && gestureMoved && insideSurface(pointerX, pointerY) ? edgeAt(pointerX, pointerY) : null, inserted = false;
+                            if (targetEdge && moves.length) {
+                                var startPos = dragStartPositions[disconnectedInsertId];
+                                if (startPos)
+                                    inserted = controller.insertExistingGraphNodeOnEdge(graphNetworkId, disconnectedInsertId, String(targetEdge.id), startPos.x + dragDeltaX, startPos.y + dragDeltaY);
+                            }
+                            if (!inserted && gestureMoved && moves.length)
+                                controller.commitGraphMove(graphNetworkId, moves);
+                            clearInteraction();
+                            savePanelState();
+                        } else if (gesture === "box" && gestureMoved) {
+                            var left = Math.min(boxStartX, pointerX), right = Math.max(boxStartX, pointerX), top = Math.min(boxStartY, pointerY), bottom = Math.max(boxStartY, pointerY), boxIds = boxSelectionBase.slice(), nodes = activeNodes();
+                            for (var n = 0; n < nodes.length; ++n) {
+                                var c = canvasPoint(nodeX(nodes[n]), nodeY(nodes[n]));
+                                if (c.x <= right && c.x + nodeWidth * zoom >= left && c.y <= bottom && c.y + nodeHeight * zoom >= top && boxIds.indexOf(String(nodes[n].id)) < 0)
+                                    boxIds.push(String(nodes[n].id));
+                            }
+                            setSelection(boxIds);
+                            savePanelState();
+                            clearInteraction();
+                        } else if (gesture === "pan") {
+                            if (!gestureMoved)
+                                setSelection([]);
+                            savePanelState();
+                            clearInteraction();
+                        } else {
+                            savePanelState();
+                            clearInteraction();
+                        }
+                    } else if (mouse.button === Qt.MiddleButton) {
+                        savePanelState();
+                        clearInteraction();
+                    } else
+                        clearInteraction();
+                }
+                onCanceled: cancelInteraction()
+                onDoubleClicked: function (mouse) {
+                    if (mouse.button !== Qt.LeftButton || lastClickMoved)
+                        return;
+                    var id = nodeAt(mouse.x, mouse.y);
+                    if (id)
+                        inspectorRequested(String(id));
+                }
+                onWheel: function (wheel) {
+                    if (gesture === "wire") {
+                        wheel.accepted = true;
+                        return;
+                    }
+                    var delta = wheel.pixelDelta && wheel.pixelDelta.y ? wheel.pixelDelta.y : (wheel.angleDelta.y / 120) * 53;
+                    if (!delta)
+                        return;
+                    var next = clampZoom(zoom * Math.exp(delta * 0.002)), point = scenePoint(wheel.x, wheel.y);
+                    zoom = next;
+                    panX = wheel.x - point.x * zoom;
+                    panY = wheel.y - point.y * zoom;
+                    savePanelState();
+                    grid.requestPaint();
+                    wheel.accepted = true;
+                }
+            }
+        }
+    }
+
+    Shortcut {
+        sequence: "Tab"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.activeFocus && !graphPanel.gesture && !graphSearchPopup.opened
+        onActivated: {
+            captureCreationContext();
+            graphSearchPopup.open();
+            graphSearchField.forceActiveFocus();
+        }
+    }
+    Shortcut {
+        sequence: "Escape"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.gesture || graphSearchPopup.opened || graphContextMenu.opened
+        onActivated: {
+            if (graphSearchPopup.opened)
+                graphSearchPopup.close();
+            else if (graphContextMenu.opened)
+                graphContextMenu.close();
+            else
+                cancelInteraction();
+        }
+    }
+    Shortcut {
+        sequence: "Delete"
+        context: Qt.WindowShortcut
+        enabled: graphPanel.activeFocus && !graphPanel.gesture && !graphSearchPopup.opened && !graphContextMenu.opened
+        onActivated: {
+            var ids = [];
+            for (var i = 0; i < selectedNodeIds.length; ++i) {
+                var n = nodeById(selectedNodeIds[i]);
+                if (n && n.deletable !== false)
+                    ids.push(String(n.id));
+            }
+            ;
+            if (ids.length && controller.deleteGraphNodes(graphNetworkId, ids)) {
+                setSelection([]);
+                savePanelState();
+            }
+        }
+    }
+
+    Popup {
+        id: graphSearchPopup
+        objectName: "graphSearchPopup"
+        parent: Overlay.overlay
+        width: 190
+        height: 214
+        padding: 6
+        modal: false
+        x: Math.max(4, Math.min(Overlay.overlay.width - width - 4, graphPanel.searchAnchor.x - width / 2))
+        y: Math.max(4, Math.min(Overlay.overlay.height - height - 4, graphPanel.searchAnchor.y - height / 2))
+        closePolicy: Popup.NoAutoClose
+        background: Rectangle {
+            radius: graphPanel.theme.radius
+            color: graphPanel.theme.panel
+            border.color: graphPanel.theme.border
+        }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 5
+            TextField {
+                id: graphSearchField
+                objectName: "graphSearchField"
+                Layout.fillWidth: true
+                implicitHeight: 28
+                placeholderText: "Search nodes"
+                color: graphPanel.theme.text
+                placeholderTextColor: graphPanel.theme.muted
+                font.pixelSize: graphPanel.theme.fontSize
+                background: Rectangle {
+                    radius: graphPanel.theme.smallRadius
+                    color: graphPanel.theme.field
+                    border.color: graphSearchField.activeFocus ? graphPanel.theme.accent : graphPanel.theme.border
+                }
+                onTextChanged: {
+                    graphSearchList.currentIndex = 0;
+                    graphSearchList.model = graphPanel.filteredCatalog(text);
+                }
+                Keys.onDownPressed: function (event) {
+                    graphSearchList.incrementCurrentIndex();
+                    event.accepted = true;
+                }
+                Keys.onUpPressed: function (event) {
+                    graphSearchList.decrementCurrentIndex();
+                    event.accepted = true;
+                }
+                Keys.onEscapePressed: function (event) {
+                    event.accepted = true;
+                    graphSearchPopup.close();
+                    graphPanel.forceActiveFocus();
+                }
+                onAccepted: {
+                    if (graphSearchList.currentItem) {
+                        graphPanel.createFromDescriptor(graphSearchList.currentItem.modelData);
+                        graphSearchPopup.close();
+                    }
+                }
+            }
+            ListView {
+                id: graphSearchList
+                objectName: "graphSearchList"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                currentIndex: 0
+                model: graphPanel.filteredCatalog("")
+                delegate: ItemDelegate {
+                    required property var modelData
+                    width: graphSearchList.width
+                    height: 29
+                    text: modelData.displayName
+                    highlighted: ListView.isCurrentItem
+                    onClicked: {
+                        graphPanel.createFromDescriptor(modelData);
+                        graphSearchPopup.close();
+                    }
+                    contentItem: Text {
+                        text: parent.text
+                        color: graphPanel.theme.text
+                        font.pixelSize: graphPanel.theme.fontSize
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: graphPanel.theme.smallRadius
+                        color: parent.hovered || parent.highlighted ? graphPanel.theme.hover : "transparent"
+                    }
+                }
+            }
+        }
+        onOpened: {
+            graphPanel.searchAnchor = graphSurface.mapToItem(Overlay.overlay, graphPanel.pointerX, graphPanel.pointerY);
+            graphSearchField.text = "";
+            graphSearchList.currentIndex = 0;
+            graphSearchList.model = graphPanel.filteredCatalog("");
+        }
+        onClosed: graphPanel.forceActiveFocus()
+    }
+    Menu {
+        id: graphContextMenu
+        objectName: "graphNodeContextMenu"
+        MenuItem {
+            objectName: "graphCollapseSelection"
+            text: "Collapse to subnetwork"
+            enabled: graphPanel.graphAvailable && graphPanel.selectedNodeIds.length > 0
+            onTriggered: graphPanel.collapseSelection()
+        }
+        MenuItem {
+            objectName: "graphEnterSelection"
+            text: "Enter subnet"
+            enabled: {
+                var candidate = graphPanel.contextNodeId;
+                if (!candidate && graphPanel.selectedNodeIds.length === 1)
+                    candidate = graphPanel.selectedNodeIds[0];
+                return graphPanel.isSubnet(graphPanel.nodeById(candidate));
+            }
+            onTriggered: {
+                var candidate = graphPanel.contextNodeId;
+                if (!candidate && graphPanel.selectedNodeIds.length === 1)
+                    candidate = graphPanel.selectedNodeIds[0];
+                graphPanel.enterSubnet(candidate);
+            }
+        }
+        MenuSeparator {
+        }
+        MenuItem {
+            objectName: "graphDeleteSelection"
+            text: "Delete"
+            enabled: graphPanel.selectedNodeIds.length > 0
+            onTriggered: {
+                var ids = [];
+                for (var i = 0; i < graphPanel.selectedNodeIds.length; ++i) {
+                    var n = graphPanel.nodeById(graphPanel.selectedNodeIds[i]);
+                    if (n && n.deletable !== false)
+                        ids.push(String(n.id));
+                }
+                ;
+                if (ids.length && controller.deleteGraphNodes(graphPanel.graphNetworkId, ids)) {
+                    graphPanel.setSelection([]);
+                    graphPanel.savePanelState();
+                }
+            }
+        }
+        MenuItem {
+            objectName: "graphSetViewerSelection"
+            text: "Set as Viewer"
+            enabled: false
+        }
+    }
+    Text {
+        objectName: "graphErrorLabel"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 8
+        visible: controller.error.length > 0
+        text: controller.error
+        color: graphPanel.theme.accent
+        font.pixelSize: 11
+        elide: Text.ElideRight
+        z: 50
+    }
+}

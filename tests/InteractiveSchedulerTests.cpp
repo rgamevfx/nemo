@@ -208,4 +208,112 @@ TEST(Interactive, CancelledSubmissionRetainsResourcesUntilActualGpuCompletion) {
     for (const auto& message : instance->take_debug_messages())
         EXPECT_LT(message.severity, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) << message.text;
 }
+
+TEST(Interactive, DestinationScopedCancelDropsOnlyThatDestinationsWork) {
+    ViewerScheduler scheduler(2);
+    Document document;
+    EvaluationRequest request;
+    request.network = document.rootNetworkId();
+    const auto other = static_cast<ViewerDestination>(2);
+    ASSERT_TRUE(scheduler.submit(document, request, 1));
+    const auto inflight = scheduler.take();
+    ASSERT_TRUE(inflight);
+    ASSERT_TRUE(scheduler.submit(document, request, 2));
+    ASSERT_TRUE(scheduler.submit(document, request, 1, other));
+    scheduler.cancel(3, ViewerDestination::Interactive);
+    EXPECT_EQ(scheduler.counts().dropped, 1u);
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).dropped, 1u);
+    EXPECT_EQ(scheduler.counts(other).dropped, 0u);
+    EXPECT_FALSE(scheduler.complete(*inflight, true));
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).staleRejected, 1u);
+    EXPECT_EQ(scheduler.counts(other).staleRejected, 0u);
+    const auto otherWork = scheduler.take();
+    ASSERT_TRUE(otherWork);
+    EXPECT_EQ(otherWork->destination, other);
+    // A destination-scoped cancel does not move the global watermark, so an
+    // older id queued for another destination stays current.
+    EXPECT_TRUE(scheduler.isCurrent(*otherWork));
+    EXPECT_TRUE(scheduler.complete(*otherWork, true));
+    EXPECT_FALSE(scheduler.take());
+    EXPECT_EQ(scheduler.counts(other).queued, 0u);
+    EXPECT_EQ(scheduler.counts(other).completed, 1u);
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).queued, 0u);
+    EXPECT_EQ(scheduler.counts().completed, 1u);
+    // The destination watermark refuses re-admission below the cancelled id and
+    // admits an id at the watermark, exactly like the global watermark.
+    EXPECT_FALSE(scheduler.submit(document, request, 2, ViewerDestination::Interactive));
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).dropped, 2u);
+    EXPECT_EQ(scheduler.counts(other).dropped, 0u);
+    ASSERT_TRUE(scheduler.submit(document, request, 3, ViewerDestination::Interactive));
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).queued, 1u);
+}
+
+TEST(Interactive, RetireDestinationDropsQueuedWorkAndRejectsInflight) {
+    ViewerScheduler scheduler(3);
+    Document document;
+    EvaluationRequest request;
+    request.network = document.rootNetworkId();
+    const auto retired = static_cast<ViewerDestination>(2);
+    const auto kept = static_cast<ViewerDestination>(3);
+    ASSERT_TRUE(scheduler.submit(document, request, 1, retired));
+    const auto inflight = scheduler.take();
+    ASSERT_TRUE(inflight);
+    ASSERT_TRUE(scheduler.submit(document, request, 2, retired));
+    ASSERT_TRUE(scheduler.requestRange(document, request, 10, 12, 3, retired));
+    ASSERT_TRUE(scheduler.submit(document, request, 5, kept));
+    EXPECT_EQ(scheduler.counts(retired).dropped, 1u);
+    EXPECT_EQ(scheduler.counts(retired).queued, 3u);
+    EXPECT_EQ(scheduler.counts(kept).queued, 1u);
+    scheduler.retireDestination(retired);
+    EXPECT_EQ(scheduler.counts(retired).queued, 0u);
+    EXPECT_EQ(scheduler.counts(retired).dropped, 0u);
+    EXPECT_FALSE(scheduler.isCurrent(*inflight));
+    EXPECT_FALSE(scheduler.complete(*inflight, true));
+    EXPECT_EQ(scheduler.counts(kept).queued, 1u);
+    EXPECT_EQ(scheduler.counts(kept).staleRejected, 0u);
+    const auto keptWork = scheduler.take();
+    ASSERT_TRUE(keptWork);
+    EXPECT_EQ(keptWork->destination, kept);
+    EXPECT_TRUE(scheduler.complete(*keptWork, true));
+    EXPECT_EQ(scheduler.counts(kept).completed, 1u);
+    EXPECT_FALSE(scheduler.take());
+    EXPECT_EQ(scheduler.counts().dropped, 4u);
+    EXPECT_EQ(scheduler.counts().staleRejected, 1u);
+    EXPECT_EQ(scheduler.counts().completed, 1u);
+}
+
+TEST(Interactive, CountsAreScopedPerDestinationAndGlobalStillAggregates) {
+    ViewerScheduler scheduler(4);
+    Document document;
+    EvaluationRequest request;
+    request.network = document.rootNetworkId();
+    const auto second = static_cast<ViewerDestination>(2);
+    const auto third = static_cast<ViewerDestination>(3);
+    ASSERT_TRUE(scheduler.submit(document, request, 1));
+    ASSERT_TRUE(scheduler.requestRange(document, request, 0, 3, 1, second));
+    ASSERT_TRUE(scheduler.submit(document, request, 1, third));
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).queued, 1u);
+    EXPECT_EQ(scheduler.counts(second).queued, 4u);
+    EXPECT_EQ(scheduler.counts(third).queued, 1u);
+    EXPECT_EQ(scheduler.counts().queued, 6u);
+    EXPECT_EQ(scheduler.counts().dropped, scheduler.counts(ViewerDestination::Interactive).dropped +
+                                              scheduler.counts(second).dropped + scheduler.counts(third).dropped);
+    ASSERT_TRUE(scheduler.submit(document, request, 2, second));
+    EXPECT_EQ(scheduler.counts(second).dropped, 4u);
+    EXPECT_EQ(scheduler.counts(second).queued, 1u);
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).dropped, 0u);
+    EXPECT_EQ(scheduler.counts(third).dropped, 0u);
+    const auto interactive = scheduler.take();
+    ASSERT_TRUE(interactive);
+    EXPECT_EQ(interactive->destination, ViewerDestination::Interactive);
+    EXPECT_TRUE(scheduler.complete(*interactive, true));
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).completed, 1u);
+    EXPECT_EQ(scheduler.counts(second).completed, 0u);
+    EXPECT_EQ(scheduler.counts(third).completed, 0u);
+    EXPECT_EQ(scheduler.counts().completed, 1u);
+    EXPECT_EQ(scheduler.counts().queued, scheduler.counts(ViewerDestination::Interactive).queued +
+                                             scheduler.counts(second).queued + scheduler.counts(third).queued);
+    EXPECT_EQ(scheduler.counts(static_cast<ViewerDestination>(9)).queued, 0u);
+    EXPECT_EQ(scheduler.counts(static_cast<ViewerDestination>(9)).dropped, 0u);
+}
 }  // namespace

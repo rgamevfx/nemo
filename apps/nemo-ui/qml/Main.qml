@@ -14,7 +14,7 @@ ApplicationWindow {
     minimumHeight: Math.max(640, rootNode.minimumPaneHeight + 56)
     // main.cpp validates the Vulkan surface before showing this window.
     visible: false
-    title: "Nemo"
+    title: projectFile.windowTitle + " — Nemo"
     color: appTheme.background
     font.family: "Inter"
     font.pixelSize: appTheme.fontSize
@@ -22,6 +22,17 @@ ApplicationWindow {
     readonly property var controller: workspace
     property bool closeOverride: false
     property bool frameless: false
+    // Pending destructive action awaiting the unsaved-changes answer.
+    // Values: "" | "open" | "recover" | "quit".
+    property string pendingAction: ""
+    property url pendingUrl
+    property bool savingForPending: false
+    // "" | "menu"; distinguishes an explicit Save As from a save-before-action.
+    property string saveAsPurpose: ""
+    property bool awaitingPresentation: false
+    property bool showRecoveredNotice: false
+    property bool warningsAcknowledged: false
+    property bool quitPending: false
     flags: Qt.Window | (frameless ? Qt.FramelessWindowHint : 0)
 
     Theme {
@@ -51,6 +62,29 @@ ApplicationWindow {
         onActivated: window.controller.reset()
     }
 
+    // Approved standard File shortcuts. Recover stays menu-only.
+    Shortcut {
+        sequence: "Ctrl+O"
+        onActivated: window.chooseOpenProject()
+    }
+    Shortcut {
+        sequence: "Ctrl+S"
+        onActivated: window.requestSave()
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+S"
+        onActivated: window.chooseSaveAs()
+    }
+
+    function openFileMenu() {
+        // Open below the trigger using the same host popup anchors as the
+        // workspace options menu, instead of the cursor/0,0 default.
+        var point = fileMenuTrigger.mapToItem(window.contentItem, 0, fileMenuTrigger.height)
+        fileMenu.x = point.x
+        fileMenu.y = point.y + 2
+        fileMenu.open()
+    }
+
     function workspaceIndex(id) {
         var entries = window.controller ? window.controller.workspaces : []
         for (var i = 0; i < entries.length; ++i) {
@@ -63,6 +97,130 @@ ApplicationWindow {
     function workspaceNameFor(id) {
         var index = workspaceIndex(id)
         return index >= 0 ? window.controller.workspaces[index].name : "Workspace"
+    }
+
+    function chooseOpenProject() {
+        if (projectFile.busy)
+            return
+        projectFile.chooseOpenProject()
+    }
+
+    function chooseSaveAs() {
+        if (projectFile.busy)
+            return
+        window.saveAsPurpose = "menu"
+        projectFile.chooseSaveAs()
+    }
+
+    function requestSave() {
+        if (projectFile.busy)
+            return
+        if (!projectFile.hasPath) {
+            window.saveAsPurpose = "menu"
+            projectFile.chooseSaveAs()
+            return
+        }
+        window.savingForPending = false
+        projectFile.save()
+    }
+
+    // A file was chosen for a destructive action; ask about unsaved changes
+    // first, then run the action against the file the user actually picked.
+    function beginPending(action, url) {
+        window.pendingAction = action
+        window.pendingUrl = url
+        if (projectFile.dirty) {
+            unsavedChangesDialog.open()
+            return
+        }
+        window.runPending()
+    }
+
+    function runPending() {
+        var action = window.pendingAction
+        var url = window.pendingUrl
+        window.pendingAction = ""
+        window.pendingUrl = ""
+        if (action === "open")
+            projectFile.openProject(url)
+        else if (action === "recover")
+            projectFile.recoverProject(url)
+        else if (action === "quit")
+            window.finishQuit()
+    }
+
+    function savePendingAction() {
+        unsavedChangesDialog.handled = true
+        unsavedChangesDialog.close()
+        if (!projectFile.hasPath) {
+            window.saveAsPurpose = "pending"
+            projectFile.chooseSaveAs()
+            return
+        }
+        window.savingForPending = true
+        projectFile.save()
+    }
+
+    function discardPendingAction() {
+        unsavedChangesDialog.handled = true
+        unsavedChangesDialog.close()
+        window.runPending()
+    }
+
+    function cancelPendingAction() {
+        unsavedChangesDialog.handled = true
+        unsavedChangesDialog.close()
+        window.pendingAction = ""
+        window.pendingUrl = ""
+    }
+
+    function finishQuit() {
+        // Never tear down while a read/write is in flight; resume when the I/O
+        // worker reports idle instead of blocking the UI thread.
+        if (projectFile.busy) {
+            window.quitPending = true
+            return
+        }
+        if (!workspace.save()) {
+            saveErrorDialog.open()
+            return
+        }
+        window.closeOverride = true
+        window.close()
+    }
+
+    function clearPendingChooserState() {
+        if (window.saveAsPurpose === "pending") {
+            // The chooser did not complete: the destructive action that asked
+            // for a Save As stays cancelled and the project keeps its changes.
+            window.savingForPending = false
+            window.pendingAction = ""
+            window.pendingUrl = ""
+        }
+        window.saveAsPurpose = ""
+    }
+
+    function resolveRestore(restore) {
+        restoreSessionDialog.resolved = true
+        restoreSessionDialog.close()
+        projectFile.resolvePresentation(restore)
+    }
+
+    function openPostOpenDialogs() {
+        if (window.showRecoveredNotice) {
+            window.showRecoveredNotice = false
+            recoveredCopyNotice.open()
+            return
+        }
+        if (projectFile.warnings.length > 0 && !window.warningsAcknowledged) {
+            window.warningsAcknowledged = true
+            projectWarningsDialog.open()
+            return
+        }
+        if (window.awaitingPresentation) {
+            window.awaitingPresentation = false
+            restoreSessionDialog.open()
+        }
     }
 
     Rectangle {
@@ -87,13 +245,40 @@ ApplicationWindow {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 12
 
-            Text {
-                text: "Nemo"
-                color: appTheme.text
-                font.pixelSize: 16
-                font.weight: Font.DemiBold
+            Item {
+                id: fileMenuTrigger
+                objectName: "fileMenuButton"
+                width: nemoTitle.implicitWidth
                 height: 28
-                verticalAlignment: Text.AlignVCenter
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    radius: appTheme.smallRadius
+                    color: fileMenuArea.containsMouse || fileMenu.visible ? appTheme.header : "transparent"
+                }
+
+                Text {
+                    id: nemoTitle
+                    anchors.centerIn: parent
+                    text: "Nemo"
+                    color: appTheme.text
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                    height: 28
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                MouseArea {
+                    id: fileMenuArea
+                    objectName: "fileMenuTriggerArea"
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    Accessible.name: "File menu"
+                    onClicked: window.openFileMenu()
+                }
             }
 
             ChromeButton {
@@ -307,6 +492,38 @@ ApplicationWindow {
             text: "Close workspace"
             enabled: window.controller.workspaces.length > 1
             onTriggered: window.controller.closeWorkspace(workspaceMenu.targetWorkspaceId)
+        }
+    }
+
+    // Approved production-only File menu: the existing Nemo title is its
+    // trigger. Open, Save, Save As and Recover only; no New action.
+    Menu {
+        id: fileMenu
+        objectName: "fileMenu"
+
+        MenuItem {
+            objectName: "fileOpenAction"
+            text: "Open…"
+            onTriggered: window.chooseOpenProject()
+        }
+        MenuItem {
+            objectName: "fileSaveAction"
+            text: "Save"
+            enabled: !projectFile.busy
+            onTriggered: window.requestSave()
+        }
+        MenuItem {
+            objectName: "fileSaveAsAction"
+            text: "Save As…"
+            enabled: !projectFile.busy
+            onTriggered: window.chooseSaveAs()
+        }
+        MenuSeparator {
+        }
+        MenuItem {
+            objectName: "fileRecoverAction"
+            text: "Recover…"
+            onTriggered: projectFile.chooseRecoveryProject()
         }
     }
 
@@ -568,9 +785,318 @@ ApplicationWindow {
     onClosing: function(close) {
         if (window.closeOverride)
             return
+        if (projectFile.busy) {
+            // A read/write is in flight: defer instead of joining it here.
+            close.accepted = false
+            window.quitPending = true
+            return
+        }
+        if (projectFile.dirty) {
+            close.accepted = false
+            window.pendingAction = "quit"
+            window.pendingUrl = ""
+            unsavedChangesDialog.open()
+            return
+        }
         if (!workspace.save()) {
             close.accepted = false
             saveErrorDialog.open()
+        }
+    }
+
+    Connections {
+        target: projectFile
+
+        function onOpenFileChosen(url) {
+            window.beginPending("open", url)
+        }
+        function onRecoveryFileChosen(url) {
+            window.beginPending("recover", url)
+        }
+        function onSaveAsChosen(url) {
+            var purpose = window.saveAsPurpose
+            window.saveAsPurpose = ""
+            if (purpose === "pending")
+                window.savingForPending = true
+            projectFile.saveAs(url)
+        }
+        function onSaveFinished(ok) {
+            if (!ok) {
+                // A cancelled or failed save cancels the pending destructive
+                // action; the project error dialog explains why.
+                window.savingForPending = false
+                window.pendingAction = ""
+                window.pendingUrl = ""
+                projectErrorDialog.open()
+                return
+            }
+            if (window.savingForPending) {
+                window.savingForPending = false
+                // A save that completed while newer document/presentation edits
+                // arrived leaves the project dirty: re-ask rather than proceed.
+                if (projectFile.dirty) {
+                    unsavedChangesDialog.open()
+                } else {
+                    window.runPending()
+                }
+            }
+        }
+        function onProjectOpened(hasPresentation, recovered) {
+            window.warningsAcknowledged = false
+            window.showRecoveredNotice = recovered
+            window.awaitingPresentation = hasPresentation
+            window.openPostOpenDialogs()
+        }
+        function onProjectOpenFailed() {
+            window.pendingAction = ""
+            window.pendingUrl = ""
+            projectErrorDialog.open()
+        }
+        function onFileDialogFailed() {
+            // A failed chooser aborts the pending destructive action exactly
+            // like cancel; the controller already set the diagnostic text.
+            window.clearPendingChooserState()
+            projectErrorDialog.open()
+        }
+        function onAutosaveFailed() {
+            // Distinct autosave failures surface through the existing error
+            // dialog; identical repeats are deduplicated in the controller.
+            projectErrorDialog.open()
+        }
+        function onFileDialogCancelled() {
+            window.clearPendingChooserState()
+        }
+        function onBusyChanged() {
+            if (!window.quitPending || projectFile.busy)
+                return
+            window.quitPending = false
+            if (projectFile.dirty) {
+                window.pendingAction = "quit"
+                window.pendingUrl = ""
+                unsavedChangesDialog.open()
+            } else {
+                window.finishQuit()
+            }
+        }
+    }
+
+    Dialog {
+        id: unsavedChangesDialog
+        objectName: "unsavedChangesDialog"
+        title: "Unsaved changes"
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: parent
+        width: 460
+        property bool handled: false
+        onOpened: handled = false
+        onRejected: {
+            unsavedChangesDialog.handled = true
+            window.cancelPendingAction()
+        }
+        onClosed: {
+            if (!unsavedChangesDialog.handled)
+                window.cancelPendingAction()
+        }
+
+        contentItem: Text {
+            text: "This project has unsaved changes. Save them before continuing?"
+            color: appTheme.text
+            wrapMode: Text.Wrap
+            width: unsavedChangesDialog.availableWidth
+        }
+
+        footer: RowLayout {
+            spacing: 8
+            ChromeButton {
+                objectName: "unsavedSaveButton"
+                theme: appTheme
+                text: "Save"
+                onClicked: window.savePendingAction()
+            }
+            ChromeButton {
+                objectName: "unsavedDiscardButton"
+                theme: appTheme
+                text: "Discard"
+                onClicked: window.discardPendingAction()
+            }
+            ChromeButton {
+                objectName: "unsavedCancelButton"
+                theme: appTheme
+                text: "Cancel"
+                onClicked: window.cancelPendingAction()
+            }
+        }
+    }
+
+    Dialog {
+        id: restoreSessionDialog
+        objectName: "restoreSessionDialog"
+        title: "Project presentation"
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: parent
+        width: 520
+        property bool resolved: false
+        onOpened: resolved = false
+        onClosed: {
+            if (!resolved)
+                window.resolveRestore(false)
+        }
+
+        contentItem: Text {
+            text: "This project stores a workspace layout and panel context. " +
+                  "Restore that presentation, or keep the current workspace? " +
+                  "Keeping the current workspace does not change processing output."
+            color: appTheme.text
+            wrapMode: Text.Wrap
+            width: restoreSessionDialog.availableWidth
+        }
+
+        footer: RowLayout {
+            spacing: 8
+            ChromeButton {
+                objectName: "restoreSessionButton"
+                theme: appTheme
+                text: "Restore Session"
+                onClicked: window.resolveRestore(true)
+            }
+            ChromeButton {
+                objectName: "keepCurrentWorkspaceButton"
+                theme: appTheme
+                text: "Keep Current"
+                onClicked: window.resolveRestore(false)
+            }
+        }
+    }
+
+    Dialog {
+        id: projectWarningsDialog
+        objectName: "projectWarningsDialog"
+        title: "Project warnings"
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: parent
+        width: 560
+        onClosed: window.openPostOpenDialogs()
+
+        contentItem: ColumnLayout {
+            spacing: 8
+            Text {
+                Layout.fillWidth: true
+                text: "The project opened with warnings."
+                color: appTheme.text
+                wrapMode: Text.Wrap
+            }
+            ScrollView {
+                id: warningScroll
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(320, warningColumn.implicitHeight)
+                clip: true
+
+                ColumnLayout {
+                    id: warningColumn
+                    // Constrain to the viewport, not the Flickable's content
+                    // width: wrapping warning text must not widen the column and
+                    // clip long paths at the right edge.
+                    width: warningScroll.availableWidth
+                    spacing: 4
+
+                    Repeater {
+                        model: projectFile.warnings
+                        delegate: Text {
+                            required property string modelData
+                            Layout.fillWidth: true
+                            text: "• " + modelData
+                            color: appTheme.muted
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                    Repeater {
+                        model: projectFile.references
+                        delegate: Text {
+                            required property var modelData
+                            visible: !modelData.exists
+                            Layout.fillWidth: true
+                            text: "• " + modelData.state + " " + modelData.identity + ": " + modelData.resolvedPath
+                            color: appTheme.errorText
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
+            }
+        }
+
+        footer: RowLayout {
+            spacing: 8
+            ChromeButton {
+                objectName: "projectWarningsDismissButton"
+                theme: appTheme
+                text: "Continue"
+                onClicked: projectWarningsDialog.close()
+            }
+        }
+    }
+
+    Dialog {
+        id: recoveredCopyNotice
+        objectName: "recoveredCopyNotice"
+        title: "Recovered unsaved copy"
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: parent
+        width: 520
+        onClosed: window.openPostOpenDialogs()
+
+        contentItem: Text {
+            text: "Opened a protected unsaved copy. The original project file was not " +
+                  "modified; use Save As to keep this copy as a new project."
+            color: appTheme.text
+            wrapMode: Text.Wrap
+            width: recoveredCopyNotice.availableWidth
+        }
+
+        footer: RowLayout {
+            spacing: 8
+            ChromeButton {
+                objectName: "recoveredCopyDismissButton"
+                theme: appTheme
+                text: "Continue"
+                onClicked: recoveredCopyNotice.close()
+            }
+        }
+    }
+
+    Dialog {
+        id: projectErrorDialog
+        objectName: "projectErrorDialog"
+        title: "Project file error"
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: parent
+        width: 520
+        onClosed: projectFile.clearError()
+
+        contentItem: Text {
+            text: projectFile.error.length > 0 ? projectFile.error : "The project file operation did not complete."
+            color: appTheme.errorText
+            wrapMode: Text.Wrap
+            width: projectErrorDialog.availableWidth
+        }
+
+        footer: RowLayout {
+            spacing: 8
+            ChromeButton {
+                objectName: "projectErrorDismissButton"
+                theme: appTheme
+                text: "Close"
+                onClicked: projectErrorDialog.close()
+            }
         }
     }
 

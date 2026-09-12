@@ -1,0 +1,387 @@
+{
+  "evidence_version": 1,
+  "issue": "https://github.com/rgamevfx/nemo/issues/35",
+  "recorded_utc": "2026-09-12T08:58:43Z",
+  "status": "Implemented and verified locally; owner API/dependency/native-image review and Windows execution remain open before merge.",
+  "source": {
+    "branch": "issue/35-project-persistence",
+    "base_commit": "aa569731145fb809d6245b33b738372c675f72b3",
+    "delivery": "Uncommitted working-tree implementation; not pushed.",
+    "owner_file_sha256": {
+      "src/nemo/core/document/Serialization.cpp": "5f99e9fed8144667d7dfa0d1bcf813bb3395185ad63bac211db328d704173377",
+      "src/nemo/core/document/Animation.cpp": "fc0d84092febad10ea825f1432bee58b6fd8ff6da49e5a6e31b3dbf691c3e7fc",
+      "src/nemo/core/session/ProjectFile.cpp": "1fd2d7ddc73f5fedaea662b265b4929f1aef41565608f00bbda891e861536ac6",
+      "src/nemo/core/session/ProjectFile.hpp": "839a9b2cc7509442a5f2f64e12df74286da0c4758981e94f85f11639a783bcbd",
+      "src/nemo/core/session/ProjectSession.cpp": "612732f081f193b7928d6941eb846bf0189ee8e8f8aa97684ea432e849a6f340",
+      "src/nemo/core/session/ProjectSession.hpp": "7c6d6b7849f80ab510380952547f706e5fb92d9d1b7d7f089176d21d7e072b3e",
+      "apps/nemo-ui/ProjectFileController.cpp": "551d4e6800a919a363a04a8469bda6da13017d8688e4004c01912245d97de29e",
+      "apps/nemo-ui/ProjectFileController.hpp": "f4a6a14d002326a5030f611bfb9a952b7e7f9185681492b57536a9a711605bfa",
+      "apps/nemo-ui/qml/Main.qml": "a699cece1eb1cfba17de3931cc242c5b70ce550faf7918f1ac0420831bda8c65",
+      "apps/nemo-ui/WorkspaceController.cpp": "74df1b0f28dcc1b622ce1b52967fd4dda98de0c945f0c1a138c8c4a58566166a",
+      "apps/nemo-ui/PanelContextRouter.cpp": "1ece092a282310e0965375c5743699f37dcafadef6ff16bb32f8f12a7be30e32",
+      "apps/nemo-ui/ViewerRuntime.cpp": "ce871191504e1f2b89d2258cba8214e2448c8b67619b009ec79b39d7ee46d509",
+      "apps/nemo-cli/ProjectSessionCommand.cpp": "c93ac6f3b1b67f11665b4e3425e63f9035426cd5d892bce00604bdd489eefb34",
+      "apps/nemo-cli/ViewerCacheCommand.cpp": "7e62aa5c83538b2cef942ff788d5242d7076a58487b05515d313d85e652f20cc",
+      "tests/PersistenceTests.cpp": "f067ade71c538f214756b5151f65660c6493497c63ad6182ad3e13e329f6fdde",
+      "tests/SessionPersistenceTests.cpp": "022b7e4eba9d8e3aefb66853f519761509abeb046bf8fb76e37f215384709386",
+      "tests/PanelContextUiTests.cpp": "5697b93e2e6fa5b04ab455161191f7ec40c47b738d2c70b45c4b8f6bfc444818"
+    }
+  },
+  "approval": {
+    "pre_edit_contract": "https://github.com/rgamevfx/nemo/issues/35#issuecomment-5644388253",
+    "new_ui_decision": "https://github.com/rgamevfx/nemo/issues/35#issuecomment-5644404619",
+    "classification": "Backend system extension; production-only File UI with narrow owner approval; existing workspace/context owners reused.",
+    "reference_policy": "No archived prototype File/Open/Save/recovery behavior was found. This is not claimed as a prototype port. Existing accepted host controls/style are reused; no prototype baseline was changed.",
+    "approved_behavior": [
+      "Nemo title opens Open/Save/Save As/Recover menu; no New action",
+      "Save/Discard/Cancel unsaved protection",
+      "Restore Session or Keep Current workspace; Keep is the default",
+      "Native Open/Save As chooser",
+      "120-second dirty autosave with three slots",
+      "Recovery is an untitled copy; original protection persists for the recovered session, including after saving elsewhere"
+    ]
+  },
+  "environment": {
+    "platform": "Linux x86_64, native Wayland on COSMIC",
+    "display_pixels": [
+      1920,
+      1080
+    ],
+    "gpu": "NVIDIA GeForce GTX 1070",
+    "qt_platform": "wayland",
+    "native_capture": "cosmic-screenshot --interactive=false --modal=false --notify=false --save-dir <isolated capture directory>",
+    "native_input": "OS evdev/uinput pointer and keyboard; temporary devices released after the run.",
+    "capture_limitation": "Harness computer.screenshot failed: Wayland capture requires the wayland-pipewire feature. Native capture/input fallback was used only after that failure. No permission changes or installations were made.",
+    "viewports": "Approximately 1280x720 and 980x640 application windows. Retained crops exclude compositor borders and all unrelated desktop content.",
+    "isolation": "Temporary project, configuration, data and viewer-cache directories; no user project files were used."
+  },
+  "gates": [
+    {
+      "command": "cmake --build --preset debug -j 3 && ctest --preset debug -j 4",
+      "passed": 435,
+      "failed": 0
+    },
+    {
+      "command": "cmake --build --preset release -j 2; ctest --preset release -j 4",
+      "passed": 435,
+      "failed": 0
+    },
+    {
+      "command": "cmake --build --preset asan --target nemo_core_tests nemo_workspace_ui_tests nemo_viewer_tests -j 1; cmake --build --preset asan --target nemo_workspace_ui_tests -j 1; ctest --preset asan -R 'PersistenceTest|SessionPersistenceTest|ProjectSessionTest|Interactive\\.|PanelContextUiTest' -j 2",
+      "passed": 117,
+      "failed": 0,
+      "scope": "Relevant ASan+UBSan ownership, persistence, scheduler/interaction and UI regressions; not the entire sanitizer suite."
+    },
+    {
+      "command": "cmake --build --preset headless --target nemo_core_tests -j 1 && build/headless/tests/nemo_core_tests",
+      "passed": 225,
+      "failed": 0,
+      "scope": "Qt-free core build and tests; not a GPU gate."
+    }
+  ],
+  "build_diagnostics": [
+    "Existing dependency libminizip-ng linker warning about mktemp; no new project-code warning observed.",
+    "qmlimportscanner reports missing QtQml qmldir on this system. Builds succeed; no warning-free claim."
+  ],
+  "headless_roundtrip": {
+    "fixture": "docs/evidence/assets/issue35-animated.nemo",
+    "fixture_sha256": "f1692a3383955819076fad358ea02fad7a512c1a20c48e008588b04a6168ac43",
+    "save_command": "nemo-cli project-session <fixture>; JSONL {\"op\":\"save-as\",\"path\":\"<different-directory>/animated.nemo\",\"path_policy\":\"relative\"}",
+    "evaluate_command": "nemo-cli evaluate <before-or-after-project> --out <frame.ppm> --frame <0|12|24> --width 32 --height 32",
+    "output_contract": "Full-quality CPU evaluation, byte-identical PPM output (zero tolerance). The render command is a fixed test-pattern smoke and was not used as graph-output evidence.",
+    "frames": [
+      {
+        "frame": 0,
+        "before_sha256": "c12db05e24954cd410fb39ce977a1b6aefa36d51a3a5c39ab78a0fad824ba495",
+        "after_sha256": "c12db05e24954cd410fb39ce977a1b6aefa36d51a3a5c39ab78a0fad824ba495",
+        "byte_identical": true
+      },
+      {
+        "frame": 12,
+        "before_sha256": "53620f02c8babf9f01a5dbdc84b6fc8ba1bc4dbd34e2c53f63c83477f86809df",
+        "after_sha256": "53620f02c8babf9f01a5dbdc84b6fc8ba1bc4dbd34e2c53f63c83477f86809df",
+        "byte_identical": true
+      },
+      {
+        "frame": 24,
+        "before_sha256": "bd0e2b1dd8a97441cbb79ccc2d956ac0671c23bc5c1fb11c186907700b91f0f2",
+        "after_sha256": "bd0e2b1dd8a97441cbb79ccc2d956ac0671c23bc5c1fb11c186907700b91f0f2",
+        "byte_identical": true
+      }
+    ],
+    "stable_identity": "Network/node/output IDs, animation channel 7 and keys 11/12 survive save/reopen. Broader networks/instances/interfaces/library/bins/marks/opaque-data cases are covered by the persistence suites.",
+    "file_state_scenarios": [
+      "Save establishes a baseline without an undo entry",
+      "Edit dirty; undo to saved content clean; redo dirty",
+      "Four autosaves retain three slots and do not clear dirty state",
+      "Successful open clears old session undo history",
+      "Save As rebases an offline source to ../original/media/plate.exr without copying media",
+      "Opaque presentation survives headless roundtrip"
+    ],
+    "source_scope": "The retained animation fixture uses real authored constant-color graph evaluation and an unused missing source reference; it is not footage-decode or editorial-workflow evidence."
+  },
+  "failure_and_recovery": {
+    "real_interruption": {
+      "method": "Finite project-session process saving an isolated 16 MiB authored payload; SIGKILL after its exclusive sibling temporary file appeared.",
+      "exit_code": -9,
+      "last_valid_sha256": "b2865d213e52fdc1807d2c45cad981ed7d88dbf4cc408e3ee4fc1ec8c43912de",
+      "observed": "Original bytes unchanged; validate succeeds; a later save succeeds despite the abandoned temp and produces a backup."
+    },
+    "real_write_failure": "Saving beneath an ordinary file used as a parent fails; last valid project and live session path remain unchanged.",
+    "newer_file": "Schema 999 rejects open and destructive replacement; final CLI reports unsupported_target.",
+    "recovery": "Autosave opens untitled/dirty. Save As to original rejects before and after saving a new copy; final CLI reports protected_target. Native chooser overwrite confirmation cannot bypass the backend guard.",
+    "protected_original_sha256": "ed60139c7715a5b09b7709aa7bcee1a2e7cedd2f00d2c5ec05e77369bfc6e08b",
+    "malformed_color_config": {
+      "before_fix": "Actual project-session save accepted an object colorConfig and dropped the authored field.",
+      "after_fix": "Actual project-session startup rejects with exit 1 naming colorConfig; bytes remain identical. Regression also proves existing target and previous-good backup survive attempted replacement."
+    },
+    "additional_regressions": [
+      "Exclusive restrictive temporary files; retain existing permissions",
+      "Atomic synced backup replacement does not follow a backup symlink",
+      "Corrupt owned autosave slot is recycled in place without losing another valid slot",
+      "Newer-schema/unknown-required autosaves are protected, and no-safe-slot fails visibly",
+      "Save completion from a different project generation is rejected",
+      "Document/presentation edits racing a write stay dirty",
+      "Unavailable node/animation payload is retained; active uninterpretable animation fails evaluation rather than silently falling back"
+    ],
+    "exact_chooser_destination": {
+      "before_fix": {
+        "exact_path_created": false,
+        "different_sibling_nemo_changed_without_confirmation": true
+      },
+      "sibling_sha256": "a114170218c24eff94e74460c554ec3a3cc93bc0a35853a1e3bea4078f48a114",
+      "after_fix": {
+        "exact_path_created": true,
+        "different_sibling_nemo_byte_identical": true
+      }
+    }
+  },
+  "native_scenarios": [
+    "Native Save/Save As writes real project files; subsequent Save creates a previous-good .bak. The final chooser-destination safety case is recorded separately.",
+    "Open saved project: Keep Current retains the enlarged split; Restore Session returns the saved equal split. Blue viewer output stays unchanged.",
+    "Splitter-only presentation change prompts on Quit. Cancel keeps the live edits; original file remains byte-identical.",
+    "Natural 120-second dirty timer writes autosave0, then autosave1. Captured graph processing data equals the saved project while presentation differs; original bytes remain unchanged.",
+    "Recover actual timed autosave, choose Discard for live edits, receive protected-copy notice, restore presentation.",
+    "Attempt to save recovered copy over original through native overwrite confirmation produces actionable refusal; original hash unchanged.",
+    "Cancel a pending Save-before-Quit chooser, then save an independent recovered copy: application remains open, proving no stale Quit action.",
+    "Edit saved recovery copy and choose Save before Quit: backup is created and application exits 0.",
+    "Newer-schema Open displays a concrete schema error and leaves current graph/viewer intact.",
+    "Missing external source displays fully wrapped identity/path diagnostics. Its independent graph output remains visible.",
+    "Actual window resized narrower; File menu and Save/Discard/Cancel controls remain visible and operable. Discard closes cleanly.",
+    "Final native Save As to exact-target-check creates that exact extensionless file and leaves existing exact-target-check.nemo byte-identical; explicit final-native-project.nemo then saves and validates successfully. Application exits cleanly."
+  ],
+  "native_fixes_proven": [
+    "Register proper portal filter D-Bus types: Save As no longer crashes.",
+    "Call FileChooser.OpenFile, not Open; actual native Open now succeeds.",
+    "Publish quiet splitter mutations to persistence dirty tracking without rebuilding the QML tree.",
+    "Capture current workspace state, not a stale preset, when saving.",
+    "Constrain warning-list width to ScrollView.availableWidth so long paths wrap.",
+    "Remove post-dialog suffix rewriting: the application must write the exact chooser-authorized destination, not silently select a different existing .nemo sibling."
+  ],
+  "project_color_execution": {
+    "environment": "OCIO=/nonexistent/should-not-be-used.ocio",
+    "project_config": "docs/evidence/issue12-view.ocio",
+    "command": "nemo-cli cache-viewer <native-saved.nemo> --cache-dir <isolated-cache> --frames 1,2,3 --width 64 --height 64 --scale 1 --shaders build/debug/src/nemo/gpu/shaders/spv --output out",
+    "observed": {
+      "ok": true,
+      "requested_frames_resolved": 3,
+      "encoded_frames": 3,
+      "replay_cache_hits": 3,
+      "replay_graph_reevaluations": 0,
+      "hardware_decoded_frames": 3,
+      "vulkan_validation_messages": 0
+    },
+    "native": "Blue viewer renders under the same invalid environment because the project config is passed explicitly. This does not claim measured visible latency or a new image baseline."
+  },
+  "assets": [
+    {
+      "scenario": "file-menu",
+      "path": "docs/evidence/assets/issue35-file-menu.png",
+      "capture": "Screenshot_2026-09-12_04-11-51.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "ce111f32b9ebfbb98c2e4613b8e687a276875fdffcfa635049ad7a35bf0aa1e1"
+    },
+    {
+      "scenario": "restore-choice",
+      "path": "docs/evidence/assets/issue35-restore-choice.png",
+      "capture": "Screenshot_2026-09-12_04-07-45.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "5187843c880d9d2e3feb32702026104b3c7bcbb39a7e817c6f40e1bab7d90c11"
+    },
+    {
+      "scenario": "keep-current",
+      "path": "docs/evidence/assets/issue35-keep-current.png",
+      "capture": "Screenshot_2026-09-12_04-07-56.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "7f4bf4fbdecf28bc933e87cc343155f9a08bae52ee7579fd73db1dd47a5d9418"
+    },
+    {
+      "scenario": "restored-workspace",
+      "path": "docs/evidence/assets/issue35-restored-workspace.png",
+      "capture": "Screenshot_2026-09-12_04-09-00.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "17061fb945bb3d58366bca908acdf76f97c4d7787397d9c1abb4d74a71646cfe"
+    },
+    {
+      "scenario": "unsaved-changes",
+      "path": "docs/evidence/assets/issue35-unsaved-changes.png",
+      "capture": "Screenshot_2026-09-12_04-09-11.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "ff3ede3c1a2c71bd263a10bcd861b928d6780c1a7e682748082464f40d1cdbe9"
+    },
+    {
+      "scenario": "recovered-copy",
+      "path": "docs/evidence/assets/issue35-recovered-copy.png",
+      "capture": "Screenshot_2026-09-12_04-13-43.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "5c2c99685067248ab4293d3536118d5f9451fa315c3420867ae2e9129691621a"
+    },
+    {
+      "scenario": "protected-original",
+      "path": "docs/evidence/assets/issue35-protected-original.png",
+      "capture": "Screenshot_2026-09-12_04-16-51.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "3cf94af2b4256735317caa4b5f49063bd9b195c1e0b11ea737dbbb362a1ebfba"
+    },
+    {
+      "scenario": "saved-recovery",
+      "path": "docs/evidence/assets/issue35-saved-recovery.png",
+      "capture": "Screenshot_2026-09-12_04-20-14.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "5fc6694f9f943328c8fbe93a63a9c04c4ec60529857a184fd6439076f2f3898d"
+    },
+    {
+      "scenario": "newer-schema-error",
+      "path": "docs/evidence/assets/issue35-newer-schema-error.png",
+      "capture": "Screenshot_2026-09-12_04-22-24.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "472ed5d5dad79fd47a7469caaefb22101ff017686ca72b2590de7cb778380a15"
+    },
+    {
+      "scenario": "missing-reference-warning",
+      "path": "docs/evidence/assets/issue35-missing-reference-warning.png",
+      "capture": "Screenshot_2026-09-12_04-23-14.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "29431cd59eed3430330e9876e85ef135667a5d70511ed490a5a8c85977832e3b"
+    },
+    {
+      "scenario": "missing-reference-independent-output",
+      "path": "docs/evidence/assets/issue35-missing-reference-independent-output.png",
+      "capture": "Screenshot_2026-09-12_04-23-58.png",
+      "crop": [
+        320,
+        136,
+        1600,
+        852
+      ],
+      "sha256": "ec5f78c4ddbb9ea67a9f546f214c5abaaa5ff59788434b3dc3e2109bc0eb03e4"
+    },
+    {
+      "scenario": "narrow-file-menu",
+      "path": "docs/evidence/assets/issue35-narrow-file-menu.png",
+      "capture": "Screenshot_2026-09-12_04-34-39.png",
+      "crop": [
+        320,
+        136,
+        1300,
+        772
+      ],
+      "sha256": "c7f9b8800d2326d2408d964884307954910811d5555114b4a9b863b4267184ef"
+    },
+    {
+      "scenario": "narrow-unsaved-dialog",
+      "path": "docs/evidence/assets/issue35-narrow-unsaved-dialog.png",
+      "capture": "Screenshot_2026-09-12_04-34-41.png",
+      "crop": [
+        320,
+        136,
+        1300,
+        772
+      ],
+      "sha256": "04a90c1e32bfce1ea93f13e7e01200d6b2669f56db094009d0114e9120ef3d9f"
+    },
+    {
+      "scenario": "native-save-chooser",
+      "path": "docs/evidence/assets/issue35-native-save-chooser.png",
+      "capture": "Screenshot_2026-09-12_04-52-15.png",
+      "crop": [
+        625,
+        184,
+        1648,
+        821
+      ],
+      "sha256": "0512d095cffcede5b273dc1ac97b2a6eb5824e0345fe4afbc366214fdf3ab539"
+    },
+    {
+      "scenario": "exact-save-destination",
+      "path": "docs/evidence/assets/issue35-exact-save-destination.png",
+      "capture": "Screenshot_2026-09-12_04-51-28.png",
+      "crop": [
+        625,
+        184,
+        1648,
+        821
+      ],
+      "sha256": "fa2066fbf0d3cc2faa72f18cff0c55b880e46b66855c15d18353d8f3fbe5a677"
+    }
+  ],
+  "review_required": [
+    "Owner review of new core persistence/session APIs, authored schema/required-feature metadata, opaque extension preservation and viewer config-path parameters.",
+    "Owner review of native File UI images/interactions against the recorded production-only approval.",
+    "Dependency/platform review: Linux uses the system Qt6 DBus module and xdg-desktop-portal; Windows uses native COM file dialogs (ole32/shell32/uuid).",
+    "Windows build/native execution was not available on this Linux host; keep that platform check open.",
+    "No new node type, packaged media/Collect/Archive, or independent .nemonet/.nemopreset/.nemoworkspace exchange is claimed; the latter remains #58."
+  ],
+  "cleanup": "One authored serializer; path rebasing edits only known fields in its payload instead of copying the entire Document. Existing ownership/rendering guides updated. Only cropped images and the deliberate authored fixture are retained; temporary test projects/input devices are removed.",
+  "tracker_handoff": "https://github.com/rgamevfx/nemo/issues/35#issuecomment-5644868382"
+}

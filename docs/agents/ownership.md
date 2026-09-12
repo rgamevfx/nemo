@@ -25,8 +25,12 @@ details still assigned to later tasks. Spec/ADRs define production ownership;
 prototype fixture models are reference behavior, not production architecture.
 
 Baseline #40/#59 supplies the shared shell and existing panel presentation.
-Context routing is group-only: a panel's context is always its own A-E group.
-Functional ports #44/#46/#50/#47/#43 extend those owners. Read the live owning
+Context routing is group-only: a panel's context is always its own A–E group,
+and every panel header keeps the visible A–E selector required by spec §6 and
+the approved prototype. The `follow`/`pinned` panel-routing modes retired by #60
+do not return; the visible selector was restored by #63; inspector-card pinning
+is separate and remains valid. Functional ports
+#44/#46/#50/#47/#43 extend those owners. Read the live owning
 issue to distinguish implemented capabilities from planned ones before using an
 extension path.
 
@@ -77,12 +81,13 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | Responsibility | Owner and interface | Concrete use site / boundary |
 | --- | --- | --- |
 | Persistent document, graph, IDs, serialization | `src/nemo/core/document/Document.hpp`, `Graph.hpp`, `Serialization.hpp`; `Document`, `Graph`, and `NodeCatalog` own persistent state | `apps/nemo-ui/ViewerController.cpp` submits commands; UI and automation do not mutate graph primitives directly |
+| Project file persistence, autosave, recovery | `src/nemo/core/session/ProjectFile.hpp`; `ProjectFile` owns read/write, path policy, file envelope and reference state; `AutosaveStore` owns bounded slots; `ProjectSession::prepareSave`/`commitSave` own path, dirty baseline and recovery guard | `apps/nemo-ui/ProjectFileController.*` and the CLI `file-state`/`open`/`save`/`save-as`/`autosave`/`recover` ops are the only callers; both go through this owner, never a second codec |
 | Node schemas and discovery | `src/nemo/core/nodes/NodeCatalog.hpp`; immutable `NodeDescriptor` records and `NodeCatalog(std::vector<NodeDescriptor>)` | Built-ins are assembled in `NodeCatalog.cpp`; `Graph::catalog()` and evaluation query the catalog. There is no unregister operation |
 | Validated edits and history | `src/nemo/core/document/Document.hpp` command factories plus `src/nemo/core/commands/`; `Command`, `CommandStack`, and `ProjectSession` | `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()` maps JSON operations; `ProjectSession::submit()` is the commit seam |
 | CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned |
 | GPU primitives and resource lifetime | `src/nemo/gpu/` (`Device`, `Allocator`, `Submit`, `ComputePass`) | `src/nemo/eval/GpuExecutor.cpp` records/submits work; follow [`rendering.md`](rendering.md) for retained ownership and synchronization rather than copying those rules here |
 | Native effect execution | `src/nemo/eval/GpuExecutor.hpp`; `EffectProgram`, `EffectLibrary`, `loadSlangEffectLibrary`, `glslEffectLibrary`, `submitGpu`, `evaluateGpu` | `src/nemo/eval/Viewer.cpp::ViewerSession` loads the Slang library. The evaluator owns execution; effects never add Qt or persistent-model dependencies |
-| Media and color adapters | `src/nemo/media/` public image/viewing contracts; external OIIO/OCIO/FFmpeg types stay behind `.cpp` adapters | CLI probe/render and `eval::SourceSession` consume the application media contract |
+| Media and color adapters | `src/nemo/media/` public image/viewing contracts; external OIIO/OCIO/FFmpeg types stay behind `.cpp` adapters | CLI probe/render and `eval::SourceSession` consume the application media contract. `src/nemo/media/ImageSource.{hpp,cpp}` owns still/sequence `SourceReference` decode (pattern resolution, declared-color interpretation, scene-linear straight-alpha conversion, headless `ImageSourceProvider`) — reuse it rather than adding a second still reader |
 | Workspace arrangement and panel state | `apps/nemo-ui/Workspace.hpp`/`Workspace.cpp`; Qt-free `Workspace`, `Panel`, and `Workspace::createPanel` | `WorkspaceController::registerPanelType`, `createPanel`, and `setPanelState` are the Qt/QML boundary; `main.cpp` registers production panels before QML loads |
 | Presentation and input | `apps/nemo-ui/WorkspaceController.*`, `ViewerController.*`, and `apps/nemo-ui/qml/` | Presentation reads state and submits commands; it does not own `Document`, evaluator, or GPU resource state |
 | Headless automation | `apps/nemo-cli/`; JSON-lines project-session protocol and `nemo-cli` commands | `ProjectSessionCommand.cpp::makeCommand()` is the current command dispatch seam; do not invent a second command registry |
@@ -211,7 +216,10 @@ The existing `Nemo` QML module owns the shared UI library alongside its panels:
 and `StudioComboBox.qml` require an explicit `theme`. Appearance defaults,
 validation, independent accent/category resets and persistence stay in the
 controller. `Main.qml` composes workspace navigation and settings; `Panel.qml`
-owns headers. Panel bodies declare a `theme` property, supplied
+owns headers, including the visible A–E group selector. Selecting a group
+submits `WorkspaceController::setGroup(panelId, group)`; the `panelGroup`
+binding and context-router synchronization follow that write. Panel bodies
+declare a `theme` property, supplied
 by `Loader.setSource` before construction so nested shared controls never read
 an uninitialized theme. Other panel context bindings are supplied by `configureLoaded`.
 Panel-specific header controls live in the body's optional `headerTools` Component;
@@ -264,6 +272,61 @@ headless operation only through `apps/nemo-cli/ProjectSessionCommand.cpp::makeCo
 use the existing `transactionCommand` for an atomic multi-edit. The concrete
 existing example is `addNodeCommand(...)` used by both `makeCommand()` and
 the catalog-backed graph creation controller.
+
+### Change project file persistence (`.nemo`)
+
+`.nemo` is plain versioned JSON: the core codec's authored document plus a
+file-owned `presentation`/`colorConfig` envelope the codec never sees. Keep
+ownership layered rather than adding a UI or CLI codec — `ProjectFile` owns
+read/write, path policy, version/envelope handling and reference state;
+`ProjectSession` owns the path, dirty baseline, save-completion generation and
+recovery guard; the `Document` codec owns the authored schema and
+required-feature metadata. `ProjectFileController` and the CLI file ops call
+these owners; the File menu and pending-quit prompt bind
+`ProjectFileController`'s chooser/open/save/saveAs/recover invokables, and
+headless automation uses the CLI `file-state`/`open`/`save`/`save-as`/
+`autosave`/`recover` ops, so neither re-implements the protocol.
+
+- **Unknown data.** Unknown authored fields and records in supported schemas
+  are retained as JSON values, so a load/save round-trip preserves them. An
+  unknown or newer required feature, or a newer `schema`, is rejected with an
+  actionable diagnostic rather than guessed. The presentation envelope is
+  versioned independently and headless callers never interpret it; a newer
+  envelope is retained verbatim with a warning, not rewritten from guesswork.
+- **External references.** Authored sources and the color configuration resolve
+  to absolute in-memory targets at read time; the write path policy is
+  `KeepStored`, portable `RebaseRelative` (Save As) or `RebaseAbsolute`. A
+  normal Save never packages media, and unknown opaque presentation paths are
+  never resolved. Missing or unresolved references are reported with
+  identity+path for relink or media-owned sequence resolution.
+- **Atomic write.** `ProjectFile::writeAtomic` writes a temp sibling, flushes
+  and fsyncs, replaces, and keeps a previous-good backup; a failure never
+  destroys the last valid target.
+- **Save lifecycle.** `prepareSave` captures an owned immutable snapshot plus
+  session file state on the owner thread with no I/O; a worker performs the
+  write; `commitSave` publishes the outcome and makes the written snapshot the
+  baseline. A save that finishes for an older snapshot stays dirty, and saving
+  never creates an undo entry. The native chooser only suggests the `.nemo`
+  name: the application honors the exact destination it returns and never
+  appends or alters a suffix after overwrite confirmation, so an extensionless
+  Save As cannot silently overwrite a different `<stem>.nemo`.
+- **Autosave and recovery.** The UI-owned timer runs every 120 seconds while
+  the document or presentation is dirty and retains 3 slots; `AutosaveStore`
+  only enforces storage and never writes the project target. A recovery copy
+  is an unsaved project with no source path and a protected original, so it is
+  kept only by saving elsewhere (Save As) and can never silently replace its
+  original. Slots holding newer-schema or unknown-required-feature data are
+  preserved rather than recycled, and the store fails visibly when no safe slot
+  remains.
+- **Project color configuration.** A non-empty authored `colorConfig` reaches
+  `ViewerSession` (through `ViewerRuntime`/`ViewerScheduler` and the
+  cache-viewer path) as that session's OCIO config; an empty path keeps the
+  existing `$OCIO` environment fallback. No process-global state is mutated.
+- **#58 scope.** `.nemonet`/`.nemopreset`/`.nemoworkspace` custom asset formats
+  are not implemented here; they must reuse this `.nemo` owner rather than add
+  parallel format codecs.
+
+Issue #35 evidence: [`issue35-persistence.json`](../evidence/issue35-persistence.json).
 
 ## Verification and review gates
 

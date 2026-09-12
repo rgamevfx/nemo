@@ -39,8 +39,12 @@ class ViewerSession {
 public:
     using CachePublicationGuard = std::function<bool()>;
 
+    // `ocioConfigPath` is the project's authored color configuration. Empty
+    // keeps the OCIO application default: the $OCIO environment variable is
+    // resolved on the first viewing request. A non-empty path overrides it for
+    // this session only, without mutating process-global environment state.
     ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                  const std::filesystem::path& shaderDirectory);
+                  const std::filesystem::path& shaderDirectory, std::string ocioConfigPath = {});
     ~ViewerSession();
     ViewerSession(const ViewerSession&) = delete;
     ViewerSession& operator=(const ViewerSession&) = delete;
@@ -64,6 +68,10 @@ public:
     // Interactive callers use scheduler publication guards instead.
     void supersedeCache(std::uint64_t revision, std::uint64_t generation,
                         ViewerDestination destination = ViewerDestination::Interactive);
+    // Forgets a retired destination's publication freshness so a reused id
+    // starts clean and capacity is released back to the bounded destination
+    // table. Thread-safe; the scheduler already rejects its in-flight work.
+    void retireDestination(ViewerDestination destination);
 
     struct SourceProbe {
         media::ClipInfo info;

@@ -148,6 +148,9 @@ void WorkspaceController::change(const std::function<void()>& operation, bool no
     try {
         operation();
         setError({});
+        // Every arrangement edit is persisted project presentation, including
+        // ratio drags that intentionally avoid rootChanged.
+        emit presentationChanged();
         if (notify) {
             emit rootChanged();
         }
@@ -630,6 +633,32 @@ void WorkspaceController::reset() {
     preserveUnreadableFile_ = false;
     setError({});
     emit rootChanged();
+}
+
+nlohmann::json WorkspaceController::projectPresentation() {
+    // The active arrangement lives in workspace_ until it is snapshotted into
+    // its preset; the standalone save path does the same. Snapshot first so a
+    // project records current panel/layout state rather than the last switch.
+    snapshotActiveWorkspace();
+    return persistenceJson();
+}
+
+bool WorkspaceController::applyProjectPresentation(const nlohmann::json& presentation) {
+    try {
+        restoreFromJson(presentation);
+    } catch (const std::exception& exception) {
+        setError(
+            QStringLiteral("Cannot restore project workspace records: %1").arg(QString::fromUtf8(exception.what())));
+        return false;
+    }
+    // restoreFromJson replaces the active arrangement wholesale; the panels and
+    // context router rebuild from rootChanged exactly as on a workspace switch.
+    setError({});
+    emit workspacesChanged();
+    emit activeWorkspaceIdChanged();
+    emit appearanceChanged();
+    emit rootChanged();
+    return true;
 }
 
 }  // namespace nemo::workspace

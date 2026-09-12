@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <nlohmann/json.hpp>
 #include <type_traits>
 #include <vector>
 
@@ -37,6 +38,13 @@ struct Keyframe {
     TangentMode tangentMode{TangentMode::Smooth};
     std::array<double, 4> inSlope{};
     std::array<double, 4> outSlope{};
+    // A key value record this build cannot type (an unavailable node type or a
+    // future tag), preserved verbatim. When set it supersedes `value` on save
+    // and is never evaluated because its owning node type is unavailable.
+    nlohmann::json opaqueValue{};
+    // Authored fields of the persisted key this build does not model, retained
+    // verbatim for lossless save.
+    nlohmann::json extension{};
 
     friend bool operator==(const Keyframe&, const Keyframe&) = default;
 };
@@ -45,6 +53,9 @@ struct AnimationChannel {
     AnimationChannelId id{};
     ParameterAddress address;
     std::vector<Keyframe> keys;
+    // Authored fields of the persisted channel this build does not model,
+    // retained verbatim for lossless save.
+    nlohmann::json extension{};
 
     friend bool operator==(const AnimationChannel&, const AnimationChannel&) = default;
 };

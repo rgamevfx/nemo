@@ -65,17 +65,26 @@ void WindowPresentationState::beginFrame(QQuickWindow* window, gpu::Device& devi
     }
 }
 
-std::shared_ptr<const ViewerResult> WindowPresentationState::takeNewPresentedFrame() {
-    std::shared_ptr<const ViewerResult> latest;
+std::vector<PresentedFrame> WindowPresentationState::takeNewPresentedFrames() {
+    // One representative per destination: the scene may hold several nodes for
+    // a destination during a panel relayout, and only its newest request is a
+    // presentation of that destination.
+    std::map<eval::ViewerDestination, std::shared_ptr<const ViewerResult>> latest;
     for (const auto& [node, result] : nodes_) {
         (void)node;
-        if (!latest || result->requestId > latest->requestId)
-            latest = result;
+        auto& current = latest[result->destination];
+        if (!current || result->requestId > current->requestId)
+            current = result;
     }
-    if (!latest || latest->requestId <= lastReportedRequest_)
-        return {};
-    lastReportedRequest_ = latest->requestId;
-    return latest;
+    std::vector<PresentedFrame> presented;
+    for (auto& [destination, result] : latest) {
+        auto& reported = lastReportedRequest_[destination];
+        if (result->requestId <= reported)
+            continue;
+        reported = result->requestId;
+        presented.push_back(PresentedFrame{destination, std::move(result)});
+    }
+    return presented;
 }
 
 ViewerItem::ViewerItem(QQuickItem* parent) : QQuickItem(parent) {

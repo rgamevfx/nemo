@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <map>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -19,6 +20,9 @@ enum class MediaProbeStatus { Unknown, Pending, Ready, Failed };
 struct MediaMarkRange {
     std::optional<std::int64_t> inFrame;
     std::optional<std::int64_t> outFrame;
+    // Authored fields of the persisted mark this build does not model, retained
+    // verbatim for lossless save.
+    nlohmann::json extension{};
     [[nodiscard]] bool valid() const noexcept;
     [[nodiscard]] bool operator==(const MediaMarkRange&) const = default;
 };
@@ -35,6 +39,9 @@ struct MediaProbeMetadata {
     std::string colorMatrix;
     std::string provenance;
     MediaProbeStatus status{MediaProbeStatus::Unknown};
+    // Authored fields of the persisted probe this build does not model,
+    // retained verbatim for lossless save.
+    nlohmann::json extension{};
     [[nodiscard]] bool operator==(const MediaProbeMetadata&) const = default;
 };
 using MediaProbeResult = MediaProbeMetadata;
@@ -48,6 +55,9 @@ struct MediaMetadata {
     bool offline{false};
     MediaKind kind{MediaKind::Unknown};
     std::optional<MediaProbeMetadata> committedProbe;
+    // Authored fields of the persisted metadata this build does not model,
+    // retained verbatim for lossless save.
+    nlohmann::json extension{};
     [[nodiscard]] bool operator==(const MediaMetadata&) const = default;
 };
 
@@ -57,6 +67,9 @@ struct MediaCatalogEntry {
     MediaBinId parent{kInvalidMediaBin};
     MediaMetadata metadata;
     std::vector<MediaMarkRange> marks;
+    // Authored fields of the persisted entry this build does not model, retained
+    // verbatim for lossless save.
+    nlohmann::json extension{};
     [[nodiscard]] bool operator==(const MediaCatalogEntry&) const = default;
 };
 
@@ -65,6 +78,9 @@ struct MediaQueryDescriptor {
     std::optional<MediaKind> kind;
     std::optional<bool> offline;
     std::optional<bool> unused;
+    // Authored fields of the persisted smart-bin query this build does not
+    // model, retained verbatim for lossless save.
+    nlohmann::json extension{};
     [[nodiscard]] bool operator==(const MediaQueryDescriptor&) const = default;
 };
 
@@ -73,6 +89,9 @@ struct MediaBin {
     std::string name;
     MediaBinId parent{kInvalidMediaBin};
     std::optional<MediaQueryDescriptor> query;
+    // Authored fields of the persisted bin this build does not model, retained
+    // verbatim for lossless save.
+    nlohmann::json extension{};
     [[nodiscard]] bool operator==(const MediaBin&) const = default;
 };
 

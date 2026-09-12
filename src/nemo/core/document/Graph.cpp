@@ -105,6 +105,15 @@ NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, Param
     return id;
 }
 
+void Graph::restoreNodeExtension(NodeId id, nlohmann::json extension, nlohmann::json opaqueParams) {
+    NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
+    if (node == nullptr)
+        throw GraphException(GraphError::UnknownNode,
+                             "cannot attach preserved data to unknown node " + std::to_string(id));
+    node->extension = std::move(extension);
+    node->opaqueParams = std::move(opaqueParams);
+}
+
 void Graph::renameNode(NodeId id, std::string name) {
     NodeInstance* node = const_cast<NodeInstance*>(findNode(id));
     if (node == nullptr)
@@ -346,6 +355,61 @@ EdgeId Graph::connectWithId(EdgeId id, PortRef from, PortRef to) {
     return id;
 }
 
+EdgeId Graph::restoreEdgeWithId(EdgeId id, PortRef from, PortRef to) {
+    if (id == kInvalidEdge || id == std::numeric_limits<EdgeId>::max())
+        throw GraphException(GraphError::InvalidId, "edge id must be a nonzero value below the identity limit");
+    if (std::find_if(edges_.begin(), edges_.end(), [id](const Edge& edge) { return edge.id == id; }) != edges_.end())
+        throw GraphException(GraphError::DuplicateId,
+                             "edge id " + std::to_string(id) + " already exists in this graph");
+    const NodeInstance* fromNode = findNode(from.node);
+    const NodeInstance* toNode = findNode(to.node);
+    if (!fromNode || !toNode)
+        throw GraphException(GraphError::UnknownNode,
+                             "cannot restore edge " + std::to_string(id) + ": endpoint node is not present");
+    if (toNode->instance != kInvalidNetworkInstance)
+        throw GraphException(GraphError::InvalidInstance,
+                             "nested instance input " + describe(to) + " must be edited through its explicit binding");
+    for (const auto& edge : edges_)
+        if (edge.to == to)
+            throw GraphException(GraphError::PortOccupied,
+                                 "input " + describe(to) + " is already fed by node " + std::to_string(edge.from.node));
+    if (reachable(to.node, from.node))
+        throw GraphException(GraphError::Cycle, "restoring edge " + std::to_string(id) +
+                                                    " would create a circular dependency through node " +
+                                                    std::to_string(to.node));
+
+    edges_.push_back(Edge{.id = id, .from = from, .to = to});
+    bool inserted = false;
+    try {
+        auto [cacheIt, wasInserted] = incomingCache_.try_emplace(to.node);
+        inserted = wasInserted;
+        cacheIt->second.push_back(edges_.back());
+    } catch (...) {
+        if (inserted)
+            incomingCache_.erase(to.node);
+        edges_.pop_back();
+        throw;
+    }
+    nextEdgeId_ = std::max(nextEdgeId_, static_cast<EdgeId>(id + 1));
+    ++revision_;
+    return id;
+}
+
+void Graph::restoreEdgeExtension(EdgeId id, nlohmann::json extension) {
+    const auto it = std::find_if(edges_.begin(), edges_.end(), [id](const Edge& edge) { return edge.id == id; });
+    if (it == edges_.end())
+        throw GraphException(GraphError::UnknownEdge,
+                             "cannot attach preserved data to unknown edge " + std::to_string(id));
+    it->extension = std::move(extension);
+    const auto cache = incomingCache_.find(it->to.node);
+    if (cache == incomingCache_.end())
+        return;
+    const auto cached =
+        std::find_if(cache->second.begin(), cache->second.end(), [id](const Edge& edge) { return edge.id == id; });
+    if (cached != cache->second.end())
+        cached->extension = it->extension;
+}
+
 void Graph::disconnect(EdgeId id) {
     const auto it = std::find_if(edges_.begin(), edges_.end(), [id](const Edge& e) { return e.id == id; });
     if (it == edges_.end())
@@ -488,6 +552,15 @@ InterfacePortId Network::addOutput(std::string name, PortKind kind, InterfacePor
 InterfacePortId Network::addFormalPort(PortDirection direction, std::string name, PortKind kind, InterfacePortId id,
                                        bool allowFanOut) {
     return addFormalPortImpl(direction, std::move(name), kind, id, allowFanOut);
+}
+
+void Network::restorePortExtension(PortDirection direction, InterfacePortId id, nlohmann::json extension) {
+    const auto& ports = direction == PortDirection::Input ? inputs_ : outputs_;
+    const FormalPort* found = findPort(ports, id);
+    if (found == nullptr)
+        throw GraphException(GraphError::InvalidId,
+                             "cannot attach preserved data to unknown formal terminal " + std::to_string(id));
+    const_cast<FormalPort*>(found)->extension = std::move(extension);
 }
 
 std::optional<GraphErrorDetails> Network::validateInputConnection(InterfacePortId input, PortRef destination) const {

@@ -3,9 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Nemo
 
-// Native viewer presentation. The ViewerController and ViewerItem remain the
-// production source/render path; this file only arranges their existing
-// operations in the compact viewer presentation.
+// Native viewer presentation. Each panel owns a ViewerController (and its
+// scheduler destination) plus a ViewerItem that presents that destination's
+// retained frames; this file arranges their existing operations in the compact
+// viewer presentation.
 FocusScope {
     id: viewerPanel
 
@@ -22,9 +23,24 @@ FocusScope {
     property var workspace: null
     property var theme: null
 
-    readonly property var controller: viewerController
+    // Each panel instance owns its controller and therefore its scheduler
+    // destination and retained presentation. Harnesses that install only the
+    // shared controller keep using it, as does a panel without an id.
+    readonly property var controller: {
+        if (panelId.length > 0 && typeof viewerControllers !== "undefined" && viewerControllers) {
+            var panelController = viewerControllers.controller(panelId)
+            if (panelController)
+                return panelController
+        }
+        return viewerController
+    }
+    // Closing the panel retires its destination together with its controller.
+    Component.onDestruction: {
+        if (panelId.length > 0 && typeof viewerControllers !== "undefined" && viewerControllers)
+            viewerControllers.release(panelId)
+    }
     // Panel-local viewer selector. Index addresses the network's Viewer
-    // nodes in ascending NodeId order; the shared controller renders one.
+    // nodes in ascending NodeId order; this panel's controller renders one.
     readonly property int viewerIndex: panelState && panelState.viewerIndex !== undefined
                                        ? Math.max(0, Math.round(Number(panelState.viewerIndex))) : 0
     // Re-evaluated on every graph change: a Q_INVOKABLE used directly in a
@@ -43,7 +59,7 @@ FocusScope {
     readonly property real sourceWidth: hasImage ? compositionWidth : 0
     readonly property real sourceHeight: hasImage ? compositionHeight : 0
     // Display settings are panel-local. They deliberately do not use the
-    // controller's shared render state, so two panels may pan/zoom separately.
+    // controller's render state, so two panels may pan/zoom separately.
     readonly property real displayZoom: panelState && panelState.zoom !== undefined ? Number(panelState.zoom) : 1
     readonly property point displayPan: Qt.point(panelState && panelState.panX !== undefined ? Number(panelState.panX) : 0,
                                                 panelState && panelState.panY !== undefined ? Number(panelState.panY) : 0)
@@ -52,8 +68,8 @@ FocusScope {
                                         ? panelContext.viewerRole : "graph"
     readonly property string resolvedGroup: panelGroup
     readonly property bool graphRole: viewerRole === "graph"
-    // The graph role follows the active Viewer node's attachment; the router
-    // carries no graph target any more, and the shared controller owns it.
+    // The graph role follows this panel's active Viewer node attachment; the
+    // router carries no graph target, so the panel controller owns it.
     readonly property string graphTargetId: String(controller.viewerTargetId || "")
     readonly property string graphTargetName: controller.viewerTargetName || ""
     readonly property real routedClock: graphRole
@@ -76,6 +92,21 @@ FocusScope {
     readonly property int firstFrame: 0
     readonly property int lastFrame: controller.frameCount > 0 ? controller.frameCount - 1 : 239
     readonly property int currentFrame: Math.max(firstFrame, Math.min(lastFrame, Math.round(routedClock)))
+    // Marks are destination-scoped on the panel controller; the panel only
+    // clamps them into the displayed frame domain for painting and hit tests.
+    readonly property int markInFrame: boundedFrame(controller.inFrame, firstFrame)
+    readonly property int markOutFrame: boundedFrame(controller.outFrame, lastFrame)
+    readonly property int markedRangeFirst: Math.min(markInFrame, markOutFrame)
+    readonly property int markedRangeLast: Math.max(markInFrame, markOutFrame)
+    // Transport and display commands only target a panel that owns a
+    // destination and has a usable target; an unavailable target must never
+    // borrow another panel's render.
+    readonly property bool transportReady: targetAvailable && controller.hasDestination === true
+    readonly property string timecodeText: {
+        var value = controller.timecode
+        return value !== undefined && value !== null && String(value).length > 0
+                ? String(value) : "--:--:--:--"
+    }
     property bool headerToolsFillWidth: true
     readonly property int headerPreferredHeight: 32
 
@@ -94,11 +125,13 @@ FocusScope {
                 width: 78
                 height: 24
                 model: ["rgb"]
-                currentIndex: 0
-                enabled: false
+                // Only the real RGB layer is offered. The depth layer is a
+                // reported capability boundary, not a fabricated option.
+                currentIndex: Math.max(0, model.indexOf(viewerPanel.controller.layer))
+                onActivated: viewerPanel.controller.setLayer(currentText)
                 ToolTip.visible: hovered
-                ToolTip.text: "Image layer selection is unavailable in the native viewer."
-                Accessible.name: "Image layer (unavailable)"
+                ToolTip.text: "Depth layer is unavailable in the native viewer."
+                Accessible.name: "Image layer"
             }
 
             StudioComboBox {
@@ -108,10 +141,11 @@ FocusScope {
                 width: 78
                 height: 24
                 model: ["RGBA", "R", "G", "B", "A"]
-                currentIndex: 0
+                currentIndex: Math.max(0, model.indexOf(viewerPanel.controller.channel))
+                onActivated: viewerPanel.controller.setChannel(currentText)
                 ToolTip.visible: hovered
-                ToolTip.text: "Display channel selection is unavailable until viewer runtime #47."
-                Accessible.name: "Display channels (unavailable)"
+                ToolTip.text: "Display channel."
+                Accessible.name: "Display channels"
             }
 
             StudioComboBox {
@@ -288,8 +322,8 @@ FocusScope {
             activateViewer()
     }
 
-    // The shared controller renders exactly one Viewer node. This panel drives
-    // that choice whenever it is the active panel or its selector changes.
+    // Each panel owns its controller, so this panel's selected Viewer node is
+    // the render target with no shared-controller contention.
     function activateViewer() {
         if (!controller)
             return
@@ -308,18 +342,77 @@ FocusScope {
         activateViewer()
     }
 
+    function boundedFrame(value, fallback) {
+        var bounded = Number(value)
+        if (!isFinite(bounded))
+            return fallback
+        return Math.max(firstFrame, Math.min(lastFrame, Math.round(bounded)))
+    }
+
+    // The graph role reads this panel's controller frame directly; media and
+    // timeline clocks are group-routed presentation state, so transport keeps
+    // them in step with the frame the destination actually renders.
+    function publishClock(frame) {
+        if (graphRole || !contextRouter || resolvedGroup.length === 0)
+            return
+        var change = {}
+        change[viewerRole === "media" ? "sourceClock" : "timelineClock"] = frame
+        contextRouter.setGroupContext(resolvedGroup, change)
+    }
+
     function updateClock(value) {
         var bounded = Math.max(firstFrame, Math.min(lastFrame, Math.round(value)))
-        // The graph role clock is the shared controller frame; timeline and
-        // media clocks remain group-routed presentation state.
-        if (viewerRole !== "graph" && contextRouter && resolvedGroup.length > 0) {
-            var change = {}
-            change[viewerRole === "media" ? "sourceClock" : "timelineClock"] = bounded
-            contextRouter.setGroupContext(resolvedGroup, change)
-        }
-        // The controller remains the single request consumer until issue #47
-        // supplies independent viewer scheduler destinations.
+        publishClock(bounded)
         controller.setFrame(bounded)
+    }
+
+    // Forward this panel's resolved context to its own destination.
+    property var forwardedContext: ({role: "", target: "", clock: NaN})
+    function forwardContext() {
+        if (!controller)
+            return
+        if (forwardedContext.role === viewerRole && forwardedContext.target === targetId
+                && forwardedContext.clock === routedClock)
+            return
+        forwardedContext = {role: viewerRole, target: targetId, clock: routedClock}
+        controller.setViewerContext(viewerRole, targetId, routedClock)
+    }
+
+    // Transport is panel-local: every call lands on this panel's destination.
+    function stepFrames(delta) {
+        controller.stepBy(delta)
+        publishClock(controller.frame)
+    }
+
+    function seekToMark(mark) {
+        if (mark === "in")
+            controller.seekToIn()
+        else
+            controller.seekToOut()
+        publishClock(controller.frame)
+    }
+
+    function runTransport(action) {
+        if (!transportReady)
+            return
+        if (action === "markIn")
+            controller.setMarkIn()
+        else if (action === "markOut")
+            controller.setMarkOut()
+        else if (action === "start")
+            seekToMark("in")
+        else if (action === "end")
+            seekToMark("out")
+        else if (action === "previous")
+            stepFrames(-1)
+        else if (action === "next")
+            stepFrames(1)
+        else if (action === "play")
+            controller.togglePlay()
+        else if (action === "stop") {
+            controller.stop()
+            publishClock(controller.frame)
+        }
     }
 
 
@@ -368,6 +461,13 @@ FocusScope {
         if (isFinite(value))
             viewerPanel.updateClock(value)
         frameField.text = String(viewerPanel.currentFrame)
+    }
+
+    function commitTimecode() {
+        var value = viewerPanel.controller.frameForTimecode(timecodeField.text)
+        if (isFinite(value))
+            viewerPanel.updateClock(value)
+        timecodeField.text = viewerPanel.timecodeText
     }
 
 
@@ -502,9 +602,9 @@ FocusScope {
 
 
 
-        // Compact FrameRuler port. Production currently owns a single routed
-        // clock; full-range endpoints are shown while mark editing remains an
-        // honest #47 capability boundary rather than a local fake state model.
+        // Compact FrameRuler port. Clicking seeks the routed clock; dragging an
+        // in/out bracket edits the panel controller's marks with the prototype's
+        // inclusive range semantics.
         Item {
             id: frameRuler
             objectName: "viewerPlayhead_" + viewerPanel.panelId
@@ -514,6 +614,20 @@ FocusScope {
             property int frame: viewerPanel.currentFrame
             property int firstFrame: viewerPanel.firstFrame
             property int lastFrame: viewerPanel.lastFrame
+            property int inFrame: viewerPanel.markedRangeFirst
+            property int outFrame: viewerPanel.markedRangeLast
+            property bool dragging: false
+            property string dragMode: ""
+            property int previewFrame: 0
+            property int previewValue: 0
+            readonly property int displayFrame: Math.max(firstFrame, Math.min(lastFrame,
+                dragging && dragMode === "seek" ? previewFrame : frame))
+            readonly property int visualInFrame: dragging && dragMode === "in"
+                                                 ? Math.min(outFrame, previewValue) : inFrame
+            readonly property int visualOutFrame: dragging && dragMode === "out"
+                                                  ? Math.max(inFrame, previewValue) : outFrame
+
+            function handleRadius() { return Math.max(7, Math.min(11, width * 0.12)) }
 
             function plotLeft() { return width >= 32 ? 8 : 2 }
             function plotRight() { return width >= 32 ? Math.max(plotLeft(), width - 8) : Math.max(plotLeft(), width - 2) }
@@ -563,8 +677,10 @@ FocusScope {
                     ctx.strokeStyle = viewerPanel.themeColor("border", "#30343a")
                     ctx.lineWidth = 1
                     ctx.beginPath(); ctx.moveTo(left, baseY + 0.5); ctx.lineTo(right, baseY + 0.5); ctx.stroke()
+                    var inX = frameRuler.xForFrame(frameRuler.visualInFrame)
+                    var outX = frameRuler.xForFrame(frameRuler.visualOutFrame)
                     ctx.fillStyle = viewerPanel.themeColor("accent", "#3485f6")
-                    ctx.fillRect(left, stripY, Math.max(2, right - left), 7)
+                    ctx.fillRect(inX, stripY, Math.max(2, outX - inX), 7)
                     var firstMajor = span > 0 ? Math.ceil(frameRuler.firstFrame / major) * major : frameRuler.firstFrame
                     var labels = []
                     if (span <= 0) labels.push(frameRuler.firstFrame)
@@ -589,7 +705,23 @@ FocusScope {
                             previousLabelRight = labelLeft + labelWidth
                         }
                     }
-                    var playheadX = frameRuler.xForFrame(frameRuler.frame)
+                    // In/out brackets stay visible even when labels are suppressed.
+                    ctx.strokeStyle = viewerPanel.themeColor("muted", "#979ea8")
+                    ctx.fillStyle = viewerPanel.themeColor("muted", "#979ea8")
+                    ctx.lineWidth = 1
+                    var endpoints = [inX, outX]
+                    for (var endpoint = 0; endpoint < endpoints.length; ++endpoint) {
+                        var endpointX = endpoints[endpoint]
+                        ctx.beginPath(); ctx.moveTo(endpointX + 0.5, stripY - 2); ctx.lineTo(endpointX + 0.5, Math.min(height - 5, baseY + 9)); ctx.stroke()
+                        ctx.beginPath()
+                        if (endpoint === 0) {
+                            ctx.moveTo(endpointX, Math.min(height - 4, baseY + 10)); ctx.lineTo(endpointX + 5, Math.min(height - 9, baseY + 5)); ctx.lineTo(endpointX, Math.min(height - 9, baseY + 5))
+                        } else {
+                            ctx.moveTo(endpointX, Math.min(height - 4, baseY + 10)); ctx.lineTo(endpointX - 5, Math.min(height - 9, baseY + 5)); ctx.lineTo(endpointX, Math.min(height - 9, baseY + 5))
+                        }
+                        ctx.closePath(); ctx.fill()
+                    }
+                    var playheadX = frameRuler.xForFrame(frameRuler.displayFrame)
                     ctx.strokeStyle = viewerPanel.themeColor("accent", "#3485f6")
                     ctx.lineWidth = 1.5
                     ctx.beginPath(); ctx.moveTo(playheadX + 0.5, 0); ctx.lineTo(playheadX + 0.5, Math.min(height - 4, baseY + 10)); ctx.stroke()
@@ -610,16 +742,80 @@ FocusScope {
                 }
             }
             MouseArea {
+                id: rulerInteraction
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
                 preventStealing: true
-                cursorShape: Qt.PointingHandCursor
-                onPressed: function(mouse) { viewerPanel.updateClock(frameRuler.frameForX(mouse.x)) }
-                onPositionChanged: function(mouse) { if (pressed) viewerPanel.updateClock(frameRuler.frameForX(mouse.x)) }
+                cursorShape: frameRuler.dragging && frameRuler.dragMode !== "seek"
+                             ? Qt.SizeHorCursor : Qt.PointingHandCursor
+                onPressed: function(mouse) {
+                    viewerPanel.forceActiveFocus()
+                    var inX = frameRuler.xForFrame(frameRuler.visualInFrame)
+                    var outX = frameRuler.xForFrame(frameRuler.visualOutFrame)
+                    var radius = frameRuler.handleRadius()
+                    var inHit = viewerPanel.transportReady && Math.abs(mouse.x - inX) <= radius
+                    var outHit = viewerPanel.transportReady && Math.abs(mouse.x - outX) <= radius
+                    if (inHit || outHit) {
+                        if (inHit && outHit)
+                            frameRuler.dragMode = mouse.x <= (inX + outX) / 2 ? "in" : "out"
+                        else
+                            frameRuler.dragMode = inHit ? "in" : "out"
+                        frameRuler.previewValue = frameRuler.dragMode === "in" ? frameRuler.visualInFrame
+                                                                               : frameRuler.visualOutFrame
+                    } else {
+                        frameRuler.dragMode = "seek"
+                        frameRuler.previewFrame = frameRuler.frameForX(mouse.x)
+                        viewerPanel.updateClock(frameRuler.previewFrame)
+                    }
+                    frameRuler.dragging = true
+                    rulerCanvas.requestPaint()
+                }
+                onPositionChanged: function(mouse) {
+                    if (!pressed || !frameRuler.dragging)
+                        return
+                    var value = frameRuler.frameForX(mouse.x)
+                    if (frameRuler.dragMode === "seek") {
+                        if (value === frameRuler.previewFrame)
+                            return
+                        frameRuler.previewFrame = value
+                        viewerPanel.updateClock(value)
+                    } else if (frameRuler.dragMode === "in") {
+                        value = Math.min(value, frameRuler.outFrame)
+                        if (value === frameRuler.previewValue)
+                            return
+                        frameRuler.previewValue = value
+                        viewerPanel.controller.setMarkInFrame(value)
+                    } else if (frameRuler.dragMode === "out") {
+                        value = Math.max(value, frameRuler.inFrame)
+                        if (value === frameRuler.previewValue)
+                            return
+                        frameRuler.previewValue = value
+                        viewerPanel.controller.setMarkOutFrame(value)
+                    }
+                    rulerCanvas.requestPaint()
+                }
+                onReleased: {
+                    frameRuler.dragging = false
+                    frameRuler.dragMode = ""
+                    rulerCanvas.requestPaint()
+                }
+                onCanceled: {
+                    frameRuler.dragging = false
+                    frameRuler.dragMode = ""
+                    rulerCanvas.requestPaint()
+                }
             }
             onFrameChanged: rulerCanvas.requestPaint()
             onFirstFrameChanged: rulerCanvas.requestPaint()
             onLastFrameChanged: rulerCanvas.requestPaint()
+            onInFrameChanged: rulerCanvas.requestPaint()
+            onOutFrameChanged: rulerCanvas.requestPaint()
+            onDisplayFrameChanged: rulerCanvas.requestPaint()
+            onVisualInFrameChanged: rulerCanvas.requestPaint()
+            onVisualOutFrameChanged: rulerCanvas.requestPaint()
+            onPreviewFrameChanged: rulerCanvas.requestPaint()
+            onPreviewValueChanged: rulerCanvas.requestPaint()
+            onDraggingChanged: rulerCanvas.requestPaint()
         }
 
         Rectangle {
@@ -640,50 +836,49 @@ FocusScope {
                 spacing: 3
                 Repeater {
                     model: [
-                        {name: "inButton", glyph: "markIn", action: "markIn", supported: false},
-                        {name: "startButton", glyph: "start", action: "start", supported: true},
-                        {name: "previousButton", glyph: "previous", action: "previous", supported: true},
-                        {name: "playButton", glyph: "play", action: "play", supported: false},
-                        {name: "stopButton", glyph: "stop", action: "stop", supported: false},
-                        {name: "nextButton", glyph: "next", action: "next", supported: true},
-                        {name: "endButton", glyph: "end", action: "end", supported: true},
-                        {name: "outButton", glyph: "markOut", action: "markOut", supported: false}
+                        {name: "inButton", glyph: "markIn", action: "markIn", tooltip: "Mark in at current frame"},
+                        {name: "startButton", glyph: "start", action: "start", tooltip: "Go to in point"},
+                        {name: "previousButton", glyph: "previous", action: "previous", tooltip: "Previous frame"},
+                        {name: "playButton", glyph: "play", action: "play", tooltip: ""},
+                        {name: "stopButton", glyph: "stop", action: "stop", tooltip: "Stop and return to in point"},
+                        {name: "nextButton", glyph: "next", action: "next", tooltip: "Next frame"},
+                        {name: "endButton", glyph: "end", action: "end", tooltip: "Go to out point"},
+                        {name: "outButton", glyph: "markOut", action: "markOut", tooltip: "Mark out at current frame"}
                     ]
                     delegate: Button {
                         id: transportButton
                         property var entry: modelData
+                        readonly property bool playbackToggle: entry.action === "play"
+                        readonly property string glyph: playbackToggle && viewerPanel.controller.playing
+                                                         ? "pause" : entry.glyph
+                        readonly property string tooltip: playbackToggle
+                                                          ? (viewerPanel.controller.playing ? "Pause playback"
+                                                                                            : "Play playback")
+                                                          : entry.tooltip
                         objectName: entry.name
                         width: 29
                         height: 28
                         padding: 0
                         flat: true
-                        enabled: entry.supported && viewerPanel.controller.hasSource
-                                 && (entry.action !== "end" || viewerPanel.controller.frameCount > 0)
-                        Accessible.name: entry.supported ? entry.name : entry.name + " unavailable until viewer runtime #47"
+                        enabled: viewerPanel.transportReady
+                        Accessible.name: tooltip
                         ToolTip.visible: hovered
-                        ToolTip.text: entry.supported ? entry.name : "Viewer runtime control is owned by issue #47"
-                        onClicked: {
-                            if (entry.action === "start")
-                                viewerPanel.updateClock(viewerPanel.firstFrame)
-                            else if (entry.action === "previous")
-                                viewerPanel.updateClock(viewerPanel.currentFrame - 1)
-                            else if (entry.action === "next")
-                                viewerPanel.updateClock(viewerPanel.currentFrame + 1)
-                            else if (entry.action === "end")
-                                viewerPanel.updateClock(viewerPanel.lastFrame)
-                        }
+                        ToolTip.text: tooltip
+                        onGlyphChanged: transportGlyph.requestPaint()
+                        onClicked: viewerPanel.runTransport(entry.action)
                         background: Rectangle {
                             radius: viewerPanel.theme ? viewerPanel.theme.smallRadius : 4
                             color: transportButton.pressed ? viewerPanel.themeColor("raised", "#282c31")
                                   : transportButton.hovered ? viewerPanel.themeColor("hover", "#343940") : "transparent"
-                            border.width: transportButton.activeFocus ? 1 : 0
+                            border.width: transportButton.activeFocus
+                                          || (transportButton.playbackToggle && viewerPanel.controller.playing) ? 1 : 0
                             border.color: viewerPanel.themeColor("accent", "#3485f6")
                         }
                         contentItem: Canvas {
                             id: transportGlyph
                             anchors.fill: parent
                             anchors.margins: 7
-                            onPaint: viewerPanel.drawGlyph(getContext("2d"), transportButton.entry.glyph,
+                            onPaint: viewerPanel.drawGlyph(getContext("2d"), transportButton.glyph,
                                                             width, height, transportButton.enabled)
                             onEnabledChanged: requestPaint()
                             Component.onCompleted: requestPaint()
@@ -735,21 +930,21 @@ FocusScope {
                 y: transportBar.compact ? 34 : 4
                 width: 119
                 height: 28
-                enabled: false
-                readOnly: true
-                text: "--:--:--:--"
+                text: viewerPanel.timecodeText
                 horizontalAlignment: Text.AlignHCenter
                 font.family: "Monospace"
                 font.pixelSize: viewerPanel.theme ? viewerPanel.theme.fontSize : 11
-                color: viewerPanel.themeColor("disabled", "#5f6670")
-                Accessible.name: "Timecode unavailable"
-                ToolTip.visible: hovered
-                ToolTip.text: "Timecode is unavailable until the native viewer provides an authoritative frame rate."
+                color: viewerPanel.theme.text
+                selectByMouse: true
+                onAccepted: viewerPanel.commitTimecode()
+                onEditingFinished: viewerPanel.commitTimecode()
                 background: Rectangle {
                     color: viewerPanel.theme ? viewerPanel.theme.field : "#24272c"
                     radius: viewerPanel.theme ? viewerPanel.theme.smallRadius : 4
-                    border.color: viewerPanel.themeColor("border", "#30343a")
+                    border.color: timecodeField.activeFocus ? viewerPanel.theme.accent
+                                                            : viewerPanel.themeColor("border", "#30343a")
                 }
+                Accessible.name: "Timecode"
             }
         }
     }
@@ -759,51 +954,57 @@ FocusScope {
             frameField.text = String(currentFrame)
     }
 
-    // The panel that owns the shared viewer renders its selected Viewer node.
-    function ownsActiveViewer() {
-        if (!contextRouter)
-            return true
-        var active = contextRouter.activePanel
-        return !active || active.length === 0 || active === panelId
-    }
-    Component.onCompleted: Qt.callLater(function() { if (ownsActiveViewer()) activateViewer() })
+    // This panel renders its own selected Viewer node; there is no shared
+    // render target to contend for.
+    Component.onCompleted: Qt.callLater(function() {
+        activateViewer()
+        forwardContext()
+    })
     onViewerIndexChanged: activateViewer()
     onGraphRoleChanged: if (graphRole) activateViewer()
-    onVisibleChanged: if (visible && graphRole && ownsActiveViewer()) activateViewer()
+    onVisibleChanged: if (visible && graphRole) activateViewer()
 
-    Connections {
-        target: viewerPanel.contextRouter
-        function onActivePanelChanged() {
-            if (viewerPanel.graphRole && viewerPanel.contextRouter
-                    && viewerPanel.contextRouter.activePanel === viewerPanel.panelId)
-                viewerPanel.activateViewer()
-        }
-    }
+    // Resolved panel context is forwarded to this panel's own destination.
+    onPanelContextChanged: forwardContext()
+    onViewerRoleChanged: forwardContext()
+    onRoutedClockChanged: forwardContext()
 
     Connections {
         target: viewerPanel.controller
         function onGraphChanged() {
             viewerPanel.graphRevision++
         }
+        function onFrameChanged() {
+            if (!timecodeField.activeFocus)
+                timecodeField.text = viewerPanel.timecodeText
+        }
     }
 
     Keys.onPressed: function(event) {
-        if (frameField.activeFocus)
+        if (frameField.activeFocus || timecodeField.activeFocus)
             return
-        if (event.key === Qt.Key_Left) {
-            viewerPanel.updateClock(viewerPanel.currentFrame - 1); event.accepted = true
-        } else if (event.key === Qt.Key_Right) {
-            viewerPanel.updateClock(viewerPanel.currentFrame + 1); event.accepted = true
-        } else if (event.key === Qt.Key_Home) {
-            viewerPanel.updateClock(viewerPanel.firstFrame); event.accepted = true
-        } else if (event.key === Qt.Key_End) {
-            viewerPanel.updateClock(viewerPanel.lastFrame); event.accepted = true
-        } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+        if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
             var index = event.key - Qt.Key_1
             if (index < viewerPanel.viewerTotal) {
                 viewerPanel.selectViewer(index)
                 event.accepted = true
             }
+            return
+        }
+        if (event.key === Qt.Key_Space) {
+            viewerPanel.runTransport("play"); event.accepted = true
+        } else if (event.key === Qt.Key_Left) {
+            viewerPanel.runTransport("previous"); event.accepted = true
+        } else if (event.key === Qt.Key_Right) {
+            viewerPanel.runTransport("next"); event.accepted = true
+        } else if (event.key === Qt.Key_I) {
+            viewerPanel.runTransport("markIn"); event.accepted = true
+        } else if (event.key === Qt.Key_O) {
+            viewerPanel.runTransport("markOut"); event.accepted = true
+        } else if (event.key === Qt.Key_Home) {
+            viewerPanel.runTransport("start"); event.accepted = true
+        } else if (event.key === Qt.Key_End) {
+            viewerPanel.runTransport("end"); event.accepted = true
         }
     }
 }

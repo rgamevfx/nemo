@@ -100,7 +100,9 @@ void ProjectSession::Subscription::reset() noexcept {
 }
 
 ProjectSession::ProjectSession(Document document, std::size_t historyCapacity)
-    : document_(std::move(document)), commands_(document_, historyCapacity), eventCapacity_(historyCapacity) {}
+    : document_(std::move(document)), commands_(document_, historyCapacity), eventCapacity_(historyCapacity) {
+    captureSavedBaseline();
+}
 
 ProjectSession::Subscription ProjectSession::subscribe(void* context, ObserverCallback callback) {
     if (!callback)
@@ -427,6 +429,7 @@ EditResult ProjectSession::execute(Operation operation, Command* command, const 
         return failure("command failed with an unknown error");
     }
     revision_ = result.revision;
+    invalidateDirtyCache();
     notifyObservers();
     return result;
 }
@@ -817,6 +820,166 @@ std::vector<MediaBin> ProjectSession::queryMediaBins(MediaBinId parent, std::siz
             break;
     }
     return result;
+}
+
+void ProjectSession::captureSavedBaseline() noexcept {
+    savedRevision_ = revision_;
+    try {
+        savedContent_ = ProjectFile::serializeContent(document_, presentation_, colorConfigPath_);
+        savedContentValid_ = true;
+    } catch (...) {
+        savedContent_.clear();
+        savedContentValid_ = false;
+    }
+}
+
+bool ProjectSession::isDirty() const {
+    if (dirtyCacheStamp_ == stateStamp_)
+        return dirtyCacheValue_;
+    if (savedContentValid_)
+        dirtyCacheValue_ = ProjectFile::serializeContent(document_, presentation_, colorConfigPath_) != savedContent_;
+    else
+        dirtyCacheValue_ = revision_ != savedRevision_;
+    dirtyCacheStamp_ = stateStamp_;
+    return dirtyCacheValue_;
+}
+
+void ProjectSession::setPresentation(nlohmann::json presentation) {
+    presentation_ = std::move(presentation);
+    invalidateDirtyCache();
+}
+
+void ProjectSession::setColorConfigPath(std::string colorConfigPath) {
+    colorConfigPath_ = std::move(colorConfigPath);
+    invalidateDirtyCache();
+}
+
+void ProjectSession::setLastFileError(std::string message) {
+    lastFileError_ = std::move(message);
+}
+
+ProjectWriteRequest ProjectSession::prepareSave(std::filesystem::path target, PathPolicy pathPolicy,
+                                                bool backup) const {
+    ProjectWriteRequest request;
+    request.snapshot = std::make_shared<const Document>(document_);
+    request.target = std::move(target);
+    request.presentation = presentation_;
+    request.colorConfigPath = colorConfigPath_;
+    request.pathPolicy = pathPolicy;
+    request.projectBase = request.target.parent_path();
+    request.backup = backup;
+    request.protectedTarget = recovered_ ? recoveryOriginal_ : std::filesystem::path{};
+    request.expectedRevision = revision_;
+    request.projectGeneration = projectGeneration_;
+    request.baseline = ProjectFile::serializeContent(document_, presentation_, colorConfigPath_);
+    return request;
+}
+
+EditResult ProjectSession::commitSave(const ProjectWriteRequest& request, const ProjectWriteResult& result) {
+    if (mutating_ || notifying_)
+        return failure("project session mutation is not allowed during an edit or notification",
+                       EditErrorCode::ReentrantMutation);
+    if (!result.ok) {
+        lastFileError_ = result.error.message.empty() ? std::string("project save failed") : result.error.message;
+        return failure(lastFileError_, EditErrorCode::IoError);
+    }
+    // A completion prepared before the session was replaced belongs to a
+    // project that is no longer open: never adopt its path or baseline, even if
+    // the revision happens to line up.
+    if (request.projectGeneration != projectGeneration_) {
+        lastFileError_ = "project save completed for a project that is no longer open; the result was not applied";
+        return failure(lastFileError_, EditErrorCode::IoError);
+    }
+    const std::filesystem::path target = result.target.empty() ? request.target : result.target;
+    if (!target.empty()) {
+        std::error_code ec;
+        const std::filesystem::path absolute = std::filesystem::absolute(target, ec);
+        projectPath_ = (ec ? target : absolute).lexically_normal();
+    }
+    // The written snapshot is the saved baseline. When the session advanced
+    // past that snapshot the session stays dirty; newer edits are never
+    // cleared by a stale completion.
+    savedRevision_ = request.expectedRevision;
+    savedContent_ = request.baseline;
+    savedContentValid_ = !savedContent_.empty();
+    if (!savedContentValid_)
+        savedRevision_ = revision_;
+    // The recovered-copy guard persists for this session's lifetime: even after
+    // saving to a copy, an explicit later choice of the original target is
+    // still refused. Opening or creating another project retires it.
+    lastFileError_.clear();
+    invalidateDirtyCache();
+    EditResult committed;
+    committed.committed = true;
+    committed.revision = revision_;
+    return committed;
+}
+
+ProjectReplaceResult ProjectSession::replaceInternal(Document document, std::filesystem::path path,
+                                                     nlohmann::json presentation, std::string colorConfigPath,
+                                                     bool recovered, std::filesystem::path recoveryOriginal) {
+    if (mutating_ || notifying_)
+        return {false, revision_,
+                EditError{"project session mutation is not allowed during an edit or notification",
+                          EditErrorCode::ReentrantMutation,
+                          {}}};
+    if (revision_ == std::numeric_limits<std::uint64_t>::max())
+        return {false, revision_, EditError{"project session revision exhausted", EditErrorCode::Unavailable, {}}};
+    try {
+        document.synchronizeReferences();
+    } catch (const std::exception& error) {
+        return {false, revision_, EditError{error.what(), EditErrorCode::InvalidArgument, {}}};
+    } catch (...) {
+        return {false, revision_,
+                EditError{"replacement document failed validation", EditErrorCode::InvalidArgument, {}}};
+    }
+
+    document_ = std::move(document);
+    commands_.clear();
+    gesture_.reset();
+    requests_.clear();
+    events_.clear();
+    ++revision_;
+    ++projectGeneration_;
+    projectPath_ = std::move(path);
+    presentation_ = std::move(presentation);
+    colorConfigPath_ = std::move(colorConfigPath);
+    recovered_ = recovered;
+    recoveryOriginal_ = recovered ? std::move(recoveryOriginal) : std::filesystem::path{};
+    lastFileError_.clear();
+    if (recovered) {
+        // A recovery copy has no saved file: it is an unsaved document.
+        savedContent_.clear();
+        savedContentValid_ = false;
+        savedRevision_ = 0;
+    } else {
+        captureSavedBaseline();
+    }
+    invalidateDirtyCache();
+    notifyObservers();
+    return {true, revision_, std::nullopt};
+}
+
+ProjectReplaceResult ProjectSession::replaceDocument(Document document, std::filesystem::path path,
+                                                     nlohmann::json presentation, std::string colorConfigPath) {
+    return replaceInternal(std::move(document), std::move(path), std::move(presentation), std::move(colorConfigPath),
+                           false, {});
+}
+
+ProjectReplaceResult ProjectSession::replaceDocument(ProjectReadResult result, bool recovered) {
+    if (!result.ok) {
+        const std::string message =
+            result.error.message.empty() ? std::string("project read failed") : result.error.message;
+        lastFileError_ = message;
+        return {false, revision_, EditError{message, EditErrorCode::IoError, {}}};
+    }
+    const bool asRecovery = recovered || result.recovered;
+    return replaceInternal(std::move(result.document), std::move(result.sourcePath), std::move(result.presentation),
+                           std::move(result.colorConfigPath), asRecovery, std::move(result.recoveryOriginal));
+}
+
+ProjectReplaceResult ProjectSession::open(ProjectReadResult result) {
+    return replaceDocument(std::move(result), false);
 }
 
 }  // namespace nemo

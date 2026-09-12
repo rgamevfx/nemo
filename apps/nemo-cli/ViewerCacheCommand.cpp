@@ -6,7 +6,6 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <limits>
 #include <numeric>
@@ -24,8 +23,8 @@
 #include "nemo/core/session/ProjectSession.hpp"
 
 #ifdef NEMO_BUILD_GPU
-#include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/eval/Viewer.hpp"
 #include "nemo/eval/ViewerCache.hpp"
 #include "nemo/gpu/Allocator.hpp"
@@ -427,11 +426,15 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
 }
 
 int runGpuHarness(const CacheCommandOptions& options, Json& report) {
-    std::ifstream input(options.project);
-    if (!input)
-        throw std::runtime_error("cannot open project: " + options.project.string());
-    const nemo::LoadResult loaded = nemo::loadDocument(Json::parse(input));
+    const nemo::ProjectReadResult loaded = nemo::ProjectFile::read(options.project);
+    if (!loaded.ok)
+        throw std::runtime_error(loaded.error.message.empty() ? "cannot open project: " + options.project.string()
+                                                              : loaded.error.message);
     report["warnings"] = loaded.warnings;
+    // Resolved project OCIO configuration passed explicitly to the viewer; no
+    // process-global environment mutation.
+    const std::string& ocioConfigPath = loaded.colorConfigPath;
+    report["color_config"] = ocioConfigPath;
 
     std::error_code directoryError;
     const bool hadExistingCache = std::filesystem::exists(options.cacheDirectory, directoryError) && !directoryError;
@@ -502,7 +505,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
         // Establish the source-view oracle in a standalone session with no
         // cache configured. This prevents a pre-existing disk entry from
         // becoming a self-comparison when --fidelity is requested.
-        nemo::eval::ViewerSession sourceSession(*instance, *device, *allocator, shaders);
+        nemo::eval::ViewerSession sourceSession(*instance, *device, *allocator, shaders, ocioConfigPath);
         const nemo::EvaluationRequest sourceRequest = makeRequest(loaded.document, options, fidelityFrame);
         nemo::eval::ViewerFrame sourceFrame =
             sourceSession.render(loaded.document, sourceRequest, 10'000'000'000ULL, 0);
@@ -515,7 +518,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
     std::uint64_t generation = 1;
     double editProbeMs = 0.0;
     {
-        nemo::eval::ViewerSession session(*instance, *device, *allocator, shaders);
+        nemo::eval::ViewerSession session(*instance, *device, *allocator, shaders, ocioConfigPath);
         session.configureCache(cacheOptions);
         buildBefore = session.cacheCounts();
         if ((!options.viewAfter.empty() || options.edit.requested()) && buildBefore.diskBytes != 0)
@@ -612,7 +615,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
     nemo::CacheCounts replayReuseAfter;
     const auto replayStart = Clock::now();
     {
-        nemo::eval::ViewerSession replay(*instance, *device, *allocator, shaders);
+        nemo::eval::ViewerSession replay(*instance, *device, *allocator, shaders, ocioConfigPath);
         replay.configureCache(cacheOptions);
         replayBefore = replay.cacheCounts();
         replayReuseBefore = replay.reuseCounts();

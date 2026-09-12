@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "nemo/core/document/Animation.hpp"
 #include "nemo/core/document/Graph.hpp"
 #include "nemo/core/document/MediaCatalog.hpp"
@@ -23,6 +25,9 @@ struct ColorPolicy {
     std::string workingSpace{"linear"};
     std::string viewerTransform{"sRGB/rec709"};
     std::string deliveryTransform{"sRGB/rec709"};
+    // Authored fields of the persisted color policy this build does not model,
+    // retained verbatim for lossless save.
+    nlohmann::json extension{};
 
     [[nodiscard]] bool operator==(const ColorPolicy&) const = default;
 };
@@ -32,6 +37,9 @@ struct SourceReference {
     std::int64_t frameStep{1};
     std::map<std::string, std::string> interpretation;
     std::uint64_t revision{0};
+    // Authored fields of the persisted source this build does not model,
+    // retained verbatim for lossless save.
+    nlohmann::json extension{};
 
     [[nodiscard]] bool operator==(const SourceReference&) const = default;
     [[nodiscard]] std::int64_t frameAt(std::int64_t localTime) const;
@@ -51,6 +59,10 @@ struct Document {
     int schemaVersion{kSchemaVersion};
     std::string name;
     ColorPolicy color;
+    // Authored top-level fields of the persisted document this build does not
+    // model, retained verbatim by the codec so a load/save cycle loses nothing.
+    // The session/file envelope's presentation record is deliberately excluded.
+    nlohmann::json extension{};
 
     [[nodiscard]] NetworkId rootNetworkId() const { return rootNetworkId_; }
     [[nodiscard]] const Network& network(NetworkId id) const;
@@ -86,6 +98,11 @@ struct Document {
     [[nodiscard]] MediaSourceId nextMediaSourceId() const { return mediaCatalog.nextEntryId(); }
     [[nodiscard]] MediaBinId nextMediaBinId() const { return mediaCatalog.nextBinId(); }
     void restoreMediaIdentityHighWatermarks(MediaSourceId nextSourceId, MediaBinId nextBinId);
+    // Attaches preserved authored JSON to a persisted network occurrence, plus
+    // raw parameter overrides for targets this build cannot type. Reserved for
+    // deserialization.
+    void restoreInstanceExtension(NetworkInstanceId id, nlohmann::json extension,
+                                  std::map<NodeId, nlohmann::json> opaqueParams);
     [[nodiscard]] AnimationChannelId nextAnimationChannelId() const { return nextAnimationChannelId_; }
     [[nodiscard]] KeyframeId nextKeyframeId() const { return nextKeyframeId_; }
     // Serialization is the only intended caller. It validates the complete

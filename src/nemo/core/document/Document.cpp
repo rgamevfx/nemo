@@ -542,24 +542,36 @@ void Document::synchronizeReferences() {
             ++binding;
         }
     }
-    animationChannels_.erase(
-        std::remove_if(animationChannels_.begin(), animationChannels_.end(),
-                       [&](const AnimationChannel& channel) {
-                           const auto& address = channel.address;
-                           const Network* network = findNetwork(address.network);
-                           if (!network)
-                               return true;
-                           const NodeInstance* node = network->graph().node(address.node);
-                           if (!node || network->graph().catalog().parameterSpec(node->type, address.key) == nullptr)
-                               return true;
-                           if (address.instance != kInvalidNetworkInstance) {
-                               const NetworkInstance* occurrence = instance(address.instance);
-                               if (!occurrence || occurrence->definition != address.network)
-                                   return true;
-                           }
-                           return false;
-                       }),
-        animationChannels_.end());
+    animationChannels_.erase(std::remove_if(animationChannels_.begin(), animationChannels_.end(),
+                                            [&](const AnimationChannel& channel) {
+                                                const auto& address = channel.address;
+                                                const Network* network = findNetwork(address.network);
+                                                if (!network)
+                                                    return true;
+                                                const NodeInstance* node = network->graph().node(address.node);
+                                                if (!node)
+                                                    return true;
+                                                // A parameter of a node type this build does not model,
+                                                // or a future parameter record preserved opaquely, has
+                                                // no usable catalog spec; its channel is retained as
+                                                // authored disabled data instead of being pruned.
+                                                const auto& catalog = network->graph().catalog();
+                                                if (catalog.find(node->type) != nullptr &&
+                                                    catalog.parameterSpec(node->type, address.key) == nullptr) {
+                                                    const bool hasOpaqueValue = std::any_of(
+                                                        channel.keys.begin(), channel.keys.end(),
+                                                        [](const Keyframe& key) { return !key.opaqueValue.is_null(); });
+                                                    if (!hasOpaqueValue)
+                                                        return true;
+                                                }
+                                                if (address.instance != kInvalidNetworkInstance) {
+                                                    const NetworkInstance* occurrence = instance(address.instance);
+                                                    if (!occurrence || occurrence->definition != address.network)
+                                                        return true;
+                                                }
+                                                return false;
+                                            }),
+                             animationChannels_.end());
 }
 
 void Document::restoreIdentityHighWatermarks(NetworkId nextNetworkId, NetworkInstanceId nextInstanceId) {
@@ -570,6 +582,16 @@ void Document::restoreIdentityHighWatermarks(NetworkId nextNetworkId, NetworkIns
 }
 void Document::restoreMediaIdentityHighWatermarks(MediaSourceId nextSourceId, MediaBinId nextBinId) {
     mediaCatalog.restoreIdentityHighWatermarks(nextSourceId, nextBinId);
+}
+
+void Document::restoreInstanceExtension(NetworkInstanceId id, nlohmann::json extension,
+                                        std::map<NodeId, nlohmann::json> opaqueParams) {
+    NetworkInstance* instance = findInstanceMutable(id);
+    if (instance == nullptr)
+        throw GraphException(GraphError::UnknownInstance,
+                             "cannot attach preserved data to unknown instance " + std::to_string(id));
+    instance->extension = std::move(extension);
+    instance->opaqueParams = std::move(opaqueParams);
 }
 
 void Document::preserveIdentityHighWatermarksFrom(const Document& source) {

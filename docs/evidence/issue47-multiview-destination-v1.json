@@ -1,0 +1,66 @@
+{
+  "issue": 47,
+  "title": "Route each viewer panel to an independent scheduler destination with retained GPU presentation",
+  "branch": "issue/47-viewer-destinations",
+  "base_commit": "e4d90d5",
+  "base_note": "Cut from the pushed #62 still/sequence decode commit (the previous session head), not origin/main (36300a2), because the media-role viewer consumes that decode path.",
+  "date": "2026-09-12",
+  "source": {
+    "production": "apps/nemo-ui (ViewerRuntime, ViewerController, ViewerControllerRegistry, ViewerItem, main.cpp, qml/ViewerPanel.qml), src/nemo/eval (ViewerScheduler, Viewer, ViewerDestination), src/nemo/gpu (ViewerPresentation + viewerPresentation.slang), tests/*",
+    "prototype_reference": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz: ViewerPanel.qml / FrameRuler.qml / TransportButton.qml (transport glyphs, in/out brackets, edit-in-place timecode, marked-range loop, layer/channel menus, 380px narrow layout)",
+    "coverage_entries": [
+      "viewer-session.json:/verified[0..13]",
+      "media-bin-session.json:/verification/checks[26..30]",
+      "media-bin-session.json:/verification/checks[50..53]"
+    ]
+  },
+  "implementation": {
+    "destination_lifecycle": "ViewerRuntime::allocateDestination(panelId)/retireDestination(destination); ids >= 2, bounded by kMaxViewerDestinations; the same panel reuses its id; exhaustion leaves the controller a facade with hasDestination=false and never aliases another panel.",
+    "scheduler": "ViewerScheduler::cancel(id, destination), retireDestination(destination), counts(destination) added; per-destination cancel floor/token stored in DestinationState; global cancel(id)/counts() semantics unchanged.",
+    "runtime": "submit(document,request,id,destination,channel), probe(...,destination), cancel(id,destination), counts(destination), per-destination channel, idempotent attachToWindow(window), one shared WindowPresentationState, framePresented(destination, frame, width, height, cacheHit, requestToSwapMs). Worker-side retire queue forwards ViewerSession::retireDestination.",
+    "controller": "setDestination/hasDestination/destinationId; every probe/submit/takeResult/cancel/range routed to the panel destination; per-destination framePresented relay; presentationState delegates to the shared window host; transport (play/pause/stop/step/seek/marks/loop), timecode, channel/layer, and setViewerContext(role,target,clock) with real media-role source-node resolution and explicit unavailable states.",
+    "panel": "ViewerPanel.qml binds viewerControllers.controller(panelId), releases on destruction, forwards panel context, and wires the prototype transport/display controls at the accepted compact geometry.",
+    "channel_isolation": "gpu::ViewerChannel (RGBA/R/G/B/A) applied in the presentation compute copy via a set-0 binding-2 uniform buffer; evaluation and viewer-cache identity are unchanged."
+  },
+  "verification": {
+    "debug_ctest": "100% tests passed, 0 failed out of 392 (ctest --preset debug)",
+    "release_ctest": "100% tests passed, 0 failed out of 392 (ctest --preset release)",
+    "asan_focused": "9/9 passed under the asan preset: Viewer.PresentationIsolatesDisplayChannels, Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot, CancellationRejectsInflightAndSupersededBacklogIsCounted, CancelledSubmissionRetainsResourcesUntilActualGpuCompletion, DestinationScopedCancelDropsOnlyThatDestinationsWork, RetireDestinationDropsQueuedWorkAndRejectsInflight, CountsAreScopedPerDestinationAndGlobalStillAggregates, MediaFreeViewerRendersAttachedComposite, TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement",
+    "new_tests": [
+      "Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement (real GPU): two controllers with distinct allocated destinations render different targets concurrently; rapid supersession on A leaves B's presentation untouched; retiring A's destination leaves B's presentation and B's subsequent render intact",
+      "Interactive.ViewerControllerRegistryAllocatesIndependentDestinations: distinct controllers/destinations per panel id, reserved streams never allocated, primary ordering, release leaves the peer live and makes the released controller inert",
+      "Interactive.DestinationScopedCancelDropsOnlyThatDestinationsWork, Interactive.RetireDestinationDropsQueuedWorkAndRejectsInflight, Interactive.CountsAreScopedPerDestinationAndGlobalStillAggregates",
+      "Viewer.PresentationIsolatesDisplayChannels (real GPU): R/G/B/A isolation plus byte-identical RGBA premultiplied output",
+      "Migrated to destination-scoped consumers: Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata, Interactive.ViewerDetachAndNodeDeletionLeaveEmptyWithoutOutputFallback, Interactive.MediaFreeViewerRendersAttachedComposite"
+    ],
+    "builds": "cmake --build --preset debug and --preset release clean apart from the pre-existing third-party minizip 'mktemp' linker warning"
+  },
+  "native_smoke": {
+    "attempted": true,
+    "commands": [
+      "QT_QPA_PLATFORM=wayland OCIO=docs/evidence/issue12-view.ocio build/debug/apps/nemo-ui/nemo-ui --source docs/evidence/assets/issue62-still-source/native-still-png.png (two-viewer workspace: split horizontal, panel-1 viewer group A, panel-2 viewer group B)",
+      "same with --frame 5 (deferred primary wiring)",
+      "same with --cache-benchmark-frames 3 --viewer-cache-codec libx264-cpu"
+    ],
+    "result": "The application starts on Wayland with a two-viewer workspace and the still source, creates its window, and stays alive with no QML or GPU errors on stderr. The promoted initial-frame path now presents (previously failed synchronously before Qt.callLater created the panel controllers). The benchmark ran against the primary panel's destination and emitted a real {\"event\":\"viewer_frame_swapped\",...} sample before stopping on the expected still-image frame-count limit (frameCount == 1).",
+    "capture_limitation": "Native pixel capture and pointer interaction are not possible in this environment: no compositor screenshot client (grim/slurp/import/scrot/maim) is installed and x11grab of the rootless Xwayland root returns a uniform black frame (verified). This run is a startup/CLI-wiring non-crash check only; it is NOT appearance or interaction-parity evidence. Owner native review of the two-viewer layout, transport controls, marked-range brackets, timecode entry, channel/layer menus, and the narrow 380px layout remains required.",
+    "per_destination_native_record": "Not produced. Acceptance example 5's per-destination request id/frame/output/region/resolution/cache-hit/current-outdated native record requires the same interaction harness the prior issue:13 evidence used; the automated registry + GPU two-destination tests are the functional evidence for this ticket."
+  },
+  "acceptance_examples": {
+    "1_two_panels_independent": "Covered by Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement (distinct outputs per destination, B untouched by A's activity) and Interactive.ViewerControllerRegistryAllocatesIndependentDestinations (distinct destinations, release isolation).",
+    "2_stale_rejection_per_destination": "Covered by Interactive.DestinationScopedCancelDropsOnlyThatDestinationsWork + Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot (scheduler) and the rapid-supersession leg of the two-viewer test (only the newest request for the edited destination publishes).",
+    "3_cached_replay_identity": "Existing Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations + ViewerCache.* unchanged; destination tag now reaches submit for panel work.",
+    "4_retained_lifetimes": "Existing retained-ownership path unchanged (ASan run covers retire/cancel/teardown); Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion and the new retirement tests pass under ASan.",
+    "5_native_per_destination_report": "NOT met natively (capture/harness unavailable); functional coverage via the automated tests above.",
+    "6_context_apis_explicit_unavailable": "ViewerPanel forwards PanelContextRouter role/group through setViewerContext; media role resolves a root-network source node or reports an explicit unavailable state; timeline role reports the #54 deferral; PanelContextRouter/PanelContextUi tests unchanged.",
+    "7_transport_and_channels": "Play/pause/stop/step/seek/marks/loop/timecode/channel/resolution wired to the panel destination in ViewerPanel.qml; channel isolation proven by Viewer.PresentationIsolatesDisplayChannels. Depth layer is reported unavailable (no runtime implementation), not fabricated."
+  },
+  "remaining_gates": [
+    "Owner review for the new public surfaces: ViewerControllerRegistry, ViewerRuntime destination API, gpu::ViewerChannel, ViewerScheduler destination-scoped cancel/retire/counts.",
+    "Native appearance/interaction parity review with matched viewport/DPR (capture tooling unavailable here).",
+    "Per-destination native interaction record for acceptance example 5.",
+    "Media-role concurrent different-source native evidence needs the Media Bin import/UI (#43), which this ticket gates; the media role currently resolves graph source nodes.",
+    "Editorial timeline rendering remains #54 (explicit unavailable state here).",
+    "Depth layer and non-RGBA channel availability are reported, not fabricated."
+  ]
+}

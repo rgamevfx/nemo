@@ -12,6 +12,7 @@ find_package(OpenColorIO CONFIG REQUIRED)
 
 add_library(nemo_media
     ImageIO.cpp
+    ImageSource.cpp
     ViewingTransform.cpp
 )
 add_library(nemo::media ALIAS nemo_media)

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -44,6 +45,14 @@ struct NodeInstance {
     bool hasPortContract{false};
     std::vector<PortSpec> inputPorts{};
     std::vector<PortSpec> outputPorts{};
+    // Authored fields of the persisted node object this build does not model,
+    // retained verbatim by the codec so a load/save cycle loses nothing. Never
+    // consulted by evaluation or commands.
+    nlohmann::json extension{};
+    // Parameter records of an unavailable node type that this build cannot
+    // interpret as typed parameters. Re-emitted verbatim alongside the typed
+    // parameters; a later typed edit of the same key wins.
+    nlohmann::json opaqueParams{};
 };
 
 struct Edge {
@@ -52,6 +61,9 @@ struct Edge {
     PortRef to;
     // Empty means no authored route; points are in graph-local coordinates.
     std::vector<LayoutPosition> route{};
+    // Authored fields of the persisted edge this build does not model, retained
+    // verbatim for lossless save. Never consulted by evaluation or commands.
+    nlohmann::json extension{};
 };
 
 // Rejected graph edits always explain the offending relationship or value.
@@ -117,6 +129,10 @@ public:
     [[nodiscard]] NodeId addNodeWithId(NodeId id, std::string type, std::string name, ParameterValues params = {},
                                        LayoutPosition layout = {}, NetworkId definition = kInvalidNetwork,
                                        NetworkInstanceId instance = kInvalidNetworkInstance);
+    // Attaches preserved authored JSON to a persisted node: fields this build
+    // does not model and parameter records of an unavailable type. Reserved for
+    // deserialization.
+    void restoreNodeExtension(NodeId id, nlohmann::json extension, nlohmann::json opaqueParams);
     void removeNode(NodeId id);
     void renameNode(NodeId id, std::string name);
 
@@ -134,6 +150,12 @@ public:
     [[nodiscard]] const NodeInstance* nodeByName(const std::string& name) const;
 
     [[nodiscard]] EdgeId connectWithId(EdgeId id, PortRef from, PortRef to);
+    // Inserts a persisted edge with its exact identity without port-contract
+    // validation, so a connection authored against a node type this build does
+    // not model survives a load. Endpoint existence, duplicate inputs and
+    // cycles are still rejected. Reserved for deserialization.
+    [[nodiscard]] EdgeId restoreEdgeWithId(EdgeId id, PortRef from, PortRef to);
+    void restoreEdgeExtension(EdgeId id, nlohmann::json extension);
     [[nodiscard]] EdgeId connect(PortRef from, PortRef to);
     void disconnect(EdgeId id);
     void setRoute(EdgeId id, std::vector<LayoutPosition> route);
@@ -178,6 +200,9 @@ struct FormalPort {
     PortKind kind{PortKind::Image};
     std::string name;
     bool allowFanOut{true};
+    // Authored fields of the persisted terminal this build does not model,
+    // retained verbatim for lossless save. Never consulted by evaluation.
+    nlohmann::json extension{};
 
     friend bool operator==(const FormalPort&, const FormalPort&) = default;
 };
@@ -236,6 +261,14 @@ public:
     [[nodiscard]] InterfacePortId nextInterfacePortId() const { return nextInterfacePortId_; }
     [[nodiscard]] std::uint64_t revision() const { return revision_ + graph_.revision(); }
 
+    // Persisted fields of the network object this build does not model, retained
+    // verbatim by the codec so a load/save cycle loses nothing.
+    [[nodiscard]] const nlohmann::json& extension() const noexcept { return extension_; }
+    void setExtension(nlohmann::json extension) { extension_ = std::move(extension); }
+    // Attaches preserved authored JSON to a persisted formal terminal. Reserved
+    // for deserialization.
+    void restorePortExtension(PortDirection direction, InterfacePortId id, nlohmann::json extension);
+
 private:
     friend struct Document;
     void syncTerminalConnections();
@@ -255,6 +288,7 @@ private:
     std::uint64_t terminalSyncRevision_{0};
     InterfacePortId nextInterfacePortId_{1};
     std::uint64_t revision_{1};
+    nlohmann::json extension_{};
 };
 
 struct NetworkInstance {
@@ -268,6 +302,12 @@ struct NetworkInstance {
     // target node explicit prevents an instance-local key from being applied
     // to an unrelated node in a shared definition.
     std::map<NodeId, ParameterValues> params;
+    // Authored fields of the persisted instance object this build does not
+    // model, retained verbatim for lossless save.
+    nlohmann::json extension{};
+    // Raw parameter overrides for targets inside an unavailable definition type
+    // that this build cannot interpret as typed parameters.
+    std::map<NodeId, nlohmann::json> opaqueParams{};
 
     friend bool operator==(const NetworkInstance&, const NetworkInstance&) = default;
 };

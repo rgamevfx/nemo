@@ -8,14 +8,21 @@ target_link_libraries(nemo_workspace PUBLIC nlohmann_json::nlohmann_json)
 
 if(NEMO_BUILD_UI)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2)
+    if(UNIX AND NOT APPLE)
+        # Native xdg-desktop-portal FileChooser client for Open/Save As/Recover.
+        find_package(Qt6 6.4 REQUIRED COMPONENTS DBus)
+    endif()
     qt_standard_project_setup()
     if(NOT NEMO_BUILD_GPU)
         message(FATAL_ERROR "NEMO_BUILD_UI requires NEMO_BUILD_GPU for native viewer presentation")
     endif()
     qt_add_executable(nemo-ui main.cpp PanelContextRouter.cpp PanelContextRouter.hpp
         ParameterEditorRegistry.cpp ParameterEditorRegistry.hpp
+        ProjectFileController.cpp ProjectFileController.hpp
         WorkspaceController.cpp WorkspaceController.hpp
-        ViewerController.cpp ViewerController.hpp ViewerRuntime.cpp ViewerRuntime.hpp
+        ViewerController.cpp ViewerController.hpp
+        ViewerControllerRegistry.cpp ViewerControllerRegistry.hpp
+        ViewerRuntime.cpp ViewerRuntime.hpp
         ViewerItem.cpp ViewerItem.hpp GraphItem.cpp GraphItem.hpp TimelineItem.cpp TimelineItem.hpp)
     qt_add_qml_module(nemo-ui
         URI Nemo
@@ -25,7 +32,13 @@ if(NEMO_BUILD_UI)
                   qml/Theme.qml qml/ChromeButton.qml qml/StudioComboBox.qml qml/UnavailablePanel.qml
                   qml/ViewerPanel.qml qml/GraphPanel.qml qml/TimelinePanel.qml qml/ParametersPanel.qml
     )
-    target_link_libraries(nemo-ui PRIVATE nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)
+    target_link_libraries(nemo-ui PRIVATE nemo::core nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(nemo-ui PRIVATE Qt6::DBus)
+    elseif(WIN32)
+        # Win32 common item dialogs (IFileOpenDialog/IFileSaveDialog).
+        target_link_libraries(nemo-ui PRIVATE ole32 shell32 uuid)
+    endif()
     if(DEFINED NEMO_SLANG_SPV_DIR)
         target_compile_definitions(nemo-ui PRIVATE NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
         add_dependencies(nemo-ui nemo_shaders)

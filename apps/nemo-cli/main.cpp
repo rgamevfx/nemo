@@ -29,10 +29,11 @@
 #include <nlohmann/json.hpp>
 
 #include "nemo/core/document/Document.hpp"
-#include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/ImageIO.hpp"
+#include "nemo/media/ImageSource.hpp"
 #include "nemo/media/Probe.hpp"
 #include "nemo/media/VideoDecode.hpp"
 #ifdef NEMO_BUILD_GPU
@@ -57,6 +58,20 @@ namespace {
     if (error != std::errc{} || end != text.data() + text.size() || value == nemo::kInvalidNetwork)
         throw std::invalid_argument("--network-id: expected a nonzero network id");
     return value;
+}
+
+// All CLI project readers go through the shared file owner so project-relative
+// source and OCIO paths resolve identically and unknown/missing-dependency
+// diagnostics are preserved. `report` must already own a "warnings" array.
+[[nodiscard]] nemo::ProjectReadResult readProject(const std::string& path, nlohmann::json& report) {
+    nemo::ProjectReadResult loaded = nemo::ProjectFile::read(path);
+    for (const auto& warning : loaded.warnings)
+        report["warnings"].push_back(warning);
+    if (!loaded.ok) {
+        report["errors"].push_back(loaded.error.message.empty() ? std::string{"cannot open file: " + path}
+                                                                : loaded.error.message);
+    }
+    return loaded;
 }
 
 int printUsage() {
@@ -90,14 +105,9 @@ int commandValidate(const std::vector<std::string>& args) {
     }
     nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        std::ifstream in(args.front());
-        if (!in) {
-            report["errors"].push_back("cannot open file: " + args.front());
-        } else {
-            const auto parsed = nlohmann::json::parse(in);
-            auto loaded = nemo::loadDocument(parsed);
+        const nemo::ProjectReadResult loaded = readProject(args.front(), report);
+        if (loaded.ok) {
             report["ok"] = true;
-            report["warnings"] = loaded.warnings;
             nlohmann::json info;
             info["name"] = loaded.document.name;
             const auto& rootGraph = loaded.document.network(loaded.document.rootNetworkId()).graph();
@@ -106,8 +116,6 @@ int commandValidate(const std::vector<std::string>& args) {
             info["edges"] = rootGraph.edges().size();
             report["document"] = std::move(info);
         }
-    } catch (const nemo::DeserializeError& e) {
-        report["errors"].push_back(std::string{"deserialize: "} + e.what());
     } catch (const std::exception& e) {
         report["errors"].push_back(std::string{"error: "} + e.what());
     }
@@ -179,14 +187,10 @@ int commandRender(const std::vector<std::string>& args) {
         return 2;
     }
 
-    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}};
+    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        std::ifstream in(args.front());
-        if (!in) {
-            report["errors"].push_back("cannot open file: " + args.front());
-        } else {
-            const auto loaded = nemo::loadDocument(nlohmann::json::parse(in));
-            report["warnings"] = loaded.warnings;
+        const nemo::ProjectReadResult loaded = readProject(args.front(), report);
+        if (loaded.ok) {
             std::ofstream out(outPath, std::ios::binary);
             if (!out) {
                 report["errors"].push_back("cannot write: " + outPath);
@@ -259,21 +263,17 @@ int commandEvaluate(const std::vector<std::string>& args) {
         return 2;
     }
 
-    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}};
+    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        std::ifstream in(args.front());
-        if (!in) {
-            report["errors"].push_back("cannot open file: " + args.front());
-        } else {
-            const auto loaded = nemo::loadDocument(nlohmann::json::parse(in));
-            report["warnings"] = loaded.warnings;
-
+        const nemo::ProjectReadResult loaded = readProject(args.front(), report);
+        if (loaded.ok) {
             nemo::EvaluationRequest request;
             request.network = network == nemo::kInvalidNetwork ? loaded.document.rootNetworkId() : network;
             request.output = nemo::resolveOutput(loaded.document, request.network, outputName);
             request.localTime = frame;
             request.region = {0, 0, width, height};
-            const nemo::CpuEvaluation evaluation = nemo::evaluateCpu(loaded.document, request);
+            nemo::media::ImageSourceProvider sources;
+            const nemo::CpuEvaluation evaluation = nemo::evaluateCpu(loaded.document, request, nullptr, &sources);
 
             std::ofstream out(outPath, std::ios::binary);
             if (!out) {
@@ -362,15 +362,10 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
 #endif
     }
 
-    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}};
+    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        std::ifstream in(args.front());
-        if (!in) {
-            report["errors"].push_back("cannot open file: " + args.front());
-        } else {
-            const auto loaded = nemo::loadDocument(nlohmann::json::parse(in));
-            report["warnings"] = loaded.warnings;
-
+        const nemo::ProjectReadResult loaded = readProject(args.front(), report);
+        if (loaded.ok) {
             nemo::EvaluationRequest request;
             request.network = network == nemo::kInvalidNetwork ? loaded.document.rootNetworkId() : network;
             request.output = nemo::resolveOutput(loaded.document, request.network, outputName);

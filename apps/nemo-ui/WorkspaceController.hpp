@@ -68,8 +68,21 @@ public:
     Q_INVOKABLE bool save();
     Q_INVOKABLE void reset();
 
+    // Project-file presentation boundary. The project envelope stores the same
+    // versioned workspace records the standalone workspace file uses, so layout,
+    // panel state (including unavailable-panel metadata) and appearance
+    // round-trip without a second arrangement model. Qt/QML never sees this
+    // payload; only the project file adapter reads and applies it.
+    [[nodiscard]] nlohmann::json projectPresentation();
+    [[nodiscard]] bool applyProjectPresentation(const nlohmann::json& presentation);
+
 signals:
     void rootChanged();
+    // Persistence-only notification: the arrangement/panel payload changed but
+    // the QML tree must not be rebuilt. Splitter ratio drags emit this and
+    // deliberately skip rootChanged, so project dirty/autosave consumers must
+    // observe it without disturbing the existing gesture.
+    void presentationChanged();
     void errorChanged();
     void panelTypesChanged();
     void workspacesChanged();

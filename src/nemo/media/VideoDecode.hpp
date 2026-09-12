@@ -39,6 +39,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -165,6 +166,17 @@ struct SoftwareClip {
     ClipInfo info;
     std::vector<CpuImage> frames;
     MediaColorMetadata metadata;
+    // Actual decoded frame pixel format (e.g. "yuv420p"), validated from the
+    // frame itself before plane access. Empty when no frame was produced.
+    std::string pixelFormat;
+    // Selected video stream index in the container.
+    int streamIndex{-1};
+    // Declared codec profile ("profile <name>"); empty when the stream
+    // declares none.
+    std::string profile;
+    // Plane count of the validated decoded format (1 gray, 2 NV12, 3
+    // planar). Zero before any frame was produced.
+    int planeCount{0};
 };
 
 // Source path: converts the clip to scene-linear working images per the
@@ -177,6 +189,32 @@ struct SoftwareClip {
 // fail explicitly rather than silently relabeling samples.
 [[nodiscard]] SoftwareClip decodeClipSoftware(const std::string& path, int64_t maxFrames = -1,
                                               const ColorPolicy& policy = {}, const ColorOverride& overrides = {});
+
+// Bounded source-frame read for import/probe/preview (issue #43): decodes
+// forward from the container start to `frameIndex` (0-based), retaining at
+// most that one frame. `width`/`height` are zero (preserve native size) or
+// MAXIMUM preview bounds; with non-zero bounds the returned frame is fitted
+// to the decoded frame's DISPLAYED shape (its width/height widened by the
+// frame's sample aspect ratio) and emitted as a square-pixel raster, while
+// `info` keeps the native geometry. Same source-linear contract,
+// ColorPolicy/ColorOverride resolution, and actual-decoded-frame format
+// validation as decodeClipSoftware; `metadata`, `pixelFormat`, `planeCount`
+// and the stream facts describe the retained frame. The returned clip holds
+// ZERO frames when the stream ends before `frameIndex` — the caller reports
+// the missing frame rather than substituting another one. No full-clip
+// accumulation: earlier frames are discarded as they decode.
+[[nodiscard]] SoftwareClip decodeClipFrameSoftware(const std::string& path, int64_t frameIndex, int width = 0,
+                                                   int height = 0, const ColorPolicy& policy = {},
+                                                   const ColorOverride& overrides = {});
+
+// Resolve a Document source's interpretation map into the decoder's explicit
+// ColorOverride vocabulary. `context` names the offending relationship
+// ("source 'shot.mov'"). Unknown fields and unsupported values throw
+// std::invalid_argument naming the field, the value, and the supported set —
+// never silently ignored or guessed. Shared by the runtime source session
+// and the import service so the interpretation vocabulary has one owner.
+[[nodiscard]] ColorOverride colorOverrideFromInterpretation(const std::map<std::string, std::string>& interpretation,
+                                                            const std::string& context);
 
 // Viewer-cache replay path: decodes an encoded viewer chunk WITHOUT the
 // source linearization — the frames stay the baked display-referred

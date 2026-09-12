@@ -1,0 +1,39 @@
+nemo43-step-start {"index":0,"kind":"attach","request":{"engineFound":true,"windowObjectName":"mainWindow"},"startedMs":166}
+nemo43-step-start {"index":1,"kind":"invoke","request":{"args":["A"],"kind":"invoke","method":"revealMediaPanel","target":"mediaLibrary"},"startedMs":166}
+nemo43-step-start {"index":2,"kind":"waitForPanel","request":{"group":"A","kind":"waitForPanel","panelType":"media","timeoutMs":20000},"startedMs":171}
+nemo43-step-start {"index":3,"kind":"invoke","request":{"args":["panel-1"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":20190}
+nemo43-step-start {"index":4,"kind":"invoke","request":{"args":["panel-3"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":20243}
+nemo43-step-start {"index":5,"kind":"invoke","request":{"args":["panel-8"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":20275}
+nemo43-step-start {"index":6,"kind":"invoke","request":{"args":["panel-6"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":20300}
+nemo43-step-start {"index":7,"kind":"resizeWindow","request":{"height":640,"kind":"resizeWindow","width":1274},"startedMs":20301}
+nemo43-step-start {"index":8,"kind":"setPanelState","request":{"group":"A","kind":"setPanelState","panelType":"media","state":{"projectScope":true,"viewMode":"list"}},"startedMs":20301}
+nemo43-step-start {"index":9,"kind":"wait","request":{"kind":"wait","ms":400},"startedMs":20302}
+nemo43-step-start {"index":10,"kind":"invoke","request":{"args":[["/tmp/nemo43-smoke/still.png","/tmp/nemo43-smoke/tagged.mkv","/tmp/nemo43-smoke/ambiguous.mkv","/tmp/nemo43-smoke/unsupported.png","/tmp/nemo43-smoke/corrupt.exr","/tmp/nemo43-smoke/offline.png"],"root",0],"kind":"invoke","method":"importPaths","target":"mediaLibrary"},"startedMs":20715}
+nemo43-step-start {"index":11,"kind":"invoke","request":{"args":[["/tmp/nemo43-smoke/shot.####.exr"],"root",1001],"kind":"invoke","method":"importPaths","target":"mediaLibrary"},"startedMs":20760}
+nemo43-step-start {"index":12,"kind":"wait","request":{"kind":"wait","ms":1800},"startedMs":20795}
+[exr @ 0x74da580f76c0] Wrong magic number 544501614.
+[image2 @ 0x74da580fa040] Could not find codec parameters for stream 0 (Video: exr, none): unspecified size
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
+nemo43-step-start {"index":13,"kind":"duplicateEntries","request":{"kind":"duplicateEntries","parentId":"root"},"startedMs":22608}
+nemo43-step-start {"index":14,"kind":"duplicateEntries","request":{"kind":"duplicateEntries","parentId":"root"},"startedMs":22709}
+nemo43-step-start {"index":15,"kind":"duplicateEntries","request":{"kind":"duplicateEntries","parentId":"root"},"startedMs":22839}
+nemo43-step-start {"index":16,"kind":"wait","request":{"kind":"wait","ms":1200},"startedMs":23032}
+nemo43-step-start {"index":17,"kind":"capture","request":{"kind":"capture","name":"media-dense"},"startedMs":24247}
+nemo43-step-start {"index":18,"kind":"scroll","request":{"dy":1400,"kind":"scroll","objectName":"mediaListView"},"startedMs":24925}
+nemo43-step-start {"index":19,"kind":"wait","request":{"kind":"wait","ms":400},"startedMs":24966}
+nemo43-step-start {"index":20,"kind":"capture","request":{"kind":"capture","name":"media-dense-scrolled"},"startedMs":25375}
+nemo43-step-start {"index":21,"kind":"scroll","request":{"contentY":0,"kind":"scroll","objectName":"mediaListView"},"startedMs":26018}
+nemo43-step-start {"index":22,"kind":"createViewer","request":{"group":"A","inLeafOf":"media","kind":"createViewer","placement":"right","ratio":0.29,"role":"media"},"startedMs":26052}
+qrc:/qt/qml/Nemo/qml/ViewerPanel.qml:982: TypeError: Property 'activateViewer' of object [null] is not a function (exception occurred during delayed function evaluation)
+nemo43-step-start {"index":23,"kind":"waitForPanel","request":{"group":"A","kind":"waitForPanel","panelType":"media","timeoutMs":20000},"startedMs":26373}
+nemo43-step-start {"index":24,"kind":"invoke","request":{"args":["A","still"],"kind":"invoke","method":"openMediaSource","target":"mediaLibrary"},"startedMs":46389}
+nemo43-step-start {"index":25,"kind":"wait","request":{"kind":"wait","ms":1800},"startedMs":46391}
+nemo43-step-start {"index":26,"kind":"setPanelState","request":{"group":"A","kind":"setPanelState","panelType":"media","state":{"projectScope":false}},"startedMs":48195}
+nemo43-step-start {"index":27,"kind":"wait","request":{"kind":"wait","ms":400},"startedMs":48206}
+nemo43-step-start {"index":28,"kind":"capture","request":{"kind":"capture","name":"media-narrow"},"startedMs":48611}
+nemo43-step-start {"index":29,"kind":"objectGeometry","request":{"group":"A","kind":"objectGeometry","panelType":"media","role":"media-narrow"},"startedMs":49289}
+nemo43-step-start {"index":30,"kind":"read","request":{"kind":"read","name":"narrow-layout","property":"root","target":"workspace"},"startedMs":49290}
+nemo43-step-start {"index":31,"kind":"invoke","request":{"args":["file:///tmp/nemo43-smoke/final-dense-narrow-saved.nemo"],"kind":"invoke","method":"saveAs","target":"projectFile"},"startedMs":49290}
+nemo43-native-evidence: wrote /tmp/nemo43-smoke/final-dense-narrow-v2/evidence.json
+nemo43-native-evidence {"attached":true,"captures":["media-dense","media-dense-scrolled","media-narrow"],"elapsedMs":49293,"errors":[],"event":"stage_ready","evidence":"/tmp/nemo43-smoke/final-dense-narrow-v2/evidence.json","lingerMs":1200,"phase":"final-dense-narrow","readyFile":"/tmp/nemo43-smoke/final-dense-narrow-v2/ready.json"}
+[nemo43-dense-v2: exited; cursor=5556]

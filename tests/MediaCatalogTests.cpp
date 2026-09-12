@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -9,6 +10,7 @@
 
 #include "nemo/core/commands/MediaCatalogCommands.hpp"
 #include "nemo/core/document/Document.hpp"
+#include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
 using namespace nemo;
@@ -43,6 +45,17 @@ MediaMetadata metadata(std::string name, MediaKind kind, bool offline = false) {
     value.kind = kind;
     value.offline = offline;
     return value;
+}
+
+MediaProbeMetadata readyProbe(std::string provenance = "fixture-probe") {
+    MediaProbeMetadata probe;
+    probe.width = 1920;
+    probe.height = 1080;
+    probe.duration = 240;
+    probe.codec = "h264";
+    probe.provenance = std::move(provenance);
+    probe.status = MediaProbeStatus::Ready;
+    return probe;
 }
 
 void addSourceNode(Document& document, std::string key) {
@@ -273,6 +286,224 @@ TEST(MediaCatalogTest, SmartMembershipUpdatesWithMetadataAndUndo) {
     EXPECT_TRUE(fixture.document.mediaCatalog.smartMembers(fixture.document, smart).empty());
 }
 
+TEST(MediaCatalogTest, SetMediaBinMetadataCommandNormalizesTagsAndUndoesAtomically) {
+    CatalogFixture fixture;
+    const auto bin = fixture.bin("Shots");
+    ASSERT_FALSE(fixture.document.mediaCatalog.bin(bin)->query.has_value());
+    const auto before = fixture.document.mediaCatalog.stateHash();
+
+    MediaBinMetadata metadata;
+    metadata.description = "archived selects";
+    metadata.tags = {"hero", "b-roll", "hero"};
+    metadata.label = "#3366ff";
+    fixture.history.push(setMediaBinMetadataCommand(bin, metadata));
+
+    const auto* stored = fixture.document.mediaCatalog.bin(bin);
+    ASSERT_NE(stored, nullptr);
+    EXPECT_EQ(stored->metadata.tags, (std::vector<std::string>{"b-roll", "hero"}));
+    EXPECT_EQ(stored->metadata.description, "archived selects");
+    EXPECT_EQ(stored->metadata.label, "#3366ff");
+    // A metadata edit never turns a container bin into a smart bin.
+    EXPECT_FALSE(stored->query.has_value());
+    EXPECT_NE(fixture.document.mediaCatalog.stateHash(), before);
+
+    ASSERT_TRUE(fixture.history.undo());
+    EXPECT_EQ(fixture.document.mediaCatalog.bin(bin)->metadata, MediaBinMetadata{});
+    EXPECT_EQ(fixture.document.mediaCatalog.stateHash(), before);
+    ASSERT_TRUE(fixture.history.redo());
+    EXPECT_EQ(fixture.document.mediaCatalog.bin(bin)->metadata.tags, (std::vector<std::string>{"b-roll", "hero"}));
+    EXPECT_EQ(fixture.document.mediaCatalog.bin(bin)->metadata.label, "#3366ff");
+}
+
+TEST(MediaCatalogTest, EmptyQueryDescriptorIsSavedAllMediaQueryAndNulloptResetsPlainBin) {
+    CatalogFixture fixture;
+    const auto smart = fixture.bin("All media");
+    const auto shot = fixture.import("shot", kInvalidMediaBin, metadata("Clip", MediaKind::Video));
+    const auto still = fixture.import("still", kInvalidMediaBin, metadata("Plate", MediaKind::Image));
+
+    // An engaged all-default descriptor is a saved all-media query.
+    fixture.history.push(setMediaQueryCommand(smart, MediaQueryDescriptor{}));
+    ASSERT_TRUE(fixture.document.mediaCatalog.bin(smart)->query.has_value());
+    auto members = fixture.document.mediaCatalog.smartMembers(fixture.document, smart);
+    std::sort(members.begin(), members.end());
+    EXPECT_EQ(members, (std::vector<MediaSourceId>{shot, still}));
+
+    // Membership is live: newly imported media joins without editing the query.
+    const auto added = fixture.import("shot", kInvalidMediaBin, metadata("Later", MediaKind::Video));
+    members = fixture.document.mediaCatalog.smartMembers(fixture.document, smart);
+    std::sort(members.begin(), members.end());
+    EXPECT_EQ(members, (std::vector<MediaSourceId>{shot, still, added}));
+
+    // Explicit nullopt alone resets the bin to an ordinary container.
+    fixture.history.push(setMediaQueryCommand(smart, std::nullopt));
+    EXPECT_FALSE(fixture.document.mediaCatalog.bin(smart)->query.has_value());
+    EXPECT_TRUE(fixture.document.mediaCatalog.smartMembers(fixture.document, smart).empty());
+
+    ASSERT_TRUE(fixture.history.undo());
+    EXPECT_EQ(fixture.document.mediaCatalog.smartMembers(fixture.document, smart).size(), 3u);
+}
+
+TEST(MediaCatalogTest, BinMetadataAndAllMediaQueryRoundTripThroughSavedDocument) {
+    Document document;
+    auto& catalog = document.mediaCatalog;
+    const auto bin = catalog.addBin("All media", kInvalidMediaBin, MediaQueryDescriptor{});
+    MediaBinMetadata binMetadata;
+    binMetadata.description = "everything";
+    binMetadata.tags = {"hero", "hero"};
+    binMetadata.label = "#3366ff";
+    binMetadata.extension = {{"futureBinFlag", true}};
+    catalog.setBinMetadata(bin, binMetadata);
+    MediaMetadata entryMetadata = metadata("Clip", MediaKind::Video);
+    const auto entry = catalog.addEntry("shot", bin, entryMetadata);
+
+    const auto encoded = saveDocument(document);
+    const auto loaded = loadDocument(encoded);
+    const MediaBin* loadedBin = loaded.document.mediaCatalog.bin(bin);
+    ASSERT_NE(loadedBin, nullptr);
+    EXPECT_TRUE(loadedBin->query.has_value());
+    EXPECT_EQ(loadedBin->metadata.tags, (std::vector<std::string>{"hero"}));
+    EXPECT_EQ(loadedBin->metadata.description, "everything");
+    EXPECT_EQ(loadedBin->metadata.label, "#3366ff");
+    ASSERT_TRUE(loadedBin->metadata.extension.is_object());
+    EXPECT_EQ(loadedBin->metadata.extension.at("futureBinFlag"), true);
+    // The saved all-media query still resolves against the loaded document.
+    EXPECT_EQ(loaded.document.mediaCatalog.smartMembers(loaded.document, bin), (std::vector<MediaSourceId>{entry}));
+    EXPECT_EQ(saveDocument(loaded.document), encoded);
+
+    // A file authored before bin metadata existed loads defaults and regains them
+    // on save without touching the smart-bin marker.
+    auto legacy = encoded;
+    legacy["mediaCatalog"]["bins"][0].erase("metadata");
+    const auto migrated = loadDocument(legacy).document;
+    ASSERT_NE(migrated.mediaCatalog.bin(bin), nullptr);
+    EXPECT_EQ(migrated.mediaCatalog.bin(bin)->metadata, MediaBinMetadata{});
+    EXPECT_TRUE(migrated.mediaCatalog.bin(bin)->query.has_value());
+    EXPECT_TRUE(saveDocument(migrated)["mediaCatalog"]["bins"][0].contains("metadata"));
+}
+
+TEST(MediaCatalogTest, SmartQueryTypedScopeRecursionAndKindFamilyDriveMembership) {
+    Document document;
+    auto& catalog = document.mediaCatalog;
+    const auto outer = catalog.addBin("Outer");
+    const auto nested = catalog.addBin("Nested", outer);
+    const auto topLevel = catalog.addEntry("shot", kInvalidMediaBin, metadata("Top", MediaKind::Video));
+    const auto inOuter = catalog.addEntry("shot", outer, metadata("Outer clip", MediaKind::Video));
+    const auto inNested = catalog.addEntry("still", nested, metadata("Nested plate", MediaKind::Image));
+    const auto sequence = catalog.addEntry("sequence", outer, metadata("Sequence", MediaKind::Sequence));
+
+    // Engaged scope + recursive=false: only the scope bin's direct entries.
+    const auto direct =
+        catalog.addBin("Direct", kInvalidMediaBin, MediaQueryDescriptor{.scope = outer, .recursive = false});
+    auto members = catalog.smartMembers(document, direct);
+    std::sort(members.begin(), members.end());
+    EXPECT_EQ(members, (std::vector<MediaSourceId>{inOuter, sequence}));
+
+    // Engaged scope + default recursive=true: the whole scope subtree.
+    const auto subtree = catalog.addBin("Subtree", kInvalidMediaBin, MediaQueryDescriptor{.scope = outer});
+    members = catalog.smartMembers(document, subtree);
+    std::sort(members.begin(), members.end());
+    EXPECT_EQ(members, (std::vector<MediaSourceId>{inOuter, inNested, sequence}));
+
+    // Absent scope: whole project regardless of depth.
+    const auto project = catalog.addBin("Project", kInvalidMediaBin, MediaQueryDescriptor{});
+    members = catalog.smartMembers(document, project);
+    std::sort(members.begin(), members.end());
+    EXPECT_EQ(members, (std::vector<MediaSourceId>{topLevel, inOuter, inNested, sequence}));
+
+    // Engaged root id (0) with recursive=false: direct children of the root.
+    const auto rootDirect = catalog.addBin("Root direct", kInvalidMediaBin,
+                                           MediaQueryDescriptor{.scope = kInvalidMediaBin, .recursive = false});
+    members = catalog.smartMembers(document, rootDirect);
+    EXPECT_EQ(members, (std::vector<MediaSourceId>{topLevel}));
+
+    // Kind family: Image alone excludes sequences; the flag admits them.
+    const auto stills = catalog.addBin("Stills", kInvalidMediaBin, MediaQueryDescriptor{.kind = MediaKind::Image});
+    members = catalog.smartMembers(document, stills);
+    EXPECT_EQ(members, (std::vector<MediaSourceId>{inNested}));
+    const auto stillsAndSequences =
+        catalog.addBin("Stills and sequences", kInvalidMediaBin,
+                       MediaQueryDescriptor{.kind = MediaKind::Image, .includeImageSequences = true});
+    members = catalog.smartMembers(document, stillsAndSequences);
+    std::sort(members.begin(), members.end());
+    EXPECT_EQ(members, (std::vector<MediaSourceId>{inNested, sequence}));
+
+    // A bins-only query contributes no media membership.
+    const auto binsOnly = catalog.addBin("Bins only", kInvalidMediaBin, MediaQueryDescriptor{.binsOnly = true});
+    EXPECT_TRUE(catalog.smartMembers(document, binsOnly).empty());
+
+    // The typed fields persist, and loaded queries keep their membership.
+    const auto encoded = saveDocument(document);
+    const auto loaded = loadDocument(encoded).document;
+    EXPECT_EQ(loaded.mediaCatalog.bins(), catalog.bins());
+    EXPECT_EQ(saveDocument(loaded), encoded);
+    auto loadedDirect = loaded.mediaCatalog.smartMembers(loaded, direct);
+    std::sort(loadedDirect.begin(), loadedDirect.end());
+    EXPECT_EQ(loadedDirect, (std::vector<MediaSourceId>{inOuter, sequence}));
+    auto loadedStills = loaded.mediaCatalog.smartMembers(loaded, stillsAndSequences);
+    std::sort(loadedStills.begin(), loadedStills.end());
+    EXPECT_EQ(loadedStills, (std::vector<MediaSourceId>{inNested, sequence}));
+}
+
+TEST(MediaCatalogTest, DeletedQueryScopeIsUnavailableAndNeverFallsBackToProject) {
+    Document document;
+    auto& catalog = document.mediaCatalog;
+    const auto scope = catalog.addBin("Scope");
+    const auto rootClip = catalog.addEntry("shot", kInvalidMediaBin, metadata("Root clip", MediaKind::Video));
+    const auto inside = catalog.addEntry("still", scope, metadata("Inside", MediaKind::Image));
+    const auto smart = catalog.addBin("Scoped", kInvalidMediaBin, MediaQueryDescriptor{.scope = scope});
+    EXPECT_EQ(catalog.smartMembers(document, smart), (std::vector<MediaSourceId>{inside}));
+
+    // Authoring a query against a missing bin is rejected without consuming history.
+    CommandStack history{document};
+    auto created = std::make_shared<MediaBinId>();
+    history.push(createBinCommand("Fresh", created));
+    const auto depth = history.depth();
+    MediaQueryDescriptor bogus;
+    bogus.scope = static_cast<MediaBinId>(999);
+    try {
+        history.push(setMediaQueryCommand(*created, bogus));
+        FAIL() << "a query scoped to a missing bin unexpectedly succeeded";
+    } catch (const GraphException& error) {
+        EXPECT_EQ(error.errorCode(), GraphError::UnknownMediaBin);
+    }
+    EXPECT_EQ(history.depth(), depth);
+    EXPECT_FALSE(catalog.bin(*created)->query.has_value());
+
+    // Removing the scope bin leaves the query unavailable, not project-wide.
+    catalog.removeBin(scope, true);
+    EXPECT_FALSE(catalog.queryScopeAvailable(*catalog.bin(smart)->query));
+    const auto members = catalog.smartMembers(document, smart);
+    EXPECT_TRUE(members.empty());
+    EXPECT_EQ(std::find(members.begin(), members.end(), rootClip), members.end());
+}
+
+TEST(MediaCatalogTest, RuntimeSourceFactsOverlayKindAndOfflineWithoutMutatingDocument) {
+    Document document;
+    auto& catalog = document.mediaCatalog;
+    const auto entry = catalog.addEntry("shot", kInvalidMediaBin, metadata("Clip", MediaKind::Unknown));
+    const auto kindBin = catalog.addBin("Video", kInvalidMediaBin, MediaQueryDescriptor{.kind = MediaKind::Video});
+    const auto offlineBin = catalog.addBin("Offline", kInvalidMediaBin, MediaQueryDescriptor{.offline = true});
+
+    // Without runtime facts the authored classification stands.
+    EXPECT_TRUE(catalog.smartMembers(document, kindBin).empty());
+    EXPECT_TRUE(catalog.smartMembers(document, offlineBin).empty());
+
+    const MediaQuerySourceState runtime[] = {{"shot", MediaKind::Video, true}};
+    EXPECT_EQ(catalog.smartMembers(document, kindBin, runtime), (std::vector<MediaSourceId>{entry}));
+    EXPECT_EQ(catalog.smartMembers(document, offlineBin, runtime), (std::vector<MediaSourceId>{entry}));
+
+    // The overlay is read-only: authored metadata and catalog state are untouched.
+    EXPECT_EQ(catalog.entry(entry)->metadata.kind, MediaKind::Unknown);
+    EXPECT_FALSE(catalog.entry(entry)->metadata.offline);
+    const auto authoredHash = catalog.stateHash();
+
+    // A fact for another source leaves the entry to its authored values.
+    const MediaQuerySourceState other[] = {{"other", MediaKind::Video, true}};
+    EXPECT_TRUE(catalog.smartMembers(document, kindBin, other).empty());
+    EXPECT_TRUE(catalog.smartMembers(document, offlineBin, other).empty());
+    EXPECT_EQ(catalog.stateHash(), authoredHash);
+}
+
 TEST(MediaCatalogTest, CatalogOnlyEditsLeaveSourceReferencesAndGraphOccurrencesUntouched) {
     CatalogFixture fixture;
     addSourceNode(fixture.document, "shot");
@@ -304,8 +535,118 @@ TEST(MediaCatalogTest, ProbeProposalIsNotCommittedUntilExplicitProvenanceBearing
     proposal.status = MediaProbeStatus::Ready;
     EXPECT_FALSE(fixture.document.mediaCatalog.entry(entry)->metadata.committedProbe.has_value());
 
-    fixture.history.push(commitMediaProbeCommand(entry, proposal));
+    fixture.history.push(commitMediaProbeCommand(entry, fixture.document.sources.at("shot"), proposal));
     ASSERT_TRUE(fixture.document.mediaCatalog.entry(entry)->metadata.committedProbe.has_value());
     EXPECT_EQ(fixture.document.mediaCatalog.entry(entry)->metadata.committedProbe->provenance, "fixture-probe");
     EXPECT_EQ(fixture.document.mediaCatalog.entry(entry)->metadata.committedProbe->width, 1920);
+}
+
+TEST(MediaCatalogTest, StaleProbeApplyAfterRelinkRejectsWithoutMutationOrHistory) {
+    CatalogFixture fixture;
+    const auto entry = fixture.import("shot", kInvalidMediaBin, metadata("Clip", MediaKind::Video));
+    const SourceReference expected = fixture.document.sources.at("shot");
+    fixture.history.push(relinkMediaSourceCommand(entry, expected, "/media/relinked/shot.mov"));
+    const auto depthAfterRelink = fixture.history.depth();
+
+    try {
+        fixture.history.push(commitMediaProbeCommand(entry, expected, readyProbe()));
+        FAIL() << "probe from before the relink unexpectedly applied";
+    } catch (const GraphException& error) {
+        EXPECT_EQ(error.errorCode(), GraphError::StaleMediaSource);
+    }
+    EXPECT_FALSE(fixture.document.mediaCatalog.entry(entry)->metadata.committedProbe.has_value());
+    EXPECT_EQ(fixture.history.depth(), depthAfterRelink);
+    EXPECT_EQ(fixture.document.sources.at("shot").path, "/media/relinked/shot.mov");
+    EXPECT_EQ(fixture.document.sources.at("shot").revision, expected.revision + 1);
+
+    fixture.history.push(commitMediaProbeCommand(entry, fixture.document.sources.at("shot"), readyProbe()));
+    EXPECT_TRUE(fixture.document.mediaCatalog.entry(entry)->metadata.committedProbe.has_value());
+}
+
+TEST(MediaCatalogTest, RelinkPreservesSharedSourceIdentityAndClearsProbesWithUndo) {
+    CatalogFixture fixture;
+    auto firstMetadata = metadata("First", MediaKind::Video);
+    firstMetadata.tags = {"hero"};
+    const auto first = fixture.import("shot", kInvalidMediaBin, firstMetadata);
+    const auto second = fixture.import("shot", kInvalidMediaBin, metadata("Second", MediaKind::Video));
+    const SourceReference expected = fixture.document.sources.at("shot");
+    fixture.history.push(commitMediaProbeCommand(first, expected, readyProbe("first")));
+    fixture.history.push(commitMediaProbeCommand(second, expected, readyProbe("second")));
+    const auto destination = fixture.bin("Destination");
+    fixture.history.push(moveMediaCommand(second, destination));
+
+    fixture.history.push(relinkMediaSourceCommand(first, expected, "/media/relinked/shot.mov"));
+
+    const auto* firstEntry = fixture.document.mediaCatalog.entry(first);
+    const auto* secondEntry = fixture.document.mediaCatalog.entry(second);
+    ASSERT_NE(firstEntry, nullptr);
+    ASSERT_NE(secondEntry, nullptr);
+    EXPECT_EQ(firstEntry->id, first);
+    EXPECT_EQ(firstEntry->sourceKey, "shot");
+    EXPECT_EQ(secondEntry->sourceKey, "shot");
+    EXPECT_EQ(firstEntry->metadata.userName, "First");
+    EXPECT_EQ(firstEntry->metadata.tags, (std::vector<std::string>{"hero"}));
+    EXPECT_EQ(firstEntry->parent, kInvalidMediaBin);
+    EXPECT_EQ(secondEntry->parent, destination);
+    EXPECT_FALSE(firstEntry->metadata.committedProbe.has_value());
+    EXPECT_FALSE(secondEntry->metadata.committedProbe.has_value());
+    EXPECT_EQ(fixture.document.sources.at("shot").path, "/media/relinked/shot.mov");
+    EXPECT_EQ(fixture.document.sources.at("shot").revision, expected.revision + 1);
+    EXPECT_EQ(fixture.document.sources.at("shot").frameOffset, expected.frameOffset);
+    EXPECT_EQ(fixture.document.sources.at("shot").frameStep, expected.frameStep);
+    EXPECT_EQ(fixture.document.sources.at("still").path, "/media/still.exr");
+    EXPECT_EQ(fixture.document.sources.at("still").revision, 7u);
+
+    ASSERT_TRUE(fixture.history.undo());
+    EXPECT_EQ(fixture.document.sources.at("shot").path, "/media/shot.mov");
+    EXPECT_EQ(fixture.document.sources.at("shot").revision, expected.revision);
+    EXPECT_TRUE(fixture.document.mediaCatalog.entry(first)->metadata.committedProbe.has_value());
+    EXPECT_TRUE(fixture.document.mediaCatalog.entry(second)->metadata.committedProbe.has_value());
+    EXPECT_EQ(fixture.document.mediaCatalog.entry(first)->metadata.tags, (std::vector<std::string>{"hero"}));
+    ASSERT_TRUE(fixture.history.redo());
+    EXPECT_EQ(fixture.document.sources.at("shot").path, "/media/relinked/shot.mov");
+    EXPECT_FALSE(fixture.document.mediaCatalog.entry(first)->metadata.committedProbe.has_value());
+}
+
+TEST(MediaCatalogTest, ExpectedSourceGuardRejectsInterpretationAndMappingMismatchButAllowsMetadataEdits) {
+    CatalogFixture fixture;
+    auto tagged = metadata("Clip", MediaKind::Video);
+    tagged.tags = {"hero", "select"};
+    const auto entry = fixture.import("shot", kInvalidMediaBin, tagged);
+    const SourceReference expected = fixture.document.sources.at("shot");
+
+    // Unrelated catalog metadata edits do not invalidate the source snapshot.
+    fixture.history.push(setMediaMetadataCommand(entry, tagged));
+
+    auto reinterpreted = expected;
+    reinterpreted.interpretation["transfer"] = "sRGB";
+    fixture.history.push(setSourceCommand("shot", reinterpreted));
+    const auto depthAfterReinterpret = fixture.history.depth();
+    try {
+        fixture.history.push(commitMediaProbeCommand(entry, expected, readyProbe()));
+        FAIL() << "probe applied against a reinterpreted source";
+    } catch (const GraphException& error) {
+        EXPECT_EQ(error.errorCode(), GraphError::StaleMediaSource);
+    }
+    EXPECT_EQ(fixture.history.depth(), depthAfterReinterpret);
+    EXPECT_FALSE(fixture.document.mediaCatalog.entry(entry)->metadata.committedProbe.has_value());
+    ASSERT_TRUE(fixture.history.undo());
+
+    auto remapped = expected;
+    remapped.frameStep = 2;
+    fixture.history.push(setSourceCommand("shot", remapped));
+    try {
+        fixture.history.push(commitMediaProbeCommand(entry, expected, readyProbe()));
+        FAIL() << "probe applied against a remapped source";
+    } catch (const GraphException& error) {
+        EXPECT_EQ(error.errorCode(), GraphError::StaleMediaSource);
+    }
+    ASSERT_TRUE(fixture.history.undo());
+
+    fixture.history.push(commitMediaProbeCommand(entry, expected, readyProbe()));
+    const auto* committed = fixture.document.mediaCatalog.entry(entry);
+    ASSERT_NE(committed, nullptr);
+    ASSERT_TRUE(committed->metadata.committedProbe.has_value());
+    EXPECT_EQ(committed->metadata.committedProbe->provenance, "fixture-probe");
+    EXPECT_EQ(committed->metadata.tags, (std::vector<std::string>{"hero", "select"}));
 }

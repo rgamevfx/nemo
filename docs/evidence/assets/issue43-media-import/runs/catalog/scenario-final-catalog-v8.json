@@ -1,0 +1,731 @@
+{
+  "phase": "final-catalog",
+  "group": "A",
+  "panelType": "media",
+  "settleMs": 500,
+  "grabWindow": true,
+  "quit": true,
+  "lingerMs": 1200,
+  "steps": [
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "revealMediaPanel",
+      "args": [
+        "A"
+      ]
+    },
+    {
+      "kind": "waitForPanel",
+      "panelType": "media",
+      "group": "A",
+      "timeoutMs": 500
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-3"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-8"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "workspace",
+      "method": "closePanel",
+      "args": [
+        "panel-6"
+      ]
+    },
+    {
+      "kind": "resizeWindow",
+      "width": 1274,
+      "height": 640
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "viewMode": "list",
+        "projectScope": true
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/still.png",
+          "/tmp/nemo43-smoke/tagged.mkv",
+          "/tmp/nemo43-smoke/ambiguous.mkv",
+          "/tmp/nemo43-smoke/unsupported.png",
+          "/tmp/nemo43-smoke/corrupt.exr",
+          "/tmp/nemo43-smoke/offline.png"
+        ],
+        "root",
+        0
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "importPaths",
+      "args": [
+        [
+          "/tmp/nemo43-smoke/shot.####.exr"
+        ],
+        "root",
+        1001
+      ]
+    },
+    {
+      "kind": "probe",
+      "ticks": 90,
+      "intervalMs": 16
+    },
+    {
+      "kind": "wait",
+      "ms": 1000
+    },
+    {
+      "kind": "capture",
+      "name": "media-list"
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "query",
+      "args": [
+        "project",
+        "",
+        true,
+        {}
+      ]
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaViewToggleButton"
+      }
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 1100,
+        "y": 600
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "capture",
+      "name": "media-grid"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaViewToggleButton"
+      }
+    },
+    {
+      "kind": "click",
+      "at": {
+        "x": 1100,
+        "y": 600
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaSearchField"
+      }
+    },
+    {
+      "kind": "key",
+      "key": "t"
+    },
+    {
+      "kind": "key",
+      "key": "a"
+    },
+    {
+      "kind": "key",
+      "key": "g"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "capture",
+      "name": "media-search"
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "visibleItems",
+      "args": []
+    },
+    {
+      "kind": "key",
+      "key": "A",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "key",
+      "key": "Backspace"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openMetadata",
+      "args": [
+        "media-1"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaTagsField",
+      "property": "text",
+      "value": "hero, review"
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaDescriptionField",
+      "property": "text",
+      "value": "Real decoded image; user metadata remains independent."
+    },
+    {
+      "kind": "capture",
+      "name": "media-metadata"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaApplyProbeButton"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaMetadataDialog",
+      "method": "accept",
+      "args": []
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "media-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "startRename",
+      "args": [
+        "media-1"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaRenameField",
+      "property": "text",
+      "value": "Hero Plate"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "media-1"
+      ]
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaAddBinButton"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": {
+        "objectName": "mediaCreateBinDialog",
+        "property": "contentItem"
+      },
+      "property": "text",
+      "value": "Shots"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginCreate",
+      "args": [
+        "bin-1",
+        false
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": {
+        "objectName": "mediaCreateBinDialog",
+        "property": "contentItem"
+      },
+      "property": "text",
+      "value": "Plates"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openBin",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "selectEntries",
+      "panelType": "media",
+      "group": "A",
+      "ids": [
+        "media-2"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "copySelection",
+      "args": [
+        true
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openBin",
+      "args": [
+        "bin-2"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "pasteSelection",
+      "args": []
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "media-2"
+      ]
+    },
+    {
+      "kind": "capture",
+      "name": "media-tree-breadcrumb"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-2"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 100
+    },
+    {
+      "kind": "read",
+      "name": "undo-1-focus",
+      "target": {
+        "objectName": "mainWindow",
+        "property": "activeFocusItem"
+      },
+      "property": "objectName"
+    },
+    {
+      "kind": "read",
+      "name": "undo-1-available",
+      "target": "mediaLibrary",
+      "property": "canUndo"
+    },
+    {
+      "kind": "key",
+      "key": "Z",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "media-2"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openBin",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "selectEntries",
+      "panelType": "media",
+      "group": "A",
+      "ids": [
+        "media-1"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "copySelection",
+      "args": [
+        false
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "pasteSelection",
+      "args": []
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "children",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaInput_media-1"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 100
+    },
+    {
+      "kind": "read",
+      "name": "undo-2-focus",
+      "target": {
+        "objectName": "mainWindow",
+        "property": "activeFocusItem"
+      },
+      "property": "objectName"
+    },
+    {
+      "kind": "read",
+      "name": "undo-2-available",
+      "target": "mediaLibrary",
+      "property": "canUndo"
+    },
+    {
+      "kind": "key",
+      "key": "Z",
+      "modifiers": "Ctrl"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "children",
+      "args": [
+        "root"
+      ]
+    },
+    {
+      "kind": "setPanelState",
+      "panelType": "media",
+      "group": "A",
+      "state": {
+        "projectScope": true,
+        "searchText": "hero"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginSaveSmartBin",
+      "args": []
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaSmartBinNameField",
+      "property": "text",
+      "value": "Hero Sources"
+    },
+    {
+      "kind": "key",
+      "key": "Return"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "read",
+      "name": "saved-searches",
+      "target": "mediaLibrary",
+      "property": "smartBins"
+    },
+    {
+      "kind": "capture",
+      "name": "media-smart-bin"
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openSmartBin",
+      "args": [
+        "smart-offline"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "visibleItems",
+      "args": []
+    },
+    {
+      "kind": "capture",
+      "name": "media-offline"
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "beginRelink",
+      "args": [
+        "media-6"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "setProperty",
+      "target": "mediaRelinkPathField",
+      "property": "text",
+      "value": "/tmp/nemo43-smoke/still.png"
+    },
+    {
+      "kind": "capture",
+      "name": "media-relink"
+    },
+    {
+      "kind": "click",
+      "target": {
+        "objectName": "mediaRelinkConfirmButton"
+      }
+    },
+    {
+      "kind": "probe",
+      "ticks": 90,
+      "intervalMs": 16
+    },
+    {
+      "kind": "invoke",
+      "target": "mediaLibrary",
+      "method": "item",
+      "args": [
+        "media-6"
+      ]
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "openSmartBin",
+      "args": [
+        "smart-unused"
+      ]
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "invoke",
+      "target": {
+        "panelType": "media",
+        "group": "A"
+      },
+      "method": "visibleItems",
+      "args": []
+    },
+    {
+      "kind": "read",
+      "name": "workspace-layout",
+      "target": "workspace",
+      "property": "root"
+    },
+    {
+      "kind": "invoke",
+      "target": "projectFile",
+      "method": "saveAs",
+      "args": [
+        "file:///tmp/nemo43-smoke/final-catalog-saved.nemo"
+      ]
+    }
+  ]
+}

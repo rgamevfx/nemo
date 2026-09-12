@@ -1,0 +1,1996 @@
+{
+    "attachError": "",
+    "attached": true,
+    "captures": [
+        {
+            "devicePixelRatio": 1,
+            "grabDevicePixelRatio": 1,
+            "grabSize": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "height": 640,
+            "name": "media-timeline-drag",
+            "path": "/tmp/nemo43-smoke/final-drag-workspace/shots-media-timeline-drag.png",
+            "sourcePixels": {
+                "height": 640,
+                "width": 1274,
+                "x": 0,
+                "y": 0
+            },
+            "width": 1274
+        }
+    ],
+    "deadlineMs": 180000,
+    "elapsedMs": 11990,
+    "environment": {
+        "engine": {
+            "className": "QQmlApplicationEngine",
+            "contextProperties": {
+                "mediaLibrary": true,
+                "panelContextRouter": true,
+                "parameterEditors": true,
+                "projectFile": true,
+                "viewerController": true,
+                "viewerControllers": true,
+                "workspace": true
+            },
+            "found": true
+        },
+        "mediaLibrary": {
+            "className": "nemo::ui::MediaLibraryModel",
+            "found": true,
+            "revision": 6
+        },
+        "process": {
+            "applicationName": "nemo-ui",
+            "arguments": [
+                "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+            ],
+            "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+            "pid": 1946319,
+            "platform": "wayland",
+            "qtVersion": "6.4.2"
+        },
+        "workspace": {
+            "found": true,
+            "panelTypes": [
+                {
+                    "headerSource": "",
+                    "source": "ViewerPanel.qml",
+                    "title": "Viewer",
+                    "typeId": "viewer"
+                },
+                {
+                    "headerSource": "",
+                    "source": "GraphPanel.qml",
+                    "title": "Node graph",
+                    "typeId": "nodegraph"
+                },
+                {
+                    "headerSource": "",
+                    "source": "TimelinePanel.qml",
+                    "title": "Timeline",
+                    "typeId": "timeline"
+                },
+                {
+                    "headerSource": "",
+                    "source": "ParametersPanel.qml",
+                    "title": "Parameters",
+                    "typeId": "parameters"
+                },
+                {
+                    "headerSource": "",
+                    "source": "MediaBinPanel.qml",
+                    "title": "Media Bin",
+                    "typeId": "media"
+                }
+            ],
+            "panels": [
+                {
+                    "group": "B",
+                    "id": "panel-12",
+                    "state": {
+                        "anchorId": "media-1",
+                        "currentParentId": "bin-1",
+                        "currentSmartBinId": "",
+                        "expandedBins": {
+                            "bin-1": true,
+                            "root": true
+                        },
+                        "kindFilter": "all",
+                        "offlineOnly": false,
+                        "projectScope": false,
+                        "searchText": "",
+                        "selectedIds": [
+                            "media-1",
+                            "media-2",
+                            "media-3"
+                        ],
+                        "sortDescending": false,
+                        "sortField": "name",
+                        "treeCollapsed": false,
+                        "treeWidth": 184,
+                        "unusedOnly": false,
+                        "viewMode": "list"
+                    },
+                    "title": "",
+                    "type": "media"
+                },
+                {
+                    "group": "A",
+                    "id": "panel-16",
+                    "state": {
+                        "viewerRole": "media"
+                    },
+                    "title": "",
+                    "type": "viewer"
+                },
+                {
+                    "group": "A",
+                    "id": "panel-13",
+                    "state": null,
+                    "title": "",
+                    "type": "timeline"
+                }
+            ]
+        }
+    },
+    "errors": [
+    ],
+    "geometry": [
+        {
+            "className": "MediaBinPanel_QMLTYPE_93",
+            "devicePixelRatio": 1,
+            "deviceRect": {
+                "height": 298,
+                "width": 448,
+                "x": 9,
+                "y": 81
+            },
+            "effectiveVisible": true,
+            "found": true,
+            "globalCaveat": "mapToGlobal is window-relative under Wayland; the compositor owns absolute placement",
+            "globalRect": {
+                "height": 298,
+                "width": 448,
+                "x": 9,
+                "y": 81
+            },
+            "height": 298,
+            "objectName": "mediaBinPanel",
+            "opacity": 1,
+            "panelId": "panel-12",
+            "role": "panel-body",
+            "sceneRect": {
+                "height": 298,
+                "width": 448,
+                "x": 9,
+                "y": 81
+            },
+            "visible": true,
+            "width": 448,
+            "windowRect": {
+                "height": 298,
+                "width": 448,
+                "x": 9,
+                "y": 81
+            }
+        }
+    ],
+    "grabWindowEnabled": true,
+    "helper": "nemo43-native-evidence/1",
+    "lingerMs": 1200,
+    "observations": [
+        {
+            "className": "TimelinePanel_QMLTYPE_52",
+            "name": "timeline-clock-before",
+            "property": "routedClock",
+            "resolvedVia": "panelType:timeline/A",
+            "summary": "37",
+            "valid": true,
+            "value": 37,
+            "valueType": "double"
+        },
+        {
+            "className": "QQuickItem_QML_98",
+            "name": "visible-source-order",
+            "property": "sourceIds",
+            "resolvedVia": "objectName:mediaInput_media-1.property:parent",
+            "valid": true,
+            "value": [
+                "tagged",
+                "tagged",
+                "sequence"
+            ],
+            "valueType": "QJSValue"
+        },
+        {
+            "className": "QQuickItem_QML_98",
+            "name": "per-occurrence-marks",
+            "property": "marks",
+            "resolvedVia": "objectName:mediaInput_media-1.property:parent",
+            "valid": true,
+            "value": [
+                {
+                    "inFrame": 2,
+                    "outFrame": 8,
+                    "sourceId": "tagged"
+                },
+                {
+                    "inFrame": 10,
+                    "outFrame": 15,
+                    "sourceId": "tagged"
+                },
+                {
+                    "inFrame": 0,
+                    "outFrame": 1,
+                    "sourceId": "sequence"
+                }
+            ],
+            "valueType": "QJSValue"
+        },
+        {
+            "className": "QQuickItem_QML_98",
+            "name": "origin-group",
+            "property": "sourceGroup",
+            "resolvedVia": "objectName:mediaInput_media-1.property:parent",
+            "summary": "B",
+            "valid": true,
+            "value": "B",
+            "valueType": "QString"
+        },
+        {
+            "count": 1,
+            "emissions": [
+                [
+                    "A",
+                    [
+                        "tagged",
+                        "tagged",
+                        "sequence"
+                    ],
+                    "insert",
+                    [
+                        {
+                            "inFrame": 2,
+                            "outFrame": 8,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 10,
+                            "outFrame": 15,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 0,
+                            "outFrame": 1,
+                            "sourceId": "sequence"
+                        }
+                    ]
+                ]
+            ],
+            "name": "insertIntent",
+            "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+        },
+        {
+            "className": "TimelinePanel_QMLTYPE_52",
+            "name": "timeline-clock-after-drop",
+            "property": "routedClock",
+            "resolvedVia": "panelType:timeline/A",
+            "summary": "37",
+            "valid": true,
+            "value": 37,
+            "valueType": "double"
+        },
+        {
+            "count": 1,
+            "emissions": [
+                [
+                    "A",
+                    [
+                        "tagged",
+                        "tagged",
+                        "sequence"
+                    ],
+                    "insert",
+                    [
+                        {
+                            "inFrame": 2,
+                            "outFrame": 8,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 10,
+                            "outFrame": 15,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 0,
+                            "outFrame": 1,
+                            "sourceId": "sequence"
+                        }
+                    ]
+                ]
+            ],
+            "name": "insertIntent",
+            "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+        },
+        {
+            "count": 1,
+            "emissions": [
+                [
+                    "A",
+                    [
+                        "tagged",
+                        "tagged",
+                        "sequence"
+                    ],
+                    "insert",
+                    [
+                        {
+                            "inFrame": 2,
+                            "outFrame": 8,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 10,
+                            "outFrame": 15,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 0,
+                            "outFrame": 1,
+                            "sourceId": "sequence"
+                        }
+                    ]
+                ]
+            ],
+            "name": "insertIntent",
+            "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+        },
+        {
+            "count": 1,
+            "emissions": [
+                [
+                    "A",
+                    [
+                        "tagged",
+                        "tagged",
+                        "sequence"
+                    ],
+                    "insert",
+                    [
+                        {
+                            "inFrame": 2,
+                            "outFrame": 8,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 10,
+                            "outFrame": 15,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 0,
+                            "outFrame": 1,
+                            "sourceId": "sequence"
+                        }
+                    ]
+                ]
+            ],
+            "name": "insertIntent",
+            "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+        },
+        {
+            "count": 2,
+            "emissions": [
+                [
+                    "A",
+                    [
+                        "tagged",
+                        "tagged",
+                        "sequence"
+                    ],
+                    "insert",
+                    [
+                        {
+                            "inFrame": 2,
+                            "outFrame": 8,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 10,
+                            "outFrame": 15,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 0,
+                            "outFrame": 1,
+                            "sourceId": "sequence"
+                        }
+                    ]
+                ],
+                [
+                    "B",
+                    [
+                        "tagged",
+                        "tagged",
+                        "sequence"
+                    ],
+                    "overwrite",
+                    [
+                        {
+                            "inFrame": 2,
+                            "outFrame": 8,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 10,
+                            "outFrame": 15,
+                            "sourceId": "tagged"
+                        },
+                        {
+                            "inFrame": 0,
+                            "outFrame": 1,
+                            "sourceId": "sequence"
+                        }
+                    ]
+                ]
+            ],
+            "name": "insertIntent",
+            "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+        },
+        {
+            "className": "TimelinePanel_QMLTYPE_52",
+            "name": "timeline-clock-final",
+            "property": "routedClock",
+            "resolvedVia": "panelType:timeline/A",
+            "summary": "37",
+            "valid": true,
+            "value": 37,
+            "valueType": "double"
+        }
+    ],
+    "phase": "final-drag-workspace",
+    "readyFile": "/tmp/nemo43-smoke/final-drag-workspace/ready.json",
+    "responsiveness": {
+        "baseTickMs": 16,
+        "frameSwapped": 217,
+        "maxBaseTickGapMs": 175
+    },
+    "scenarioLoaded": true,
+    "scenarioPath": "/tmp/nemo43-smoke/scenario-final-drag-workspace.json",
+    "steps": [
+        {
+            "index": 0,
+            "kind": "attach",
+            "request": {
+                "engineFound": true,
+                "windowObjectName": "mainWindow"
+            },
+            "startedMs": 136
+        },
+        {
+            "finishedMs": 136,
+            "index": 1,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "file:///tmp/nemo43-smoke/marked-catalog.json"
+                ],
+                "kind": "invoke",
+                "method": "openProject",
+                "target": "projectFile"
+            },
+            "result": {
+                "className": "nemo::ui::ProjectFileController",
+                "method": "openProject",
+                "resolvedVia": "contextProperty:projectFile",
+                "resultSummary": "void"
+            },
+            "startedMs": 136
+        },
+        {
+            "index": 2,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 600
+            },
+            "startedMs": 136
+        },
+        {
+            "finishedMs": 753,
+            "index": 3,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "projectWarningsDismissButton"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:projectWarningsDismissButton",
+                "x": 394,
+                "y": 470
+            },
+            "startedMs": 750
+        },
+        {
+            "index": 4,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 300
+            },
+            "startedMs": 753
+        },
+        {
+            "finishedMs": 1054,
+            "index": 5,
+            "kind": "resizeWindow",
+            "ok": true,
+            "request": {
+                "height": 640,
+                "kind": "resizeWindow",
+                "width": 1274
+            },
+            "result": {
+                "height": 640,
+                "width": 1274
+            },
+            "startedMs": 1054
+        },
+        {
+            "finishedMs": 1057,
+            "index": 6,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "A",
+                    {
+                        "timelineClock": 37
+                    }
+                ],
+                "kind": "invoke",
+                "method": "setGroupContext",
+                "target": "panelContextRouter"
+            },
+            "result": {
+                "className": "nemo::ui::PanelContextRouter",
+                "method": "setGroupContext",
+                "resolvedVia": "contextProperty:panelContextRouter",
+                "resultJson": true,
+                "resultSummary": "true"
+            },
+            "startedMs": 1054
+        },
+        {
+            "finishedMs": 1074,
+            "index": 7,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "B"
+                ],
+                "kind": "invoke",
+                "method": "revealMediaPanel",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "revealMediaPanel",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            },
+            "startedMs": 1057
+        },
+        {
+            "finishedMs": 1586,
+            "index": 8,
+            "kind": "waitForPanel",
+            "ok": true,
+            "request": {
+                "group": "B",
+                "kind": "waitForPanel",
+                "panelType": "media",
+                "timeoutMs": 500
+            },
+            "result": {
+                "bodyClassName": "MediaBinPanel_QMLTYPE_93",
+                "bodyFound": true,
+                "bodyHeight": 354,
+                "bodyObjectName": "mediaBinPanel",
+                "bodyWidth": 623,
+                "panelId": "panel-12"
+            },
+            "startedMs": 1074
+        },
+        {
+            "finishedMs": 1591,
+            "index": 9,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-1"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            },
+            "startedMs": 1586
+        },
+        {
+            "finishedMs": 1626,
+            "index": 10,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-3"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            },
+            "startedMs": 1591
+        },
+        {
+            "finishedMs": 1638,
+            "index": 11,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-8"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            },
+            "startedMs": 1626
+        },
+        {
+            "finishedMs": 1668,
+            "index": 12,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "panel-6"
+                ],
+                "kind": "invoke",
+                "method": "closePanel",
+                "target": "workspace"
+            },
+            "result": {
+                "className": "nemo::workspace::WorkspaceController",
+                "method": "closePanel",
+                "resolvedVia": "contextProperty:workspace",
+                "resultSummary": "void"
+            },
+            "startedMs": 1638
+        },
+        {
+            "finishedMs": 1684,
+            "index": 13,
+            "kind": "createPanel",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "inLeafOf": "media",
+                "kind": "createPanel",
+                "placement": "bottom",
+                "ratio": 0.58,
+                "type": "timeline"
+            },
+            "result": {
+                "panelId": "panel-13",
+                "rootAfterPlacement": {
+                    "children": [
+                        {
+                            "active": "panel-12",
+                            "id": "leaf-2",
+                            "kind": "tabs",
+                            "panels": [
+                                {
+                                    "group": "B",
+                                    "id": "panel-12",
+                                    "type": "media"
+                                }
+                            ]
+                        },
+                        {
+                            "active": "panel-13",
+                            "id": "leaf-14",
+                            "kind": "tabs",
+                            "panels": [
+                                {
+                                    "group": "A",
+                                    "id": "panel-13",
+                                    "type": "timeline"
+                                }
+                            ]
+                        }
+                    ],
+                    "id": "split-15",
+                    "kind": "split",
+                    "orientation": "vertical",
+                    "ratio": 0.5
+                }
+            },
+            "startedMs": 1668
+        },
+        {
+            "finishedMs": 2018,
+            "index": 14,
+            "kind": "createViewer",
+            "ok": true,
+            "request": {
+                "group": "A",
+                "inLeafOf": "media",
+                "kind": "createViewer",
+                "placement": "right",
+                "ratio": 0.36,
+                "role": "media"
+            },
+            "result": {
+                "applied": true,
+                "leafId": "leaf-17",
+                "originalLeafId": "leaf-2",
+                "panelId": "panel-16",
+                "placement": "right",
+                "ratio": 0.36,
+                "role": "media",
+                "rootAfterPlacement": {
+                    "children": [
+                        {
+                            "children": [
+                                {
+                                    "active": "panel-12",
+                                    "id": "leaf-2",
+                                    "kind": "tabs",
+                                    "panels": [
+                                        {
+                                            "group": "B",
+                                            "id": "panel-12",
+                                            "type": "media"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "active": "panel-16",
+                                    "id": "leaf-17",
+                                    "kind": "tabs",
+                                    "panels": [
+                                        {
+                                            "group": "A",
+                                            "id": "panel-16",
+                                            "type": "viewer"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "id": "split-18",
+                            "kind": "split",
+                            "orientation": "horizontal",
+                            "ratio": 0.5
+                        },
+                        {
+                            "active": "panel-13",
+                            "id": "leaf-14",
+                            "kind": "tabs",
+                            "panels": [
+                                {
+                                    "group": "A",
+                                    "id": "panel-13",
+                                    "type": "timeline"
+                                }
+                            ]
+                        }
+                    ],
+                    "id": "split-15",
+                    "kind": "split",
+                    "orientation": "vertical",
+                    "ratio": 0.58
+                },
+                "splitId": "split-18",
+                "viewerRole": "media"
+            },
+            "startedMs": 1684
+        },
+        {
+            "index": 15,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 300
+            },
+            "startedMs": 2018
+        },
+        {
+            "finishedMs": 2323,
+            "index": 16,
+            "kind": "setPanelState",
+            "ok": true,
+            "request": {
+                "group": "B",
+                "kind": "setPanelState",
+                "panelType": "media",
+                "state": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                }
+            },
+            "result": {
+                "panelId": "panel-12",
+                "readBackState": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                },
+                "requestedState": {
+                    "projectScope": true,
+                    "viewMode": "list"
+                }
+            },
+            "startedMs": 2320
+        },
+        {
+            "finishedMs": 3765,
+            "index": 17,
+            "kind": "probe",
+            "ok": true,
+            "request": {
+                "intervalMs": 16,
+                "kind": "probe",
+                "ticks": 90
+            },
+            "result": {
+                "intervalMs": 16,
+                "maxGapMs": 18,
+                "meanGapMs": 16.011111111111113,
+                "minGapMs": 14,
+                "note": "GUI-thread QTimer cadence; jitter/ordering only, not render or scanout timing",
+                "p95GapMs": 16,
+                "samples": [
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    18,
+                    14,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    15,
+                    17,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16,
+                    16
+                ],
+                "ticks": 90
+            },
+            "startedMs": 2323
+        },
+        {
+            "finishedMs": 3781,
+            "index": 18,
+            "kind": "spySignal",
+            "ok": true,
+            "request": {
+                "kind": "spySignal",
+                "name": "insertIntent",
+                "signal": "timelineInsertRequested",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "name": "insertIntent",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "signal": "timelineInsertRequested"
+            },
+            "startedMs": 3781
+        },
+        {
+            "finishedMs": 3783,
+            "index": 19,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "timeline-clock-before",
+                "property": "routedClock",
+                "target": {
+                    "group": "A",
+                    "panelType": "timeline"
+                }
+            },
+            "result": {
+                "className": "TimelinePanel_QMLTYPE_52",
+                "name": "timeline-clock-before",
+                "property": "routedClock",
+                "resolvedVia": "panelType:timeline/A",
+                "summary": "37",
+                "valid": true,
+                "value": 37,
+                "valueType": "double"
+            },
+            "startedMs": 3781
+        },
+        {
+            "finishedMs": 3790,
+            "index": 20,
+            "kind": "selectEntries",
+            "ok": true,
+            "request": {
+                "group": "B",
+                "ids": [
+                    "media-3",
+                    "media-2",
+                    "media-1"
+                ],
+                "kind": "selectEntries",
+                "panelType": "media"
+            },
+            "result": {
+                "names": [
+                    "Gamma Sequence",
+                    "Beta Clip",
+                    "Alpha Clip"
+                ],
+                "panelId": "panel-12",
+                "selectedIds": [
+                    "media-3",
+                    "media-2",
+                    "media-1"
+                ]
+            },
+            "startedMs": 3783
+        },
+        {
+            "index": 21,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 200
+            },
+            "startedMs": 3790
+        },
+        {
+            "finishedMs": 4005,
+            "index": 22,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "visible-source-order",
+                "property": "sourceIds",
+                "target": {
+                    "objectName": "mediaInput_media-1",
+                    "property": "parent"
+                }
+            },
+            "result": {
+                "className": "QQuickItem_QML_98",
+                "name": "visible-source-order",
+                "property": "sourceIds",
+                "resolvedVia": "objectName:mediaInput_media-1.property:parent",
+                "valid": true,
+                "value": [
+                    "tagged",
+                    "tagged",
+                    "sequence"
+                ],
+                "valueType": "QJSValue"
+            },
+            "startedMs": 4005
+        },
+        {
+            "finishedMs": 4005,
+            "index": 23,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "per-occurrence-marks",
+                "property": "marks",
+                "target": {
+                    "objectName": "mediaInput_media-1",
+                    "property": "parent"
+                }
+            },
+            "result": {
+                "className": "QQuickItem_QML_98",
+                "name": "per-occurrence-marks",
+                "property": "marks",
+                "resolvedVia": "objectName:mediaInput_media-1.property:parent",
+                "valid": true,
+                "value": [
+                    {
+                        "inFrame": 2,
+                        "outFrame": 8,
+                        "sourceId": "tagged"
+                    },
+                    {
+                        "inFrame": 10,
+                        "outFrame": 15,
+                        "sourceId": "tagged"
+                    },
+                    {
+                        "inFrame": 0,
+                        "outFrame": 1,
+                        "sourceId": "sequence"
+                    }
+                ],
+                "valueType": "QJSValue"
+            },
+            "startedMs": 4005
+        },
+        {
+            "finishedMs": 4006,
+            "index": 24,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "origin-group",
+                "property": "sourceGroup",
+                "target": {
+                    "objectName": "mediaInput_media-1",
+                    "property": "parent"
+                }
+            },
+            "result": {
+                "className": "QQuickItem_QML_98",
+                "name": "origin-group",
+                "property": "sourceGroup",
+                "resolvedVia": "objectName:mediaInput_media-1.property:parent",
+                "summary": "B",
+                "valid": true,
+                "value": "B",
+                "valueType": "QString"
+            },
+            "startedMs": 4005
+        },
+        {
+            "finishedMs": 5351,
+            "index": 25,
+            "kind": "drag",
+            "ok": true,
+            "request": {
+                "from": {
+                    "objectName": "mediaInput_media-1"
+                },
+                "holdMs": 80,
+                "kind": "drag",
+                "settleMs": 700,
+                "spacingMs": 80,
+                "steps": 12,
+                "to": {
+                    "objectName": "timelineInsertDrop"
+                }
+            },
+            "result": {
+                "cancel": false,
+                "dropAreasAtRelease": [
+                    {
+                        "containsDrag": false,
+                        "keys": [
+                            "application/x-nemo-source",
+                            "application/x-nemo-source-id"
+                        ],
+                        "objectName": "timelineInsertDrop",
+                        "rect": {
+                            "height": 206,
+                            "width": 1256,
+                            "x": 9,
+                            "y": 425.4
+                        }
+                    }
+                ],
+                "eventSource": "QTest synthesized Qt events across separate GUI ticks; not OS-pointer parity",
+                "from": {
+                    "x": 330,
+                    "y": 166
+                },
+                "holdMs": 80,
+                "moveTarget": {
+                    "x": 637,
+                    "y": 528
+                },
+                "moveVia": "objectName:timelineInsertDrop",
+                "release": {
+                    "x": 637,
+                    "y": 528
+                },
+                "releaseEvent": true,
+                "steps": 12
+            },
+            "startedMs": 4006
+        },
+        {
+            "finishedMs": 6053,
+            "index": 26,
+            "kind": "spyRead",
+            "ok": true,
+            "request": {
+                "kind": "spyRead",
+                "name": "insertIntent"
+            },
+            "result": {
+                "count": 1,
+                "emissions": [
+                    [
+                        "A",
+                        [
+                            "tagged",
+                            "tagged",
+                            "sequence"
+                        ],
+                        "insert",
+                        [
+                            {
+                                "inFrame": 2,
+                                "outFrame": 8,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 10,
+                                "outFrame": 15,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 0,
+                                "outFrame": 1,
+                                "sourceId": "sequence"
+                            }
+                        ]
+                    ]
+                ],
+                "name": "insertIntent",
+                "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+            },
+            "startedMs": 6053
+        },
+        {
+            "finishedMs": 6055,
+            "index": 27,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "timeline-clock-after-drop",
+                "property": "routedClock",
+                "target": {
+                    "group": "A",
+                    "panelType": "timeline"
+                }
+            },
+            "result": {
+                "className": "TimelinePanel_QMLTYPE_52",
+                "name": "timeline-clock-after-drop",
+                "property": "routedClock",
+                "resolvedVia": "panelType:timeline/A",
+                "summary": "37",
+                "valid": true,
+                "value": 37,
+                "valueType": "double"
+            },
+            "startedMs": 6053
+        },
+        {
+            "finishedMs": 6727,
+            "index": 28,
+            "kind": "capture",
+            "ok": true,
+            "request": {
+                "kind": "capture",
+                "name": "media-timeline-drag"
+            },
+            "result": {
+                "devicePixelRatio": 1,
+                "grabDevicePixelRatio": 1,
+                "grabSize": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "height": 640,
+                "name": "media-timeline-drag",
+                "path": "/tmp/nemo43-smoke/final-drag-workspace/shots-media-timeline-drag.png",
+                "sourcePixels": {
+                    "height": 640,
+                    "width": 1274,
+                    "x": 0,
+                    "y": 0
+                },
+                "width": 1274
+            },
+            "startedMs": 6055
+        },
+        {
+            "finishedMs": 7529,
+            "index": 29,
+            "kind": "drag",
+            "ok": true,
+            "request": {
+                "cancel": true,
+                "from": {
+                    "objectName": "mediaInput_media-1"
+                },
+                "kind": "drag",
+                "over": {
+                    "objectName": "timelineInsertDrop"
+                },
+                "settleMs": 500,
+                "spacingMs": 70,
+                "steps": 8
+            },
+            "result": {
+                "cancel": true,
+                "dropAreasAtRelease": [
+                ],
+                "eventSource": "QTest synthesized Qt events across separate GUI ticks; not OS-pointer parity",
+                "from": {
+                    "x": 330,
+                    "y": 166
+                },
+                "holdMs": 0,
+                "moveTarget": {
+                    "x": 637,
+                    "y": 528
+                },
+                "moveVia": "objectName:timelineInsertDrop",
+                "release": {
+                    "x": 4,
+                    "y": 4
+                },
+                "releaseEvent": true,
+                "steps": 8
+            },
+            "startedMs": 6727
+        },
+        {
+            "finishedMs": 8040,
+            "index": 30,
+            "kind": "spyRead",
+            "ok": true,
+            "request": {
+                "kind": "spyRead",
+                "name": "insertIntent"
+            },
+            "result": {
+                "count": 1,
+                "emissions": [
+                    [
+                        "A",
+                        [
+                            "tagged",
+                            "tagged",
+                            "sequence"
+                        ],
+                        "insert",
+                        [
+                            {
+                                "inFrame": 2,
+                                "outFrame": 8,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 10,
+                                "outFrame": 15,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 0,
+                                "outFrame": 1,
+                                "sourceId": "sequence"
+                            }
+                        ]
+                    ]
+                ],
+                "name": "insertIntent",
+                "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+            },
+            "startedMs": 8040
+        },
+        {
+            "finishedMs": 8121,
+            "index": 31,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    {
+                        "name": "Destination",
+                        "parentId": "root",
+                        "type": "createBin"
+                    }
+                ],
+                "kind": "invoke",
+                "method": "apply",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "apply",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": true,
+                "resultSummary": "true"
+            },
+            "startedMs": 8040
+        },
+        {
+            "index": 32,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 500
+            },
+            "startedMs": 8121
+        },
+        {
+            "finishedMs": 8627,
+            "index": 33,
+            "kind": "selectEntries",
+            "ok": true,
+            "request": {
+                "group": "B",
+                "ids": [
+                    "media-3",
+                    "media-2",
+                    "media-1"
+                ],
+                "kind": "selectEntries",
+                "panelType": "media"
+            },
+            "result": {
+                "names": [
+                    "Gamma Sequence",
+                    "Beta Clip",
+                    "Alpha Clip"
+                ],
+                "panelId": "panel-12",
+                "selectedIds": [
+                    "media-3",
+                    "media-2",
+                    "media-1"
+                ]
+            },
+            "startedMs": 8624
+        },
+        {
+            "finishedMs": 9468,
+            "index": 34,
+            "kind": "drag",
+            "ok": true,
+            "request": {
+                "from": {
+                    "objectName": "mediaInput_media-1"
+                },
+                "kind": "drag",
+                "settleMs": 700,
+                "spacingMs": 70,
+                "steps": 8,
+                "to": {
+                    "objectName": "mediaTreeDrop_bin-1"
+                }
+            },
+            "result": {
+                "cancel": false,
+                "dropAreasAtRelease": [
+                ],
+                "eventSource": "QTest synthesized Qt events across separate GUI ticks; not OS-pointer parity",
+                "from": {
+                    "x": 330,
+                    "y": 200
+                },
+                "holdMs": 0,
+                "moveTarget": {
+                    "x": 105,
+                    "y": 190
+                },
+                "moveVia": "objectName:mediaTreeDrop_bin-1",
+                "release": {
+                    "x": 105,
+                    "y": 190
+                },
+                "releaseEvent": true,
+                "steps": 8
+            },
+            "startedMs": 8627
+        },
+        {
+            "finishedMs": 10173,
+            "index": 35,
+            "kind": "spyRead",
+            "ok": true,
+            "request": {
+                "kind": "spyRead",
+                "name": "insertIntent"
+            },
+            "result": {
+                "count": 1,
+                "emissions": [
+                    [
+                        "A",
+                        [
+                            "tagged",
+                            "tagged",
+                            "sequence"
+                        ],
+                        "insert",
+                        [
+                            {
+                                "inFrame": 2,
+                                "outFrame": 8,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 10,
+                                "outFrame": 15,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 0,
+                                "outFrame": 1,
+                                "sourceId": "sequence"
+                            }
+                        ]
+                    ]
+                ],
+                "name": "insertIntent",
+                "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+            },
+            "startedMs": 10173
+        },
+        {
+            "finishedMs": 10173,
+            "index": 36,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "media-1"
+                ],
+                "kind": "invoke",
+                "method": "item",
+                "target": "mediaLibrary"
+            },
+            "result": {
+                "className": "nemo::ui::MediaLibraryModel",
+                "method": "item",
+                "resolvedVia": "contextProperty:mediaLibrary",
+                "resultJson": {
+                    "authoredKind": "unknown",
+                    "authoredOffline": false,
+                    "color": "",
+                    "committedProbe": null,
+                    "description": "",
+                    "duration": 0,
+                    "frameOffset": 0,
+                    "id": "media-1",
+                    "kind": "video",
+                    "marks": [
+                        {
+                            "inFrame": 2,
+                            "outFrame": 8
+                        }
+                    ],
+                    "mediaKind": "video",
+                    "name": "Alpha Clip",
+                    "offline": false,
+                    "parentId": "bin-1",
+                    "probe": {
+                        "codec": "ffv1",
+                        "colorMatrix": "bt709",
+                        "colorPrimaries": "bt709",
+                        "colorTransfer": "bt709",
+                        "duration": 0,
+                        "height": 180,
+                        "provenance": "ffmpeg-software",
+                        "status": "ready",
+                        "width": 320
+                    },
+                    "probeStatus": "ready",
+                    "runtime": {
+                        "bitDepth": 8,
+                        "chromaLocation": "left",
+                        "colorRange": "limited",
+                        "fallbackReason": "software: import/probe decodes on the CPU reference path (no GPU device owned by the import worker)",
+                        "frameRate": 24,
+                        "hardware": false,
+                        "pixelAspect": 1,
+                        "pixelFormat": "yuv420p",
+                        "planeCount": 3,
+                        "profile": "",
+                        "streamIndex": 0
+                    },
+                    "sourceId": "tagged",
+                    "tags": [
+                    ],
+                    "thumbnailUrl": "image://nemo-media/1"
+                },
+                "resultSummary": "QVariantMap"
+            },
+            "startedMs": 10173
+        },
+        {
+            "finishedMs": 10178,
+            "index": 37,
+            "kind": "selectEntries",
+            "ok": true,
+            "request": {
+                "group": "B",
+                "ids": [
+                    "bin-1"
+                ],
+                "kind": "selectEntries",
+                "panelType": "media"
+            },
+            "result": {
+                "names": [
+                    "Destination"
+                ],
+                "panelId": "panel-12",
+                "selectedIds": [
+                    "bin-1"
+                ]
+            },
+            "startedMs": 10173
+        },
+        {
+            "finishedMs": 10973,
+            "index": 38,
+            "kind": "drag",
+            "ok": true,
+            "request": {
+                "from": {
+                    "objectName": "mediaInput_bin-1"
+                },
+                "kind": "drag",
+                "settleMs": 500,
+                "spacingMs": 70,
+                "steps": 8,
+                "to": {
+                    "objectName": "timelineInsertDrop"
+                }
+            },
+            "result": {
+                "cancel": false,
+                "dropAreasAtRelease": [
+                    {
+                        "containsDrag": false,
+                        "keys": [
+                            "application/x-nemo-source",
+                            "application/x-nemo-source-id"
+                        ],
+                        "objectName": "timelineInsertDrop",
+                        "rect": {
+                            "height": 206,
+                            "width": 1256,
+                            "x": 9,
+                            "y": 425.4
+                        }
+                    }
+                ],
+                "eventSource": "QTest synthesized Qt events across separate GUI ticks; not OS-pointer parity",
+                "from": {
+                    "x": 330,
+                    "y": 166
+                },
+                "holdMs": 0,
+                "moveTarget": {
+                    "x": 637,
+                    "y": 528
+                },
+                "moveVia": "objectName:timelineInsertDrop",
+                "release": {
+                    "x": 637,
+                    "y": 528
+                },
+                "releaseEvent": true,
+                "steps": 8
+            },
+            "startedMs": 10178
+        },
+        {
+            "finishedMs": 11485,
+            "index": 39,
+            "kind": "spyRead",
+            "ok": true,
+            "request": {
+                "kind": "spyRead",
+                "name": "insertIntent"
+            },
+            "result": {
+                "count": 1,
+                "emissions": [
+                    [
+                        "A",
+                        [
+                            "tagged",
+                            "tagged",
+                            "sequence"
+                        ],
+                        "insert",
+                        [
+                            {
+                                "inFrame": 2,
+                                "outFrame": 8,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 10,
+                                "outFrame": 15,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 0,
+                                "outFrame": 1,
+                                "sourceId": "sequence"
+                            }
+                        ]
+                    ]
+                ],
+                "name": "insertIntent",
+                "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+            },
+            "startedMs": 11484
+        },
+        {
+            "finishedMs": 11540,
+            "index": 40,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "bin-1"
+                ],
+                "kind": "invoke",
+                "method": "openBin",
+                "target": {
+                    "group": "B",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "openBin",
+                "resolvedVia": "panelType:media/B",
+                "resultSummary": "void"
+            },
+            "startedMs": 11485
+        },
+        {
+            "index": 41,
+            "kind": "wait",
+            "request": {
+                "kind": "wait",
+                "ms": 400
+            },
+            "startedMs": 11540
+        },
+        {
+            "finishedMs": 11962,
+            "index": 42,
+            "kind": "click",
+            "ok": true,
+            "request": {
+                "kind": "click",
+                "target": {
+                    "objectName": "mediaInput_media-1"
+                }
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt click; not OS-pointer parity",
+                "resolvedVia": "objectName:mediaInput_media-1",
+                "x": 330,
+                "y": 166
+            },
+            "startedMs": 11947
+        },
+        {
+            "finishedMs": 11977,
+            "index": 43,
+            "kind": "key",
+            "ok": true,
+            "request": {
+                "key": "A",
+                "kind": "key",
+                "modifiers": "Ctrl"
+            },
+            "result": {
+                "eventSource": "QTest synthesized Qt key event; not OS-pointer parity",
+                "key": "A"
+            },
+            "startedMs": 11962
+        },
+        {
+            "finishedMs": 11981,
+            "index": 44,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "overwrite"
+                ],
+                "kind": "invoke",
+                "method": "requestInsert",
+                "target": {
+                    "group": "B",
+                    "panelType": "media"
+                }
+            },
+            "result": {
+                "className": "MediaBinPanel_QMLTYPE_93",
+                "method": "requestInsert",
+                "resolvedVia": "panelType:media/B",
+                "resultSummary": "void"
+            },
+            "startedMs": 11977
+        },
+        {
+            "finishedMs": 11981,
+            "index": 45,
+            "kind": "spyRead",
+            "ok": true,
+            "request": {
+                "kind": "spyRead",
+                "name": "insertIntent"
+            },
+            "result": {
+                "count": 2,
+                "emissions": [
+                    [
+                        "A",
+                        [
+                            "tagged",
+                            "tagged",
+                            "sequence"
+                        ],
+                        "insert",
+                        [
+                            {
+                                "inFrame": 2,
+                                "outFrame": 8,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 10,
+                                "outFrame": 15,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 0,
+                                "outFrame": 1,
+                                "sourceId": "sequence"
+                            }
+                        ]
+                    ],
+                    [
+                        "B",
+                        [
+                            "tagged",
+                            "tagged",
+                            "sequence"
+                        ],
+                        "overwrite",
+                        [
+                            {
+                                "inFrame": 2,
+                                "outFrame": 8,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 10,
+                                "outFrame": 15,
+                                "sourceId": "tagged"
+                            },
+                            {
+                                "inFrame": 0,
+                                "outFrame": 1,
+                                "sourceId": "sequence"
+                            }
+                        ]
+                    ]
+                ],
+                "name": "insertIntent",
+                "signal": "timelineInsertRequested(QString,QStringList,QString,QVariantList)"
+            },
+            "startedMs": 11981
+        },
+        {
+            "finishedMs": 11984,
+            "index": 46,
+            "kind": "read",
+            "ok": true,
+            "request": {
+                "kind": "read",
+                "name": "timeline-clock-final",
+                "property": "routedClock",
+                "target": {
+                    "group": "A",
+                    "panelType": "timeline"
+                }
+            },
+            "result": {
+                "className": "TimelinePanel_QMLTYPE_52",
+                "name": "timeline-clock-final",
+                "property": "routedClock",
+                "resolvedVia": "panelType:timeline/A",
+                "summary": "37",
+                "valid": true,
+                "value": 37,
+                "valueType": "double"
+            },
+            "startedMs": 11981
+        },
+        {
+            "finishedMs": 11986,
+            "index": 47,
+            "kind": "invoke",
+            "ok": true,
+            "request": {
+                "args": [
+                    "file:///tmp/nemo43-smoke/final-drag-saved.nemo"
+                ],
+                "kind": "invoke",
+                "method": "saveAs",
+                "target": "projectFile"
+            },
+            "result": {
+                "className": "nemo::ui::ProjectFileController",
+                "method": "saveAs",
+                "resolvedVia": "contextProperty:projectFile",
+                "resultSummary": "void"
+            },
+            "startedMs": 11984
+        }
+    ],
+    "timeUtc": "2026-09-12T17:50:38.328Z",
+    "window": {
+        "active": true,
+        "className": "Main_QMLTYPE_37",
+        "contentItem": {
+            "height": 640,
+            "width": 1274
+        },
+        "devicePixelRatio": 1,
+        "exposed": true,
+        "found": true,
+        "frameSwapped": 217,
+        "objectName": "mainWindow",
+        "position": {
+            "x": 0,
+            "y": 0
+        },
+        "positionCaveat": "Wayland does not expose an absolute window position; x/y is the compositor value (usually 0,0)",
+        "screen": {
+            "availableGeometry": {
+                "height": 1080,
+                "width": 1920,
+                "x": 0,
+                "y": 0
+            },
+            "devicePixelRatio": 1,
+            "geometry": {
+                "height": 1080,
+                "width": 1920,
+                "x": 0,
+                "y": 0
+            },
+            "name": "eDP-1"
+        },
+        "size": {
+            "height": 640,
+            "width": 1274
+        },
+        "title": "marked-catalog.json* — Nemo",
+        "visible": true
+    }
+}

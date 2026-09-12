@@ -198,6 +198,7 @@ struct FrameHeader {
     std::string formatName;
     std::string declaredColorSpace;
     std::vector<float> chromaticities;
+    std::string nativePrecision;
     int width{0};
     int height{0};
     double pixelAspect{1.0};
@@ -214,6 +215,7 @@ struct FrameHeader {
     header.formatName = std::string(input->format_name());
     header.declaredColorSpace = spec.get_string_attribute("oiio:ColorSpace");
     header.chromaticities = declaredChromaticities(spec);
+    header.nativePrecision = spec.format.c_str();
     header.width = spec.full_width > 0 ? spec.full_width : spec.width;
     header.height = spec.full_height > 0 ? spec.full_height : spec.height;
     header.pixelAspect = spec.get_float_attribute("pixelaspectratio", 1.0F);
@@ -258,10 +260,11 @@ bool isImagePath(const std::string& path) {
     return true;
 }
 
-ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::string& context) {
+ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::string& context,
+                               const std::int64_t localTime) {
     std::int64_t frame = 0;
     try {
-        frame = reference.frameAt(0);
+        frame = reference.frameAt(localTime);
     } catch (const std::exception& error) {
         fail(reference.path, std::string("source time mapping failed: ") + error.what());
     }
@@ -272,6 +275,7 @@ ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::stri
     info.path = header.path;
     info.formatName = header.formatName;
     info.declaredColorSpace = header.declaredColorSpace;
+    info.nativePrecision = header.nativePrecision;
     info.width = header.width;
     info.height = header.height;
     info.pixelAspect = header.pixelAspect;
@@ -317,6 +321,7 @@ ImageFrame readImageFrame(const SourceReference& reference, const std::int64_t f
     result.info.path = path;
     result.info.formatName = read.formatName;
     result.info.declaredColorSpace = read.declaredColorSpace;
+    result.info.nativePrecision = read.nativePrecision;
     result.info.width = image.width();
     result.info.height = image.height();
     result.info.pixelAspect = image.layout().pixelAspect;

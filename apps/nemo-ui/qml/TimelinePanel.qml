@@ -296,9 +296,16 @@ Pane {
                     id: mediaButton
                     objectName: "timelineMediaButton"
                     glyph: "media"
-                    enabled: false
-                    ToolTip.text: "Media insertion is not available in the native timeline yet"
+                    // Revealing the matching-group Media Bin is presentation
+                    // only and independent of editorial insertion: no clip is
+                    // created here and editing stays unavailable until #54.
+                    enabled: typeof mediaLibrary !== "undefined" && mediaLibrary !== null
+                    ToolTip.text: "Open the Media Bin for this panel's group"
                     Accessible.name: "Open media bin"
+                    onClicked: {
+                        if (typeof mediaLibrary !== "undefined" && mediaLibrary !== null)
+                            mediaLibrary.revealMediaPanel(timelinePanel.panelGroup)
+                    }
                 }
                 GlyphButton {
                     id: menuButton
@@ -347,6 +354,42 @@ Pane {
         if (contextRouter && panelGroup.length > 0)
             contextRouter.setGroupContext(panelGroup, {timelineClock: frame})
         controller.setFrame(frame)
+    }
+
+    // Issue #43 acceptance 5: the media drag payload is the ordered occurrence
+    // list (sourceIds with their parallel marks and requested mode) plus the
+    // media panel group that produced it. A drop is only an insertion intent
+    // when that payload is complete, so a blank, foreign or catalog-internal
+    // drag (a bin row or anything without media sources) emits nothing. The
+    // origin group is read for validation only: the insertion targets this
+    // timeline's group, and the origin panel never hands over its own mark
+    // state. Neither the playhead nor the Document is touched here.
+    function mediaInsertPayload(drag) {
+        var source = drag && drag.source ? drag.source : null
+        if (!source || !source.sourceIds || source.sourceIds.length === undefined)
+            return null
+        var sourceIds = []
+        for (var i = 0; i < source.sourceIds.length; ++i) {
+            var sourceId = source.sourceIds[i]
+            if (sourceId === undefined || sourceId === null || String(sourceId).length === 0)
+                return null
+            sourceIds.push(String(sourceId))
+        }
+        if (sourceIds.length === 0)
+            return null
+        // The payload's origin group is the media panel's group; the drag source
+        // object names it `group` (payload vocabulary) or `sourceGroup` (the
+        // delegate exposure). Either way it is only a completeness check.
+        var originGroup = source.group !== undefined ? source.group : source.sourceGroup
+        if (!originGroup || String(originGroup).length === 0)
+            return null
+        var marks = source.marks && source.marks.length !== undefined ? source.marks : []
+        var mode = source.mode !== undefined && String(source.mode).length > 0 ? String(source.mode) : "insert"
+        return {
+            "sourceIds": sourceIds,
+            "marks": marks,
+            "mode": mode
+        }
     }
 
     ColumnLayout {
@@ -418,6 +461,37 @@ Pane {
                         font.pixelSize: 9
                         horizontalAlignment: Text.AlignHCenter
                         elide: Text.ElideRight
+                    }
+                }
+
+                // Drop target for the media insertion intent. It spans the
+                // visible timeline surface (the content rect, or the viewport
+                // when the content is shorter, so it never scrolls out of
+                // reach), draws nothing and takes no mouse gesture: seeking,
+                // row selection, labels and flicking are unchanged. Only the
+                // media drag keys enter it; the payload is validated on drop
+                // and the drop is accepted only after requestTimelineInsert
+                // reports success, so one release emits at most one intent and
+                // a blank/foreign/catalog-internal drag emits none.
+                DropArea {
+                    id: timelineInsertDrop
+                    objectName: "timelineInsertDrop"
+                    x: 0
+                    y: 0
+                    width: timelineContent.width
+                    height: Math.max(timelineContent.height, timelineScroll.height)
+                    keys: ["application/x-nemo-source", "application/x-nemo-source-id"]
+                    onDropped: function (drop) {
+                        drop.accepted = false
+                        var payload = timelinePanel.mediaInsertPayload(drop)
+                        if (!payload)
+                            return
+                        if (typeof mediaLibrary === "undefined" || mediaLibrary === null
+                                || !mediaLibrary.requestTimelineInsert)
+                            return
+                        if (mediaLibrary.requestTimelineInsert(timelinePanel.panelGroup, payload.sourceIds,
+                                                               payload.mode, payload.marks))
+                            drop.accept(Qt.CopyAction)
                     }
                 }
             }

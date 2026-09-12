@@ -512,24 +512,35 @@ std::vector<NodeId> viewerNodeIds(const nemo::Document& document, NetworkId netw
 }  // namespace
 
 namespace {
-// Resolves a routed media target — a catalog source key or a decimal catalog
-// entry id — to the root network's source node addressing that key. The lowest
-// matching NodeId wins so one target always resolves to one node. `reason`
-// names the failed relationship when no such node exists; the viewer then
-// reports an explicit unavailable state instead of another group's output.
-[[nodiscard]] NodeId mediaSourceNode(const nemo::Document& document, const QString& target, QString& reason) {
+// Resolves a routed media target to its decodable Document source key. A
+// decimal target is a catalog entry id and resolves through the entry's
+// persistent source key; anything else is the source key itself, matching
+// PanelContextRouter::targetAvailable. Empty when the target names no
+// Document source reference at all — a catalog entry whose source reference
+// was removed is not viewable.
+[[nodiscard]] std::string mediaSourceKey(const nemo::Document& document, const QString& target) {
     const auto trimmed = target.trimmed();
-    if (trimmed.isEmpty()) {
-        reason = QStringLiteral("Media source is unavailable: the panel context has no source target");
-        return kInvalidNode;
-    }
-    QString key = trimmed;
+    if (trimmed.isEmpty())
+        return {};
+    std::string key;
     bool decimal = false;
     const auto entryId = trimmed.toULongLong(&decimal);
     if (decimal) {
-        if (const auto* entry = document.mediaCatalog.entry(static_cast<MediaSourceId>(entryId)))
-            key = QString::fromStdString(entry->sourceKey);
+        const auto* entry = document.mediaCatalog.entry(static_cast<MediaSourceId>(entryId));
+        if (entry == nullptr)
+            return {};
+        key = entry->sourceKey;
+    } else {
+        key = trimmed.toStdString();
     }
+    return document.sources.find(key) == document.sources.end() ? std::string{} : key;
+}
+
+// Resolves the root network's source node addressing `key`. The lowest
+// matching NodeId wins so one target always resolves to one node. `reason`
+// names the failed relationship when no such node exists; the caller decides
+// whether that is an unavailable panel or a request-owned snapshot.
+[[nodiscard]] NodeId mediaSourceNode(const nemo::Document& document, const std::string& key, QString& reason) {
     NodeId found = kInvalidNode;
     try {
         const auto& graph = document.network(document.rootNetworkId()).graph();
@@ -540,17 +551,19 @@ namespace {
             if (parameter == node.params.end())
                 continue;
             const auto* value = std::get_if<std::string>(&parameter->second);
-            if (!value || *value != key.toStdString())
+            if (!value || *value != key)
                 continue;
             if (found == kInvalidNode || node.id < found)
                 found = node.id;
         }
     } catch (const std::exception&) {
-        reason = QStringLiteral("Media source '%1' cannot be resolved: the root network is unavailable").arg(trimmed);
+        reason = QStringLiteral("Media source '%1' cannot be resolved: the root network is unavailable")
+                     .arg(QString::fromStdString(key));
         return kInvalidNode;
     }
     if (found == kInvalidNode)
-        reason = QStringLiteral("Media source '%1' has no source node in the root network").arg(trimmed);
+        reason =
+            QStringLiteral("Media source '%1' has no source node in the root network").arg(QString::fromStdString(key));
     return found;
 }
 }  // namespace
@@ -843,10 +856,30 @@ void ViewerController::setViewerContext(const QString& role, const QString& targ
 void ViewerController::refreshContextTarget() {
     contextTargetNode_ = kInvalidNode;
     contextUnavailable_.clear();
+    contextSourceKey_.clear();
     switch (contextRole_) {
-    case ContextRole::Media:
-        contextTargetNode_ = mediaSourceNode(session_.document(), contextTarget_, contextUnavailable_);
+    case ContextRole::Media: {
+        // The catalog reference alone must be viewable: a media target is a
+        // valid context as soon as it names a Document source reference, even
+        // when no authored graph node addresses it. refreshRequest then runs
+        // the source-fill plan over a request-owned snapshot instead of
+        // authoring a node.
+        contextSourceKey_ = mediaSourceKey(session_.document(), contextTarget_);
+        if (contextSourceKey_.empty()) {
+            contextUnavailable_ =
+                contextTarget_.isEmpty()
+                    ? QStringLiteral("Media source is unavailable: the panel context has no source target")
+                    : QStringLiteral("Media source '%1' is unavailable: no catalog source reference")
+                          .arg(contextTarget_);
+            return;
+        }
+        contextTargetNode_ = mediaSourceNode(session_.document(), contextSourceKey_, contextUnavailable_);
+        // No authored source node is not a failure for this role: the
+        // reference is still rendered from the private snapshot above.
+        if (contextTargetNode_ == kInvalidNode)
+            contextUnavailable_.clear();
         return;
+    }
     case ContextRole::Timeline:
         // Editorial timeline target wiring belongs to issue #54. This panel
         // reports the deferral instead of presenting another group's output.
@@ -1966,7 +1999,13 @@ void ViewerController::receive() {
         if (probe->requestId != generation_)
             return;
         const auto& info = probe->source.info;
-        probedSource_ = session_.document().sources.at("src");
+        // Publish exactly the reference that was probed: the graph role keeps
+        // "src", the media role its routed catalog source. A reference removed
+        // before the result arrived is not republished as current media.
+        const auto reference = session_.document().sources.find(probeSourceKey_);
+        if (reference == session_.document().sources.end())
+            return;
+        probedSource_ = reference->second;
         pending_ = false;
         sourceSize_ = QSizeF(info.width, info.height);
         pixelAspect_ = info.pixelAspect;
@@ -1992,7 +2031,10 @@ void ViewerController::receive() {
         refreshRequest();
     } else {
         auto frame = std::get<std::shared_ptr<const ViewerResult>>(std::move(*result));
-        if (frame->requestId != generation_ || frame->revision != session_.document().stateRevision())
+        // The result must belong to the request this panel still owns and carry
+        // the snapshot it was rendered from; generation_ already rejects work
+        // issued before the authored document changed.
+        if (frame->requestId != generation_ || frame->revision != submittedRevision_)
             return;
         presentation_ = std::move(frame);
         pending_ = false;
@@ -2029,11 +2071,36 @@ void ViewerController::refreshRequest() {
     try {
         // Capture one immutable project state for the whole request. The
         // session remains owner-thread-only; workers receive this snapshot.
-        const Document document = session_.snapshot();
+        // The media role adds one request-owned node below, so this copy stays
+        // writable while the authored document and its history are untouched.
+        Document document = session_.snapshot();
+        // The revision a rendered result must still match is the authored
+        // document's: the request-owned node below must not make this panel's
+        // own result look stale.
+        const auto revision = document.stateRevision();
+        const bool mediaContext = contextRole_ == ContextRole::Media;
+        // The graph role keeps the command-line "src" reference; the media role
+        // resolves the routed catalog reference.
+        const std::string sourceKey = mediaContext ? contextSourceKey_ : std::string{"src"};
+        // An authored source node addressing the media key wins. Without one,
+        // the routed catalog reference is still viewable: a temporary source
+        // node is inserted into this request-owned snapshot only, so the same
+        // source-fill plan runs as for an authored node. Its result identity is
+        // the reference itself (Reuse canonicalSource: key, path, mapping,
+        // revision, interpretation), so it is cache-equivalent to an authored
+        // node and follows relink revisions, while no node, used-media mark or
+        // history entry is ever persisted for a catalog open.
+        NodeId target = renderTargetNode();
+        const bool privateMediaSource = mediaContext && target == kInvalidNode && !contextSourceKey_.empty();
+        if (privateMediaSource) {
+            const auto created = std::make_shared<NodeId>();
+            addNodeCommand(document.rootNetworkId(), "source", "source", created, {}).apply(document);
+            setParamCommand(document.rootNetworkId(), *created, "source", contextSourceKey_).apply(document);
+            target = *created;
+        }
         // No render target means an explicit empty viewer, never an Output
         // fallback and never another group's target: the Output node still
         // defines network consumption, but it is not what this panel displays.
-        const NodeId target = renderTargetNode();
         if (target == kInvalidNode) {
             const bool hadPresentation = static_cast<bool>(presentation_);
             presentation_.reset();
@@ -2046,7 +2113,7 @@ void ViewerController::refreshRequest() {
                 emit frameArrived();
             return;
         }
-        const auto source = document.sources.find("src");
+        const auto source = document.sources.find(sourceKey);
         bool mediaReady = false;
         if (source == document.sources.end()) {
             const bool hadMedia = !sourceSize_.isEmpty() || !probedSource_.path.empty() || pixelAspect_ != 1.0;
@@ -2072,7 +2139,8 @@ void ViewerController::refreshRequest() {
                 emit sourceChanged();
                 emit statusChanged();
                 generation_ = ++nextRequestId_;
-                if (!runtime_->probe(document, "src", generation_, *destination_, session_.colorConfigPath()))
+                probeSourceKey_ = sourceKey;
+                if (!runtime_->probe(document, sourceKey, generation_, *destination_, session_.colorConfigPath()))
                     fail(QStringLiteral("Source probe admission rejected"));
                 return;
             }
@@ -2088,7 +2156,6 @@ void ViewerController::refreshRequest() {
         EvaluationRequest request;
         // The media role addresses a source node in the root network; the graph
         // role follows the active Viewer attachment's network.
-        const bool mediaContext = contextRole_ == ContextRole::Media;
         request.network =
             !mediaContext && activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : document.rootNetworkId();
         request.output = target;
@@ -2109,12 +2176,14 @@ void ViewerController::refreshRequest() {
         request.region = {x, y, right - x, bottom - y};
         request.fullWidth = width;
         request.fullHeight = height;
-        const auto revision = document.stateRevision();
         if (lastRequest_ && *lastRequest_ == request && lastRevision_ == revision)
             return;
         lastRequest_ = request;
         lastRevision_ = revision;
         const auto id = generation_ = ++nextRequestId_;
+        // A published result carries the revision of the snapshot it was
+        // rendered from, so remember exactly what was submitted.
+        submittedRevision_ = document.stateRevision();
         if (!runtime_->submit(document, request, id, *destination_, viewerChannel_, session_.colorConfigPath()))
             pending_ = true;
         outdated_ = static_cast<bool>(presentation_);

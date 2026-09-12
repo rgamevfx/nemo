@@ -13,6 +13,7 @@ find_package(OpenColorIO CONFIG REQUIRED)
 add_library(nemo_media
     ImageIO.cpp
     ImageSource.cpp
+    MediaImportService.cpp
     ViewingTransform.cpp
 )
 add_library(nemo::media ALIAS nemo_media)
@@ -55,6 +56,12 @@ if(NEMO_BUILD_GPU)
             ViewerEncode.cpp
             CodecSweep.cpp
     )
+    # MediaImportService.cpp is part of the always-built module (stills and
+    # sequences decode on the CPU path); this macro enables its clip branch,
+    # which needs the FFmpeg adapter above. Without it the service still
+    # builds and reports an explicit diagnostic for clip sources instead of
+    # silently failing to link.
+    target_compile_definitions(nemo_media PRIVATE NEMO_MEDIA_FFMPEG=1)
     target_link_libraries(nemo_media
         PUBLIC nemo::gpu
         PRIVATE nemo::gpu_viewerinterop

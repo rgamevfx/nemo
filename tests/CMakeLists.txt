@@ -43,6 +43,7 @@ if(NEMO_BUILD_GPU)
         HwMediaTests.cpp
         MediaDecodeTests.cpp
         MediaEncodeTests.cpp
+        MediaImportTests.cpp
     )
     target_link_libraries(nemo_hwmedia_tests PRIVATE nemo::media nemo::gpu GTest::gtest_main)
     if(DEFINED NEMO_SLANG_SPV_DIR)
@@ -103,10 +104,16 @@ if(NEMO_BUILD_UI)
         find_package(Qt6 6.4 REQUIRED COMPONENTS DBus)
     endif()
     add_executable(nemo_workspace_ui_tests
+        ChooserOwnershipTests.cpp
         WorkspaceDragTests.cpp
         InteractiveUiTests.cpp
         PanelContextRouterTests.cpp
         PanelContextUiTests.cpp
+        MediaLibraryModelTests.cpp
+        ../apps/nemo-ui/MediaLibraryModel.cpp
+        ../apps/nemo-ui/MediaLibraryModel.hpp
+        ../apps/nemo-ui/NativeFileChooser.cpp
+        ../apps/nemo-ui/NativeFileChooser.hpp
         ../apps/nemo-ui/PanelContextRouter.cpp
         ../apps/nemo-ui/PanelContextRouter.hpp
         ../apps/nemo-ui/ParameterEditorRegistry.cpp

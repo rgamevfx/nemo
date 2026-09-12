@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QScopedValueRollback>
 
 #include <algorithm>
 #include <exception>
@@ -152,11 +153,29 @@ void WorkspaceController::change(const std::function<void()>& operation, bool no
         // ratio drags that intentionally avoid rootChanged.
         emit presentationChanged();
         if (notify) {
-            emit rootChanged();
+            notifyRootChanged();
         }
     } catch (const std::exception& exception) {
         setError(QString::fromUtf8(exception.what()));
     }
+}
+
+void WorkspaceController::notifyRootChanged() {
+    if (deliveringRootChanged_) {
+        // A handler reached by the in-flight delivery changed workspace state
+        // (the panels persist identity/teardown edits synchronously). Delivering
+        // now would notify a QML binding that is still updating its value; the
+        // outer loop below delivers the latest snapshot once this unwinds.
+        rootChangePending_ = true;
+        return;
+    }
+    do {
+        rootChangePending_ = false;
+        // Scoped so the flag is cleared before the pending check: the re-delivery
+        // below is a fresh outer delivery, not a deferral.
+        const QScopedValueRollback<bool> delivery(deliveringRootChanged_, true);
+        emit rootChanged();
+    } while (rootChangePending_);
 }
 
 void WorkspaceController::registerPanelType(const QString& typeId, const QString& title, const QString& qmlSource,
@@ -183,7 +202,7 @@ QString WorkspaceController::createPanel(const QString& leafId, const QString& t
         }
         const auto id = workspace_.createPanel(leafId.toStdString(), typeId.toStdString(), group.toStdString());
         setError({});
-        emit rootChanged();
+        notifyRootChanged();
         return QString::fromStdString(id);
     } catch (const std::exception& exception) {
         setError(QString::fromUtf8(exception.what()));
@@ -203,7 +222,7 @@ void WorkspaceController::setPanelState(const QString& panelId, const QVariantMa
     try {
         workspace_.setPanelState(panelId.toStdString(), variantMapToJson(state));
         setError({});
-        emit rootChanged();
+        notifyRootChanged();
     } catch (const std::exception& exception) {
         setError(QString::fromUtf8(exception.what()));
     }
@@ -267,7 +286,7 @@ bool WorkspaceController::movePanel(const QString& panelId, const QString& leafI
             {leafId.toStdString(), position, position == Placement::Tabs ? static_cast<std::size_t>(tabIndex) : 0});
         setError({});
         if (changed) {
-            emit rootChanged();
+            notifyRootChanged();
         }
         return true;
     } catch (const std::exception& exception) {
@@ -372,7 +391,7 @@ bool WorkspaceController::closeWorkspace(const QString& id) {
         activeWorkspaceId_ = presets_[static_cast<std::size_t>(replacement)].id;
         workspace_ = presets_[static_cast<std::size_t>(replacement)].workspace;
         emit activeWorkspaceIdChanged();
-        emit rootChanged();
+        notifyRootChanged();
     }
     setError({});
     emit workspacesChanged();
@@ -394,7 +413,7 @@ bool WorkspaceController::switchWorkspace(const QString& id) {
     activeWorkspaceId_ = id;
     setError({});
     emit activeWorkspaceIdChanged();
-    emit rootChanged();
+    notifyRootChanged();
     return true;
 }
 bool WorkspaceController::moveWorkspace(const QString& id, int offset) {
@@ -632,7 +651,7 @@ void WorkspaceController::reset() {
     snapshotActiveWorkspace();
     preserveUnreadableFile_ = false;
     setError({});
-    emit rootChanged();
+    notifyRootChanged();
 }
 
 nlohmann::json WorkspaceController::projectPresentation() {
@@ -657,7 +676,7 @@ bool WorkspaceController::applyProjectPresentation(const nlohmann::json& present
     emit workspacesChanged();
     emit activeWorkspaceIdChanged();
     emit appearanceChanged();
-    emit rootChanged();
+    notifyRootChanged();
     return true;
 }
 

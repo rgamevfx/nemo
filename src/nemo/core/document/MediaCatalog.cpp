@@ -38,6 +38,12 @@ bool containsText(std::string_view value, std::string_view needle) {
            }) != value.end();
 }
 
+// Entry and bin metadata share one canonical tag form: sorted, deduplicated.
+void normalizeTags(std::vector<std::string>& tags) {
+    std::sort(tags.begin(), tags.end());
+    tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
+}
+
 }  // namespace
 
 bool MediaMarkRange::valid() const noexcept {
@@ -188,16 +194,35 @@ bool MediaCatalog::sourceUsed(const Document& document, std::string_view sourceK
     return false;
 }
 
-std::vector<MediaSourceId> MediaCatalog::search(const Document& document, std::string_view text,
-                                                std::optional<MediaKind> kind, std::optional<bool> offline,
-                                                std::optional<bool> unused, MediaBinId scope) const {
+std::vector<MediaSourceId> MediaCatalog::searchCandidates(const Document& document,
+                                                          std::vector<MediaSourceId> candidates, std::string_view text,
+                                                          std::optional<MediaKind> kind, std::optional<bool> offline,
+                                                          std::optional<bool> unused, bool includeImageSequences,
+                                                          std::span<const MediaQuerySourceState> runtime) const {
     std::vector<MediaSourceId> result;
-    for (const auto id : depthFirstEntries(scope)) {
+    result.reserve(candidates.size());
+    for (const auto id : candidates) {
         const auto* value = entry(id);
         const auto& metadata = value->metadata;
-        if (kind && metadata.kind != *kind)
-            continue;
-        if (offline && metadata.offline != *offline)
+        // Runtime facts overlay kind/offline only; authored metadata, text,
+        // scope and unused stay canonical.
+        MediaKind effectiveKind = metadata.kind;
+        bool effectiveOffline = metadata.offline;
+        for (const auto& state : runtime) {
+            if (state.sourceKey == value->sourceKey) {
+                effectiveKind = state.kind;
+                effectiveOffline = state.offline;
+                break;
+            }
+        }
+        if (kind) {
+            const bool matchesKind = effectiveKind == *kind;
+            const bool matchesStillFamily =
+                includeImageSequences && *kind == MediaKind::Image && effectiveKind == MediaKind::Sequence;
+            if (!matchesKind && !matchesStillFamily)
+                continue;
+        }
+        if (offline && effectiveOffline != *offline)
             continue;
         if (unused && !sourceUsed(document, value->sourceKey) != *unused)
             continue;
@@ -213,19 +238,49 @@ std::vector<MediaSourceId> MediaCatalog::search(const Document& document, std::s
     return result;
 }
 
-std::vector<MediaSourceId> MediaCatalog::search(const Document& document, const MediaQueryDescriptor& query,
-                                                MediaBinId scope) const {
-    return search(document, query.text, query.kind, query.offline, query.unused, scope);
+std::vector<MediaSourceId> MediaCatalog::search(const Document& document, std::string_view text,
+                                                std::optional<MediaKind> kind, std::optional<bool> offline,
+                                                std::optional<bool> unused, MediaBinId scope) const {
+    return searchCandidates(document, depthFirstEntries(scope), text, kind, offline, unused, false, {});
 }
 
-std::vector<MediaSourceId> MediaCatalog::smartMembers(const Document& document, MediaBinId id) const {
+bool MediaCatalog::queryScopeAvailable(const MediaQueryDescriptor& query) const noexcept {
+    // The root scope is always available even though it has no stored bin.
+    return !query.scope || *query.scope == kInvalidMediaBin || bin(*query.scope) != nullptr;
+}
+
+std::vector<MediaSourceId> MediaCatalog::search(const Document& document, const MediaQueryDescriptor& query,
+                                                std::optional<MediaBinId> scopeOverride,
+                                                std::span<const MediaQuerySourceState> runtime) const {
+    if (query.binsOnly)
+        return {};
+    const std::optional<MediaBinId> scope = scopeOverride ? scopeOverride : query.scope;
+    std::vector<MediaSourceId> candidates;
+    if (!scope) {
+        // Whole project: traversal is always recursive, `recursive` only shapes
+        // an engaged scope.
+        candidates = depthFirstEntries(kInvalidMediaBin);
+    } else if (*scope == kInvalidMediaBin) {
+        candidates = query.recursive ? depthFirstEntries(kInvalidMediaBin) : childEntries(kInvalidMediaBin);
+    } else if (bin(*scope) != nullptr) {
+        candidates = query.recursive ? depthFirstEntries(*scope) : childEntries(*scope);
+    } else {
+        // The scoped bin was removed after the query was authored: the query is
+        // unavailable and must not silently widen back to the whole project.
+        return {};
+    }
+    return searchCandidates(document, std::move(candidates), query.text, query.kind, query.offline, query.unused,
+                            query.includeImageSequences, runtime);
+}
+
+std::vector<MediaSourceId> MediaCatalog::smartMembers(const Document& document, MediaBinId id,
+                                                      std::span<const MediaQuerySourceState> runtime) const {
     const auto* value = bin(id);
     if (!value)
         reject(GraphError::UnknownMediaBin, "cannot query unknown bin " + std::to_string(id));
     if (!value->query)
         return {};
-    const auto& query = *value->query;
-    return search(document, query.text, query.kind, query.offline, query.unused);
+    return search(document, *value->query, std::nullopt, runtime);
 }
 
 std::string MediaCatalog::path(MediaBinId id) const {
@@ -265,8 +320,7 @@ MediaSourceId MediaCatalog::addEntry(std::string sourceKey, MediaBinId parent, M
     }
     if (entry(id))
         reject(GraphError::DuplicateId, "media entry id " + std::to_string(id) + " already exists");
-    std::sort(metadata.tags.begin(), metadata.tags.end());
-    metadata.tags.erase(std::unique(metadata.tags.begin(), metadata.tags.end()), metadata.tags.end());
+    normalizeTags(metadata.tags);
     for (const auto& mark : marks)
         if (!mark.valid())
             reject(GraphError::InvalidMediaMark, "entry '" + sourceKey + "' has an inverted mark range");
@@ -294,8 +348,6 @@ MediaBinId MediaCatalog::addBin(std::string name, MediaBinId parent, std::option
         reject(GraphError::DuplicateId, "media bin id " + std::to_string(id) + " already exists");
     if (hasName(parent, name))
         reject(GraphError::MediaDuplicateName, "bin name '" + name + "' already exists in its parent");
-    if (query && query->text.empty() && !query->kind && !query->offline && !query->unused)
-        query.reset();
     bins_.push_back(MediaBin{id, std::move(name), parent, std::move(query)});
     nextBinId_ = std::max(nextBinId_, static_cast<MediaBinId>(id + 1));
     return id;
@@ -399,8 +451,7 @@ void MediaCatalog::setMetadata(MediaSourceId id, MediaMetadata metadata) {
     auto* value = entry(id);
     if (!value)
         reject(GraphError::UnknownMediaEntry, "cannot edit unknown media entry " + std::to_string(id));
-    std::sort(metadata.tags.begin(), metadata.tags.end());
-    metadata.tags.erase(std::unique(metadata.tags.begin(), metadata.tags.end()), metadata.tags.end());
+    normalizeTags(metadata.tags);
     const auto name = metadata.userName.empty() ? value->sourceKey : metadata.userName;
     if (hasName(value->parent, name, id))
         reject(GraphError::MediaDuplicateName, "metadata name would collide in parent bin");
@@ -421,9 +472,15 @@ void MediaCatalog::setQuery(MediaBinId id, std::optional<MediaQueryDescriptor> q
     auto* value = bin(id);
     if (!value)
         reject(GraphError::UnknownMediaBin, "cannot set query on unknown media bin " + std::to_string(id));
-    if (query && query->text.empty() && !query->kind && !query->offline && !query->unused)
-        query.reset();
     value->query = std::move(query);
+}
+
+void MediaCatalog::setBinMetadata(MediaBinId id, MediaBinMetadata metadata) {
+    auto* value = bin(id);
+    if (!value)
+        reject(GraphError::UnknownMediaBin, "cannot edit metadata on unknown media bin " + std::to_string(id));
+    normalizeTags(metadata.tags);
+    value->metadata = std::move(metadata);
 }
 
 void MediaCatalog::restoreIdentityHighWatermarks(MediaSourceId nextEntryId, MediaBinId nextBinId) {
@@ -450,8 +507,19 @@ std::uint64_t MediaCatalog::stateHash() const noexcept {
             hash = mix(hash, value.query->kind ? static_cast<std::uint64_t>(*value.query->kind) + 1 : 0);
             hash = mix(hash, value.query->offline ? (*value.query->offline ? 2 : 1) : 0);
             hash = mix(hash, value.query->unused ? (*value.query->unused ? 2 : 1) : 0);
+            hash = mix(hash, value.query->scope ? 1 : 0);
+            if (value.query->scope)
+                hash = mix(hash, *value.query->scope);
+            hash = mix(hash, value.query->recursive ? 1 : 0);
+            hash = mix(hash, value.query->includeImageSequences ? 1 : 0);
+            hash = mix(hash, value.query->binsOnly ? 1 : 0);
         }
         hash = mix(hash, value.query ? 1 : 0);
+        hash = mixText(hash, value.metadata.description);
+        hash = mixText(hash, value.metadata.label);
+        for (const auto& tag : value.metadata.tags)
+            hash = mixText(hash, tag);
+        hash = mix(hash, value.metadata.tags.size());
     }
     for (const auto& value : entries_) {
         hash = mix(hash, value.id);

@@ -1,0 +1,242 @@
+[
+  {
+    "label": "still-0-evaluate",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate",
+      "/tmp/nemo43-smoke/still.json",
+      "--out",
+      "/tmp/nemo43-smoke/still-0-evaluate.ppm",
+      "--frame",
+      "0",
+      "--width",
+      "320",
+      "--height",
+      "180"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.154,
+    "stdout": "{\n  \"errors\": [],\n  \"evaluation\": {\n    \"request\": {\n      \"channels\": \"RGBA\",\n      \"fullHeight\": 180,\n      \"fullWidth\": 320,\n      \"localTime\": 0,\n      \"network\": 1,\n      \"output\": 1,\n      \"quality\": \"full\",\n      \"region\": {\n        \"height\": 180,\n        \"width\": 320,\n        \"x\": 0,\n        \"y\": 0\n      },\n      \"samplingScale\": 1\n    },\n    \"result\": {\n      \"channels\": [\n        \"R\",\n        \"G\",\n        \"B\",\n        \"A\"\n      ],\n      \"color\": \"scene-linear\",\n      \"contentHash\": \"8d1105eef784d751\",\n      \"height\": 180,\n      \"pixelAspect\": 1.0,\n      \"precision\": \"float32\",\n      \"residency\": \"host-cpu-reference\",\n      \"width\": 320\n    },\n    \"steps\": [\n      {\n        \"effectiveParams\": {\n          \"frame\": {\n            \"type\": \"integer\",\n            \"value\": 0\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"value\": \"still\"\n          },\n          \"sourcePath\": {\n            \"type\": \"string\",\n            \"value\": \"/tmp/nemo43-smoke/still.png\"\n          }\n        },\n        \"inputImages\": [],\n        \"inputs\": [],\n        \"instance\": 0,\n        \"name\": \"media\",\n        \"network\": 1,\n        \"node\": 2,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"8d1105eef784d751\",\n          \"height\": 180,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"host-cpu-reference\",\n          \"width\": 320\n        },\n        \"reused\": false,\n        \"scopedInputs\": []\n      },\n      {\n        \"effectiveParams\": {},\n        \"inputImages\": [\n          {\n            \"channels\": [\n              \"R\",\n              \"G\",\n              \"B\",\n              \"A\"\n            ],\n            \"color\": \"scene-linear\",\n            \"contentHash\": \"8d1105eef784d751\",\n            \"height\": 180,\n            \"pixelAspect\": 1.0,\n            \"precision\": \"float32\",\n            \"residency\": \"host-cpu-reference\",\n            \"width\": 320\n          }\n        ],\n        \"inputs\": [\n          2\n        ],\n        \"instance\": 0,\n        \"name\": \"Output\",\n        \"network\": 1,\n        \"node\": 1,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"8d1105eef784d751\",\n          \"height\": 180,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"host-cpu-reference\",\n          \"width\": 320\n        },\n        \"reused\": false,\n        \"scopedInputs\": [\n          {\n            \"instance\": 0,\n            \"network\": 1,\n            \"node\": 2,\n            \"outputPort\": 4294967295,\n            \"path\": []\n          }\n        ]\n      }\n    ]\n  },\n  \"ok\": true,\n  \"rendered\": {\n    \"frame\": 0,\n    \"height\": 180,\n    \"network\": 1,\n    \"path\": \"/tmp/nemo43-smoke/still-0-evaluate.ppm\",\n    \"width\": 320\n  },\n  \"warnings\": []\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "still-0-evaluate-gpu",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate-gpu",
+      "/tmp/nemo43-smoke/still.json",
+      "--out",
+      "/tmp/nemo43-smoke/still-0-evaluate-gpu.ppm",
+      "--frame",
+      "0",
+      "--width",
+      "320",
+      "--height",
+      "180"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.555,
+    "stdout": "{\n  \"errors\": [],\n  \"evaluation\": {\n    \"request\": {\n      \"channels\": \"RGBA\",\n      \"fullHeight\": 180,\n      \"fullWidth\": 320,\n      \"localTime\": 0,\n      \"network\": 1,\n      \"output\": 1,\n      \"quality\": \"full\",\n      \"region\": {\n        \"height\": 180,\n        \"width\": 320,\n        \"x\": 0,\n        \"y\": 0\n      },\n      \"samplingScale\": 1\n    },\n    \"result\": {\n      \"channels\": [\n        \"R\",\n        \"G\",\n        \"B\",\n        \"A\"\n      ],\n      \"color\": \"scene-linear\",\n      \"contentHash\": \"8d1105eef784d751\",\n      \"height\": 180,\n      \"pixelAspect\": 1.0,\n      \"precision\": \"float32\",\n      \"residency\": \"gpu-device\",\n      \"width\": 320\n    },\n    \"steps\": [\n      {\n        \"effectiveParams\": {\n          \"frame\": {\n            \"type\": \"integer\",\n            \"value\": 0\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"value\": \"still\"\n          },\n          \"sourceDimensions\": {\n            \"type\": \"string\",\n            \"value\": \"320x180\"\n          }\n        },\n        \"inputImages\": [],\n        \"inputs\": [],\n        \"instance\": 0,\n        \"name\": \"media\",\n        \"network\": 1,\n        \"node\": 2,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"0000000000000000\",\n          \"height\": 180,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"gpu-device\",\n          \"width\": 320\n        },\n        \"reused\": false,\n        \"scopedInputs\": []\n      },\n      {\n        \"effectiveParams\": {},\n        \"inputImages\": [\n          {\n            \"channels\": [\n              \"R\",\n              \"G\",\n              \"B\",\n              \"A\"\n            ],\n            \"color\": \"scene-linear\",\n            \"contentHash\": \"0000000000000000\",\n            \"height\": 180,\n            \"pixelAspect\": 1.0,\n            \"precision\": \"float32\",\n            \"residency\": \"gpu-device\",\n            \"width\": 320\n          }\n        ],\n        \"inputs\": [\n          2\n        ],\n        \"instance\": 0,\n        \"name\": \"Output\",\n        \"network\": 1,\n        \"node\": 1,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"8d1105eef784d751\",\n          \"height\": 180,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"gpu-device\",\n          \"width\": 320\n        },\n        \"reused\": false,\n        \"scopedInputs\": [\n          {\n            \"instance\": 0,\n            \"network\": 1,\n            \"node\": 2,\n            \"outputPort\": 4294967295,\n            \"path\": []\n          }\n        ]\n      }\n    ]\n  },\n  \"ok\": true,\n  \"readback\": {\n    \"network\": 1,\n    \"node\": 1,\n    \"note\": \"diagnostic-only; the executor path itself performs no host readback\"\n  },\n  \"rendered\": {\n    \"backend\": \"slang\",\n    \"color\": \"scene-linear\",\n    \"device\": \"NVIDIA GeForce GTX 1070\",\n    \"frame\": 0,\n    \"height\": 180,\n    \"network\": 1,\n    \"path\": \"/tmp/nemo43-smoke/still-0-evaluate-gpu.ppm\",\n    \"precision\": \"float32\",\n    \"width\": 320\n  },\n  \"warnings\": []\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "sequence-0-evaluate",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate",
+      "/tmp/nemo43-smoke/sequence.json",
+      "--out",
+      "/tmp/nemo43-smoke/sequence-0-evaluate.ppm",
+      "--frame",
+      "0",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.042,
+    "stdout": "{\n  \"errors\": [],\n  \"evaluation\": {\n    \"request\": {\n      \"channels\": \"RGBA\",\n      \"fullHeight\": 48,\n      \"fullWidth\": 64,\n      \"localTime\": 0,\n      \"network\": 1,\n      \"output\": 1,\n      \"quality\": \"full\",\n      \"region\": {\n        \"height\": 48,\n        \"width\": 64,\n        \"x\": 0,\n        \"y\": 0\n      },\n      \"samplingScale\": 1\n    },\n    \"result\": {\n      \"channels\": [\n        \"R\",\n        \"G\",\n        \"B\",\n        \"A\"\n      ],\n      \"color\": \"scene-linear\",\n      \"contentHash\": \"92e4468d2be826ee\",\n      \"height\": 48,\n      \"pixelAspect\": 1.0,\n      \"precision\": \"float32\",\n      \"residency\": \"host-cpu-reference\",\n      \"width\": 64\n    },\n    \"steps\": [\n      {\n        \"effectiveParams\": {\n          \"frame\": {\n            \"type\": \"integer\",\n            \"value\": 1001\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"value\": \"sequence\"\n          },\n          \"sourcePath\": {\n            \"type\": \"string\",\n            \"value\": \"/tmp/nemo43-smoke/shot.####.exr\"\n          }\n        },\n        \"inputImages\": [],\n        \"inputs\": [],\n        \"instance\": 0,\n        \"name\": \"media\",\n        \"network\": 1,\n        \"node\": 2,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"92e4468d2be826ee\",\n          \"height\": 48,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"host-cpu-reference\",\n          \"width\": 64\n        },\n        \"reused\": false,\n        \"scopedInputs\": []\n      },\n      {\n        \"effectiveParams\": {},\n        \"inputImages\": [\n          {\n            \"channels\": [\n              \"R\",\n              \"G\",\n              \"B\",\n              \"A\"\n            ],\n            \"color\": \"scene-linear\",\n            \"contentHash\": \"92e4468d2be826ee\",\n            \"height\": 48,\n            \"pixelAspect\": 1.0,\n            \"precision\": \"float32\",\n            \"residency\": \"host-cpu-reference\",\n            \"width\": 64\n          }\n        ],\n        \"inputs\": [\n          2\n        ],\n        \"instance\": 0,\n        \"name\": \"Output\",\n        \"network\": 1,\n        \"node\": 1,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"92e4468d2be826ee\",\n          \"height\": 48,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"host-cpu-reference\",\n          \"width\": 64\n        },\n        \"reused\": false,\n        \"scopedInputs\": [\n          {\n            \"instance\": 0,\n            \"network\": 1,\n            \"node\": 2,\n            \"outputPort\": 4294967295,\n            \"path\": []\n          }\n        ]\n      }\n    ]\n  },\n  \"ok\": true,\n  \"rendered\": {\n    \"frame\": 0,\n    \"height\": 48,\n    \"network\": 1,\n    \"path\": \"/tmp/nemo43-smoke/sequence-0-evaluate.ppm\",\n    \"width\": 64\n  },\n  \"warnings\": [\n    \"unresolved sequence dependency source:sequence: /tmp/nemo43-smoke/shot.####.exr (authored as '/tmp/nemo43-smoke/shot.####.exr'); frame range needs media-owned sequence resolution\"\n  ]\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "sequence-0-evaluate-gpu",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate-gpu",
+      "/tmp/nemo43-smoke/sequence.json",
+      "--out",
+      "/tmp/nemo43-smoke/sequence-0-evaluate-gpu.ppm",
+      "--frame",
+      "0",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.439,
+    "stdout": "{\n  \"errors\": [],\n  \"evaluation\": {\n    \"request\": {\n      \"channels\": \"RGBA\",\n      \"fullHeight\": 48,\n      \"fullWidth\": 64,\n      \"localTime\": 0,\n      \"network\": 1,\n      \"output\": 1,\n      \"quality\": \"full\",\n      \"region\": {\n        \"height\": 48,\n        \"width\": 64,\n        \"x\": 0,\n        \"y\": 0\n      },\n      \"samplingScale\": 1\n    },\n    \"result\": {\n      \"channels\": [\n        \"R\",\n        \"G\",\n        \"B\",\n        \"A\"\n      ],\n      \"color\": \"scene-linear\",\n      \"contentHash\": \"92e4468d2be826ee\",\n      \"height\": 48,\n      \"pixelAspect\": 1.0,\n      \"precision\": \"float32\",\n      \"residency\": \"gpu-device\",\n      \"width\": 64\n    },\n    \"steps\": [\n      {\n        \"effectiveParams\": {\n          \"frame\": {\n            \"type\": \"integer\",\n            \"value\": 1001\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"value\": \"sequence\"\n          },\n          \"sourceDimensions\": {\n            \"type\": \"string\",\n            \"value\": \"64x48\"\n          }\n        },\n        \"inputImages\": [],\n        \"inputs\": [],\n        \"instance\": 0,\n        \"name\": \"media\",\n        \"network\": 1,\n        \"node\": 2,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"0000000000000000\",\n          \"height\": 48,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"gpu-device\",\n          \"width\": 64\n        },\n        \"reused\": false,\n        \"scopedInputs\": []\n      },\n      {\n        \"effectiveParams\": {},\n        \"inputImages\": [\n          {\n            \"channels\": [\n              \"R\",\n              \"G\",\n              \"B\",\n              \"A\"\n            ],\n            \"color\": \"scene-linear\",\n            \"contentHash\": \"0000000000000000\",\n            \"height\": 48,\n            \"pixelAspect\": 1.0,\n            \"precision\": \"float32\",\n            \"residency\": \"gpu-device\",\n            \"width\": 64\n          }\n        ],\n        \"inputs\": [\n          2\n        ],\n        \"instance\": 0,\n        \"name\": \"Output\",\n        \"network\": 1,\n        \"node\": 1,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"92e4468d2be826ee\",\n          \"height\": 48,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"gpu-device\",\n          \"width\": 64\n        },\n        \"reused\": false,\n        \"scopedInputs\": [\n          {\n            \"instance\": 0,\n            \"network\": 1,\n            \"node\": 2,\n            \"outputPort\": 4294967295,\n            \"path\": []\n          }\n        ]\n      }\n    ]\n  },\n  \"ok\": true,\n  \"readback\": {\n    \"network\": 1,\n    \"node\": 1,\n    \"note\": \"diagnostic-only; the executor path itself performs no host readback\"\n  },\n  \"rendered\": {\n    \"backend\": \"slang\",\n    \"color\": \"scene-linear\",\n    \"device\": \"NVIDIA GeForce GTX 1070\",\n    \"frame\": 0,\n    \"height\": 48,\n    \"network\": 1,\n    \"path\": \"/tmp/nemo43-smoke/sequence-0-evaluate-gpu.ppm\",\n    \"precision\": \"float32\",\n    \"width\": 64\n  },\n  \"warnings\": [\n    \"unresolved sequence dependency source:sequence: /tmp/nemo43-smoke/shot.####.exr (authored as '/tmp/nemo43-smoke/shot.####.exr'); frame range needs media-owned sequence resolution\"\n  ]\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "sequence-1-evaluate",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate",
+      "/tmp/nemo43-smoke/sequence.json",
+      "--out",
+      "/tmp/nemo43-smoke/sequence-1-evaluate.ppm",
+      "--frame",
+      "1",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.041,
+    "stdout": "{\n  \"errors\": [],\n  \"evaluation\": {\n    \"request\": {\n      \"channels\": \"RGBA\",\n      \"fullHeight\": 48,\n      \"fullWidth\": 64,\n      \"localTime\": 1,\n      \"network\": 1,\n      \"output\": 1,\n      \"quality\": \"full\",\n      \"region\": {\n        \"height\": 48,\n        \"width\": 64,\n        \"x\": 0,\n        \"y\": 0\n      },\n      \"samplingScale\": 1\n    },\n    \"result\": {\n      \"channels\": [\n        \"R\",\n        \"G\",\n        \"B\",\n        \"A\"\n      ],\n      \"color\": \"scene-linear\",\n      \"contentHash\": \"7cdce4c9d8e106ee\",\n      \"height\": 48,\n      \"pixelAspect\": 1.0,\n      \"precision\": \"float32\",\n      \"residency\": \"host-cpu-reference\",\n      \"width\": 64\n    },\n    \"steps\": [\n      {\n        \"effectiveParams\": {\n          \"frame\": {\n            \"type\": \"integer\",\n            \"value\": 1002\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"value\": \"sequence\"\n          },\n          \"sourcePath\": {\n            \"type\": \"string\",\n            \"value\": \"/tmp/nemo43-smoke/shot.####.exr\"\n          }\n        },\n        \"inputImages\": [],\n        \"inputs\": [],\n        \"instance\": 0,\n        \"name\": \"media\",\n        \"network\": 1,\n        \"node\": 2,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"7cdce4c9d8e106ee\",\n          \"height\": 48,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"host-cpu-reference\",\n          \"width\": 64\n        },\n        \"reused\": false,\n        \"scopedInputs\": []\n      },\n      {\n        \"effectiveParams\": {},\n        \"inputImages\": [\n          {\n            \"channels\": [\n              \"R\",\n              \"G\",\n              \"B\",\n              \"A\"\n            ],\n            \"color\": \"scene-linear\",\n            \"contentHash\": \"7cdce4c9d8e106ee\",\n            \"height\": 48,\n            \"pixelAspect\": 1.0,\n            \"precision\": \"float32\",\n            \"residency\": \"host-cpu-reference\",\n            \"width\": 64\n          }\n        ],\n        \"inputs\": [\n          2\n        ],\n        \"instance\": 0,\n        \"name\": \"Output\",\n        \"network\": 1,\n        \"node\": 1,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"7cdce4c9d8e106ee\",\n          \"height\": 48,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"host-cpu-reference\",\n          \"width\": 64\n        },\n        \"reused\": false,\n        \"scopedInputs\": [\n          {\n            \"instance\": 0,\n            \"network\": 1,\n            \"node\": 2,\n            \"outputPort\": 4294967295,\n            \"path\": []\n          }\n        ]\n      }\n    ]\n  },\n  \"ok\": true,\n  \"rendered\": {\n    \"frame\": 1,\n    \"height\": 48,\n    \"network\": 1,\n    \"path\": \"/tmp/nemo43-smoke/sequence-1-evaluate.ppm\",\n    \"width\": 64\n  },\n  \"warnings\": [\n    \"unresolved sequence dependency source:sequence: /tmp/nemo43-smoke/shot.####.exr (authored as '/tmp/nemo43-smoke/shot.####.exr'); frame range needs media-owned sequence resolution\"\n  ]\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "sequence-1-evaluate-gpu",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate-gpu",
+      "/tmp/nemo43-smoke/sequence.json",
+      "--out",
+      "/tmp/nemo43-smoke/sequence-1-evaluate-gpu.ppm",
+      "--frame",
+      "1",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.448,
+    "stdout": "{\n  \"errors\": [],\n  \"evaluation\": {\n    \"request\": {\n      \"channels\": \"RGBA\",\n      \"fullHeight\": 48,\n      \"fullWidth\": 64,\n      \"localTime\": 1,\n      \"network\": 1,\n      \"output\": 1,\n      \"quality\": \"full\",\n      \"region\": {\n        \"height\": 48,\n        \"width\": 64,\n        \"x\": 0,\n        \"y\": 0\n      },\n      \"samplingScale\": 1\n    },\n    \"result\": {\n      \"channels\": [\n        \"R\",\n        \"G\",\n        \"B\",\n        \"A\"\n      ],\n      \"color\": \"scene-linear\",\n      \"contentHash\": \"7cdce4c9d8e106ee\",\n      \"height\": 48,\n      \"pixelAspect\": 1.0,\n      \"precision\": \"float32\",\n      \"residency\": \"gpu-device\",\n      \"width\": 64\n    },\n    \"steps\": [\n      {\n        \"effectiveParams\": {\n          \"frame\": {\n            \"type\": \"integer\",\n            \"value\": 1002\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"value\": \"sequence\"\n          },\n          \"sourceDimensions\": {\n            \"type\": \"string\",\n            \"value\": \"64x48\"\n          }\n        },\n        \"inputImages\": [],\n        \"inputs\": [],\n        \"instance\": 0,\n        \"name\": \"media\",\n        \"network\": 1,\n        \"node\": 2,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"0000000000000000\",\n          \"height\": 48,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"gpu-device\",\n          \"width\": 64\n        },\n        \"reused\": false,\n        \"scopedInputs\": []\n      },\n      {\n        \"effectiveParams\": {},\n        \"inputImages\": [\n          {\n            \"channels\": [\n              \"R\",\n              \"G\",\n              \"B\",\n              \"A\"\n            ],\n            \"color\": \"scene-linear\",\n            \"contentHash\": \"0000000000000000\",\n            \"height\": 48,\n            \"pixelAspect\": 1.0,\n            \"precision\": \"float32\",\n            \"residency\": \"gpu-device\",\n            \"width\": 64\n          }\n        ],\n        \"inputs\": [\n          2\n        ],\n        \"instance\": 0,\n        \"name\": \"Output\",\n        \"network\": 1,\n        \"node\": 1,\n        \"outputPort\": 4294967295,\n        \"path\": [],\n        \"produced\": {\n          \"channels\": [\n            \"R\",\n            \"G\",\n            \"B\",\n            \"A\"\n          ],\n          \"color\": \"scene-linear\",\n          \"contentHash\": \"7cdce4c9d8e106ee\",\n          \"height\": 48,\n          \"pixelAspect\": 1.0,\n          \"precision\": \"float32\",\n          \"residency\": \"gpu-device\",\n          \"width\": 64\n        },\n        \"reused\": false,\n        \"scopedInputs\": [\n          {\n            \"instance\": 0,\n            \"network\": 1,\n            \"node\": 2,\n            \"outputPort\": 4294967295,\n            \"path\": []\n          }\n        ]\n      }\n    ]\n  },\n  \"ok\": true,\n  \"readback\": {\n    \"network\": 1,\n    \"node\": 1,\n    \"note\": \"diagnostic-only; the executor path itself performs no host readback\"\n  },\n  \"rendered\": {\n    \"backend\": \"slang\",\n    \"color\": \"scene-linear\",\n    \"device\": \"NVIDIA GeForce GTX 1070\",\n    \"frame\": 1,\n    \"height\": 48,\n    \"network\": 1,\n    \"path\": \"/tmp/nemo43-smoke/sequence-1-evaluate-gpu.ppm\",\n    \"precision\": \"float32\",\n    \"width\": 64\n  },\n  \"warnings\": [\n    \"unresolved sequence dependency source:sequence: /tmp/nemo43-smoke/shot.####.exr (authored as '/tmp/nemo43-smoke/shot.####.exr'); frame range needs media-owned sequence resolution\"\n  ]\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "sequence-5-evaluate",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate",
+      "/tmp/nemo43-smoke/sequence.json",
+      "--out",
+      "/tmp/nemo43-smoke/sequence-5-evaluate.ppm",
+      "--frame",
+      "5",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.041,
+    "stdout": "{\n  \"errors\": [\n    \"node 'media' (id 2, type 'source'): source provider failed for 'sequence' at frame 1006: image: /tmp/nemo43-smoke/shot.1006.exr: Could not open \\\"/tmp/nemo43-smoke/shot.1006.exr\\\" (No such file or directory)\"\n  ],\n  \"ok\": false,\n  \"warnings\": [\n    \"unresolved sequence dependency source:sequence: /tmp/nemo43-smoke/shot.####.exr (authored as '/tmp/nemo43-smoke/shot.####.exr'); frame range needs media-owned sequence resolution\"\n  ]\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "sequence-5-evaluate-gpu",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate-gpu",
+      "/tmp/nemo43-smoke/sequence.json",
+      "--out",
+      "/tmp/nemo43-smoke/sequence-5-evaluate-gpu.ppm",
+      "--frame",
+      "5",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.402,
+    "stdout": "{\n  \"errors\": [\n    \"error: media decode: /tmp/nemo43-smoke/shot.####.exr: container/codec: avformat_open_input failed (No such file or directory)\"\n  ],\n  \"ok\": false,\n  \"warnings\": [\n    \"unresolved sequence dependency source:sequence: /tmp/nemo43-smoke/shot.####.exr (authored as '/tmp/nemo43-smoke/shot.####.exr'); frame range needs media-owned sequence resolution\"\n  ]\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "unsupported-0-evaluate",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate",
+      "/tmp/nemo43-smoke/unsupported.json",
+      "--out",
+      "/tmp/nemo43-smoke/unsupported-0-evaluate.ppm",
+      "--frame",
+      "0",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.123,
+    "stdout": "{\n  \"errors\": [\n    \"node 'media' (id 2, type 'source'): source provider failed for 'unsupported' at frame 0: image: /tmp/nemo43-smoke/unsupported.png: no R/G/B channels in png file: 1 channels\"\n  ],\n  \"ok\": false,\n  \"warnings\": []\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "unsupported-0-evaluate-gpu",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate-gpu",
+      "/tmp/nemo43-smoke/unsupported.json",
+      "--out",
+      "/tmp/nemo43-smoke/unsupported-0-evaluate-gpu.ppm",
+      "--frame",
+      "0",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.474,
+    "stdout": "{\n  \"errors\": [\n    \"error: image: /tmp/nemo43-smoke/unsupported.png: no R/G/B channels in png file: 1 channels\"\n  ],\n  \"ok\": false,\n  \"warnings\": []\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "corrupt-0-evaluate",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate",
+      "/tmp/nemo43-smoke/corrupt.json",
+      "--out",
+      "/tmp/nemo43-smoke/corrupt-0-evaluate.ppm",
+      "--frame",
+      "0",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.041,
+    "stdout": "{\n  \"errors\": [\n    \"node 'media' (id 2, type 'source'): source provider failed for 'corrupt' at frame 0: image: /tmp/nemo43-smoke/corrupt.exr: EXR Error (/tmp/nemo43-smoke/corrupt.exr): EXR_ERR_FILE_BAD_HEADER File is not an OpenEXR file: magic 0x20746F6E (544501614) flags 0x61762061\"\n  ],\n  \"ok\": false,\n  \"warnings\": []\n}\n",
+    "stderr": ""
+  },
+  {
+    "label": "corrupt-0-evaluate-gpu",
+    "argv": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate-gpu",
+      "/tmp/nemo43-smoke/corrupt.json",
+      "--out",
+      "/tmp/nemo43-smoke/corrupt-0-evaluate-gpu.ppm",
+      "--frame",
+      "0",
+      "--width",
+      "64",
+      "--height",
+      "48"
+    ],
+    "exitCode": 1,
+    "elapsedSeconds": 0.384,
+    "stdout": "{\n  \"errors\": [\n    \"error: media decode: /tmp/nemo43-smoke/corrupt.exr: unknown pixel format: unsupported pixel format; the decoder converts a conservative explicit subset, supported formats: yuv420p, yuvj420p, nv12, yuv444p, yuvj444p, yuv420p10le, yuv444p10le, gray8, gray10le, gray16le\"\n  ],\n  \"ok\": false,\n  \"warnings\": []\n}\n",
+    "stderr": "[exr @ 0x5fb760e7ee40] Wrong magic number 544501614.\n[image2 @ 0x5fb75ee90800] Could not find codec parameters for stream 0 (Video: exr, none): unspecified size\nConsider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options\n"
+  }
+]

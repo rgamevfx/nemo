@@ -17,6 +17,8 @@ if(NEMO_BUILD_UI)
         message(FATAL_ERROR "NEMO_BUILD_UI requires NEMO_BUILD_GPU for native viewer presentation")
     endif()
     qt_add_executable(nemo-ui main.cpp PanelContextRouter.cpp PanelContextRouter.hpp
+        MediaLibraryModel.cpp MediaLibraryModel.hpp
+        NativeFileChooser.cpp NativeFileChooser.hpp
         ParameterEditorRegistry.cpp ParameterEditorRegistry.hpp
         ProjectFileController.cpp ProjectFileController.hpp
         WorkspaceController.cpp WorkspaceController.hpp
@@ -31,6 +33,7 @@ if(NEMO_BUILD_UI)
         QML_FILES qml/Main.qml qml/WorkspaceNode.qml qml/Panel.qml qml/DockDrag.qml qml/PanelDragHandler.qml
                   qml/Theme.qml qml/ChromeButton.qml qml/StudioComboBox.qml qml/UnavailablePanel.qml
                   qml/ViewerPanel.qml qml/GraphPanel.qml qml/TimelinePanel.qml qml/ParametersPanel.qml
+                  qml/MediaBinPanel.qml
     )
     target_link_libraries(nemo-ui PRIVATE nemo::core nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)
     if(UNIX AND NOT APPLE)

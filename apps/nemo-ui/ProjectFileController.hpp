@@ -1,5 +1,6 @@
 #pragma once
 
+#include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
 #include "WorkspaceController.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
@@ -41,10 +42,11 @@ class ProjectFileController final : public QObject {
     Q_PROPERTY(QVariantList references READ references NOTIFY warningsChanged)
 
 public:
-    // All three owners must outlive this controller; main.cpp declares them
-    // before the QML engine and this object after them.
+    // All owners must outlive this controller; main.cpp declares them before the
+    // QML engine and this object after them. The chooser is the shared native
+    // file-chooser seam this controller's choose* entry points drive.
     ProjectFileController(nemo::ProjectSession& session, nemo::workspace::WorkspaceController& workspace,
-                          PanelContextRouter& router, QObject* parent = nullptr);
+                          PanelContextRouter& router, NativeFileChooser& chooser, QObject* parent = nullptr);
     ~ProjectFileController() override;
 
     [[nodiscard]] bool dirty() const { return dirty_; }
@@ -118,13 +120,6 @@ private:
     // Sets the persistent error diagnostic before emitting fileDialogFailed so
     // the existing error dialog shows the real reason.
     void failFileDialog(QString message);
-#if defined(_WIN32)
-    void startWindowsDialog(DialogPurpose purpose, const QString& title, const std::filesystem::path& folder,
-                            const QString& suggestedName);
-#elif defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    void startPortalDialog(DialogPurpose purpose, const QString& title, const std::filesystem::path& folder,
-                           const QString& suggestedName);
-#endif
     void emitChosen(DialogPurpose purpose, const QUrl& url);
 
     void beginRead(const std::filesystem::path& path, bool recovery);
@@ -150,15 +145,11 @@ private:
     std::filesystem::path autosaveIdentity();
     std::filesystem::path recoveryFolder();
 
-private slots:
-    // XDG portal Request::Response(u,a{sv}); string-based connection so the
-    // portal's own signature is matched without introspecting the handle.
-    void onPortalResponse(uint response, const QVariantMap& results);
-
 private:
     nemo::ProjectSession& session_;
     nemo::workspace::WorkspaceController& workspace_;
     PanelContextRouter& router_;
+    NativeFileChooser& chooser_;
     nemo::ProjectSession::Subscription sessionSubscription_;
 
     QThread ioThread_;
@@ -195,12 +186,6 @@ private:
 
     QString appDataDirectory_;
     std::filesystem::path untitledIdentity_;
-    bool dialogInFlight_{false};
-    DialogPurpose chooserPurpose_{DialogPurpose::Open};
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    QString portalHandle_;
-    int portalTokenCounter_{0};
-#endif
 };
 
 }  // namespace nemo::ui

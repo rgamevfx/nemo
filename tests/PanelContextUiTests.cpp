@@ -101,8 +101,9 @@ protected:
     nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
     nemo::ui::PanelContextRouter router{projectSession};
     // Main.qml reads the project file state; the harness injects the same
-    // adapter the application composes.
-    nemo::ui::ProjectFileController projectFile{projectSession, workspace, router};
+    // adapter and shared native chooser the application composes.
+    nemo::ui::NativeFileChooser chooser;
+    nemo::ui::ProjectFileController projectFile{projectSession, workspace, router, chooser};
     QQmlApplicationEngine engine;
     QQuickWindow* window = nullptr;
 

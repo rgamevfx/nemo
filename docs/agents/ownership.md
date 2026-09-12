@@ -30,8 +30,10 @@ and every panel header keeps the visible A–E selector required by spec §6 and
 the approved prototype. The `follow`/`pinned` panel-routing modes retired by #60
 do not return; the visible selector was restored by #63; inspector-card pinning
 is separate and remains valid. Functional ports
-#44/#46/#50/#47/#43 extend those owners. Read the live owning
-issue to distinguish implemented capabilities from planned ones before using an
+#44/#46/#50/#47/#43 extend those owners. #43's implemented media-import/Media
+Bin owners are recorded below; #47's two-viewer/media-role parity and the human
+API/schema/image review of #43 remain open gates, so read the live owning issue
+to distinguish implemented capabilities from planned ones before using an
 extension path.
 
 ## Target graph and dependency direction
@@ -88,6 +90,10 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | GPU primitives and resource lifetime | `src/nemo/gpu/` (`Device`, `Allocator`, `Submit`, `ComputePass`) | `src/nemo/eval/GpuExecutor.cpp` records/submits work; follow [`rendering.md`](rendering.md) for retained ownership and synchronization rather than copying those rules here |
 | Native effect execution | `src/nemo/eval/GpuExecutor.hpp`; `EffectProgram`, `EffectLibrary`, `loadSlangEffectLibrary`, `glslEffectLibrary`, `submitGpu`, `evaluateGpu` | `src/nemo/eval/Viewer.cpp::ViewerSession` loads the Slang library. The evaluator owns execution; effects never add Qt or persistent-model dependencies |
 | Media and color adapters | `src/nemo/media/` public image/viewing contracts; external OIIO/OCIO/FFmpeg types stay behind `.cpp` adapters | CLI probe/render and `eval::SourceSession` consume the application media contract. `src/nemo/media/ImageSource.{hpp,cpp}` owns still/sequence `SourceReference` decode (pattern resolution, declared-color interpretation, scene-linear straight-alpha conversion, headless `ImageSourceProvider`) — reuse it rather than adding a second still reader |
+| Media import, probing and preview | `src/nemo/media/MediaImportService.hpp`; `MediaImportService`, `MediaImportRequest`/`MediaImportResult`, `inspectMediaSource` | One service worker decodes, probes and reduces a display-referred preview off the GUI thread; the queue is bounded and results carry request identity. `apps/nemo-ui/MediaLibraryModel.*` is the production consumer, requests previews within 160×90 bounds, and owns no decoder |
+| Media Bin catalog adapter | `apps/nemo-ui/MediaLibraryModel.*`; Qt/QML query/command surface over `Document`/`MediaCatalog` | Submits validated catalog commands through `ProjectSession`; owns transient probe results and the bounded display-referred `QImage` thumbnail cache/provider, not persistent catalog state. A runtime probe is a proposal until `applyProbe` commits it; `relink` copies the preserved `SourceReference` |
+| Media Bin panel presentation | `apps/nemo-ui/qml/MediaBinPanel.qml` | Reactive adapter records plus panel-state view/selection preferences; it submits catalog operations, emits ordered `requestTimelineInsert` intent for #54, reveals through `revealMediaPanel`, and opens explicitly only through `MediaLibraryModel::openMediaSource` |
+| Native file chooser | `apps/nemo-ui/NativeFileChooser.hpp`; `openFiles`/`saveFile` with a requester-owned `OutcomeHandler` | One platform implementation per build; each request belongs to its requester and no outcome is broadcast. `ProjectFileController` and `MediaLibraryModel` are separate requesters of the same chooser |
 | Workspace arrangement and panel state | `apps/nemo-ui/Workspace.hpp`/`Workspace.cpp`; Qt-free `Workspace`, `Panel`, and `Workspace::createPanel` | `WorkspaceController::registerPanelType`, `createPanel`, and `setPanelState` are the Qt/QML boundary; `main.cpp` registers production panels before QML loads |
 | Presentation and input | `apps/nemo-ui/WorkspaceController.*`, `ViewerController.*`, and `apps/nemo-ui/qml/` | Presentation reads state and submits commands; it does not own `Document`, evaluator, or GPU resource state |
 | Headless automation | `apps/nemo-cli/`; JSON-lines project-session protocol and `nemo-cli` commands | `ProjectSessionCommand.cpp::makeCommand()` is the current command dispatch seam; do not invent a second command registry |
@@ -209,6 +215,47 @@ through `panelState`/`setPanelState`; it is not `Document` state. Do not add
 panel switches to the shared shell or make workspace a core/evaluation
 dependency.
 
+### Extend media import and the Media Bin
+
+Media Bin work keeps the three layers separate; add to the layer that owns the
+change rather than importing decode logic into the panel or catalog state into
+the adapter.
+
+1. **Decode, probe and preview** belong to `src/nemo/media/MediaImportService.hpp`.
+   One worker thread consumes only the application media contract: stills and
+   image sequences through `ImageSource.hpp`, clips through the source decoder's
+   bounded single-frame read, and the preview is a display-referred image within
+   the Media Bin's requested 160×90 bounds, through the existing OCIO viewing transform — never
+   viewer-cache replay and never a synthetic image. The outstanding set is
+   bounded; a repeat submission for an outstanding source coalesces to the newest
+   reference, and failure is data, not an exception. Results carry the submitted
+   request, so re-import or relink re-queues work rather than guessing.
+2. **Catalog access and previews** belong to `apps/nemo-ui/MediaLibraryModel.*`,
+   the Qt/QML query/command surface over `Document`/`MediaCatalog`. It submits
+   validated catalog commands through `ProjectSession`, owns no persistent
+   catalog state, and polls the import service on the GUI thread. A runtime
+   result is a proposal until `applyProbe` commits it; `relink` copies the
+   preserved `SourceReference`. Extend the adapter rather than adding a second
+   QML catalog.
+3. **The panel** `apps/nemo-ui/qml/MediaBinPanel.qml` is a reactive projection of
+   adapter query/selection records plus panel-state view preferences; it submits
+   catalog operations and never mutates catalog primitives. `requestTimelineInsert`
+   is ordered intent only — insertion and the playhead belong to #54's timeline
+   owner — and `revealMediaPanel` activates or creates the group's media panel.
+   Explicit open routes `openMediaSource` through `PanelContextRouter` to
+   `ViewerController`, which renders the routed catalog reference from a
+   request-owned evaluation snapshot; no authored graph node, used-media mark or
+   history entry is created for a catalog open. Two-viewer/media-role parity
+   remains with #47.
+4. **The native chooser** `apps/nemo-ui/NativeFileChooser.hpp` is the shared
+   platform seam. It is shared with `ProjectFileController`; each is a separate
+   requester and receives only its own requests' outcomes. The panel owns the
+   follow-up `importPaths`/`relink` call and its failure presentation.
+
+Issue #43 evidence: [`session.json`](../evidence/assets/issue43-media-import/session.json).
+The human image/API/schema review of this surface remains open; passing an agent
+or smoke check is not approval.
+
 ### Extend shared UI presentation
 
 The existing `Nemo` QML module owns the shared UI library alongside its panels:
@@ -256,9 +303,11 @@ toolbars rather than keeping them behind compatibility menus. The prototype
 defines visible controls; unsupported actions remain disabled until their owning
 feature ticket implements them. Graph creation reads the production catalog and
 submits existing commands through its category menu. Native media verification
-uses the existing `--source` option and an explicit OCIO configuration; a test
-entry field is not the media-import workflow. GraphItem/TimelineItem consume
-plain presentation colors and records, never theme QObjects on the render thread.
+uses the Media Bin import/relink path in the media entry point below, or the
+existing `--source` option with an explicit OCIO configuration; a temporary
+test entry field is not the media-import workflow. GraphItem/TimelineItem
+consume plain presentation colors and records, never theme QObjects on the
+render thread.
 
 ### Add a command
 

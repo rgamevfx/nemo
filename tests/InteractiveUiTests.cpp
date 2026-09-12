@@ -2,10 +2,14 @@
 #include "ScopedEnvironment.hpp"
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
+#include "ViewerItem.hpp"
 #include "nemo/core/commands/AnimationCommands.hpp"
+#include "nemo/core/commands/MediaCatalogCommands.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 #include "nemo/gpu/Error.hpp"
 
+#include <QCoreApplication>
+#include <QEvent>
 #include <QJSEngine>
 #include <QJSValue>
 #include <QSignalSpy>
@@ -509,6 +513,33 @@ TEST(Interactive, ViewerControllerRegistryAllocatesIndependentDestinations) {
     EXPECT_EQ(registry.activeCount(), 0);
     EXPECT_EQ(registry.primary(), nullptr);
     EXPECT_FALSE(second->destination().has_value());
+}
+
+// A panel's ViewerItem borrows the controller the registry owns, and
+// ViewerPanel.qml releases that controller from Component.onDestruction. The
+// registry retires it with deleteLater(), so the item can outlive the
+// controller by a deferred-delete pass; destroying it afterwards must not
+// dereference the retired controller. Before the borrowed pointer became weak,
+// ~ViewerItem crashed here while detaching from the freed controller.
+TEST(Interactive, ViewerItemOutlivesItsReleasedControllerWithoutDereferencingIt) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerControllerRegistry registry(&runtime, session);
+    auto* controller = qobject_cast<nemo::ui::ViewerController*>(registry.controller(QStringLiteral("panel-a")));
+    ASSERT_TRUE(controller);
+    ASSERT_EQ(registry.activeCount(), 1);
+
+    auto* item = new nemo::ui::ViewerItem;
+    item->setController(controller);
+    ASSERT_EQ(item->controller(), controller);
+
+    // The panel is removed while its item still exists: the controller is
+    // retired and destroyed on the next deferred-delete pass.
+    registry.release(QStringLiteral("panel-a"));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    EXPECT_EQ(item->controller(), nullptr);
+    delete item;
 }
 
 TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
@@ -1032,6 +1063,59 @@ TEST(Interactive, JavaScriptArrayEditsConvertVectorAndColorParameters) {
     const auto positions = session.queryValues(networkId, fixture.node, "position");
     ASSERT_FALSE(positions.empty());
     EXPECT_EQ(std::get<nemo::Vector3Value>(positions.front().value), (nemo::Vector3Value{{1.0F, 2.0F, 3.0F}}));
+}
+
+// Issue #43: a Media Bin reference is explicitly viewable through the shared
+// source-fill path even when no authored source node addresses it, and the
+// explicit open authors nothing.
+TEST(Interactive, MediaRoleViewsCatalogReferenceWithoutAuthoringAGraphNode) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    // A media import authors exactly this: one Document source reference plus
+    // one catalog entry, never a graph node.
+    nemo::SourceReference reference;
+    reference.path = "/media/nemo-media-role-still.exr";
+    reference.revision = 5;
+    ASSERT_TRUE(session
+                    .submit(nemo::setSourceCommand("media-role-still", reference),
+                            nemo::EditOptions{.expectedRevision = session.revision()})
+                    .committed);
+    auto entry = std::make_shared<nemo::MediaSourceId>();
+    ASSERT_TRUE(session
+                    .submit(nemo::importMediaReferenceCommand("media-role-still", nemo::kInvalidMediaBin, {}, entry),
+                            nemo::EditOptions{.expectedRevision = session.revision()})
+                    .committed);
+
+    nemo::ui::ViewerController controller(&runtime, session);
+    controller.setDestination(nemo::eval::ViewerDestination::Interactive);
+    const auto network = session.document().rootNetworkId();
+    // The fixture authors exactly the media import result: a source reference
+    // and a catalog entry, no graph node at all.
+    ASSERT_TRUE(session.document().network(network).graph().nodes().empty());
+    const auto revisionBefore = session.revision();
+    const bool canUndoBefore = controller.canUndo();
+
+    // The catalog reference alone reaches the source-fill path: the routed
+    // media role probes the referenced source, not the graph role's "src".
+    controller.setViewerContext(QStringLiteral("media"), QStringLiteral("media-role-still"), 0);
+    EXPECT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    EXPECT_EQ(controller.renderState(), QStringLiteral("pending"));
+    EXPECT_EQ(runtime.counts().queued, 1u);
+
+    // Explicit viewing is presentation-only: no node, no history entry, and the
+    // source is not counted as used media.
+    EXPECT_TRUE(session.document().network(network).graph().nodes().empty());
+    EXPECT_TRUE(controller.graphNodes().isEmpty());
+    EXPECT_EQ(session.revision(), revisionBefore);
+    EXPECT_EQ(controller.canUndo(), canUndoBefore);
+    EXPECT_FALSE(session.document().mediaCatalog.sourceUsed(session.document(), "media-role-still"));
+
+    // A decimal catalog entry id addresses the same reference; an unknown
+    // target still reports an explicit unavailable media context.
+    controller.setViewerContext(QStringLiteral("media"), QString::number(static_cast<qulonglong>(*entry)), 0);
+    EXPECT_EQ(controller.renderState(), QStringLiteral("pending"));
+    controller.setViewerContext(QStringLiteral("media"), QStringLiteral("media-role-missing"), 0);
+    EXPECT_EQ(controller.renderState(), QStringLiteral("unavailable"));
 }
 
 TEST(Interactive, ParameterEditorRegistryRegistersAndResolvesEditors) {

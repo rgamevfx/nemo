@@ -1,0 +1,3590 @@
+{
+  "schema": "nemo.issue43.media-import-evidence.v1",
+  "issue": "https://github.com/rgamevfx/nemo/issues/43",
+  "roadmap": "https://github.com/rgamevfx/nemo/issues/24",
+  "status": "Implementation and agent verification complete; human API/schema/image review and #47 integration gate remain open. Not committed, pushed or merged.",
+  "branch": "issue/43-media-import-bin",
+  "baseCommit": "4274641",
+  "sourceState": "Uncommitted implementation; capture-time process/source metadata lives in individual reports. Earlier capture hashes are not asserted equal to the final source tree.",
+  "reference": {
+    "archive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+    "archiveSha256": "0027b39f6ba20fc2168f83215f8ba036fcc408284e6b3a2702a21c2c37b8e57e",
+    "manifest": "docs/evidence/assets/issue25-prototype-reference-manifest.json",
+    "sourceCommit": "76071624aebd6577ca613a9d3322f535fd80f399",
+    "coverage": "docs/evidence/issue25-coverage-v1.json",
+    "record": "media-bin-session.json",
+    "currentEntries": 63,
+    "preEditMapping": "https://github.com/rgamevfx/nemo/issues/43#issuecomment-5645063881"
+  },
+  "approvals": {
+    "productionStatesAndActions": [
+      "https://github.com/rgamevfx/nemo/issues/43#issuecomment-5645135083",
+      "https://github.com/rgamevfx/nemo/issues/43#issuecomment-5645179374"
+    ],
+    "scope": "Existing import/relink placements; Pending/Offline/Unsupported labels beside names; diagnostics and explicit Apply Probe in existing metadata surfaces;350px dialogs/320px content with path/native chooser and explicit sequence start frame. Relink preserves identity/mapping. These approvals do not approve the final screenshots.",
+    "desktopInput": "Owner approved the Remote Control provider on the desktop; agent did not accept provider permission UI."
+  },
+  "method": {
+    "surface": "Real nemo-ui, Qt6.4.2, native Wayland, NVIDIA GTX1070/Vulkan,1274x640,DPR1 for matched captures. Existing production QML/controllers/media/evaluation/GPU paths; no StudioModel or mocked app.",
+    "input": "Temporary preloaded QtTest driver delivered timed clicks/keys/drags to the actual QQuickWindow. Scenario invoke steps use real application commands for setup and semantic observations. This is not OS-pointer/portal-event parity.",
+    "capture": "Actual QQuickWindow application-only grabs. No whole-desktop screenshots or generated media files retained. Native driver is a throwaway diagnostic, not an application dependency.",
+    "colorConfig": "/home/rgame/dev/Nemo_Dev2/docs/evidence/issue12-view.ocio",
+    "colorConfigSha256": "db9a7fbb119f88528b2d05597e5f7d7e97e77ab6eebe01b9e800fe2816670fc8",
+    "platformLimitations": [
+      "Windows not exercised.",
+      "Qt Wayland LeakSanitizer exit is a remaining limitation; see sanitizerNative.",
+      "Final human visual review has not happened."
+    ]
+  },
+  "acceptance": [
+    {
+      "example": 1,
+      "result": "Real still/video/offset sequence imports and bounded asynchronous thumbnails; pending/ready/offline/unsupported states; responsive search while48real4Kfiles decode.",
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/dialogs/evidence.json",
+        "runs/busy-debug/evidence.json",
+        "runs/busy-release/evidence.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "example": 2,
+      "result": "Missing source, malformed EXR, unsupported one-channel PNG and ambiguous-transfer clip are explicit failures; actual format/plane/bit-depth/color/fallback evidence is separate from user metadata.",
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "headless-results.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "example": 3,
+      "result": "Persistent nested catalog, list/grid, visible sorting, search/smart filters, metadata, rename/cut/copy/duplicate/history and real tree drag;56-entry dense/narrow navigation.",
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json",
+        "runs/drag/evidence.json",
+        "runs/dense-narrow/evidence.json",
+        "comparisons/",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "example": 4,
+      "result": "Single selection does not open; double-click renders real still/sequence/clip in matching group; simultaneous A/B source clocks remain independent; existing/create-only-when-absent panel reveal regression passes.",
+      "evidence": [
+        "runs/source/evidence.json",
+        "runs/workspace-source/evidence.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "example": 5,
+      "result": "Real drop emits ordered repeated source keys and distinct per-entry marks to receiverA; cancellation/internal/bin drags emit no insert; context overwrite targetsB. Timelineclock37 remains37; editorial state is not changed.",
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "example": 6,
+      "result": "Real-file stale relink/reset/color-change/reentrant-completion regressions pass; user metadata does not invalidate fresh runtime evidence; persistent probe apply is explicit and expected-reference guarded.",
+      "evidence": [
+        "logs/ctest-debug.log",
+        "logs/ctest-release.log",
+        "logs/ctest-asan.log",
+        "runs/catalog/evidence.json",
+        "runs/dialogs/evidence.json"
+      ]
+    },
+    {
+      "example": 7,
+      "result": "Native source viewer displays supported still without a video container and sequence local0/1 maps to files1001/1002. Same references evaluate identically in CPU/GPU headless paths; missing/unsupported/corrupt inputs fail explicitly.",
+      "evidence": [
+        "runs/source/evidence.json",
+        "runs/workspace-source/evidence.json",
+        "headless-results.json",
+        "headless-comparison.json"
+      ]
+    }
+  ],
+  "coverage": [
+    {
+      "id": "media-bin-session.json:/verification/checks[0]",
+      "obligation": "Root traversal excludes root and terminates",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[1]",
+      "obligation": "Unused filter excludes all used source records",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[2]",
+      "obligation": "Catalog sources refer to real timeline source IDs",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ],
+      "note": "Production records reference Document SourceReference keys, not copied prototype TimelineModel fixture IDs."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[3]",
+      "obligation": "Creating a bin publishes it in root",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[4]",
+      "obligation": "Creating nested bins retains hierarchy",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[5]",
+      "obligation": "Moving ancestor into descendant rejects atomically",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[6]",
+      "obligation": "Rename preserves bin identity",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[7]",
+      "obligation": "Undo restores prior bin name",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[8]",
+      "obligation": "Redo restores renamed bin",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[9]",
+      "obligation": "Moving media keeps stable source identity",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[10]",
+      "obligation": "Project search finds edited metadata",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[11]",
+      "obligation": "Removing bin keeping contents reparents media",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[12]",
+      "obligation": "Undo restores removed bin and hierarchy",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[13]",
+      "obligation": "Used source removal rejects without partial mutations",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[14]",
+      "obligation": "Duplicate is independent catalog identity referencing same source",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[15]",
+      "obligation": "Renaming duplicate does not rename original catalog item",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[16]",
+      "obligation": "Organization leaves timeline edits unchanged",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[17]",
+      "obligation": "New organizational edit clears redo branch",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[18]",
+      "obligation": "History restores initial catalog",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[19]",
+      "obligation": "Initial media panel and viewer have positive usable geometry",
+      "status": "native-media-surface-verified; human-image-review-open",
+      "owners": [
+        40,
+        43
+      ],
+      "evidence": [
+        "runs/dense-narrow/evidence.json",
+        "runs/workspace-source/evidence.json",
+        "comparisons/"
+      ],
+      "note": "Matched1274x640/DPR1 media layouts; workspace arrangement uses existing commands. Production workspace names/data and #47/#54 viewer/editorial contents are not prototype fixtures."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[20]",
+      "obligation": "Native viewer role menu selects Media Bin without changing group",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[21]",
+      "obligation": "Single source selection does not load viewer",
+      "status": "native-source-open-and-group-isolation-verified",
+      "owners": [
+        41,
+        43,
+        47
+      ],
+      "evidence": [
+        "runs/source/evidence.json",
+        "runs/workspace-source/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[22]",
+      "obligation": "Doubleclick loads source into matching media viewer",
+      "status": "native-source-open-and-group-isolation-verified",
+      "owners": [
+        41,
+        43,
+        47
+      ],
+      "evidence": [
+        "runs/source/evidence.json",
+        "runs/workspace-source/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[23]",
+      "obligation": "Source seek leaves timeline and graph clocks unchanged",
+      "status": "native-source-open-and-group-isolation-verified",
+      "owners": [
+        41,
+        43,
+        47
+      ],
+      "evidence": [
+        "runs/source/evidence.json",
+        "runs/workspace-source/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[24]",
+      "obligation": "Source marks allow scrubbing outside marked range",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[25]",
+      "obligation": "Timeline role uses its independent clock",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[26]",
+      "obligation": "Role switching restores media source and marks",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[27]",
+      "obligation": "Opening source in group B does not change A viewer",
+      "status": "native-source-open-and-group-isolation-verified",
+      "owners": [
+        41,
+        43,
+        47
+      ],
+      "evidence": [
+        "runs/source/evidence.json",
+        "runs/workspace-source/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[28]",
+      "obligation": "Changing viewer group follows B source and playhead",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[29]",
+      "obligation": "Empty graph group does not borrow A output",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[30]",
+      "obligation": "Graph viewer targets remain group independent",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[31]",
+      "obligation": "Native bin drag inserts marked linked AV at hovered track and time",
+      "status": "producer-boundary-verified; editorial-consumer-remains-with-54",
+      "owners": [
+        43,
+        54
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ],
+      "note": "Stable ordered IDs/per-entry marks, cross-group delivery, insert/overwrite intent and unchanged playhead are #43. Clip creation, consecutive assembly and editorial undo are #54 non-goals, not claimed complete."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[32]",
+      "obligation": "Bin drop preserves sequence playhead",
+      "status": "native-insertion-intent-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[33]",
+      "obligation": "One undo restores sequence before media drop",
+      "status": "producer-boundary-verified; editorial-consumer-remains-with-54",
+      "owners": [
+        43,
+        54
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ],
+      "note": "Stable ordered IDs/per-entry marks, cross-group delivery, insert/overwrite intent and unchanged playhead are #43. Clip creation, consecutive assembly and editorial undo are #54 non-goals, not claimed complete."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[34]",
+      "obligation": "Multi-source selection uses visible bin order",
+      "status": "native-insertion-intent-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[35]",
+      "obligation": "Multi-source drop commits consecutive marked ranges",
+      "status": "producer-boundary-verified; editorial-consumer-remains-with-54",
+      "owners": [
+        43,
+        54
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ],
+      "note": "Stable ordered IDs/per-entry marks, cross-group delivery, insert/overwrite intent and unchanged playhead are #43. Clip creation, consecutive assembly and editorial undo are #54 non-goals, not claimed complete."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[36]",
+      "obligation": "Multi-source insertion is one atomic undo",
+      "status": "producer-boundary-verified; editorial-consumer-remains-with-54",
+      "owners": [
+        43,
+        54
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ],
+      "note": "Stable ordered IDs/per-entry marks, cross-group delivery, insert/overwrite intent and unchanged playhead are #43. Clip creation, consecutive assembly and editorial undo are #54 non-goals, not claimed complete."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[37]",
+      "obligation": "Cross-group drag uses source group's marked range",
+      "status": "native-insertion-intent-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[38]",
+      "obligation": "Repeated source project items are not collapsed in assembly",
+      "status": "native-insertion-intent-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[39]",
+      "obligation": "Context overwrite routes to matching timeline",
+      "status": "native-insertion-intent-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[40]",
+      "obligation": "Native new-bin dialog creates named bin",
+      "status": "native-catalog-gesture-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[41]",
+      "obligation": "Native F2 rename preserves media source identity",
+      "status": "native-catalog-gesture-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[42]",
+      "obligation": "Native cut and paste moves clip into bin",
+      "status": "native-catalog-gesture-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[43]",
+      "obligation": "Native organizational undo restores original bin",
+      "status": "native-catalog-gesture-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[44]",
+      "obligation": "Project search finds renamed source across nested bins",
+      "status": "native-catalog-gesture-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[45]",
+      "obligation": "Native drag moves source into tree bin",
+      "status": "native-organization-and-membership-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[46]",
+      "obligation": "Saving search creates functional smart bin",
+      "status": "native-catalog-gesture-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[47]",
+      "obligation": "Smart query updates when matching metadata changes",
+      "status": "native-organization-and-membership-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[48]",
+      "obligation": "Undo restores smart-bin membership",
+      "status": "native-organization-and-membership-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[49]",
+      "obligation": "Native metadata dialog publishes editable tags",
+      "status": "native-catalog-gesture-verified",
+      "owners": [
+        43
+      ],
+      "evidence": [
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[50]",
+      "obligation": "Two simultaneous media viewers follow different groups",
+      "status": "native-source-open-and-group-isolation-verified",
+      "owners": [
+        41,
+        43,
+        47
+      ],
+      "evidence": [
+        "runs/source/evidence.json",
+        "runs/workspace-source/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[51]",
+      "obligation": "Scrubbing A leaves simultaneous B viewer unchanged",
+      "status": "native-source-open-and-group-isolation-verified",
+      "owners": [
+        41,
+        43,
+        47
+      ],
+      "evidence": [
+        "runs/source/evidence.json",
+        "runs/workspace-source/evidence.json"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[52]",
+      "obligation": "Same-group media viewers share source playhead",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[53]",
+      "obligation": "Linked viewers keep independent display zoom",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[54]",
+      "obligation": "Dense media list scrolls through catalog contents",
+      "status": "native-media-surface-verified; human-image-review-open",
+      "owners": [
+        40,
+        43
+      ],
+      "evidence": [
+        "runs/dense-narrow/evidence.json",
+        "runs/workspace-source/evidence.json",
+        "comparisons/"
+      ],
+      "note": "Matched1274x640/DPR1 media layouts; workspace arrangement uses existing commands. Production workspace names/data and #47/#54 viewer/editorial contents are not prototype fixtures."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[55]",
+      "obligation": "Narrow media panel retains navigable content area",
+      "status": "native-media-surface-verified; human-image-review-open",
+      "owners": [
+        40,
+        43
+      ],
+      "evidence": [
+        "runs/dense-narrow/evidence.json",
+        "runs/workspace-source/evidence.json",
+        "comparisons/"
+      ],
+      "note": "Matched1274x640/DPR1 media layouts; workspace arrangement uses existing commands. Production workspace names/data and #47/#54 viewer/editorial contents are not prototype fixtures."
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[56]",
+      "obligation": "Timeline media command opens matching-group bin panel",
+      "status": "group-panel-reveal-verified",
+      "owners": [
+        40,
+        43
+      ],
+      "evidence": [
+        "runs/source/evidence.json",
+        "logs/ctest-debug.log"
+      ],
+      "tests": [
+        "MediaLibraryModel.RevealActivatesExistingPanelPerGroupAndCreatesOnlyWhenAbsent"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/verification/checks[57]",
+      "obligation": "Media reveal restores existing group panel",
+      "status": "group-panel-reveal-verified",
+      "owners": [
+        40,
+        43
+      ],
+      "evidence": [
+        "runs/source/evidence.json",
+        "logs/ctest-debug.log"
+      ],
+      "tests": [
+        "MediaLibraryModel.RevealActivatesExistingPanelPerGroupAndCreatesOnlyWhenAbsent"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/implementation[0]",
+      "obligation": "Catalog-backed nested bins; atomic organization/history; protected used media; stable source references",
+      "status": "catalog-contract-verified",
+      "owners": [
+        39,
+        43
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/catalog/evidence.json",
+        "runs/organization/evidence.json"
+      ],
+      "tests": [
+        "MediaCatalogTest.*",
+        "MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity",
+        "MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected"
+      ]
+    },
+    {
+      "id": "media-bin-session.json:/implementation[1]",
+      "obligation": "List/grid; narrow layout; search and metadata; contextual actions; saved smart searches",
+      "status": "native-media-surface-verified; human-image-review-open",
+      "owners": [
+        40,
+        43
+      ],
+      "evidence": [
+        "runs/dense-narrow/evidence.json",
+        "runs/workspace-source/evidence.json",
+        "comparisons/"
+      ],
+      "note": "Matched1274x640/DPR1 media layouts; workspace arrangement uses existing commands. Production workspace names/data and #47/#54 viewer/editorial contents are not prototype fixtures."
+    },
+    {
+      "id": "media-bin-session.json:/implementation[2]",
+      "obligation": "Real native bin and marked linked AV timeline drags; multi-source consecutive insertion and overwrite",
+      "status": "producer-boundary-verified; editorial-consumer-remains-with-54",
+      "owners": [
+        43,
+        54
+      ],
+      "evidence": [
+        "runs/drag/evidence.json",
+        "logs/ctest-debug.log"
+      ],
+      "note": "Stable ordered IDs/per-entry marks, cross-group delivery, insert/overwrite intent and unchanged playhead are #43. Clip creation, consecutive assembly and editorial undo are #54 non-goals, not claimed complete."
+    },
+    {
+      "id": "media-bin-session.json:/implementation[3]",
+      "obligation": "Separate group-keyed media, timeline, graph time; remembered source ranges; explicit graph viewing targets; existing group badge",
+      "status": "protected-existing-owner-contract; owner-review-remains-open",
+      "owners": [
+        41,
+        47
+      ],
+      "evidence": [
+        "logs/ctest-debug.log",
+        "runs/source/evidence.json"
+      ],
+      "note": "Existing context/viewer regressions passed. The source run proves explicit open and A/B independent clocks only; it is not a claim that every viewer menu, role-switch, mark, zoom or graph-target gesture was re-exercised here. #47 retains its full native/API review gate."
+    },
+    {
+      "id": "media-bin-session.json:/implementation[4]",
+      "obligation": "Media action reveals matching dockable panel; Edit workspace media panel above timeline, left of viewer",
+      "status": "native-media-surface-verified; human-image-review-open",
+      "owners": [
+        40,
+        43
+      ],
+      "evidence": [
+        "runs/dense-narrow/evidence.json",
+        "runs/workspace-source/evidence.json",
+        "comparisons/"
+      ],
+      "note": "Matched1274x640/DPR1 media layouts; workspace arrangement uses existing commands. Production workspace names/data and #47/#54 viewer/editorial contents are not prototype fixtures."
+    }
+  ],
+  "regression": {
+    "debug": {
+      "buildCommand": "cmake --build --preset debug",
+      "buildResult": "passed; existing QtQml qmldir scanner and minizip mktemp linker warnings only",
+      "testCommand": "ctest --preset debug -j2",
+      "tests": 478,
+      "passed": 478,
+      "failed": 0,
+      "seconds": 48.74,
+      "log": "logs/ctest-debug.log"
+    },
+    "release": {
+      "buildCommand": "cmake --build --preset release",
+      "buildResult": "passed; existing QtQml qmldir scanner and minizip mktemp linker warnings only",
+      "testCommand": "ctest --preset release -j2",
+      "tests": 478,
+      "passed": 478,
+      "failed": 0,
+      "seconds": 36.45,
+      "log": "logs/ctest-release.log"
+    },
+    "asan": {
+      "buildCommand": "cmake --build --preset asan",
+      "buildResult": "passed; existing QtQml qmldir scanner and minizip mktemp linker warnings only",
+      "testCommand": "ctest --preset asan -j2",
+      "tests": 478,
+      "passed": 478,
+      "failed": 0,
+      "seconds": 398.67,
+      "log": "logs/ctest-asan.log"
+    }
+  },
+  "responsiveness": {
+    "workload": "48distinct source paths (hardlinked copies of one3840x2160PNG), actual async still decode; same debug scenario before/after.",
+    "cadence": {
+      "before-debug": {
+        "intervalMs": 16,
+        "maxGapMs": 23858,
+        "meanGapMs": 279.71666666666664,
+        "minGapMs": 2,
+        "note": "GUI-thread QTimer cadence; jitter/ordering only, not render or scanout timing",
+        "p95GapMs": 17,
+        "ticks": 180,
+        "scenarioElapsedMs": 175902
+      },
+      "after-debug": {
+        "intervalMs": 16,
+        "maxGapMs": 214,
+        "meanGapMs": 17.11111111111111,
+        "minGapMs": 14,
+        "note": "GUI-thread QTimer cadence; jitter/ordering only, not render or scanout timing",
+        "p95GapMs": 17,
+        "ticks": 180,
+        "scenarioElapsedMs": 31930
+      },
+      "after-release": {
+        "intervalMs": 16,
+        "maxGapMs": 219,
+        "meanGapMs": 18.433055555555555,
+        "minGapMs": 5,
+        "note": "GUI-thread QTimer cadence; jitter/ordering only, not render or scanout timing",
+        "p95GapMs": 17,
+        "ticks": 3600,
+        "scenarioElapsedMs": 94932
+      }
+    },
+    "attribution": "GUI stack: MediaBinPanel.visibleItems -> sourceIdsForItemIds -> per-delegate sourceIds binding. Worker was independently in ImageSource decode. Fix shares reactive visibleRecords and selected payload; attempted C++ memoization was reverted.",
+    "scope": "QTimer GUI-thread cadence, not scanout/render latency. Scenario elapsed includes fixed waits/captures. Debug short run observed2ready and remainingpending; release extended run observedall48ready. Post-fix p95=17ms; max214ms debug/219ms release, so sub100ms worst-case is NOT claimed.",
+    "evidence": [
+      "diagnostics/busy-before.json",
+      "runs/busy-debug/evidence.json",
+      "runs/busy-release/evidence.json"
+    ]
+  },
+  "headless": {
+    "commands": "Actual nemo-cli evaluate and evaluate-gpu, not the render pattern writer. Exact argv/output/exit codes in headless-results.json.",
+    "comparison": [
+      {
+        "media": "still",
+        "frame": 0,
+        "size": [
+          320,
+          180
+        ],
+        "identical": true,
+        "maximumChannelDelta": 0,
+        "cpuFirstPixel": [
+          54,
+          0,
+          253
+        ],
+        "gpuFirstPixel": [
+          54,
+          0,
+          253
+        ]
+      },
+      {
+        "media": "sequence",
+        "frame": 0,
+        "size": [
+          64,
+          48
+        ],
+        "identical": true,
+        "maximumChannelDelta": 0,
+        "cpuFirstPixel": [
+          253,
+          0,
+          0
+        ],
+        "gpuFirstPixel": [
+          253,
+          0,
+          0
+        ]
+      },
+      {
+        "media": "sequence",
+        "frame": 1,
+        "size": [
+          64,
+          48
+        ],
+        "identical": true,
+        "maximumChannelDelta": 0,
+        "cpuFirstPixel": [
+          1,
+          128,
+          1
+        ],
+        "gpuFirstPixel": [
+          1,
+          128,
+          1
+        ]
+      }
+    ],
+    "outcomes": {
+      "success": 6,
+      "intentionalRejection": 6
+    },
+    "caveats": [
+      "CPU/GPU equality is parity evidence, not an independent color oracle.",
+      "Native captures are display-referred; headless PPM source results are not asserted byte-identical to screenshot pixels.",
+      "Malformed/missing files may have different OIIO versus FFmpeg classifications; both paths reject rather than substitute a frame."
+    ]
+  },
+  "sanitizerNative": {
+    "nemo": {
+      "scenario": "runs/native-asan/evidence.json",
+      "driverErrors": [],
+      "exitCode": 1,
+      "leakedBytes": 1264,
+      "allocations": 14,
+      "log": "logs/native-asan.log",
+      "result": "Source/clock scenario completed; no UAF or UBSan diagnostic. LeakSanitizer reports Qt6Wayland/libwayland/QtCore allocations on process exit, so this run is NOT clean."
+    },
+    "controls": [
+      {
+        "program": "QGuiApplication+QWindow; no Nemo code",
+        "exitCode": 1,
+        "leakedBytes": 1152,
+        "allocations": 12,
+        "log": "logs/qt-wayland-control.log"
+      },
+      {
+        "program": "QQmlApplicationEngine+Window+focused TextInput; no Nemo code",
+        "exitCode": 1,
+        "leakedBytes": 1408,
+        "allocations": 16,
+        "log": "logs/qt-quick-wayland-control.log"
+      }
+    ],
+    "interpretation": "The platform leak class reproduces without Nemo. Counts are not identical; native leak-clean acceptance remains unproven. No suppression was added."
+  },
+  "integrationFixes": [
+    {
+      "owner": 47,
+      "change": "ViewerItem uses QPointer for the released controller; native multi-panel close/quit no longer dereferences the freed destination.",
+      "regression": "Interactive.ViewerItemOutlivesItsReleasedControllerWithoutDereferencingIt"
+    },
+    {
+      "owner": 40,
+      "change": "Workspace root notifications coalesce nested synchronous publication without dropping latest state.",
+      "regression": "WorkspaceControllerTest.NestedPanelStatePublicationIsCoalescedWithoutDroppingState"
+    },
+    {
+      "owner": 47,
+      "change": "Frame/timecode fields have a single conditional binding owner with RestoreNone; focusing preserves displayed value and real key entry updates the matching clock.",
+      "evidence": "runs/source/evidence.json"
+    }
+  ],
+  "reviewGates": [
+    "Human review of the MediaImportService/typed catalog metadata-query API/schema changes and app-internal chooser/adapter interfaces.",
+    "Human image/interaction review of retained comparisons, including approved production-only states; no image baseline silently updated.",
+    "#47 remains open for its full independent-viewer/API/native acceptance; this work contributes source-role/lifetime/transport evidence, not a blanket closure.",
+    "#54 owns clip creation/overwrite/consecutive assembly and editorial undo; the implemented seam is ordered insertion intent only.",
+    "No Windows/native platform-matrix or leak-clean Wayland claim."
+  ],
+  "retentionNotes": [
+    "Native reports/scenarios/captures retained byte-exact; original /tmp paths are capture provenance, not permanent dependencies.",
+    "Generated fixtures, shader caches, readiness files, obsolete failed captures, full-desktop shots and diagnostic binaries/scripts are not product assets.",
+    "diagnostics/busy-before.json is explicitly pre-fix reproduction, not a final acceptance run.",
+    "Native evidence captured via grabWindow on the real QQuickWindow in a Wayland session; no OS pointer/windowing parity claim is made and none should be inferred from these files.",
+    "Human image/API/schema review and the existing #47 review gate remain open; these files are machine-verified evidence only and do not constitute human acceptance.",
+    "Capture-time working tree content is not asserted to hash-identical with the final integrated code; evidence.json embeds the process/environment snapshot instead of a source hash.",
+    "native-asan report has zero driver errors but the ASAN process exited 1 with platform-level Qt/Wayland leaks (1264 bytes / 14 allocations; bare Qt control 1152/12, QtQuick control 1408/16) and no new suppression; it must not be described as clean.",
+    "headless-results.json includes intentional failure-path entries (exit 1) for missing frame 1006, grayscale PNG, and bad EXR; those diagnostics are expected, not regressions.",
+    "workspace-source was explicitly stopped after completed capture; it is not a clean-exit measurement. The other retained regular native acceptance runs completed with exit0."
+  ],
+  "nativeRuns": {
+    "catalog": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-catalog-v9",
+      "retainedRunDir": "runs/catalog",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/evidence.json",
+        "retainedPath": "runs/catalog/evidence.json",
+        "bytes": 162521,
+        "driverErrors": [],
+        "phase": "final-catalog",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-catalog-v9/ready.json",
+        "timeUtc": "2026-09-12T17:21:40.394Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-catalog-v8.json",
+        "grabWindowEnabled": true,
+        "helperName": "nemo43-native-evidence/1",
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+          "pid": 1925204,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "ee5f3e6a272f7471ba9ce2cf4688d841ecb22e393687e6778ef9ec3e18bea5e6"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-catalog-v8.json",
+        "retainedPath": "runs/catalog/scenario-final-catalog-v8.json",
+        "bytes": 12632,
+        "sha256": "1adc922e80423f5f345e03c88956f57d64b29619c9dfebef5716e57826b34bd3"
+      },
+      "captures": [
+        {
+          "name": "media-list",
+          "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/shots-media-list.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/catalog/shots-media-list.png",
+          "bytes": 47230,
+          "sha256": "f69d12b69db02273264b4c1ea1e773096c58bfb1f0c3b7afd4d4008abd0c1ef6",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-grid",
+          "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/shots-media-grid.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/catalog/shots-media-grid.png",
+          "bytes": 33657,
+          "sha256": "97e0328a86b2036684af758ab410c1d2f8dc69a87150d6dedfd66d896594f6bb",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-search",
+          "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/shots-media-search.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/catalog/shots-media-search.png",
+          "bytes": 24777,
+          "sha256": "cc0b86c989cfb6915e1889e8ee4bf44f468e5174acdea729c84de9c4243642b1",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-metadata",
+          "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/shots-media-metadata.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/catalog/shots-media-metadata.png",
+          "bytes": 49186,
+          "sha256": "6c8263f5bc4eca9d8c5b9f0e5fc16746c9d0383701ce2ca015d75d4ed7b5f688",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-tree-breadcrumb",
+          "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/shots-media-tree-breadcrumb.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/catalog/shots-media-tree-breadcrumb.png",
+          "bytes": 29807,
+          "sha256": "1ff29b989d987f793f74106681725a7122867f86bfd05f12fd251091ea550fa4",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-smart-bin",
+          "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/shots-media-smart-bin.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/catalog/shots-media-smart-bin.png",
+          "bytes": 29555,
+          "sha256": "ab6d00659b0261f99f4dc0d51c51dd4946bf789fa0a6a04d8f346553ffac6cdc",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-offline",
+          "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/shots-media-offline.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/catalog/shots-media-offline.png",
+          "bytes": 28614,
+          "sha256": "a3cf63cfd44d950caa1accb3a6cc66c501d64e378c46907f43eac04c15b96fc5",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-relink",
+          "originalPath": "/tmp/nemo43-smoke/final-catalog-v9/shots-media-relink.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/catalog/shots-media-relink.png",
+          "bytes": 27381,
+          "sha256": "e84c368536e93e4e139f5ca61f1274c0c927a1e20b8bf63b78a2f9992f9bb72d",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        }
+      ],
+      "notes": []
+    },
+    "organization": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-organization",
+      "retainedRunDir": "runs/organization",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-organization/evidence.json",
+        "retainedPath": "runs/organization/evidence.json",
+        "bytes": 74394,
+        "driverErrors": [],
+        "phase": "final-organization",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-organization/ready.json",
+        "timeUtc": "2026-09-12T16:26:46.948Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-organization.json",
+        "grabWindowEnabled": true,
+        "helperName": "nemo43-native-evidence/1",
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+          "pid": 1903732,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "a8fcbf20baeba2680bbb8c43bdc72b229e734d01cddfa26c8e3769623b0646dd"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-organization.json",
+        "retainedPath": "runs/organization/scenario-final-organization.json",
+        "bytes": 10078,
+        "sha256": "4a202be57c66ec17e691076abb2810716c1f04afebc0c159c11931ee1ceb31e0"
+      },
+      "captures": [
+        {
+          "name": "media-nested-collection",
+          "originalPath": "/tmp/nemo43-smoke/final-organization/shots-media-nested-collection.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/organization/shots-media-nested-collection.png",
+          "bytes": 28758,
+          "sha256": "c9a8317a81184811d1fd49b25d870237ae8d9bd352f744ecbb215fbc824d260c",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-bin-metadata",
+          "originalPath": "/tmp/nemo43-smoke/final-organization/shots-media-bin-metadata.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/organization/shots-media-bin-metadata.png",
+          "bytes": 33007,
+          "sha256": "8811140efb79e18f2dc069ba1ef9fbadc2058920efde38cf75ac50cb25a57027",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-delete-keep-contents",
+          "originalPath": "/tmp/nemo43-smoke/final-organization/shots-media-delete-keep-contents.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/organization/shots-media-delete-keep-contents.png",
+          "bytes": 41067,
+          "sha256": "f815f38789e8207f9d31e2ccc9950282a7beace04ba2297a7add0a72d80ece6d",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-smart-membership",
+          "originalPath": "/tmp/nemo43-smoke/final-organization/shots-media-smart-membership.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/organization/shots-media-smart-membership.png",
+          "bytes": 29649,
+          "sha256": "f2bd31ffb230e688a9a90f4f4b6e4bc949f1a10ba7146d152b881819897441ef",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        }
+      ],
+      "notes": []
+    },
+    "source": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-source-v3",
+      "retainedRunDir": "runs/source",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-source-v3/evidence.json",
+        "retainedPath": "runs/source/evidence.json",
+        "bytes": 66971,
+        "driverErrors": [],
+        "phase": "final-source",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-source-v3/ready.json",
+        "timeUtc": "2026-09-12T16:45:17.381Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-source-v3.json",
+        "grabWindowEnabled": true,
+        "helperName": "nemo43-native-evidence/1",
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+          "pid": 1909120,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "bdcf1bd8f87bc4d11ec4a5011090594369da42626131ecae4d1e4ed541e1077a"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-source-v3.json",
+        "retainedPath": "runs/source/scenario-final-source-v3.json",
+        "bytes": 8161,
+        "sha256": "acd256ee739cdb3eee49c4995cd7be4e442aef1adbd0c4973811634e2915373d"
+      },
+      "captures": [
+        {
+          "name": "media-source-still",
+          "originalPath": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-still.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/source/shots-media-source-still.png",
+          "bytes": 81922,
+          "sha256": "56d97dbfc173d2728b11ba1e78c8a2d98722f6754fcc6f97aebb098682659ba6",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-source-sequence-1001",
+          "originalPath": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-sequence-1001.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/source/shots-media-source-sequence-1001.png",
+          "bytes": 45215,
+          "sha256": "85ff2869144d50f5b359d631e9e2727e8190dae57475af376987cbe9602ba370",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-source-sequence-1002",
+          "originalPath": "/tmp/nemo43-smoke/final-source-v3/shots-media-source-sequence-1002.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/source/shots-media-source-sequence-1002.png",
+          "bytes": 45325,
+          "sha256": "d5f2d3aa47db1ed3ad40dbcb4b145de41085177968d19228653603a79557134b",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-two-viewers",
+          "originalPath": "/tmp/nemo43-smoke/final-source-v3/shots-media-two-viewers.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/source/shots-media-two-viewers.png",
+          "bytes": 86713,
+          "sha256": "adca323826d48b9c50f3d40bda77c5f1442fb6bf6bc70275171a5234500a6c5c",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        }
+      ],
+      "notes": []
+    },
+    "drag": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-drag-workspace",
+      "retainedRunDir": "runs/drag",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-drag-workspace/evidence.json",
+        "retainedPath": "runs/drag/evidence.json",
+        "bytes": 62547,
+        "driverErrors": [],
+        "phase": "final-drag-workspace",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-drag-workspace/ready.json",
+        "timeUtc": "2026-09-12T17:50:38.328Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-drag-workspace.json",
+        "grabWindowEnabled": true,
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+          "pid": 1946319,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "3a28ca84393bc84084aaf8c68362cc60d330abb0debde31e78faa1ae4a39af89"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-drag-workspace.json",
+        "retainedPath": "runs/drag/scenario-final-drag-workspace.json",
+        "bytes": 6695,
+        "sha256": "092efb27d0bacf131078c8e7f8ce2ceda7c55c422592fe94bde0b41625971e9e"
+      },
+      "captures": [
+        {
+          "name": "media-timeline-drag",
+          "originalPath": "/tmp/nemo43-smoke/final-drag-workspace/shots-media-timeline-drag.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/drag/shots-media-timeline-drag.png",
+          "bytes": 59762,
+          "sha256": "85f82c0fa67ca30519bdc0e6e160aec7dc9daeaf4dcd65576aa679d5df1da3cd",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        }
+      ],
+      "notes": [
+        "Replaced 2026-09-12T17:50Z with final drag proof phase final-drag-workspace (single capture 1274x640): panel geometry now matches the workspace layout, not just the viewport - media panel body 448x298 at (9,81) versus 623x354 in the superseded final-drag-matched revision. Observations identical in payload and count to that revision: all timeline routedClock samples 37, sourceIds [tagged,tagged,sequence], 3 per-occurrence marks, sourceGroup B, 5 insertIntent probes. Capture-context (supplied by Main, not derived from the report): Media 450x336 at (8,44), Viewer right, Timeline below; driver revision 2B81; no application source changes.",
+        "Superseded retained files removed by this refresh: scenario-final-drag-v3.json and shots-media-timeline-drag.png (the previous final-drag-matched revision); no other run's files were touched."
+      ]
+    },
+    "dense-narrow": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-dense-narrow-v2",
+      "retainedRunDir": "runs/dense-narrow",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-dense-narrow-v2/evidence.json",
+        "retainedPath": "runs/dense-narrow/evidence.json",
+        "bytes": 230702,
+        "driverErrors": [],
+        "phase": "final-dense-narrow",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-dense-narrow-v2/ready.json",
+        "timeUtc": "2026-09-12T16:56:27.634Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-dense-narrow-v2.json",
+        "grabWindowEnabled": true,
+        "helperName": "nemo43-native-evidence/1",
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+          "pid": 1912366,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "3bab5e555506fe2158c0d965edc44920253a9460d035c0a3a688922e7368855c"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-dense-narrow-v2.json",
+        "retainedPath": "runs/dense-narrow/scenario-final-dense-narrow-v2.json",
+        "bytes": 3810,
+        "sha256": "82c1cacefd75557d18352b47abfca296b893e113710c229cfddd4c1bf6c307ce"
+      },
+      "captures": [
+        {
+          "name": "media-dense",
+          "originalPath": "/tmp/nemo43-smoke/final-dense-narrow-v2/shots-media-dense.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/dense-narrow/shots-media-dense.png",
+          "bytes": 92411,
+          "sha256": "f70534442f7c60c18738e07d690437134b05816f1368f4a29aeda569bafb6de6",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-dense-scrolled",
+          "originalPath": "/tmp/nemo43-smoke/final-dense-narrow-v2/shots-media-dense-scrolled.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/dense-narrow/shots-media-dense-scrolled.png",
+          "bytes": 94284,
+          "sha256": "b2b7cd63134b1e1e50ab2af9a1ca202bd0e7c1c08d7a30aa6c2b683dd69d0012",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-narrow",
+          "originalPath": "/tmp/nemo43-smoke/final-dense-narrow-v2/shots-media-narrow.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/dense-narrow/shots-media-narrow.png",
+          "bytes": 118639,
+          "sha256": "737be643e6b549f4c087b110b4616232b4f986e32bd3a56dd925627aa157e179",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        }
+      ],
+      "notes": []
+    },
+    "dialogs": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-dialog",
+      "retainedRunDir": "runs/dialogs",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-dialog/evidence.json",
+        "retainedPath": "runs/dialogs/evidence.json",
+        "bytes": 42594,
+        "driverErrors": [],
+        "phase": "final-dialog",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-dialog/ready.json",
+        "timeUtc": "2026-09-12T16:32:53.864Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-dialog.json",
+        "grabWindowEnabled": true,
+        "helperName": "nemo43-native-evidence/1",
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+          "pid": 1905315,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "62db723b449ab087097eb97ff45f0c507109ee59501cfe1104aa7c677fb53341"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-dialog.json",
+        "retainedPath": "runs/dialogs/scenario-final-dialog.json",
+        "bytes": 4830,
+        "sha256": "5dc299d950e6be85ddf06c49fe34de35fa0fbad8c6f080dad68b718b8aeeec19"
+      },
+      "captures": [
+        {
+          "name": "media-import-still",
+          "originalPath": "/tmp/nemo43-smoke/final-dialog/shots-media-import-still.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/dialogs/shots-media-import-still.png",
+          "bytes": 25425,
+          "sha256": "8937f1330945935575cd7bb91618755f6f447a67d1edd54e1bbcc6acd8cf6110",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-import-sequence",
+          "originalPath": "/tmp/nemo43-smoke/final-dialog/shots-media-import-sequence.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/dialogs/shots-media-import-sequence.png",
+          "bytes": 26639,
+          "sha256": "db71246196b039570045525534e5c91ec59bbf549a4428a627ed7bfc01a8ebb5",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-relink-sequence",
+          "originalPath": "/tmp/nemo43-smoke/final-dialog/shots-media-relink-sequence.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/dialogs/shots-media-relink-sequence.png",
+          "bytes": 30603,
+          "sha256": "36d72ced6ef83cf230201e38ca86f05032ed78a63996de3045aa98f95f184cbd",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        }
+      ],
+      "notes": []
+    },
+    "busy-debug": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-busy-v2",
+      "retainedRunDir": "runs/busy-debug",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-busy-v2/evidence.json",
+        "retainedPath": "runs/busy-debug/evidence.json",
+        "bytes": 102947,
+        "driverErrors": [],
+        "phase": "final-busy",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-busy-v2/ready.json",
+        "timeUtc": "2026-09-12T16:48:42.802Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-busy.json",
+        "grabWindowEnabled": true,
+        "helperName": "nemo43-native-evidence/1",
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+          "pid": 1910671,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "52d4c0b501f6d6af2dc85268feede688c20fcbc9941c7295b5414a5b4504d9cc"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-busy.json",
+        "retainedPath": "runs/busy-debug/scenario-final-busy.json",
+        "bytes": 4791,
+        "sha256": "b46d82bd624391e2f216539b3c01bd05e9cf61a545b686067396e611c2d7f32e"
+      },
+      "captures": [
+        {
+          "name": "media-pending",
+          "originalPath": "/tmp/nemo43-smoke/final-busy-v2/shots-media-pending.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/busy-debug/shots-media-pending.png",
+          "bytes": 69832,
+          "sha256": "f0c106f8dc573695f3f08170dd8549d9f24c9c25e84710a30c801e9d54cef2d4",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-busy-progress",
+          "originalPath": "/tmp/nemo43-smoke/final-busy-v2/shots-media-busy-progress.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/busy-debug/shots-media-busy-progress.png",
+          "bytes": 69166,
+          "sha256": "479b10d2a1dfa95339f99238f9f4909706bb46c60d7ede3d4b492eb276227aa7",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-busy-complete",
+          "originalPath": "/tmp/nemo43-smoke/final-busy-v2/shots-media-busy-complete.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/busy-debug/shots-media-busy-complete.png",
+          "bytes": 68675,
+          "sha256": "da168ba1aa871e3652bde56e4630619f516d47915c2dc47f884fa370481ce656",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        }
+      ],
+      "notes": []
+    },
+    "busy-release": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-busy-release",
+      "retainedRunDir": "runs/busy-release",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-busy-release/evidence.json",
+        "retainedPath": "runs/busy-release/evidence.json",
+        "bytes": 308524,
+        "driverErrors": [],
+        "phase": "final-busy",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-busy-release/ready.json",
+        "timeUtc": "2026-09-12T16:53:57.602Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-busy-long.json",
+        "grabWindowEnabled": true,
+        "helperName": "nemo43-native-evidence/1",
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/release/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/release/apps/nemo-ui/nemo-ui",
+          "pid": 1911640,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "817637f27d1398d13bbd5946d333f6aebbeaab23acb3fbc773e6f9a2359c2e9a"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-busy-long.json",
+        "retainedPath": "runs/busy-release/scenario-final-busy-long.json",
+        "bytes": 4967,
+        "sha256": "6efa90a30bc9574d9a07896ebadbf74ed49345415b17fe8806c4983ed6cfc983"
+      },
+      "captures": [
+        {
+          "name": "media-pending",
+          "originalPath": "/tmp/nemo43-smoke/final-busy-release/shots-media-pending.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/busy-release/shots-media-pending.png",
+          "bytes": 69829,
+          "sha256": "ad26e4cb263f9c096533e320db5106b751c6de0c6f1554e072cae9a045299641",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-busy-progress",
+          "originalPath": "/tmp/nemo43-smoke/final-busy-release/shots-media-busy-progress.png",
+          "reportedWidth": 1280,
+          "reportedHeight": 720,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 720,
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 720,
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/busy-release/shots-media-busy-progress.png",
+          "bytes": 76482,
+          "sha256": "ae37620f9318588c533fcc93522cc0eaebdae74d7530e5f8bb2b1989abccf5ad",
+          "pngWidth": 1280,
+          "pngHeight": 720
+        },
+        {
+          "name": "media-busy-complete",
+          "originalPath": "/tmp/nemo43-smoke/final-busy-release/shots-media-busy-complete.png",
+          "reportedWidth": 1280,
+          "reportedHeight": 720,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 720,
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 720,
+            "width": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/busy-release/shots-media-busy-complete.png",
+          "bytes": 76482,
+          "sha256": "ae37620f9318588c533fcc93522cc0eaebdae74d7530e5f8bb2b1989abccf5ad",
+          "pngWidth": 1280,
+          "pngHeight": 720,
+          "duplicateOf": "media-busy-progress",
+          "duplicateFileName": "shots-media-busy-progress.png"
+        }
+      ],
+      "notes": [
+        "byte-identical capture pair retained under both report capture names: media-busy-progress = media-busy-complete (same PNG bytes)"
+      ]
+    },
+    "native-asan": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-source-asan",
+      "retainedRunDir": "runs/native-asan",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-source-asan/evidence.json",
+        "retainedPath": "runs/native-asan/evidence.json",
+        "bytes": 66987,
+        "driverErrors": [],
+        "phase": "final-source",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-source-asan/ready.json",
+        "timeUtc": "2026-09-12T17:07:51.885Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-source-v3.json",
+        "grabWindowEnabled": true,
+        "helperName": "nemo43-native-evidence/1",
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/asan/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/asan/apps/nemo-ui/nemo-ui",
+          "pid": 1915152,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "0adfef902e3a709a69517b3b2ccec9249bc1502b2d1323cfceba3d015cfc96bb"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-source-v3.json",
+        "retainedPath": "runs/native-asan/scenario-final-source-v3.json",
+        "bytes": 8161,
+        "sha256": "acd256ee739cdb3eee49c4995cd7be4e442aef1adbd0c4973811634e2915373d"
+      },
+      "captures": [
+        {
+          "name": "media-source-still",
+          "originalPath": "/tmp/nemo43-smoke/final-source-asan/shots-media-source-still.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": null,
+          "notRetainedReason": "report-only run; capture duplicates runs/source/ (skip duplicate images)"
+        },
+        {
+          "name": "media-source-sequence-1001",
+          "originalPath": "/tmp/nemo43-smoke/final-source-asan/shots-media-source-sequence-1001.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": null,
+          "notRetainedReason": "report-only run; capture duplicates runs/source/ (skip duplicate images)"
+        },
+        {
+          "name": "media-source-sequence-1002",
+          "originalPath": "/tmp/nemo43-smoke/final-source-asan/shots-media-source-sequence-1002.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": null,
+          "notRetainedReason": "report-only run; capture duplicates runs/source/ (skip duplicate images)"
+        },
+        {
+          "name": "media-two-viewers",
+          "originalPath": "/tmp/nemo43-smoke/final-source-asan/shots-media-two-viewers.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": null,
+          "notRetainedReason": "report-only run; capture duplicates runs/source/ (skip duplicate images)"
+        }
+      ],
+      "notes": [
+        "Native ASAN run: evidence.json report retained only; screenshots not duplicated. Driver errors empty, but the ASAN process EXITED 1 with 1264 bytes / 14 allocations in Qt/Wayland teardown; bare Qt control (1152 bytes / 12 allocs) and QtQuick control (1408 bytes / 16 allocs) reproduce the platform leak, and no new suppression was added. This report is NOT a clean ASAN result; Main retains the ASAN logs and final test counts."
+      ]
+    },
+    "workspace-source": {
+      "sourceRunDir": "/tmp/nemo43-smoke/final-workspace-source",
+      "retainedRunDir": "runs/workspace-source",
+      "evidence": {
+        "originalPath": "/tmp/nemo43-smoke/final-workspace-source/evidence.json",
+        "retainedPath": "runs/workspace-source/evidence.json",
+        "bytes": 31347,
+        "driverErrors": [],
+        "phase": "final-workspace-source",
+        "attached": true,
+        "helper": "nemo43-native-evidence/1",
+        "readyFile": "/tmp/nemo43-smoke/final-workspace-source/ready.json",
+        "timeUtc": "2026-09-12T17:48:05.385Z",
+        "scenarioPathRaw": "/tmp/nemo43-smoke/scenario-final-workspace-source.json",
+        "grabWindowEnabled": true,
+        "process": {
+          "applicationName": "nemo-ui",
+          "arguments": [
+            "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui"
+          ],
+          "executable": "/home/rgame/dev/Nemo_Dev2/build/debug/apps/nemo-ui/nemo-ui",
+          "pid": 1945648,
+          "platform": "wayland",
+          "qtVersion": "6.4.2"
+        },
+        "retainedSha256": "e6f0c7c434608daab40fa1fb00bd08876698fff46e29e68652e382184bcb6525"
+      },
+      "scenario": {
+        "originalPath": "/tmp/nemo43-smoke/scenario-final-workspace-source.json",
+        "retainedPath": "runs/workspace-source/scenario-final-workspace-source.json",
+        "bytes": 3496,
+        "sha256": "dd0aa2e7bac4df9a47af42ec3a2eddb81390e199d0cef04f34d03f270c149390"
+      },
+      "captures": [
+        {
+          "name": "media-workspace",
+          "originalPath": "/tmp/nemo43-smoke/final-workspace-source/shots-media-workspace.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/workspace-source/shots-media-workspace.png",
+          "bytes": 52947,
+          "sha256": "f1cc25aae7ac72f23da95036166c1f5d15911fe0085356a138038a3d6ecbe44c",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        },
+        {
+          "name": "media-source-view",
+          "originalPath": "/tmp/nemo43-smoke/final-workspace-source/shots-media-source-view.png",
+          "reportedWidth": 1274,
+          "reportedHeight": 640,
+          "devicePixelRatio": 1,
+          "grabDevicePixelRatio": 1,
+          "grabSize": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "sourcePixels": {
+            "height": 640,
+            "width": 1274,
+            "x": 0,
+            "y": 0
+          },
+          "retainedPath": "runs/workspace-source/shots-media-source-view.png",
+          "bytes": 58190,
+          "sha256": "00947620b2ea072a5696b87f148a0c3e4e380c94eee5427638b235e623197cea",
+          "pngWidth": 1274,
+          "pngHeight": 640
+        }
+      ],
+      "notes": [
+        "Capture-context (supplied by Main, not derived from the report): workspace arranged through existing workspace APIs with Media at 450x336 positioned at (8,44), Viewer to the right and Timeline below to match the reference layout; the supported still displays. Captured with helper revision 2B81 (new generic createPanel support) versus helper 7C18 for the earlier runs; no application source changes. Report itself records helper id nemo43-native-evidence/1, phase final-workspace-source, errors=[], 1274x640 window and grab on Wayland/Qt 6.4.2."
+      ],
+      "termination": "Capture completed/errors[]; session remained open after capture and was stopped during cleanup. No exit0 claim for this run."
+    }
+  },
+  "comparisons": {
+    "source_commit": "76071624aebd6577ca613a9d3322f535fd80f399",
+    "reference_archive": {
+      "path": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+      "expected_count": 61,
+      "file_count": 107
+    },
+    "comparisons": [
+      {
+        "name": "media-workspace",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-workspace.png",
+        "reference_path": "comparisons/media-workspace-reference.png",
+        "reference": {
+          "sha256": "9ff28ba46874952ccbba20d7bdf7897a0ef0ffdb27213f57b9f86d5a19178cc1",
+          "expected_sha256": "9ff28ba46874952ccbba20d7bdf7897a0ef0ffdb27213f57b9f86d5a19178cc1",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 73687,
+          "manifest_match": true
+        },
+        "production_path": "runs/workspace-source/shots-media-workspace.png",
+        "production": {
+          "sha256": "f1cc25aae7ac72f23da95036166c1f5d15911fe0085356a138038a3d6ecbe44c",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-workspace-pair.png",
+          "sha256": "503e4f124b832ad0899a93a64b211e54bcf5a6f8060620ea4cf5de5161f3a9a8",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-workspace-overlay.png",
+          "sha256": "af71da8423760fdc079874c697cc1e7f40d1562f7ad6ff78c5898c2313904d31",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-workspace-diff.png",
+          "sha256": "effa39c136083a418ccadff18faffcb3af842633f0c37f84886b8e82eabc6c63",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": [
+          "producer-intent/accepted Media panel placement/geometry match only, not full editorial parity (#47/#54)"
+        ]
+      },
+      {
+        "name": "media-list",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-list.png",
+        "reference_path": "comparisons/media-list-reference.png",
+        "reference": {
+          "sha256": "e36772cf99bf619851f1fce7b89506479c30a76360585960ab26c4494e55a0d4",
+          "expected_sha256": "e36772cf99bf619851f1fce7b89506479c30a76360585960ab26c4494e55a0d4",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 64587,
+          "manifest_match": true
+        },
+        "production_path": "runs/catalog/shots-media-list.png",
+        "production": {
+          "sha256": "f69d12b69db02273264b4c1ea1e773096c58bfb1f0c3b7afd4d4008abd0c1ef6",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-list-pair.png",
+          "sha256": "0d031d7af4b550e3fc1762eda309aee9ab329fdd057c4d439133d12ffc142c1a",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-list-overlay.png",
+          "sha256": "fb875782d211a93061b1163796de44a9d51a73fa3b018c66fd6edc0f6cdb3558",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-list-diff.png",
+          "sha256": "c518dc99b152d7e0c1d6dc2d634ec38e0a3ac1479b463d23c1a12003eae180e6",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": []
+      },
+      {
+        "name": "media-grid",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-grid.png",
+        "reference_path": "comparisons/media-grid-reference.png",
+        "reference": {
+          "sha256": "9544b9259e0a84b760535ffc6ddce8b71213c99ea112bb4686029d7f8dde2d8b",
+          "expected_sha256": "9544b9259e0a84b760535ffc6ddce8b71213c99ea112bb4686029d7f8dde2d8b",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 43450,
+          "manifest_match": true
+        },
+        "production_path": "runs/catalog/shots-media-grid.png",
+        "production": {
+          "sha256": "97e0328a86b2036684af758ab410c1d2f8dc69a87150d6dedfd66d896594f6bb",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-grid-pair.png",
+          "sha256": "96bb2e0d1a95898b3246383889fa378863aea1adc8419704a80aa04940ffa87f",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-grid-overlay.png",
+          "sha256": "dd6f45be2d29c1d957f6941a16402609eb0b9a02155f180f2ddbd67dbfc79328",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-grid-diff.png",
+          "sha256": "198ae7d1753c7eadfc5835109d5e927e98a141aea59fcba04fc677d7b9c4b3d1",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": []
+      },
+      {
+        "name": "media-search",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-search.png",
+        "reference_path": "comparisons/media-search-reference.png",
+        "reference": {
+          "sha256": "1328aac5141a8deca17dbd9ea9882f152a44bdbfe249e21db1afb36b63be25a5",
+          "expected_sha256": "1328aac5141a8deca17dbd9ea9882f152a44bdbfe249e21db1afb36b63be25a5",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 28369,
+          "manifest_match": true
+        },
+        "production_path": "runs/catalog/shots-media-search.png",
+        "production": {
+          "sha256": "cc0b86c989cfb6915e1889e8ee4bf44f468e5174acdea729c84de9c4243642b1",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-search-pair.png",
+          "sha256": "ab4b38eb79f850e178e4f77bab6816abdf08a878960a9965c7189bc1463ec60a",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-search-overlay.png",
+          "sha256": "f73f431fd860daf707d871e3378ac8500058651eca3ede1dd1ab68947ef9baae",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-search-diff.png",
+          "sha256": "dbb362933159fd5f1cf8bc335cbfbdbd15a89db63eac7d9460406e1a028560e4",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": []
+      },
+      {
+        "name": "media-smart-bin",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-smart-bin.png",
+        "reference_path": "comparisons/media-smart-bin-reference.png",
+        "reference": {
+          "sha256": "8652eaa50cbf2f891fe0020eb0ad609f0c2891b8d8024a10e38d6ac6b34a245d",
+          "expected_sha256": "8652eaa50cbf2f891fe0020eb0ad609f0c2891b8d8024a10e38d6ac6b34a245d",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 29678,
+          "manifest_match": true
+        },
+        "production_path": "runs/catalog/shots-media-smart-bin.png",
+        "production": {
+          "sha256": "ab6d00659b0261f99f4dc0d51c51dd4946bf789fa0a6a04d8f346553ffac6cdc",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-smart-bin-pair.png",
+          "sha256": "a49a9dfceeee5d0c892629f09b6d5aee97ae09ceb72dbe8e8e569143a1dc5e56",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-smart-bin-overlay.png",
+          "sha256": "bcc966abba979f6fd81a4bc0f9dbc86da8502b7288c5e5f64b3376872ebdd43e",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-smart-bin-diff.png",
+          "sha256": "3112455ce8e81720fb70b35cd92dbd024ced6fc1545e363baeba322e4b6cbee4",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": []
+      },
+      {
+        "name": "media-source-view",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-source-view.png",
+        "reference_path": "comparisons/media-source-view-reference.png",
+        "reference": {
+          "sha256": "ce88bee3b02f353ad60bc4f7b487a800b5af812cca91304ee11fbc61e1a295ce",
+          "expected_sha256": "ce88bee3b02f353ad60bc4f7b487a800b5af812cca91304ee11fbc61e1a295ce",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 74240,
+          "manifest_match": true
+        },
+        "production_path": "runs/workspace-source/shots-media-source-view.png",
+        "production": {
+          "sha256": "00947620b2ea072a5696b87f148a0c3e4e380c94eee5427638b235e623197cea",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-source-view-pair.png",
+          "sha256": "d39d994760175430be1e79d3d1e50cbd818b8241664825151cd3f1e9d3b9c205",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-source-view-overlay.png",
+          "sha256": "68e90de502f83f9ea7f68868ac4df1fe461965b8dd59624fef58700d50b3349c",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-source-view-diff.png",
+          "sha256": "d567f28a597be9919669f89a59f0a211816472af41fd527844614cde5359f9bf",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": [
+          "producer-intent/accepted Media panel placement/geometry match only, not full editorial parity (#47/#54)"
+        ]
+      },
+      {
+        "name": "media-timeline-drag",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-timeline-drag.png",
+        "reference_path": "comparisons/media-timeline-drag-reference.png",
+        "reference": {
+          "sha256": "573a95fad2e89dcce297ae38f5bd20b392f0d0c62752061ae293e65560d3e8f6",
+          "expected_sha256": "573a95fad2e89dcce297ae38f5bd20b392f0d0c62752061ae293e65560d3e8f6",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 73001,
+          "manifest_match": true
+        },
+        "production_path": "runs/drag/shots-media-timeline-drag.png",
+        "production": {
+          "sha256": "85f82c0fa67ca30519bdc0e6e160aec7dc9daeaf4dcd65576aa679d5df1da3cd",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-timeline-drag-pair.png",
+          "sha256": "1cf8b6af679977b9839ace875f7b8699f2f6b8c9bb96ff22ad172de3102e3686",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-timeline-drag-overlay.png",
+          "sha256": "1a13e76b6f00df66ede37ecc6ed9368435f5f194ec15eb36ac14bb7510c2a372",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-timeline-drag-diff.png",
+          "sha256": "d7cf775de14184d955c074b7ca6ce350ed15cb87eccc3c2cfcc1357140b8df59",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": [
+          "producer-intent/accepted current timeline surface only, not editorial parity"
+        ]
+      },
+      {
+        "name": "media-dense",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-dense.png",
+        "reference_path": "comparisons/media-dense-reference.png",
+        "reference": {
+          "sha256": "ff3254e8506bedd6526228b10137c368f7f22316db2b00d31333992fd29729dc",
+          "expected_sha256": "ff3254e8506bedd6526228b10137c368f7f22316db2b00d31333992fd29729dc",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 71019,
+          "manifest_match": true
+        },
+        "production_path": "runs/dense-narrow/shots-media-dense.png",
+        "production": {
+          "sha256": "f70534442f7c60c18738e07d690437134b05816f1368f4a29aeda569bafb6de6",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-dense-pair.png",
+          "sha256": "c0051e0dbc63fe966053a8712b3e39ea2b0ce3d3ddee3c8609e8c8fa131f134b",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-dense-overlay.png",
+          "sha256": "8f083adc9f9f3db2d2a47095f3902b06429c9e4d66e3df63c02bc68b3320ab27",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-dense-diff.png",
+          "sha256": "bca900bd9136b4ae2ea0772f686825a2cf60ba4ae834bd915b06153c7e4ec73b",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": []
+      },
+      {
+        "name": "media-dense-scrolled",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-dense-scrolled.png",
+        "reference_path": "comparisons/media-dense-scrolled-reference.png",
+        "reference": {
+          "sha256": "126a798a0f89baa3893cde4bd2db390d797bf5250b79fffdcd3a19d930cf5c69",
+          "expected_sha256": "126a798a0f89baa3893cde4bd2db390d797bf5250b79fffdcd3a19d930cf5c69",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 74053,
+          "manifest_match": true
+        },
+        "production_path": "runs/dense-narrow/shots-media-dense-scrolled.png",
+        "production": {
+          "sha256": "b2b7cd63134b1e1e50ab2af9a1ca202bd0e7c1c08d7a30aa6c2b683dd69d0012",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-dense-scrolled-pair.png",
+          "sha256": "4c1fb9a5ba5bf80d50fa0850f58e9495f6d05ac64d150dafd4b0817ba1e26cbc",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-dense-scrolled-overlay.png",
+          "sha256": "a2ebcf8598a185bb2d97c907cab3ffa4bcd243e94a5dfd8b53c33456cc965625",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-dense-scrolled-diff.png",
+          "sha256": "963ef74986f8209d459ddb07b78e0144bf8a0472049a7e4e48cb2da98ce41750",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": []
+      },
+      {
+        "name": "media-narrow",
+        "reference_archive_member": "issue25-prototype-reference-v1/apps/nemo-ui/prototype/evidence/media-narrow.png",
+        "reference_path": "comparisons/media-narrow-reference.png",
+        "reference": {
+          "sha256": "bce757396abb6d4bbfe972e7b1eb82b657081ebc273e514a7786b5207520f23a",
+          "expected_sha256": "bce757396abb6d4bbfe972e7b1eb82b657081ebc273e514a7786b5207520f23a",
+          "dimensions": [
+            1274,
+            640
+          ],
+          "bytes": 105192,
+          "manifest_match": true
+        },
+        "production_path": "runs/dense-narrow/shots-media-narrow.png",
+        "production": {
+          "sha256": "737be643e6b549f4c087b110b4616232b4f986e32bd3a56dd925627aa157e179",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "pair": {
+          "path": "comparisons/media-narrow-pair.png",
+          "sha256": "53aa1f3c90b89f10b7c6e5318130d8216434a62b5295839efba72d6967615409",
+          "dimensions": [
+            2548,
+            640
+          ]
+        },
+        "overlay": {
+          "path": "comparisons/media-narrow-overlay.png",
+          "sha256": "5306458cb11252ee29562b14693f3e4cd16729e7fa1713ab81c7003c75325d61",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "diff": {
+          "path": "comparisons/media-narrow-diff.png",
+          "sha256": "031de201dcce4384e50319d865cd4fe117e51add1f70bb0bc04cb6cdcc69869f",
+          "dimensions": [
+            1274,
+            640
+          ]
+        },
+        "caveats": []
+      }
+    ]
+  },
+  "ownerDirection": "Owner requested stopping further UI/interaction refinement and bug hunting; finalization only. UI polish and interaction adjustments can follow owner review.",
+  "artifacts": [
+    {
+      "path": "comparisons/media-dense-diff.png",
+      "bytes": 119624,
+      "sha256": "bca900bd9136b4ae2ea0772f686825a2cf60ba4ae834bd915b06153c7e4ec73b"
+    },
+    {
+      "path": "comparisons/media-dense-overlay.png",
+      "bytes": 114206,
+      "sha256": "8f083adc9f9f3db2d2a47095f3902b06429c9e4d66e3df63c02bc68b3320ab27"
+    },
+    {
+      "path": "comparisons/media-dense-pair.png",
+      "bytes": 146090,
+      "sha256": "c0051e0dbc63fe966053a8712b3e39ea2b0ce3d3ddee3c8609e8c8fa131f134b"
+    },
+    {
+      "path": "comparisons/media-dense-reference.png",
+      "bytes": 71019,
+      "sha256": "ff3254e8506bedd6526228b10137c368f7f22316db2b00d31333992fd29729dc"
+    },
+    {
+      "path": "comparisons/media-dense-scrolled-diff.png",
+      "bytes": 130690,
+      "sha256": "963ef74986f8209d459ddb07b78e0144bf8a0472049a7e4e48cb2da98ce41750"
+    },
+    {
+      "path": "comparisons/media-dense-scrolled-overlay.png",
+      "bytes": 124061,
+      "sha256": "a2ebcf8598a185bb2d97c907cab3ffa4bcd243e94a5dfd8b53c33456cc965625"
+    },
+    {
+      "path": "comparisons/media-dense-scrolled-pair.png",
+      "bytes": 151064,
+      "sha256": "4c1fb9a5ba5bf80d50fa0850f58e9495f6d05ac64d150dafd4b0817ba1e26cbc"
+    },
+    {
+      "path": "comparisons/media-dense-scrolled-reference.png",
+      "bytes": 74053,
+      "sha256": "126a798a0f89baa3893cde4bd2db390d797bf5250b79fffdcd3a19d930cf5c69"
+    },
+    {
+      "path": "comparisons/media-grid-diff.png",
+      "bytes": 53264,
+      "sha256": "198ae7d1753c7eadfc5835109d5e927e98a141aea59fcba04fc677d7b9c4b3d1"
+    },
+    {
+      "path": "comparisons/media-grid-overlay.png",
+      "bytes": 52192,
+      "sha256": "dd6f45be2d29c1d957f6941a16402609eb0b9a02155f180f2ddbd67dbfc79328"
+    },
+    {
+      "path": "comparisons/media-grid-pair.png",
+      "bytes": 68243,
+      "sha256": "96bb2e0d1a95898b3246383889fa378863aea1adc8419704a80aa04940ffa87f"
+    },
+    {
+      "path": "comparisons/media-grid-reference.png",
+      "bytes": 43450,
+      "sha256": "9544b9259e0a84b760535ffc6ddce8b71213c99ea112bb4686029d7f8dde2d8b"
+    },
+    {
+      "path": "comparisons/media-list-diff.png",
+      "bytes": 72621,
+      "sha256": "c518dc99b152d7e0c1d6dc2d634ec38e0a3ac1479b463d23c1a12003eae180e6"
+    },
+    {
+      "path": "comparisons/media-list-overlay.png",
+      "bytes": 71178,
+      "sha256": "fb875782d211a93061b1163796de44a9d51a73fa3b018c66fd6edc0f6cdb3558"
+    },
+    {
+      "path": "comparisons/media-list-pair.png",
+      "bytes": 99040,
+      "sha256": "0d031d7af4b550e3fc1762eda309aee9ab329fdd057c4d439133d12ffc142c1a"
+    },
+    {
+      "path": "comparisons/media-list-reference.png",
+      "bytes": 64587,
+      "sha256": "e36772cf99bf619851f1fce7b89506479c30a76360585960ab26c4494e55a0d4"
+    },
+    {
+      "path": "comparisons/media-narrow-diff.png",
+      "bytes": 173968,
+      "sha256": "031de201dcce4384e50319d865cd4fe117e51add1f70bb0bc04cb6cdcc69869f"
+    },
+    {
+      "path": "comparisons/media-narrow-overlay.png",
+      "bytes": 155161,
+      "sha256": "5306458cb11252ee29562b14693f3e4cd16729e7fa1713ab81c7003c75325d61"
+    },
+    {
+      "path": "comparisons/media-narrow-pair.png",
+      "bytes": 201855,
+      "sha256": "53aa1f3c90b89f10b7c6e5318130d8216434a62b5295839efba72d6967615409"
+    },
+    {
+      "path": "comparisons/media-narrow-reference.png",
+      "bytes": 105192,
+      "sha256": "bce757396abb6d4bbfe972e7b1eb82b657081ebc273e514a7786b5207520f23a"
+    },
+    {
+      "path": "comparisons/media-search-diff.png",
+      "bytes": 29398,
+      "sha256": "dbb362933159fd5f1cf8bc335cbfbdbd15a89db63eac7d9460406e1a028560e4"
+    },
+    {
+      "path": "comparisons/media-search-overlay.png",
+      "bytes": 31144,
+      "sha256": "f73f431fd860daf707d871e3378ac8500058651eca3ede1dd1ab68947ef9baae"
+    },
+    {
+      "path": "comparisons/media-search-pair.png",
+      "bytes": 44929,
+      "sha256": "ab4b38eb79f850e178e4f77bab6816abdf08a878960a9965c7189bc1463ec60a"
+    },
+    {
+      "path": "comparisons/media-search-reference.png",
+      "bytes": 28369,
+      "sha256": "1328aac5141a8deca17dbd9ea9882f152a44bdbfe249e21db1afb36b63be25a5"
+    },
+    {
+      "path": "comparisons/media-smart-bin-diff.png",
+      "bytes": 32420,
+      "sha256": "3112455ce8e81720fb70b35cd92dbd024ced6fc1545e363baeba322e4b6cbee4"
+    },
+    {
+      "path": "comparisons/media-smart-bin-overlay.png",
+      "bytes": 33571,
+      "sha256": "bcc966abba979f6fd81a4bc0f9dbc86da8502b7288c5e5f64b3376872ebdd43e"
+    },
+    {
+      "path": "comparisons/media-smart-bin-pair.png",
+      "bytes": 50452,
+      "sha256": "a49a9dfceeee5d0c892629f09b6d5aee97ae09ceb72dbe8e8e569143a1dc5e56"
+    },
+    {
+      "path": "comparisons/media-smart-bin-reference.png",
+      "bytes": 29678,
+      "sha256": "8652eaa50cbf2f891fe0020eb0ad609f0c2891b8d8024a10e38d6ac6b34a245d"
+    },
+    {
+      "path": "comparisons/media-source-view-diff.png",
+      "bytes": 100725,
+      "sha256": "d567f28a597be9919669f89a59f0a211816472af41fd527844614cde5359f9bf"
+    },
+    {
+      "path": "comparisons/media-source-view-overlay.png",
+      "bytes": 94069,
+      "sha256": "68e90de502f83f9ea7f68868ac4df1fe461965b8dd59624fef58700d50b3349c"
+    },
+    {
+      "path": "comparisons/media-source-view-pair.png",
+      "bytes": 118760,
+      "sha256": "d39d994760175430be1e79d3d1e50cbd818b8241664825151cd3f1e9d3b9c205"
+    },
+    {
+      "path": "comparisons/media-source-view-reference.png",
+      "bytes": 74240,
+      "sha256": "ce88bee3b02f353ad60bc4f7b487a800b5af812cca91304ee11fbc61e1a295ce"
+    },
+    {
+      "path": "comparisons/media-timeline-drag-diff.png",
+      "bytes": 99180,
+      "sha256": "d7cf775de14184d955c074b7ca6ce350ed15cb87eccc3c2cfcc1357140b8df59"
+    },
+    {
+      "path": "comparisons/media-timeline-drag-overlay.png",
+      "bytes": 94250,
+      "sha256": "1a13e76b6f00df66ede37ecc6ed9368435f5f194ec15eb36ac14bb7510c2a372"
+    },
+    {
+      "path": "comparisons/media-timeline-drag-pair.png",
+      "bytes": 118935,
+      "sha256": "1cf8b6af679977b9839ace875f7b8699f2f6b8c9bb96ff22ad172de3102e3686"
+    },
+    {
+      "path": "comparisons/media-timeline-drag-reference.png",
+      "bytes": 73001,
+      "sha256": "573a95fad2e89dcce297ae38f5bd20b392f0d0c62752061ae293e65560d3e8f6"
+    },
+    {
+      "path": "comparisons/media-workspace-diff.png",
+      "bytes": 92028,
+      "sha256": "effa39c136083a418ccadff18faffcb3af842633f0c37f84886b8e82eabc6c63"
+    },
+    {
+      "path": "comparisons/media-workspace-overlay.png",
+      "bytes": 87104,
+      "sha256": "af71da8423760fdc079874c697cc1e7f40d1562f7ad6ff78c5898c2313904d31"
+    },
+    {
+      "path": "comparisons/media-workspace-pair.png",
+      "bytes": 113191,
+      "sha256": "503e4f124b832ad0899a93a64b211e54bcf5a6f8060620ea4cf5de5161f3a9a8"
+    },
+    {
+      "path": "comparisons/media-workspace-reference.png",
+      "bytes": 73687,
+      "sha256": "9ff28ba46874952ccbba20d7bdf7897a0ef0ffdb27213f57b9f86d5a19178cc1"
+    },
+    {
+      "path": "diagnostics/busy-before.json",
+      "bytes": 126119,
+      "sha256": "5f2ce3a409c95e37ffcce70d3f633df713ed2d396d00ebeffeefa8fb70986141"
+    },
+    {
+      "path": "fixture-commands.json",
+      "bytes": 1407,
+      "sha256": "5242cbcb08608c693afbec440567459ecefde926d7eef248f19657b0d9040408"
+    },
+    {
+      "path": "headless-comparison.json",
+      "bytes": 777,
+      "sha256": "afeaa2ab6e186bf10d0e8eb542b5d74c0562f3e4316c4ab34ef2a6f2aa0bcc3e"
+    },
+    {
+      "path": "headless-results.json",
+      "bytes": 29754,
+      "sha256": "68375e3513b869963a0dbca6ba32db8bb8b7355fd59e1d362e4a670e033bfd3e"
+    },
+    {
+      "path": "logs/busy-debug.log",
+      "bytes": 5375,
+      "sha256": "9bfc578439003a45d9c96a9df6a4dac1f2162f34c6b4dd882b31527ce57f6371"
+    },
+    {
+      "path": "logs/busy-release.log",
+      "bytes": 5560,
+      "sha256": "e9fc747ff5cbd106c9b9314b1f6b2c22c6f55d94178593584461606a1bf49f46"
+    },
+    {
+      "path": "logs/catalog.log",
+      "bytes": 16406,
+      "sha256": "0f39da2b2650c30351a5ff7b87e0506db8012e731c49b72373de09ed9a19203f"
+    },
+    {
+      "path": "logs/ctest-asan.log",
+      "bytes": 105610,
+      "sha256": "fabc942f46beb75df6bfb8f9ed725781b2c8bd736f66101ccfdc5b310487bfd5"
+    },
+    {
+      "path": "logs/ctest-debug.log",
+      "bytes": 105611,
+      "sha256": "0f6d186d5e7ab41ba0a0e02a01cabf2e1733cf257b40bf8fd2d9e75150ba9c69"
+    },
+    {
+      "path": "logs/ctest-release.log",
+      "bytes": 105613,
+      "sha256": "ddf4a8fcc42e3cae6bfcfef407d3b64cd8353f9fbca5a303b577c4a58ce51f9a"
+    },
+    {
+      "path": "logs/dense-narrow.log",
+      "bytes": 5595,
+      "sha256": "eeb9e661361941b995b0a58b8bac0caf86ff6aa6710101ed9d2b01b8a801dc2c"
+    },
+    {
+      "path": "logs/dialogs.log",
+      "bytes": 442,
+      "sha256": "b75b3ac9b29d3c49354bc334e1f20a0805bf4e4efd43822d021e9e5bfd561d67"
+    },
+    {
+      "path": "logs/drag.log",
+      "bytes": 7978,
+      "sha256": "07181020ee1883f601bd81af42ac73dd439f642322cd95e96f7727bae2b183f5"
+    },
+    {
+      "path": "logs/native-asan.log",
+      "bytes": 30494,
+      "sha256": "9f1eee7ccaef2324c6ebd1da5442f65a4295eec628541d51a8fbfd107ec9f753"
+    },
+    {
+      "path": "logs/organization.log",
+      "bytes": 504,
+      "sha256": "ec22be6f4f81eba11b1c2b71f7bc905dc57502d91c88edcf1420c9e446547b7b"
+    },
+    {
+      "path": "logs/qt-quick-wayland-control.log",
+      "bytes": 19280,
+      "sha256": "cda2a467f9f2a8e04b5462692bd85b3e7774eb261620a71f3b8f21f7a4b13adb"
+    },
+    {
+      "path": "logs/qt-wayland-control.log",
+      "bytes": 18808,
+      "sha256": "2a4ccf7c915da1b836fab13be80207cb174c55c0499153033e6f64682e2341e2"
+    },
+    {
+      "path": "logs/source.log",
+      "bytes": 10275,
+      "sha256": "929c2ffdb4febcac6df939750cb2c89354b57cfc8b191ca9ad889d57a8d7d4b0"
+    },
+    {
+      "path": "logs/workspace-source.log",
+      "bytes": 4350,
+      "sha256": "8012b6d7f95f71c55e575d02273b66b36e53b82283c7e1af9f23f542f762a90e"
+    },
+    {
+      "path": "runs/busy-debug/evidence.json",
+      "bytes": 102947,
+      "sha256": "52d4c0b501f6d6af2dc85268feede688c20fcbc9941c7295b5414a5b4504d9cc"
+    },
+    {
+      "path": "runs/busy-debug/scenario-final-busy.json",
+      "bytes": 4791,
+      "sha256": "b46d82bd624391e2f216539b3c01bd05e9cf61a545b686067396e611c2d7f32e"
+    },
+    {
+      "path": "runs/busy-debug/shots-media-busy-complete.png",
+      "bytes": 68675,
+      "sha256": "da168ba1aa871e3652bde56e4630619f516d47915c2dc47f884fa370481ce656"
+    },
+    {
+      "path": "runs/busy-debug/shots-media-busy-progress.png",
+      "bytes": 69166,
+      "sha256": "479b10d2a1dfa95339f99238f9f4909706bb46c60d7ede3d4b492eb276227aa7"
+    },
+    {
+      "path": "runs/busy-debug/shots-media-pending.png",
+      "bytes": 69832,
+      "sha256": "f0c106f8dc573695f3f08170dd8549d9f24c9c25e84710a30c801e9d54cef2d4"
+    },
+    {
+      "path": "runs/busy-release/evidence.json",
+      "bytes": 308524,
+      "sha256": "817637f27d1398d13bbd5946d333f6aebbeaab23acb3fbc773e6f9a2359c2e9a"
+    },
+    {
+      "path": "runs/busy-release/scenario-final-busy-long.json",
+      "bytes": 4967,
+      "sha256": "6efa90a30bc9574d9a07896ebadbf74ed49345415b17fe8806c4983ed6cfc983"
+    },
+    {
+      "path": "runs/busy-release/shots-media-busy-complete.png",
+      "bytes": 76482,
+      "sha256": "ae37620f9318588c533fcc93522cc0eaebdae74d7530e5f8bb2b1989abccf5ad"
+    },
+    {
+      "path": "runs/busy-release/shots-media-busy-progress.png",
+      "bytes": 76482,
+      "sha256": "ae37620f9318588c533fcc93522cc0eaebdae74d7530e5f8bb2b1989abccf5ad"
+    },
+    {
+      "path": "runs/busy-release/shots-media-pending.png",
+      "bytes": 69829,
+      "sha256": "ad26e4cb263f9c096533e320db5106b751c6de0c6f1554e072cae9a045299641"
+    },
+    {
+      "path": "runs/catalog/evidence.json",
+      "bytes": 162521,
+      "sha256": "ee5f3e6a272f7471ba9ce2cf4688d841ecb22e393687e6778ef9ec3e18bea5e6"
+    },
+    {
+      "path": "runs/catalog/scenario-final-catalog-v8.json",
+      "bytes": 12632,
+      "sha256": "1adc922e80423f5f345e03c88956f57d64b29619c9dfebef5716e57826b34bd3"
+    },
+    {
+      "path": "runs/catalog/shots-media-grid.png",
+      "bytes": 33657,
+      "sha256": "97e0328a86b2036684af758ab410c1d2f8dc69a87150d6dedfd66d896594f6bb"
+    },
+    {
+      "path": "runs/catalog/shots-media-list.png",
+      "bytes": 47230,
+      "sha256": "f69d12b69db02273264b4c1ea1e773096c58bfb1f0c3b7afd4d4008abd0c1ef6"
+    },
+    {
+      "path": "runs/catalog/shots-media-metadata.png",
+      "bytes": 49186,
+      "sha256": "6c8263f5bc4eca9d8c5b9f0e5fc16746c9d0383701ce2ca015d75d4ed7b5f688"
+    },
+    {
+      "path": "runs/catalog/shots-media-offline.png",
+      "bytes": 28614,
+      "sha256": "a3cf63cfd44d950caa1accb3a6cc66c501d64e378c46907f43eac04c15b96fc5"
+    },
+    {
+      "path": "runs/catalog/shots-media-relink.png",
+      "bytes": 27381,
+      "sha256": "e84c368536e93e4e139f5ca61f1274c0c927a1e20b8bf63b78a2f9992f9bb72d"
+    },
+    {
+      "path": "runs/catalog/shots-media-search.png",
+      "bytes": 24777,
+      "sha256": "cc0b86c989cfb6915e1889e8ee4bf44f468e5174acdea729c84de9c4243642b1"
+    },
+    {
+      "path": "runs/catalog/shots-media-smart-bin.png",
+      "bytes": 29555,
+      "sha256": "ab6d00659b0261f99f4dc0d51c51dd4946bf789fa0a6a04d8f346553ffac6cdc"
+    },
+    {
+      "path": "runs/catalog/shots-media-tree-breadcrumb.png",
+      "bytes": 29807,
+      "sha256": "1ff29b989d987f793f74106681725a7122867f86bfd05f12fd251091ea550fa4"
+    },
+    {
+      "path": "runs/dense-narrow/evidence.json",
+      "bytes": 230702,
+      "sha256": "3bab5e555506fe2158c0d965edc44920253a9460d035c0a3a688922e7368855c"
+    },
+    {
+      "path": "runs/dense-narrow/scenario-final-dense-narrow-v2.json",
+      "bytes": 3810,
+      "sha256": "82c1cacefd75557d18352b47abfca296b893e113710c229cfddd4c1bf6c307ce"
+    },
+    {
+      "path": "runs/dense-narrow/shots-media-dense-scrolled.png",
+      "bytes": 94284,
+      "sha256": "b2b7cd63134b1e1e50ab2af9a1ca202bd0e7c1c08d7a30aa6c2b683dd69d0012"
+    },
+    {
+      "path": "runs/dense-narrow/shots-media-dense.png",
+      "bytes": 92411,
+      "sha256": "f70534442f7c60c18738e07d690437134b05816f1368f4a29aeda569bafb6de6"
+    },
+    {
+      "path": "runs/dense-narrow/shots-media-narrow.png",
+      "bytes": 118639,
+      "sha256": "737be643e6b549f4c087b110b4616232b4f986e32bd3a56dd925627aa157e179"
+    },
+    {
+      "path": "runs/dialogs/evidence.json",
+      "bytes": 42594,
+      "sha256": "62db723b449ab087097eb97ff45f0c507109ee59501cfe1104aa7c677fb53341"
+    },
+    {
+      "path": "runs/dialogs/scenario-final-dialog.json",
+      "bytes": 4830,
+      "sha256": "5dc299d950e6be85ddf06c49fe34de35fa0fbad8c6f080dad68b718b8aeeec19"
+    },
+    {
+      "path": "runs/dialogs/shots-media-import-sequence.png",
+      "bytes": 26639,
+      "sha256": "db71246196b039570045525534e5c91ec59bbf549a4428a627ed7bfc01a8ebb5"
+    },
+    {
+      "path": "runs/dialogs/shots-media-import-still.png",
+      "bytes": 25425,
+      "sha256": "8937f1330945935575cd7bb91618755f6f447a67d1edd54e1bbcc6acd8cf6110"
+    },
+    {
+      "path": "runs/dialogs/shots-media-relink-sequence.png",
+      "bytes": 30603,
+      "sha256": "36d72ced6ef83cf230201e38ca86f05032ed78a63996de3045aa98f95f184cbd"
+    },
+    {
+      "path": "runs/drag/evidence.json",
+      "bytes": 62547,
+      "sha256": "3a28ca84393bc84084aaf8c68362cc60d330abb0debde31e78faa1ae4a39af89"
+    },
+    {
+      "path": "runs/drag/scenario-final-drag-workspace.json",
+      "bytes": 6695,
+      "sha256": "092efb27d0bacf131078c8e7f8ce2ceda7c55c422592fe94bde0b41625971e9e"
+    },
+    {
+      "path": "runs/drag/shots-media-timeline-drag.png",
+      "bytes": 59762,
+      "sha256": "85f82c0fa67ca30519bdc0e6e160aec7dc9daeaf4dcd65576aa679d5df1da3cd"
+    },
+    {
+      "path": "runs/native-asan/evidence.json",
+      "bytes": 66987,
+      "sha256": "0adfef902e3a709a69517b3b2ccec9249bc1502b2d1323cfceba3d015cfc96bb"
+    },
+    {
+      "path": "runs/native-asan/scenario-final-source-v3.json",
+      "bytes": 8161,
+      "sha256": "acd256ee739cdb3eee49c4995cd7be4e442aef1adbd0c4973811634e2915373d"
+    },
+    {
+      "path": "runs/organization/evidence.json",
+      "bytes": 74394,
+      "sha256": "a8fcbf20baeba2680bbb8c43bdc72b229e734d01cddfa26c8e3769623b0646dd"
+    },
+    {
+      "path": "runs/organization/scenario-final-organization.json",
+      "bytes": 10078,
+      "sha256": "4a202be57c66ec17e691076abb2810716c1f04afebc0c159c11931ee1ceb31e0"
+    },
+    {
+      "path": "runs/organization/shots-media-bin-metadata.png",
+      "bytes": 33007,
+      "sha256": "8811140efb79e18f2dc069ba1ef9fbadc2058920efde38cf75ac50cb25a57027"
+    },
+    {
+      "path": "runs/organization/shots-media-delete-keep-contents.png",
+      "bytes": 41067,
+      "sha256": "f815f38789e8207f9d31e2ccc9950282a7beace04ba2297a7add0a72d80ece6d"
+    },
+    {
+      "path": "runs/organization/shots-media-nested-collection.png",
+      "bytes": 28758,
+      "sha256": "c9a8317a81184811d1fd49b25d870237ae8d9bd352f744ecbb215fbc824d260c"
+    },
+    {
+      "path": "runs/organization/shots-media-smart-membership.png",
+      "bytes": 29649,
+      "sha256": "f2bd31ffb230e688a9a90f4f4b6e4bc949f1a10ba7146d152b881819897441ef"
+    },
+    {
+      "path": "runs/source/evidence.json",
+      "bytes": 66971,
+      "sha256": "bdcf1bd8f87bc4d11ec4a5011090594369da42626131ecae4d1e4ed541e1077a"
+    },
+    {
+      "path": "runs/source/scenario-final-source-v3.json",
+      "bytes": 8161,
+      "sha256": "acd256ee739cdb3eee49c4995cd7be4e442aef1adbd0c4973811634e2915373d"
+    },
+    {
+      "path": "runs/source/shots-media-source-sequence-1001.png",
+      "bytes": 45215,
+      "sha256": "85ff2869144d50f5b359d631e9e2727e8190dae57475af376987cbe9602ba370"
+    },
+    {
+      "path": "runs/source/shots-media-source-sequence-1002.png",
+      "bytes": 45325,
+      "sha256": "d5f2d3aa47db1ed3ad40dbcb4b145de41085177968d19228653603a79557134b"
+    },
+    {
+      "path": "runs/source/shots-media-source-still.png",
+      "bytes": 81922,
+      "sha256": "56d97dbfc173d2728b11ba1e78c8a2d98722f6754fcc6f97aebb098682659ba6"
+    },
+    {
+      "path": "runs/source/shots-media-two-viewers.png",
+      "bytes": 86713,
+      "sha256": "adca323826d48b9c50f3d40bda77c5f1442fb6bf6bc70275171a5234500a6c5c"
+    },
+    {
+      "path": "runs/workspace-source/evidence.json",
+      "bytes": 31347,
+      "sha256": "e6f0c7c434608daab40fa1fb00bd08876698fff46e29e68652e382184bcb6525"
+    },
+    {
+      "path": "runs/workspace-source/scenario-final-workspace-source.json",
+      "bytes": 3496,
+      "sha256": "dd0aa2e7bac4df9a47af42ec3a2eddb81390e199d0cef04f34d03f270c149390"
+    },
+    {
+      "path": "runs/workspace-source/shots-media-source-view.png",
+      "bytes": 58190,
+      "sha256": "00947620b2ea072a5696b87f148a0c3e4e380c94eee5427638b235e623197cea"
+    },
+    {
+      "path": "runs/workspace-source/shots-media-workspace.png",
+      "bytes": 52947,
+      "sha256": "f1cc25aae7ac72f23da95036166c1f5d15911fe0085356a138038a3d6ecbe44c"
+    }
+  ]
+}

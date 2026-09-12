@@ -456,18 +456,19 @@ FocusScope {
     }
 
 
+    // The commit writes only the owners (routed group clock + panel
+    // controller); the displayed text stays the focused field's own while the
+    // edit is active and returns to the binding once focus leaves.
     function commitFrame() {
         var value = Number(frameField.text)
         if (isFinite(value))
             viewerPanel.updateClock(value)
-        frameField.text = String(viewerPanel.currentFrame)
     }
 
     function commitTimecode() {
         var value = viewerPanel.controller.frameForTimecode(timecodeField.text)
         if (isFinite(value))
             viewerPanel.updateClock(value)
-        timecodeField.text = viewerPanel.timecodeText
     }
 
 
@@ -903,7 +904,6 @@ FocusScope {
                 y: transportBar.compact ? 34 : 4
                 width: 65
                 height: 28
-                text: String(viewerPanel.currentFrame)
                 font.family: "Monospace"
                 font.pixelSize: 11
                 color: viewerPanel.theme.text
@@ -923,6 +923,19 @@ FocusScope {
                 Accessible.name: "Frame"
             }
 
+            // The frame display is a declarative binding, never an imperative
+            // assignment: an assignment from JS would destroy the binding and
+            // freeze the field at the value it happened to hold. RestoreNone
+            // keeps the displayed value while the binding is suspended by the
+            // edit gesture, so focusing the field never clears its text.
+            Binding {
+                target: frameField
+                property: "text"
+                value: String(viewerPanel.currentFrame)
+                when: !frameField.activeFocus
+                restoreMode: Binding.RestoreNone
+            }
+
             TextField {
                 id: timecodeField
                 objectName: "viewerTimecode_" + viewerPanel.panelId
@@ -930,7 +943,6 @@ FocusScope {
                 y: transportBar.compact ? 34 : 4
                 width: 119
                 height: 28
-                text: viewerPanel.timecodeText
                 horizontalAlignment: Text.AlignHCenter
                 font.family: "Monospace"
                 font.pixelSize: viewerPanel.theme ? viewerPanel.theme.fontSize : 11
@@ -946,12 +958,22 @@ FocusScope {
                 }
                 Accessible.name: "Timecode"
             }
-        }
-    }
 
-    onCurrentFrameChanged: {
-        if (!frameField.activeFocus)
-            frameField.text = String(currentFrame)
+            // Same rule as the frame display: the timecode is a binding on the
+            // panel controller's own clock, so it follows a routed seek in the
+            // same dependency order the controller publishes it. A frameChanged
+            // handler assigning this text is what pinned a stale timecode while
+            // the routed frame field already showed the new frame. RestoreNone
+            // preserves the displayed value while the edit gesture suspends the
+            // binding.
+            Binding {
+                target: timecodeField
+                property: "text"
+                value: viewerPanel.timecodeText
+                when: !timecodeField.activeFocus
+                restoreMode: Binding.RestoreNone
+            }
+        }
     }
 
     // This panel renders its own selected Viewer node; there is no shared
@@ -973,10 +995,6 @@ FocusScope {
         target: viewerPanel.controller
         function onGraphChanged() {
             viewerPanel.graphRevision++
-        }
-        function onFrameChanged() {
-            if (!timecodeField.activeFocus)
-                timecodeField.text = viewerPanel.timecodeText
         }
     }
 

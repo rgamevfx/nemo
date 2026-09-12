@@ -1,0 +1,29 @@
+nemo43-step-start {"index":0,"kind":"attach","request":{"engineFound":true,"windowObjectName":"mainWindow"},"startedMs":162}
+nemo43-step-start {"index":1,"kind":"invoke","request":{"args":["A"],"kind":"invoke","method":"revealMediaPanel","target":"mediaLibrary"},"startedMs":162}
+nemo43-step-start {"index":2,"kind":"waitForPanel","request":{"group":"A","kind":"waitForPanel","panelType":"media","timeoutMs":20000},"startedMs":164}
+nemo43-step-start {"index":3,"kind":"invoke","request":{"args":["panel-1"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":20168}
+nemo43-step-start {"index":4,"kind":"invoke","request":{"args":["panel-3"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":20199}
+nemo43-step-start {"index":5,"kind":"invoke","request":{"args":["panel-8"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":20227}
+nemo43-step-start {"index":6,"kind":"invoke","request":{"args":["panel-6"],"kind":"invoke","method":"closePanel","target":"workspace"},"startedMs":20251}
+nemo43-step-start {"index":7,"kind":"resizeWindow","request":{"height":640,"kind":"resizeWindow","width":1274},"startedMs":20252}
+nemo43-step-start {"index":8,"kind":"setPanelState","request":{"group":"A","kind":"setPanelState","panelType":"media","state":{"projectScope":true,"viewMode":"list"}},"startedMs":20252}
+nemo43-step-start {"index":9,"kind":"wait","request":{"kind":"wait","ms":400},"startedMs":20253}
+nemo43-step-start {"index":10,"kind":"invoke","request":{"args":[["/tmp/nemo43-smoke/busy-00.png","/tmp/nemo43-smoke/busy-01.png","/tmp/nemo43-smoke/busy-02.png","/tmp/nemo43-smoke/busy-03.png","/tmp/nemo43-smoke/busy-04.png","/tmp/nemo43-smoke/busy-05.png","/tmp/nemo43-smoke/busy-06.png","/tmp/nemo43-smoke/busy-07.png","/tmp/nemo43-smoke/busy-08.png","/tmp/nemo43-smoke/busy-09.png","/tmp/nemo43-smoke/busy-10.png","/tmp/nemo43-smoke/busy-11.png","/tmp/nemo43-smoke/busy-12.png","/tmp/nemo43-smoke/busy-13.png","/tmp/nemo43-smoke/busy-14.png","/tmp/nemo43-smoke/busy-15.png","/tmp/nemo43-smoke/busy-16.png","/tmp/nemo43-smoke/busy-17.png","/tmp/nemo43-smoke/busy-18.png","/tmp/nemo43-smoke/busy-19.png","/tmp/nemo43-smoke/busy-20.png","/tmp/nemo43-smoke/busy-21.png","/tmp/nemo43-smoke/busy-22.png","/tmp/nemo43-smoke/busy-23.png","/tmp/nemo43-smoke/busy-24.png","/tmp/nemo43-smoke/busy-25.png","/tmp/nemo43-smoke/busy-26.png","/tmp/nemo43-smoke/busy-27.png","/tmp/nemo43-smoke/busy-28.png","/tmp/nemo43-smoke/busy-29.png","/tmp/nemo43-smoke/busy-30.png","/tmp/nemo43-smoke/busy-31.png","/tmp/nemo43-smoke/busy-32.png","/tmp/nemo43-smoke/busy-33.png","/tmp/nemo43-smoke/busy-34.png","/tmp/nemo43-smoke/busy-35.png","/tmp/nemo43-smoke/busy-36.png","/tmp/nemo43-smoke/busy-37.png","/tmp/nemo43-smoke/busy-38.png","/tmp/nemo43-smoke/busy-39.png","/tmp/nemo43-smoke/busy-40.png","/tmp/nemo43-smoke/busy-41.png","/tmp/nemo43-smoke/busy-42.png","/tmp/nemo43-smoke/busy-43.png","/tmp/nemo43-smoke/busy-44.png","/tmp/nemo43-smoke/busy-45.png","/tmp/nemo43-smoke/busy-46.png","/tmp/nemo43-smoke/busy-47.png"],"root",0],"kind":"invoke","method":"importPaths","target":"mediaLibrary"},"startedMs":20662}
+nemo43-step-start {"index":11,"kind":"capture","request":{"kind":"capture","name":"media-pending"},"startedMs":20835}
+nemo43-step-start {"index":12,"kind":"click","request":{"kind":"click","target":{"objectName":"mediaSearchField"}},"startedMs":21394}
+nemo43-step-start {"index":13,"kind":"key","request":{"key":"b","kind":"key"},"startedMs":21395}
+nemo43-step-start {"index":14,"kind":"key","request":{"key":"u","kind":"key"},"startedMs":21397}
+nemo43-step-start {"index":15,"kind":"key","request":{"key":"s","kind":"key"},"startedMs":21400}
+nemo43-step-start {"index":16,"kind":"key","request":{"key":"y","kind":"key"},"startedMs":21402}
+nemo43-step-start {"index":17,"kind":"read","request":{"kind":"read","name":"search-during-probe","property":"text","target":"mediaSearchField"},"startedMs":21405}
+nemo43-step-start {"index":18,"kind":"invoke","request":{"args":["media-48"],"kind":"invoke","method":"probeState","target":"mediaLibrary"},"startedMs":21405}
+nemo43-step-start {"index":19,"kind":"probe","request":{"intervalMs":16,"kind":"probe","ticks":3600},"startedMs":21405}
+nemo43-step-start {"index":20,"kind":"capture","request":{"kind":"capture","name":"media-busy-progress"},"startedMs":87781}
+nemo43-step-start {"index":21,"kind":"invoke","request":{"args":["project","",true,{}],"kind":"invoke","method":"query","target":"mediaLibrary"},"startedMs":88338}
+nemo43-step-start {"index":22,"kind":"wait","request":{"kind":"wait","ms":6000},"startedMs":88340}
+nemo43-step-start {"index":23,"kind":"capture","request":{"kind":"capture","name":"media-busy-complete"},"startedMs":94341}
+nemo43-step-start {"index":24,"kind":"invoke","request":{"args":["project","",true,{}],"kind":"invoke","method":"query","target":"mediaLibrary"},"startedMs":94929}
+nemo43-step-start {"index":25,"kind":"invoke","request":{"args":["file:///tmp/nemo43-smoke/final-busy-saved.nemo"],"kind":"invoke","method":"saveAs","target":"projectFile"},"startedMs":94931}
+nemo43-native-evidence: wrote /tmp/nemo43-smoke/final-busy-release/evidence.json
+nemo43-native-evidence {"attached":true,"captures":["media-pending","media-busy-progress","media-busy-complete"],"elapsedMs":94932,"errors":[],"event":"stage_ready","evidence":"/tmp/nemo43-smoke/final-busy-release/evidence.json","lingerMs":1200,"phase":"final-busy","readyFile":"/tmp/nemo43-smoke/final-busy-release/ready.json"}
+[nemo43-busy-release: exited; cursor=5517]

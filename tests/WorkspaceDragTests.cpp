@@ -8,9 +8,14 @@
 #include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDropEvent>
 #include <QFile>
 #include <QGuiApplication>
 #include <QJsonDocument>
+#include <QJsonObject>
+#include <QMimeData>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -842,32 +847,39 @@ TEST_F(WorkspaceDragTest, SubnetParameterPopoutExposesEditsAndReordersRows) {
     QTest::qWait(20);
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphEditExposedParameters"));
     QTest::qWait(40);
-    auto* popup = window->findChild<QObject*>(QStringLiteral("subnetParametersPopup"));
+    auto* popup = window->findChild<QQuickWindow*>(QStringLiteral("subnetParametersWindow"));
     ASSERT_NE(popup, nullptr);
-    ASSERT_TRUE(popup->property("opened").toBool());
-    EXPECT_TRUE(item("subnetParametersHint")->isVisible());
-    EXPECT_EQ(item("subnetParametersLinkState")->property("text").toString(), QStringLiteral("Local subnet"));
+    ASSERT_TRUE(popup->isVisible());
+    const auto editorItem = [popup](const QString& name) { return visual(popup->contentItem(), name); };
+    const auto editorCenter = [&editorItem](const QString& name) {
+        auto* found = editorItem(name);
+        return found->mapToScene(QPointF(found->width() / 2, found->height() / 2)).toPoint();
+    };
+    EXPECT_TRUE(editorItem("subnetParametersHint")->isVisible());
 
-    // A promoted source parameter appears as an ordered row with an editable
-    // label and its muted source identity.
-    const auto exposed = viewerController.subnetExposure(network, subnet).value(QStringLiteral("rows")).toList();
-    ASSERT_TRUE(exposed.isEmpty());
-    ASSERT_TRUE(viewerController.promoteParameter(definition, source, "color", ""));
-    ASSERT_TRUE(viewerController.error().isEmpty()) << viewerController.error().toStdString();
+    // Author an exposure through the searchable picker, not a direct call to
+    // the controller that bypasses the real authoring UI.
+    QTest::mouseClick(popup, Qt::LeftButton, Qt::NoModifier, editorCenter("subnetAddParameter"));
+    auto* search = editorItem("subnetParameterSearch");
+    ASSERT_NE(search, nullptr);
+    search->setProperty("text", QStringLiteral("ExposeSource.color"));
+    QTest::qWait(40);
+    auto* candidates = editorItem("subnetParameterCandidates");
+    ASSERT_NE(candidates, nullptr);
+    QTest::mouseClick(popup, Qt::LeftButton, Qt::NoModifier, candidates->mapToScene(QPointF(60, 14)).toPoint());
+    QTest::qWait(40);
+    QTest::mouseClick(popup, Qt::LeftButton, Qt::NoModifier, editorCenter("subnetAddParameter"));
     QTest::qWait(40);
     const auto rows = viewerController.subnetExposure(network, subnet).value(QStringLiteral("rows")).toList();
     ASSERT_EQ(rows.size(), 1);
     const auto exposedId = rows.first().toMap().value(QStringLiteral("id")).toString();
-    auto* label = item("subnetExposedLabel_" + exposedId);
+    auto* label = editorItem("subnetExposedLabel_" + exposedId);
     ASSERT_NE(label, nullptr);
-    EXPECT_EQ(label->property("text").toString(), QStringLiteral("Color"));
-    EXPECT_EQ(item("subnetExposedSource_" + exposedId)->property("text").toString(),
-              QStringLiteral("ExposeSource.color"));
 
     // Renaming the exposed label is one undoable command.
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("subnetExposedLabel_" + exposedId));
+    QTest::mouseClick(popup, Qt::LeftButton, Qt::NoModifier, editorCenter("subnetExposedLabel_" + exposedId));
     label->setProperty("text", QStringLiteral("Tint"));
-    QTest::keyClick(window, Qt::Key_Return);
+    QTest::keyClick(popup, Qt::Key_Return);
     QTest::qWait(40);
     EXPECT_EQ(viewerController.subnetExposure(network, subnet)
                   .value(QStringLiteral("rows"))
@@ -886,7 +898,7 @@ TEST_F(WorkspaceDragTest, SubnetParameterPopoutExposesEditsAndReordersRows) {
                   .toMap()
                   .value(QStringLiteral("name"))
                   .toString(),
-              QStringLiteral("Color"));
+              rows.first().toMap().value(QStringLiteral("name")).toString());
 
     // Removing the exposure leaves the definition parameter authored value and
     // the row disappears; the popout stays open with its hint.
@@ -895,10 +907,36 @@ TEST_F(WorkspaceDragTest, SubnetParameterPopoutExposesEditsAndReordersRows) {
     ASSERT_NE(definitionNode, nullptr);
     const auto authored = definitionNode->params.count("color");
 
-    // A second exposure gives the popout authored order; dragging the first
-    // row's handle past the second reorders the controls as one command.
-    ASSERT_TRUE(viewerController.promoteParameter(definition, merge, "operation", ""));
-    ASSERT_TRUE(viewerController.error().isEmpty()) << viewerController.error().toStdString();
+    // Exercise the cross-window MIME receiver with native Qt drag/drop events.
+    // Cancellation and wrong-scope/duplicate drops must not author anything.
+    auto* dropArea = editorItem("subnetParametersDropArea");
+    ASSERT_NE(dropArea, nullptr);
+    auto dropPoint = dropArea->mapToScene(QPointF(30, 65));
+    QMimeData mime;
+    const auto setPayload = [&](const QString& scope) {
+        mime.setData("application/x-nemo-parameter",
+                     QJsonDocument(QJsonObject{{"networkId", scope}, {"nodeId", merge}, {"parameterKey", "operation"}})
+                         .toJson(QJsonDocument::Compact));
+    };
+    const auto enterDrop = [&](Qt::DropActions actions = Qt::CopyAction) {
+        QDragEnterEvent enter(dropPoint.toPoint(), actions, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(popup, &enter);
+        return enter.isAccepted();
+    };
+    setPayload(network);
+    EXPECT_FALSE(enterDrop());
+    QDragLeaveEvent rejectedLeave;
+    QCoreApplication::sendEvent(popup, &rejectedLeave);
+    EXPECT_EQ(viewerController.subnetExposure(network, subnet).value("rows").toList().size(), 1);
+    setPayload(definition);
+    ASSERT_TRUE(enterDrop()) << popup->property("message").toString().toStdString();
+    QDragLeaveEvent leave;
+    QCoreApplication::sendEvent(popup, &leave);
+    EXPECT_EQ(viewerController.subnetExposure(network, subnet).value("rows").toList().size(), 1);
+    ASSERT_TRUE(enterDrop()) << popup->property("message").toString().toStdString();
+    QDropEvent drop(dropPoint, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(popup, &drop);
+    EXPECT_TRUE(drop.isAccepted());
     QTest::qWait(40);
     const auto order = [&] {
         QVariantList ids;
@@ -908,39 +946,45 @@ TEST_F(WorkspaceDragTest, SubnetParameterPopoutExposesEditsAndReordersRows) {
         return ids;
     };
     ASSERT_EQ(order().size(), 2);
+    EXPECT_FALSE(enterDrop());
+    QCoreApplication::sendEvent(popup, &rejectedLeave);
+    EXPECT_EQ(order().size(), 2);
     const auto firstId = order().at(0).toString();
-    EXPECT_NE(item("subnetExposedHandle_" + firstId), nullptr);
-    // The handle's drop index is computed from the dragged row and forwarded to
-    // the child graph's authored order; the pointer gesture itself is exercised
-    // natively (QTest cannot drive a DragHandler's held-button stream).
-    QVariant reordered;
-    ASSERT_TRUE(QMetaObject::invokeMethod(popup, "moveRow", Q_RETURN_ARG(QVariant, reordered),
-                                          Q_ARG(QVariant, QVariant(firstId)), Q_ARG(QVariant, QVariant(1))));
+    // Reorder through the same window's native MIME receiver, not its command
+    // function. Insertion below the last row moves the first control to the end.
+    mime.clear();
+    mime.setData(
+        "application/x-nemo-exposure",
+        QJsonDocument(QJsonObject{{"networkId", definition}, {"exposureId", firstId}}).toJson(QJsonDocument::Compact));
+    dropPoint = dropArea->mapToScene(QPointF(30, dropArea->height() - 12));
+    ASSERT_TRUE(enterDrop(Qt::MoveAction));
+    QDropEvent reorder(dropPoint, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(popup, &reorder);
+    EXPECT_TRUE(reorder.isAccepted());
     QTest::qWait(60);
     EXPECT_EQ(order().at(1).toString(), firstId);
     ASSERT_TRUE(viewerController.undo());
     QTest::qWait(40);
     EXPECT_EQ(order().at(0).toString(), firstId);
 
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("subnetExposedRemove_" + firstId));
+    QTest::mouseClick(popup, Qt::LeftButton, Qt::NoModifier, editorCenter("subnetExposedRemove_" + firstId));
     QTest::qWait(40);
     ASSERT_EQ(order().size(), 1);
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
-                      center("subnetExposedRemove_" + order().at(0).toString()));
+    QTest::mouseClick(popup, Qt::LeftButton, Qt::NoModifier,
+                      editorCenter("subnetExposedRemove_" + order().at(0).toString()));
     QTest::qWait(40);
     EXPECT_TRUE(order().isEmpty());
-    EXPECT_TRUE(popup->property("opened").toBool());
-    EXPECT_TRUE(item("subnetParametersHint")->isVisible());
+    EXPECT_TRUE(popup->isVisible());
+    EXPECT_TRUE(editorItem("subnetParametersHint")->isVisible());
     const auto* afterRemove =
         projectSession.document().network(definition.toULongLong()).graph().node(source.toULongLong());
     ASSERT_NE(afterRemove, nullptr);
     EXPECT_EQ(afterRemove->params.count("color"), authored);
 
-    // The popout is nonmodal and floats above the workspace; close it before
-    // driving the node's context menu so the menu receives the right-click.
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("subnetParametersClose"));
+    // Close the tool window before exercising the graph context menu.
+    popup->close();
     QTest::qWait(40);
-    EXPECT_FALSE(popup->property("opened").toBool());
+    EXPECT_FALSE(popup->isVisible());
 
     // The context menu duplicates a linked occurrence and detaches only the
     // selected one; the occurrence query reports the shared then local state.

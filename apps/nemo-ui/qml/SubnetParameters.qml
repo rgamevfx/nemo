@@ -3,399 +3,515 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Nemo
 
-// Owner-approved nonmodal authoring surface for a subnet's exposed parameters
-// (issue #49). It floats above the workspace, stays open while the artist
-// navigates into the child graph and drags parameters from the ordinary
-// Parameters inspector, and is presentation state only: every edit it makes is
-// a shared document command with its own undo step.
-Popup {
+// A transient tool window, not a scene popup. The target remains independent
+// of graph selection; persistent edits still belong to the shared commands.
+ApplicationWindow {
     id: subnetParameters
+    objectName: "subnetParametersWindow"
+    required property var controller
+    required property var theme
 
-    objectName: "subnetParametersPopup"
-    modal: false
-    focus: false
-    // The graph keeps its own Escape handling; the popout closes only from its
-    // own control so an in-flight gesture is never stolen.
-    closePolicy: Popup.NoAutoClose
-    padding: 0
-    width: 292
-    height: Math.min(360, header.height + body.implicitHeight + 10)
+    // Match the main window's chrome and native system move/resize gestures.
+    // Qt.Tool keeps this above Nemo without a desktop-wide always-on-top flag.
+    flags: Qt.Tool | Qt.FramelessWindowHint
+    modality: Qt.NonModal
+    visible: false
+    width: 460
+    height: 480
+    minimumWidth: 380
+    minimumHeight: 340
+    title: "Edit exposed parameters" + (available ? " — " + exposure.name : "")
+    color: theme.panel
+    font.family: "Inter"
+    font.pixelSize: theme.fontSize
+    palette: transientParent.palette
 
-    property var controller: null
-    property var theme: null
-    // Occurrence the popout was opened for. Kept across scope navigation so
-    // the surface does not follow the active graph.
+    header: Rectangle {
+        height: 34
+        color: subnetParameters.theme.header
+        MouseArea {
+            objectName: "subnetParametersMoveArea"
+            anchors.fill: parent
+            onPressed: subnetParameters.startSystemMove()
+        }
+        Label {
+            anchors.left: parent.left
+            anchors.leftMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Edit exposed parameters"
+            color: subnetParameters.theme.text
+        }
+        ChromeButton {
+            objectName: "subnetParametersClose"
+            anchors.right: parent.right
+            anchors.rightMargin: 4
+            anchors.verticalCenter: parent.verticalCenter
+            theme: subnetParameters.theme
+            text: "×"
+            implicitWidth: 28
+            Accessible.name: "Close exposed parameter editor"
+            onClicked: subnetParameters.close()
+        }
+    }
+    MouseArea {
+        objectName: "subnetParametersResize"
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        width: 12
+        height: 12
+        z: 10
+        cursorShape: Qt.SizeFDiagCursor
+        onPressed: subnetParameters.startSystemResize(Qt.RightEdge | Qt.BottomEdge)
+        Label {
+            anchors.centerIn: parent
+            text: "⌟"
+            color: subnetParameters.theme.muted
+        }
+    }
+
     property string panelNetworkId: ""
     property string panelNodeId: ""
+    property string parentPath: ""
     property var exposure: ({})
     property string message: ""
+    property bool pickerOpen: false
+    property var candidates: []
+    property int insertionIndex: -1
+    readonly property bool available: exposure.available === true
+    readonly property string definition: available ? String(exposure.definition) : ""
+    readonly property var rows: available ? exposure.rows : []
+    readonly property int rowHeight: 46
+    readonly property string linkLabel: !available ? "Unavailable" : exposure.linkState === "local" ? "Local subnet" : "Shared definition"
+    readonly property var filteredCandidates: candidates.filter(function (candidate) {
+            var query = search.text.trim().toLowerCase();
+            return (candidate.source + " " + candidate.label).toLowerCase().indexOf(query) >= 0;
+        })
 
-    readonly property string definition: exposure && exposure.definition !== undefined
-                                         ? String(exposure.definition) : ""
-    readonly property var rows: exposure && exposure.rows !== undefined ? exposure.rows : []
-    readonly property string linkLabel: exposure && String(exposure.linkState) === "local" ? "Local subnet"
-                                       : exposure && String(exposure.linkState) === "shared" ? "Shared definition"
-                                                                                             : "Linked instance"
-
-    function openFor(networkId, nodeId) {
-        panelNetworkId = String(networkId || "");
-        panelNodeId = String(nodeId || "");
+    function openFor(networkId, nodeId, path) {
+        panelNetworkId = String(networkId);
+        panelNodeId = String(nodeId);
+        parentPath = String(path || "");
         message = "";
+        pickerOpen = false;
+        search.text = "";
         refresh();
-        if (!opened)
-            open();
+        show();
+        raise();
+        requestActivate();
     }
 
     function refresh() {
-        if (!controller || panelNetworkId.length === 0 || panelNodeId.length === 0) {
-            exposure = ({});
+        exposure = panelNetworkId.length && controller ? controller.subnetExposure(panelNetworkId, panelNodeId) : ({});
+        if (pickerOpen)
+            refreshCandidates();
+    }
+
+    function refreshCandidates() {
+        var result = [];
+        if (available) {
+            var nodes = controller.graphSnapshot(definition).nodes || [];
+            for (var n = 0; n < nodes.length; ++n) {
+                var node = nodes[n];
+                // Formal terminals and subnet occurrences have no directly
+                // promotable catalog parameters. Do not fabricate a schema.
+                if (!/^\d+$/.test(String(node.id)) || node.instance)
+                    continue;
+                var inspector = controller.parameterInspector(definition, String(node.id));
+                var sections = inspector.sections || [];
+                for (var s = 0; s < sections.length; ++s) {
+                    var parameters = sections[s].parameters || [];
+                    for (var p = 0; p < parameters.length; ++p) {
+                        var parameter = parameters[p];
+                        result.push({
+                                "networkId": definition,
+                                "nodeId": String(node.id),
+                                "parameterKey": String(parameter.key),
+                                "label": String(parameter.label),
+                                "source": String(node.name) + "." + parameter.key,
+                                "type": String(parameter.type)
+                            });
+                    }
+                }
+            }
+        }
+        result.sort(function (a, b) {
+                return a.source.localeCompare(b.source);
+            });
+        candidates = result;
+    }
+
+    function exposedIndex(payload) {
+        for (var i = 0; i < rows.length; ++i) {
+            if (String(rows[i].node) === String(payload.nodeId) && String(rows[i].key) === String(payload.parameterKey))
+                return i;
+        }
+        return -1;
+    }
+
+    function rejection(payload) {
+        if (!available)
+            return "This subnet is no longer available.";
+        if (!payload || String(payload.networkId) !== definition)
+            return "Choose a parameter from this subnet's own graph.";
+        if (payload.exposureId) {
+            for (var i = 0; i < rows.length; ++i)
+                if (String(rows[i].id) === String(payload.exposureId))
+                    return "";
+            return "This exposure is no longer available.";
+        }
+        if (!/^\d+$/.test(String(payload.nodeId)) || !String(payload.parameterKey || "").length)
+            return "This drag does not identify a parameter.";
+        if (exposedIndex(payload) >= 0)
+            return "This parameter is already exposed.";
+        return "";
+    }
+
+    function dragPayload(drag) {
+        var formats = drag.formats;
+        var type = formats.indexOf("application/x-nemo-parameter") >= 0 ? "application/x-nemo-parameter" : formats.indexOf("application/x-nemo-exposure") >= 0 ? "application/x-nemo-exposure" : "";
+        if (!type.length)
+            return null;
+        try {
+            return JSON.parse(drag.getDataAsString(type));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function dropParameter(payload, index) {
+        message = rejection(payload);
+        if (message.length)
+            return false;
+        if (!controller.promoteParameter(definition, String(payload.nodeId), String(payload.parameterKey), "", index)) {
+            message = controller.error;
+            return false;
+        }
+        return true;
+    }
+
+    function renameRow(id, name) {
+        if (!available)
+            return;
+        if (!name.trim().length) {
+            message = "An exposed parameter needs a label.";
             return;
         }
-        exposure = controller.subnetExposure(panelNetworkId, panelNodeId);
+        message = controller.renameExposedParameter(definition, id, name.trim()) ? "" : controller.error;
     }
 
-    function reject(reason) {
-        message = reason;
+    function removeRow(id) {
+        if (available)
+            message = controller.removeExposedParameter(definition, id) ? "" : controller.error;
     }
 
-    // Row actions for the delegate. The delegate calls these through a bound
-    // reference rather than reaching for the popup id from inside a handler.
-    function renameRow(parameterId, newName) {
-        if (!controller || newName.length === 0 || parameterId.length === 0)
-            return;
-        if (controller.renameExposedParameter(definition, parameterId, newName))
-            message = "";
+    function moveRow(id, index) {
+        if (available)
+            message = controller.moveExposedParameter(definition, id, index) ? "" : controller.error;
     }
 
-    function removeRow(parameterId) {
-        if (!controller || parameterId.length === 0)
-            return;
-        if (controller.removeExposedParameter(definition, parameterId))
-            message = "";
+    function acceptDrop(payload, index) {
+        if (!payload.exposureId)
+            return dropParameter(payload, index);
+        var from = -1;
+        for (var i = 0; i < rows.length; ++i)
+            if (String(rows[i].id) === String(payload.exposureId))
+                from = i;
+        var destination = Math.max(0, Math.min(rows.length - 1, index - (from < index ? 1 : 0)));
+        if (from < 0)
+            return false;
+        if (destination === from)
+            return true;
+        moveRow(String(payload.exposureId), destination);
+        return message.length === 0;
     }
 
-    function moveRow(parameterId, index) {
-        if (!controller || parameterId.length === 0)
-            return;
-        controller.moveExposedParameter(definition, parameterId, index);
-    }
-
-    // A drop only promotes a parameter dragged from this subnet's own
-    // definition; anything else is reported rather than exposing an unrelated
-    // parameter. The payload carries source identities, never a copy.
-    function acceptsPayload(payload) {
-        return !!payload && String(payload.networkId) === definition
-               && String(payload.parameterKey || "").length > 0;
-    }
-
-    function dropParameter(payload) {
-        if (!acceptsPayload(payload)) {
-            reject("Drag a parameter from this subnet's own graph.");
-            return;
-        }
-        if (controller.promoteParameter(String(payload.networkId), String(payload.nodeId),
-                                        String(payload.parameterKey), ""))
-            message = "";
-    }
-
-    onClosed: {
+    onClosing: {
         panelNetworkId = "";
         panelNodeId = "";
         exposure = ({});
+        candidates = [];
+        pickerOpen = false;
         message = "";
     }
-
     Connections {
         target: subnetParameters.controller
         function onGraphChanged() {
-            subnetParameters.refresh();
+            if (subnetParameters.visible)
+                Qt.callLater(subnetParameters.refresh);
         }
     }
-
-    background: Rectangle {
-        color: subnetParameters.theme ? subnetParameters.theme.panel : "#1e2023"
-        border.color: subnetParameters.theme ? subnetParameters.theme.border : "#30343a"
-        border.width: 1
-        radius: subnetParameters.theme ? subnetParameters.theme.radius : 7
+    Shortcut {
+        sequences: [StandardKey.Undo]
+        context: Qt.WindowShortcut
+        onActivated: subnetParameters.controller.undo()
+    }
+    Shortcut {
+        sequences: [StandardKey.Redo]
+        context: Qt.WindowShortcut
+        onActivated: subnetParameters.controller.redo()
     }
 
-    // Children of a Popup are parented into its content item by the popup
-    // itself. Declaring them here (instead of assigning `contentItem`) keeps
-    // every id in this file's creation context, so row and drop handlers
-    // resolve the popup normally.
     ColumnLayout {
         anchors.fill: parent
-        spacing: 0
+        anchors.margins: 12
+        spacing: 8
 
-        // --- header: drag handle, link state, close --------------------------
-        Rectangle {
-            id: header
-            objectName: "subnetParametersHeader"
+        Label {
             Layout.fillWidth: true
-            implicitHeight: 28
-            color: subnetParameters.theme ? subnetParameters.theme.panel : "#1e2023"
-
-            DragHandler {
-                id: headerDrag
-                target: null
-                acceptedButtons: Qt.LeftButton
-                property real grabX: 0
-                property real grabY: 0
-                property point grabScene
-                onActiveChanged: {
-                    if (!active)
-                        return;
-                    grabX = subnetParameters.x;
-                    grabY = subnetParameters.y;
-                    grabScene = headerDrag.centroid.scenePosition;
-                }
-                onCentroidChanged: {
-                    if (!active)
-                        return;
-                    var point = headerDrag.centroid.scenePosition;
-                    subnetParameters.x = grabX + (point.x - grabScene.x);
-                    subnetParameters.y = grabY + (point.y - grabScene.y);
-                }
-            }
-
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                text: "Subnet Parameters"
-                color: subnetParameters.theme ? subnetParameters.theme.text : "#dce0e6"
-                font.pixelSize: subnetParameters.theme ? subnetParameters.theme.fontSize : 11
-            }
-
-            Text {
-                id: linkLabelText
+            text: subnetParameters.parentPath + (subnetParameters.available ? " / " + subnetParameters.exposure.name : "")
+            elide: Text.ElideMiddle
+            color: subnetParameters.theme.text
+            font.bold: true
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            Label {
                 objectName: "subnetParametersLinkState"
-                anchors.right: closeButton.left
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
                 text: subnetParameters.linkLabel
-                color: subnetParameters.theme ? subnetParameters.theme.muted : "#979ea8"
-                font.pixelSize: subnetParameters.theme ? subnetParameters.theme.fontSize : 11
+                color: subnetParameters.theme.muted
+                Layout.fillWidth: true
             }
-
-            Button {
-                id: closeButton
-                objectName: "subnetParametersClose"
-                anchors.right: parent.right
-                anchors.rightMargin: 4
-                anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: 20
-                implicitHeight: 20
-                padding: 0
-                Accessible.name: "Close subnet parameters"
-                onClicked: subnetParameters.close()
-                contentItem: Text {
-                    text: "\u00d7"
-                    color: closeButton.down ? (subnetParameters.theme ? subnetParameters.theme.accent : "#3485f6")
-                                            : (subnetParameters.theme ? subnetParameters.theme.text : "#dce0e6")
-                    font.pixelSize: 14
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+            ChromeButton {
+                objectName: "subnetAddParameter"
+                theme: subnetParameters.theme
+                text: subnetParameters.pickerOpen ? "Hide browser" : "Add parameter…"
+                enabled: subnetParameters.available
+                onClicked: {
+                    subnetParameters.pickerOpen = !subnetParameters.pickerOpen;
+                    if (subnetParameters.pickerOpen) {
+                        subnetParameters.refreshCandidates();
+                        search.forceActiveFocus();
+                    }
                 }
-                background: Rectangle {
-                    radius: subnetParameters.theme ? subnetParameters.theme.smallRadius : 4
-                    color: closeButton.hovered ? (subnetParameters.theme ? subnetParameters.theme.hover : "#343940")
-                                               : "transparent"
-                }
-            }
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 1
-                color: subnetParameters.theme ? subnetParameters.theme.border : "#30343a"
             }
         }
-
-        // --- exposed rows and drop target ------------------------------------
-        Item {
-            id: body
+        Rectangle {
             Layout.fillWidth: true
-            implicitHeight: bodyColumn.implicitHeight + 8
+            Layout.fillHeight: true
+            Layout.minimumHeight: 90
+            color: subnetParameters.theme.field
+            border.color: subnetParameters.theme.border
+            radius: subnetParameters.theme.smallRadius
 
-            DropArea {
-                id: parameterDrop
-                objectName: "subnetParametersDropArea"
+            ListView {
+                id: exposureList
+                objectName: "subnetExposedList"
                 anchors.fill: parent
-                // Only parameters dragged from this subnet's own definition are
-                // meaningful; a payload from any other graph is rejected with a
-                // reason instead of exposing an unrelated parameter.
-                onEntered: function (drag) {
-                    if (subnetParameters.acceptsPayload(drag.source))
-                        drag.acceptProposedAction();
+                anchors.margins: 4
+                clip: true
+                model: subnetParameters.rows
+                ScrollBar.vertical: ScrollBar {
                 }
-                onDropped: function (drop) {
-                    subnetParameters.dropParameter(drop.source);
-                }
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.margins: 3
-                    radius: subnetParameters.theme ? subnetParameters.theme.smallRadius : 4
-                    color: "transparent"
-                    border.width: parameterDrop.containsDrag ? 1 : 0
-                    border.color: subnetParameters.theme ? subnetParameters.theme.accent : "#3485f6"
-                }
-            }
-
-            Column {
-                id: bodyColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.topMargin: 4
-                spacing: 2
-
-                Text {
-                    objectName: "subnetParametersHint"
-                    visible: subnetParameters.rows.length === 0 && subnetParameters.message.length === 0
-                    width: parent.width
-                    leftPadding: 8
-                    rightPadding: 8
-                    wrapMode: Text.WordWrap
-                    text: "Drag a parameter label from the Parameters inspector to expose it here."
-                    color: subnetParameters.theme ? subnetParameters.theme.muted : "#979ea8"
-                    font.pixelSize: subnetParameters.theme ? subnetParameters.theme.fontSize : 11
-                }
-
-                Text {
-                    objectName: "subnetParametersMessage"
-                    visible: subnetParameters.message.length > 0
-                    width: parent.width
-                    leftPadding: 8
-                    rightPadding: 8
-                    wrapMode: Text.WordWrap
-                    text: subnetParameters.message
-                    color: subnetParameters.theme ? subnetParameters.theme.accent : "#3485f6"
-                    font.pixelSize: subnetParameters.theme ? subnetParameters.theme.fontSize : 11
-                }
-
-                Repeater {
-                    model: subnetParameters.rows
-                    delegate: Rectangle {
-                        id: exposedRow
-                        required property var modelData
-                        required property int index
-                        readonly property string rowId: modelData && modelData.id !== undefined
-                                                        ? String(modelData.id) : ""
-                        readonly property real rowPitch: height + bodyColumn.spacing
-                        readonly property var host: subnetParameters
-
-                        objectName: "subnetExposedRow_" + rowId
-                        width: bodyColumn.width
-                        height: 26
-                        color: "transparent"
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 6
-                            anchors.rightMargin: 6
-                            spacing: 4
-
-                            Text {
-                                objectName: "subnetExposedHandle_" + exposedRow.rowId
-                                Layout.preferredWidth: 12
-                                text: "\u2261"
-                                color: exposedRow.modelData && exposedRow.modelData.name !== undefined
-                                       ? (subnetParameters.theme ? subnetParameters.theme.muted : "#979ea8") : "transparent"
-                                font.pixelSize: 12
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                Accessible.name: "Reorder handle"
-                                DragHandler {
-                                    id: reorderHandle
-                                    target: null
-                                    acceptedButtons: Qt.LeftButton
-                                    property real releasedOffset: 0
-                                    onActiveChanged: {
-                                        if (active)
-                                            return;
-                                        var destination = Math.round((exposedRow.y + reorderHandle.releasedOffset)
-                                                                     / exposedRow.rowPitch);
-                                        destination = Math.max(0, Math.min(exposedRow.host.rows.length - 1, destination));
-                                        exposedRow.host.moveRow(exposedRow.rowId, destination);
+                delegate: Rectangle {
+                    id: exposedRow
+                    required property var modelData
+                    required property int index
+                    readonly property string rowId: String(modelData.id)
+                    objectName: "subnetExposedRow_" + rowId
+                    width: exposureList.width
+                    height: subnetParameters.rowHeight
+                    color: index % 2 ? subnetParameters.theme.field : subnetParameters.theme.panel
+                    Drag.dragType: Drag.Automatic
+                    Drag.supportedActions: Qt.MoveAction
+                    Drag.proposedAction: Qt.MoveAction
+                    Drag.mimeData: ({
+                            "application/x-nemo-exposure": JSON.stringify({
+                                    "networkId": subnetParameters.definition,
+                                    "exposureId": exposedRow.rowId
+                                })
+                        })
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 4
+                        spacing: 6
+                        Label {
+                            objectName: "subnetExposedHandle_" + exposedRow.rowId
+                            text: "≡"
+                            color: subnetParameters.theme.muted
+                            Layout.preferredWidth: 18
+                            Accessible.name: "Reorder " + exposedRow.modelData.name
+                            HoverHandler {
+                                cursorShape: Qt.OpenHandCursor
+                            }
+                            DragHandler {
+                                id: reorderDrag
+                                target: null
+                                acceptedButtons: Qt.LeftButton
+                                onActiveChanged: {
+                                    if (!active) {
+                                        exposedRow.Drag.active = false;
+                                        return;
                                     }
-                                    onCentroidChanged: {
-                                        if (active)
-                                            reorderHandle.releasedOffset = reorderHandle.centroid.scenePosition.y
-                                                                           - reorderHandle.centroid.pressPosition.y;
-                                    }
+                                    exposedRow.grabToImage(function (image) {
+                                            if (!reorderDrag.active)
+                                                return;
+                                            exposedRow.Drag.imageSource = image.url;
+                                            exposedRow.Drag.active = true;
+                                        });
                                 }
                             }
-
-                            Rectangle {
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 1
+                            TextField {
+                                id: labelField
+                                objectName: "subnetExposedLabel_" + exposedRow.rowId
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 22
-                                radius: subnetParameters.theme ? subnetParameters.theme.smallRadius : 4
-                                color: labelField.activeFocus
-                                       ? (subnetParameters.theme ? subnetParameters.theme.field : "#24272c")
-                                       : "transparent"
-                                border.width: labelField.activeFocus ? 1 : 0
-                                border.color: subnetParameters.theme ? subnetParameters.theme.accent : "#3485f6"
-
-                                TextInput {
-                                    id: labelField
-                                    objectName: "subnetExposedLabel_" + exposedRow.rowId
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 3
-                                    anchors.rightMargin: 3
-                                    text: exposedRow.modelData ? String(exposedRow.modelData.name) : ""
-                                    color: subnetParameters.theme ? subnetParameters.theme.text : "#dce0e6"
-                                    font.pixelSize: subnetParameters.theme ? subnetParameters.theme.fontSize : 11
-                                    selectByMouse: true
-                                    verticalAlignment: TextInput.AlignVCenter
-                                    Accessible.name: "Exposed parameter label"
-                                    Component.onCompleted: text = exposedRow.modelData ? String(exposedRow.modelData.name) : ""
-                                    onEditingFinished: {
-                                        if (text.trim().length === 0 || text === String(exposedRow.modelData.name))
-                                            return;
-                                        exposedRow.host.renameRow(exposedRow.rowId, text.trim());
-                                    }
-                                }
-                            }
-
-                            Text {
-                                objectName: "subnetExposedSource_" + exposedRow.rowId
-                                Layout.preferredWidth: 104
-                                text: exposedRow.modelData ? String(exposedRow.modelData.source) : ""
-                                color: subnetParameters.theme ? subnetParameters.theme.muted : "#979ea8"
-                                font.pixelSize: subnetParameters.theme ? subnetParameters.theme.fontSize : 11
-                                elide: Text.ElideMiddle
-                                horizontalAlignment: Text.AlignRight
-                                verticalAlignment: Text.AlignVCenter
-                            }
-
-                            Button {
-                                id: removeButton
-                                objectName: "subnetExposedRemove_" + exposedRow.rowId
-                                Layout.preferredWidth: 18
-                                Layout.preferredHeight: 18
-                                padding: 0
-                                Accessible.name: "Remove exposure"
-                                onClicked: exposedRow.host.removeRow(exposedRow.rowId)
-                                contentItem: Text {
-                                    text: "\u2212"
-                                    color: removeButton.down ? (subnetParameters.theme ? subnetParameters.theme.accent : "#3485f6")
-                                                             : (subnetParameters.theme ? subnetParameters.theme.muted : "#979ea8")
-                                    font.pixelSize: 13
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
+                                implicitHeight: 23
+                                padding: 3
+                                text: exposedRow.modelData.name
+                                selectByMouse: true
+                                Accessible.name: "Exposed parameter label"
                                 background: Rectangle {
-                                    radius: subnetParameters.theme ? subnetParameters.theme.smallRadius : 4
-                                    color: removeButton.hovered
-                                           ? (subnetParameters.theme ? subnetParameters.theme.hover : "#343940") : "transparent"
+                                    color: labelField.activeFocus ? subnetParameters.theme.raised : "transparent"
+                                    border.width: labelField.activeFocus ? 1 : 0
+                                    border.color: subnetParameters.theme.accent
+                                    radius: subnetParameters.theme.smallRadius
+                                }
+                                onEditingFinished: {
+                                    if (text.trim() !== String(exposedRow.modelData.name))
+                                        subnetParameters.renameRow(exposedRow.rowId, text);
+                                }
+                                Keys.onEscapePressed: function (event) {
+                                    text = exposedRow.modelData.name;
+                                    focus = false;
+                                    event.accepted = true;
                                 }
                             }
+                            Label {
+                                objectName: "subnetExposedSource_" + exposedRow.rowId
+                                Layout.fillWidth: true
+                                text: exposedRow.modelData.source + "  ·  " + exposedRow.modelData.type
+                                color: subnetParameters.theme.muted
+                                elide: Text.ElideMiddle
+                            }
+                        }
+                        ChromeButton {
+                            objectName: "subnetExposedRemove_" + exposedRow.rowId
+                            theme: subnetParameters.theme
+                            text: "−"
+                            implicitWidth: 26
+                            Accessible.name: "Remove exposure " + exposedRow.modelData.name
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Remove exposure; keep the source parameter and animation"
+                            onClicked: subnetParameters.removeRow(exposedRow.rowId)
                         }
                     }
                 }
             }
+            Label {
+                objectName: "subnetParametersHint"
+                anchors.centerIn: parent
+                width: parent.width - 32
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                visible: subnetParameters.rows.length === 0
+                text: subnetParameters.available ? "Drag a parameter label here\nor choose Add parameter…" : String(subnetParameters.exposure.reason || "This subnet is unavailable.")
+                color: subnetParameters.theme.muted
+            }
+            DropArea {
+                id: parameterDrop
+                objectName: "subnetParametersDropArea"
+                anchors.fill: exposureList
+                keys: ["application/x-nemo-parameter", "application/x-nemo-exposure"]
+                property var payload: null
+                function updatePosition(y) {
+                    subnetParameters.insertionIndex = Math.max(0, Math.min(subnetParameters.rows.length, Math.floor((y + exposureList.contentY + subnetParameters.rowHeight / 2) / subnetParameters.rowHeight)));
+                }
+                onEntered: function (drag) {
+                    payload = subnetParameters.dragPayload(drag);
+                    subnetParameters.message = subnetParameters.rejection(payload);
+                    drag.accepted = subnetParameters.message.length === 0;
+                    if (drag.accepted)
+                        updatePosition(drag.y);
+                }
+                onPositionChanged: function (drag) {
+                    updatePosition(drag.y);
+                }
+                onExited: subnetParameters.insertionIndex = -1
+                onDropped: function (drop) {
+                    var incoming = subnetParameters.dragPayload(drop);
+                    subnetParameters.message = subnetParameters.rejection(incoming);
+                    if (!subnetParameters.message.length && subnetParameters.acceptDrop(incoming, subnetParameters.insertionIndex))
+                        drop.accept(incoming.exposureId ? Qt.MoveAction : Qt.CopyAction);
+                    subnetParameters.insertionIndex = -1;
+                }
+            }
+            Rectangle {
+                x: 4
+                y: Math.max(4, Math.min(parent.height - 5, 4 + subnetParameters.insertionIndex * subnetParameters.rowHeight - exposureList.contentY))
+                width: parent.width - 8
+                height: 2
+                visible: parameterDrop.containsDrag && subnetParameters.insertionIndex >= 0
+                color: subnetParameters.theme.accent
+            }
+            Timer {
+                interval: 35
+                repeat: true
+                running: parameterDrop.containsDrag
+                onTriggered: {
+                    var y = parameterDrop.drag.y;
+                    var delta = y < 24 ? -8 : y > exposureList.height - 24 ? 8 : 0;
+                    exposureList.contentY = Math.max(0, Math.min(Math.max(0, exposureList.contentHeight - exposureList.height), exposureList.contentY + delta));
+                    parameterDrop.updatePosition(y);
+                }
+            }
+        }
+        ColumnLayout {
+            visible: subnetParameters.pickerOpen
+            Layout.fillWidth: true
+            spacing: 4
+            TextField {
+                id: search
+                objectName: "subnetParameterSearch"
+                Layout.fillWidth: true
+                placeholderText: "Find node or parameter…"
+                color: subnetParameters.theme.text
+                placeholderTextColor: subnetParameters.theme.muted
+                selectByMouse: true
+                Keys.onEscapePressed: subnetParameters.pickerOpen = false
+            }
+            ListView {
+                id: candidateList
+                objectName: "subnetParameterCandidates"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 130
+                clip: true
+                model: subnetParameters.filteredCandidates
+                ScrollBar.vertical: ScrollBar {
+                }
+                delegate: ItemDelegate {
+                    id: candidate
+                    required property var modelData
+                    width: candidateList.width
+                    height: 28
+                    readonly property bool alreadyExposed: subnetParameters.exposedIndex(modelData) >= 0
+                    enabled: !alreadyExposed
+                    text: modelData.source + "  ·  " + modelData.type + (alreadyExposed ? "  — exposed" : "")
+                    onClicked: subnetParameters.dropParameter(modelData, subnetParameters.rows.length)
+                }
+                Label {
+                    anchors.centerIn: parent
+                    visible: candidateList.count === 0
+                    text: "No matching parameters"
+                    color: subnetParameters.theme.muted
+                }
+            }
+        }
+        Label {
+            objectName: "subnetParametersMessage"
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: subnetParameters.message
+            color: subnetParameters.theme.accent
+            wrapMode: Text.WordWrap
+        }
+        Label {
+            Layout.fillWidth: true
+            text: subnetParameters.available && subnetParameters.exposure.linkState !== "local" ? "Interface changes affect linked instances. Values stay instance-local." : "Edit values in the Parameters inspector. Changes are undoable."
+            color: subnetParameters.theme.muted
+            wrapMode: Text.WordWrap
         }
     }
 }

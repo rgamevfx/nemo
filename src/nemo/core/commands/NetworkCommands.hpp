@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,7 +17,7 @@ Command unpackInstanceCommand(NetworkInstanceId instance);
 
 Command renameInterfaceCommand(NetworkId network, PortDirection direction, InterfacePortId port, std::string name);
 Command promoteParameterCommand(NetworkId network, NodeId node, std::string key, std::string exposedName,
-                                std::shared_ptr<InterfacePortId> created = {});
+                                std::shared_ptr<InterfacePortId> created = {}, std::optional<std::size_t> index = {});
 Command renameExposedParameterCommand(NetworkId network, InterfacePortId parameter, std::string name);
 Command removeExposedParameterCommand(NetworkId network, InterfacePortId parameter);
 Command moveExposedParameterCommand(NetworkId network, InterfacePortId parameter, std::size_t index);

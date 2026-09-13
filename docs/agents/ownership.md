@@ -253,12 +253,21 @@ occurrence's definition and link state, `promoteParameter`/`renameExposedParamet
 `removeExposedParameter`/`moveExposedParameter` submit the shared commands, and
 `parameterInspector` presents a subnet occurrence as its definition's exposed
 controls, addressed by `exposed:<id>` so a renamed or duplicate label can never
-retarget an edit. `SubnetParameters.qml` is the
-[owner-approved #49 popout](https://github.com/rgamevfx/nemo/issues/49#issuecomment-5640704767):
-it accepts individual parameter-label drags from the shared inspector, with
-inline exposure labels, reorder and removal, while ordinary values keep using
-the shared Parameters inspector. Removing an exposure leaves the definition
-parameter, its authored value and its animation untouched.
+retarget an edit. `SubnetParameters.qml` is the modeless, transient tool window
+for the [owner-approved #49 authoring correction](https://github.com/rgamevfx/nemo/issues/49#issuecomment-5655521991).
+It remains attached to the selected subnet while graph/inspector context changes.
+The shared inspector sends stable identities as `application/x-nemo-parameter`
+native drag MIME data across windows; the authoring window also discovers sources
+through `graphSnapshot`/`parameterInspector` for its searchable Add parameter list.
+Label edits, native drag reorder and removal use the same commands. Promotion
+accepts an optional insertion index as one atomic history entry (also available
+as `index` on the CLI `promote-parameter` operation). Ordinary values remain in the
+shared inspector. Removing exposure leaves source values and animation untouched.
+The owner accepted the revised native window on 2026-09-13. The UI regression
+uses the source picker and Qt drag/drop events at the separate-window MIME
+boundary, including rejection/cancellation and reorder, rather than bypassing
+the UI with promotion calls. OS/compositor pointer gestures remain a native
+review check, not a claim made by the offscreen event test.
 
 Effect additions use the catalog entry point above, including the category
 metadata that drives shared colors and search. They do not extend this gesture

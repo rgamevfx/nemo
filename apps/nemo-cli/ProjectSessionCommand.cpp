@@ -188,9 +188,11 @@ template <typename T>
                                             command.at("name").get<std::string>());
     }
     if (op == "promote-parameter") {
-        return nemo::promoteParameterCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
-                                             command.at("key").get<std::string>(),
-                                             command.at("name").get<std::string>());
+        return nemo::promoteParameterCommand(
+            networkIdAt(command), nodeIdAt(command, "node_id"), command.at("key").get<std::string>(),
+            command.at("name").get<std::string>(), {},
+            command.contains("index") ? std::optional<std::size_t>(unsignedValue<std::size_t>(command, "index"))
+                                      : std::nullopt);
     }
     if (op == "rename-exposed-parameter") {
         return nemo::renameExposedParameterCommand(networkIdAt(command), interfaceIdAt(command),

@@ -380,6 +380,35 @@ TEST(NetworkCommandsTest, ExposedParameterRejectsDuplicateSourceAndReorders) {
     EXPECT_EQ(exposedIds(), (std::vector<InterfacePortId>{*tint, *mix}));
 }
 
+TEST(NetworkCommandsTest, ParameterInsertionAndUndoAreOneAtomicEdit) {
+    Document document;
+    const auto network = document.addNetwork("Editable");
+    auto& definition = document.network(network);
+    const auto color = definition.graph().addNode("constcolor", "color");
+    const auto transform = definition.graph().addNode("transform", "transform");
+    CommandStack history(document);
+    history.push(promoteParameterCommand(network, color, "color", "Tint"));
+    history.push(promoteParameterCommand(network, transform, "rotate", "Angle"));
+    const auto names = [&] {
+        std::vector<std::string> result;
+        for (const auto& parameter : document.network(network).exposedParameters())
+            result.push_back(parameter.name);
+        return result;
+    };
+    history.push(promoteParameterCommand(network, transform, "scale", "Size", {}, 1));
+    EXPECT_EQ(names(), (std::vector<std::string>{"Tint", "Size", "Angle"}));
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(names(), (std::vector<std::string>{"Tint", "Angle"}));
+    ASSERT_TRUE(history.redo());
+    EXPECT_EQ(names(), (std::vector<std::string>{"Tint", "Size", "Angle"}));
+    const auto beforeRejection = saveDocument(document);
+    EXPECT_THROW(history.push(promoteParameterCommand(network, transform, "scale", "Duplicate", {}, 0)),
+                 GraphException);
+    EXPECT_EQ(saveDocument(document), beforeRejection);
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(names(), (std::vector<std::string>{"Tint", "Angle"}));
+}
+
 TEST(NetworkCommandsTest, ExposureInterfaceLayoutAndOwnershipSurviveSerialization) {
     Document document;
     const auto rootId = document.rootNetworkId();

@@ -2063,12 +2063,13 @@ QVariantMap ViewerController::subnetExposure(const QString& networkValue, const 
 }
 
 bool ViewerController::promoteParameter(const QString& networkValue, const QVariant& nodeValue, const QString& keyValue,
-                                        const QString& nameValue) {
+                                        const QString& nameValue, int index) {
     const auto network = networkIdentity(networkValue);
     const auto node = graphIdentity(nodeValue);
     const auto key = keyValue.trimmed();
-    if (!network || !node || key.isEmpty()) {
-        fail(QStringLiteral("promote requires a definition network, a node and a parameter key"));
+    if (!network || !node || key.isEmpty() || index < -1) {
+        fail(QStringLiteral(
+            "promote requires a definition network, a node, a parameter key and a valid insertion index"));
         return false;
     }
     try {
@@ -2085,7 +2086,8 @@ bool ViewerController::promoteParameter(const QString& networkValue, const QVari
                               ? QString::fromStdString(uniqueExposedName(definition, *spec, key.toStdString()))
                               : requested;
         return applyEdit(session_.submit(
-            promoteParameterCommand(*network, static_cast<NodeId>(*node), key.toStdString(), name.toStdString()),
+            promoteParameterCommand(*network, static_cast<NodeId>(*node), key.toStdString(), name.toStdString(), {},
+                                    index < 0 ? std::nullopt : std::optional<std::size_t>(index)),
             editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));

@@ -48,9 +48,8 @@ FocusScope {
     property alias headerTools: headerToolsComponent
 
     // --- identity helpers -------------------------------------------------
-
     function validIdentity(value) {
-        return value !== undefined && value !== null && String(value).length > 0
+        return value !== undefined && value !== null && String(value).length > 0;
     }
 
     function normalizedEntry(entry) {
@@ -59,7 +58,7 @@ FocusScope {
             "node": String(entry.node),
             "pinned": entry.pinned === true,
             "collapsed": entry.collapsed === true
-        }
+        };
     }
 
     function entryIndex(network, node) {
@@ -95,17 +94,16 @@ FocusScope {
     }
 
     // --- persistence ------------------------------------------------------
-
     function stateEntries() {
         var result = [];
         for (var i = 0; i < inspectors.length; ++i) {
             var entry = inspectors[i];
             result.push({
-                "network": String(entry.network),
-                "node": String(entry.node),
-                "pinned": entry.pinned === true,
-                "collapsed": entry.collapsed === true
-            });
+                    "network": String(entry.network),
+                    "node": String(entry.node),
+                    "pinned": entry.pinned === true,
+                    "collapsed": entry.collapsed === true
+                });
         }
         return result;
     }
@@ -170,7 +168,6 @@ FocusScope {
     }
 
     // --- accumulation -----------------------------------------------------
-
     function clampLimit(value) {
         return Math.max(1, Math.min(20, Math.round(Number(value))));
     }
@@ -213,11 +210,11 @@ FocusScope {
         var next = inspectors.slice();
         if (entryIndex(network, node) < 0) {
             next.unshift({
-                "network": String(network),
-                "node": String(node),
-                "pinned": false,
-                "collapsed": false
-            });
+                    "network": String(network),
+                    "node": String(node),
+                    "pinned": false,
+                    "collapsed": false
+                });
             inspectors = next;
             enforceLimit();
             saveState();
@@ -292,13 +289,12 @@ FocusScope {
 
     function revealTop() {
         Qt.callLater(function () {
-            if (inspectorScroll.contentItem)
-                inspectorScroll.contentItem.contentY = 0;
-        });
+                if (inspectorScroll.contentItem)
+                    inspectorScroll.contentItem.contentY = 0;
+            });
     }
 
     // --- refresh ----------------------------------------------------------
-
     function requestRefresh() {
         if (activeToken.length > 0) {
             refreshPending = true;
@@ -429,7 +425,6 @@ FocusScope {
     }
 
     // --- lifecycle --------------------------------------------------------
-
     Component.onCompleted: {
         restoreState();
         revision++;
@@ -476,7 +471,6 @@ FocusScope {
     }
 
     // --- header tools -----------------------------------------------------
-
     Component {
         id: headerToolsComponent
         Item {
@@ -603,7 +597,6 @@ FocusScope {
     }
 
     // --- shared scroll and columns ---------------------------------------
-
     ScrollView {
         id: inspectorScroll
         anchors.fill: parent
@@ -619,9 +612,7 @@ FocusScope {
             id: inspectorContent
             property real columnGap: 6
             property real minCardWidth: 260
-            property real columnWidth: parametersPanel.twoColumns
-                                           ? Math.max(minCardWidth, (inspectorScroll.availableWidth - columnGap) / 2)
-                                           : Math.max(minCardWidth, inspectorScroll.availableWidth)
+            property real columnWidth: parametersPanel.twoColumns ? Math.max(minCardWidth, (inspectorScroll.availableWidth - columnGap) / 2) : Math.max(minCardWidth, inspectorScroll.availableWidth)
             width: parametersPanel.twoColumns ? columnWidth * 2 + columnGap : columnWidth
             height: Math.max(leftInspectorColumn.implicitHeight, rightInspectorColumn.implicitHeight)
 
@@ -654,14 +645,12 @@ FocusScope {
     }
 
     // --- inspector card ---------------------------------------------------
-
     Component {
         id: inspectorCardComponent
         Rectangle {
             id: card
             property var delegateData: modelData
-            property string networkId: delegateData && delegateData.network !== undefined
-                                       ? String(delegateData.network) : ""
+            property string networkId: delegateData && delegateData.network !== undefined ? String(delegateData.network) : ""
             property string nodeId: delegateData && delegateData.node !== undefined ? String(delegateData.node) : ""
             property string inspectorId: card.nodeId
             property var inspectorState: delegateData
@@ -672,24 +661,16 @@ FocusScope {
                 parametersPanel.revision;
                 if (card.networkId.length === 0 || card.nodeId.length === 0 || !parametersPanel.controller)
                     return ({
-                        "available": false
-                    });
+                            "available": false
+                        });
                 return parametersPanel.controller.parameterInspector(card.networkId, card.nodeId);
             }
             readonly property bool available: inspector && inspector.available === true
-            readonly property string displayName: card.available
-                                                  ? (inspector.name !== undefined && String(inspector.name).length > 0
-                                                     ? String(inspector.name) : card.nodeId)
-                                                  : card.nodeId + " (unavailable)"
-            readonly property string displayType: card.available && inspector.type !== undefined
-                                                  ? String(inspector.type) : ""
-            readonly property string category: card.available && inspector.category !== undefined
-                                               ? String(inspector.category) : "Utility"
-            readonly property string instanceId: card.available && inspector.instanceId !== undefined
-                                                 ? String(inspector.instanceId) : ""
-            readonly property string unavailableReason: card.available ? ""
-                                                          : (inspector && inspector.reason !== undefined
-                                                             ? String(inspector.reason) : "")
+            readonly property string displayName: card.available ? (inspector.name !== undefined && String(inspector.name).length > 0 ? String(inspector.name) : card.nodeId) : card.nodeId + " (unavailable)"
+            readonly property string displayType: card.available && inspector.type !== undefined ? String(inspector.type) : ""
+            readonly property string category: card.available && inspector.category !== undefined ? String(inspector.category) : "Utility"
+            readonly property string instanceId: card.available && inspector.instanceId !== undefined ? String(inspector.instanceId) : ""
+            readonly property string unavailableReason: card.available ? "" : (inspector && inspector.reason !== undefined ? String(inspector.reason) : "")
             readonly property var sections: card.available && inspector.sections ? inspector.sections : []
 
             // The section shell only rebuilds when the schema shape changes, so
@@ -709,9 +690,9 @@ FocusScope {
                         keys.push(String(params[j].key));
                     signature += String(section.name) + ":" + keys.join(",") + "|";
                     model.push({
-                        "name": String(section.name),
-                        "keys": keys
-                    });
+                            "name": String(section.name),
+                            "keys": keys
+                        });
                 }
                 if (signature === sectionSignature)
                     return;
@@ -774,8 +755,7 @@ FocusScope {
                         implicitWidth: 19
                         objectName: "collapse_" + card.nodeId
                         padding: 0
-                        onClicked: parametersPanel.setCollapsed(card.networkId, card.nodeId,
-                                                                card.inspectorState.collapsed !== true)
+                        onClicked: parametersPanel.setCollapsed(card.networkId, card.nodeId, card.inspectorState.collapsed !== true)
                         contentItem: Text {
                             text: collapseButton.text
                             color: theme.muted
@@ -814,8 +794,7 @@ FocusScope {
                         implicitHeight: 23
                         padding: 0
                         Accessible.name: card.inspectorState.pinned ? "Unpin inspector" : "Pin inspector"
-                        onClicked: parametersPanel.setPinned(card.networkId, card.nodeId,
-                                                             card.inspectorState.pinned !== true)
+                        onClicked: parametersPanel.setPinned(card.networkId, card.nodeId, card.inspectorState.pinned !== true)
                         contentItem: Canvas {
                             id: pinGlyph
                             onPaint: {
@@ -898,7 +877,6 @@ FocusScope {
     }
 
     // --- section ----------------------------------------------------------
-
     Component {
         id: sectionComponent
         Rectangle {
@@ -958,7 +936,6 @@ FocusScope {
     }
 
     // --- parameter row ----------------------------------------------------
-
     Component {
         id: parameterComponent
         Item {
@@ -976,22 +953,14 @@ FocusScope {
                 parametersPanel.revision;
                 if (!parametersPanel.controller || parameterRow.parameterKey.length === 0)
                     return "none";
-                return String(parametersPanel.controller.nodeParameterKeyStatus(parameterRow.networkId, parameterRow.nodeId,
-                                                                                parameterRow.parameterKey));
+                return String(parametersPanel.controller.nodeParameterKeyStatus(parameterRow.networkId, parameterRow.nodeId, parameterRow.parameterKey));
             }
             readonly property real numberValue: parameter ? Number(parameter.value) : 0
             readonly property bool integerParameter: parameter && String(parameter.type) === "integer"
-            readonly property real numberStep: parameterRow.integerParameter
-                                                ? 1 : (parameter && parameter.step !== undefined
-                                                       ? Number(parameter.step) : 0.01)
-            readonly property string formattedNumber: parameterRow.integerParameter
-                                                      ? String(Math.round(parameterRow.numberValue))
-                                                      : parametersPanel.formatParameter(parameterRow.numberValue,
-                                                                                         parameter && parameter.step !== undefined
-                                                                                         ? parameter.step : undefined)
+            readonly property real numberStep: parameterRow.integerParameter ? 1 : (parameter && parameter.step !== undefined ? Number(parameter.step) : 0.01)
+            readonly property string formattedNumber: parameterRow.integerParameter ? String(Math.round(parameterRow.numberValue)) : parametersPanel.formatParameter(parameterRow.numberValue, parameter && parameter.step !== undefined ? parameter.step : undefined)
             readonly property bool boolValue: parameter ? parameter.value === true : false
-            readonly property string stringValue: parameter && parameter.value !== undefined
-                                                  ? String(parameter.value) : ""
+            readonly property string stringValue: parameter && parameter.value !== undefined ? String(parameter.value) : ""
             readonly property int choiceIndex: {
                 if (!parameter || !parameter.choices)
                     return 0;
@@ -1004,57 +973,51 @@ FocusScope {
                     return "transparent";
                 return Qt.rgba(Number(value[0]), Number(value[1]), Number(value[2]), value.length > 3 ? Number(value[3]) : 1);
             }
-            readonly property bool hasCustomEditor: parameter && parameter.editor !== undefined
-                                                    && String(parameter.editor).length > 0
+            readonly property bool hasCustomEditor: parameter && parameter.editor !== undefined && String(parameter.editor).length > 0
             readonly property string editorId: hasCustomEditor ? String(parameter.editor) : ""
             readonly property var editorInfo: {
                 if (!parameterRow.hasCustomEditor || typeof parameterEditors === "undefined" || !parameterEditors)
                     return ({
-                        "available": false,
-                        "source": "",
-                        "reason": ""
-                    });
+                            "available": false,
+                            "source": "",
+                            "reason": ""
+                        });
                 return parameterEditors.editor(parameterRow.editorId);
             }
             readonly property bool editorAvailable: parameterRow.editorInfo && parameterRow.editorInfo.available === true
             readonly property bool customEditorActive: parameterRow.hasCustomEditor && parameterRow.editorAvailable
 
-            // Identity payload consumed by the #49 exposure popout. Numeric ids
-            // stay decimal strings so JavaScript never rounds them.
-            readonly property var dragPayload: QtObject {
-                readonly property string networkId: parameterRow.networkId
-                readonly property string instanceId: parameterRow.instanceId
-                readonly property string nodeId: parameterRow.nodeId
-                readonly property string parameterKey: parameterRow.parameterKey
-            }
+            // Capture identities at drag start. Native MIME transport crosses
+            // QQuickWindow boundaries without moving the inspector's layout.
+            property var dragPayload: ({})
 
             implicitHeight: Math.max(labelText.implicitHeight, controlColumn.implicitHeight)
             Layout.fillWidth: true
 
-            Drag.active: labelDrag.active
-            Drag.source: parameterRow.dragPayload
-            Drag.hotSpot: Qt.point(0, 0)
+            Drag.dragType: Drag.Automatic
+            Drag.supportedActions: Qt.CopyAction
+            Drag.proposedAction: Qt.CopyAction
+            Drag.mimeData: ({
+                    "application/x-nemo-parameter": JSON.stringify(parameterRow.dragPayload)
+                })
 
             function componentValue(index) {
                 var value = parameter ? parameter.value : null;
                 if (!value || value.length === undefined || index >= value.length)
                     return "0";
-                return parametersPanel.formatParameter(Number(value[index]),
-                                                       parameter.step !== undefined ? parameter.step : undefined);
+                return parametersPanel.formatParameter(Number(value[index]), parameter.step !== undefined ? parameter.step : undefined);
             }
 
             function keyAtFrame() {
                 if (!parametersPanel.controller || parameterRow.parameterKey.length === 0)
                     return false;
-                return parametersPanel.controller.keyNodeParameter(parameterRow.networkId, parameterRow.nodeId,
-                                                                   parameterRow.parameterKey);
+                return parametersPanel.controller.keyNodeParameter(parameterRow.networkId, parameterRow.nodeId, parameterRow.parameterKey);
             }
 
             function removeKey() {
                 if (!parametersPanel.controller || parameterRow.parameterKey.length === 0)
                     return false;
-                return parametersPanel.controller.removeNodeParameterKey(parameterRow.networkId, parameterRow.nodeId,
-                                                                         parameterRow.parameterKey);
+                return parametersPanel.controller.removeNodeParameterKey(parameterRow.networkId, parameterRow.nodeId, parameterRow.parameterKey);
             }
 
             function altOnly(mouse) {
@@ -1076,9 +1039,7 @@ FocusScope {
                         id: labelText
                         anchors.fill: parent
                         objectName: "label_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                        text: parameterRow.parameter && parameterRow.parameter.label !== undefined
-                              && String(parameterRow.parameter.label).length > 0
-                              ? String(parameterRow.parameter.label) : parameterRow.parameterKey
+                        text: parameterRow.parameter && parameterRow.parameter.label !== undefined && String(parameterRow.parameter.label).length > 0 ? String(parameterRow.parameter.label) : parameterRow.parameterKey
                         color: theme.text
                         font.pixelSize: theme.fontSize
                         elide: Text.ElideRight
@@ -1089,7 +1050,9 @@ FocusScope {
                     // press is released so the label stays selectable for #49.
                     MouseArea {
                         anchors.fill: parent
-                        onPressed: parameterRow.altOnly(mouse)
+                        onPressed: function (mouse) {
+                            parameterRow.altOnly(mouse);
+                        }
                         onClicked: parameterRow.keyAtFrame()
                     }
 
@@ -1097,14 +1060,30 @@ FocusScope {
                         id: labelDrag
                         target: null
                         acceptedButtons: Qt.LeftButton
+                        acceptedModifiers: Qt.NoModifier
+                        enabled: !parameterRow.parameterKey.startsWith("exposed:")
+                        onActiveChanged: {
+                            if (!active) {
+                                parameterRow.Drag.active = false;
+                                return;
+                            }
+                            parameterRow.dragPayload = {
+                                "networkId": parameterRow.networkId,
+                                "instanceId": parameterRow.instanceId,
+                                "nodeId": parameterRow.nodeId,
+                                "parameterKey": parameterRow.parameterKey
+                            };
+                            labelRegion.grabToImage(function (image) {
+                                    if (!labelDrag.active)
+                                        return;
+                                    parameterRow.Drag.imageSource = image.url;
+                                    parameterRow.Drag.active = true;
+                                });
+                        }
                     }
 
                     ToolTip.visible: labelHover.hovered
-                    ToolTip.text: parameterRow.keyStatus === "key"
-                                  ? "Keyed at frame " + parametersPanel.controller.frame
-                                  : parameterRow.keyStatus === "animated"
-                                    ? "Animated; Alt-click to key at frame " + parametersPanel.controller.frame
-                                    : "Alt-click to add a key at frame " + parametersPanel.controller.frame
+                    ToolTip.text: (parameterRow.parameterKey.startsWith("exposed:") ? "Exposed control. " : "Drag to Edit exposed parameters. ") + (parameterRow.keyStatus === "key" ? "Keyed at frame " + parametersPanel.controller.frame : parameterRow.keyStatus === "animated" ? "Animated; Alt-click to key at frame " + parametersPanel.controller.frame : "Alt-click to add a key at frame " + parametersPanel.controller.frame)
                     HoverHandler {
                         id: labelHover
                     }
@@ -1119,15 +1098,13 @@ FocusScope {
                     radius: theme.smallRadius
                     color: keyIndicatorMouse.containsMouse ? theme.hover : "transparent"
                     border.width: 1
-                    border.color: parameterRow.keyStatus === "key" ? theme.accent
-                                  : parameterRow.keyStatus === "animated" ? theme.muted : theme.border
+                    border.color: parameterRow.keyStatus === "key" ? theme.accent : parameterRow.keyStatus === "animated" ? theme.muted : theme.border
                     Accessible.name: "Animation key status: " + parameterRow.keyStatus
                     Accessible.description: "Click to insert or update a key at the current frame. Right-click to remove a key at the current frame."
 
                     Text {
                         anchors.centerIn: parent
-                        text: parameterRow.keyStatus === "key" ? "\u25c6"
-                              : parameterRow.keyStatus === "animated" ? "\u25c7" : "\u25cb"
+                        text: parameterRow.keyStatus === "key" ? "\u25c6" : parameterRow.keyStatus === "animated" ? "\u25c7" : "\u25cb"
                         color: parameterRow.keyStatus === "none" ? theme.muted : theme.accent
                         font.pixelSize: 15
                     }
@@ -1160,11 +1137,7 @@ FocusScope {
                     }
 
                     ToolTip.visible: indicatorHover.hovered
-                    ToolTip.text: parameterRow.keyStatus === "key"
-                                  ? "Key at frame " + parametersPanel.controller.frame + ". Click to update; right-click to remove."
-                                  : parameterRow.keyStatus === "animated"
-                                    ? "Animated parameter. Click to add a key at frame " + parametersPanel.controller.frame
-                                    : "Not animated. Click to add a key at frame " + parametersPanel.controller.frame
+                    ToolTip.text: parameterRow.keyStatus === "key" ? "Key at frame " + parametersPanel.controller.frame + ". Click to update; right-click to remove." : parameterRow.keyStatus === "animated" ? "Animated parameter. Click to add a key at frame " + parametersPanel.controller.frame : "Not animated. Click to add a key at frame " + parametersPanel.controller.frame
                     HoverHandler {
                         id: indicatorHover
                     }
@@ -1185,10 +1158,8 @@ FocusScope {
                             id: numberSlider
                             property int revision: parameterRow.revision
                             objectName: "slider_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                            from: parameterRow.parameter && parameterRow.parameter.minimum !== undefined
-                                  ? Number(parameterRow.parameter.minimum) : 0
-                            to: parameterRow.parameter && parameterRow.parameter.maximum !== undefined
-                                ? Number(parameterRow.parameter.maximum) : 1
+                            from: parameterRow.parameter && parameterRow.parameter.minimum !== undefined ? Number(parameterRow.parameter.minimum) : 0
+                            to: parameterRow.parameter && parameterRow.parameter.maximum !== undefined ? Number(parameterRow.parameter.maximum) : 1
                             stepSize: parameterRow.numberStep
                             snapMode: Slider.SnapAlways
                             value: parameterRow.numberValue
@@ -1244,10 +1215,8 @@ FocusScope {
                             selectByMouse: true
                             horizontalAlignment: Text.AlignRight
                             validator: DoubleValidator {
-                                bottom: parameterRow.parameter && parameterRow.parameter.minimum !== undefined
-                                        ? Number(parameterRow.parameter.minimum) : -1e9
-                                top: parameterRow.parameter && parameterRow.parameter.maximum !== undefined
-                                     ? Number(parameterRow.parameter.maximum) : 1e9
+                                bottom: parameterRow.parameter && parameterRow.parameter.minimum !== undefined ? Number(parameterRow.parameter.minimum) : -1e9
+                                top: parameterRow.parameter && parameterRow.parameter.maximum !== undefined ? Number(parameterRow.parameter.maximum) : 1e9
                             }
                             onEditingFinished: {
                                 if (pendingNumericEdit)
@@ -1347,8 +1316,7 @@ FocusScope {
 
                     // vector2/vector3: N numeric fields (owner-approved new design).
                     RowLayout {
-                        visible: (parameterRow.kind === "vector2" || parameterRow.kind === "vector3")
-                                 && !parameterRow.customEditorActive
+                        visible: (parameterRow.kind === "vector2" || parameterRow.kind === "vector3") && !parameterRow.customEditorActive
                         Layout.fillWidth: true
                         spacing: 4
 
@@ -1506,10 +1474,7 @@ FocusScope {
                     Text {
                         visible: parameterRow.hasCustomEditor && !parameterRow.editorAvailable
                         Layout.fillWidth: true
-                        text: parameterRow.editorInfo && parameterRow.editorInfo.reason !== undefined
-                              && String(parameterRow.editorInfo.reason).length > 0
-                              ? String(parameterRow.editorInfo.reason)
-                              : "Parameter editor '" + parameterRow.editorId + "' is unavailable"
+                        text: parameterRow.editorInfo && parameterRow.editorInfo.reason !== undefined && String(parameterRow.editorInfo.reason).length > 0 ? String(parameterRow.editorInfo.reason) : "Parameter editor '" + parameterRow.editorId + "' is unavailable"
                         color: theme.muted
                         font.pixelSize: Math.max(9, theme.fontSize - 1)
                         elide: Text.ElideRight
@@ -1517,10 +1482,7 @@ FocusScope {
                     }
 
                     Text {
-                        visible: parameterRow.kind !== "" && parameterRow.kind !== "number"
-                                 && parameterRow.kind !== "choice" && parameterRow.kind !== "toggle"
-                                 && parameterRow.kind !== "vector2" && parameterRow.kind !== "vector3"
-                                 && parameterRow.kind !== "color" && parameterRow.kind !== "string"
+                        visible: parameterRow.kind !== "" && parameterRow.kind !== "number" && parameterRow.kind !== "choice" && parameterRow.kind !== "toggle" && parameterRow.kind !== "vector2" && parameterRow.kind !== "vector3" && parameterRow.kind !== "color" && parameterRow.kind !== "string"
                         text: "Unsupported parameter kind '" + parameterRow.kind + "'"
                         color: theme.muted
                         font.pixelSize: theme.fontSize

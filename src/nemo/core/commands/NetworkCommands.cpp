@@ -811,10 +811,14 @@ Command renameInterfaceCommand(NetworkId network, PortDirection direction, Inter
 }
 
 Command promoteParameterCommand(NetworkId network, NodeId node, std::string key, std::string exposedName,
-                                std::shared_ptr<InterfacePortId> created) {
-    return Command{"promote network parameter", [network, node, key = std::move(key),
-                                                 exposedName = std::move(exposedName), created](Document& candidate) {
-                       const auto id = candidate.network(network).addExposedParameter(node, key, exposedName);
+                                std::shared_ptr<InterfacePortId> created, std::optional<std::size_t> index) {
+    return Command{"promote network parameter",
+                   [network, node, key = std::move(key), exposedName = std::move(exposedName), created,
+                    index](Document& candidate) {
+                       auto& definition = candidate.network(network);
+                       const auto id = definition.addExposedParameter(node, key, exposedName);
+                       if (index)
+                           definition.moveExposedParameter(id, *index);
                        if (created)
                            *created = id;
                    }};

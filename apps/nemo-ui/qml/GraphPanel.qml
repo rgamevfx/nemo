@@ -1282,8 +1282,7 @@ FocusScope {
                     // Local subnets keep the neutral terminal border; a linked
                     // or shared definition is called out in the accent so the
                     // card distinguishes reuse at a glance.
-                    border.color: String(modelData.linkState || "local") === "local"
-                                  ? graphPanel.theme.border : graphPanel.theme.accent
+                    border.color: String(modelData.linkState || "local") === "local" ? graphPanel.theme.border : graphPanel.theme.accent
                     border.width: 1
                     z: 6
                     Text {
@@ -1623,8 +1622,7 @@ FocusScope {
     Shortcut {
         sequences: [StandardKey.Copy]
         context: Qt.WindowShortcut
-        enabled: graphPanel.activeFocus && graphPanel.selectedNodeIds.length > 0
-                 && !graphSearchPopup.opened && !graphContextMenu.opened
+        enabled: graphPanel.activeFocus && graphPanel.selectedNodeIds.length > 0 && !graphSearchPopup.opened && !graphContextMenu.opened
         onActivated: controller.copyGraphSelection(graphPanel.graphNetworkId, graphPanel.selectedNodeIds)
     }
     Shortcut {
@@ -1826,8 +1824,12 @@ FocusScope {
             enabled: graphPanel.contextSubnetId().length > 0
             onTriggered: {
                 var id = graphPanel.contextSubnetId();
-                if (id.length)
-                    subnetParameters.openFor(graphPanel.graphNetworkId, id);
+                if (id.length) {
+                    var path = graphPanel.scopeBreadcrumbs.map(function (crumb) {
+                            return String(crumb.name || crumb.networkId);
+                        }).join(" / ");
+                    subnetParameters.openFor(graphPanel.graphNetworkId, id, path);
+                }
             }
         }
         MenuItem {
@@ -1851,9 +1853,7 @@ FocusScope {
                 var id = graphPanel.contextSubnetId(), node = graphPanel.nodeById(id);
                 if (!node)
                     return;
-                controller.duplicateLinkedInstance(graphPanel.graphNetworkId, id,
-                                                  graphPanel.nodeX(node) + graphPanel.nodeWidth + 24,
-                                                  graphPanel.nodeY(node));
+                controller.duplicateLinkedInstance(graphPanel.graphNetworkId, id, graphPanel.nodeX(node) + graphPanel.nodeWidth + 24, graphPanel.nodeY(node));
             }
         }
         MenuSeparator {
@@ -1891,6 +1891,13 @@ FocusScope {
         id: subnetParameters
         controller: graphPanel.controller
         theme: graphPanel.theme
+        transientParent: graphPanel.Window.window
+        Connections {
+            target: typeof projectFile !== "undefined" ? projectFile : null
+            function onProjectOpened() {
+                subnetParameters.close();
+            }
+        }
     }
     Text {
         objectName: "graphErrorLabel"

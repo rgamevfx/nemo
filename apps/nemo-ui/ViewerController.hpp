@@ -120,9 +120,10 @@ public:
     // so the popout and inspector never guess at link state.
     Q_INVOKABLE QVariantMap subnetExposure(const QString& networkId, const QVariant& nodeId) const;
     // Promotes a definition-local parameter to a typed exposed control. An
-    // empty `name` derives a unique label from the source schema.
+    // empty `name` derives a unique label from the source schema. Index -1
+    // appends; an explicit insertion position is part of the same undo step.
     Q_INVOKABLE bool promoteParameter(const QString& networkId, const QVariant& nodeId, const QString& key,
-                                      const QString& name = {});
+                                      const QString& name = {}, int index = -1);
     Q_INVOKABLE bool renameExposedParameter(const QString& networkId, const QVariant& parameterId, const QString& name);
     Q_INVOKABLE bool removeExposedParameter(const QString& networkId, const QVariant& parameterId);
     Q_INVOKABLE bool moveExposedParameter(const QString& networkId, const QVariant& parameterId, int index);

@@ -1,0 +1,52 @@
+{
+  "ticket": 49,
+  "date": "2026-09-13",
+  "branch": "issue/49-parameter-window",
+  "increment": "Correct inspector dragging and replace the graph popup with a modeless parameter authoring window",
+  "authority": {
+    "pre_edit_contract": "https://github.com/rgamevfx/nemo/issues/49#issuecomment-5655399592",
+    "owner_acceptance": "https://github.com/rgamevfx/nemo/issues/49#issuecomment-5655521991",
+    "direction": "Owner reviewed the running application, said Looks good, and authorized completion, commit, merge and push. No subagents were used."
+  },
+  "implementation": {
+    "window": "SubnetParameters.qml is a Qt.Tool ApplicationWindow, transient to Nemo, with the shared native move/resize pattern and close control. Its target does not follow graph selection; project replacement closes it.",
+    "promotion": "ParametersPanel.qml captures stable source identities and starts a native MIME drag with a drag image. The separate authoring window accepts application/x-nemo-parameter, rejects wrong-scope/duplicate drops, and offers a searchable source picker using existing queries.",
+    "ordering": "application/x-nemo-exposure carries reorder identity. Drop position and scroll feedback precede one command on accepted release; leaving/canceling publishes no edit.",
+    "ownership": "Existing catalog metadata, NetworkCommands and ProjectSession remain authoritative. Normal inspector values remain instance-local; removing exposure preserves source values and animation.",
+    "public_interface_change": "promoteParameterCommand accepts optional insertion index; ViewerController::promoteParameter accepts index (-1 appends); CLI promote-parameter accepts optional nonnegative index. Insertion is part of the promotion command, not a second undo step. No new dependencies or node types."
+  },
+  "verification": [
+    {
+      "command": "cmake --build --preset debug -j 4 && ctest --preset debug -j 4 --output-on-failure",
+      "result": "535/535 passed, zero failures, 36.58 seconds test time; one final full debug suite",
+      "log": "parameter-window-debug-v2.log"
+    },
+    {
+      "command": "cmake --build --preset release --target nemo-ui nemo-cli -j 2",
+      "result": "Application and CLI built successfully; release tests were not rerun"
+    },
+    {
+      "command": "build/debug/tests/nemo_core_tests --gtest_filter=NetworkCommandsTest.*",
+      "result": "13/13 passed, including ParameterInsertionAndUndoAreOneAtomicEdit"
+    },
+    {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows:Interactive.SubnetExposurePublishesTypedControlsWithInstanceLocalEdits",
+      "result": "Controller case passed. The event simulation initially omitted drag-leave between attempts; that was corrected. The final full suite passed both cases, including source-picker promotion, native Qt MIME receiver acceptance/rejection/cancellation, reorder, rename, removal and undo."
+    },
+    {
+      "command": "build/debug/apps/nemo-cli/nemo-cli project-session docs/evidence/assets/issue34-native-effects/workflow.nemo",
+      "result": "Nine JSON-line operations exercised insertion, save-as to temporary snapshots, undo, redo and negative-index rejection. Inserted order Angle, Size; one undo leaves Size. Invalid index returns invalid_request without advancing revision (6). Temporary snapshots removed; input project unchanged."
+    },
+    {
+      "command": "build/debug/apps/nemo-ui/nemo-ui --project docs/evidence/assets/issue34-native-effects/workflow.nemo --viewer-cache-dir /tmp/nemo49-review-cache",
+      "result": "Actual Wayland/Vulkan application and separate authoring window launched, observed visually, and reviewed by owner. An external temporary helper prepared ReviewSubnet and opened the inspector/window through real app queries/commands; it did not simulate pointer acceptance and was removed afterward. The user's running app was left untouched during tests."
+    }
+  ],
+  "limitations": [
+    "Automated drag coverage uses Qt events at the separate-window MIME boundary, not OS/compositor pointer injection. Native UI acceptance is the owner's review, not the offscreen test.",
+    "QtQml qmldir scanner messages and the dependency minizip mktemp linker warning remain. A pre-existing numeric inspector MouseArea signal-parameter deprecation warning was observed during user interaction; no unrelated warning cleanup was included.",
+    "No hosted CI, sanitizer suite, Windows execution or release full suite was added to this scoped correction. There is no new concurrent/shared ownership mechanism.",
+    "Animation acceptance remains owned by issue 50; formal image-interface editor design remains outside this parameter authoring correction, as recorded by the previous issue49 closeout."
+  ],
+  "cleanup": "Formatter-created backup files and temporary verification/setup files were removed. User-generated review autosaves were preserved and excluded from the commit."
+}

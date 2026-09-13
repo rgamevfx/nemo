@@ -218,6 +218,16 @@ FocusScope {
         var point = scenePoint(px, py), x = nodeX(node), y = nodeY(node);
         return point.x >= x + nodeWidth - 24 && point.x <= x + nodeWidth - 3 && point.y >= y + 3 && point.y <= y + 24 ? id : "";
     }
+    // The subnet the context menu acts on: the right-clicked node, or the sole
+    // selection when the menu was opened without a node under the cursor.
+    function contextSubnetId() {
+        var candidate = contextNodeId;
+        if (!candidate && selectedNodeIds.length === 1)
+            candidate = selectedNodeIds[0];
+        if (!candidate)
+            return "";
+        return isSubnet(nodeById(candidate)) ? String(candidate) : "";
+    }
     function enterSubnet(id) {
         var node = nodeById(id);
         if (!isSubnet(node) || !node.definition || !node.instance)
@@ -1269,7 +1279,11 @@ FocusScope {
                     transformOrigin: Item.TopLeft
                     radius: 3
                     color: graphPanel.theme.raised
-                    border.color: graphPanel.theme.border
+                    // Local subnets keep the neutral terminal border; a linked
+                    // or shared definition is called out in the accent so the
+                    // card distinguishes reuse at a glance.
+                    border.color: String(modelData.linkState || "local") === "local"
+                                  ? graphPanel.theme.border : graphPanel.theme.accent
                     border.width: 1
                     z: 6
                     Text {
@@ -1604,6 +1618,28 @@ FocusScope {
             }
         }
     }
+    // Graphical copy/paste of a graph selection. The clipboard is panel
+    // presentation state; each paste is one shared command and one undo step.
+    Shortcut {
+        sequences: [StandardKey.Copy]
+        context: Qt.WindowShortcut
+        enabled: graphPanel.activeFocus && graphPanel.selectedNodeIds.length > 0
+                 && !graphSearchPopup.opened && !graphContextMenu.opened
+        onActivated: controller.copyGraphSelection(graphPanel.graphNetworkId, graphPanel.selectedNodeIds)
+    }
+    Shortcut {
+        sequences: [StandardKey.Paste]
+        context: Qt.WindowShortcut
+        enabled: graphPanel.activeFocus && !graphSearchPopup.opened && !graphContextMenu.opened
+        onActivated: {
+            var point = graphPanel.creationPoint();
+            var created = controller.pasteGraphSelection(graphPanel.graphNetworkId, point.x, point.y);
+            if (!created.length)
+                return;
+            graphPanel.setSelection(String(created).split(","));
+            graphPanel.savePanelState();
+        }
+    }
     // Digits 1..9 attach the single selected node to viewer N. The core command
     // toggles, so pressing the same digit for the attached node detaches it.
     Shortcut {
@@ -1785,6 +1821,44 @@ FocusScope {
         MenuSeparator {
         }
         MenuItem {
+            objectName: "graphEditExposedParameters"
+            text: "Edit exposed parameters…"
+            enabled: graphPanel.contextSubnetId().length > 0
+            onTriggered: {
+                var id = graphPanel.contextSubnetId();
+                if (id.length)
+                    subnetParameters.openFor(graphPanel.graphNetworkId, id);
+            }
+        }
+        MenuItem {
+            objectName: "graphMakeIndependent"
+            text: "Make independent"
+            enabled: {
+                var node = graphPanel.nodeById(graphPanel.contextSubnetId());
+                return !!node && String(node.linkState) !== "local";
+            }
+            onTriggered: {
+                var node = graphPanel.nodeById(graphPanel.contextSubnetId());
+                if (node && node.instance !== undefined)
+                    controller.makeIndependent(String(node.instance));
+            }
+        }
+        MenuItem {
+            objectName: "graphDuplicateLinked"
+            text: "Duplicate (linked)"
+            enabled: graphPanel.contextSubnetId().length > 0
+            onTriggered: {
+                var id = graphPanel.contextSubnetId(), node = graphPanel.nodeById(id);
+                if (!node)
+                    return;
+                controller.duplicateLinkedInstance(graphPanel.graphNetworkId, id,
+                                                  graphPanel.nodeX(node) + graphPanel.nodeWidth + 24,
+                                                  graphPanel.nodeY(node));
+            }
+        }
+        MenuSeparator {
+        }
+        MenuItem {
             objectName: "graphDeleteSelection"
             text: "Delete"
             enabled: graphPanel.selectedNodeIds.length > 0
@@ -1812,6 +1886,11 @@ FocusScope {
                 controller.assignViewer(graphPanel.graphNetworkId, 0, String(graphPanel.selectedNodeIds[0]));
             }
         }
+    }
+    SubnetParameters {
+        id: subnetParameters
+        controller: graphPanel.controller
+        theme: graphPanel.theme
     }
     Text {
         objectName: "graphErrorLabel"

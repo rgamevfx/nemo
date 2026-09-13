@@ -1191,4 +1191,99 @@ TEST(Interactive, ParameterEditorRegistryRegistersAndResolvesEditors) {
     EXPECT_EQ(changed.count(), 3);
 }
 
+TEST(Interactive, SubnetExposurePublishesTypedControlsWithInstanceLocalEdits) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = controller.rootNetworkId();
+    const auto source = controller.createGraphNode(scope, "constcolor", "exposeSource", 0.0, 0.0, {}, {});
+    const auto merge = controller.createGraphNode(scope, "merge", "exposeMerge", 160.0, 0.0, {}, {});
+    const auto output = controller.createGraphNode(scope, "output", "exposeOutput", 320.0, 0.0, {}, {});
+    ASSERT_FALSE(source.isEmpty());
+    ASSERT_FALSE(merge.isEmpty());
+    ASSERT_FALSE(output.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, source, 0, merge, 0));
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, merge, 0, output, 0));
+    const auto subnet = controller.collapseSelection(scope, QVariantList{source, merge}, "Exposed");
+    ASSERT_FALSE(subnet.isEmpty()) << controller.error().toStdString();
+    const auto node = namedNode(controller, "Exposed");
+    const auto definition = node.value("definition").toString();
+    const auto instance = node.value("instance").toString();
+    ASSERT_FALSE(definition.isEmpty());
+    ASSERT_FALSE(instance.isEmpty());
+
+    ASSERT_TRUE(controller.promoteParameter(definition, source, "color", "")) << controller.error().toStdString();
+    const auto exposure = controller.subnetExposure(scope, subnet);
+    ASSERT_TRUE(exposure.value("available").toBool()) << exposure.value("reason").toString().toStdString();
+    EXPECT_EQ(exposure.value("linkState").toString(), QStringLiteral("local"));
+    const auto rows = exposure.value("rows").toList();
+    ASSERT_EQ(rows.size(), 1);
+    const auto row = rows.first().toMap();
+    EXPECT_EQ(row.value("key").toString(), QStringLiteral("color"));
+    EXPECT_EQ(row.value("node").toString(), source);
+    EXPECT_EQ(row.value("nodeName").toString(), QStringLiteral("exposeSource"));
+    EXPECT_EQ(row.value("source").toString(), QStringLiteral("exposeSource.color"));
+    const auto exposedId = row.value("id").toString();
+
+    // A subnet's ordinary inspector presents the exposed control, addressed by
+    // exposed identity rather than the editable label.
+    const auto inspector = controller.parameterInspector(scope, subnet);
+    ASSERT_TRUE(inspector.value("available").toBool()) << inspector.value("reason").toString().toStdString();
+    const auto sections = inspector.value("sections").toList();
+    ASSERT_EQ(sections.size(), 1);
+    const auto controls = sections.first().toMap().value("parameters").toList();
+    ASSERT_EQ(controls.size(), 1);
+    const auto control = controls.first().toMap();
+    EXPECT_EQ(control.value("key").toString(), QStringLiteral("exposed:") + exposedId);
+    EXPECT_EQ(control.value("kind").toString(), QStringLiteral("color"));
+
+    // Editing the control is one command gesture and an instance-local override:
+    // the definition-authored value of the child node stays untouched.
+    const auto token = controller.beginNodeParameterEdit(scope, subnet, control.value("key").toString());
+    ASSERT_FALSE(token.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdit(token, QVariantList{0.25, 0.5, 0.75, 1.0}));
+    ASSERT_TRUE(controller.commitNodeParameterEdit(token));
+    const auto edited = controller.parameterInspector(scope, subnet)
+                            .value("sections")
+                            .toList()
+                            .first()
+                            .toMap()
+                            .value("parameters")
+                            .toList()
+                            .first()
+                            .toMap()
+                            .value("value")
+                            .toList();
+    ASSERT_EQ(edited.size(), 4);
+    EXPECT_FLOAT_EQ(edited.at(0).toFloat(), 0.25F);
+    EXPECT_FLOAT_EQ(edited.at(2).toFloat(), 0.75F);
+    const auto* definitionNode =
+        session.document().network(definition.toULongLong()).graph().node(source.toULongLong());
+    ASSERT_NE(definitionNode, nullptr);
+    EXPECT_EQ(definitionNode->params.count("color"), 0U);
+    const auto* firstInstance = session.document().instance(instance.toULongLong());
+    ASSERT_NE(firstInstance, nullptr);
+    EXPECT_TRUE(firstInstance->params.contains(source.toULongLong()));
+
+    ASSERT_TRUE(controller.undo());
+    const auto* restoredInstance = session.document().instance(instance.toULongLong());
+    ASSERT_NE(restoredInstance, nullptr);
+    EXPECT_FALSE(restoredInstance->params.contains(source.toULongLong()));
+
+    ASSERT_TRUE(controller.renameExposedParameter(definition, exposedId, "Tint"));
+    ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    EXPECT_EQ(controller.subnetExposure(scope, subnet).value("rows").toList().first().toMap().value("name").toString(),
+              QStringLiteral("Tint"));
+
+    // Duplicating shares the definition; Make Independent detaches only the
+    // selected occurrence.
+    const auto copyNode = controller.duplicateLinkedInstance(scope, subnet, 420.0, 80.0);
+    ASSERT_FALSE(copyNode.isEmpty()) << controller.error().toStdString();
+    EXPECT_EQ(controller.subnetExposure(scope, subnet).value("linkState").toString(), QStringLiteral("shared"));
+    EXPECT_EQ(namedNode(controller, "Exposed").value("linkState").toString(), QStringLiteral("shared"));
+    ASSERT_TRUE(controller.makeIndependent(instance));
+    EXPECT_EQ(controller.subnetExposure(scope, subnet).value("linkState").toString(), QStringLiteral("local"));
+    EXPECT_EQ(controller.subnetExposure(scope, copyNode).value("linkState").toString(), QStringLiteral("linked"));
+}
+
 }  // namespace

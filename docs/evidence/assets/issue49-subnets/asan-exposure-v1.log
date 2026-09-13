@@ -1,0 +1,56 @@
+# ASan+UBSan affected model/command/UI cases for issue #49
+$ LSAN_OPTIONS=suppressions=tests/lsan_suppressions.txt build/asan/tests/nemo_core_tests --gtest_filter='NetworkCommandsTest.*'
+Running main() from /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest_main.cc
+Note: Google Test filter = NetworkCommandsTest.*
+[==========] Running 12 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 12 tests from NetworkCommandsTest
+[ RUN      ] NetworkCommandsTest.CollapseClassifiesCrossingsAndUndoRestoresBothScopes
+[       OK ] NetworkCommandsTest.CollapseClassifiesCrossingsAndUndoRestoresBothScopes (6 ms)
+[ RUN      ] NetworkCommandsTest.InvalidCollapseIsAtomic
+[       OK ] NetworkCommandsTest.InvalidCollapseIsAtomic (3 ms)
+[ RUN      ] NetworkCommandsTest.PromotionIsMetadataOnlyAndIndependentCloneDetachesOneOccurrence
+[       OK ] NetworkCommandsTest.PromotionIsMetadataOnlyAndIndependentCloneDetachesOneOccurrence (8 ms)
+[ RUN      ] NetworkCommandsTest.ViewerOnlyCollapseRoutesExternalInputThroughSubnetOutput
+[       OK ] NetworkCommandsTest.ViewerOnlyCollapseRoutesExternalInputThroughSubnetOutput (2 ms)
+[ RUN      ] NetworkCommandsTest.OwnedLocalDefinitionIsRemovedWithoutTouchingLinkedDefinition
+[       OK ] NetworkCommandsTest.OwnedLocalDefinitionIsRemovedWithoutTouchingLinkedDefinition (0 ms)
+[ RUN      ] NetworkCommandsTest.NonconvexCollapseRejectsParentCycleWithoutPublishing
+[       OK ] NetworkCommandsTest.NonconvexCollapseRejectsParentCycleWithoutPublishing (4 ms)
+[ RUN      ] NetworkCommandsTest.NestedCollapseRetainsExternalScopeAndUnpacksWithoutChangingPixels
+[       OK ] NetworkCommandsTest.NestedCollapseRetainsExternalScopeAndUnpacksWithoutChangingPixels (25 ms)
+[ RUN      ] NetworkCommandsTest.CopyDuplicatesLocalStructureButRetainsNestedExplicitLinks
+[       OK ] NetworkCommandsTest.CopyDuplicatesLocalStructureButRetainsNestedExplicitLinks (10 ms)
+[ RUN      ] NetworkCommandsTest.DisconnectedViewerCollapseRejectsWithoutInventingAnOutput
+[       OK ] NetworkCommandsTest.DisconnectedViewerCollapseRejectsWithoutInventingAnOutput (5 ms)
+[ RUN      ] NetworkCommandsTest.ExposedParameterRejectsDuplicateSourceAndReorders
+[       OK ] NetworkCommandsTest.ExposedParameterRejectsDuplicateSourceAndReorders (4 ms)
+[ RUN      ] NetworkCommandsTest.ExposureInterfaceLayoutAndOwnershipSurviveSerialization
+[       OK ] NetworkCommandsTest.ExposureInterfaceLayoutAndOwnershipSurviveSerialization (7 ms)
+[ RUN      ] NetworkCommandsTest.LinkedDuplicateSharesDefinitionAndPlacesTheOccurrence
+[       OK ] NetworkCommandsTest.LinkedDuplicateSharesDefinitionAndPlacesTheOccurrence (0 ms)
+[----------] 12 tests from NetworkCommandsTest (80 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 1 test suite ran. (80 ms total)
+[  PASSED  ] 12 tests.
+
+$ build/asan/tests/nemo_workspace_ui_tests --gtest_filter='Interactive.SubnetExposure*:WorkspaceDragTest.SubnetParameterPopout*:WorkspaceDragTest.SubnetNavigation*'
+Note: Google Test filter = Interactive.SubnetExposure*:WorkspaceDragTest.SubnetParameterPopout*:WorkspaceDragTest.SubnetNavigation*
+[==========] Running 3 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from WorkspaceDragTest
+[ RUN      ] WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView
+[       OK ] WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView (2192 ms)
+[ RUN      ] WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows
+[       OK ] WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows (3229 ms)
+[----------] 2 tests from WorkspaceDragTest (5421 ms total)
+
+[----------] 1 test from Interactive
+[ RUN      ] Interactive.SubnetExposurePublishesTypedControlsWithInstanceLocalEdits
+[       OK ] Interactive.SubnetExposurePublishesTypedControlsWithInstanceLocalEdits (7 ms)
+[----------] 1 test from Interactive (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 2 test suites ran. (5428 ms total)
+[  PASSED  ] 3 tests.

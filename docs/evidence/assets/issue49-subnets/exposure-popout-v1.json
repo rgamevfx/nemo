@@ -1,0 +1,87 @@
+{
+  "ticket": 49,
+  "increment": "subnet parameter exposure popout and inspector integration",
+  "recorded": "2026-09-13",
+  "branch": "issue/49-atomic-subnets",
+  "baseline": "main after d198e39 (rebased; previously based on 7a699b5)",
+  "implementation": {
+    "core": [
+      "src/nemo/core/document/Graph.hpp",
+      "src/nemo/core/document/Graph.cpp",
+      "src/nemo/core/document/Document.hpp",
+      "src/nemo/core/document/Document.cpp",
+      "src/nemo/core/document/Serialization.cpp",
+      "src/nemo/core/commands/NetworkCommands.hpp",
+      "src/nemo/core/commands/NetworkCommands.cpp",
+      "src/nemo/core/evaluation/CpuReference.cpp"
+    ],
+    "presentation": [
+      "apps/nemo-ui/ViewerController.hpp",
+      "apps/nemo-ui/ViewerController.cpp",
+      "apps/nemo-ui/qml/GraphPanel.qml",
+      "apps/nemo-ui/qml/SubnetParameters.qml",
+      "apps/nemo-ui/CMakeLists.txt"
+    ],
+    "tests": [
+      "tests/NetworkCommandsTests.cpp",
+      "tests/InteractiveUiTests.cpp",
+      "tests/WorkspaceDragTests.cpp"
+    ],
+    "docs": ["docs/agents/ownership.md", "AGENTS.md"]
+  },
+  "approved_design_mapping": {
+    "authority": "https://github.com/rgamevfx/nemo/issues/49#issuecomment-5640704767",
+    "nonmodal_popout": "apps/nemo-ui/qml/SubnetParameters.qml (Popup, modal:false, NoAutoClose) opened from the subnet context menu item graphEditExposedParameters",
+    "source_parameter_drag": "ParametersPanel row drag payload (networkId/instanceId/nodeId/parameterKey) consumed by the popout DropArea; ViewerController::promoteParameter submits promoteParameterCommand",
+    "exposed_rows": "authored order from Network::exposedParameters(); inline label edit -> renameExposedParameterCommand; drag reorder -> moveExposedParameterCommand; remove control -> removeExposedParameterCommand",
+    "ordinary_inspector": "ViewerController::parameterInspector presents a subnet occurrence as its definition's exposed controls; rows address the definition parameter through exposed:<id>, so a renamed or duplicate label cannot retarget an edit",
+    "instance_local_values": "edits use ParameterAddress{definition, exposed node, exposed key, occurrence}; instance overrides never mutate the definition-authored value",
+    "remove_preserves_state": "removeExposedParameterCommand erases metadata only; target authored value and animation channels are untouched",
+    "one_undo_step": "each completed drop/rename/reorder/remove is one CommandStack entry"
+  },
+  "evidence": [
+    {
+      "command": "cmake --build --preset debug && ctest --preset debug -j 4",
+      "result": "534/534 passed",
+      "log": "docs/evidence/assets/issue49-subnets/debug-ctest.log"
+    },
+    {
+      "command": "cmake --preset release && cmake --build build/release && ctest --preset release -j 8",
+      "result": "522/522 passed",
+      "log": "docs/evidence/assets/issue49-subnets/release-ctest.log"
+    },
+    {
+      "command": "NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland build/debug/tests/nemo_workspace_ui_tests --gtest_filter='WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows:WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView'",
+      "result": "2/2 passed on the real Wayland/OpenGL platform with real event delivery",
+      "log": "docs/evidence/assets/issue49-subnets/native-exposure-v1.log"
+    },
+    {
+      "command": "LSAN_OPTIONS=suppressions=tests/lsan_suppressions.txt build/asan/tests/nemo_core_tests --gtest_filter='NetworkCommandsTest.*'",
+      "result": "12/12 passed"
+    },
+    {
+      "command": "build/asan/tests/nemo_workspace_ui_tests --gtest_filter='Interactive.SubnetExposure*:WorkspaceDragTest.SubnetParameterPopout*:WorkspaceDragTest.SubnetNavigation*'",
+      "result": "3/3 passed",
+      "log": "docs/evidence/assets/issue49-subnets/asan-exposure-v1.log"
+    }
+  ],
+  "new_cases": [
+    "NetworkCommandsTest.ExposedParameterRejectsDuplicateSourceAndReorders",
+    "NetworkCommandsTest.ExposureInterfaceLayoutAndOwnershipSurviveSerialization",
+    "NetworkCommandsTest.LinkedDuplicateSharesDefinitionAndPlacesTheOccurrence",
+    "Interactive.SubnetExposurePublishesTypedControlsWithInstanceLocalEdits",
+    "WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows"
+  ],
+  "environment_limitations": [
+    "Artifacts in this directory without a -v1 suffix (native-session.json, cli-session.json, session.json, production-*.png, comparison-*.png, reference-*.png) were captured before the rebase onto current main. They remain the collapse/navigation reference comparison; the current increment re-ran those behaviours through the tests below rather than re-capturing pixels.",
+    "No supported pixel-capture tool was available for the running application in this session: the desktop is COSMIC on Wayland, the Xwayland root does not composite client windows (x11grab is black), and no Wayland screencopy client (for example grim) is installed. Visual capture of the popout is therefore not attached; the real QML scene was exercised on both the offscreen and native Wayland platforms.",
+    "QTest cannot synthesize a held-button pointer stream, so the reorder DragHandler gesture is covered through the popout's moveRow seam invoked from the real QML object; the pointer gesture itself needs a human check.",
+    "A media-import case (MediaImport.StillImportProducesProbeAndDisplayReferredThumbnail) is flaky under high parallel load: a fixture PNG was read before it finished writing, and it passes standalone and at -j 4. Unrelated to this change."
+  ],
+  "remaining_gates": [
+    "Acceptance example 5's Animation half belongs to #50 (Track/Curves editor), which is blocked by #49 and cannot exist before it.",
+    "Graphical clipboard copy/paste and the local/linked/shared card indicator are implemented conservatively in shared chrome; the prototype archive has no reference for these production-only surfaces, so owner review is required.",
+    "Formal interface rename/promotion has no prototype reference; only the shared commands exist (renameInterfaceCommand, promoteInterfaceCommand). No new visible interface editor was invented.",
+    "Owner review of the new presentation and of the public API additions (ViewerController exposure/reuse methods, Network exposed-parameter metadata) is still required."
+  ]
+}

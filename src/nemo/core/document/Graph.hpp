@@ -314,9 +314,15 @@ public:
     void setFormalPortLayout(PortDirection direction, InterfacePortId id, LayoutPosition layout);
 
     [[nodiscard]] const std::vector<ExposedParameter>& exposedParameters() const { return exposedParameters_; }
+    [[nodiscard]] const ExposedParameter* exposedParameter(InterfacePortId id) const {
+        return findExposedParameter(id);
+    }
     [[nodiscard]] InterfacePortId addExposedParameter(NodeId node, std::string key, std::string name,
                                                       InterfacePortId id = kInvalidInterfacePort);
     void renameExposedParameter(InterfacePortId id, std::string name);
+    // Moves an exposure to `index` (clamped to the current range), preserving
+    // every other row's relative order. Authoring order is the control order.
+    void moveExposedParameter(InterfacePortId id, std::size_t index);
     void removeExposedParameter(InterfacePortId id);
 
     // Formal input terminals may fan out to internal inputs. Each destination

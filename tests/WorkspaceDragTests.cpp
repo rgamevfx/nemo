@@ -803,6 +803,165 @@ TEST_F(WorkspaceDragTest, CreatingWorkspaceThroughDialogActivatesAnIndependentCo
     EXPECT_EQ(snapshot()["children"][0]["children"][0]["panels"][0]["group"], "D");
 }
 
+TEST_F(WorkspaceDragTest, SubnetParameterPopoutExposesEditsAndReordersRows) {
+    const auto network = viewerController.rootNetworkId();
+    const auto source = viewerController.createGraphNode(network, "constcolor", "ExposeSource", 0, 0, {}, {});
+    const auto merge = viewerController.createGraphNode(network, "merge", "ExposeMerge", 0, 160, {}, {});
+    ASSERT_FALSE(source.isEmpty());
+    ASSERT_FALSE(merge.isEmpty());
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, source, 0, merge, 0));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    const auto point = [&](const QString& id) { return graph->mapToScene(graph->nodeRect(id).center()).toPoint(); };
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(source));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::ShiftModifier, point(merge));
+    QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, point(merge));
+    QTest::qWait(20);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphCollapseSelection"));
+    QTest::qWait(60);
+
+    QString subnet;
+    QString definition;
+    for (const auto& value : viewerController.graphNodes()) {
+        const auto node = value.toMap();
+        if (!node.value(QStringLiteral("instance")).toString().isEmpty()) {
+            subnet = node.value(QStringLiteral("id")).toString();
+            definition = node.value(QStringLiteral("definition")).toString();
+            break;
+        }
+    }
+    ASSERT_FALSE(subnet.isEmpty());
+    ASSERT_FALSE(definition.isEmpty());
+
+    graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(subnet));
+    QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, point(subnet));
+    QTest::qWait(20);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphEditExposedParameters"));
+    QTest::qWait(40);
+    auto* popup = window->findChild<QObject*>(QStringLiteral("subnetParametersPopup"));
+    ASSERT_NE(popup, nullptr);
+    ASSERT_TRUE(popup->property("opened").toBool());
+    EXPECT_TRUE(item("subnetParametersHint")->isVisible());
+    EXPECT_EQ(item("subnetParametersLinkState")->property("text").toString(), QStringLiteral("Local subnet"));
+
+    // A promoted source parameter appears as an ordered row with an editable
+    // label and its muted source identity.
+    const auto exposed = viewerController.subnetExposure(network, subnet).value(QStringLiteral("rows")).toList();
+    ASSERT_TRUE(exposed.isEmpty());
+    ASSERT_TRUE(viewerController.promoteParameter(definition, source, "color", ""));
+    ASSERT_TRUE(viewerController.error().isEmpty()) << viewerController.error().toStdString();
+    QTest::qWait(40);
+    const auto rows = viewerController.subnetExposure(network, subnet).value(QStringLiteral("rows")).toList();
+    ASSERT_EQ(rows.size(), 1);
+    const auto exposedId = rows.first().toMap().value(QStringLiteral("id")).toString();
+    auto* label = item("subnetExposedLabel_" + exposedId);
+    ASSERT_NE(label, nullptr);
+    EXPECT_EQ(label->property("text").toString(), QStringLiteral("Color"));
+    EXPECT_EQ(item("subnetExposedSource_" + exposedId)->property("text").toString(),
+              QStringLiteral("ExposeSource.color"));
+
+    // Renaming the exposed label is one undoable command.
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("subnetExposedLabel_" + exposedId));
+    label->setProperty("text", QStringLiteral("Tint"));
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(40);
+    EXPECT_EQ(viewerController.subnetExposure(network, subnet)
+                  .value(QStringLiteral("rows"))
+                  .toList()
+                  .first()
+                  .toMap()
+                  .value(QStringLiteral("name"))
+                  .toString(),
+              QStringLiteral("Tint"));
+    ASSERT_TRUE(viewerController.undo());
+    QTest::qWait(40);
+    EXPECT_EQ(viewerController.subnetExposure(network, subnet)
+                  .value(QStringLiteral("rows"))
+                  .toList()
+                  .first()
+                  .toMap()
+                  .value(QStringLiteral("name"))
+                  .toString(),
+              QStringLiteral("Color"));
+
+    // Removing the exposure leaves the definition parameter authored value and
+    // the row disappears; the popout stays open with its hint.
+    const auto* definitionNode =
+        projectSession.document().network(definition.toULongLong()).graph().node(source.toULongLong());
+    ASSERT_NE(definitionNode, nullptr);
+    const auto authored = definitionNode->params.count("color");
+
+    // A second exposure gives the popout authored order; dragging the first
+    // row's handle past the second reorders the controls as one command.
+    ASSERT_TRUE(viewerController.promoteParameter(definition, merge, "operation", ""));
+    ASSERT_TRUE(viewerController.error().isEmpty()) << viewerController.error().toStdString();
+    QTest::qWait(40);
+    const auto order = [&] {
+        QVariantList ids;
+        for (const auto& value :
+             viewerController.subnetExposure(network, subnet).value(QStringLiteral("rows")).toList())
+            ids.push_back(value.toMap().value(QStringLiteral("id")));
+        return ids;
+    };
+    ASSERT_EQ(order().size(), 2);
+    const auto firstId = order().at(0).toString();
+    EXPECT_NE(item("subnetExposedHandle_" + firstId), nullptr);
+    // The handle's drop index is computed from the dragged row and forwarded to
+    // the child graph's authored order; the pointer gesture itself is exercised
+    // natively (QTest cannot drive a DragHandler's held-button stream).
+    QVariant reordered;
+    ASSERT_TRUE(QMetaObject::invokeMethod(popup, "moveRow", Q_RETURN_ARG(QVariant, reordered),
+                                          Q_ARG(QVariant, QVariant(firstId)), Q_ARG(QVariant, QVariant(1))));
+    QTest::qWait(60);
+    EXPECT_EQ(order().at(1).toString(), firstId);
+    ASSERT_TRUE(viewerController.undo());
+    QTest::qWait(40);
+    EXPECT_EQ(order().at(0).toString(), firstId);
+
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("subnetExposedRemove_" + firstId));
+    QTest::qWait(40);
+    ASSERT_EQ(order().size(), 1);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      center("subnetExposedRemove_" + order().at(0).toString()));
+    QTest::qWait(40);
+    EXPECT_TRUE(order().isEmpty());
+    EXPECT_TRUE(popup->property("opened").toBool());
+    EXPECT_TRUE(item("subnetParametersHint")->isVisible());
+    const auto* afterRemove =
+        projectSession.document().network(definition.toULongLong()).graph().node(source.toULongLong());
+    ASSERT_NE(afterRemove, nullptr);
+    EXPECT_EQ(afterRemove->params.count("color"), authored);
+
+    // The popout is nonmodal and floats above the workspace; close it before
+    // driving the node's context menu so the menu receives the right-click.
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("subnetParametersClose"));
+    QTest::qWait(40);
+    EXPECT_FALSE(popup->property("opened").toBool());
+
+    // The context menu duplicates a linked occurrence and detaches only the
+    // selected one; the occurrence query reports the shared then local state.
+    ASSERT_TRUE(viewerController.promoteParameter(definition, source, "color", ""));
+    QTest::qWait(40);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(subnet));
+    QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, point(subnet));
+    QTest::qWait(20);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphDuplicateLinked"));
+    QTest::qWait(60);
+    EXPECT_EQ(viewerController.subnetExposure(network, subnet).value(QStringLiteral("linkState")).toString(),
+              QStringLiteral("shared"));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(subnet));
+    QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, point(subnet));
+    QTest::qWait(20);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphMakeIndependent"));
+    QTest::qWait(60);
+    EXPECT_EQ(viewerController.subnetExposure(network, subnet).value(QStringLiteral("linkState")).toString(),
+              QStringLiteral("local"));
+}
+
 TEST(WorkspaceControllerTest, WorkspaceOrderMovementValidatesAndPersists) {
     QTemporaryDir directory;
     const QString path = directory.filePath("workspace.json");

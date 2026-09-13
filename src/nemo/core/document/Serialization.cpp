@@ -1109,10 +1109,10 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             }
         }
     }
-    network.setExtension(collectUnknownFields(
-        entry, {"id", "name", "defaultOutput", "nextNodeId", "nextEdgeId", "nextInterfacePortId", "inputs", "outputs",
-                "nodes", "edges", "inputConnections", "outputConnections", "outputInputBindings",
-                "exposedParameters"}));
+    network.setExtension(
+        collectUnknownFields(entry, {"id", "name", "defaultOutput", "nextNodeId", "nextEdgeId", "nextInterfacePortId",
+                                     "inputs", "outputs", "nodes", "edges", "inputConnections", "outputConnections",
+                                     "outputInputBindings", "exposedParameters"}));
     network.restoreIdentityHighWatermarks(
         watermark(entry, "nextNodeId", "network").value_or(network.graph().nextNodeId()),
         watermark(entry, "nextEdgeId", "network").value_or(network.graph().nextEdgeId()),

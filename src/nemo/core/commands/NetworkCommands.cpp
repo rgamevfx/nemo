@@ -328,7 +328,7 @@ void collapse(Document& document, NetworkId parentId, const std::vector<NodeId>&
         }
     }
 
-    const std::vector<Edge> parentEdges = parentGraph.edges();
+    const std::vector<Edge> parentEdges(parentGraph.edges().begin(), parentGraph.edges().end());
     const NetworkId childId =
         document.addNetwork(uniqueNetworkName(document, requestedName.empty() ? "Subnet" : requestedName));
     Network& child = document.network(childId);
@@ -553,7 +553,7 @@ void unpack(Document& document, NetworkInstanceId instanceId) {
 
     std::map<NodeId, NodeId> nodeMap;
     std::map<NetworkInstanceId, NetworkInstanceId> instanceMap;
-    const std::vector<Edge> parentEdges = graph.edges();
+    const std::vector<Edge> parentEdges(graph.edges().begin(), graph.edges().end());
     std::vector<Edge> incomingEdges;
     std::vector<Edge> outgoingEdges;
     for (const auto& edge : parentEdges) {
@@ -707,7 +707,7 @@ void copySelected(Document& document, NetworkId sourceId, const std::vector<Node
             throw GraphException(GraphError::UnknownNode, "copy selection contains unknown node " + std::to_string(id));
         selectedNodes.push_back(*node);
     }
-    const std::vector<Edge> sourceEdges = sourceSnapshot.graph().edges();
+    const std::vector<Edge> sourceEdges(sourceSnapshot.graph().edges().begin(), sourceSnapshot.graph().edges().end());
     std::map<NodeId, NodeId> mapping;
     std::map<NodeId, NetworkInstanceId> copiedInstances;
     for (const auto& node : selectedNodes) {
@@ -831,6 +831,11 @@ Command removeExposedParameterCommand(NetworkId network, InterfacePortId paramet
                        candidate.network(network).removeExposedParameter(parameter);
                    }};
 }
+Command moveExposedParameterCommand(NetworkId network, InterfacePortId parameter, std::size_t index) {
+    return Command{"reorder exposed parameter", [network, parameter, index](Document& candidate) {
+                       candidate.network(network).moveExposedParameter(parameter, index);
+                   }};
+}
 Command setInterfaceLayoutCommand(NetworkId network, PortDirection direction, InterfacePortId port,
                                   LayoutPosition layout) {
     return Command{"position network interface", [network, direction, port, layout](Document& candidate) {
@@ -885,13 +890,16 @@ Command unbindInstanceInputCommand(NetworkInstanceId instance, InterfacePortId i
 }
 
 Command createLinkedInstanceCommand(NetworkId parentNetwork, NetworkId definition, std::string name,
-                                    std::shared_ptr<NetworkInstanceId> created) {
+                                    LayoutPosition position, std::shared_ptr<NetworkInstanceId> created) {
     return Command{"create linked network instance",
-                   [parentNetwork, definition, name = std::move(name), created](Document& candidate) {
+                   [parentNetwork, definition, name = std::move(name), position, created](Document& candidate) {
                        for (const auto& occurrence : candidate.instances())
                            if (occurrence.definition == definition && occurrence.ownsDefinition)
                                candidate.setInstanceOwnership(occurrence.id, false);
                        const auto id = candidate.addInstance(parentNetwork, definition, name);
+                       const auto* occurrence = candidate.instance(id);
+                       if (occurrence)
+                           candidate.network(parentNetwork).graph().setLayout(occurrence->node, position);
                        if (created)
                            *created = id;
                    }};

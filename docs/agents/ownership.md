@@ -248,11 +248,17 @@ owning occurrence; explicitly linked definitions retain their identity.
 
 Network exposed-parameter metadata references a single node/key and derives its
 type from the catalog. Promotion/removal does not rewrite the target value or
-animation. The [owner-approved #49 popout](https://github.com/rgamevfx/nemo/issues/49#issuecomment-5640704767)
-accepts individual parameter-label drags, inline exposure labels, reorder and
-removal, while ordinary values use the shared Parameters inspector. Its live
-implementation depends on #46's real parameter rows, drag payload and controls;
-the backend metadata is not proof that this inspector/popout exists.
+animation. `ViewerController::subnetExposure(networkId, nodeId)` resolves an
+occurrence's definition and link state, `promoteParameter`/`renameExposedParameter`/
+`removeExposedParameter`/`moveExposedParameter` submit the shared commands, and
+`parameterInspector` presents a subnet occurrence as its definition's exposed
+controls, addressed by `exposed:<id>` so a renamed or duplicate label can never
+retarget an edit. `SubnetParameters.qml` is the
+[owner-approved #49 popout](https://github.com/rgamevfx/nemo/issues/49#issuecomment-5640704767):
+it accepts individual parameter-label drags from the shared inspector, with
+inline exposure labels, reorder and removal, while ordinary values keep using
+the shared Parameters inspector. Removing an exposure leaves the definition
+parameter, its authored value and its animation untouched.
 
 Effect additions use the catalog entry point above, including the category
 metadata that drives shared colors and search. They do not extend this gesture

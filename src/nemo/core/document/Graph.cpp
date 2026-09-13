@@ -2,6 +2,8 @@
 #include "nemo/core/evaluation/Request.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <iterator>
 #include <limits>
 #include <set>
 #include <utility>
@@ -684,6 +686,10 @@ InterfacePortId Network::addExposedParameter(NodeId node, std::string key, std::
         throw GraphException(GraphError::ParameterValue,
                              "node '" + std::to_string(node) + "' has no parameter '" + key + "'");
     if (std::any_of(exposedParameters_.begin(), exposedParameters_.end(),
+                    [&](const ExposedParameter& value) { return value.node == node && value.key == key; }))
+        throw GraphException(GraphError::DuplicateName,
+                             "parameter '" + key + "' of node " + std::to_string(node) + " is already exposed");
+    if (std::any_of(exposedParameters_.begin(), exposedParameters_.end(),
                     [&](const ExposedParameter& value) { return value.name == name; }))
         throw GraphException(GraphError::DuplicateName, "exposed parameter name '" + name + "' is already in use");
     if (id == kInvalidInterfacePort) {
@@ -724,6 +730,21 @@ void Network::removeExposedParameter(InterfacePortId id) {
     if (it == exposedParameters_.end())
         throw GraphException(GraphError::UnknownEdge, "cannot remove unknown exposed parameter " + std::to_string(id));
     exposedParameters_.erase(it);
+    ++revision_;
+}
+
+void Network::moveExposedParameter(InterfacePortId id, std::size_t index) {
+    const auto it = std::find_if(exposedParameters_.begin(), exposedParameters_.end(),
+                                 [id](const ExposedParameter& value) { return value.id == id; });
+    if (it == exposedParameters_.end())
+        throw GraphException(GraphError::UnknownEdge, "cannot reorder unknown exposed parameter " + std::to_string(id));
+    const std::size_t current = static_cast<std::size_t>(std::distance(exposedParameters_.begin(), it));
+    const std::size_t destination = std::min(index, exposedParameters_.size() - 1);
+    if (current == destination)
+        return;
+    ExposedParameter moved = std::move(*it);
+    exposedParameters_.erase(exposedParameters_.begin() + static_cast<std::ptrdiff_t>(current));
+    exposedParameters_.insert(exposedParameters_.begin() + static_cast<std::ptrdiff_t>(destination), std::move(moved));
     ++revision_;
 }
 

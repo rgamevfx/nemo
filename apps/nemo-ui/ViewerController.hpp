@@ -114,6 +114,27 @@ public:
     Q_INVOKABLE QString collapseSelection(const QString& networkId, const QVariantList& nodeIds,
                                           const QString& name = QStringLiteral("Subnet"));
     Q_INVOKABLE bool unpackInstance(const QString& instanceId);
+    // Exposed parameters belong to the definition network. The occurrence
+    // query resolves the definition from a selected subnet node and reports
+    // whether that definition is owned locally or shared with other instances,
+    // so the popout and inspector never guess at link state.
+    Q_INVOKABLE QVariantMap subnetExposure(const QString& networkId, const QVariant& nodeId) const;
+    // Promotes a definition-local parameter to a typed exposed control. An
+    // empty `name` derives a unique label from the source schema.
+    Q_INVOKABLE bool promoteParameter(const QString& networkId, const QVariant& nodeId, const QString& key,
+                                      const QString& name = {});
+    Q_INVOKABLE bool renameExposedParameter(const QString& networkId, const QVariant& parameterId, const QString& name);
+    Q_INVOKABLE bool removeExposedParameter(const QString& networkId, const QVariant& parameterId);
+    Q_INVOKABLE bool moveExposedParameter(const QString& networkId, const QVariant& parameterId, int index);
+    // Linked instances share one definition. Duplicate creates another linked
+    // occurrence; Make Independent detaches only the selected occurrence.
+    Q_INVOKABLE QString duplicateLinkedInstance(const QString& networkId, const QVariant& nodeId, double x, double y);
+    Q_INVOKABLE bool makeIndependent(const QString& instanceId);
+    // Graphical copy/paste uses the shared selection-copy command. The
+    // clipboard is presentation state: it survives panel changes but is never
+    // part of the document or its history.
+    Q_INVOKABLE bool copyGraphSelection(const QString& networkId, const QVariantList& nodeIds);
+    Q_INVOKABLE QString pasteGraphSelection(const QString& networkId, double x, double y);
     // Parameter entry points remain command-backed and are used by the inspector.
     Q_INVOKABLE void setNodeParameter(const QVariant& nodeId, const QString& key, const QVariant& value);
     // Explicit text-entry adapter; parsing remains catalog-owned and avoids
@@ -279,6 +300,9 @@ private:
     void refreshContextTarget();
     [[nodiscard]] NodeId renderTargetNode() const;
     [[nodiscard]] QString unavailableStatus() const;
+    // Inspector view of a subnet occurrence: its definition's exposed controls,
+    // addressed by exposed identity and carrying instance-local values.
+    [[nodiscard]] QVariantMap subnetInspector(nemo::NetworkId network, nemo::NodeId node) const;
     // Clamps into the same frame domain as setFrame: [0, frameCount - 1].
     [[nodiscard]] int clampFrame(int frame) const;
     // Inclusive last frame of the current domain. Unknown media length has no
@@ -372,5 +396,9 @@ private:
     std::optional<nemo::ParameterAddress> parameterGestureAddress_;
     nemo::ParameterGestureToken parameterGestureToken_{};
     bool parameterGestureKeyed_{false};
+    // Presentation-only clipboard: the source network and node identities of
+    // the last graphical copy. Never part of the document or its history.
+    std::optional<nemo::NetworkId> clipboardNetwork_;
+    std::vector<nemo::NodeId> clipboardNodes_;
 };
 }  // namespace nemo::ui

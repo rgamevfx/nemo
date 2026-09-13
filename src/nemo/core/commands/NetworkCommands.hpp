@@ -19,6 +19,7 @@ Command promoteParameterCommand(NetworkId network, NodeId node, std::string key,
                                 std::shared_ptr<InterfacePortId> created = {});
 Command renameExposedParameterCommand(NetworkId network, InterfacePortId parameter, std::string name);
 Command removeExposedParameterCommand(NetworkId network, InterfacePortId parameter);
+Command moveExposedParameterCommand(NetworkId network, InterfacePortId parameter, std::size_t index);
 Command promoteInterfaceCommand(NetworkId network, PortDirection direction, PortKind kind, std::string name,
                                 std::shared_ptr<InterfacePortId> created = {});
 Command setInterfaceLayoutCommand(NetworkId network, PortDirection direction, InterfacePortId port,
@@ -33,7 +34,7 @@ Command bindInstanceInputToParentTerminalCommand(NetworkInstanceId instance, Int
 Command unbindInstanceInputCommand(NetworkInstanceId instance, InterfacePortId input);
 
 Command createLinkedInstanceCommand(NetworkId parentNetwork, NetworkId definition, std::string name,
-                                    std::shared_ptr<NetworkInstanceId> created = {});
+                                    LayoutPosition position = {}, std::shared_ptr<NetworkInstanceId> created = {});
 Command makeIndependentCommand(NetworkInstanceId instance, std::shared_ptr<NetworkId> createdDefinition = {});
 
 // Copies selected nodes and their wholly internal edges. Owned local subnets

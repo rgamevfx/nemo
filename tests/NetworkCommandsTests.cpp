@@ -342,3 +342,102 @@ TEST(NetworkCommandsTest, DisconnectedViewerCollapseRejectsWithoutInventingAnOut
     EXPECT_EQ(saveDocument(document), maskOnly);
     EXPECT_FALSE(history.canUndo());
 }
+
+TEST(NetworkCommandsTest, ExposedParameterRejectsDuplicateSourceAndReorders) {
+    Document document;
+    const auto definitionId = document.addNetwork("shared");
+    auto& definition = document.network(definitionId);
+    const auto color = definition.graph().addNode("constcolor", "color");
+    const auto merge = definition.graph().addNode("merge", "merge");
+    CommandStack history(document);
+    auto tint = std::make_shared<InterfacePortId>();
+    history.push(promoteParameterCommand(definitionId, color, "color", "Tint", tint));
+    auto mix = std::make_shared<InterfacePortId>();
+    history.push(promoteParameterCommand(definitionId, merge, "operation", "Operation", mix));
+
+    // The same source parameter is one authored control, and duplicate display
+    // names would make the inspector rows ambiguous.
+    const auto afterPromotion = saveDocument(document);
+    EXPECT_THROW(history.push(promoteParameterCommand(definitionId, color, "color", "Tint Again")), GraphException);
+    EXPECT_THROW(history.push(promoteParameterCommand(definitionId, merge, "operation", "Tint")), GraphException);
+    EXPECT_EQ(saveDocument(document), afterPromotion);
+    const auto exposedIds = [&document, definitionId] {
+        std::vector<InterfacePortId> ids;
+        for (const auto& exposed : document.network(definitionId).exposedParameters())
+            ids.push_back(exposed.id);
+        return ids;
+    };
+    EXPECT_EQ(exposedIds(), (std::vector<InterfacePortId>{*tint, *mix}));
+
+    history.push(moveExposedParameterCommand(definitionId, *tint, 1));
+    EXPECT_EQ(exposedIds(), (std::vector<InterfacePortId>{*mix, *tint}));
+    // A destination past the end clamps to the last row instead of failing.
+    history.push(moveExposedParameterCommand(definitionId, *mix, 99));
+    EXPECT_EQ(exposedIds(), (std::vector<InterfacePortId>{*tint, *mix}));
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(exposedIds(), (std::vector<InterfacePortId>{*mix, *tint}));
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(exposedIds(), (std::vector<InterfacePortId>{*tint, *mix}));
+}
+
+TEST(NetworkCommandsTest, ExposureInterfaceLayoutAndOwnershipSurviveSerialization) {
+    Document document;
+    const auto rootId = document.rootNetworkId();
+    const auto definitionId = document.addNetwork("Inspectable");
+    auto& definition = document.network(definitionId);
+    const auto color = definition.graph().addNode("constcolor", "color");
+    const auto image = definition.addInput("image", PortKind::Image);
+    const auto result = definition.addOutput("result", PortKind::Image);
+    definition.setFormalPortLayout(PortDirection::Input, image, {12.0, 34.0});
+    definition.renameFormalPort(PortDirection::Input, image, "plate");
+    const auto passed = definition.addOutput("passed", PortKind::Image);
+    definition.connectOutputToInput(passed, image);
+    definition.connectOutput({color, 0}, result);
+    const auto exposed = definition.addExposedParameter(color, "color", "Tint");
+    const auto owned = document.addInstance(rootId, definitionId, "Owned");
+    const auto linked = document.addInstance(rootId, definitionId, "Linked");
+    document.setInstanceOwnership(owned, true);
+
+    const auto saved = saveDocument(document);
+    auto restored = loadDocument(saved);
+    EXPECT_EQ(saveDocument(restored.document), saved);
+    const auto* restoredOwned = restored.document.instance(owned);
+    ASSERT_NE(restoredOwned, nullptr);
+    EXPECT_TRUE(restoredOwned->ownsDefinition);
+    ASSERT_NE(restored.document.instance(linked), nullptr);
+    EXPECT_FALSE(restored.document.instance(linked)->ownsDefinition);
+
+    const auto& restoredDefinition = restored.document.network(definitionId);
+    const auto* restoredPlate = restoredDefinition.input("plate");
+    ASSERT_NE(restoredPlate, nullptr);
+    EXPECT_EQ(restoredPlate->layout, (LayoutPosition{12.0, 34.0}));
+    ASSERT_EQ(restoredDefinition.outputInputBindings().size(), 1U);
+    const auto* restoredExposed = restoredDefinition.exposedParameter(exposed);
+    ASSERT_NE(restoredExposed, nullptr);
+    EXPECT_EQ(restoredExposed->name, "Tint");
+    EXPECT_EQ(restoredExposed->key, "color");
+    EXPECT_EQ(restoredExposed->node, color);
+    EXPECT_EQ(restoredExposed->type, ParameterType::Color);
+}
+
+TEST(NetworkCommandsTest, LinkedDuplicateSharesDefinitionAndPlacesTheOccurrence) {
+    Document document;
+    const auto rootId = document.rootNetworkId();
+    const auto definitionId = document.addNetwork("shared");
+    document.network(definitionId).graph().addNode("testpattern", "pattern");
+    const auto first = document.addInstance(rootId, definitionId, "First");
+    document.setInstanceOwnership(first, true);
+
+    CommandStack history(document);
+    auto created = std::make_shared<NetworkInstanceId>();
+    history.push(createLinkedInstanceCommand(rootId, definitionId, "Second", {320.0, 180.0}, created));
+    const auto* second = document.instance(*created);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(second->definition, definitionId);
+    EXPECT_FALSE(second->ownsDefinition);
+    EXPECT_FALSE(document.instance(first)->ownsDefinition);
+    const auto* secondNode = root(document).graph().node(second->node);
+    ASSERT_NE(secondNode, nullptr);
+    EXPECT_EQ(secondNode->layout, (LayoutPosition{320.0, 180.0}));
+    EXPECT_NE(document.instance(first)->node, second->node);
+}

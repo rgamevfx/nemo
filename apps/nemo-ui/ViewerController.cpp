@@ -601,6 +601,53 @@ const char* parameterKindName(nemo::ParameterType type) {
     return QString::fromStdString(result);
 }
 
+// A shared definition may be instantiated many times; only the occurrence name
+// must be unique inside its parent graph.
+[[nodiscard]] std::string uniqueOccurrenceName(const nemo::Graph& graph, std::string base) {
+    if (!graph.nodeByName(base))
+        return base;
+    for (std::size_t suffix = 2;; ++suffix) {
+        const std::string candidate = base + " " + std::to_string(suffix);
+        if (!graph.nodeByName(candidate))
+            return candidate;
+    }
+}
+
+// Default label for a newly exposed control, derived from the source schema so
+// the popout never invents a name. A collision gains a numeric suffix.
+[[nodiscard]] std::string uniqueExposedName(const nemo::Network& definition, const nemo::ParameterSpec& spec,
+                                            const std::string& key) {
+    const std::string base = spec.label.empty() ? humanizedParameterLabel(key).toStdString() : spec.label;
+    const auto taken = [&definition](const std::string& candidate) {
+        return std::any_of(definition.exposedParameters().begin(), definition.exposedParameters().end(),
+                           [&candidate](const nemo::ExposedParameter& exposed) { return exposed.name == candidate; });
+    };
+    if (!taken(base))
+        return base;
+    for (std::size_t suffix = 2;; ++suffix) {
+        const std::string candidate = base + " " + std::to_string(suffix);
+        if (!taken(candidate))
+            return candidate;
+    }
+}
+
+// A subnet inspector row addresses its definition parameter through the stable
+// exposed identity, never through the editable display name (which may repeat
+// a source key or be renamed at any time).
+QString exposedParameterToken(nemo::InterfacePortId id) {
+    return QStringLiteral("exposed:") + QString::number(id);
+}
+
+std::optional<nemo::InterfacePortId> exposedParameterIdentity(const QString& key) {
+    const auto prefix = QStringLiteral("exposed:");
+    if (!key.startsWith(prefix))
+        return std::nullopt;
+    bool valid = false;
+    const auto id = key.mid(prefix.size()).toULongLong(&valid);
+    return valid && id != 0 ? std::optional<nemo::InterfacePortId>{static_cast<nemo::InterfacePortId>(id)}
+                            : std::nullopt;
+}
+
 struct InspectorTarget {
     nemo::NetworkId network{nemo::kInvalidNetwork};
     nemo::NodeId node{nemo::kInvalidNode};
@@ -637,6 +684,41 @@ std::optional<InspectorTarget> resolveInspectorTarget(const nemo::Document& docu
         error = QStringLiteral("node '%1' does not exist in network '%2'")
                     .arg(QString::number(id), QString::number(*network));
         return std::nullopt;
+    }
+    if (instance->instance != nemo::kInvalidNetworkInstance) {
+        // A subnet occurrence has no catalog descriptor of its own; its
+        // inspector and edit target are the definition's exposed parameters.
+        const auto* occurrence = document.instance(instance->instance);
+        if (!occurrence || occurrence->parentNetwork != *network) {
+            error = QStringLiteral("node '%1' is not a live subnet occurrence in network '%2'")
+                        .arg(QString::number(id), QString::number(*network));
+            return std::nullopt;
+        }
+        const auto& definition = document.network(occurrence->definition);
+        InspectorTarget target{
+            occurrence->definition,
+            nemo::kInvalidNode,
+            instance,
+            nullptr,
+            nullptr,
+            nemo::ParameterAddress{occurrence->definition, nemo::kInvalidNode, std::string(key), occurrence->id}};
+        if (!key.empty()) {
+            const auto exposedId =
+                exposedParameterIdentity(QString::fromUtf8(key.data(), static_cast<int>(key.size())));
+            const auto* exposed = exposedId ? definition.exposedParameter(*exposedId) : nullptr;
+            const auto* node = exposed ? definition.graph().node(exposed->node) : nullptr;
+            const auto* spec = node ? definition.graph().catalog().parameterSpec(node->type, exposed->key) : nullptr;
+            if (!exposed || !node || !spec) {
+                error = QStringLiteral("subnet '%1' does not expose parameter '%2'")
+                            .arg(QString::fromStdString(instance->name), QString::fromStdString(std::string(key)));
+                return std::nullopt;
+            }
+            target.node = exposed->node;
+            target.spec = spec;
+            target.address.node = exposed->node;
+            target.address.key = exposed->key;
+        }
+        return target;
     }
     const auto* descriptor = resolved->graph().descriptor(instance->type);
     if (!descriptor) {
@@ -981,8 +1063,23 @@ QVariantMap ViewerController::graphSnapshot(const QString& networkValue) const {
                                      {QStringLiteral("deletable"), node->id != scoped.defaultOutput()}};
                 if (node->definition != kInvalidNetwork)
                     snapshot.insert(QStringLiteral("definition"), QString::number(node->definition));
-                if (node->instance != kInvalidNetworkInstance)
+                if (node->instance != kInvalidNetworkInstance) {
                     snapshot.insert(QStringLiteral("instance"), QString::number(node->instance));
+                    if (const auto* occurrence = session_.document().instance(node->instance)) {
+                        std::size_t references = 0;
+                        for (const auto& other : session_.document().instances())
+                            if (other.definition == occurrence->definition)
+                                ++references;
+                        snapshot.insert(QStringLiteral("linkState"), references > 1 ? QStringLiteral("shared")
+                                                                     : occurrence->ownsDefinition
+                                                                         ? QStringLiteral("local")
+                                                                         : QStringLiteral("linked"));
+                        snapshot.insert(
+                            QStringLiteral("exposedParameterCount"),
+                            static_cast<int>(
+                                session_.document().network(occurrence->definition).exposedParameters().size()));
+                    }
+                }
                 nodes.push_back(std::move(snapshot));
             }
             if (page.size() < 256)
@@ -1900,6 +1997,296 @@ bool ViewerController::unpackInstance(const QString& instanceValue) {
     }
 }
 
+QVariantMap ViewerController::subnetExposure(const QString& networkValue, const QVariant& nodeValue) const {
+    const auto failure = [&networkValue, &nodeValue](const QString& reason) {
+        return QVariantMap{
+            {QStringLiteral("available"), false},        {QStringLiteral("reason"), reason},
+            {QStringLiteral("networkId"), networkValue}, {QStringLiteral("nodeId"), nodeValue.toString()},
+            {QStringLiteral("instanceId"), QString{}},   {QStringLiteral("definition"), QString{}},
+            {QStringLiteral("name"), QString{}},         {QStringLiteral("linkState"), QString{}},
+            {QStringLiteral("rows"), QVariantList{}}};
+    };
+    const auto network = networkIdentity(networkValue);
+    const auto node = graphIdentity(nodeValue);
+    if (!network || !node)
+        return failure(QStringLiteral("subnet exposure requires a network and a subnet node"));
+    try {
+        const auto& document = session_.document();
+        const auto& parent = document.network(*network);
+        const auto* occurrenceNode = parent.graph().node(static_cast<NodeId>(*node));
+        if (!occurrenceNode || occurrenceNode->instance == kInvalidNetworkInstance)
+            return failure(QStringLiteral("selected node is not a subnet occurrence"));
+        const auto* occurrence = document.instance(occurrenceNode->instance);
+        if (!occurrence)
+            return failure(QStringLiteral("subnet occurrence is unavailable"));
+        const auto& definition = document.network(occurrence->definition);
+        std::size_t references = 0;
+        for (const auto& other : document.instances())
+            if (other.definition == occurrence->definition)
+                ++references;
+        QVariantList rows;
+        for (const auto& exposed : definition.exposedParameters()) {
+            const auto* child = definition.graph().node(exposed.node);
+            if (!child)
+                continue;
+            const auto* spec = definition.graph().catalog().parameterSpec(child->type, exposed.key);
+            if (!spec)
+                continue;
+            rows.push_back(
+                QVariantMap{{QStringLiteral("id"), QString::number(exposed.id)},
+                            {QStringLiteral("node"), QString::number(exposed.node)},
+                            {QStringLiteral("nodeName"), QString::fromStdString(child->name)},
+                            {QStringLiteral("key"), QString::fromStdString(exposed.key)},
+                            {QStringLiteral("name"), QString::fromStdString(exposed.name)},
+                            {QStringLiteral("label"), spec->label.empty() ? humanizedParameterLabel(exposed.key)
+                                                                          : QString::fromStdString(spec->label)},
+                            {QStringLiteral("type"), QString::fromLatin1(parameterTypeName(spec->type))},
+                            {QStringLiteral("kind"), QString::fromLatin1(parameterKindName(spec->type))},
+                            {QStringLiteral("source"), QString::fromStdString(child->name + "." + exposed.key)}});
+        }
+        const QString linkState = references > 1               ? QStringLiteral("shared")
+                                  : occurrence->ownsDefinition ? QStringLiteral("local")
+                                                               : QStringLiteral("linked");
+        return QVariantMap{{QStringLiteral("available"), true},
+                           {QStringLiteral("reason"), QString{}},
+                           {QStringLiteral("networkId"), QString::number(*network)},
+                           {QStringLiteral("nodeId"), QString::number(static_cast<NodeId>(*node))},
+                           {QStringLiteral("instanceId"), QString::number(occurrence->id)},
+                           {QStringLiteral("definition"), QString::number(occurrence->definition)},
+                           {QStringLiteral("name"), QString::fromStdString(occurrenceNode->name)},
+                           {QStringLiteral("definitionName"), QString::fromStdString(definition.name())},
+                           {QStringLiteral("linkState"), linkState},
+                           {QStringLiteral("rows"), rows}};
+    } catch (const std::exception& error) {
+        return failure(QString::fromUtf8(error.what()));
+    }
+}
+
+bool ViewerController::promoteParameter(const QString& networkValue, const QVariant& nodeValue, const QString& keyValue,
+                                        const QString& nameValue) {
+    const auto network = networkIdentity(networkValue);
+    const auto node = graphIdentity(nodeValue);
+    const auto key = keyValue.trimmed();
+    if (!network || !node || key.isEmpty()) {
+        fail(QStringLiteral("promote requires a definition network, a node and a parameter key"));
+        return false;
+    }
+    try {
+        const auto& definition = session_.document().network(*network);
+        const auto* source = definition.graph().node(static_cast<NodeId>(*node));
+        const auto* spec =
+            source ? definition.graph().catalog().parameterSpec(source->type, key.toStdString()) : nullptr;
+        if (!source || !spec) {
+            fail(QStringLiteral("promote target has no parameter '%1'").arg(key));
+            return false;
+        }
+        const auto requested = nameValue.trimmed();
+        const auto name = requested.isEmpty()
+                              ? QString::fromStdString(uniqueExposedName(definition, *spec, key.toStdString()))
+                              : requested;
+        return applyEdit(session_.submit(
+            promoteParameterCommand(*network, static_cast<NodeId>(*node), key.toStdString(), name.toStdString()),
+            editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool ViewerController::renameExposedParameter(const QString& networkValue, const QVariant& parameterValue,
+                                              const QString& nameValue) {
+    const auto network = networkIdentity(networkValue);
+    const auto parameter = graphIdentity(parameterValue);
+    const auto name = nameValue.trimmed();
+    if (!network || !parameter || name.isEmpty()) {
+        fail(QStringLiteral("rename requires a definition network, an exposed parameter and a name"));
+        return false;
+    }
+    try {
+        if (!session_.document().network(*network).exposedParameter(static_cast<InterfacePortId>(*parameter))) {
+            fail(
+                QStringLiteral("network %1 does not expose parameter %2").arg(networkValue, parameterValue.toString()));
+            return false;
+        }
+        return applyEdit(session_.submit(
+            renameExposedParameterCommand(*network, static_cast<InterfacePortId>(*parameter), name.toStdString()),
+            editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool ViewerController::removeExposedParameter(const QString& networkValue, const QVariant& parameterValue) {
+    const auto network = networkIdentity(networkValue);
+    const auto parameter = graphIdentity(parameterValue);
+    if (!network || !parameter) {
+        fail(QStringLiteral("remove requires a definition network and an exposed parameter"));
+        return false;
+    }
+    try {
+        if (!session_.document().network(*network).exposedParameter(static_cast<InterfacePortId>(*parameter))) {
+            fail(
+                QStringLiteral("network %1 does not expose parameter %2").arg(networkValue, parameterValue.toString()));
+            return false;
+        }
+        return applyEdit(session_.submit(
+            removeExposedParameterCommand(*network, static_cast<InterfacePortId>(*parameter)), editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool ViewerController::moveExposedParameter(const QString& networkValue, const QVariant& parameterValue, int index) {
+    const auto network = networkIdentity(networkValue);
+    const auto parameter = graphIdentity(parameterValue);
+    if (!network || !parameter || index < 0) {
+        fail(QStringLiteral("reorder requires a definition network, an exposed parameter and a row index"));
+        return false;
+    }
+    try {
+        const auto& definition = session_.document().network(*network);
+        if (!definition.exposedParameter(static_cast<InterfacePortId>(*parameter))) {
+            fail(
+                QStringLiteral("network %1 does not expose parameter %2").arg(networkValue, parameterValue.toString()));
+            return false;
+        }
+        return applyEdit(session_.submit(moveExposedParameterCommand(*network, static_cast<InterfacePortId>(*parameter),
+                                                                     static_cast<std::size_t>(index)),
+                                         editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+QString ViewerController::duplicateLinkedInstance(const QString& networkValue, const QVariant& nodeValue, double x,
+                                                  double y) {
+    const auto network = networkIdentity(networkValue);
+    const auto node = graphIdentity(nodeValue);
+    if (!network || !node || !finitePosition(x, y)) {
+        fail(QStringLiteral("duplicate requires a network, a subnet node and a finite position"));
+        return {};
+    }
+    try {
+        const auto& document = session_.document();
+        const auto& parent = document.network(*network);
+        const auto* occurrenceNode = parent.graph().node(static_cast<NodeId>(*node));
+        if (!occurrenceNode || occurrenceNode->instance == kInvalidNetworkInstance) {
+            fail(QStringLiteral("duplicate requires a selected subnet occurrence"));
+            return {};
+        }
+        const auto* occurrence = document.instance(occurrenceNode->instance);
+        if (!occurrence) {
+            fail(QStringLiteral("subnet occurrence is unavailable"));
+            return {};
+        }
+        const auto name = uniqueOccurrenceName(parent.graph(), occurrenceNode->name + " Copy");
+        const auto created = std::make_shared<NetworkInstanceId>();
+        if (!applyEdit(session_.submit(
+                createLinkedInstanceCommand(*network, occurrence->definition, name, LayoutPosition{x, y}, created),
+                editOptions())))
+            return {};
+        const auto* createdInstance = session_.document().instance(*created);
+        if (!createdInstance) {
+            fail(QStringLiteral("duplicate committed without a readable instance"));
+            return {};
+        }
+        clearError();
+        return QString::number(createdInstance->node);
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return {};
+    }
+}
+
+bool ViewerController::makeIndependent(const QString& instanceValue) {
+    const auto identity = graphIdentity(instanceValue);
+    if (!identity) {
+        fail(QStringLiteral("make independent requires a valid network instance ID"));
+        return false;
+    }
+    try {
+        return applyEdit(
+            session_.submit(makeIndependentCommand(static_cast<NetworkInstanceId>(*identity)), editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool ViewerController::copyGraphSelection(const QString& networkValue, const QVariantList& nodeValues) {
+    const auto network = networkIdentity(networkValue);
+    if (!network || nodeValues.isEmpty()) {
+        fail(QStringLiteral("copy requires a network and a non-empty selection"));
+        return false;
+    }
+    std::vector<NodeId> nodes;
+    nodes.reserve(static_cast<std::size_t>(nodeValues.size()));
+    std::unordered_set<NodeId> unique;
+    try {
+        const auto& graph = session_.document().network(*network).graph();
+        for (const auto& value : nodeValues) {
+            const auto id = graphIdentity(value);
+            if (!id || !graph.node(static_cast<NodeId>(*id)) || !unique.insert(static_cast<NodeId>(*id)).second) {
+                fail(QStringLiteral("copy requires distinct existing node IDs"));
+                return false;
+            }
+            nodes.push_back(static_cast<NodeId>(*id));
+        }
+        clipboardNetwork_ = *network;
+        clipboardNodes_ = std::move(nodes);
+        clearError();
+        return true;
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+QString ViewerController::pasteGraphSelection(const QString& networkValue, double x, double y) {
+    if (!clipboardNetwork_ || clipboardNodes_.empty()) {
+        fail(QStringLiteral("nothing has been copied"));
+        return {};
+    }
+    const auto network = networkIdentity(networkValue);
+    if (!network || !finitePosition(x, y)) {
+        fail(QStringLiteral("paste requires a network and a finite position"));
+        return {};
+    }
+    try {
+        const auto& graph = session_.document().network(*clipboardNetwork_).graph();
+        double minX = std::numeric_limits<double>::max();
+        double minY = std::numeric_limits<double>::max();
+        for (const auto id : clipboardNodes_) {
+            const auto* node = graph.node(id);
+            if (!node)
+                continue;
+            minX = std::min(minX, node->layout.x);
+            minY = std::min(minY, node->layout.y);
+        }
+        if (minX == std::numeric_limits<double>::max()) {
+            fail(QStringLiteral("copied selection no longer exists"));
+            return {};
+        }
+        const auto created = std::make_shared<std::vector<NodeId>>();
+        if (!applyEdit(session_.submit(copySelectionCommand(*clipboardNetwork_, clipboardNodes_, *network,
+                                                            LayoutPosition{x - minX, y - minY}, created),
+                                       editOptions())))
+            return {};
+        QStringList ids;
+        ids.reserve(static_cast<qsizetype>(created->size()));
+        for (const auto id : *created)
+            ids.push_back(QString::number(id));
+        clearError();
+        return ids.join(QLatin1Char(','));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return {};
+    }
+}
+
 void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString& keyValue, const QVariant& value) {
     // QML identities travel as decimal strings, not lossy JavaScript doubles.
     bool validId = false;
@@ -2029,6 +2416,89 @@ void ViewerController::setNodeParameters(const QVariantList& edits) {
     }
 }
 
+QVariantMap ViewerController::subnetInspector(nemo::NetworkId network, nemo::NodeId node) const {
+    const auto unavailable = [network, node](const QString& reason) {
+        return QVariantMap{{QStringLiteral("available"), false},
+                           {QStringLiteral("reason"), reason},
+                           {QStringLiteral("networkId"), QString::number(network)},
+                           {QStringLiteral("nodeId"), QString::number(node)},
+                           {QStringLiteral("instanceId"), QString{}},
+                           {QStringLiteral("name"), QString{}},
+                           {QStringLiteral("type"), QString{}},
+                           {QStringLiteral("category"), QString{}},
+                           {QStringLiteral("linkState"), QString{}},
+                           {QStringLiteral("sections"), QVariantList{}}};
+    };
+    try {
+        const auto& document = session_.document();
+        const auto& parent = document.network(network);
+        const auto* occurrenceNode = parent.graph().node(node);
+        const auto* occurrence = occurrenceNode && occurrenceNode->instance != nemo::kInvalidNetworkInstance
+                                     ? document.instance(occurrenceNode->instance)
+                                     : nullptr;
+        if (!occurrence)
+            return unavailable(QStringLiteral("node '%1' is not a live subnet occurrence").arg(node));
+        const auto& definition = document.network(occurrence->definition);
+        std::size_t references = 0;
+        for (const auto& other : document.instances())
+            if (other.definition == occurrence->definition)
+                ++references;
+        const QString linkState = references > 1               ? QStringLiteral("shared")
+                                  : occurrence->ownsDefinition ? QStringLiteral("local")
+                                                               : QStringLiteral("linked");
+        const auto frame = static_cast<double>(frame_);
+        QVariantList rows;
+        for (const auto& exposed : definition.exposedParameters()) {
+            const auto* child = definition.graph().node(exposed.node);
+            const auto* spec = child ? definition.graph().catalog().parameterSpec(child->type, exposed.key) : nullptr;
+            if (!child || !spec)
+                continue;
+            const nemo::ParameterAddress address{occurrence->definition, exposed.node, exposed.key, occurrence->id};
+            const auto keyState = parameterKeyState(document, address, frame);
+            QVariantMap row{{QStringLiteral("key"), exposedParameterToken(exposed.id)},
+                            {QStringLiteral("label"), QString::fromStdString(exposed.name)},
+                            {QStringLiteral("source"), QString::fromStdString(child->name + "." + exposed.key)},
+                            {QStringLiteral("type"), QString::fromLatin1(parameterTypeName(spec->type))},
+                            {QStringLiteral("kind"), QString::fromLatin1(parameterKindName(spec->type))},
+                            {QStringLiteral("value"),
+                             parameterValueVariant(nemo::animatedParameterValue(document, address, frame))},
+                            {QStringLiteral("animated"), keyState.animated},
+                            {QStringLiteral("keyed"), keyState.keyed},
+                            {QStringLiteral("editor"), QString::fromStdString(spec->editor)}};
+            if (spec->minimum)
+                row.insert(QStringLiteral("minimum"), *spec->minimum);
+            if (spec->maximum)
+                row.insert(QStringLiteral("maximum"), *spec->maximum);
+            if (spec->step)
+                row.insert(QStringLiteral("step"), *spec->step);
+            QVariantList choices;
+            for (const auto& choice : spec->choices)
+                choices.push_back(QString::fromStdString(choice));
+            row.insert(QStringLiteral("choices"), choices);
+            rows.push_back(std::move(row));
+        }
+        QVariantList sections;
+        sections.push_back(QVariantMap{{QStringLiteral("name"), QStringLiteral("Exposed Parameters")},
+                                       {QStringLiteral("parameters"), rows}});
+        return QVariantMap{
+            {QStringLiteral("available"), true},
+            {QStringLiteral("reason"), QString{}},
+            {QStringLiteral("networkId"), QString::number(network)},
+            {QStringLiteral("nodeId"), QString::number(node)},
+            {QStringLiteral("instanceId"), QString::number(occurrence->id)},
+            {QStringLiteral("name"), QString::fromStdString(occurrenceNode->name)},
+            {QStringLiteral("type"),
+             QStringLiteral("Subnet \u00b7 ") + (linkState == QStringLiteral("local")    ? QStringLiteral("local")
+                                                 : linkState == QStringLiteral("shared") ? QStringLiteral("shared")
+                                                                                         : QStringLiteral("linked"))},
+            {QStringLiteral("category"), QStringLiteral("Subnet")},
+            {QStringLiteral("linkState"), linkState},
+            {QStringLiteral("sections"), sections}};
+    } catch (const std::exception& failure) {
+        return unavailable(QString::fromUtf8(failure.what()));
+    }
+}
+
 QVariantMap ViewerController::parameterInspector(const QString& networkValue, const QVariant& nodeValue) const {
     const auto unavailable = [&networkValue, &nodeValue](const QString& reason) {
         return QVariantMap{
@@ -2039,6 +2509,20 @@ QVariantMap ViewerController::parameterInspector(const QString& networkValue, co
             {QStringLiteral("sections"), QVariantList{}}};
     };
     QString error;
+    // A subnet occurrence presents its definition's exposed controls rather
+    // than the synthetic network.instance schema, which has no parameters.
+    if (const auto network = networkIdentity(networkValue)) {
+        if (const auto node = graphIdentity(nodeValue)) {
+            const nemo::NodeInstance* candidate = nullptr;
+            try {
+                candidate = session_.document().network(*network).graph().node(static_cast<NodeId>(*node));
+            } catch (const std::exception&) {
+                candidate = nullptr;
+            }
+            if (candidate && candidate->instance != nemo::kInvalidNetworkInstance)
+                return subnetInspector(*network, static_cast<NodeId>(*node));
+        }
+    }
     const auto target = resolveInspectorTarget(session_.document(), networkValue, nodeValue, {}, error);
     if (!target)
         return unavailable(error);

@@ -33,7 +33,7 @@ if(NEMO_BUILD_UI)
         QML_FILES qml/Main.qml qml/WorkspaceNode.qml qml/Panel.qml qml/DockDrag.qml qml/PanelDragHandler.qml
                   qml/Theme.qml qml/ChromeButton.qml qml/StudioComboBox.qml qml/UnavailablePanel.qml
                   qml/ViewerPanel.qml qml/GraphPanel.qml qml/TimelinePanel.qml qml/ParametersPanel.qml
-                  qml/MediaBinPanel.qml
+                  qml/MediaBinPanel.qml qml/SubnetParameters.qml
     )
     target_link_libraries(nemo-ui PRIVATE nemo::core nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)
     if(UNIX AND NOT APPLE)

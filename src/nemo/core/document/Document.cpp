@@ -870,8 +870,8 @@ void Document::synchronizeReferences(const ChangeRecorder* touched) {
             const ParameterSpec* spec = probe.graph().catalog().parameterSpec(node->type, parameter.key);
             return spec == nullptr || spec->type != parameter.type;
         };
-        const bool needsWrite = std::any_of(probe.exposedParameters().begin(), probe.exposedParameters().end(),
-                                            staleOrChanged);
+        const bool needsWrite =
+            std::any_of(probe.exposedParameters().begin(), probe.exposedParameters().end(), staleOrChanged);
         if (!needsWrite)
             continue;
         Network& networkValue = networks_.mutableAt(index);
@@ -1018,8 +1018,7 @@ void Document::remapAnimationChannels(NetworkId sourceNetwork, NetworkId destina
                                       std::optional<NetworkInstanceId> onlyInstance) {
     for (std::size_t index = 0; index < animationChannels_.size(); ++index) {
         const AnimationChannel& current = animationChannels_[index];
-        if (current.address.network != sourceNetwork ||
-            (onlyInstance && current.address.instance != *onlyInstance))
+        if (current.address.network != sourceNetwork || (onlyInstance && current.address.instance != *onlyInstance))
             continue;
         const auto mapped = nodes.find(current.address.node);
         if (mapped == nodes.end())

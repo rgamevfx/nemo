@@ -1181,10 +1181,16 @@ int main(int argc, char** argv) {
     const bool nativeUi = qEnvironmentVariableIntValue("NEMO_TEST_NATIVE_UI") == 1;
     if (!nativeUi)
         qputenv("QT_QPA_PLATFORM", "offscreen");
+    // The viewer destination scenario adopts the application-owned Vulkan
+    // device on the real window (ViewerRuntime::attachToWindow), so that run
+    // asks Qt for the Vulkan scene graph instead of OpenGL. CI keeps the
+    // offscreen/Null configuration and the test skips without the opt-in.
+    const bool viewerWindow = qEnvironmentVariableIntValue("NEMO_TEST_VIEWER_WINDOW") == 1;
     // Keep CI isolated even when the desktop exports a QPA fallback list.
     // Native acceptance opts in and uses the requested system platform.
     QQuickWindow::setSceneGraphBackend(QStringLiteral("rhi"));
-    QQuickWindow::setGraphicsApi(nativeUi ? QSGRendererInterface::OpenGL : QSGRendererInterface::Null);
+    QQuickWindow::setGraphicsApi(nativeUi ? (viewerWindow ? QSGRendererInterface::Vulkan : QSGRendererInterface::OpenGL)
+                                          : QSGRendererInterface::Null);
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     qmlRegisterType<nemo::ui::ViewerItem>("Nemo", 1, 0, "ViewerItem");

@@ -1,0 +1,41 @@
+Note: Google Test filter = ViewerDestinationSurface.*
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ViewerDestinationSurface
+[ RUN      ] ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations
+[libx264 @ 0x519000401080] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x519000401080] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x519000401080] frame I:4     Avg QP: 0.00  size:   350
+[libx264 @ 0x519000401080] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x519000401080] final ratefactor: -5.79
+[libx264 @ 0x519000401080] 8x8 transform intra:0.0%
+[libx264 @ 0x519000401080] coded y,uvDC,uvAC intra: 0.0% 0.0% 0.0%
+[libx264 @ 0x519000401080] i16 v,h,dc,p: 97%  0%  3%  0%
+[libx264 @ 0x519000401080] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x519000401080] kb/s:67.25
+[libx264 @ 0x51900040ce80] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x51900040ce80] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x51900040ce80] frame I:1     Avg QP: 0.00  size:   748
+[libx264 @ 0x51900040ce80] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x51900040ce80] final ratefactor: -8.61
+[libx264 @ 0x51900040ce80] 8x8 transform intra:0.0%
+[libx264 @ 0x51900040ce80] coded y,uvDC,uvAC intra: 0.0% 0.2% 0.0%
+[libx264 @ 0x51900040ce80] i16 v,h,dc,p: 94%  0%  6%  0%
+[libx264 @ 0x51900040ce80] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x51900040ce80] kb/s:143.62
+[libx264 @ 0x51900040ec80] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x51900040ec80] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x51900040ec80] frame I:1     Avg QP: 0.00  size:   820
+[libx264 @ 0x51900040ec80] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x51900040ec80] final ratefactor: 2.08
+[libx264 @ 0x51900040ec80] 8x8 transform intra:0.0%
+[libx264 @ 0x51900040ec80] coded y,uvDC,uvAC intra: 0.0% 0.0% 0.0%
+[libx264 @ 0x51900040ec80] i16 v,h,dc,p: 97%  0%  3%  0%
+[libx264 @ 0x51900040ec80] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x51900040ec80] kb/s:157.44
+[       OK ] ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations (19589 ms)
+[----------] 1 test from ViewerDestinationSurface (19589 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (19589 ms total)
+[  PASSED  ] 1 test.

@@ -112,6 +112,7 @@ if(NEMO_BUILD_UI)
         ../apps/nemo-ui/AnimationViewModel.hpp
         WorkspaceDragTests.cpp
         InteractiveUiTests.cpp
+        Issue47ViewerDestinationUiTests.cpp
         PanelContextRouterTests.cpp
         PanelContextUiTests.cpp
         MediaLibraryModelTests.cpp

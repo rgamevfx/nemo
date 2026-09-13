@@ -1,15 +1,13 @@
-# Native Wayland run of the issue #49 subnet exposure and navigation cases
-$ NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland build/debug/tests/nemo_workspace_ui_tests --gtest_filter='WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows:WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView'
 Note: Google Test filter = WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows:WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView
 [==========] Running 2 tests from 1 test suite.
 [----------] Global test environment set-up.
 [----------] 2 tests from WorkspaceDragTest
 [ RUN      ] WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView
-[       OK ] WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView (1227 ms)
+[       OK ] WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView (1190 ms)
 [ RUN      ] WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows
-[       OK ] WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows (1791 ms)
-[----------] 2 tests from WorkspaceDragTest (3018 ms total)
+[       OK ] WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows (1735 ms)
+[----------] 2 tests from WorkspaceDragTest (2925 ms total)
 
 [----------] Global test environment tear-down
-[==========] 2 tests from 1 test suite ran. (3019 ms total)
+[==========] 2 tests from 1 test suite ran. (2925 ms total)
 [  PASSED  ] 2 tests.

@@ -34,12 +34,83 @@ Document animatedDocument() {
         .apply(document);
     return document;
 }
+QVariantMap nodeTarget(NetworkId network, NodeId node) {
+    return {{"network", QString::number(network)}, {"node", QString::number(node)}};
+}
+QVariantList rootAnimationTargets(const Document& document) {
+    QVariantList targets;
+    for (const auto& channel : document.animationChannels()) {
+        const auto* occurrence = document.instance(channel.address.instance);
+        const auto network = occurrence ? occurrence->parentNetwork : channel.address.network;
+        const auto node = occurrence ? occurrence->node : channel.address.node;
+        const auto target = nodeTarget(network, node);
+        if (network == document.rootNetworkId() && !targets.contains(target))
+            targets.push_back(target);
+    }
+    return targets;
+}
+TEST(AnimationUi, TargetUnionKeepsNetworkIdentityAndRejectsFilteredEdits) {
+    auto document = animatedDocument();
+    const auto original = document.animationChannels().front();
+    const auto occurrenceId = std::make_shared<NetworkInstanceId>();
+    collapseSelectionCommand(document.rootNetworkId(), {original.address.node}, "Subnet", occurrenceId).apply(document);
+    const auto definition = document.instance(*occurrenceId)->definition;
+    const auto child = document.network(definition).graph().nodeByName("Color")->id;
+    const auto other = document.network(document.rootNetworkId()).graph().addNode("constcolor", "Other");
+    setKeyframesCommand({{ParameterAddress{document.rootNetworkId(), other, "color"},
+                          Keyframe{0, 12, ColorValue{{0.2F, 0.3F, 0.4F, 1.0F}}}}})
+        .apply(document);
+    ProjectSession session(document);
+    ui::AnimationViewModel model(session);
+    EXPECT_TRUE(model.channels().isEmpty());
+    auto red = nodeTarget(definition, child);
+    red.insert("parameter", "color");
+    red.insert("component", 0);
+    model.setTargets({red, nodeTarget(document.rootNetworkId(), other), red, nodeTarget(999999, child)});
+    ASSERT_EQ(model.channels().size(), 5);
+    const auto projected = model.channels().front().toMap();
+    EXPECT_EQ(projected.value("networkId").toString(), QString::number(definition));
+    EXPECT_EQ(projected.value("nodeId").toString(), QString::number(child));
+    const auto selectedKey = projected.value("keys").toList().front().toMap().value("id").toString();
+    ASSERT_TRUE(model.beginGesture());
+    const auto revision = session.revision();
+    model.setTargets({nodeTarget(document.rootNetworkId(), other)});
+    EXPECT_FALSE(model.moveKeys({selectedKey}, 4, 1));
+    EXPECT_EQ(session.revision(), revision);
+    EXPECT_FALSE(session.canUndo());
+    EXPECT_EQ(session.document().animationChannels(), document.animationChannels());
+}
+
+TEST(AnimationUi, ParameterTargetSurvivesLastKeyRemovalAndRecreation) {
+    ProjectSession session(animatedDocument());
+    ui::AnimationViewModel model(session);
+    const auto address = session.document().animationChannels().front().address;
+    auto green = nodeTarget(address.network, address.node);
+    green.insert("parameter", "color");
+    green.insert("component", 1);
+    model.setTargets({green});
+    ASSERT_EQ(model.channels().size(), 1);
+    QStringList keys;
+    for (const auto& value : model.channels().front().toMap().value("keys").toList())
+        keys.push_back(value.toMap().value("id").toString());
+    ASSERT_TRUE(model.removeKeys(keys));
+    EXPECT_TRUE(model.channels().isEmpty());
+    ASSERT_TRUE(session
+                    .submit(setKeyframesCommand({{address, Keyframe{0, 20, ColorValue{{0.1F, 0.7F, 0.3F, 1.0F}}}}}),
+                            {session.revision(), {}})
+                    .committed);
+    ASSERT_EQ(model.channels().size(), 1);
+    const auto values = model.channels().front().toMap().value("keys").toList();
+    ASSERT_EQ(values.size(), 1);
+    EXPECT_FLOAT_EQ(values.front().toMap().value("value").toFloat(), 0.7F);
+}
 QString key(const ui::AnimationViewModel& model, int component, int index) {
     return model.channels().at(component).toMap().value("keys").toList().at(index).toMap().value("id").toString();
 }
 TEST(AnimationUi, ComponentMovesCoalesceTimeAndPreserveUnselectedValues) {
     ProjectSession session(animatedDocument());
     ui::AnimationViewModel model(session);
+    model.setTargets(rootAnimationTargets(session.document()));
     const auto before = session.document().animationChannels().front();
     ASSERT_TRUE(model.beginGesture());
     ASSERT_TRUE(model.moveKeys({key(model, 0, 0), key(model, 1, 0)}, 2, 0.25));
@@ -59,6 +130,7 @@ TEST(AnimationUi, ComponentMovesCoalesceTimeAndPreserveUnselectedValues) {
 TEST(AnimationUi, CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory) {
     ProjectSession session(animatedDocument());
     ui::AnimationViewModel model(session);
+    model.setTargets(rootAnimationTargets(session.document()));
     const auto before = session.document().animationChannels().front();
     const auto revision = session.revision();
     ASSERT_TRUE(model.beginGesture());
@@ -80,6 +152,7 @@ TEST(AnimationUi, CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory) {
 TEST(AnimationUi, StaleGestureCannotOverwriteAnotherEditOrReplacement) {
     ProjectSession session(animatedDocument());
     ui::AnimationViewModel model(session);
+    model.setTargets(rootAnimationTargets(session.document()));
     const auto id = key(model, 0, 0);
     ASSERT_TRUE(model.beginGesture());
     const auto& original = session.document().animationChannels().front();
@@ -97,6 +170,7 @@ TEST(AnimationUi, StaleGestureCannotOverwriteAnotherEditOrReplacement) {
 TEST(AnimationUi, TangentsAndInsertionUseSharedCurveSemantics) {
     ProjectSession session(animatedDocument());
     ui::AnimationViewModel model(session);
+    model.setTargets(rootAnimationTargets(session.document()));
     const auto id = key(model, 0, 0);
     ASSERT_TRUE(model.setInterpolation({id}, "bezier"));
     ASSERT_TRUE(model.setTangent(id, "out", 0.1));
@@ -193,6 +267,10 @@ protected:
         QSignalSpy rendered(window, &QQuickWindow::frameSwapped);
         window->requestUpdate();
         ASSERT_TRUE(rendered.wait(2000));
+        for (const auto& target : rootAnimationTargets(session.document()))
+            ASSERT_TRUE(router.requestInspector("A", target.toMap().value("network").toString(),
+                                                target.toMap().value("node").toString()));
+        QTest::qWait(30);
     }
     void TearDown() override {
         if (window)
@@ -232,6 +310,13 @@ protected:
         QTest::mouseRelease(window, button, modifiers, to);
         QTest::qWait(20);
     }
+    void clickPin(const QString& name) {
+        auto* target = item(name);
+        ASSERT_NE(target, nullptr);
+        QTest::mouseMove(window, target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint());
+        QTest::qWait(30);
+        click(name);
+    }
     void enter(const QString& name, const QString& text) {
         click(name);
         QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
@@ -257,10 +342,11 @@ protected:
                                popup->property("width").toInt(), popup->property("height").toInt());
             EXPECT_TRUE(window->grabWindow().copy(bounds).save(dir + '/' + name + "-popup.png"));
         }
-        if (name == "dense-track") {
+        if (name == "dense-track" || name == "inspector-pins") {
             session.setPresentation(makePresentationEnvelope(
                 {{"workspace", workspace.projectPresentation()}, {"context", router.contextPresentation()}}));
-            EXPECT_TRUE(ProjectFile::writeAtomic(session.prepareSave((dir + "/dense.nemo").toStdString())).ok);
+            const auto filename = name == "dense-track" ? "/dense.nemo" : "/inspector-pins.nemo";
+            EXPECT_TRUE(ProjectFile::writeAtomic(session.prepareSave((dir + filename).toStdString())).ok);
         }
         EXPECT_TRUE(window->grabWindow().save(dir + '/' + name + ".png"));
     }
@@ -276,7 +362,7 @@ TEST_F(AnimationSurface, HeaderSelectionAndHierarchyNeverWriteAnimation) {
     const auto start = item("animationPanel")->property("viewStart");
     const auto end = item("animationPanel")->property("viewEnd");
     const auto node = QString::number(session.document().animationChannels().front().address.node);
-    click("animationNodeRow_" + node);
+    click("animationNodeRow_" + controller.rootNetworkId() + "_" + node);
     EXPECT_EQ(item("animationPanel")->property("viewStart"), start);
     EXPECT_EQ(item("animationPanel")->property("viewEnd"), end);
     EXPECT_EQ(js("animation.channels.filter(c => animation.curveVisible(c.id)).length").toInt(), 4);
@@ -384,31 +470,31 @@ TEST_F(AnimationSurface, VisibilityFramingAndGroupRestorationRemainPresentationO
     QTest::qWait(20);
     EXPECT_EQ(js("animation.targetNodeId").toString(), node);
     // The tree's explicit context menu owns isolation; selection alone does not.
-    auto* row = item("animationParameterRow_" + node + "_color.R");
+    auto* row = item("animationParameterRow_" + controller.rootNetworkId() + "_" + node + "_color.R");
     ASSERT_NE(row, nullptr);
     QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier,
                       row->mapToScene(QPointF(row->width() / 2, row->height() / 2)).toPoint());
     QTest::qWait(20);
     click("animationIsolateCurves");
     EXPECT_EQ(js("animation.channels.filter(c => animation.curveVisible(c.id)).length").toInt(), 1);
-    click("animationNodeRow_" + node);
+    click("animationNodeRow_" + controller.rootNetworkId() + "_" + node);
     EXPECT_EQ(js("animation.channels.filter(c => animation.curveVisible(c.id)).length").toInt(), 1);
     EXPECT_EQ(js("animation.viewStart"), start);
     EXPECT_EQ(js("animation.viewEnd"), end);
     capture("isolated");
-    row = item("animationNodeRow_" + node);
+    row = item("animationNodeRow_" + controller.rootNetworkId() + "_" + node);
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, row->mapToScene(QPointF(10, 11)).toPoint());
     EXPECT_EQ(js("animation.rows.length").toInt(), 1);
     EXPECT_EQ(js("animation.channels.length").toInt(), 4);
-    row = item("animationNodeRow_" + node);
+    row = item("animationNodeRow_" + controller.rootNetworkId() + "_" + node);
     QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier,
                       row->mapToScene(QPointF(row->width() / 2, row->height() / 2)).toPoint());
     QTest::qWait(20);
     click("animationShowAllCurves");
     EXPECT_EQ(js("animation.channels.filter(c => animation.curveVisible(c.id)).length").toInt(), 4);
-    row = item("animationNodeRow_" + node);
+    row = item("animationNodeRow_" + controller.rootNetworkId() + "_" + node);
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, row->mapToScene(QPointF(10, 11)).toPoint());
-    row = item("animationParameterRow_" + node + "_color.R");
+    row = item("animationParameterRow_" + controller.rootNetworkId() + "_" + node + "_color.R");
     QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier,
                       row->mapToScene(QPointF(row->width() / 2, row->height() / 2)).toPoint());
     QTest::qWait(20);
@@ -423,6 +509,8 @@ TEST_F(AnimationSurface, VisibilityFramingAndGroupRestorationRemainPresentationO
     const auto originalWorkspace = workspace.activeWorkspaceId();
     const auto other = workspace.createWorkspace("Other");
     ASSERT_FALSE(other.isEmpty());
+    ASSERT_TRUE(workspace.switchWorkspace(other));
+    QTest::qWait(60);
     ASSERT_TRUE(workspace.switchWorkspace(originalWorkspace));
     QTest::qWait(50);
     EXPECT_EQ(js("animation.targetNodeId").toString(), node);
@@ -444,6 +532,7 @@ TEST(AnimationUi, ExposedOccurrenceChannelsDoNotEditTheirDefinition) {
     setKeyframesCommand({{address, Keyframe{0, 12, ColorValue{{0.5F, 0.25F, 0.75F, 1.0F}}}}}).apply(document);
     ProjectSession session(document);
     ui::AnimationViewModel model(session);
+    model.setTargets(rootAnimationTargets(session.document()));
     ASSERT_EQ(model.channels().size(), 4);
     EXPECT_EQ(model.channels()[0].toMap().value("nodeId").toString(), QString::number(occurrence.node));
     EXPECT_EQ(model.channels()[0].toMap().value("label").toString(), "Tint.R");
@@ -453,7 +542,7 @@ TEST(AnimationUi, ExposedOccurrenceChannelsDoNotEditTheirDefinition) {
     EXPECT_FLOAT_EQ(std::get<ColorValue>(animatedParameterValue(session.document(), address, 15)).value[0], 0.8F);
     ASSERT_TRUE(model.undo());
     EXPECT_DOUBLE_EQ(session.document().animationChannel(address)->keys[0].time, 12);
-    model.setNetworkId("999999");
+    model.setTargets({nodeTarget(999999, occurrence.node)});
     EXPECT_FALSE(model.available());
     EXPECT_TRUE(model.channels().isEmpty());
     EXPECT_FALSE(model.moveKeys({"1:0/1"}, 2, 0));
@@ -522,6 +611,10 @@ TEST_F(AnimationSurface, DenseTrackCurvesTangentsAndCompactDock) {
     }
     setKeyframesCommand(std::move(edits)).apply(document);
     ASSERT_TRUE(session.replaceDocument(std::move(document)).replaced);
+    // This legacy dense gesture fixture explicitly pins its nodes before
+    // removing the inspector dock; filtering itself is exercised separately.
+    ASSERT_TRUE(item("animationPanel")->setProperty("pinnedTargets", rootAnimationTargets(session.document())));
+    QTest::qWait(30);
     const auto originalLayout = workspace.projectPresentation();
     for (const auto& type : {"viewer", "parameters", "nodegraph"}) {
         const auto other = panelByType(workspace.root(), type).value("id").toString();
@@ -541,7 +634,8 @@ TEST_F(AnimationSurface, DenseTrackCurvesTangentsAndCompactDock) {
     capture("dense-curves");
     const auto denseStart = js("animation.viewStart");
     const auto denseEnd = js("animation.viewEnd");
-    auto* firstNodeRow = item("animationNodeRow_" + js("animation.channels[0].nodeId").toString());
+    auto* firstNodeRow =
+        item("animationNodeRow_" + controller.rootNetworkId() + "_" + js("animation.channels[0].nodeId").toString());
     const auto nodePoint = firstNodeRow->mapToScene(QPointF(70, 11)).toPoint();
     QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, nodePoint);
     QTest::qWait(20);
@@ -676,7 +770,7 @@ TEST_F(AnimationSurface, CollapsedTrackBandMovesHiddenDescendantsAsOneEdit) {
     click("animationTrackView");
     click("animationFrameAll");
     const auto node = QString::number(session.document().animationChannels().front().address.node);
-    auto* row = item("animationNodeRow_" + node);
+    auto* row = item("animationNodeRow_" + controller.rootNetworkId() + "_" + node);
     ASSERT_NE(row, nullptr);
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, row->mapToScene(QPointF(10, 11)).toPoint());
     ASSERT_EQ(js("animation.rows.length").toInt(), 1);
@@ -722,5 +816,104 @@ TEST_F(AnimationSurface, BoxSelectionPanZoomAndTreeResizeDoNotCommit) {
     EXPECT_EQ(session.revision(), revision);
     EXPECT_EQ(controller.frame(), clock);
     EXPECT_EQ(js("animation.channels.filter(c => animation.curveVisible(c.id)).length").toInt(), 4);
+}
+
+TEST_F(AnimationSurface, InspectorFollowingPinsAndMasksSurviveGroupAndWorkspaceChanges) {
+    click("closeAllInspectors");
+    EXPECT_EQ(js("animation.channels.length").toInt(), 0);
+    for (const auto& type : {"viewer", "nodegraph"}) {
+        const auto id = panelByType(workspace.root(), type).value("id").toString();
+        if (!id.isEmpty())
+            workspace.closePanel(id);
+    }
+    window->setMaximumSize(QSize(1274, 640));
+    window->resize(1274, 640);
+    QTest::qWait(60);
+    const auto scope = controller.rootNetworkId();
+    const auto grade = controller.createGraphNode(scope, "grade", "Grade", 0, 0, {}, {});
+    const auto blur = controller.createGraphNode(scope, "blur", "Blur", 160, 0, {}, {});
+    ASSERT_FALSE(grade.isEmpty());
+    ASSERT_FALSE(blur.isEmpty());
+    ASSERT_TRUE(controller.keyNodeParameter(scope, grade, "multiply"));
+    ASSERT_TRUE(controller.keyNodeParameter(scope, blur, "size"));
+    ASSERT_TRUE(controller.keyNodeParameter(scope, blur, "mix"));
+    EXPECT_EQ(js("animation.channels.length").toInt(), 0);
+    ASSERT_TRUE(router.requestInspector("A", scope, grade));
+    ASSERT_TRUE(router.requestInspector("A", scope, blur));
+    QTest::qWait(40);
+    ASSERT_EQ(js("animation.channels.length").toInt(), 6);
+    EXPECT_EQ(js("animation.rows.filter(r => r.parent).length").toInt(), 2);
+    click("animationCurvesView");
+    click("animationFrameAll");
+    const auto start = js("animation.viewStart");
+    const auto end = js("animation.viewEnd");
+    const auto revision = session.revision();
+    const auto before = session.document().animationChannels();
+    capture("follow-inspectors");
+    click("collapse_" + grade);
+    EXPECT_EQ(js("animation.channels.length").toInt(), 6);
+    const auto red =
+        js(QString(
+               "animation.channels.find(c => c.nodeId === '%1' && c.parameter === 'multiply' && c.component === 0).id")
+               .arg(grade))
+            .toString();
+    clickPin("animationPinChannel_" + red);
+    click("close_" + grade);
+    ASSERT_EQ(js("animation.channels.length").toInt(), 3);
+    EXPECT_EQ(js(QString("animation.channels.filter(c => c.nodeId === '%1').length").arg(grade)).toInt(), 1);
+    capture("inspector-pins");
+    auto* row = item("animationParameterRow_" + scope + "_" + grade + "_multiply.R");
+    ASSERT_NE(row, nullptr);
+    QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier,
+                      row->mapToScene(QPointF(45, row->height() / 2)).toPoint());
+    QTest::qWait(20);
+    click("animationHideCurves");
+    EXPECT_FALSE(js(QString("animation.curveVisible('%1')").arg(red)).toBool());
+    clickPin("animationPinNode_" + scope + "_" + blur);
+    click("close_" + blur);
+    ASSERT_EQ(js("animation.channels.length").toInt(), 3);
+    EXPECT_EQ(js("animation.channels.filter(c => animation.curveVisible(c.id)).length").toInt(), 2);
+    capture("only-pins");
+    workspace.setGroup(panelId, "B");
+    QTest::qWait(40);
+    EXPECT_EQ(js("animation.channels.length").toInt(), 0);
+    workspace.setGroup(panelId, "A");
+    QTest::qWait(40);
+    EXPECT_EQ(js("animation.channels.length").toInt(), 3);
+    const auto original = workspace.activeWorkspaceId();
+    const auto other = workspace.createWorkspace("Other");
+    ASSERT_FALSE(other.isEmpty());
+    ASSERT_TRUE(workspace.switchWorkspace(other));
+    QTest::qWait(60);
+    ASSERT_TRUE(workspace.switchWorkspace(original));
+    QTest::qWait(100);
+    ASSERT_EQ(js("animation.channels.length").toInt(), 3);
+    EXPECT_FALSE(js(QString("animation.curveVisible('%1')").arg(red)).toBool());
+    clickPin("animationPinChannel_" + red);
+    EXPECT_EQ(js("animation.channels.length").toInt(), 2);
+    clickPin("animationPinNode_" + scope + "_" + blur);
+    EXPECT_EQ(js("animation.channels.length").toInt(), 0);
+    EXPECT_EQ(js("animation.viewStart"), start);
+    EXPECT_EQ(js("animation.viewEnd"), end);
+    EXPECT_EQ(session.revision(), revision);
+    EXPECT_EQ(session.document().animationChannels(), before);
+}
+TEST_F(AnimationSurface, RestoringPresentationRetainsInspectorMembershipAndPinnedChannels) {
+    const auto red = js("animation.channels.find(c => c.component === 0).id").toString();
+    clickPin("animationPinChannel_" + red);
+    const auto saved = workspace.projectPresentation();
+    ASSERT_TRUE(QMetaObject::invokeMethod(item("parametersPanel"), "closeAllInspectors"));
+    QTest::qWait(30);
+    clickPin("animationPinChannel_" + red);
+    ASSERT_EQ(js("animation.channels.length").toInt(), 0);
+
+    ASSERT_TRUE(workspace.applyProjectPresentation(saved));
+    QTest::qWait(100);
+    ASSERT_EQ(item("parametersPanel")->property("inspectors").toList().size(), 1);
+    ASSERT_EQ(js("animation.channels.length").toInt(), 4);
+    ASSERT_TRUE(QMetaObject::invokeMethod(item("parametersPanel"), "closeAllInspectors"));
+    QTest::qWait(30);
+    EXPECT_EQ(js("animation.channels.length").toInt(), 1);
+    EXPECT_EQ(js("animation.channels[0].id").toString(), red);
 }
 }  // namespace

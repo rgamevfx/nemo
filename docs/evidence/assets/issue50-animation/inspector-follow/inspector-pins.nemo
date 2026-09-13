@@ -1,0 +1,366 @@
+{
+  "animationChannels": [
+    {
+      "address": {
+        "key": "color",
+        "network": 1,
+        "node": 2
+      },
+      "id": 1,
+      "keys": [
+        {
+          "id": 1,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 10.0,
+          "value": {
+            "type": "color",
+            "value": [
+              0.0,
+              0.25,
+              0.5,
+              1.0
+            ]
+          }
+        },
+        {
+          "id": 2,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 30.0,
+          "value": {
+            "type": "color",
+            "value": [
+              1.0,
+              0.5,
+              0.75,
+              1.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "multiply",
+        "network": 1,
+        "node": 3
+      },
+      "id": 2,
+      "keys": [
+        {
+          "id": 3,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 0.0,
+          "value": {
+            "type": "color",
+            "value": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "size",
+        "network": 1,
+        "node": 4
+      },
+      "id": 3,
+      "keys": [
+        {
+          "id": 4,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 0.0,
+          "value": {
+            "type": "float",
+            "value": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "mix",
+        "network": 1,
+        "node": 4
+      },
+      "id": 4,
+      "keys": [
+        {
+          "id": 5,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 0.0,
+          "value": {
+            "type": "float",
+            "value": 1.0
+          }
+        }
+      ]
+    }
+  ],
+  "color": {
+    "deliveryTransform": "sRGB/rec709",
+    "viewerTransform": "sRGB/rec709",
+    "workingSpace": "linear"
+  },
+  "format": "nemo",
+  "instances": [],
+  "mediaCatalog": {
+    "bins": [],
+    "entries": [],
+    "nextBinId": 1,
+    "nextEntryId": 1
+  },
+  "name": "",
+  "networks": [
+    {
+      "defaultOutput": 1,
+      "edges": [],
+      "exposedParameters": [],
+      "id": 1,
+      "inputConnections": [],
+      "inputs": [],
+      "name": "Root",
+      "nextEdgeId": 1,
+      "nextInterfacePortId": 1,
+      "nextNodeId": 5,
+      "nodes": [
+        {
+          "id": 1,
+          "layout": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "name": "Output",
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 2,
+          "layout": {
+            "x": -140.0,
+            "y": 0.0
+          },
+          "name": "Color",
+          "params": {},
+          "type": "constcolor"
+        },
+        {
+          "id": 3,
+          "layout": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "name": "Grade",
+          "params": {},
+          "type": "grade"
+        },
+        {
+          "id": 4,
+          "layout": {
+            "x": 160.0,
+            "y": 0.0
+          },
+          "name": "Blur",
+          "params": {},
+          "type": "blur"
+        }
+      ],
+      "outputConnections": [],
+      "outputInputBindings": [],
+      "outputs": []
+    }
+  ],
+  "nextAnimationChannelId": 5,
+  "nextInstanceId": 1,
+  "nextKeyframeId": 6,
+  "nextNetworkId": 2,
+  "presentation": {
+    "data": {
+      "context": {
+        "groups": {}
+      },
+      "workspace": {
+        "activeWorkspaceId": "workspace-1",
+        "appearance": {
+          "accentOverride": "",
+          "categoryColors": {
+            "Color": "#71608c",
+            "Distort": "#54816b",
+            "Filter": "#a96832",
+            "IO": "#386b91",
+            "Merge": "#60656b",
+            "Utility": "#59646f"
+          },
+          "preset": "Graphite"
+        },
+        "version": 2,
+        "workspaces": [
+          {
+            "id": "workspace-1",
+            "layout": {
+              "root": {
+                "children": [
+                  {
+                    "active": "panel-8",
+                    "id": "leaf-9",
+                    "kind": "tabs",
+                    "panels": [
+                      {
+                        "group": "A",
+                        "id": "panel-8",
+                        "state": {
+                          "columns": true,
+                          "inspectors": [
+                            {
+                              "collapsed": false,
+                              "network": "1",
+                              "node": "4",
+                              "pinned": false
+                            }
+                          ],
+                          "limit": 3
+                        },
+                        "type": "parameters"
+                      }
+                    ]
+                  },
+                  {
+                    "active": "panel-6",
+                    "id": "leaf-7",
+                    "kind": "tabs",
+                    "panels": [
+                      {
+                        "group": "A",
+                        "id": "panel-6",
+                        "state": {
+                          "animationGroups": {
+                            "A": {
+                              "channels": [
+                                "3:0",
+                                "4:0"
+                              ],
+                              "collapsed": {},
+                              "end": 8,
+                              "hidden": {},
+                              "keys": [],
+                              "max": 1.22,
+                              "min": -0.22,
+                              "mode": "curves",
+                              "network": "1",
+                              "pins": [
+                                {
+                                  "component": 0,
+                                  "network": "1",
+                                  "node": "3",
+                                  "parameter": "multiply"
+                                }
+                              ],
+                              "scroll": 0,
+                              "start": -2,
+                              "target": "4",
+                              "tree": 154
+                            }
+                          }
+                        },
+                        "type": "animation"
+                      }
+                    ]
+                  }
+                ],
+                "id": "split-10",
+                "kind": "split",
+                "orientation": "horizontal",
+                "ratio": 0.5
+              },
+              "version": 1
+            },
+            "name": "Default"
+          }
+        ]
+      }
+    },
+    "version": 1
+  },
+  "requiredFeatures": [
+    {
+      "id": "networks",
+      "version": 1
+    },
+    {
+      "id": "animation",
+      "version": 1
+    }
+  ],
+  "rootNetworkId": 1,
+  "schema": 4,
+  "sources": {}
+}

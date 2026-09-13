@@ -1,0 +1,99 @@
+[1/5] Automatic MOC for target nemo_workspace_ui_tests
+[2/4] Building CXX object tests/CMakeFiles/nemo_workspace_ui_tests.dir/PanelContextUiTests.cpp.o
+[3/4] Building CXX object tests/CMakeFiles/nemo_workspace_ui_tests.dir/AnimationUiTests.cpp.o
+[4/4] Linking CXX executable tests/nemo_workspace_ui_tests
+/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':
+/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'
+Note: Google Test filter = AnimationUi.*:AnimationSurface.*:PanelContextRouter.*:PanelContextUiTest.*:Interactive.ParameterInspector*
+[==========] Running 33 tests from 5 test suites.
+[----------] Global test environment set-up.
+[----------] 7 tests from AnimationUi
+[ RUN      ] AnimationUi.TargetUnionKeepsNetworkIdentityAndRejectsFilteredEdits
+[       OK ] AnimationUi.TargetUnionKeepsNetworkIdentityAndRejectsFilteredEdits (18 ms)
+[ RUN      ] AnimationUi.ParameterTargetSurvivesLastKeyRemovalAndRecreation
+[       OK ] AnimationUi.ParameterTargetSurvivesLastKeyRemovalAndRecreation (3 ms)
+[ RUN      ] AnimationUi.ComponentMovesCoalesceTimeAndPreserveUnselectedValues
+[       OK ] AnimationUi.ComponentMovesCoalesceTimeAndPreserveUnselectedValues (12 ms)
+[ RUN      ] AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory
+[       OK ] AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory (7 ms)
+[ RUN      ] AnimationUi.StaleGestureCannotOverwriteAnotherEditOrReplacement
+[       OK ] AnimationUi.StaleGestureCannotOverwriteAnotherEditOrReplacement (6 ms)
+[ RUN      ] AnimationUi.TangentsAndInsertionUseSharedCurveSemantics
+[       OK ] AnimationUi.TangentsAndInsertionUseSharedCurveSemantics (19 ms)
+[ RUN      ] AnimationUi.ExposedOccurrenceChannelsDoNotEditTheirDefinition
+[       OK ] AnimationUi.ExposedOccurrenceChannelsDoNotEditTheirDefinition (7 ms)
+[----------] 7 tests from AnimationUi (76 ms total)
+
+[----------] 9 tests from AnimationSurface
+[ RUN      ] AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation
+[       OK ] AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation (2968 ms)
+[ RUN      ] AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag
+This plugin does not support propagateSizeHints()
+[       OK ] AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag (3802 ms)
+[ RUN      ] AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly
+[       OK ] AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly (1786 ms)
+[ RUN      ] AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory
+qt.qml.context: file:///home/rgame/dev/Nemo_Dev2/apps/nemo-ui/qml/ParametersPanel.qml:1174:33 Parameter "mouse" is not declared. Injection of parameters into signal handlers is deprecated. Use JavaScript functions with formal parameters instead.
+[       OK ] AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory (1627 ms)
+[ RUN      ] AnimationSurface.DenseTrackCurvesTangentsAndCompactDock
+This plugin does not support propagateSizeHints()
+[       OK ] AnimationSurface.DenseTrackCurvesTangentsAndCompactDock (3864 ms)
+[ RUN      ] AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit
+[       OK ] AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit (1106 ms)
+[ RUN      ] AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit
+[       OK ] AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit (992 ms)
+[ RUN      ] AnimationSurface.InspectorFollowingPinsAndMasksSurviveGroupAndWorkspaceChanges
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[       OK ] AnimationSurface.InspectorFollowingPinsAndMasksSurviveGroupAndWorkspaceChanges (2626 ms)
+[ RUN      ] AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels
+[       OK ] AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels (1277 ms)
+[----------] 9 tests from AnimationSurface (20054 ms total)
+
+[----------] 2 tests from Interactive
+[ RUN      ] Interactive.ParameterInspectorPublishesSchemaMetadataAndValues
+[       OK ] Interactive.ParameterInspectorPublishesSchemaMetadataAndValues (4 ms)
+[ RUN      ] Interactive.ParameterInspectorReportsUnavailableTargets
+[       OK ] Interactive.ParameterInspectorReportsUnavailableTargets (1 ms)
+[----------] 2 tests from Interactive (6 ms total)
+
+[----------] 8 tests from PanelContextRouter
+[ RUN      ] PanelContextRouter.RejectsInvalidValuesWithoutChangingBinding
+[       OK ] PanelContextRouter.RejectsInvalidValuesWithoutChangingBinding (0 ms)
+[ RUN      ] PanelContextRouter.GroupClocksAreIndependentAndNotifyOnlyAffectedPanels
+[       OK ] PanelContextRouter.GroupClocksAreIndependentAndNotifyOnlyAffectedPanels (0 ms)
+[ RUN      ] PanelContextRouter.RetiredRoutingModesAreAbsentFromThePublicApi
+[       OK ] PanelContextRouter.RetiredRoutingModesAreAbsentFromThePublicApi (0 ms)
+[ RUN      ] PanelContextRouter.ViewerRoleSelectsTargetWithoutRepurposingGroupContext
+[       OK ] PanelContextRouter.ViewerRoleSelectsTargetWithoutRepurposingGroupContext (1 ms)
+[ RUN      ] PanelContextRouter.MediaAvailabilityAndMarksFollowTheDocumentCatalog
+[       OK ] PanelContextRouter.MediaAvailabilityAndMarksFollowTheDocumentCatalog (1 ms)
+[ RUN      ] PanelContextRouter.ExplicitSourceOpenIsGroupScopedAndDoesNotMutateTheDocument
+[       OK ] PanelContextRouter.ExplicitSourceOpenIsGroupScopedAndDoesNotMutateTheDocument (0 ms)
+[ RUN      ] PanelContextRouter.InspectorRequestIsGroupScopedAndMediaFree
+[       OK ] PanelContextRouter.InspectorRequestIsGroupScopedAndMediaFree (0 ms)
+[ RUN      ] PanelContextRouter.InspectorMembershipUnionsCurrentWorkspaceCardsByGroup
+[       OK ] PanelContextRouter.InspectorMembershipUnionsCurrentWorkspaceCardsByGroup (18 ms)
+[----------] 8 tests from PanelContextRouter (25 ms total)
+
+[----------] 7 tests from PanelContextUiTest
+[ RUN      ] PanelContextUiTest.RetiredBindingChromeIsGoneFromPanelHeaders
+[       OK ] PanelContextUiTest.RetiredBindingChromeIsGoneFromPanelHeaders (559 ms)
+[ RUN      ] PanelContextUiTest.GroupBadgeMenuRetargetsRoutingWithoutTouchingOtherGroups
+[       OK ] PanelContextUiTest.GroupBadgeMenuRetargetsRoutingWithoutTouchingOtherGroups (2908 ms)
+[ RUN      ] PanelContextUiTest.GroupContextsStayIsolatedWithoutLinkModes
+[       OK ] PanelContextUiTest.GroupContextsStayIsolatedWithoutLinkModes (561 ms)
+[ RUN      ] PanelContextUiTest.InspectorRequestsAreGroupScopedAndMediaFree
+[       OK ] PanelContextUiTest.InspectorRequestsAreGroupScopedAndMediaFree (786 ms)
+[ RUN      ] PanelContextUiTest.PresentationEditRacingProjectWriteKeepsProjectDirtyAndFileUnchangedByIt
+[       OK ] PanelContextUiTest.PresentationEditRacingProjectWriteKeepsProjectDirtyAndFileUnchangedByIt (757 ms)
+[ RUN      ] PanelContextUiTest.SplitRatioChangeAfterSaveMarksProjectDirtyAndSecondSaveClearsIt
+[       OK ] PanelContextUiTest.SplitRatioChangeAfterSaveMarksProjectDirtyAndSecondSaveClearsIt (730 ms)
+[ RUN      ] PanelContextUiTest.SaveAsToExtensionlessPathNeverRewritesAnExistingSiblingProject
+[       OK ] PanelContextUiTest.SaveAsToExtensionlessPathNeverRewritesAnExistingSiblingProject (681 ms)
+[----------] 7 tests from PanelContextUiTest (6985 ms total)
+
+[----------] Global test environment tear-down
+[==========] 33 tests from 5 test suites ran. (27151 ms total)
+[  PASSED  ] 33 tests.

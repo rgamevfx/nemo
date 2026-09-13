@@ -1,0 +1,23 @@
+[1/18] Generating Nemo/qml/AnimationPanel.qml
+[2/18] Generating Nemo/qml/ParametersPanel.qml
+[3/18] Generating Nemo/qml/PinButton.qml
+[4/18] Automatic MOC for target nemo_workspace_ui_tests
+[5/17] Running qmlimportscanner for nemo-ui
+qmldir file not found at "/usr/lib/x86_64-linux-gnu/qt6/qml/QtQml"
+qmldir file not found at "/usr/lib/x86_64-linux-gnu/qt6/qml/QtQml"
+[6/17] Generating .rcc/qmlcache/nemo-ui_qml/ParametersPanel_qml.cpp
+[7/17] Generating .rcc/qmlcache/nemo-ui_qml/AnimationPanel_qml.cpp
+[8/17] Generating .rcc/qmlcache/nemo-ui_qml/PinButton_qml.cpp
+[9/17] Running rcc for resource nemo-ui_raw_qml_0
+[10/17] Building CXX object apps/nemo-ui/CMakeFiles/nemo-ui.dir/.rcc/qmlcache/nemo-ui_qml/ParametersPanel_qml.cpp.o
+[11/17] Building CXX object apps/nemo-ui/CMakeFiles/nemo-ui.dir/.rcc/qmlcache/nemo-ui_qml/AnimationPanel_qml.cpp.o
+[12/17] Building CXX object apps/nemo-ui/CMakeFiles/nemo-ui.dir/.rcc/qmlcache/nemo-ui_qml/PinButton_qml.cpp.o
+[13/17] Building CXX object apps/nemo-ui/CMakeFiles/nemo-ui.dir/.rcc/qrc_nemo-ui_raw_qml_0.cpp.o
+[14/17] Building CXX object tests/CMakeFiles/nemo_workspace_ui_tests.dir/AnimationUiTests.cpp.o
+[15/17] Building CXX object tests/CMakeFiles/nemo_workspace_ui_tests.dir/PanelContextUiTests.cpp.o
+[16/17] Linking CXX executable apps/nemo-ui/nemo-ui
+/usr/bin/ld: vcpkg_installed/x64-linux/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':
+mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'
+[17/17] Linking CXX executable tests/nemo_workspace_ui_tests
+/usr/bin/ld: vcpkg_installed/x64-linux/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':
+mz_os_posix.c:(.text+0x668): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'

@@ -32,17 +32,18 @@ bool parseUnsigned(const QString& value, std::uint64_t* result) {
     return true;
 }
 
-void collectPanelIds(const QVariantMap& node, std::set<QString>* ids) {
+void collectPanels(const QVariantMap& node, std::map<QString, QVariantMap>* panels) {
     if (node.value(QStringLiteral("kind")).toString() == QStringLiteral("tabs")) {
         for (const auto& panel : node.value(QStringLiteral("panels")).toList()) {
-            const auto id = panel.toMap().value(QStringLiteral("id")).toString();
+            const auto record = panel.toMap();
+            const auto id = record.value(QStringLiteral("id")).toString();
             if (!id.isEmpty())
-                ids->insert(id);
+                panels->emplace(id, record);
         }
         return;
     }
     for (const auto& child : node.value(QStringLiteral("children")).toList())
-        collectPanelIds(child.toMap(), ids);
+        collectPanels(child.toMap(), panels);
 }
 }  // namespace
 
@@ -59,8 +60,8 @@ void PanelContextRouter::setWorkspaceController(nemo::workspace::WorkspaceContro
     if (workspace_) {
         connect(workspace_, &nemo::workspace::WorkspaceController::rootChanged, this,
                 &PanelContextRouter::synchronizeWorkspace);
-        synchronizeWorkspace();
     }
+    synchronizeWorkspace();
 }
 
 QString PanelContextRouter::normalized(const QString& value) {
@@ -91,10 +92,35 @@ void PanelContextRouter::persist(const QString& panelId, const PanelBinding& bin
 }
 
 void PanelContextRouter::synchronizeWorkspace() {
-    if (!workspace_)
+    if (!workspace_) {
+        inspectorNodes_ = {};
+        documentChanged();
         return;
-    std::set<QString> current;
-    collectPanelIds(workspace_->root(), &current);
+    }
+    std::map<QString, QVariantMap> current;
+    collectPanels(workspace_->root(), &current);
+    std::array<std::set<std::pair<QString, QString>>, 5> membership;
+    for (const auto& [id, panel] : current) {
+        if (panel.value(QStringLiteral("type")).toString() != QStringLiteral("parameters"))
+            continue;
+        const auto group = groupIndex(panel.value(QStringLiteral("group")).toString());
+        if (group < 0)
+            continue;
+        const auto state = panel.value(QStringLiteral("state")).toMap();
+        for (const auto& value : state.value(QStringLiteral("inspectors")).toList()) {
+            const auto entry = value.toMap();
+            const auto network = normalized(entry.value(QStringLiteral("network")).toString());
+            const auto node = normalized(entry.value(QStringLiteral("node")).toString());
+            if (!network.isEmpty() && !node.isEmpty())
+                membership[group].emplace(network, node);
+        }
+    }
+    for (std::size_t group = 0; group < membership.size(); ++group) {
+        QVariantList nodes;
+        for (const auto& [network, node] : membership[group])
+            nodes.push_back(QVariantMap{{QStringLiteral("network"), network}, {QStringLiteral("node"), node}});
+        inspectorNodes_[group] = std::move(nodes);
+    }
     for (auto panel = panels_.begin(); panel != panels_.end();) {
         if (current.contains(panel->first)) {
             ++panel;
@@ -109,6 +135,7 @@ void PanelContextRouter::synchronizeWorkspace() {
         }
         emit panelContextChanged(removed);
     }
+    documentChanged();
 }
 
 bool PanelContextRouter::registerPanel(const QString& rawPanelId, const QString& rawGroup) {
@@ -257,6 +284,7 @@ QVariantMap PanelContextRouter::groupMap(const QString& panelId, const GroupCont
                        {QStringLiteral("sourceTarget"), context.sourceTarget},
                        {QStringLiteral("timelineClock"), context.timelineClock},
                        {QStringLiteral("sourceClock"), context.sourceClock}};
+    result.insert(QStringLiteral("inspectorNodes"), inspectorNodes_[groupIndex(binding.group)]);
     result.insert(QStringLiteral("sourceMarks"), sourceMarks(context.sourceTarget));
     const QString kind = binding.role == QStringLiteral("media") ? QStringLiteral("source") : binding.role;
     const QString target = binding.role == QStringLiteral("timeline") ? context.timelineTarget

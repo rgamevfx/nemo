@@ -1,0 +1,155 @@
+[1/4] Automatic MOC for target nemo_workspace_ui_tests
+[2/3] Building CXX object tests/CMakeFiles/nemo_workspace_ui_tests.dir/AnimationUiTests.cpp.o
+[3/3] Linking CXX executable tests/nemo_workspace_ui_tests
+/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':
+/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'
+Note: Google Test filter = AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from AnimationSurface
+[ RUN      ] AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels
+/home/rgame/dev/Nemo_Dev2/tests/AnimationUiTests.cpp:913: Failure
+Expected equality of these values:
+  item("parametersPanel")->property("inspectors").toList().size()
+    Which is: 0
+  1
+{
+  "activeWorkspaceId": "workspace-1",
+  "appearance": {
+    "accentOverride": "",
+    "categoryColors": {
+      "Color": "#71608c",
+      "Distort": "#54816b",
+      "Filter": "#a96832",
+      "IO": "#386b91",
+      "Merge": "#60656b",
+      "Utility": "#59646f"
+    },
+    "preset": "Graphite"
+  },
+  "version": 2,
+  "workspaces": [
+    {
+      "id": "workspace-1",
+      "layout": {
+        "root": {
+          "children": [
+            {
+              "children": [
+                {
+                  "active": "panel-1",
+                  "id": "leaf-2",
+                  "kind": "tabs",
+                  "panels": [
+                    {
+                      "group": "A",
+                      "id": "panel-1",
+                      "type": "viewer"
+                    }
+                  ]
+                },
+                {
+                  "active": "panel-3",
+                  "id": "leaf-4",
+                  "kind": "tabs",
+                  "panels": [
+                    {
+                      "group": "A",
+                      "id": "panel-3",
+                      "type": "nodegraph"
+                    }
+                  ]
+                }
+              ],
+              "id": "split-5",
+              "kind": "split",
+              "orientation": "horizontal",
+              "ratio": 0.5
+            },
+            {
+              "children": [
+                {
+                  "active": "panel-8",
+                  "id": "leaf-9",
+                  "kind": "tabs",
+                  "panels": [
+                    {
+                      "group": "A",
+                      "id": "panel-8",
+                      "state": {
+                        "columns": true,
+                        "inspectors": [
+                          {
+                            "collapsed": false,
+                            "network": "1",
+                            "node": "2",
+                            "pinned": false
+                          }
+                        ],
+                        "limit": 3
+                      },
+                      "type": "parameters"
+                    }
+                  ]
+                },
+                {
+                  "active": "panel-6",
+                  "id": "leaf-7",
+                  "kind": "tabs",
+                  "panels": [
+                    {
+                      "group": "A",
+                      "id": "panel-6",
+                      "state": {
+                        "animationGroups": {
+                          "A": {
+                            "channels": [],
+                            "collapsed": {},
+                            "end": 64,
+                            "hidden": {},
+                            "keys": [],
+                            "max": 2,
+                            "min": -1,
+                            "mode": "track",
+                            "network": "1",
+                            "pins": [],
+                            "scroll": 0,
+                            "start": -8,
+                            "target": "2",
+                            "tree": 154
+                          }
+                        }
+                      },
+                      "type": "animation"
+                    }
+                  ]
+                }
+              ],
+              "id": "split-10",
+              "kind": "split",
+              "orientation": "horizontal",
+              "ratio": 0.5
+            }
+          ],
+          "id": "split-11",
+          "kind": "split",
+          "orientation": "vertical",
+          "ratio": 0.72
+        },
+        "version": 1
+      },
+      "name": "Default"
+    }
+  ]
+}
+
+[  FAILED  ] AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels (2171 ms)
+[----------] 1 test from AnimationSurface (2171 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (2171 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels
+
+ 1 FAILED TEST

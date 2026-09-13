@@ -101,6 +101,8 @@ private:
     std::map<QString, PanelBinding> panels_;
     std::array<GroupContext, 5> groups_{};
     std::map<QString, QVariantMap> lastContexts_;
+    // Derived from current-workspace inspector panel state; never serialized here.
+    std::array<QVariantList, 5> inspectorNodes_{};
     QString activePanel_;
 };
 

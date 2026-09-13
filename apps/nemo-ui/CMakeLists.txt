@@ -35,7 +35,7 @@ if(NEMO_BUILD_UI)
                   qml/Theme.qml qml/ChromeButton.qml qml/StudioComboBox.qml qml/UnavailablePanel.qml
                   qml/ViewerPanel.qml qml/GraphPanel.qml qml/TimelinePanel.qml qml/ParametersPanel.qml
                   qml/MediaBinPanel.qml qml/SubnetParameters.qml
-                  qml/AnimationPanel.qml qml/AnimationHeaderTools.qml
+                  qml/AnimationPanel.qml qml/AnimationHeaderTools.qml qml/PinButton.qml
     )
     target_link_libraries(nemo-ui PRIVATE nemo::core nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)
     if(UNIX AND NOT APPLE)

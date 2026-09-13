@@ -128,6 +128,10 @@ protected:
         window->show();
         window->requestActivate();
         QTest::qWait(50);
+        ASSERT_TRUE(QTest::qWaitForWindowExposed(window));
+        QSignalSpy rendered(window, &QQuickWindow::frameSwapped);
+        window->requestUpdate();
+        ASSERT_TRUE(rendered.wait(2000));
     }
 
     void TearDown() override {

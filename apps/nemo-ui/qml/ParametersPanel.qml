@@ -34,6 +34,8 @@ FocusScope {
     property bool twoColumns: true
     property string restoredForPanelId: ""
     property bool stateReady: false
+    property bool savingState: false
+    readonly property string persistedStateJson: JSON.stringify([panelState.inspectors || [], panelState.limit, panelState.columns])
 
     // One global revision drives inspector re-queries. It advances on document,
     // frame, and catalog changes. A refresh requested mid-gesture is deferred so
@@ -129,7 +131,12 @@ FocusScope {
         merged.columns = twoColumns;
         if (JSON.stringify(merged) === JSON.stringify(panelStateCopy()))
             return;
-        workspace.setPanelState(panelId, merged);
+        savingState = true;
+        try {
+            workspace.setPanelState(panelId, merged);
+        } finally {
+            savingState = false;
+        }
     }
 
     function restoreState() {
@@ -426,17 +433,22 @@ FocusScope {
 
     // --- lifecycle --------------------------------------------------------
     Component.onCompleted: {
-        restoreState();
+        Qt.callLater(restoreState);
         revision++;
     }
 
-    onPanelIdChanged: {
-        if (restoredForPanelId && restoredForPanelId !== panelId)
-            saveState();
-        restoreState();
+    // Panel injects ID, state and workspace together; wait for those bindings.
+    // Arrangement edits save eagerly, never after an ID change or teardown.
+    onPanelIdChanged: Qt.callLater(restoreState)
+    // A restored presentation can reuse this panel ID and its loaded body.
+    onPersistedStateJsonChanged: {
+        if (!stateReady || savingState)
+            return;
+        stateReady = false;
+        restoredForPanelId = "";
+        cancelEdit();
+        Qt.callLater(restoreState);
     }
-
-    Component.onDestruction: saveState()
 
     Connections {
         target: parametersPanel.contextRouter
@@ -786,51 +798,13 @@ FocusScope {
                         }
                     }
 
-                    Button {
+                    PinButton {
                         id: pinButton
                         objectName: "pin_" + card.nodeId
-                        flat: true
-                        implicitWidth: 22
-                        implicitHeight: 23
-                        padding: 0
-                        Accessible.name: card.inspectorState.pinned ? "Unpin inspector" : "Pin inspector"
-                        onClicked: parametersPanel.setPinned(card.networkId, card.nodeId, card.inspectorState.pinned !== true)
-                        contentItem: Canvas {
-                            id: pinGlyph
-                            onPaint: {
-                                var ctx = getContext("2d");
-                                ctx.reset();
-                                ctx.strokeStyle = card.inspectorState.pinned ? theme.accent : theme.muted;
-                                ctx.fillStyle = ctx.strokeStyle;
-                                ctx.lineWidth = 1;
-                                var cx = width / 2, cy = height / 2;
-                                ctx.beginPath();
-                                ctx.moveTo(cx - 3, cy - 5);
-                                ctx.lineTo(cx + 3, cy - 5);
-                                ctx.lineTo(cx + 2, cy - 1);
-                                ctx.lineTo(cx + 4, cy + 2);
-                                ctx.lineTo(cx - 4, cy + 2);
-                                ctx.lineTo(cx - 2, cy - 1);
-                                ctx.closePath();
-                                if (card.inspectorState.pinned)
-                                    ctx.fill();
-                                else
-                                    ctx.stroke();
-                                ctx.beginPath();
-                                ctx.moveTo(cx, cy + 2);
-                                ctx.lineTo(cx, cy + 6);
-                                ctx.stroke();
-                            }
-                            Connections {
-                                target: theme
-                                function onAccentChanged() {
-                                    pinGlyph.requestPaint();
-                                }
-                                function onMutedChanged() {
-                                    pinGlyph.requestPaint();
-                                }
-                            }
-                        }
+                        theme: parametersPanel.theme
+                        pinned: card.inspectorState.pinned === true
+                        Accessible.name: pinned ? "Unpin inspector" : "Pin inspector"
+                        onClicked: parametersPanel.setPinned(card.networkId, card.nodeId, !pinned)
                     }
 
                     Button {

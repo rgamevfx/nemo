@@ -193,6 +193,12 @@ when a registered editor is unavailable, and a schema field or namespaced
 editor selector not present in the current catalog remains an owner-reviewed
 public catalog change, not an assumed capability.
 
+Inspector arrangement lives in workspace `panel.state.inspectors`, not graph
+selection. `ParametersPanel.qml` saves arrangement edits there and rehydrates
+external state even when a restored layout reuses the same panel ID. The shared
+`PinButton.qml` preserves the accepted inspector glyph; inspector accumulation
+pins and Animation visibility pins remain independent actions.
+
 For a new Glow-like effect, add schema plus real CPU/GPU execution through the
 steps above. The graph catalog discovers it, and the existing generic inspector
 renders its schema through `parameterInspector` with no effect-name switches; a
@@ -205,15 +211,28 @@ headless evaluation, and the native inspector host.
 
 `AnimationViewModel` is the panel-local query/edit adapter created by
 `ViewerController::createAnimationModel(owner)`. It projects immutable channels
-from the application `ProjectSession`: definition-local animation in the viewed
-network, plus exposed occurrence animation on child subnet nodes. Vector/color
-components have opaque presentation IDs but share the typed key's time; editing
-one component preserves the others. Unavailable scopes never fall back to root.
+from the application `ProjectSession` using explicit scoped `targets`:
+`{network, node}` selects a node, optionally narrowed by `parameter` and
+`component`. Definition-local and exposed occurrence channels retain their
+display network/node identity. Vector/color components have opaque presentation
+IDs but share the typed key's time; editing one component preserves the others.
+Unavailable targets never fall back to root or discard other valid targets.
 
 `AnimationPanel.qml` and `AnimationHeaderTools.qml` port #50's archived Track/Curves
-presentation. Selection, visibility, framing, scroll and cancellable previews
-belong to the panel and its per-group workspace state. Scope/target requests use
-the existing `PanelContextRouter` inspector route; playhead changes use the shared
+presentation. Selection, visibility, framing, scroll, pins and cancellable
+previews belong to the panel and its per-group workspace state. Following the
+owner-approved #50 refinement, Tracks and Curves show the union of open inspector
+cards in the same A–E group and that Animation panel's pins. The router derives
+`inspectorNodes` from all Parameters panels in the active workspace, including
+inactive tabs; collapsed cards and scrolling do not change membership. There is
+no second inspector-membership registry.
+
+Pins identify a scoped node or parameter/component, not a channel ID, so removing
+and recreating keys does not lose them. Unpinning returns to inspector-following;
+explicit Hide/Isolate masks remain independent. External workspace state
+rehydrates reused panels without feeding their own writes back into active
+gestures or writing stale state during teardown. Scope/target requests use the
+existing `PanelContextRouter` inspector route; playhead changes use the shared
 group clock. New effects contribute catalog schema and ordinary animation
 channels, not their own editor or graph gestures.
 

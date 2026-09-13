@@ -5,6 +5,8 @@
   "pre_edit_contract": "https://github.com/rgamevfx/nemo/issues/50#issuecomment-5655682329",
   "classification": "prototype port over existing production animation commands and ProjectSession",
   "owner_acceptance": "Pending human image/internal-API review. Evidence is not baseline acceptance; issue remains open and branch is not merged or pushed.",
+  "membership_refinement": "issue50-inspector-follow-native.json",
+  "historical_scope": "Initial d741c81 comparison evidence. Channel membership is superseded by the owner-approved inspector-following refinement linked above; the original images and measurements remain historical evidence.",
   "reference": {
     "archive": "assets/issue25-prototype-reference-v1.tar.gz",
     "sha256": "0027b39f6ba20fc2168f83215f8ba036fcc408284e6b3a2702a21c2c37b8e57e",

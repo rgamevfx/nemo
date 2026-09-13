@@ -1,0 +1,108 @@
+{
+  "schema": "nemo.issue50.inspector-follow-native-evidence.v1",
+  "issue": "https://github.com/rgamevfx/nemo/issues/50",
+  "branch": "issue/50-animation-editor",
+  "base_commit": "d741c81",
+  "classification": "Owner-approved refinement of the prototype port; existing presentation and workspace owners retained",
+  "approved_contract": "https://github.com/rgamevfx/nemo/issues/50#issuecomment-5656312112",
+  "acceptance": "Implementation complete locally; owner review pending. No merge, push, task closure, or new image-baseline acceptance.",
+  "reference": {
+    "initial_evidence": "issue50-animation-native.json",
+    "archive": "assets/issue25-prototype-reference-v1.tar.gz",
+    "sha256": "0027b39f6ba20fc2168f83215f8ba036fcc408284e6b3a2702a21c2c37b8e57e",
+    "approved_override": "All-channel membership now means eligible channels from same-group inspector cards plus this Animation panel’s pins. Existing gestures, framing, typed edits, explicit visibility masks and shared history remain protected."
+  },
+  "contract": {
+    "following": "Union of open inspector cards from all Parameters panels in the active workspace and same A–E group, including inactive tabs. Graph selection, card collapse and viewport scrolling do not define membership.",
+    "pins": "Per-Animation-panel, per-group workspace state; stable {network,node,parameter?,component?} selectors, independent of animation channel lifetime. Supports individual components and whole nodes.",
+    "unpin": "Returns to inspector-following, without deleting keys or changing history/framing.",
+    "masks": "Hide and Isolate remain explicit and independent; pins never override them.",
+    "ownership": "Workspace panel.state.inspectors remains authoritative; PanelContextRouter projects inspectorNodes. AnimationViewModel consumes explicit targets. No second membership registry, document state, effect-name switches or alternate edit path.",
+    "internal_api_change": "AnimationViewModel.networkId replaced by targets; projected channels carry networkId, nodeKey, parameter and component. All application/test callers migrated.",
+    "shared_control": "PinButton.qml extracts the accepted inspector pin glyph for both consumers; inspector accumulation pins and Animation visibility pins are separate.",
+    "restoration_fix": "Parameters and Animation rehydrate externally restored state even when panel IDs/bodies are reused, suppress feedback from their own state writes, and do not write stale state at teardown. Inspector initialization waits for Panel binding injection."
+  },
+  "verification": {
+    "filter": "AnimationUi.*:AnimationSurface.*:PanelContextRouter.*:PanelContextUiTest.*:Interactive.ParameterInspector*",
+    "debug_native": {
+      "passed": 33,
+      "failed": 0,
+      "environment": "NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland",
+      "log": "assets/issue50-animation/inspector-follow/debug-native.log"
+    },
+    "sanitizers": {
+      "passed": 33,
+      "failed": 0,
+      "environment": "ASan+UBSan+LSan; offscreen UI harness; existing issue70 fixed-Mesa environment and existing tests/lsan_suppressions.txt; no new suppressions",
+      "log": "assets/issue50-animation/inspector-follow/asan.log"
+    },
+    "builds": "cmake --build --preset debug/release --target nemo-ui nemo_workspace_ui_tests -j 2; both passed",
+    "release_log": "assets/issue50-animation/inspector-follow/release-build.log",
+    "build_notes": "QtQml import-scanner and minizip mktemp linker warnings are recorded and not suppressed.",
+    "suite_budget": "Focused follow-up verification only. The original 547-test full ticket run was not repeated.",
+    "restoration_regression": {
+      "before": "Restored inspector count was 0 instead of 1 despite authoritative state containing the card; stale Animation state also overwrote restored pins.",
+      "before_log": "assets/issue50-animation/inspector-follow/restore-regression-before.log",
+      "after": "RestoringPresentationRetainsInspectorMembershipAndPinnedChannels passes in both final native and sanitizer runs."
+    },
+    "new_behavior_tests": [
+      "AnimationUi.TargetUnionKeepsNetworkIdentityAndRejectsFilteredEdits",
+      "AnimationUi.ParameterTargetSurvivesLastKeyRemovalAndRecreation",
+      "PanelContextRouter.InspectorMembershipUnionsCurrentWorkspaceCardsByGroup",
+      "AnimationSurface.InspectorFollowingPinsAndMasksSurviveGroupAndWorkspaceChanges",
+      "AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels"
+    ],
+    "driver_corrections": "Workspace round trips now enter the other workspace before returning; the group-menu fixture waits for exposure and an actual frame before input."
+  },
+  "native": {
+    "platform": "Linux COSMIC Wayland; DPR 1; production Main.qml and adapters",
+    "packaged_application": "build/debug/apps/nemo-ui/nemo-ui --project /tmp/nemo-issue50-follow/inspector-pins.nemo --viewer-cache-dir /tmp/nemo-issue50-pins-cache",
+    "isolation": "Temporary project and XDG_CONFIG_HOME; only the owned verification process was stopped.",
+    "backend_evidence": [
+      "qt.scenegraph.general: Using QRhi with backend Vulkan",
+      "qt.scenegraph.general: MSAA sample count for the swapchain is 1. Alpha channel requested = no."
+    ],
+    "driver": "cosmic-screenshot and evdev UInput after computer-tool AT-SPI and Wayland capture failures; input device closed after verification.",
+    "crop": [
+      320,
+      136,
+      1600,
+      856
+    ],
+    "crop_notes": "Unscaled application-only desktop crops; no other application content retained.",
+    "observed_packaged_actions": [
+      "Restored saved presentation: Blur inspector and its two channels plus pinned Grade Multiply.R returned.",
+      "Unpinned Grade Multiply.R: Grade disappeared, Blur continued following its inspector.",
+      "Pinned the Blur node and closed its inspector: both Blur channels remained."
+    ],
+    "other_native_assertions": "Native QTest additionally verifies no channels after final unpin, group/workspace restoration, independent Hide masks and unchanged document revision/animation values.",
+    "performance_scope": "No renderer throughput or latency claim."
+  },
+  "images": [
+    {
+      "path": "assets/issue50-animation/inspector-follow/follow-inspectors.png",
+      "observation": "Grade and Blur inspectors produce only Grade and Blur animation rows."
+    },
+    {
+      "path": "assets/issue50-animation/inspector-follow/inspector-pins.png",
+      "observation": "Grade inspector closed; only its pinned Multiply.R remains alongside the open Blur inspector’s channels."
+    },
+    {
+      "path": "assets/issue50-animation/inspector-follow/only-pins.png",
+      "observation": "No open inspectors; component and whole-node pins remain. Grade’s explicit Hide mask still applies."
+    },
+    {
+      "path": "assets/issue50-animation/inspector-follow/packaged-restored.png",
+      "observation": "Packaged application restores the inspector-following and component-pin state."
+    },
+    {
+      "path": "assets/issue50-animation/inspector-follow/packaged-unpin-parameter.png",
+      "observation": "Packaged application returns the unpinned Grade component to following; only Blur remains."
+    },
+    {
+      "path": "assets/issue50-animation/inspector-follow/packaged-node-pin.png",
+      "observation": "Packaged application keeps all pinned Blur channels after its inspector closes."
+    }
+  ],
+  "review_project": "assets/issue50-animation/inspector-follow/inspector-pins.nemo"
+}

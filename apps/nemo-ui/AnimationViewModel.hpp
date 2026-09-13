@@ -15,7 +15,7 @@ namespace nemo::ui {
 // a second animation model. Selection and pointer previews belong to the panel.
 class AnimationViewModel final : public QObject {
     Q_OBJECT
-    Q_PROPERTY(QString networkId READ networkId WRITE setNetworkId NOTIFY networkIdChanged)
+    Q_PROPERTY(QVariantList targets READ targets WRITE setTargets NOTIFY targetsChanged)
     Q_PROPERTY(QVariantList channels READ channels NOTIFY channelsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(bool available READ available NOTIFY channelsChanged)
@@ -23,8 +23,10 @@ class AnimationViewModel final : public QObject {
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY historyChanged)
 public:
     explicit AnimationViewModel(ProjectSession& session, QObject* parent = nullptr);
-    [[nodiscard]] QString networkId() const { return networkId_; }
-    void setNetworkId(const QString& network);
+    // Selectors are {network, node}, optionally narrowed by parameter/component.
+    // They describe presentation membership, never authored animation state.
+    [[nodiscard]] QVariantList targets() const { return targets_; }
+    void setTargets(const QVariantList& targets);
     [[nodiscard]] QVariantList channels() const { return channels_; }
     [[nodiscard]] QString error() const { return error_; }
     [[nodiscard]] bool available() const { return available_; }
@@ -42,7 +44,7 @@ public:
     Q_INVOKABLE bool undo();
     Q_INVOKABLE bool redo();
 signals:
-    void networkIdChanged();
+    void targetsChanged();
     void channelsChanged();
     void errorChanged();
     void historyChanged();
@@ -68,7 +70,7 @@ private:
     void refresh();
     static void changed(void* context) noexcept;
     ProjectSession& session_;
-    QString networkId_;
+    QVariantList targets_;
     QString error_;
     QVariantList channels_;
     std::map<QString, Component> components_;

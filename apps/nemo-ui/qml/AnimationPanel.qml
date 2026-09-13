@@ -22,9 +22,12 @@ FocusScope {
     property var selectedChannelIds: []
     readonly property real currentFrame: contextRouter && panelContext.timelineClock !== undefined ? Number(panelContext.timelineClock) : controller.frame
     property var groupStates: ({})
+    property var pinnedTargets: []
     property string loadedGroup: ""
     property string loadedPanel: ""
     property bool stateReady: false
+    property bool savingState: false
+    readonly property string persistedStateJson: JSON.stringify(panelState.animationGroups || ({}))
     clip: true
 
     function viewState() {
@@ -41,6 +44,7 @@ FocusScope {
             "collapsed": collapsedNodes,
             "hidden": hiddenCurveIds,
             "keys": selectedKeyIds,
+            "pins": pinnedTargets,
             "channels": selectedChannelIds
         };
     }
@@ -57,8 +61,14 @@ FocusScope {
         rememberGroup();
         var saved = Object.assign({}, workspace.panelState(panelId));
         saved.animationGroups = groupStates;
-        if (JSON.stringify(saved) !== JSON.stringify(workspace.panelState(panelId)))
+        if (JSON.stringify(saved) === JSON.stringify(workspace.panelState(panelId)))
+            return;
+        savingState = true;
+        try {
             workspace.setPanelState(panelId, saved);
+        } finally {
+            savingState = false;
+        }
     }
     function restoreState() {
         if (!panelId || !model)
@@ -80,7 +90,6 @@ FocusScope {
         var saved = groupStates[loadedGroup] || previous;
         networkId = String(saved.network || controller.rootNetworkId);
         targetNodeId = String(saved.target || "");
-        model.networkId = networkId;
         viewMode = saved.mode === "curves" ? "curves" : "track";
         viewStart = Number.isFinite(saved.start) ? saved.start : currentFrame - 8;
         viewEnd = Number.isFinite(saved.end) && saved.end > viewStart ? saved.end : viewStart + 72;
@@ -91,6 +100,7 @@ FocusScope {
         hiddenCurveIds = saved.hidden || ({});
         selectedKeyIds = saved.keys || [];
         selectedChannelIds = saved.channels || [];
+        pinnedTargets = groupStates[loadedGroup] ? saved.pins || [] : [];
         tree.contentY = Math.max(0, Math.min(Number(saved.scroll || 0), tree.contentHeight - tree.height));
         stateReady = true;
         animationSurface.requestPaint();
@@ -106,6 +116,73 @@ FocusScope {
     }
     onPanelIdChanged: Qt.callLater(restoreState)
     onPanelGroupChanged: Qt.callLater(restoreState)
+    // Restore external workspace state without feeding our own writes back.
+    onPersistedStateJsonChanged: {
+        if (!stateReady || savingState)
+            return;
+        stateReady = false;
+        loadedPanel = "";
+        stateTimer.stop();
+        Qt.callLater(restoreState);
+    }
+    onPanelContextChanged: updateTargets()
+    onStateReadyChanged: updateTargets()
+    onPinnedTargetsChanged: {
+        updateTargets();
+        queueSave();
+    }
+    function updateTargets() {
+        if (!model || !stateReady)
+            return;
+        var wanted = [];
+        var inspectors = panelContext.group === panelGroup ? panelContext.inspectorNodes || [] : [];
+        for (var i = 0; i < inspectors.length; ++i)
+            wanted.push({
+                    "network": String(inspectors[i].network),
+                    "node": String(inspectors[i].node)
+                });
+        for (var p = 0; p < pinnedTargets.length; ++p)
+            wanted.push(pinnedTargets[p]);
+        model.targets = wanted;
+    }
+    function pinTarget(row) {
+        if (row.parent)
+            return {
+                "network": row.networkId,
+                "node": row.nodeId
+            };
+        return {
+            "network": row.networkId,
+            "node": row.nodeId,
+            "parameter": row.channel.parameter,
+            "component": row.channel.component
+        };
+    }
+    function pinIdentity(target) {
+        return JSON.stringify([String(target.network), String(target.node), target.parameter || "", target.component === undefined ? -1 : Number(target.component)]);
+    }
+    function rowPinned(row) {
+        var identity = pinIdentity(pinTarget(row));
+        for (var i = 0; i < pinnedTargets.length; ++i)
+            if (pinIdentity(pinnedTargets[i]) === identity)
+                return true;
+        return false;
+    }
+    function togglePin(row) {
+        var target = pinTarget(row);
+        var identity = pinIdentity(target);
+        var found = false;
+        var next = [];
+        for (var i = 0; i < pinnedTargets.length; ++i) {
+            if (pinIdentity(pinnedTargets[i]) === identity)
+                found = true;
+            else
+                next.push(pinnedTargets[i]);
+        }
+        if (!found)
+            next.push(target);
+        pinnedTargets = next;
+    }
     onSelectedKeyIdsChanged: {
         animationSurface.requestPaint();
         queueSave();
@@ -144,9 +221,9 @@ FocusScope {
             keyEditPopup.close();
             animationPanel.networkId = network;
             animationPanel.targetNodeId = nodeId;
-            if (animationPanel.model)
-                animationPanel.model.networkId = network;
-            animationPanel.selectNode(nodeId);
+            Qt.callLater(function () {
+                    animationPanel.selectNode(network + "_" + nodeId);
+                });
             animationPanel.queueSave();
         }
     }
@@ -258,19 +335,21 @@ FocusScope {
             var channel = list[i];
             if (!channel)
                 continue;
-            var nodeId = String(channel.nodeId);
-            if (!grouped[nodeId]) {
-                grouped[nodeId] = [];
-                order.push(nodeId);
+            var nodeKey = String(channel.nodeKey);
+            if (!grouped[nodeKey]) {
+                grouped[nodeKey] = [];
+                order.push(nodeKey);
             }
-            grouped[nodeId].push(channel);
+            grouped[nodeKey].push(channel);
         }
         var result = [];
         for (var n = 0; n < order.length; ++n) {
             var id = order[n];
             var name = grouped[id][0].nodeName || id;
             result.push({
-                    "nodeId": id,
+                    "nodeKey": id,
+                    "nodeId": grouped[id][0].nodeId,
+                    "networkId": grouped[id][0].networkId,
                     "channelId": "",
                     "label": name,
                     "parent": true,
@@ -282,7 +361,9 @@ FocusScope {
             for (var c = 0; c < grouped[id].length; ++c) {
                 var child = grouped[id][c];
                 result.push({
-                        "nodeId": id,
+                        "nodeKey": id,
+                        "nodeId": child.nodeId,
+                        "networkId": child.networkId,
                         "channelId": channelId(child),
                         "parameterKey": String(child.parameterKey),
                         "label": child.label || child.parameterKey,
@@ -302,10 +383,10 @@ FocusScope {
         return null;
     }
 
-    function channelsForNode(nodeId) {
+    function channelsForNode(nodeKey) {
         var result = [];
         for (var i = 0; i < channels.length; ++i)
-            if (String(channels[i].nodeId) === String(nodeId))
+            if (String(channels[i].nodeKey) === String(nodeKey))
                 result.push(channels[i]);
         return result;
     }
@@ -325,8 +406,8 @@ FocusScope {
         return result;
     }
 
-    function idsForNode(nodeId) {
-        return idsForChannels(channelsForNode(nodeId));
+    function idsForNode(nodeKey) {
+        return idsForChannels(channelsForNode(nodeKey));
     }
 
     function selectedKeys() {
@@ -394,8 +475,8 @@ FocusScope {
         setSelectedChannels(unique(next));
     }
 
-    function selectNode(nodeId) {
-        var list = channelsForNode(nodeId);
+    function selectNode(nodeKey) {
+        var list = channelsForNode(nodeKey);
         var ids = [];
         for (var i = 0; i < list.length; ++i)
             ids.push(channelId(list[i]));
@@ -412,21 +493,21 @@ FocusScope {
         return null;
     }
 
-    function rowIndex(nodeId, channelIdValue) {
+    function rowIndex(nodeKey, channelIdValue) {
         for (var i = 0; i < rows.length; ++i)
-            if (String(rows[i].nodeId) === String(nodeId) && String(rows[i].channelId) === String(channelIdValue))
+            if (String(rows[i].nodeKey) === String(nodeKey) && String(rows[i].channelId) === String(channelIdValue))
                 return i;
         for (var j = 0; j < rows.length; ++j)
-            if (String(rows[j].nodeId) === String(nodeId) && rows[j].parent)
+            if (String(rows[j].nodeKey) === String(nodeKey) && rows[j].parent)
                 return j;
         return -1;
     }
 
-    function toggleNode(nodeId) {
+    function toggleNode(nodeKey) {
         var copy = {};
         for (var key in collapsedNodes)
             copy[key] = collapsedNodes[key];
-        copy[String(nodeId)] = copy[String(nodeId)] !== true;
+        copy[String(nodeKey)] = copy[String(nodeKey)] !== true;
         collapsedNodes = copy;
         animationSurface.requestPaint();
     }
@@ -472,7 +553,7 @@ FocusScope {
                     return {
                         "key": keys[k],
                         "channel": channel,
-                        "rowIndex": rowIndex(channel.nodeId, channelId(channel))
+                        "rowIndex": rowIndex(channel.nodeKey, channelId(channel))
                     };
             }
         }
@@ -1281,7 +1362,7 @@ FocusScope {
                     width: labelWidth
                     height: rowHeight
                     color: modelData.parent ? theme.raised : isSelectedChannel(modelData.channelId) ? theme.nodeSelected : theme.panel
-                    objectName: modelData.parent ? "animationNodeRow_" + modelData.nodeId : "animationParameterRow_" + modelData.nodeId + "_" + modelData.parameterKey
+                    objectName: modelData.parent ? "animationNodeRow_" + modelData.nodeKey : "animationParameterRow_" + modelData.nodeKey + "_" + modelData.parameterKey
                     Rectangle {
                         visible: !modelData.parent
                         x: 9
@@ -1295,7 +1376,7 @@ FocusScope {
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: modelData.parent ? 9 : 22
-                        anchors.rightMargin: modelData.parent ? 8 : 25
+                        anchors.rightMargin: modelData.parent ? 26 : 45
                         text: modelData.parent ? ((modelData.collapsed ? "›  " : "⌄  ") + modelData.label) : modelData.label
                         color: modelData.parent ? theme.text : viewMode === "curves" && !curveVisible(modelData.channelId) ? theme.disabled : theme.muted
                         font.pixelSize: modelData.parent ? 11 : 10
@@ -1325,15 +1406,32 @@ FocusScope {
                             animationPanel.forceActiveFocus();
                             if (modelData.parent) {
                                 if (mouse.x < 24)
-                                    toggleNode(modelData.nodeId);
+                                    toggleNode(modelData.nodeKey);
                                 else
-                                    selectNode(modelData.nodeId);
+                                    selectNode(modelData.nodeKey);
                             } else {
                                 selectChannel(modelData.channel, !!(mouse.modifiers & Qt.ShiftModifier), !!(mouse.modifiers & Qt.ShiftModifier));
                             }
                         }
                         onDoubleClicked: if (modelData.parent)
-                            contextRouter.requestInspector(panelGroup, networkId, modelData.nodeId)
+                            contextRouter.requestInspector(panelGroup, modelData.networkId, modelData.nodeId)
+                    }
+                    PinButton {
+                        id: animationPin
+                        objectName: modelData.parent ? "animationPinNode_" + modelData.nodeKey : "animationPinChannel_" + modelData.channelId
+                        theme: animationPanel.theme
+                        pinned: rowPinned(modelData)
+                        visible: pinned || channelMouse.containsMouse || hovered
+                        anchors.right: parent.right
+                        anchors.rightMargin: modelData.parent ? 4 : 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18
+                        height: 20
+                        Accessible.name: (pinned ? "Unpin " : "Pin ") + (modelData.parent ? "node animation" : "parameter animation")
+                        onClicked: togglePin(modelData)
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 450
+                        ToolTip.text: pinned ? "Unpin animation" : "Keep animation when its inspector closes"
                     }
                     Item {
                         visible: !modelData.parent && viewMode === "curves" && (channelMouse.containsMouse || visibilityMouse.containsMouse || !curveVisible(modelData.channelId))
@@ -1492,7 +1590,7 @@ FocusScope {
                     if (viewMode === "track") {
                         var index = Math.floor((mouse.y - rulerHeight + scrollY) / rowHeight);
                         if (index >= 0 && index < rows.length) {
-                            var row = rows[index], ids = row.parent ? idsForNode(row.nodeId) : idsForChannels([row.channel]);
+                            var row = rows[index], ids = row.parent ? idsForNode(row.nodeKey) : idsForChannels([row.channel]);
                             var lo = Infinity, hi = -Infinity;
                             for (var i = 0; i < ids.length; ++i) {
                                 var record = keyRecord(ids[i]);
@@ -1503,7 +1601,7 @@ FocusScope {
                             }
                             if (isFinite(lo) && mouse.x >= timeToX(lo) - 8 && mouse.x <= timeToX(hi) + 8 && Math.abs(mouse.y - rowY(index)) <= 11) {
                                 if (row.parent)
-                                    selectNode(row.nodeId);
+                                    selectNode(row.nodeKey);
                                 else
                                     selectChannel(row.channel, false, false);
                                 dragConstrained = (mouse.modifiers & Qt.ShiftModifier) !== 0;
@@ -1643,7 +1741,7 @@ FocusScope {
     Text {
         anchors.centerIn: parent
         visible: model && !model.available
-        text: "Animation network unavailable"
+        text: "Animation targets unavailable"
         color: theme.muted
         font.pixelSize: theme.fontSize
     }
@@ -2009,7 +2107,11 @@ FocusScope {
             animationPanel.collapsedNodes = ({});
             animationPanel.groupStates = ({});
             animationPanel.networkId = controller.rootNetworkId;
-            model.networkId = animationPanel.networkId;
+            animationPanel.pinnedTargets = [];
+        }
+        function onTargetsChanged() {
+            animationPanel.cancelPreview();
+            keyEditPopup.close();
         }
         function onChannelsChanged() {
             animationSurface.requestPaint();
@@ -2038,5 +2140,4 @@ FocusScope {
         networkId = controller.rootNetworkId;
         Qt.callLater(restoreState);
     }
-    Component.onDestruction: saveState()
 }

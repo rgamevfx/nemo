@@ -6,6 +6,7 @@
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <vector>
 
 namespace nemo::ui {
 namespace {
@@ -66,20 +67,20 @@ QString interpolationName(KeyInterpolation mode) {
 }  // namespace
 
 AnimationViewModel::AnimationViewModel(ProjectSession& session, QObject* parent)
-    : QObject(parent), session_(session), networkId_(QString::number(session.document().rootNetworkId())),
-      generation_(session.projectGeneration()), subscription_(session.subscribe(this, changed)) {
+    : QObject(parent), session_(session), generation_(session.projectGeneration()),
+      subscription_(session.subscribe(this, changed)) {
     refresh();
 }
 void AnimationViewModel::changed(void* context) noexcept {
     static_cast<AnimationViewModel*>(context)->refresh();
 }
-void AnimationViewModel::setNetworkId(const QString& network) {
-    if (networkId_ == network)
+void AnimationViewModel::setTargets(const QVariantList& targets) {
+    if (targets_ == targets)
         return;
     cancelGesture();
-    networkId_ = network;
+    targets_ = targets;
+    emit targetsChanged();
     refresh();
-    emit networkIdChanged();
 }
 void AnimationViewModel::refresh() {
     QVariantList records;
@@ -90,78 +91,124 @@ void AnimationViewModel::refresh() {
         generation_ = generation;
     components_.clear();
     const bool wasAvailable = available_;
-    available_ = false;
+    available_ = targets_.empty();
     try {
         const auto& document = session_.document();
-        bool valid = false;
-        const auto scope = networkId_.toULongLong(&valid);
-        if (!valid || scope == kInvalidNetwork)
-            throw std::invalid_argument("animation network identity is unavailable");
-        const auto& network = document.network(scope);
-        available_ = true;
-        for (const auto& channel : document.animationChannels()) {
-            const NodeInstance* displayNode = nullptr;
-            QString label;
-            QString parameterKey = QString::fromStdString(channel.address.key);
-            const auto& definition = document.network(channel.address.network);
-            const auto* node = definition.graph().node(channel.address.node);
-            const auto* spec =
-                node ? definition.graph().catalog().parameterSpec(node->type, channel.address.key) : nullptr;
-            if (!spec || channel.keys.empty())
+        struct Selection {
+            bool all{};
+            std::vector<std::pair<QString, int>> parameters;
+        };
+        std::map<std::pair<NetworkId, NodeId>, Selection> selected;
+        for (const auto& value : targets_) {
+            const auto target = value.toMap();
+            bool validNetwork = false, validNode = false;
+            const auto network = target.value("network").toString().toULongLong(&validNetwork);
+            const auto node = target.value("node").toString().toULongLong(&validNode);
+            if (!validNetwork || !validNode)
                 continue;
-            if (channel.address.instance == kInvalidNetworkInstance) {
-                if (channel.address.network != scope)
+            try {
+                if (!document.network(network).graph().node(node))
                     continue;
-                displayNode = node;
-                label = QString::fromStdString(spec->label.empty() ? spec->name : spec->label);
-            } else {
-                const auto* occurrence = document.instance(channel.address.instance);
-                if (!occurrence || occurrence->parentNetwork != scope)
-                    continue;
-                displayNode = network.graph().node(occurrence->node);
-                for (const auto& exposed : definition.exposedParameters()) {
-                    if (exposed.node == channel.address.node && exposed.key == channel.address.key) {
-                        label = QString::fromStdString(exposed.name);
-                        parameterKey = "exposed:" + QString::number(exposed.id);
-                        break;
-                    }
-                }
-                if (label.isEmpty())
+            } catch (const std::exception&) {
+                continue;  // A deleted/restored presentation target is not a root fallback.
+            }
+            available_ = true;
+            auto& selection = selected[{network, node}];
+            const auto parameter = target.value("parameter").toString();
+            if (parameter.isEmpty()) {
+                selection.all = true;
+                continue;
+            }
+            int component = -1;
+            if (target.contains("component")) {
+                bool validComponent = false;
+                component = target.value("component").toInt(&validComponent);
+                if (!validComponent || component < 0 || component > 3)
                     continue;
             }
-            if (!displayNode)
-                continue;
-            const auto count = animation_detail::componentCount(spec->type);
-            const QString kind = spec->type == ParameterType::Boolean                                         ? "toggle"
-                                 : spec->type == ParameterType::Choice || spec->type == ParameterType::String ? "choice"
-                                 : spec->type == ParameterType::Integer ? "integer"
-                                                                        : "number";
-            for (std::size_t component = 0; component < std::max<std::size_t>(1, count); ++component) {
-                const auto id = componentId(channel.id, component);
-                const QString suffix =
-                    count > 1 ? QString(".%1").arg((spec->type == ParameterType::Color ? "RGBA" : "XYZ")[component])
-                              : QString{};
-                QVariantList keys;
-                for (const auto& key : channel.keys) {
-                    keys.push_back(
-                        QVariantMap{{"id", keyId(id, key.id)},
-                                    {"keyframeId", QString::number(key.id)},
-                                    {"time", key.time},
-                                    {"value", componentValue(key.value, component)},
-                                    {"interpolation", interpolationName(key.interpolation)},
-                                    {"tangentMode", key.tangentMode == TangentMode::Smooth ? "smooth" : "broken"},
-                                    {"inSlope", key.inSlope[component]},
-                                    {"outSlope", key.outSlope[component]}});
+            selection.parameters.emplace_back(parameter, component);
+        }
+        if (!selected.empty()) {
+            for (const auto& channel : document.animationChannels()) {
+                const auto* occurrence = channel.address.instance == kInvalidNetworkInstance
+                                             ? nullptr
+                                             : document.instance(channel.address.instance);
+                if (channel.address.instance != kInvalidNetworkInstance && !occurrence)
+                    continue;
+                const auto scope = occurrence ? occurrence->parentNetwork : channel.address.network;
+                const auto nodeId = occurrence ? occurrence->node : channel.address.node;
+                const auto selection = selected.find({scope, nodeId});
+                if (selection == selected.end() || channel.keys.empty())
+                    continue;
+                const auto& definition = document.network(channel.address.network);
+                const auto* node = definition.graph().node(channel.address.node);
+                const auto* spec =
+                    node ? definition.graph().catalog().parameterSpec(node->type, channel.address.key) : nullptr;
+                const auto* displayNode = occurrence ? document.network(scope).graph().node(nodeId) : node;
+                if (!spec || !displayNode)
+                    continue;
+                QString parameterKey = QString::fromStdString(channel.address.key);
+                QString label;
+                if (!occurrence) {
+                    label = QString::fromStdString(spec->label.empty() ? spec->name : spec->label);
+                } else {
+                    for (const auto& exposed : definition.exposedParameters()) {
+                        if (exposed.node == channel.address.node && exposed.key == channel.address.key) {
+                            label = QString::fromStdString(exposed.name);
+                            parameterKey = "exposed:" + QString::number(exposed.id);
+                            break;
+                        }
+                    }
+                    if (label.isEmpty())
+                        continue;
                 }
-                records.push_back(QVariantMap{{"id", id},
-                                              {"nodeId", QString::number(displayNode->id)},
-                                              {"nodeName", QString::fromStdString(displayNode->name)},
-                                              {"parameterKey", parameterKey + suffix},
-                                              {"label", label + suffix},
-                                              {"kind", kind},
-                                              {"continuous", count != 0},
-                                              {"keys", keys}});
-                components_.emplace(id, Component{channel.id, component, spec->type});
+                const auto count = animation_detail::componentCount(spec->type);
+                const QString kind = spec->type == ParameterType::Boolean ? "toggle"
+                                     : spec->type == ParameterType::Choice || spec->type == ParameterType::String
+                                         ? "choice"
+                                     : spec->type == ParameterType::Integer ? "integer"
+                                                                            : "number";
+                const auto networkId = QString::number(scope);
+                const auto displayId = QString::number(nodeId);
+                for (std::size_t component = 0; component < std::max<std::size_t>(1, count); ++component) {
+                    if (!selection->second.all &&
+                        !std::any_of(selection->second.parameters.begin(), selection->second.parameters.end(),
+                                     [&](const auto& parameter) {
+                                         return parameter.first == parameterKey &&
+                                                (parameter.second < 0 ||
+                                                 static_cast<std::size_t>(parameter.second) == component);
+                                     }))
+                        continue;
+                    const auto id = componentId(channel.id, component);
+                    const QString suffix =
+                        count > 1 ? QString(".%1").arg((spec->type == ParameterType::Color ? "RGBA" : "XYZ")[component])
+                                  : QString{};
+                    QVariantList keys;
+                    for (const auto& key : channel.keys) {
+                        keys.push_back(
+                            QVariantMap{{"id", keyId(id, key.id)},
+                                        {"keyframeId", QString::number(key.id)},
+                                        {"time", key.time},
+                                        {"value", componentValue(key.value, component)},
+                                        {"interpolation", interpolationName(key.interpolation)},
+                                        {"tangentMode", key.tangentMode == TangentMode::Smooth ? "smooth" : "broken"},
+                                        {"inSlope", key.inSlope[component]},
+                                        {"outSlope", key.outSlope[component]}});
+                    }
+                    records.push_back(QVariantMap{{"id", id},
+                                                  {"networkId", networkId},
+                                                  {"nodeId", displayId},
+                                                  {"nodeKey", networkId + "_" + displayId},
+                                                  {"nodeName", QString::fromStdString(displayNode->name)},
+                                                  {"parameter", parameterKey},
+                                                  {"component", static_cast<int>(component)},
+                                                  {"parameterKey", parameterKey + suffix},
+                                                  {"label", label + suffix},
+                                                  {"kind", kind},
+                                                  {"continuous", count != 0},
+                                                  {"keys", keys}});
+                    components_.emplace(id, Component{channel.id, component, spec->type});
+                }
             }
         }
     } catch (const std::exception&) {
@@ -184,7 +231,7 @@ bool AnimationViewModel::fail(const QString& message) {
 }
 bool AnimationViewModel::beginGesture() {
     if (!available_)
-        return fail("Animation network '" + networkId_ + "' is unavailable");
+        return fail("Animation targets are unavailable");
     gestureRevision_ = session_.revision();
     generation_ = session_.projectGeneration();
     return true;
@@ -196,7 +243,7 @@ void AnimationViewModel::cancelGesture() {
 bool AnimationViewModel::checkRevision() {
     if (generation_ != session_.projectGeneration() || (gestureRevision_ && *gestureRevision_ != session_.revision()))
         return fail("The project changed during this animation edit. Cancel and retry.");
-    return available_ || fail("Animation network '" + networkId_ + "' is unavailable");
+    return available_ || fail("Animation targets are unavailable");
 }
 AnimationViewModel::Target AnimationViewModel::resolve(const QString& id) const {
     const auto slash = id.lastIndexOf('/');

@@ -6,6 +6,7 @@
 #include "nemo/core/session/ProjectSession.hpp"
 
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QVariantList>
 #include <QVariantMap>
 #include <gtest/gtest.h>
@@ -198,4 +199,66 @@ TEST(PanelContextRouter, InspectorRequestIsGroupScopedAndMediaFree) {
     // The relay never touches the document or the media catalog.
     EXPECT_EQ(session.revision(), revision);
     EXPECT_TRUE(session.document().mediaCatalog().entries().empty());
+}
+
+TEST(PanelContextRouter, InspectorMembershipUnionsCurrentWorkspaceCardsByGroup) {
+    QTemporaryDir directory;
+    nemo::workspace::WorkspaceController workspace(directory.filePath("workspace.json"));
+    workspace.registerPanelType("parameters", "Parameters", "ParametersPanel.qml");
+    workspace.registerPanelType("animation", "Animation", "AnimationPanel.qml");
+    const auto panelFor = [&](auto&& self, const QVariantMap& node, const QString& type) -> QString {
+        for (const auto& value : node.value("panels").toList())
+            if (value.toMap().value("type").toString() == type)
+                return value.toMap().value("id").toString();
+        for (const auto& child : node.value("children").toList()) {
+            const auto found = self(self, child.toMap(), type);
+            if (!found.isEmpty())
+                return found;
+        }
+        return {};
+    };
+    const auto a = panelFor(panelFor, workspace.root(), "viewer");
+    const auto b = panelFor(panelFor, workspace.root(), "nodegraph");
+    const auto first = panelFor(panelFor, workspace.root(), "parameters");
+    const auto second = panelFor(panelFor, workspace.root(), "timeline");
+    ASSERT_FALSE(a.isEmpty());
+    ASSERT_FALSE(b.isEmpty());
+    ASSERT_FALSE(first.isEmpty());
+    ASSERT_FALSE(second.isEmpty());
+    workspace.setPanelType(a, "animation");
+    workspace.setPanelType(b, "animation");
+    workspace.setPanelType(second, "parameters");
+    workspace.setGroup(b, "B");
+    nemo::ProjectSession session;
+    nemo::ui::PanelContextRouter router(session);
+    router.setWorkspaceController(&workspace);
+    ASSERT_TRUE(router.registerPanel(a, "A"));
+    ASSERT_TRUE(router.registerPanel(b, "B"));
+    const QVariantMap one{{"network", "1"}, {"node", "2"}};
+    const QVariantMap two{{"network", "1"}, {"node", "3"}};
+    workspace.setPanelState(first, {{"inspectors", QVariantList{one, two}}});
+    workspace.setPanelState(second, {{"inspectors", QVariantList{one}}});
+    EXPECT_EQ(router.contextFor(a).value("inspectorNodes").toList(), (QVariantList{one, two}));
+    EXPECT_TRUE(router.contextFor(b).value("inspectorNodes").toList().isEmpty());
+    QSignalSpy changed(&router, &nemo::ui::PanelContextRouter::panelContextChanged);
+    auto collapsed = one;
+    collapsed.insert("collapsed", true);
+    workspace.setPanelState(first, {{"inspectors", QVariantList{collapsed, two}}, {"columns", false}});
+    EXPECT_EQ(changed.count(), 0);
+    workspace.setGroup(second, "B");
+    EXPECT_EQ(router.contextFor(a).value("inspectorNodes").toList(), (QVariantList{one, two}));
+    EXPECT_EQ(router.contextFor(b).value("inspectorNodes").toList(), (QVariantList{one}));
+    workspace.setPanelState(first, {{"inspectors", QVariantList{two}}});
+    EXPECT_EQ(router.contextFor(a).value("inspectorNodes").toList(), (QVariantList{two}));
+    workspace.closePanel(second);
+    EXPECT_TRUE(router.contextFor(b).value("inspectorNodes").toList().isEmpty());
+    const auto original = workspace.activeWorkspaceId();
+    const auto other = workspace.createWorkspace("Other");
+    ASSERT_FALSE(other.isEmpty());
+    ASSERT_TRUE(workspace.switchWorkspace(other));
+    EXPECT_TRUE(router.contextFor(a).value("inspectorNodes").toList().isEmpty());
+    ASSERT_TRUE(workspace.switchWorkspace(original));
+    ASSERT_TRUE(router.registerPanel(a, "A"));
+    EXPECT_EQ(router.contextFor(a).value("inspectorNodes").toList(), (QVariantList{two}));
+    EXPECT_FALSE(session.canUndo());
 }

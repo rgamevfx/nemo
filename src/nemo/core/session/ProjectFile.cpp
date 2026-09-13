@@ -508,8 +508,8 @@ ProjectReadResult ProjectFile::read(const fs::path& file, std::shared_ptr<const 
     for (const auto& reference : result.references) {
         if (reference.identity.rfind("source:", 0) == 0) {
             const std::string id = reference.identity.substr(std::string_view("source:").size());
-            if (const auto source = result.document.sources.find(id); source != result.document.sources.end())
-                source->second.path = reference.resolvedPath;
+            if (result.document.sources.contains(id))
+                result.document.sources.at(id).path = reference.resolvedPath;
         } else if (reference.identity == "colorConfig") {
             result.colorConfigPath = reference.resolvedPath;
         }

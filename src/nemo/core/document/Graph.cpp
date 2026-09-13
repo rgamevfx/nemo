@@ -18,11 +18,6 @@ const std::vector<PortSpec>& emptyPorts() {
     return none;
 }
 
-const std::vector<Edge>& emptyEdges() {
-    static const std::vector<Edge> none;
-    return none;
-}
-
 void validatePortSpecs(const std::vector<PortSpec>& ports, const char* direction) {
     std::set<std::string> names;
     for (const auto& port : ports) {
@@ -51,25 +46,86 @@ void Graph::restoreIdentityHighWatermarks(NodeId nextNodeId, EdgeId nextEdgeId) 
 }
 
 const NodeInstance* Graph::findNode(NodeId id) const {
-    const auto it = std::find_if(nodes_.begin(), nodes_.end(), [id](const NodeInstance& n) { return n.id == id; });
-    return it == nodes_.end() ? nullptr : &*it;
+    const std::size_t index = nodeIndexOf(id);
+    return index == nodes_.size() ? nullptr : &nodes_[index];
 }
 
-NodeInstance* Graph::findNode(NodeId id) {
-    const auto it = std::find_if(nodes_.begin(), nodes_.end(), [id](const NodeInstance& n) { return n.id == id; });
-    return it == nodes_.end() ? nullptr : &*it;
+NodeInstance* Graph::mutableNode(NodeId id, std::size_t& index) {
+    index = nodeIndexOf(id);
+    return index == nodes_.size() ? nullptr : &nodes_.mutableAt(index);
 }
 
-void Graph::eraseIncomingEdge(const Edge& edge) noexcept {
-    const auto cacheIt = incomingCache_.find(edge.to.node);
-    if (cacheIt == incomingCache_.end())
+std::size_t Graph::cacheLowerBound(NodeId id) const {
+    std::size_t low = 0;
+    std::size_t high = incomingCache_.size();
+    while (low < high) {
+        const std::size_t middle = low + (high - low) / 2;
+        if (incomingCache_[middle].first < id)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    return low;
+}
+
+std::size_t Graph::cacheIndexOf(NodeId id) const {
+    const std::size_t position = cacheLowerBound(id);
+    if (position < incomingCache_.size() && incomingCache_[position].first == id)
+        return position;
+    return incomingCache_.size();
+}
+
+void Graph::recordNode(NodeId id) {
+    if (recorder_)
+        recorder_->node(recorderNetwork_, id);
+}
+
+void Graph::recordEdge(EdgeId id) {
+    if (recorder_)
+        recorder_->edge(recorderNetwork_, id);
+}
+
+void Graph::recordGraph() {
+    if (recorder_)
+        recorder_->network(recorderNetwork_);
+}
+
+EdgeId Graph::appendEdge(EdgeId id, PortRef from, PortRef to) {
+    edges_.push_back(Edge{.id = id, .from = from, .to = to});
+    try {
+        addEdgeToCache(to.node, edges_[edges_.size() - 1]);
+    } catch (...) {
+        edges_.pop_back();
+        throw;
+    }
+    nextEdgeId_ = std::max(nextEdgeId_, static_cast<EdgeId>(id + 1));
+    ++revision_;
+    recordEdge(id);
+    return id;
+}
+
+void Graph::addEdgeToCache(NodeId destination, const Edge& edge) {
+    const std::size_t index = cacheLowerBound(destination);
+    if (index < incomingCache_.size() && incomingCache_[index].first == destination) {
+        incomingCache_.mutableAt(index).second.push_back(edge);
         return;
-    auto& incoming = cacheIt->second;
-    incoming.erase(
-        std::remove_if(incoming.begin(), incoming.end(), [&edge](const Edge& cached) { return cached.id == edge.id; }),
-        incoming.end());
-    if (incoming.empty())
-        incomingCache_.erase(cacheIt);
+    }
+    EdgeStorage list;
+    list.push_back(edge);
+    incomingCache_.insert(index, IncomingEntry{destination, std::move(list)});
+}
+
+void Graph::removeEdgeFromCache(const Edge& edge) {
+    const std::size_t index = cacheIndexOf(edge.to.node);
+    if (index == incomingCache_.size())
+        return;
+    EdgeStorage& into = incomingCache_.mutableAt(index).second;
+    const std::size_t position = into.indexOf([&edge](const Edge& candidate) { return candidate.id == edge.id; });
+    if (position == into.size())
+        return;
+    into.erase(position);
+    if (into.empty())
+        incomingCache_.erase(index);
 }
 
 NodeId Graph::addNode(std::string type, std::string name) {
@@ -107,11 +163,13 @@ NodeId Graph::addNodeWithId(NodeId id, std::string type, std::string name, Param
                                   .instance = instance});
     nextNodeId_ = std::max(nextNodeId_, static_cast<NodeId>(id + 1));
     ++revision_;
+    recordNode(id);
     return id;
 }
 
 void Graph::restoreNodeExtension(NodeId id, nlohmann::json extension, nlohmann::json opaqueParams) {
-    NodeInstance* node = findNode(id);
+    std::size_t index = 0;
+    NodeInstance* node = mutableNode(id, index);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode,
                              "cannot attach preserved data to unknown node " + std::to_string(id));
@@ -120,39 +178,46 @@ void Graph::restoreNodeExtension(NodeId id, nlohmann::json extension, nlohmann::
 }
 
 void Graph::renameNode(NodeId id, std::string name) {
-    NodeInstance* node = findNode(id);
-    if (node == nullptr)
-        throw GraphException(GraphError::UnknownNode, "cannot rename unknown node " + std::to_string(id));
     if (name.empty())
         throw GraphException(GraphError::InvalidName, "node name must not be empty");
+    std::size_t index = 0;
+    NodeInstance* node = mutableNode(id, index);
+    if (node == nullptr)
+        throw GraphException(GraphError::UnknownNode, "cannot rename unknown node " + std::to_string(id));
     if (const NodeInstance* existing = nodeByName(name); existing != nullptr && existing->id != id)
         throw GraphException(GraphError::DuplicateName, "node name '" + name + "' already exists in this graph");
     if (node->name == name)
         return;
     node->name = std::move(name);
     ++revision_;
+    recordNode(id);
 }
 
 void Graph::removeNode(NodeId id) {
-    if (!findNode(id))
+    const std::size_t nodeIndex = nodeIndexOf(id);
+    if (nodeIndex == nodes_.size())
         throw GraphException(GraphError::UnknownNode, "cannot remove unknown node " + std::to_string(id));
-    for (const auto& edge : edges_) {
+    // Incident edges leave with the node; each removed edge is a touched
+    // identity, so publication reports exactly the relationships that died.
+    std::vector<EdgeId> incident;
+    for (const Edge& edge : edges_)
         if (edge.from.node == id || edge.to.node == id)
-            eraseIncomingEdge(edge);
+            incident.push_back(edge.id);
+    for (const EdgeId edgeId : incident) {
+        const std::size_t edgeIndex = edges_.indexOf([edgeId](const Edge& e) { return e.id == edgeId; });
+        removeEdgeFromCache(edges_[edgeIndex]);
+        edges_.erase(edgeIndex);
+        recordEdge(edgeId);
     }
-    edges_.erase(std::remove_if(edges_.begin(), edges_.end(),
-                                [id](const Edge& e) { return e.from.node == id || e.to.node == id; }),
-                 edges_.end());
-    reservedInputs_.erase(
-        std::remove_if(reservedInputs_.begin(), reservedInputs_.end(), [id](PortRef ref) { return ref.node == id; }),
-        reservedInputs_.end());
-    nodes_.erase(std::remove_if(nodes_.begin(), nodes_.end(), [id](const NodeInstance& n) { return n.id == id; }),
-                 nodes_.end());
+    reservedInputs_.eraseIf([id](PortRef ref) { return ref.node == id; });
+    nodes_.erase(nodeIndex);
     ++revision_;
+    recordNode(id);
 }
 
 void Graph::setPortContract(NodeId id, std::vector<PortSpec> inputs, std::vector<PortSpec> outputs) {
-    NodeInstance* node = findNode(id);
+    std::size_t index = 0;
+    NodeInstance* node = mutableNode(id, index);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode,
                              "cannot set a port contract on unknown node " + std::to_string(id));
@@ -177,48 +242,52 @@ void Graph::setPortContract(NodeId id, std::vector<PortSpec> inputs, std::vector
     node->outputPorts = std::move(outputs);
     node->hasPortContract = true;
     ++revision_;
+    recordNode(id);
 }
 
 void Graph::reserveInput(PortRef destination) {
     if (!findNode(destination.node))
         throw GraphException(GraphError::UnknownNode, "cannot reserve input on unknown " + describe(destination));
-    if (std::find(reservedInputs_.begin(), reservedInputs_.end(), destination) != reservedInputs_.end())
+    if (inputReserved(destination))
         throw GraphException(GraphError::PortOccupied, "input " + describe(destination) + " is already reserved");
-    if (std::find_if(edges_.begin(), edges_.end(),
-                     [destination](const Edge& edge) { return edge.to == destination; }) != edges_.end())
+    if (edges_.find([destination](const Edge& edge) { return edge.to == destination; }) != nullptr)
         throw GraphException(GraphError::PortOccupied, "input " + describe(destination) + " is already occupied");
     reservedInputs_.push_back(destination);
     ++revision_;
+    recordGraph();
 }
 
 void Graph::releaseInput(PortRef destination) {
-    const auto it = std::find(reservedInputs_.begin(), reservedInputs_.end(), destination);
-    if (it == reservedInputs_.end())
+    const std::size_t index = reservedInputs_.indexOf([destination](PortRef ref) { return ref == destination; });
+    if (index == reservedInputs_.size())
         throw GraphException(GraphError::UnknownEdge, "input reservation does not exist for " + describe(destination));
-    reservedInputs_.erase(it);
+    reservedInputs_.erase(index);
     ++revision_;
+    recordGraph();
 }
 void Graph::clearInputReservations(NodeId node) {
-    const auto oldSize = reservedInputs_.size();
-    reservedInputs_.erase(std::remove_if(reservedInputs_.begin(), reservedInputs_.end(),
-                                         [node](PortRef ref) { return ref.node == node; }),
-                          reservedInputs_.end());
-    if (reservedInputs_.size() != oldSize)
+    const std::size_t oldSize = reservedInputs_.size();
+    reservedInputs_.eraseIf([node](PortRef ref) { return ref.node == node; });
+    if (reservedInputs_.size() != oldSize) {
         ++revision_;
+        recordGraph();
+    }
 }
 
 bool Graph::inputReserved(PortRef destination) const {
-    return std::find(reservedInputs_.begin(), reservedInputs_.end(), destination) != reservedInputs_.end();
+    return reservedInputs_.find([destination](PortRef ref) { return ref == destination; }) != nullptr;
 }
 
 void Graph::setLayout(NodeId id, LayoutPosition position) {
-    NodeInstance* node = findNode(id);
+    std::size_t index = 0;
+    NodeInstance* node = mutableNode(id, index);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot position unknown node " + std::to_string(id));
     if (node->layout == position)
         return;
     node->layout = position;
     ++revision_;
+    recordNode(id);
 }
 
 const NodeInstance* Graph::node(NodeId id) const {
@@ -321,7 +390,7 @@ std::optional<GraphErrorDetails> Graph::validateEdge(PortRef from, PortRef to) c
             return GraphErrorDetails{GraphError::PortOccupied, "input " + describe(to) + " is already fed by node " +
                                                                    std::to_string(edge.from.node)};
     }
-    if (std::find(reservedInputs_.begin(), reservedInputs_.end(), to) != reservedInputs_.end())
+    if (inputReserved(to))
         return GraphErrorDetails{GraphError::PortOccupied,
                                  "input " + describe(to) + " is reserved by a formal network terminal"};
     if (reachable(to.node, from.node))
@@ -340,33 +409,19 @@ EdgeId Graph::connect(PortRef from, PortRef to) {
 EdgeId Graph::connectWithId(EdgeId id, PortRef from, PortRef to) {
     if (id == kInvalidEdge || id == std::numeric_limits<EdgeId>::max())
         throw GraphException(GraphError::InvalidId, "edge id must be a nonzero value below the identity limit");
-    if (std::find_if(edges_.begin(), edges_.end(), [id](const Edge& edge) { return edge.id == id; }) != edges_.end())
+    if (edges_.find([id](const Edge& edge) { return edge.id == id; }) != nullptr)
         throw GraphException(GraphError::DuplicateId,
                              "edge id " + std::to_string(id) + " already exists in this graph");
     if (const auto problem = validateEdge(from, to))
         throw GraphException(problem->code, problem->message);
 
-    edges_.push_back(Edge{.id = id, .from = from, .to = to});
-    bool inserted = false;
-    try {
-        auto [cacheIt, wasInserted] = incomingCache_.try_emplace(to.node);
-        inserted = wasInserted;
-        cacheIt->second.push_back(edges_.back());
-    } catch (...) {
-        if (inserted)
-            incomingCache_.erase(to.node);
-        edges_.pop_back();
-        throw;
-    }
-    nextEdgeId_ = std::max(nextEdgeId_, static_cast<EdgeId>(id + 1));
-    ++revision_;
-    return id;
+    return appendEdge(id, from, to);
 }
 
 EdgeId Graph::restoreEdgeWithId(EdgeId id, PortRef from, PortRef to) {
     if (id == kInvalidEdge || id == std::numeric_limits<EdgeId>::max())
         throw GraphException(GraphError::InvalidId, "edge id must be a nonzero value below the identity limit");
-    if (std::find_if(edges_.begin(), edges_.end(), [id](const Edge& edge) { return edge.id == id; }) != edges_.end())
+    if (edges_.find([id](const Edge& edge) { return edge.id == id; }) != nullptr)
         throw GraphException(GraphError::DuplicateId,
                              "edge id " + std::to_string(id) + " already exists in this graph");
     const NodeInstance* fromNode = findNode(from.node);
@@ -386,66 +441,56 @@ EdgeId Graph::restoreEdgeWithId(EdgeId id, PortRef from, PortRef to) {
                                                     " would create a circular dependency through node " +
                                                     std::to_string(to.node));
 
-    edges_.push_back(Edge{.id = id, .from = from, .to = to});
-    bool inserted = false;
-    try {
-        auto [cacheIt, wasInserted] = incomingCache_.try_emplace(to.node);
-        inserted = wasInserted;
-        cacheIt->second.push_back(edges_.back());
-    } catch (...) {
-        if (inserted)
-            incomingCache_.erase(to.node);
-        edges_.pop_back();
-        throw;
-    }
-    nextEdgeId_ = std::max(nextEdgeId_, static_cast<EdgeId>(id + 1));
-    ++revision_;
-    return id;
+    return appendEdge(id, from, to);
 }
 
 void Graph::restoreEdgeExtension(EdgeId id, nlohmann::json extension) {
-    const auto it = std::find_if(edges_.begin(), edges_.end(), [id](const Edge& edge) { return edge.id == id; });
-    if (it == edges_.end())
+    const std::size_t index = edges_.indexOf([id](const Edge& edge) { return edge.id == id; });
+    if (index == edges_.size())
         throw GraphException(GraphError::UnknownEdge,
                              "cannot attach preserved data to unknown edge " + std::to_string(id));
-    it->extension = std::move(extension);
-    const auto cache = incomingCache_.find(it->to.node);
-    if (cache == incomingCache_.end())
+    edges_.mutableAt(index).extension = std::move(extension);
+    const std::size_t cacheIndex = cacheIndexOf(edges_[index].to.node);
+    if (cacheIndex == incomingCache_.size())
         return;
-    const auto cached =
-        std::find_if(cache->second.begin(), cache->second.end(), [id](const Edge& edge) { return edge.id == id; });
-    if (cached != cache->second.end())
-        cached->extension = it->extension;
+    EdgeStorage& into = incomingCache_.mutableAt(cacheIndex).second;
+    const std::size_t cached = into.indexOf([id](const Edge& edge) { return edge.id == id; });
+    if (cached != into.size())
+        into.mutableAt(cached).extension = edges_[index].extension;
 }
 
 void Graph::disconnect(EdgeId id) {
-    const auto it = std::find_if(edges_.begin(), edges_.end(), [id](const Edge& e) { return e.id == id; });
-    if (it == edges_.end())
+    const std::size_t index = edges_.indexOf([id](const Edge& edge) { return edge.id == id; });
+    if (index == edges_.size())
         throw GraphException(GraphError::UnknownEdge, "cannot disconnect unknown edge " + std::to_string(id));
-    eraseIncomingEdge(*it);
-    edges_.erase(it);
+    const Edge removed = edges_[index];
+    removeEdgeFromCache(removed);
+    edges_.erase(index);
     ++revision_;
+    recordEdge(id);
 }
 
 void Graph::setRoute(EdgeId id, std::vector<LayoutPosition> route) {
-    const auto it = std::find_if(edges_.begin(), edges_.end(), [id](const Edge& e) { return e.id == id; });
-    if (it == edges_.end())
+    const std::size_t index = edges_.indexOf([id](const Edge& edge) { return edge.id == id; });
+    if (index == edges_.size())
         throw GraphException(GraphError::UnknownEdge, "cannot route unknown edge " + std::to_string(id));
-    if (it->route == route)
+    if (edges_[index].route == route)
         return;
-    const auto cacheIt = incomingCache_.find(it->to.node);
-    if (cacheIt != incomingCache_.end()) {
-        const auto cached = std::find_if(cacheIt->second.begin(), cacheIt->second.end(),
-                                         [id](const Edge& edge) { return edge.id == id; });
-        if (cached != cacheIt->second.end())
-            cached->route = route;
+    const std::size_t cacheIndex = cacheIndexOf(edges_[index].to.node);
+    if (cacheIndex != incomingCache_.size()) {
+        EdgeStorage& into = incomingCache_.mutableAt(cacheIndex).second;
+        const std::size_t cached = into.indexOf([id](const Edge& edge) { return edge.id == id; });
+        if (cached != into.size())
+            into.mutableAt(cached).route = route;
     }
-    it->route = std::move(route);
+    edges_.mutableAt(index).route = std::move(route);
     ++revision_;
+    recordEdge(id);
 }
 
 void Graph::setParam(NodeId id, const std::string& key, ParameterValue value) {
-    NodeInstance* node = findNode(id);
+    std::size_t index = 0;
+    NodeInstance* node = mutableNode(id, index);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot set a parameter on unknown node " + std::to_string(id));
     if (const auto problem = catalog_->validateParameter(node->type, key, value))
@@ -453,19 +498,23 @@ void Graph::setParam(NodeId id, const std::string& key, ParameterValue value) {
                              "node '" + node->name + "' parameter '" + key + "': " + *problem);
     node->params[key] = std::move(value);
     ++revision_;
+    recordNode(id);
 }
 
 void Graph::eraseParam(NodeId id, const std::string& key) {
-    NodeInstance* node = findNode(id);
+    std::size_t index = 0;
+    NodeInstance* node = mutableNode(id, index);
     if (node == nullptr)
         throw GraphException(GraphError::UnknownNode, "cannot erase a parameter on unknown node " + std::to_string(id));
     node->params.erase(key);
     ++revision_;
+    recordNode(id);
 }
 
-const std::vector<Edge>& Graph::edgesInto(NodeId node) const {
-    const auto it = incomingCache_.find(node);
-    return it == incomingCache_.end() ? emptyEdges() : it->second;
+const Graph::EdgeStorage& Graph::edgesInto(NodeId node) const {
+    static const EdgeStorage empty;
+    const std::size_t index = cacheIndexOf(node);
+    return index == incomingCache_.size() ? empty : incomingCache_[index].second;
 }
 
 Network::Network(NetworkId id, std::string name, std::shared_ptr<const NodeCatalog> catalog)
@@ -484,6 +533,7 @@ void Network::rename(std::string name) {
         return;
     name_ = std::move(name);
     ++revision_;
+    record();
 }
 
 NodeId Network::defaultOutput() const {
@@ -505,6 +555,7 @@ void Network::setDefaultOutput(NodeId output) {
         return;
     defaultOutput_ = output;
     ++revision_;
+    record();
 }
 
 const FormalPort* Network::findPort(const std::vector<FormalPort>& ports, InterfacePortId id) const {
@@ -551,6 +602,7 @@ InterfacePortId Network::addFormalPortImpl(PortDirection direction, std::string 
     ports.push_back(FormalPort{.id = id, .kind = kind, .name = std::move(name), .allowFanOut = allowFanOut});
     nextInterfacePortId_ = std::max(nextInterfacePortId_, static_cast<InterfacePortId>(id + 1));
     ++revision_;
+    record();
     return id;
 }
 
@@ -623,6 +675,7 @@ void Network::connectInput(InterfacePortId input, PortRef destination) {
         throw;
     }
     ++revision_;
+    record();
 }
 
 void Network::disconnectInput(InterfacePortId input, PortRef destination) {
@@ -636,6 +689,7 @@ void Network::disconnectInput(InterfacePortId input, PortRef destination) {
     graph_.releaseInput(destination);
     inputConnections_.erase(it);
     ++revision_;
+    record();
 }
 
 std::optional<GraphErrorDetails> Network::validateOutputConnection(PortRef source, InterfacePortId output) const {
@@ -671,6 +725,7 @@ void Network::connectOutput(PortRef source, InterfacePortId output) {
         throw GraphException(problem->code, problem->message);
     outputConnections_.push_back(TerminalConnection{.terminal = output, .node = source});
     ++revision_;
+    record();
 }
 
 void Network::disconnectOutput(InterfacePortId output) {
@@ -682,6 +737,7 @@ void Network::disconnectOutput(InterfacePortId output) {
         throw GraphException(GraphError::UnknownEdge, "formal output connection does not exist");
     outputConnections_.erase(it);
     ++revision_;
+    record();
 }
 void Network::syncTerminalConnections() {
     if (terminalSyncRevision_ == graph_.revision())

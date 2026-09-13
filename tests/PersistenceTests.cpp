@@ -439,7 +439,7 @@ TEST(PersistenceTest, AnimationRejectsMalformedValuesAndTangentsInsteadOfDroppin
 
 TEST(PersistenceTest, MediaLibraryBinsEntriesAndWatermarksRoundTrip) {
     Document original;
-    auto& catalog = original.mediaCatalog;
+    auto& catalog = original.mediaCatalog();
     const auto shots = catalog.addBin("Shots");
     const auto video = catalog.addBin("Video", shots, MediaQueryDescriptor{.text = "hero", .kind = MediaKind::Video});
     MediaMetadata metadata;
@@ -469,9 +469,9 @@ TEST(PersistenceTest, MediaLibraryBinsEntriesAndWatermarksRoundTrip) {
     EXPECT_EQ(encoded.at("format"), "nemo");
     const auto loaded = loadDocument(encoded);
     ASSERT_TRUE(loaded.warnings.empty());
-    EXPECT_EQ(loaded.document.mediaCatalog.bins(), original.mediaCatalog.bins());
-    EXPECT_EQ(loaded.document.mediaCatalog.entries(), original.mediaCatalog.entries());
-    EXPECT_EQ(loaded.document.mediaCatalog.entry(entry)->marks, std::vector<MediaMarkRange>{mark});
+    EXPECT_EQ(loaded.document.mediaCatalog().bins(), original.mediaCatalog().bins());
+    EXPECT_EQ(loaded.document.mediaCatalog().entries(), original.mediaCatalog().entries());
+    EXPECT_EQ(loaded.document.mediaCatalog().entry(entry)->marks, std::vector<MediaMarkRange>{mark});
     EXPECT_EQ(loaded.document.nextMediaSourceId(), original.nextMediaSourceId());
     EXPECT_EQ(loaded.document.nextMediaBinId(), original.nextMediaBinId());
     EXPECT_EQ(saveDocument(loaded.document), encoded);
@@ -595,7 +595,7 @@ TEST(PersistenceTest, ProjectFormatAndRequiredFeaturesAreEnforced) {
 
 TEST(PersistenceTest, MediaIdentityWatermarksSurviveRoundTrip) {
     Document original;
-    auto& catalog = original.mediaCatalog;
+    auto& catalog = original.mediaCatalog();
     const auto shots = catalog.addBin("Shots");
     const auto scratch = catalog.addBin("Scratch");
     catalog.removeBin(scratch, false);
@@ -605,8 +605,8 @@ TEST(PersistenceTest, MediaIdentityWatermarksSurviveRoundTrip) {
     auto loaded = loadDocument(saveDocument(original));
     EXPECT_EQ(loaded.document.nextMediaBinId(), original.nextMediaBinId());
     EXPECT_EQ(loaded.document.nextMediaSourceId(), original.nextMediaSourceId());
-    EXPECT_GT(loaded.document.mediaCatalog.addBin("fresh"), scratch);
-    EXPECT_GT(loaded.document.mediaCatalog.addEntry("new.exr", shots, MediaMetadata{}), removed);
+    EXPECT_GT(loaded.document.mediaCatalog().addBin("fresh"), scratch);
+    EXPECT_GT(loaded.document.mediaCatalog().addEntry("new.exr", shots, MediaMetadata{}), removed);
 }
 
 TEST(PersistenceTest, UnavailableNodeAnimationIsRetainedAndRecoversWithCatalog) {

@@ -619,7 +619,7 @@ void addMediaEntry(Workload& workload, std::size_t index, MediaBinId bin) {
         }
     }
     std::size_t marks = 0;
-    for (const auto& entry : document.mediaCatalog.entries())
+    for (const auto& entry : document.mediaCatalog().entries())
         marks += entry.marks.size();
     return Json{{"networks", document.networks().size()},
                 {"nodes", nodes},
@@ -627,8 +627,8 @@ void addMediaEntry(Workload& workload, std::size_t index, MediaBinId bin) {
                 {"parameters", params},
                 {"parameters_by_type", paramsByType},
                 {"sources", document.sources.size()},
-                {"media_entries", document.mediaCatalog.entries().size()},
-                {"media_bins", document.mediaCatalog.bins().size()},
+                {"media_entries", document.mediaCatalog().entries().size()},
+                {"media_bins", document.mediaCatalog().bins().size()},
                 {"media_marks", marks},
                 {"animation_channels", document.animationChannels().size()},
                 {"animation_keys", keys},
@@ -965,15 +965,15 @@ void runMediaOps(const Workload& workload) {
     ProjectSession& session = *workload.session;
     const std::string& name = workload.name;
     const Json notes{{"history_capacity", kDefaultHistoryCapacity},
-                     {"media_entries", session.document().mediaCatalog.entries().size()},
-                     {"media_bins", session.document().mediaCatalog.bins().size()},
+                     {"media_entries", session.document().mediaCatalog().entries().size()},
+                     {"media_bins", session.document().mediaCatalog().bins().size()},
                      {"history_depth_at_start", retainedDepth(session)},
                      {"samples_undone_between_runs", true}};
     const auto undoLast = [&] { static_cast<void>(session.undo(EditOptions{session.revision(), {}})); };
 
     std::size_t labelCounter = 0;
     measureOp(name, "submit.set_media_metadata", notes, kColdSamples, kWarmupSamples, kWarmSamples, {}, [&] {
-        MediaMetadata metadata = session.document().mediaCatalog.entry(workload.mediaEntry)->metadata;
+        MediaMetadata metadata = session.document().mediaCatalog().entry(workload.mediaEntry)->metadata;
         // Committed probe data is owned by commitMediaProbeCommand; the generic
         // metadata command rejects it.
         metadata.committedProbe.reset();
@@ -1258,7 +1258,8 @@ void runRetention() {
         emitRetention("gesture_preview_after_cancel", Json{{"released", true}}, duringUpdates, afterCancel);
     }
 
-    // Prepared-save snapshot and its serialized baseline.
+    // Prepared-save snapshot. The prepared write retains a stable document
+    // version and the envelope fields; it no longer serializes the project.
     {
         Workload workload = seatWorkload("prepared_save", kDefaultHistoryCapacity, buildEditSurface("save", 16));
         ProjectSession& session = *workload.session;
@@ -1266,13 +1267,10 @@ void runRetention() {
         emitRetention("prepared_save_populated", Json{{"history_capacity", kDefaultHistoryCapacity}}, start, base);
         ProjectWriteRequest request = session.prepareSave("/tmp/issue69-driver/out.nemo", PathPolicy::KeepStored, false);
         const unsigned long long prepared = heapInUse();
-        const std::size_t baselineBytes = request.baseline.size();
-        emitRetention("prepared_save_snapshot_plus_baseline", Json{{"baseline_bytes", baselineBytes}}, base,
-                      prepared);
-        request.baseline.clear();
+        emitRetention("prepared_save_snapshot", Json{{"serialized_baseline", false}}, base, prepared);
         request.snapshot.reset();
         const unsigned long long dropped = heapInUse();
-        emitRetention("prepared_save_request_released", Json{{"baseline_bytes", baselineBytes}}, prepared, dropped);
+        emitRetention("prepared_save_request_released", Json{{"released", true}}, prepared, dropped);
     }
 
     struct rusage usage {};

@@ -202,7 +202,7 @@ bool PanelContextRouter::targetAvailable(const QString& kind, const QString& tar
     if (target.isEmpty())
         return false;
     if (kind == QStringLiteral("source")) {
-        for (const auto& entry : session_.document().mediaCatalog.entries()) {
+        for (const auto& entry : session_.document().mediaCatalog().entries()) {
             if (target == QString::fromStdString(entry.sourceKey) ||
                 target == QString::number(static_cast<qulonglong>(entry.id)))
                 return true;
@@ -230,7 +230,7 @@ bool PanelContextRouter::targetAvailable(const QString& kind, const QString& tar
 }
 
 QVariantList PanelContextRouter::sourceMarks(const QString& target) const {
-    for (const auto& entry : session_.document().mediaCatalog.entries()) {
+    for (const auto& entry : session_.document().mediaCatalog().entries()) {
         if (target != QString::fromStdString(entry.sourceKey) &&
             target != QString::number(static_cast<qulonglong>(entry.id)))
             continue;

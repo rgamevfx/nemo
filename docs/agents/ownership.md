@@ -86,6 +86,7 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | Project file persistence, autosave, recovery | `src/nemo/core/session/ProjectFile.hpp`; `ProjectFile` owns read/write, path policy, file envelope and reference state; `AutosaveStore` owns bounded slots; `ProjectSession::prepareSave`/`commitSave` own path, dirty baseline and recovery guard | `apps/nemo-ui/ProjectFileController.*` and the CLI `file-state`/`open`/`save`/`save-as`/`autosave`/`recover` ops are the only callers; both go through this owner, never a second codec |
 | Node schemas and discovery | `src/nemo/core/nodes/NodeCatalog.hpp`; immutable `NodeDescriptor` records and `NodeCatalog(std::vector<NodeDescriptor>)` | Built-ins are assembled in `NodeCatalog.cpp`; `Graph::catalog()` and evaluation query the catalog. There is no unregister operation |
 | Validated edits and history | `src/nemo/core/document/Document.hpp` command factories plus `src/nemo/core/commands/`; `Command`, `CommandStack`, and `ProjectSession` | `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()` maps JSON operations; `ProjectSession::submit()` is the commit seam |
+| Structural document storage | `src/nemo/core/SharedContainers.hpp` (`CowVector`, `CowMap`) and the document's controlled mutations; `ChangeRecorder` (`src/nemo/core/document/ChangeRecorder.hpp`) records the identities a transaction touched | Commands and sessions retain version handles, never deep copies; publication/undo/redo derive their notifications from the touched identities. See ADR-0007 "Structurally shared document versions (#72)"; do not reintroduce a whole-document copy, diff or serialization on the ordinary edit path |
 | CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned |
 | GPU primitives and resource lifetime | `src/nemo/gpu/` (`Device`, `Allocator`, `Submit`, `ComputePass`) | `src/nemo/eval/GpuExecutor.cpp` records/submits work; follow [`rendering.md`](rendering.md) for retained ownership and synchronization rather than copying those rules here |
 | Native effect execution | `src/nemo/eval/GpuExecutor.hpp` (`EffectProgram`, `EffectLibrary`, `loadSlangEffectLibrary`, `glslEffectLibrary`, `submitGpu`, `evaluateGpu`) and the CPU reference [`NativeEffects.hpp`](../../src/nemo/core/evaluation/NativeEffects.hpp) (`evaluateNativeEffect`) | [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp) owns the typed effective parameters (`effectiveEffectMask`/`effectiveGrade`/`effectiveBlur`/`effectiveTransform`) both executors consume; `CpuReference.cpp` dispatches `grade`/`blur`/`transform` to `evaluateNativeEffect`. `ViewerSession` loads the Slang library. Numerical contract and spatial limits: [`rendering.md`](rendering.md) |
@@ -108,7 +109,11 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
   replacement/opening. `NDEBUG` removes the assertions, not the contract; no
   synchronization or cross-thread dispatch is added. Callbacks run synchronously
   after publication and must not block or mutate during notification. Workers
-  receive `ProjectSession::snapshot()` copies, never the session object.
+  receive `ProjectSession::snapshot()` copies — structurally shared immutable
+  versions, so a snapshot is a handle set, never a live session or a mutable
+  builder — and never the session object. A caller that needs a mutable worker
+  view copies the snapshot first; mutation of a copy is copy-on-write and never
+  reaches the published version.
 - `NodeCatalog` is an immutable snapshot after construction. Descriptors contain
   schema facts only: no Qt, Vulkan, plugin, executor, or image objects.
 - Evaluation consumes an immutable document view. `ViewerScheduler` is the

@@ -1108,7 +1108,7 @@ TEST(Interactive, MediaRoleViewsCatalogReferenceWithoutAuthoringAGraphNode) {
     EXPECT_TRUE(controller.graphNodes().isEmpty());
     EXPECT_EQ(session.revision(), revisionBefore);
     EXPECT_EQ(controller.canUndo(), canUndoBefore);
-    EXPECT_FALSE(session.document().mediaCatalog.sourceUsed(session.document(), "media-role-still"));
+    EXPECT_FALSE(session.document().mediaCatalog().sourceUsed(session.document(), "media-role-still"));
 
     // A decimal catalog entry id addresses the same reference; an unknown
     // target still reports an explicit unavailable media context.

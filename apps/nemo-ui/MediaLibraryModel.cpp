@@ -107,7 +107,7 @@ RecordRef lookupRecord(const Document& document, const QString& id) {
         if (!ok || parsed == 0) {
             return ref;
         }
-        const MediaBin* bin = document.mediaCatalog.bin(static_cast<MediaBinId>(parsed));
+        const MediaBin* bin = document.mediaCatalog().bin(static_cast<MediaBinId>(parsed));
         if (!bin) {
             return ref;
         }
@@ -123,7 +123,7 @@ RecordRef lookupRecord(const Document& document, const QString& id) {
         if (!ok || parsed == 0) {
             return ref;
         }
-        const MediaCatalogEntry* entry = document.mediaCatalog.entry(static_cast<MediaSourceId>(parsed));
+        const MediaCatalogEntry* entry = document.mediaCatalog().entry(static_cast<MediaSourceId>(parsed));
         if (!entry) {
             return ref;
         }
@@ -257,9 +257,9 @@ bool containsLower(const std::string& haystack, const QString& needleLower) {
 // True when any entry in the bin's subtree addresses a source used by a source
 // node (the prototype's bin-level used semantics).
 bool binHasUsedDescendant(const Document& document, MediaBinId bin) {
-    for (const MediaSourceId id : document.mediaCatalog.depthFirstEntries(bin)) {
-        const MediaCatalogEntry* entry = document.mediaCatalog.entry(id);
-        if (entry && document.mediaCatalog.sourceUsed(document, entry->sourceKey)) {
+    for (const MediaSourceId id : document.mediaCatalog().depthFirstEntries(bin)) {
+        const MediaCatalogEntry* entry = document.mediaCatalog().entry(id);
+        if (entry && document.mediaCatalog().sourceUsed(document, entry->sourceKey)) {
             return true;
         }
     }
@@ -268,8 +268,8 @@ bool binHasUsedDescendant(const Document& document, MediaBinId bin) {
 
 bool subtreeHasUsed(const Document& document, const RecordRef& ref) {
     if (!ref.bin) {
-        const MediaCatalogEntry* entry = document.mediaCatalog.entry(ref.entryId);
-        return entry && document.mediaCatalog.sourceUsed(document, entry->sourceKey);
+        const MediaCatalogEntry* entry = document.mediaCatalog().entry(ref.entryId);
+        return entry && document.mediaCatalog().sourceUsed(document, entry->sourceKey);
     }
     return binHasUsedDescendant(document, ref.binId);
 }
@@ -601,10 +601,10 @@ Command copyEntryCommand(const Document& document, MediaSourceId entry, MediaBin
     std::vector<Command> parts;
     parts.push_back(nemo::duplicateCatalogEntryCommand(entry, parent, created));
     if (topLevel) {
-        const MediaCatalogEntry* source = document.mediaCatalog.entry(entry);
+        const MediaCatalogEntry* source = document.mediaCatalog().entry(entry);
         if (source) {
             const std::string base = source->metadata.userName.empty() ? source->sourceKey : source->metadata.userName;
-            const std::string name = document.mediaCatalog.nextAvailableName(parent, base + " Copy");
+            const std::string name = document.mediaCatalog().nextAvailableName(parent, base + " Copy");
             parts.push_back(Command{"name duplicated media", [created, name](Document& candidate) {
                                         nemo::renameMediaCommand(*created, name).apply(candidate);
                                     }});
@@ -617,12 +617,12 @@ Command copyEntryCommand(const Document& document, MediaSourceId entry, MediaBin
 // smart query bins excluded exactly as children() does.
 void storedChildIds(const Document& document, MediaBinId parent, std::vector<MediaBinId>& bins,
                     std::vector<MediaSourceId>& entries) {
-    for (const MediaBin& bin : document.mediaCatalog.bins()) {
+    for (const MediaBin& bin : document.mediaCatalog().bins()) {
         if (bin.parent == parent && !bin.query) {
             bins.push_back(bin.id);
         }
     }
-    for (const MediaCatalogEntry& entry : document.mediaCatalog.entries()) {
+    for (const MediaCatalogEntry& entry : document.mediaCatalog().entries()) {
         if (entry.parent == parent) {
             entries.push_back(entry.id);
         }
@@ -632,13 +632,13 @@ void storedChildIds(const Document& document, MediaBinId parent, std::vector<Med
 // Duplicate a bin subtree. Children keep their names; only a top-level copy is
 // renamed, matching the archived prototype `_copyTree`.
 Command copyBinCommand(const Document& document, MediaBinId source, MediaBinId parent, bool topLevel) {
-    const MediaBin* bin = document.mediaCatalog.bin(source);
+    const MediaBin* bin = document.mediaCatalog().bin(source);
     if (!bin) {
         return noOpCommand("duplicate unknown media bin");
     }
     auto created = std::make_shared<MediaBinId>(kInvalidMediaBin);
     const std::string name =
-        topLevel ? document.mediaCatalog.nextAvailableName(parent, bin->name + " Copy") : bin->name;
+        topLevel ? document.mediaCatalog().nextAvailableName(parent, bin->name + " Copy") : bin->name;
     std::vector<MediaBinId> bins;
     std::vector<MediaSourceId> entries;
     storedChildIds(document, source, bins, entries);
@@ -648,7 +648,7 @@ Command copyBinCommand(const Document& document, MediaBinId source, MediaBinId p
     // The prototype clones the whole item record, so a duplicate keeps the
     // source bin's authored metadata (tags/description/color).
     parts.push_back(Command{"duplicate bin metadata", [source, created](Document& candidate) {
-                                const MediaBin* original = candidate.mediaCatalog.bin(source);
+                                const MediaBin* original = candidate.mediaCatalog().bin(source);
                                 if (original) {
                                     nemo::setMediaBinMetadataCommand(*created, original->metadata).apply(candidate);
                                 }
@@ -670,16 +670,16 @@ Command copyBinCommand(const Document& document, MediaBinId source, MediaBinId p
 // existing move/remove commands as one UI transaction; the core
 // removeBinCommand(keepContents=true) direct-child semantics stay untouched.
 Command flattenBinCommand(const Document& document, MediaBinId bin) {
-    const MediaBin* value = document.mediaCatalog.bin(bin);
+    const MediaBin* value = document.mediaCatalog().bin(bin);
     if (!value) {
         return noOpCommand("remove unknown media bin");
     }
     const MediaBinId parent = value->parent;
     std::vector<Command> parts;
-    for (const MediaBinId child : document.mediaCatalog.depthFirstBins(bin)) {
+    for (const MediaBinId child : document.mediaCatalog().depthFirstBins(bin)) {
         parts.push_back(nemo::moveBinCommand(child, parent));
     }
-    for (const MediaSourceId child : document.mediaCatalog.depthFirstEntries(bin)) {
+    for (const MediaSourceId child : document.mediaCatalog().depthFirstEntries(bin)) {
         parts.push_back(nemo::moveMediaCommand(child, parent));
     }
     parts.push_back(nemo::removeBinCommand(bin, false));
@@ -690,10 +690,10 @@ Command flattenBinCommand(const Document& document, MediaBinId bin) {
 // for a non-empty bin, so descendants are removed deepest first and the bin
 // itself last, inside one transaction.
 void collectRemovalCommands(const Document& document, MediaBinId bin, std::vector<Command>& out) {
-    for (const MediaBinId child : document.mediaCatalog.childBins(bin)) {
+    for (const MediaBinId child : document.mediaCatalog().childBins(bin)) {
         collectRemovalCommands(document, child, out);
     }
-    for (const MediaSourceId child : document.mediaCatalog.childEntries(bin)) {
+    for (const MediaSourceId child : document.mediaCatalog().childEntries(bin)) {
         out.push_back(nemo::removeMediaEntryCommand(child));
     }
     out.push_back(nemo::removeBinCommand(bin, false));
@@ -754,7 +754,7 @@ private:
             return true;
         }
         MediaBinId parsed = kInvalidMediaBin;
-        if (!parseBinIdentity(id, parsed) || !document_.mediaCatalog.bin(parsed)) {
+        if (!parseBinIdentity(id, parsed) || !document_.mediaCatalog().bin(parsed)) {
             error = QStringLiteral("Destination must be an existing bin");
             return false;
         }
@@ -768,7 +768,7 @@ private:
             error = QStringLiteral("Unknown media bin ") + value.toString();
             return false;
         }
-        if (!document_.mediaCatalog.bin(parsed)) {
+        if (!document_.mediaCatalog().bin(parsed)) {
             error = QStringLiteral("Unknown media bin ") + value.toString();
             return false;
         }
@@ -875,8 +875,8 @@ private:
                     return false;
                 }
             } else if (!ref.bin) {
-                const MediaCatalogEntry* entry = document_.mediaCatalog.entry(ref.entryId);
-                if (entry && document_.mediaCatalog.sourceUsed(document_, entry->sourceKey)) {
+                const MediaCatalogEntry* entry = document_.mediaCatalog().entry(ref.entryId);
+                if (entry && document_.mediaCatalog().sourceUsed(document_, entry->sourceKey)) {
                     error = QStringLiteral("Used media cannot be removed from the catalog");
                     return false;
                 }
@@ -961,7 +961,7 @@ private:
                 // The prototype allows tags/description/color on any catalog
                 // item, so bins use the same authored fields through the bin
                 // metadata command.
-                const MediaBin* bin = document_.mediaCatalog.bin(ref.binId);
+                const MediaBin* bin = document_.mediaCatalog().bin(ref.binId);
                 if (!bin) {
                     continue;
                 }
@@ -978,7 +978,7 @@ private:
                 commands.push_back(nemo::setMediaBinMetadataCommand(ref.binId, std::move(metadata)));
                 continue;
             }
-            const MediaCatalogEntry* entry = document_.mediaCatalog.entry(ref.entryId);
+            const MediaCatalogEntry* entry = document_.mediaCatalog().entry(ref.entryId);
             if (!entry) {
                 continue;
             }
@@ -1061,7 +1061,7 @@ private:
             return false;
         }
         if (descriptor->scope.has_value() && *descriptor->scope != kInvalidMediaBin &&
-            !document_.mediaCatalog.bin(*descriptor->scope)) {
+            !document_.mediaCatalog().bin(*descriptor->scope)) {
             error = QStringLiteral("Saved search destination must be an existing bin");
             return false;
         }
@@ -1085,7 +1085,7 @@ private:
             return false;
         }
         if (descriptor->scope.has_value() && *descriptor->scope != kInvalidMediaBin &&
-            !document_.mediaCatalog.bin(*descriptor->scope)) {
+            !document_.mediaCatalog().bin(*descriptor->scope)) {
             error = QStringLiteral("Saved search destination must be an existing bin");
             return false;
         }
@@ -1317,7 +1317,7 @@ bool MediaLibraryModel::canRedo() const {
 }
 
 std::uint64_t MediaLibraryModel::documentStamp() const {
-    const std::uint64_t catalog = session_.document().mediaCatalog.stateHash();
+    const std::uint64_t catalog = session_.document().mediaCatalog().stateHash();
     return (session_.revision() * 1099511628211ULL) ^ catalog;
 }
 
@@ -1557,12 +1557,12 @@ QVariantMap MediaLibraryModel::entryRecord(const MediaCatalogEntry& entry) const
 QVariantList MediaLibraryModel::itemsSnapshot(const Document& document) const {
     QVariantList out;
     out.push_back(rootRecord());
-    for (const MediaBin& bin : document.mediaCatalog.bins()) {
+    for (const MediaBin& bin : document.mediaCatalog().bins()) {
         if (!bin.query) {
             out.push_back(binRecord(bin));
         }
     }
-    for (const MediaCatalogEntry& entry : document.mediaCatalog.entries()) {
+    for (const MediaCatalogEntry& entry : document.mediaCatalog().entries()) {
         out.push_back(entryRecord(entry));
     }
     return out;
@@ -1571,7 +1571,7 @@ QVariantList MediaLibraryModel::itemsSnapshot(const Document& document) const {
 QVariantList MediaLibraryModel::smartBins() const {
     QVariantList out;
     const Document& document = session_.document();
-    for (const MediaBin& bin : document.mediaCatalog.bins()) {
+    for (const MediaBin& bin : document.mediaCatalog().bins()) {
         if (!bin.query) {
             continue;
         }
@@ -1597,10 +1597,10 @@ QVariant MediaLibraryModel::item(const QString& id) const {
         if (ref.binId == kInvalidMediaBin) {
             return rootRecord();
         }
-        const MediaBin* bin = document.mediaCatalog.bin(ref.binId);
+        const MediaBin* bin = document.mediaCatalog().bin(ref.binId);
         return bin ? QVariant(binRecord(*bin)) : QVariant();
     }
-    const MediaCatalogEntry* entry = document.mediaCatalog.entry(ref.entryId);
+    const MediaCatalogEntry* entry = document.mediaCatalog().entry(ref.entryId);
     return entry ? QVariant(entryRecord(*entry)) : QVariant();
 }
 
@@ -1610,19 +1610,19 @@ QVariantList MediaLibraryModel::children(const QString& parentId) const {
         return {};
     }
     const Document& document = session_.document();
-    if (parent != kInvalidMediaBin && !document.mediaCatalog.bin(parent)) {
+    if (parent != kInvalidMediaBin && !document.mediaCatalog().bin(parent)) {
         return {};
     }
     QVariantList out;
     // Stored creation order, matching the prototype's single items array. The
     // core childBins/childEntries queries stay name-sorted and are used by
     // query()/traversal elsewhere; the panel sorts its own visible list.
-    for (const MediaBin& bin : document.mediaCatalog.bins()) {
+    for (const MediaBin& bin : document.mediaCatalog().bins()) {
         if (bin.parent == parent && !bin.query) {
             out.push_back(binRecord(bin));
         }
     }
-    for (const MediaCatalogEntry& entry : document.mediaCatalog.entries()) {
+    for (const MediaCatalogEntry& entry : document.mediaCatalog().entries()) {
         if (entry.parent == parent) {
             out.push_back(entryRecord(entry));
         }
@@ -1640,12 +1640,12 @@ QVariantList MediaLibraryModel::descendants(const QString& id) const {
     // walk in the prototype's order: a level's bins then its media, recursing.
     std::map<MediaBinId, std::vector<MediaBinId>> childBins;
     std::map<MediaBinId, std::vector<MediaSourceId>> childEntries;
-    for (const MediaBin& bin : document.mediaCatalog.bins()) {
+    for (const MediaBin& bin : document.mediaCatalog().bins()) {
         if (!bin.query) {
             childBins[bin.parent].push_back(bin.id);
         }
     }
-    for (const MediaCatalogEntry& entry : document.mediaCatalog.entries()) {
+    for (const MediaCatalogEntry& entry : document.mediaCatalog().entries()) {
         childEntries[entry.parent].push_back(entry.id);
     }
 
@@ -1663,7 +1663,7 @@ QVariantList MediaLibraryModel::descendants(const QString& id) const {
                 if (!seen.insert(child).second) {
                     continue;
                 }
-                const MediaBin* bin = document.mediaCatalog.bin(child);
+                const MediaBin* bin = document.mediaCatalog().bin(child);
                 if (bin) {
                     out.push_back(binRecord(*bin));
                     queue.push_back(child);
@@ -1673,7 +1673,7 @@ QVariantList MediaLibraryModel::descendants(const QString& id) const {
         const auto entries = childEntries.find(current);
         if (entries != childEntries.end()) {
             for (const MediaSourceId child : entries->second) {
-                const MediaCatalogEntry* entry = document.mediaCatalog.entry(child);
+                const MediaCatalogEntry* entry = document.mediaCatalog().entry(child);
                 if (entry) {
                     out.push_back(entryRecord(*entry));
                 }
@@ -1700,13 +1700,13 @@ QVariantList MediaLibraryModel::path(const QString& id) const {
                 chain.push_back(rootRecord());
                 break;
             }
-            const MediaBin* bin = document.mediaCatalog.bin(ref.binId);
+            const MediaBin* bin = document.mediaCatalog().bin(ref.binId);
             if (!bin) {
                 break;
             }
             chain.push_back(binRecord(*bin));
         } else {
-            const MediaCatalogEntry* entry = document.mediaCatalog.entry(ref.entryId);
+            const MediaCatalogEntry* entry = document.mediaCatalog().entry(ref.entryId);
             if (!entry) {
                 break;
             }
@@ -1740,7 +1740,7 @@ QVariantList MediaLibraryModel::query(const QString& parentId, const QString& te
         if (!parseBinIdentity(scopeValue, scopeBin)) {
             return {};
         }
-        if (scopeBin != kInvalidMediaBin && !document.mediaCatalog.bin(scopeBin)) {
+        if (scopeBin != kInvalidMediaBin && !document.mediaCatalog().bin(scopeBin)) {
             return {};
         }
         scope = scopeBin;
@@ -1786,17 +1786,17 @@ QVariantList MediaLibraryModel::query(const QString& parentId, const QString& te
         std::vector<MediaBinId> bins;
         try {
             if (projectScope) {
-                bins = document.mediaCatalog.depthFirstBins(kInvalidMediaBin);
+                bins = document.mediaCatalog().depthFirstBins(kInvalidMediaBin);
             } else if (recurse) {
-                bins = document.mediaCatalog.depthFirstBins(scopeBin);
+                bins = document.mediaCatalog().depthFirstBins(scopeBin);
             } else {
-                bins = document.mediaCatalog.childBins(scopeBin);
+                bins = document.mediaCatalog().childBins(scopeBin);
             }
         } catch (const GraphException&) {
             return {};
         }
         for (const MediaBinId id : bins) {
-            const MediaBin* bin = document.mediaCatalog.bin(id);
+            const MediaBin* bin = document.mediaCatalog().bin(id);
             if (!bin || bin->query) {
                 continue;
             }
@@ -1861,12 +1861,12 @@ QVariantList MediaLibraryModel::query(const QString& parentId, const QString& te
     }
     std::vector<MediaSourceId> members;
     try {
-        members = document.mediaCatalog.search(document, descriptor, std::nullopt, runtime);
+        members = document.mediaCatalog().search(document, descriptor, std::nullopt, runtime);
     } catch (const GraphException&) {
         return {};
     }
     for (const MediaSourceId id : members) {
-        const MediaCatalogEntry* entry = document.mediaCatalog.entry(id);
+        const MediaCatalogEntry* entry = document.mediaCatalog().entry(id);
         if (entry) {
             out.push_back(entryRecord(*entry));
         }
@@ -1880,7 +1880,7 @@ QVariant MediaLibraryModel::sourceItem(const QString& sourceId) const {
         return {};
     }
     const Document& document = session_.document();
-    for (const MediaCatalogEntry& entry : document.mediaCatalog.entries()) {
+    for (const MediaCatalogEntry& entry : document.mediaCatalog().entries()) {
         if (entry.sourceKey == key.toStdString()) {
             return entryRecord(entry);
         }
@@ -1895,7 +1895,7 @@ QVariantList MediaLibraryModel::itemsForSource(const QString& sourceId) const {
     }
     const Document& document = session_.document();
     QVariantList out;
-    for (const MediaCatalogEntry& entry : document.mediaCatalog.entries()) {
+    for (const MediaCatalogEntry& entry : document.mediaCatalog().entries()) {
         if (entry.sourceKey == key.toStdString()) {
             out.push_back(entryRecord(entry));
         }
@@ -1905,7 +1905,7 @@ QVariantList MediaLibraryModel::itemsForSource(const QString& sourceId) const {
 
 bool MediaLibraryModel::isUsed(const QString& sourceId) const {
     const QString key = sourceId.trimmed();
-    return !key.isEmpty() && session_.document().mediaCatalog.sourceUsed(session_.document(), key.toStdString());
+    return !key.isEmpty() && session_.document().mediaCatalog().sourceUsed(session_.document(), key.toStdString());
 }
 
 QVariantList MediaLibraryModel::normalizeSelection(const QVariantList& ids) const {
@@ -1988,7 +1988,7 @@ bool MediaLibraryModel::importPaths(const QStringList& paths, const QString& par
         return false;
     }
     const Document& document = session_.document();
-    if (parent != kInvalidMediaBin && !document.mediaCatalog.bin(parent)) {
+    if (parent != kInvalidMediaBin && !document.mediaCatalog().bin(parent)) {
         setError(QStringLiteral("Import destination bin does not exist"));
         return false;
     }
@@ -1999,14 +1999,14 @@ bool MediaLibraryModel::importPaths(const QStringList& paths, const QString& par
         usedKeys.insert(key);
     }
     QStringList usedNames;
-    for (const MediaSourceId id : document.mediaCatalog.childEntries(parent)) {
-        const MediaCatalogEntry* entry = document.mediaCatalog.entry(id);
+    for (const MediaSourceId id : document.mediaCatalog().childEntries(parent)) {
+        const MediaCatalogEntry* entry = document.mediaCatalog().entry(id);
         if (entry) {
             usedNames.append(displayName(*entry));
         }
     }
-    for (const MediaBinId id : document.mediaCatalog.childBins(parent)) {
-        const MediaBin* bin = document.mediaCatalog.bin(id);
+    for (const MediaBinId id : document.mediaCatalog().childBins(parent)) {
+        const MediaBin* bin = document.mediaCatalog().bin(id);
         if (bin) {
             usedNames.append(QString::fromStdString(bin->name));
         }
@@ -2081,7 +2081,7 @@ bool MediaLibraryModel::importPaths(const QStringList& paths, const QString& par
 
 bool MediaLibraryModel::enqueueRuntime(MediaSourceId entry) {
     const Document& document = session_.document();
-    const MediaCatalogEntry* catalogEntry = document.mediaCatalog.entry(entry);
+    const MediaCatalogEntry* catalogEntry = document.mediaCatalog().entry(entry);
     if (!catalogEntry) {
         setError(QStringLiteral("Media item no longer exists"));
         return false;
@@ -2156,7 +2156,7 @@ bool MediaLibraryModel::runtimePending(const std::string& sourceKey) const {
 
 bool MediaLibraryModel::ensureRuntime(MediaSourceId entry) {
     const Document& document = session_.document();
-    const MediaCatalogEntry* catalogEntry = document.mediaCatalog.entry(entry);
+    const MediaCatalogEntry* catalogEntry = document.mediaCatalog().entry(entry);
     if (!catalogEntry) {
         return false;
     }
@@ -2203,7 +2203,7 @@ void MediaLibraryModel::refreshThumbnailsForColorChange() {
         keys.insert(key);
     }
     const Document& document = session_.document();
-    for (const MediaCatalogEntry& entry : document.mediaCatalog.entries()) {
+    for (const MediaCatalogEntry& entry : document.mediaCatalog().entries()) {
         if (keys.contains(entry.sourceKey)) {
             enqueueRuntime(entry.id);
         }
@@ -2232,7 +2232,7 @@ void MediaLibraryModel::startPollingIfNeeded() {
 
 bool MediaLibraryModel::reprobe(const QString& id) {
     MediaSourceId entry = kInvalidMediaSource;
-    if (!parseEntryIdentity(id, entry) || !session_.document().mediaCatalog.entry(entry)) {
+    if (!parseEntryIdentity(id, entry) || !session_.document().mediaCatalog().entry(entry)) {
         setError(QStringLiteral("Unknown media item ") + id);
         return false;
     }
@@ -2246,7 +2246,7 @@ bool MediaLibraryModel::applyProbe(const QString& id) {
         return false;
     }
     const Document& document = session_.document();
-    const MediaCatalogEntry* entry = document.mediaCatalog.entry(entryId);
+    const MediaCatalogEntry* entry = document.mediaCatalog().entry(entryId);
     if (!entry) {
         setError(QStringLiteral("Unknown media item ") + id);
         return false;
@@ -2316,7 +2316,7 @@ bool MediaLibraryModel::relink(const QString& id, const QString& path) {
         return false;
     }
     const Document& document = session_.document();
-    const MediaCatalogEntry* entry = document.mediaCatalog.entry(entryId);
+    const MediaCatalogEntry* entry = document.mediaCatalog().entry(entryId);
     if (!entry) {
         setError(QStringLiteral("Unknown media item ") + id);
         return false;
@@ -2373,7 +2373,7 @@ void MediaLibraryModel::handleRuntimeResult(nemo::media::MediaImportResult resul
     const MediaSourceId entryId = inflight->second.entry;
     const SourceReference expected = inflight->second.expected;
     const QString itemId = entryIdentity(entryId);
-    const MediaCatalogEntry* entry = document.mediaCatalog.entry(entryId);
+    const MediaCatalogEntry* entry = document.mediaCatalog().entry(entryId);
     const MediaSourceId storedEntry = entry ? entry->id : kInvalidMediaSource;
     const bool entryMatchesKey = entry != nullptr && entry->sourceKey == key;
     inFlight_.erase(inflight);
@@ -2440,7 +2440,7 @@ void MediaLibraryModel::handleRuntimeResult(nemo::media::MediaImportResult resul
     if (current == nullptr || current->result.request.requestId != requestId) {
         return;
     }
-    if (session_.document().mediaCatalog.entry(storedEntry) == nullptr) {
+    if (session_.document().mediaCatalog().entry(storedEntry) == nullptr) {
         return;
     }
     if (!error.empty()) {
@@ -2474,7 +2474,7 @@ QString MediaLibraryModel::thumbnailUrl(const QString& id) const {
         return {};
     }
     const Document& document = session_.document();
-    const MediaCatalogEntry* entry = document.mediaCatalog.entry(entryId);
+    const MediaCatalogEntry* entry = document.mediaCatalog().entry(entryId);
     if (!entry) {
         return {};
     }
@@ -2501,7 +2501,7 @@ QVariantMap MediaLibraryModel::probeState(const QString& id) {
         return state;
     }
     const Document& document = session_.document();
-    const MediaCatalogEntry* entry = document.mediaCatalog.entry(entryId);
+    const MediaCatalogEntry* entry = document.mediaCatalog().entry(entryId);
     if (!entry) {
         return state;
     }
@@ -2509,7 +2509,7 @@ QVariantMap MediaLibraryModel::probeState(const QString& id) {
     // without thumbnails, so asking for an item's state queues a probe for the
     // current source reference and viewing transforms when none exists.
     ensureRuntime(entryId);
-    entry = document.mediaCatalog.entry(entryId);
+    entry = document.mediaCatalog().entry(entryId);
     if (!entry) {
         return state;
     }
@@ -2559,7 +2559,7 @@ QVariantMap MediaLibraryModel::defaultMarkForSource(const QString& sourceId) con
     mark.insert(QStringLiteral("inFrame"), QVariant());
     mark.insert(QStringLiteral("outFrame"), QVariant());
     const Document& document = session_.document();
-    for (const MediaCatalogEntry& entry : document.mediaCatalog.entries()) {
+    for (const MediaCatalogEntry& entry : document.mediaCatalog().entries()) {
         if (entry.sourceKey != sourceId.toStdString() || entry.marks.empty()) {
             continue;
         }
@@ -2623,7 +2623,7 @@ QVariantList MediaLibraryModel::marks(const QString& id) const {
     if (!parseEntryIdentity(id, entryId)) {
         return {};
     }
-    const MediaCatalogEntry* entry = session_.document().mediaCatalog.entry(entryId);
+    const MediaCatalogEntry* entry = session_.document().mediaCatalog().entry(entryId);
     return entry ? markList(entry->marks) : QVariantList();
 }
 
@@ -2633,7 +2633,7 @@ qint64 MediaLibraryModel::frameOffset(const QString& id) const {
         return 0;
     }
     const Document& document = session_.document();
-    const MediaCatalogEntry* entry = document.mediaCatalog.entry(entryId);
+    const MediaCatalogEntry* entry = document.mediaCatalog().entry(entryId);
     if (!entry) {
         return 0;
     }
@@ -2657,7 +2657,7 @@ void MediaLibraryModel::chooseImportPaths(const QString& parentId) {
     }
     MediaBinId parent = kInvalidMediaBin;
     if (!parseBinIdentity(parentId, parent) ||
-        (parent != kInvalidMediaBin && !session_.document().mediaCatalog.bin(parent))) {
+        (parent != kInvalidMediaBin && !session_.document().mediaCatalog().bin(parent))) {
         failMediaChooser(QStringLiteral("Import destination must be an existing bin"));
         return;
     }
@@ -2693,7 +2693,7 @@ void MediaLibraryModel::chooseRelinkPath(const QString& id) {
         return;
     }
     MediaSourceId entryId = kInvalidMediaSource;
-    if (!parseEntryIdentity(id, entryId) || !session_.document().mediaCatalog.entry(entryId)) {
+    if (!parseEntryIdentity(id, entryId) || !session_.document().mediaCatalog().entry(entryId)) {
         failMediaChooser(QStringLiteral("Unknown media item ") + id);
         return;
     }

@@ -51,20 +51,32 @@ bool MediaMarkRange::valid() const noexcept {
 }
 
 const MediaCatalogEntry* MediaCatalog::entry(MediaSourceId id) const noexcept {
-    const auto it = std::find_if(entries_.begin(), entries_.end(), [id](const auto& value) { return value.id == id; });
-    return it == entries_.end() ? nullptr : &*it;
-}
-MediaCatalogEntry* MediaCatalog::entry(MediaSourceId id) noexcept {
-    return const_cast<MediaCatalogEntry*>(std::as_const(*this).entry(id));
+    const std::size_t index = entries_.indexOf([id](const MediaCatalogEntry& value) { return value.id == id; });
+    return index == entries_.size() ? nullptr : &entries_[index];
 }
 const MediaBin* MediaCatalog::bin(MediaBinId id) const noexcept {
     if (id == kInvalidMediaBin)
         return nullptr;
-    const auto it = std::find_if(bins_.begin(), bins_.end(), [id](const auto& value) { return value.id == id; });
-    return it == bins_.end() ? nullptr : &*it;
+    const std::size_t index = bins_.indexOf([id](const MediaBin& value) { return value.id == id; });
+    return index == bins_.size() ? nullptr : &bins_[index];
 }
-MediaBin* MediaCatalog::bin(MediaBinId id) noexcept {
-    return const_cast<MediaBin*>(std::as_const(*this).bin(id));
+MediaCatalogEntry* MediaCatalog::mutableEntry(MediaSourceId id) noexcept {
+    const std::size_t index = entries_.indexOf([id](const MediaCatalogEntry& value) { return value.id == id; });
+    return index == entries_.size() ? nullptr : &entries_.mutableAt(index);
+}
+MediaBin* MediaCatalog::mutableBin(MediaBinId id) noexcept {
+    if (id == kInvalidMediaBin)
+        return nullptr;
+    const std::size_t index = bins_.indexOf([id](const MediaBin& value) { return value.id == id; });
+    return index == bins_.size() ? nullptr : &bins_.mutableAt(index);
+}
+void MediaCatalog::recordEntry(MediaSourceId id) noexcept {
+    if (recorder_)
+        recorder_->mediaEntry(id);
+}
+void MediaCatalog::recordBin(MediaBinId id) noexcept {
+    if (recorder_)
+        recorder_->mediaBin(id);
 }
 
 bool MediaCatalog::hasName(MediaBinId parent, std::string_view name, MediaSourceId exceptEntry,
@@ -328,6 +340,7 @@ MediaSourceId MediaCatalog::addEntry(std::string sourceKey, MediaBinId parent, M
         reject(GraphError::MediaDuplicateName, "entry name already exists in its parent bin");
     entries_.push_back(MediaCatalogEntry{id, std::move(sourceKey), parent, std::move(metadata), std::move(marks)});
     nextEntryId_ = std::max(nextEntryId_, static_cast<MediaSourceId>(id + 1));
+    recordEntry(id);
     return id;
 }
 
@@ -350,21 +363,23 @@ MediaBinId MediaCatalog::addBin(std::string name, MediaBinId parent, std::option
         reject(GraphError::MediaDuplicateName, "bin name '" + name + "' already exists in its parent");
     bins_.push_back(MediaBin{id, std::move(name), parent, std::move(query)});
     nextBinId_ = std::max(nextBinId_, static_cast<MediaBinId>(id + 1));
+    recordBin(id);
     return id;
 }
 
 void MediaCatalog::removeEntry(MediaSourceId id) {
-    const auto it = std::find_if(entries_.begin(), entries_.end(), [id](const auto& value) { return value.id == id; });
-    if (it == entries_.end())
+    const std::size_t index = entries_.indexOf([id](const MediaCatalogEntry& value) { return value.id == id; });
+    if (index == entries_.size())
         reject(GraphError::UnknownMediaEntry, "cannot remove unknown media entry " + std::to_string(id));
-    entries_.erase(it);
+    entries_.erase(index);
+    recordEntry(id);
 }
 
 void MediaCatalog::removeBin(MediaBinId id, bool keepContents) {
-    const auto it = std::find_if(bins_.begin(), bins_.end(), [id](const auto& value) { return value.id == id; });
-    if (it == bins_.end())
+    const std::size_t binIndex = bins_.indexOf([id](const MediaBin& value) { return value.id == id; });
+    if (binIndex == bins_.size())
         reject(GraphError::UnknownMediaBin, "cannot remove unknown media bin " + std::to_string(id));
-    const MediaBinId parent = it->parent;
+    const MediaBinId parent = bins_[binIndex].parent;
     const auto directBins = childBins(id);
     const auto directEntries = childEntries(id);
     if (!keepContents && (!directBins.empty() || !directEntries.empty()))
@@ -390,18 +405,26 @@ void MediaCatalog::removeBin(MediaBinId id, bool keepContents) {
         }
     }
     if (keepContents) {
-        for (auto& value : entries_)
-            if (value.parent == id)
-                value.parent = parent;
-        for (auto& value : bins_)
-            if (value.parent == id)
-                value.parent = parent;
+        for (std::size_t index = 0; index < entries_.size(); ++index) {
+            if (entries_[index].parent != id)
+                continue;
+            entries_.mutableAt(index).parent = parent;
+            recordEntry(entries_[index].id);
+        }
+        for (std::size_t index = 0; index < bins_.size(); ++index) {
+            if (bins_[index].parent != id)
+                continue;
+            const MediaBinId child = bins_[index].id;
+            bins_.mutableAt(index).parent = parent;
+            recordBin(child);
+        }
     }
-    bins_.erase(it);
+    bins_.erase(bins_.indexOf([id](const MediaBin& value) { return value.id == id; }));
+    recordBin(id);
 }
 
 void MediaCatalog::renameEntry(MediaSourceId id, std::string name) {
-    auto* value = entry(id);
+    auto* value = mutableEntry(id);
     if (!value)
         reject(GraphError::UnknownMediaEntry, "cannot rename unknown media entry " + std::to_string(id));
     if (name.empty())
@@ -409,10 +432,11 @@ void MediaCatalog::renameEntry(MediaSourceId id, std::string name) {
     if (hasName(value->parent, name, id))
         reject(GraphError::MediaDuplicateName, "entry name '" + name + "' already exists in its parent");
     value->metadata.userName = std::move(name);
+    recordEntry(id);
 }
 
 void MediaCatalog::renameBin(MediaBinId id, std::string name) {
-    auto* value = bin(id);
+    auto* value = mutableBin(id);
     if (!value)
         reject(GraphError::UnknownMediaBin, "cannot rename unknown media bin " + std::to_string(id));
     if (name.empty())
@@ -420,10 +444,11 @@ void MediaCatalog::renameBin(MediaBinId id, std::string name) {
     if (hasName(value->parent, name, kInvalidMediaSource, id))
         reject(GraphError::MediaDuplicateName, "bin name '" + name + "' already exists in its parent");
     value->name = std::move(name);
+    recordBin(id);
 }
 
 void MediaCatalog::moveEntry(MediaSourceId id, MediaBinId parent) {
-    auto* value = entry(id);
+    auto* value = mutableEntry(id);
     if (!value)
         reject(GraphError::UnknownMediaEntry, "cannot move unknown media entry " + std::to_string(id));
     if (parent != kInvalidMediaBin && !bin(parent))
@@ -431,10 +456,11 @@ void MediaCatalog::moveEntry(MediaSourceId id, MediaBinId parent) {
     if (hasName(parent, displayName(*value), id))
         reject(GraphError::MediaDuplicateName, "moving entry would collide at destination bin");
     value->parent = parent;
+    recordEntry(id);
 }
 
 void MediaCatalog::moveBin(MediaBinId id, MediaBinId parent) {
-    auto* value = bin(id);
+    auto* value = mutableBin(id);
     if (!value)
         reject(GraphError::UnknownMediaBin, "cannot move unknown media bin " + std::to_string(id));
     if (parent == id || isDescendant(parent, id))
@@ -445,10 +471,11 @@ void MediaCatalog::moveBin(MediaBinId id, MediaBinId parent) {
     if (hasName(parent, value->name, kInvalidMediaSource, id))
         reject(GraphError::MediaDuplicateName, "moving bin would collide at destination bin");
     value->parent = parent;
+    recordBin(id);
 }
 
 void MediaCatalog::setMetadata(MediaSourceId id, MediaMetadata metadata) {
-    auto* value = entry(id);
+    auto* value = mutableEntry(id);
     if (!value)
         reject(GraphError::UnknownMediaEntry, "cannot edit unknown media entry " + std::to_string(id));
     normalizeTags(metadata.tags);
@@ -456,31 +483,50 @@ void MediaCatalog::setMetadata(MediaSourceId id, MediaMetadata metadata) {
     if (hasName(value->parent, name, id))
         reject(GraphError::MediaDuplicateName, "metadata name would collide in parent bin");
     value->metadata = std::move(metadata);
+    recordEntry(id);
 }
 
 void MediaCatalog::setMarks(MediaSourceId id, std::vector<MediaMarkRange> marks) {
-    auto* value = entry(id);
+    auto* value = mutableEntry(id);
     if (!value)
         reject(GraphError::UnknownMediaEntry, "cannot edit marks on unknown media entry " + std::to_string(id));
     for (const auto& mark : marks)
         if (!mark.valid())
             reject(GraphError::InvalidMediaMark, "entry has an inverted mark range");
     value->marks = std::move(marks);
+    recordEntry(id);
 }
 
 void MediaCatalog::setQuery(MediaBinId id, std::optional<MediaQueryDescriptor> query) {
-    auto* value = bin(id);
+    auto* value = mutableBin(id);
     if (!value)
         reject(GraphError::UnknownMediaBin, "cannot set query on unknown media bin " + std::to_string(id));
     value->query = std::move(query);
+    recordBin(id);
 }
 
 void MediaCatalog::setBinMetadata(MediaBinId id, MediaBinMetadata metadata) {
-    auto* value = bin(id);
+    auto* value = mutableBin(id);
     if (!value)
         reject(GraphError::UnknownMediaBin, "cannot edit metadata on unknown media bin " + std::to_string(id));
     normalizeTags(metadata.tags);
     value->metadata = std::move(metadata);
+    recordBin(id);
+}
+
+void MediaCatalog::restoreEntryExtension(MediaSourceId id, nlohmann::json extension) {
+    MediaCatalogEntry* value = mutableEntry(id);
+    if (value == nullptr)
+        reject(GraphError::UnknownMediaEntry,
+               "cannot attach preserved data to unknown media entry " + std::to_string(id));
+    value->extension = std::move(extension);
+}
+
+void MediaCatalog::restoreBinExtension(MediaBinId id, nlohmann::json extension) {
+    MediaBin* value = mutableBin(id);
+    if (value == nullptr)
+        reject(GraphError::UnknownMediaBin, "cannot attach preserved data to unknown media bin " + std::to_string(id));
+    value->extension = std::move(extension);
 }
 
 void MediaCatalog::restoreIdentityHighWatermarks(MediaSourceId nextEntryId, MediaBinId nextBinId) {

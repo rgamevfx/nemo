@@ -197,5 +197,5 @@ TEST(PanelContextRouter, InspectorRequestIsGroupScopedAndMediaFree) {
 
     // The relay never touches the document or the media catalog.
     EXPECT_EQ(session.revision(), revision);
-    EXPECT_TRUE(session.document().mediaCatalog.entries().empty());
+    EXPECT_TRUE(session.document().mediaCatalog().entries().empty());
 }

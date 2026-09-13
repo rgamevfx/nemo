@@ -273,24 +273,25 @@ void applyAnimationParameters(const Document& document, NetworkId network, NodeI
 }
 
 const AnimationChannel* Document::animationChannel(AnimationChannelId id) const {
-    const auto it = std::find_if(animationChannels_.begin(), animationChannels_.end(),
-                                 [id](const AnimationChannel& channel) { return channel.id == id; });
-    return it == animationChannels_.end() ? nullptr : &*it;
+    const std::size_t index =
+        animationChannels_.indexOf([id](const AnimationChannel& channel) { return channel.id == id; });
+    return index == animationChannels_.size() ? nullptr : &animationChannels_[index];
 }
 
 const AnimationChannel* Document::animationChannel(const ParameterAddress& address) const {
-    const auto it = std::find_if(animationChannels_.begin(), animationChannels_.end(),
-                                 [&address](const AnimationChannel& channel) { return channel.address == address; });
-    return it == animationChannels_.end() ? nullptr : &*it;
+    const std::size_t index =
+        animationChannels_.indexOf([&address](const AnimationChannel& channel) { return channel.address == address; });
+    return index == animationChannels_.size() ? nullptr : &animationChannels_[index];
 }
 
-void Document::restoreAnimationChannels(std::vector<AnimationChannel> channels, AnimationChannelId nextChannelId,
+void Document::restoreAnimationChannels(AnimationStorage channels, AnimationChannelId nextChannelId,
                                         KeyframeId nextKeyId) {
     if (nextChannelId == kInvalidAnimationChannel || nextKeyId == kInvalidKeyframe)
         throw GraphException(GraphError::InvalidId, "animation identity watermarks must be nonzero");
     std::set<AnimationChannelId> channelIds;
     std::set<KeyframeId> keyIds;
-    for (auto& channel : channels) {
+    for (std::size_t channelIndex = 0; channelIndex < channels.size(); ++channelIndex) {
+        AnimationChannel& channel = channels[channelIndex];
         for (const auto& key : channel.keys)
             if (!std::isfinite(key.time))
                 throw GraphException(GraphError::ParameterValue, "animation channel " + std::to_string(channel.id) +
@@ -330,8 +331,19 @@ void Document::restoreAnimationChannels(std::vector<AnimationChannel> channels, 
                                                                   std::to_string(channels[i].address.network) +
                                                                   " node " + std::to_string(channels[i].address.node) +
                                                                   " parameter '" + channels[i].address.key + "'");
-    std::sort(channels.begin(), channels.end(),
-              [](const AnimationChannel& left, const AnimationChannel& right) { return left.id < right.id; });
+    if (!std::is_sorted(
+            channels.begin(), channels.end(),
+            [](const AnimationChannel& left, const AnimationChannel& right) { return left.id < right.id; })) {
+        std::vector<std::size_t> order(channels.size());
+        for (std::size_t index = 0; index < order.size(); ++index)
+            order[index] = index;
+        std::sort(order.begin(), order.end(),
+                  [&](std::size_t left, std::size_t right) { return channels[left].id < channels[right].id; });
+        AnimationStorage sorted;
+        for (const std::size_t index : order)
+            sorted.push_back(std::move(channels[index]));
+        channels = std::move(sorted);
+    }
     animationChannels_ = std::move(channels);
     nextAnimationChannelId_ = std::max(nextAnimationChannelId_, nextChannelId);
     nextKeyframeId_ = std::max(nextKeyframeId_, nextKeyId);

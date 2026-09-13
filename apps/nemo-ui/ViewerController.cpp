@@ -527,7 +527,7 @@ namespace {
     bool decimal = false;
     const auto entryId = trimmed.toULongLong(&decimal);
     if (decimal) {
-        const auto* entry = document.mediaCatalog.entry(static_cast<MediaSourceId>(entryId));
+        const auto* entry = document.mediaCatalog().entry(static_cast<MediaSourceId>(entryId));
         if (entry == nullptr)
             return {};
         key = entry->sourceKey;

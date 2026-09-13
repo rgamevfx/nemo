@@ -1,5 +1,7 @@
 #pragma once
 
+#include "nemo/core/SharedContainers.hpp"
+#include "nemo/core/document/ChangeRecorder.hpp"
 #include "nemo/core/document/Ids.hpp"
 
 #include <cstdint>
@@ -144,12 +146,16 @@ public:
     }
     MediaCatalog() = default;
 
-    [[nodiscard]] const std::vector<MediaCatalogEntry>& entries() const noexcept { return entries_; }
-    [[nodiscard]] const std::vector<MediaBin>& bins() const noexcept { return bins_; }
+    using EntryStorage = CowVector<MediaCatalogEntry>;
+    using BinStorage = CowVector<MediaBin>;
+
+    // Records catalog mutations against the owning document's transaction.
+    void setChangeRecorder(ChangeRecorder* recorder) noexcept { recorder_ = recorder; }
+
+    [[nodiscard]] const EntryStorage& entries() const noexcept { return entries_; }
+    [[nodiscard]] const BinStorage& bins() const noexcept { return bins_; }
     [[nodiscard]] const MediaCatalogEntry* entry(MediaSourceId id) const noexcept;
-    [[nodiscard]] MediaCatalogEntry* entry(MediaSourceId id) noexcept;
     [[nodiscard]] const MediaBin* bin(MediaBinId id) const noexcept;
-    [[nodiscard]] MediaBin* bin(MediaBinId id) noexcept;
 
     [[nodiscard]] std::vector<MediaBinId> childBins(MediaBinId parent = kInvalidMediaBin) const;
     [[nodiscard]] std::vector<MediaSourceId> childEntries(MediaBinId parent = kInvalidMediaBin) const;
@@ -198,6 +204,10 @@ public:
     void setMarks(MediaSourceId id, std::vector<MediaMarkRange> marks);
     void setQuery(MediaBinId id, std::optional<MediaQueryDescriptor> query);
     void setBinMetadata(MediaBinId id, MediaBinMetadata metadata);
+    // Attaches preserved authored JSON to a persisted record. Reserved for
+    // deserialization; it never records a controlled-edit transition.
+    void restoreEntryExtension(MediaSourceId id, nlohmann::json extension);
+    void restoreBinExtension(MediaBinId id, nlohmann::json extension);
 
 private:
     [[nodiscard]] std::vector<MediaSourceId>
@@ -209,8 +219,13 @@ private:
                                MediaBinId exceptBin = kInvalidMediaBin) const;
     [[nodiscard]] bool isDescendant(MediaBinId candidate, MediaBinId ancestor) const noexcept;
     [[nodiscard]] std::string displayName(const MediaCatalogEntry& entry) const;
-    std::vector<MediaCatalogEntry> entries_;
-    std::vector<MediaBin> bins_;
+    [[nodiscard]] MediaCatalogEntry* mutableEntry(MediaSourceId id) noexcept;
+    [[nodiscard]] MediaBin* mutableBin(MediaBinId id) noexcept;
+    void recordEntry(MediaSourceId id) noexcept;
+    void recordBin(MediaBinId id) noexcept;
+    EntryStorage entries_;
+    BinStorage bins_;
+    ChangeRecorder* recorder_{};
     MediaSourceId nextEntryId_{1};
     MediaBinId nextBinId_{1};
 };

@@ -133,16 +133,50 @@ Document::Document(std::shared_ptr<const NodeCatalog> catalog) : catalog_(std::m
     static_cast<void>(addNetworkWithId(1, "Root"));
 }
 
+std::size_t Document::networkIndexOf(NetworkId id) const {
+    return networks_.indexOf([id](const Network& network) { return network.id() == id; });
+}
+
+std::size_t Document::instanceIndexOf(NetworkInstanceId id) const {
+    return instances_.indexOf([id](const NetworkInstance& instance) { return instance.id == id; });
+}
+
+void Document::beginRecording(ChangeRecorder* recorder) {
+    if (recorder == nullptr) {
+        recorder_ = nullptr;
+        mediaCatalog_.setChangeRecorder(nullptr);
+        for (const NetworkId id : recorderInstalls_) {
+            const std::size_t index = networkIndexOf(id);
+            if (index != networks_.size())
+                networks_.mutableAt(index).setChangeRecorder(nullptr);
+        }
+        recorderInstalls_.clear();
+        return;
+    }
+    recorder_ = recorder;
+    mediaCatalog_.setChangeRecorder(recorder);
+}
+
+void Document::installRecorder(Network& network, NetworkId id) {
+    network.setChangeRecorder(recorder_);
+    if (recorder_ == nullptr)
+        return;
+    if (std::find(recorderInstalls_.begin(), recorderInstalls_.end(), id) == recorderInstalls_.end())
+        recorderInstalls_.push_back(id);
+}
+
 Network* Document::findNetwork(NetworkId id) {
-    const auto it =
-        std::find_if(networks_.begin(), networks_.end(), [id](const Network& network) { return network.id() == id; });
-    return it == networks_.end() ? nullptr : &*it;
+    const std::size_t index = networkIndexOf(id);
+    if (index == networks_.size())
+        return nullptr;
+    Network& found = networks_.mutableAt(index);
+    installRecorder(found, id);
+    return &found;
 }
 
 const Network* Document::findNetwork(NetworkId id) const {
-    const auto it =
-        std::find_if(networks_.begin(), networks_.end(), [id](const Network& network) { return network.id() == id; });
-    return it == networks_.end() ? nullptr : &*it;
+    const std::size_t index = networkIndexOf(id);
+    return index == networks_.size() ? nullptr : &networks_[index];
 }
 
 const Network& Document::network(NetworkId id) const {
@@ -159,8 +193,24 @@ Network& Document::network(NetworkId id) {
     return *found;
 }
 
-const std::vector<Network>& Document::networks() const {
-    return networks_;
+void Document::recordNetwork(NetworkId id) {
+    if (recorder_)
+        recorder_->network(id);
+}
+
+void Document::recordInstance(NetworkInstanceId id) {
+    if (recorder_)
+        recorder_->instance(id);
+}
+
+void Document::recordNode(NetworkId networkId, NodeId id) {
+    if (recorder_)
+        recorder_->node(networkId, id);
+}
+
+void Document::recordAnimationChannel(AnimationChannelId id) {
+    if (recorder_)
+        recorder_->animationChannel(id);
 }
 
 NetworkId Document::addNetwork(std::string name) {
@@ -173,14 +223,13 @@ NetworkId Document::addNetworkWithId(NetworkId id, std::string name) {
         throw GraphException(GraphError::DuplicateNetwork, "network id " + std::to_string(id) + " already exists");
     if (name.empty())
         throw GraphException(GraphError::InvalidName, "network name must not be empty");
-    const auto duplicate = std::find_if(networks_.begin(), networks_.end(),
-                                        [&name](const Network& network) { return network.name() == name; });
-    if (duplicate != networks_.end())
+    if (networks_.find([&name](const Network& network) { return network.name() == name; }) != nullptr)
         throw GraphException(GraphError::DuplicateNetwork, "network name '" + name + "' already exists");
     networks_.emplace_back(id, std::move(name), catalog_);
     nextNetworkId_ = std::max(nextNetworkId_, static_cast<NetworkId>(id + 1));
     if (rootNetworkId_ == kInvalidNetwork)
         rootNetworkId_ = id;
+    recordNetwork(id);
     return id;
 }
 
@@ -219,30 +268,28 @@ void Document::removeNetwork(NetworkId id) {
     const Network& removed = *findNetwork(id);
     retiredNetworkWatermarks_[id] =
         NetworkWatermarks{removed.graph().nextNodeId(), removed.graph().nextEdgeId(), removed.nextInterfacePortId()};
-    networks_.erase(
-        std::remove_if(networks_.begin(), networks_.end(), [id](const Network& network) { return network.id() == id; }),
-        networks_.end());
+    networks_.erase(networkIndexOf(id));
+    recordNetwork(id);
 }
 void Document::setRootNetworkId(NetworkId id) {
     if (!findNetwork(id))
         throw GraphException(GraphError::UnknownNetwork, "cannot select unknown root network " + std::to_string(id));
+    if (rootNetworkId_ == id)
+        return;
+    const NetworkId previous = rootNetworkId_;
     rootNetworkId_ = id;
-}
-
-const std::vector<NetworkInstance>& Document::instances() const {
-    return instances_;
+    recordNetwork(previous);
+    recordNetwork(id);
 }
 
 const NetworkInstance* Document::instance(NetworkInstanceId id) const {
-    const auto it = std::find_if(instances_.begin(), instances_.end(),
-                                 [id](const NetworkInstance& instance) { return instance.id == id; });
-    return it == instances_.end() ? nullptr : &*it;
+    const std::size_t index = instanceIndexOf(id);
+    return index == instances_.size() ? nullptr : &instances_[index];
 }
 
 NetworkInstance* Document::findInstanceMutable(NetworkInstanceId id) {
-    const auto it = std::find_if(instances_.begin(), instances_.end(),
-                                 [id](const NetworkInstance& instance) { return instance.id == id; });
-    return it == instances_.end() ? nullptr : &*it;
+    const std::size_t index = instanceIndexOf(id);
+    return index == instances_.size() ? nullptr : &instances_.mutableAt(index);
 }
 
 NetworkInstanceId Document::addInstance(NetworkId parentNetwork, NetworkId definition, std::string name) {
@@ -341,6 +388,7 @@ NetworkInstanceId Document::addInstanceWithId(NetworkInstanceId id, NetworkId pa
                                          .inputBindings = std::move(inputBindings),
                                          .params = std::move(params)});
     nextInstanceId_ = std::max(nextInstanceId_, static_cast<NetworkInstanceId>(id + 1));
+    recordInstance(id);
     return id;
 }
 void Document::removeInstance(NetworkInstanceId id) {
@@ -348,10 +396,11 @@ void Document::removeInstance(NetworkInstanceId id) {
     if (!target)
         throw GraphException(GraphError::UnknownInstance,
                              "cannot remove unknown network instance " + std::to_string(id));
-    network(target->parentNetwork).graph().removeNode(target->node);
-    instances_.erase(std::remove_if(instances_.begin(), instances_.end(),
-                                    [id](const NetworkInstance& instance) { return instance.id == id; }),
-                     instances_.end());
+    const NetworkId parentNetwork = target->parentNetwork;
+    const NodeId node = target->node;
+    network(parentNetwork).graph().removeNode(node);
+    instances_.erase(instanceIndexOf(id));
+    recordInstance(id);
 }
 
 void Document::bindInstanceInput(NetworkInstanceId id, InterfacePortId input, PortRef source) {
@@ -391,6 +440,7 @@ void Document::bindInstanceInput(NetworkInstanceId id, InterfacePortId input, Po
     const auto existingBinding = target->inputBindings.find(input);
     if (existingBinding != target->inputBindings.end()) {
         existingBinding->second = source;
+        recordInstance(id);
         return;
     }
     target->inputBindings.emplace(input, source);
@@ -400,6 +450,7 @@ void Document::bindInstanceInput(NetworkInstanceId id, InterfacePortId input, Po
         target->inputBindings.erase(input);
         throw;
     }
+    recordInstance(id);
 }
 void Document::eraseInstanceInputBinding(NetworkInstanceId id, InterfacePortId input) {
     NetworkInstance* target = findInstanceMutable(id);
@@ -417,6 +468,7 @@ void Document::eraseInstanceInputBinding(NetworkInstanceId id, InterfacePortId i
                     target->node, static_cast<std::uint32_t>(std::distance(definition.inputs().begin(), formalIndex))});
     }
     target->inputBindings.erase(input);
+    recordInstance(id);
 }
 
 void Document::setInstanceParam(NetworkInstanceId id, NodeId targetNode, std::string key, ParameterValue value) {
@@ -436,6 +488,7 @@ void Document::setInstanceParam(NetworkInstanceId id, NodeId targetNode, std::st
                                                              std::to_string(targetNode) + " key '" + key +
                                                              "': " + *problem);
     target->params[targetNode][std::move(key)] = std::move(value);
+    recordInstance(id);
 }
 
 void Document::eraseInstanceParam(NetworkInstanceId id, NodeId targetNode, const std::string& key) {
@@ -455,6 +508,7 @@ void Document::eraseInstanceParam(NetworkInstanceId id, NodeId targetNode, const
     targetIt->second.erase(key);
     if (targetIt->second.empty())
         target->params.erase(targetIt);
+    recordInstance(id);
 }
 
 bool Document::instanceBindingDependsOn(NetworkInstanceId origin, NetworkInstanceId target) const {
@@ -488,24 +542,78 @@ bool Document::instanceBindingDependsOn(NetworkInstanceId origin, NetworkInstanc
     }
     return false;
 }
-void Document::synchronizeReferences() {
-    for (auto& networkValue : networks_)
-        networkValue.syncTerminalConnections();
+void Document::synchronizeReferences(const ChangeRecorder* touched) {
+    // The complete pass is for schema restoration and whole-document
+    // replacement. A controlled edit passes the identities it touched, so
+    // reconciliation visits only the relationships that could have changed
+    // instead of sweeping every network, instance and channel.
+    const bool full = touched == nullptr;
+    // A network this transaction touched *and removed* can have taken its
+    // occurrences and channels with it; a merely edited network has not.
+    const auto networkRemoved = [&](NetworkId id) {
+        return touched->networks().count(id) != 0 && networkIndexOf(id) == networks_.size();
+    };
+    const auto nodeAffected = [&](NetworkId networkId, NodeId node) {
+        return full || touched->nodes().count({networkId, node}) != 0;
+    };
+    // An occurrence depends on its parent occurrence, its definition's formal
+    // terminals, and every source node its bindings read; only those can have
+    // changed it.
+    const auto instanceAffected = [&](const NetworkInstance& instance) {
+        if (full || touched->instances().count(instance.id) != 0)
+            return true;
+        if (networkRemoved(instance.parentNetwork) || networkRemoved(instance.definition))
+            return true;
+        if (touched->networks().count(instance.definition) != 0)
+            return true;
+        if (nodeAffected(instance.parentNetwork, instance.node))
+            return true;
+        for (const auto& [terminal, source] : instance.inputBindings)
+            if (nodeAffected(instance.parentNetwork, source.node))
+                return true;
+        return false;
+    };
 
-    instances_.erase(std::remove_if(instances_.begin(), instances_.end(),
-                                    [&](const NetworkInstance& value) {
-                                        const Network* parent = findNetwork(value.parentNetwork);
-                                        const Network* definition = findNetwork(value.definition);
-                                        return parent == nullptr || definition == nullptr ||
-                                               parent->graph().node(value.node) == nullptr;
-                                    }),
-                     instances_.end());
-    for (auto& value : instances_) {
-        Network* parent = findNetwork(value.parentNetwork);
-        const Network* definition = findNetwork(value.definition);
+    if (full) {
+        for (std::size_t index = 0; index < networks_.size(); ++index)
+            networks_.mutableAt(index).syncTerminalConnections();
+    } else {
+        for (const NetworkId id : touched->networks()) {
+            const std::size_t index = networkIndexOf(id);
+            if (index != networks_.size())
+                networks_.mutableAt(index).syncTerminalConnections();
+        }
+    }
+
+    // Instances whose parent definition, occurrence or target disappeared.
+    std::vector<NetworkInstanceId> candidateInstances;
+    candidateInstances.reserve(instances_.size());
+    for (const NetworkInstance& instance : instances_)
+        if (instanceAffected(instance))
+            candidateInstances.push_back(instance.id);
+    for (const NetworkInstanceId id : candidateInstances) {
+        const NetworkInstance* value = instance(id);
+        if (value == nullptr)
+            continue;
+        const Network* parent = findNetwork(value->parentNetwork);
+        const Network* definition = findNetwork(value->definition);
+        const bool stale = parent == nullptr || definition == nullptr || parent->graph().node(value->node) == nullptr;
+        if (!stale)
+            continue;
+        instances_.erase(instanceIndexOf(id));
+        recordInstance(id);
+    }
+
+    for (const NetworkInstanceId id : candidateInstances) {
+        NetworkInstance* value = findInstanceMutable(id);
+        if (value == nullptr)
+            continue;
+        Network* parent = findNetwork(value->parentNetwork);
+        const Network* definition = findNetwork(value->definition);
         if (!parent || !definition)
             continue;
-        const NodeInstance* nestedNode = parent->graph().node(value.node);
+        const NodeId node = value->node;
+        const NodeInstance* nestedNode = parent->graph().node(node);
         if (!nestedNode)
             continue;
         std::vector<PortSpec> inputs;
@@ -517,10 +625,11 @@ void Document::synchronizeReferences() {
         const bool contractChanged =
             nestedNode->inputPorts != inputs || nestedNode->outputPorts != outputs || !nestedNode->hasPortContract;
         if (contractChanged) {
-            parent->graph().clearInputReservations(value.node);
-            parent->graph().setPortContract(value.node, std::move(inputs), std::move(outputs));
+            parent->graph().clearInputReservations(node);
+            parent->graph().setPortContract(node, std::move(inputs), std::move(outputs));
+            recordNode(value->parentNetwork, node);
         }
-        for (auto binding = value.inputBindings.begin(); binding != value.inputBindings.end();) {
+        for (auto binding = value->inputBindings.begin(); binding != value->inputBindings.end();) {
             const auto formal = definition->input(binding->first);
             const auto formalIndex =
                 std::find_if(definition->inputs().begin(), definition->inputs().end(),
@@ -532,51 +641,98 @@ void Document::synchronizeReferences() {
                                portKindsCompatible(sourcePorts[binding->second.port].kind, formal->kind);
             if (!valid) {
                 if (formalIndex != definition->inputs().end()) {
-                    const PortRef destination{value.node, static_cast<std::uint32_t>(std::distance(
-                                                              definition->inputs().begin(), formalIndex))};
+                    const PortRef destination{
+                        node, static_cast<std::uint32_t>(std::distance(definition->inputs().begin(), formalIndex))};
                     if (parent->graph().inputReserved(destination))
                         parent->graph().releaseInput(destination);
                 }
-                binding = value.inputBindings.erase(binding);
+                binding = value->inputBindings.erase(binding);
+                recordInstance(id);
                 continue;
             }
             const PortRef destination{
-                value.node, static_cast<std::uint32_t>(std::distance(definition->inputs().begin(), formalIndex))};
-            if (!parent->graph().inputReserved(destination))
+                node, static_cast<std::uint32_t>(std::distance(definition->inputs().begin(), formalIndex))};
+            if (!parent->graph().inputReserved(destination)) {
                 parent->graph().reserveInput(destination);
+                recordInstance(id);
+            }
             ++binding;
         }
     }
-    animationChannels_.erase(std::remove_if(animationChannels_.begin(), animationChannels_.end(),
-                                            [&](const AnimationChannel& channel) {
-                                                const auto& address = channel.address;
-                                                const Network* network = findNetwork(address.network);
-                                                if (!network)
-                                                    return true;
-                                                const NodeInstance* node = network->graph().node(address.node);
-                                                if (!node)
-                                                    return true;
-                                                // A parameter of a node type this build does not model,
-                                                // or a future parameter record preserved opaquely, has
-                                                // no usable catalog spec; its channel is retained as
-                                                // authored disabled data instead of being pruned.
-                                                const auto& catalog = network->graph().catalog();
-                                                if (catalog.find(node->type) != nullptr &&
-                                                    catalog.parameterSpec(node->type, address.key) == nullptr) {
-                                                    const bool hasOpaqueValue = std::any_of(
-                                                        channel.keys.begin(), channel.keys.end(),
-                                                        [](const Keyframe& key) { return !key.opaqueValue.is_null(); });
-                                                    if (!hasOpaqueValue)
-                                                        return true;
-                                                }
-                                                if (address.instance != kInvalidNetworkInstance) {
-                                                    const NetworkInstance* occurrence = instance(address.instance);
-                                                    if (!occurrence || occurrence->definition != address.network)
-                                                        return true;
-                                                }
-                                                return false;
-                                            }),
-                             animationChannels_.end());
+
+    const auto channelStale = [&](const AnimationChannel& channel) {
+        const auto& address = channel.address;
+        const Network* network = findNetwork(address.network);
+        if (!network)
+            return true;
+        const NodeInstance* node = network->graph().node(address.node);
+        if (!node)
+            return true;
+        // A parameter of a node type this build does not model, or a future
+        // parameter record preserved opaquely, has no usable catalog spec; its
+        // channel is retained as authored disabled data instead of being pruned.
+        const auto& catalog = network->graph().catalog();
+        if (catalog.find(node->type) != nullptr && catalog.parameterSpec(node->type, address.key) == nullptr) {
+            const bool hasOpaqueValue = std::any_of(channel.keys.begin(), channel.keys.end(),
+                                                    [](const Keyframe& key) { return !key.opaqueValue.is_null(); });
+            if (!hasOpaqueValue)
+                return true;
+        }
+        if (address.instance != kInvalidNetworkInstance) {
+            const NetworkInstance* occurrence = instance(address.instance);
+            if (!occurrence || occurrence->definition != address.network)
+                return true;
+        }
+        return false;
+    };
+    std::vector<AnimationChannelId> candidateChannels;
+    candidateChannels.reserve(animationChannels_.size());
+    for (const AnimationChannel& channel : animationChannels_) {
+        if (full || touched->animationChannels().count(channel.id) != 0 ||
+            nodeAffected(channel.address.network, channel.address.node) ||
+            (channel.address.instance != kInvalidNetworkInstance &&
+             touched->instances().count(channel.address.instance) != 0) ||
+            networkRemoved(channel.address.network))
+            candidateChannels.push_back(channel.id);
+    }
+    for (const AnimationChannelId id : candidateChannels) {
+        const AnimationChannel* channel = animationChannel(id);
+        if (channel == nullptr)
+            continue;
+        const AnimationChannel& value = *channel;
+        if (channelStale(value)) {
+            animationChannels_.erase(
+                animationChannels_.indexOf([id](const AnimationChannel& candidate) { return candidate.id == id; }));
+            recordAnimationChannel(id);
+        }
+    }
+}
+
+void Document::setSourceReference(const std::string& id, SourceReference value) {
+    sources[id] = std::move(value);
+    if (recorder_)
+        recorder_->source(id);
+}
+
+void Document::removeSourceReference(const std::string& id) {
+    sources.erase(id);
+    if (recorder_)
+        recorder_->source(id);
+}
+
+void Document::removeAnimationChannelsFor(NetworkId network, NodeId node, NetworkInstanceId instance) {
+    std::vector<AnimationChannelId> removed;
+    for (const AnimationChannel& channel : animationChannels_) {
+        const bool matchesNode = channel.address.network == network && channel.address.node == node;
+        const bool matchesInstance = instance != kInvalidNetworkInstance && channel.address.instance == instance;
+        if (matchesNode || matchesInstance)
+            removed.push_back(channel.id);
+    }
+    for (const AnimationChannelId id : removed) {
+        animationChannels_.erase(
+            animationChannels_.indexOf([id](const AnimationChannel& channel) { return channel.id == id; }));
+        recordAnimationChannel(id);
+    }
 }
 
 void Document::restoreIdentityHighWatermarks(NetworkId nextNetworkId, NetworkInstanceId nextInstanceId) {
@@ -586,7 +742,7 @@ void Document::restoreIdentityHighWatermarks(NetworkId nextNetworkId, NetworkIns
     nextInstanceId_ = std::max(nextInstanceId_, nextInstanceId);
 }
 void Document::restoreMediaIdentityHighWatermarks(MediaSourceId nextSourceId, MediaBinId nextBinId) {
-    mediaCatalog.restoreIdentityHighWatermarks(nextSourceId, nextBinId);
+    mediaCatalog().restoreIdentityHighWatermarks(nextSourceId, nextBinId);
 }
 
 void Document::restoreInstanceExtension(NetworkInstanceId id, nlohmann::json extension,
@@ -601,23 +757,23 @@ void Document::restoreInstanceExtension(NetworkInstanceId id, nlohmann::json ext
 
 void Document::preserveIdentityHighWatermarksFrom(const Document& source) {
     restoreIdentityHighWatermarks(source.nextNetworkId_, source.nextInstanceId_);
-    mediaCatalog.preserveIdentityHighWatermarksFrom(source.mediaCatalog);
+    mediaCatalog().preserveIdentityHighWatermarksFrom(source.mediaCatalog());
     for (const auto& [id, watermark] : source.retiredNetworkWatermarks_) {
         auto& candidate = retiredNetworkWatermarks_[id];
         candidate.nextNodeId = std::max(candidate.nextNodeId, watermark.nextNodeId);
         candidate.nextEdgeId = std::max(candidate.nextEdgeId, watermark.nextEdgeId);
         candidate.nextInterfacePortId = std::max(candidate.nextInterfacePortId, watermark.nextInterfacePortId);
     }
-    for (const auto& candidateNetwork : networks_) {
-        Network* mutableNetwork = findNetwork(candidateNetwork.id());
-        const Network* sourceNetwork = source.findNetwork(candidateNetwork.id());
+    for (std::size_t index = 0; index < networks_.size(); ++index) {
+        Network* mutableNetwork = &networks_.mutableAt(index);
+        const Network* sourceNetwork = source.findNetwork(mutableNetwork->id());
         if (sourceNetwork) {
             mutableNetwork->restoreIdentityHighWatermarks(sourceNetwork->graph().nextNodeId(),
                                                           sourceNetwork->graph().nextEdgeId(),
                                                           sourceNetwork->nextInterfacePortId());
             continue;
         }
-        const auto retired = source.retiredNetworkWatermarks_.find(candidateNetwork.id());
+        const auto retired = source.retiredNetworkWatermarks_.find(mutableNetwork->id());
         if (retired != source.retiredNetworkWatermarks_.end())
             mutableNetwork->restoreIdentityHighWatermarks(retired->second.nextNodeId, retired->second.nextEdgeId,
                                                           retired->second.nextInterfacePortId);
@@ -650,7 +806,7 @@ std::uint64_t Document::stateRevision() const {
     }
     hashMixWord(hash, static_cast<std::uint64_t>(sources.size()));
 
-    hashMixWord(hash, mediaCatalog.stateHash());
+    hashMixWord(hash, mediaCatalog().stateHash());
 
     for (const auto& networkValue : networks_) {
         hashMixWord(hash, networkValue.id());
@@ -764,15 +920,49 @@ std::int64_t SourceReference::frameAt(std::int64_t localTime) const {
     return frame;
 }
 
-CommandStack::CommandStack(Document& document, std::size_t capacity) : document_(document), capacity_(capacity) {
-    undo_.reserve(capacity_);
-    redo_.reserve(capacity_);
+CommandStack::Ring::Ring(std::size_t capacity) {
+    if (capacity != 0)
+        slots_.resize(capacity);
 }
 
-void CommandStack::prepare(Document& candidate) const {
+void CommandStack::Ring::push(Entry entry) {
+    if (slots_.empty())
+        return;
+    const std::size_t slot = (head_ + count_) % slots_.size();
+    slots_[slot] = std::move(entry);
+    if (count_ == slots_.size())
+        head_ = (head_ + 1) % slots_.size();
+    else
+        ++count_;
+}
+
+void CommandStack::Ring::popBack() {
+    if (count_ == 0)
+        return;
+    slots_[slotOf(count_ - 1)].reset();
+    --count_;
+}
+
+void CommandStack::Ring::clear() {
+    for (auto& slot : slots_)
+        slot.reset();
+    head_ = 0;
+    count_ = 0;
+}
+
+CommandStack::CommandStack(Document& document, std::size_t capacity)
+    : document_(document), undo_(capacity), redo_(capacity) {}
+
+void CommandStack::prepare(Document& candidate, ChangeRecorder* recorder) const {
     if (document_.freshnessRevision_ == std::numeric_limits<std::uint64_t>::max())
         throw std::overflow_error("document freshness revision exhausted");
-    candidate.synchronizeReferences();
+    if (recorder != nullptr) {
+        candidate.beginRecording(recorder);
+        candidate.synchronizeReferences(recorder);
+        candidate.beginRecording(nullptr);
+    } else {
+        candidate.synchronizeReferences();
+    }
     candidate.freshnessRevision_ = document_.freshnessRevision_ + 1;
     candidate.preserveIdentityHighWatermarksFrom(document_);
 }
@@ -780,45 +970,56 @@ void CommandStack::prepare(Document& candidate) const {
 void CommandStack::push(Command command, const BeforeCommit& beforeCommit) {
     if (!command.apply)
         throw std::invalid_argument("command must provide an apply operation");
-    Document candidate = document_;
-    command.apply(candidate);
-    prepare(candidate);
-    if (beforeCommit)
-        beforeCommit(document_, candidate);
     static_assert(std::is_nothrow_move_assignable_v<Document>);
     static_assert(std::is_nothrow_move_constructible_v<Document>);
-    if (capacity_ != 0) {
-        if (undo_.size() == capacity_)
-            undo_.erase(undo_.begin());
-        undo_.push_back(std::move(document_));
+    Document candidate = document_;
+    ChangeRecorder touched;
+    candidate.beginRecording(&touched);
+    try {
+        command.apply(candidate);
+    } catch (...) {
+        candidate.beginRecording(nullptr);
+        throw;
     }
+    prepare(candidate, &touched);
+    if (beforeCommit)
+        beforeCommit(document_, candidate, touched);
+    // The retained version and the identities its transition touched are
+    // stored together: undo replays the same transition in reverse without
+    // diffing either document.
+    Entry entry{std::move(document_), std::move(touched)};
     document_ = std::move(candidate);
+    undo_.push(std::move(entry));
     redo_.clear();
 }
 
 bool CommandStack::undo(const BeforeCommit& beforeCommit) {
     if (undo_.empty())
         return false;
-    Document candidate = undo_.back();
-    prepare(candidate);
+    Entry& entry = undo_.back();
+    Document candidate = entry.document;
+    prepare(candidate, &entry.touched);
     if (beforeCommit)
-        beforeCommit(document_, candidate);
-    redo_.push_back(std::move(document_));
+        beforeCommit(document_, candidate, entry.touched);
+    Entry forward{std::move(document_), entry.touched};
     document_ = std::move(candidate);
-    undo_.pop_back();
+    undo_.popBack();
+    redo_.push(std::move(forward));
     return true;
 }
 
 bool CommandStack::redo(const BeforeCommit& beforeCommit) {
     if (redo_.empty())
         return false;
-    Document candidate = redo_.back();
-    prepare(candidate);
+    Entry& entry = redo_.back();
+    Document candidate = entry.document;
+    prepare(candidate, &entry.touched);
     if (beforeCommit)
-        beforeCommit(document_, candidate);
-    undo_.push_back(std::move(document_));
+        beforeCommit(document_, candidate, entry.touched);
+    Entry backward{std::move(document_), entry.touched};
     document_ = std::move(candidate);
-    redo_.pop_back();
+    redo_.popBack();
+    undo_.push(std::move(backward));
     return true;
 }
 
@@ -1128,18 +1329,10 @@ Command removeNodeCommand(NetworkId network, NodeId nodeId) {
                                                 "cannot remove formal output terminal node " + std::to_string(nodeId));
 
                        const NetworkInstanceId instanceId = node->instance;
-                       auto channels = document.animationChannels();
-                       const bool removesAnimation =
-                           std::erase_if(channels, [network, nodeId, instanceId](const AnimationChannel& channel) {
-                               return (channel.address.network == network && channel.address.node == nodeId) ||
-                                      (instanceId != kInvalidNetworkInstance && channel.address.instance == instanceId);
-                           }) != 0;
-                       // Validate and publish animation cleanup first. Graph
-                       // removal is non-throwing after the node lookup above,
-                       // keeping direct command application atomic on failure.
-                       if (removesAnimation)
-                           document.restoreAnimationChannels(std::move(channels), document.nextAnimationChannelId(),
-                                                             document.nextKeyframeId());
+                       // Publish animation cleanup first. Graph removal is
+                       // non-throwing after the node lookup above, keeping
+                       // direct command application atomic on failure.
+                       document.removeAnimationChannelsFor(network, nodeId, instanceId);
                        if (instanceId != kInvalidNetworkInstance)
                            document.removeInstance(instanceId);
                        else
@@ -1336,7 +1529,11 @@ Command transactionCommand(std::string label, std::vector<Command> commands) {
 }
 
 Command setColorPolicyCommand(ColorPolicy value) {
-    return Command{"set color policy", [value = std::move(value)](Document& document) { document.color = value; }};
+    return Command{"set color policy", [value = std::move(value)](Document& document) {
+                       document.color = value;
+                       if (document.recorder())
+                           document.recorder()->colorPolicy();
+                   }};
 }
 
 Command setSourceCommand(std::string id, SourceReference value) {
@@ -1347,7 +1544,7 @@ Command setSourceCommand(std::string id, SourceReference value) {
     if (value.frameStep == 0)
         throw std::runtime_error("setSource: source '" + id + "' frameStep must not be zero");
     return Command{"set source '" + id + "'", [id = std::move(id), value = std::move(value)](Document& document) {
-                       document.sources[id] = value;
+                       document.setSourceReference(id, value);
                    }};
 }
 Command removeSourceCommand(std::string id) {
@@ -1357,16 +1554,127 @@ Command removeSourceCommand(std::string id) {
                        if (!document.sources.contains(id))
                            throw GraphException(GraphError::MissingMediaSource,
                                                 "cannot remove unknown source '" + id + "'");
-                       if (document.mediaCatalog.sourceUsed(document, id))
+                       if (document.mediaCatalog().sourceUsed(document, id))
                            throw GraphException(GraphError::MediaSourceInUse,
                                                 "cannot remove source '" + id + "': it is addressed by a source node");
-                       for (const auto& entry : document.mediaCatalog.entries())
+                       for (const auto& entry : document.mediaCatalog().entries())
                            if (entry.sourceKey == id)
                                throw GraphException(GraphError::MediaSourceInUse,
                                                     "cannot remove source '" + id + "': media entry " +
                                                         std::to_string(entry.id) + " references it");
-                       document.sources.erase(id);
+                       document.removeSourceReference(id);
                    }};
+}
+
+namespace {
+
+// Chunk-aware container comparison: storage that still shares chunks is
+// identical, and a container whose size changed is unequal immediately.
+template <class T, class Equal>
+bool containerContentEquals(const CowVector<T>& left, const CowVector<T>& right, Equal equal) {
+    if (left.sharesStorageWith(right))
+        return true;
+    if (left.size() != right.size())
+        return false;
+    std::size_t leftChunk = 0;
+    std::size_t rightChunk = 0;
+    std::size_t position = 0;
+    while (position < left.size()) {
+        if (left.chunkStart(leftChunk) != right.chunkStart(rightChunk)) {
+            // Different chunking of the same record count (an edit that
+            // inserted and removed records): compare this container directly.
+            for (std::size_t index = 0; index < left.size(); ++index)
+                if (!equal(left[index], right[index]))
+                    return false;
+            return true;
+        }
+        if (left.chunkIdentity(leftChunk) != right.chunkIdentity(rightChunk)) {
+            const std::size_t end = left.chunkStart(leftChunk) + left.chunkSize(leftChunk);
+            for (; position < end; ++position)
+                if (!equal(left[position], right[position]))
+                    return false;
+        } else {
+            position += left.chunkSize(leftChunk);
+        }
+        ++leftChunk;
+        ++rightChunk;
+    }
+    return true;
+}
+
+}  // namespace
+
+// Content equality that matches what the project codec persists.
+bool nodeContentEquals(const NodeInstance& left, const NodeInstance& right) {
+    return left.id == right.id && left.type == right.type && left.name == right.name && left.params == right.params &&
+           left.layout == right.layout && left.definition == right.definition && left.instance == right.instance &&
+           left.hasPortContract == right.hasPortContract && left.inputPorts == right.inputPorts &&
+           left.outputPorts == right.outputPorts && left.extension == right.extension &&
+           left.opaqueParams == right.opaqueParams;
+}
+
+bool edgeContentEquals(const Edge& left, const Edge& right) {
+    return left.id == right.id && left.from == right.from && left.to == right.to && left.route == right.route &&
+           left.extension == right.extension;
+}
+
+bool networkContentEquals(const Network& left, const Network& right) {
+    return left.name() == right.name() && left.defaultOutput() == right.defaultOutput() &&
+           left.graph().nextNodeId() == right.graph().nextNodeId() &&
+           left.graph().nextEdgeId() == right.graph().nextEdgeId() &&
+           left.nextInterfacePortId() == right.nextInterfacePortId() && left.inputs() == right.inputs() &&
+           left.outputs() == right.outputs() && left.inputConnections() == right.inputConnections() &&
+           left.outputConnections() == right.outputConnections() && left.extension() == right.extension();
+}
+
+bool documentContentEquals(const Document& left, const Document& right) {
+    if (left.schemaVersion != right.schemaVersion || left.name != right.name || left.color != right.color ||
+        left.rootNetworkId() != right.rootNetworkId() || left.nextNetworkId() != right.nextNetworkId() ||
+        left.nextInstanceId() != right.nextInstanceId() ||
+        left.nextAnimationChannelId() != right.nextAnimationChannelId() ||
+        left.nextKeyframeId() != right.nextKeyframeId() || left.extension.get() != right.extension.get() ||
+        left.mediaCatalog().nextEntryId() != right.mediaCatalog().nextEntryId() ||
+        left.mediaCatalog().nextBinId() != right.mediaCatalog().nextBinId())
+        return false;
+    if (!left.sources.sharesStorageWith(right.sources)) {
+        if (left.sources.size() != right.sources.size())
+            return false;
+        auto leftIt = left.sources.begin();
+        auto rightIt = right.sources.begin();
+        for (; leftIt != left.sources.end(); ++leftIt, ++rightIt)
+            if (leftIt->first != rightIt->first || leftIt->second != rightIt->second)
+                return false;
+    }
+    if (!containerContentEquals(left.mediaCatalog().entries(), right.mediaCatalog().entries(),
+                                [](const MediaCatalogEntry& a, const MediaCatalogEntry& b) { return a == b; }))
+        return false;
+    if (!containerContentEquals(left.mediaCatalog().bins(), right.mediaCatalog().bins(),
+                                [](const MediaBin& a, const MediaBin& b) { return a == b; }))
+        return false;
+    if (!containerContentEquals(left.instances(), right.instances(),
+                                [](const NetworkInstance& a, const NetworkInstance& b) { return a == b; }))
+        return false;
+    if (!containerContentEquals(left.animationChannels(), right.animationChannels(),
+                                [](const AnimationChannel& a, const AnimationChannel& b) { return a == b; }))
+        return false;
+    if (left.networks().sharesStorageWith(right.networks()))
+        return true;
+    if (left.networks().size() != right.networks().size())
+        return false;
+    for (std::size_t index = 0; index < left.networks().size(); ++index) {
+        const Network& a = left.networks()[index];
+        const Network& b = right.networks()[index];
+        if (!networkContentEquals(a, b))
+            return false;
+        if (!containerContentEquals(
+                a.graph().nodes(), b.graph().nodes(),
+                [](const NodeInstance& x, const NodeInstance& y) { return nodeContentEquals(x, y); }))
+            return false;
+        if (!containerContentEquals(a.graph().edges(), b.graph().edges(),
+                                    [](const Edge& x, const Edge& y) { return edgeContentEquals(x, y); }))
+            return false;
+    }
+    return true;
 }
 
 }  // namespace nemo

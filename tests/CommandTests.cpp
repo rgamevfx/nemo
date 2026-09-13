@@ -396,7 +396,8 @@ TEST(CommandStackTest, FailedPublicationPreparationPreservesUndoAndIdentityHighW
     stack.push(addNodeCommand(doc.rootNetworkId(), "testpattern", "first"));
     const auto first = rootGraph(doc).nodes().front().id;
     const auto revision = doc.stateRevision();
-    EXPECT_THROW(stack.undo([](const Document&, const Document&) { throw std::bad_alloc(); }), std::bad_alloc);
+    EXPECT_THROW(stack.undo([](const Document&, const Document&, const ChangeRecorder&) { throw std::bad_alloc(); }),
+                 std::bad_alloc);
     EXPECT_EQ(doc.stateRevision(), revision);
     EXPECT_NE(rootGraph(doc).node(first), nullptr);
     EXPECT_TRUE(stack.canUndo());

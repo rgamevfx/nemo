@@ -52,8 +52,8 @@ nlohmann::json requiredFeaturesJson(const Document& document) {
         features.push_back({{"id", "instances"}, {"version", 1}});
     if (!document.animationChannels().empty())
         features.push_back({{"id", "animation"}, {"version", 1}});
-    if (!document.mediaCatalog.entries().empty() || !document.mediaCatalog.bins().empty() ||
-        document.mediaCatalog.nextEntryId() > 1 || document.mediaCatalog.nextBinId() > 1)
+    if (!document.mediaCatalog().entries().empty() || !document.mediaCatalog().bins().empty() ||
+        document.mediaCatalog().nextEntryId() > 1 || document.mediaCatalog().nextBinId() > 1)
         features.push_back({{"id", "mediaLibrary"}, {"version", 1}});
     return features;
 }
@@ -633,7 +633,7 @@ nlohmann::json mediaCatalogJson(const MediaCatalog& catalog) {
 void loadMediaCatalog(const nlohmann::json& value, Document& document) {
     if (!value.is_object())
         throw DeserializeError("document 'mediaCatalog' must be an object");
-    auto& catalog = document.mediaCatalog;
+    auto& catalog = document.mediaCatalog();
     if (value.contains("bins")) {
         const auto& entries = value.at("bins");
         if (!entries.is_array())
@@ -681,7 +681,7 @@ void loadMediaCatalog(const nlohmann::json& value, Document& document) {
                 } catch (const std::exception& error) {
                     throw DeserializeError("mediaCatalog bin " + std::to_string(it->id) + ": " + error.what());
                 }
-                catalog.bin(it->id)->extension = std::move(it->extension);
+                catalog.restoreBinExtension(it->id, std::move(it->extension));
                 catalog.setBinMetadata(it->id, std::move(it->metadata));
                 it = pending.erase(it);
                 progress = true;
@@ -720,7 +720,7 @@ void loadMediaCatalog(const nlohmann::json& value, Document& document) {
             } catch (const std::exception& error) {
                 throw DeserializeError(context + ": " + error.what());
             }
-            catalog.entry(id)->extension = std::move(extension);
+            catalog.restoreEntryExtension(id, std::move(extension));
         }
     }
     const auto nextEntry =
@@ -831,7 +831,10 @@ void loadAnimation(const nlohmann::json& json, LoadResult& result, int schema) {
     try {
         // Restore validates the entire set, including catalog/address/type,
         // identities, collisions and tangents, before installing any channels.
-        document.restoreAnimationChannels(std::move(channels), nextId("nextAnimationChannelId"),
+        Document::AnimationStorage storage;
+        for (AnimationChannel& channel : channels)
+            storage.push_back(std::move(channel));
+        document.restoreAnimationChannels(std::move(storage), nextId("nextAnimationChannelId"),
                                           nextId("nextKeyframeId"));
     } catch (const std::exception& error) {
         throw DeserializeError("document animation: " + std::string(error.what()));
@@ -1242,7 +1245,7 @@ nlohmann::json saveDocument(const Document& document) {
                           {"name", document.name},
                           {"color", std::move(color)},
                           {"sources", std::move(sources)},
-                          {"mediaCatalog", mediaCatalogJson(document.mediaCatalog)},
+                          {"mediaCatalog", mediaCatalogJson(document.mediaCatalog())},
                           {"rootNetworkId", document.rootNetworkId()},
                           {"nextNetworkId", document.nextNetworkId()},
                           {"nextInstanceId", document.nextInstanceId()},

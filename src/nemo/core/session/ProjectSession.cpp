@@ -12,23 +12,6 @@ namespace nemo {
 namespace {
 constexpr std::size_t kRequestCapacity = 256;
 
-bool samePorts(const std::vector<PortSpec>& left, const std::vector<PortSpec>& right) {
-    if (left.size() != right.size())
-        return false;
-    return std::equal(left.begin(), left.end(), right.begin(), [](const PortSpec& a, const PortSpec& b) {
-        return a.kind == b.kind && a.name == b.name && a.optional == b.optional;
-    });
-}
-
-bool sameNode(const NodeInstance& left, const NodeInstance& right) {
-    return left.id == right.id && left.type == right.type && left.name == right.name && left.params == right.params &&
-           left.layout == right.layout && left.definition == right.definition && left.instance == right.instance &&
-           left.hasPortContract == right.hasPortContract && samePorts(left.inputPorts, right.inputPorts) &&
-           samePorts(left.outputPorts, right.outputPorts);
-}
-bool sameEdge(const Edge& left, const Edge& right) {
-    return left.id == right.id && left.from == right.from && left.to == right.to && left.route == right.route;
-}
 bool isDiscreteValue(const ParameterValue& value) {
     return std::holds_alternative<bool>(value) || std::holds_alternative<std::int64_t>(value) ||
            std::holds_alternative<std::string>(value) || std::holds_alternative<ChoiceValue>(value);
@@ -205,8 +188,54 @@ std::optional<EditResult> ProjectSession::duplicate(const std::string& requestId
     return std::nullopt;
 }
 
-void ProjectSession::preparePublication(const Document& before, const Document& after, EditResult& result,
-                                        const std::string& requestId) {
+namespace {
+
+// Identity lists for one network, already in ascending touched order.
+template <class Id>
+std::vector<Id> touchedIdsIn(const std::set<std::pair<NetworkId, Id>>& touched, NetworkId network) {
+    std::vector<Id> ids;
+    for (auto it = touched.lower_bound({network, Id{}}); it != touched.end() && it->first == network; ++it)
+        ids.push_back(it->second);
+    return ids;
+}
+
+// One pass over a version's records per touched network, matching the touched
+// identities by binary search: publication costs one scan per version instead
+// of one scan per touched identity, while still comparing only touched values.
+template <class Record, class IdOf>
+std::vector<const Record*> touchedRecords(const CowVector<Record>& records, const std::vector<std::uint64_t>& ids,
+                                          IdOf idOf) {
+    std::vector<const Record*> result(ids.size(), nullptr);
+    for (const Record& record : records) {
+        const std::uint64_t id = idOf(record);
+        const auto position = std::lower_bound(ids.begin(), ids.end(), id);
+        if (position != ids.end() && *position == id)
+            result[static_cast<std::size_t>(position - ids.begin())] = &record;
+    }
+    return result;
+}
+
+// Applies a preview command to a private shared candidate and reconciles
+// exactly the relationships it touched. The candidate is never published, and
+// the transient recorder is released on every path so no retained snapshot
+// holds a pointer to a finished transaction.
+template <class Apply>
+void applyPreview(Document& snapshot, ChangeRecorder& touched, Apply&& apply) {
+    snapshot.beginRecording(&touched);
+    try {
+        apply();
+    } catch (...) {
+        snapshot.beginRecording(nullptr);
+        throw;
+    }
+    snapshot.synchronizeReferences(&touched);
+    snapshot.beginRecording(nullptr);
+}
+
+}  // namespace
+
+void ProjectSession::derivePublication(const Document& before, const Document& after, const ChangeRecorder& touched,
+                                       EditResult& result, const std::string& requestId) {
     result.committed = true;
     result.revision = revision_ + 1;
 
@@ -227,56 +256,77 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
         result.changedEdgeIds.push_back(ScopedEdgeId{network, id});
     };
 
-    for (const auto& beforeNetwork : before.networks()) {
-        const Network* current = findNetwork(after, beforeNetwork.id());
-        if (current == nullptr || current->name() != beforeNetwork.name() ||
-            current->defaultOutput() != beforeNetwork.defaultOutput() ||
-            current->revision() != beforeNetwork.revision()) {
-            addNetworkChange(beforeNetwork.id());
-        }
-        if (current == nullptr)
-            continue;
-        const auto& beforeGraph = beforeNetwork.graph();
-        const auto& afterGraph = current->graph();
-        for (const auto& node : beforeGraph.nodes()) {
-            const NodeInstance* twin = afterGraph.node(node.id);
-            if (twin == nullptr || !sameNode(node, *twin))
-                addNodeChange(beforeNetwork.id(), node.id);
-        }
-        for (const auto& node : afterGraph.nodes()) {
-            const NodeInstance* previous = beforeGraph.node(node.id);
-            if (previous == nullptr) {
-                result.createdNodeIds.push_back(ScopedNodeId{beforeNetwork.id(), node.id});
-                addNodeChange(beforeNetwork.id(), node.id);
+    // Networks that already existed: network-level change, then the touched
+    // nodes and edges of that network.
+    for (const NetworkId id : touched.networks()) {
+        const Network* previous = findNetwork(before, id);
+        const Network* current = findNetwork(after, id);
+        if (previous != nullptr) {
+            if (current == nullptr || previous->name() != current->name() ||
+                previous->defaultOutput() != current->defaultOutput() || previous->revision() != current->revision())
+                addNetworkChange(id);
+            if (current == nullptr)
+                continue;
+            const std::vector<NodeId> nodeIds = touchedIdsIn(touched.nodes(), id);
+            if (!nodeIds.empty()) {
+                const auto previousNodes = touchedRecords(previous->graph().nodes(),
+                                                          std::vector<std::uint64_t>(nodeIds.begin(), nodeIds.end()),
+                                                          [](const NodeInstance& node) { return node.id; });
+                const auto currentNodes =
+                    touchedRecords(current->graph().nodes(), std::vector<std::uint64_t>(nodeIds.begin(), nodeIds.end()),
+                                   [](const NodeInstance& node) { return node.id; });
+                for (std::size_t position = 0; position < nodeIds.size(); ++position) {
+                    const NodeInstance* prior = previousNodes[position];
+                    const NodeInstance* twin = currentNodes[position];
+                    if (twin == nullptr) {
+                        addNodeChange(id, nodeIds[position]);
+                    } else if (prior == nullptr) {
+                        result.createdNodeIds.push_back(ScopedNodeId{id, nodeIds[position]});
+                        addNodeChange(id, nodeIds[position]);
+                    } else if (!nodeContentEquals(*prior, *twin)) {
+                        addNodeChange(id, nodeIds[position]);
+                    }
+                }
             }
-        }
-        for (const auto& edge : beforeGraph.edges()) {
-            const auto currentEdge = std::find_if(afterGraph.edges().begin(), afterGraph.edges().end(),
-                                                  [&](const Edge& candidate) { return candidate.id == edge.id; });
-            if (currentEdge == afterGraph.edges().end() || !sameEdge(edge, *currentEdge))
-                addEdgeChange(beforeNetwork.id(), edge.id);
-        }
-        for (const auto& edge : afterGraph.edges()) {
-            const auto previous = std::find_if(beforeGraph.edges().begin(), beforeGraph.edges().end(),
-                                               [&](const Edge& candidate) { return candidate.id == edge.id; });
-            if (previous == beforeGraph.edges().end()) {
-                result.createdEdgeIds.push_back(ScopedEdgeId{beforeNetwork.id(), edge.id});
-                addEdgeChange(beforeNetwork.id(), edge.id);
+            const std::vector<EdgeId> edgeIds = touchedIdsIn(touched.edges(), id);
+            if (!edgeIds.empty()) {
+                const auto previousEdges = touchedRecords(previous->graph().edges(),
+                                                          std::vector<std::uint64_t>(edgeIds.begin(), edgeIds.end()),
+                                                          [](const Edge& edge) { return edge.id; });
+                const auto currentEdges =
+                    touchedRecords(current->graph().edges(), std::vector<std::uint64_t>(edgeIds.begin(), edgeIds.end()),
+                                   [](const Edge& edge) { return edge.id; });
+                for (std::size_t position = 0; position < edgeIds.size(); ++position) {
+                    const Edge* prior = previousEdges[position];
+                    const Edge* twin = currentEdges[position];
+                    if (twin == nullptr) {
+                        addEdgeChange(id, edgeIds[position]);
+                    } else if (prior == nullptr) {
+                        result.createdEdgeIds.push_back(ScopedEdgeId{id, edgeIds[position]});
+                        addEdgeChange(id, edgeIds[position]);
+                    } else if (!edgeContentEquals(*prior, *twin)) {
+                        addEdgeChange(id, edgeIds[position]);
+                    }
+                }
             }
         }
     }
-    for (const auto& afterNetwork : after.networks()) {
-        if (findNetwork(before, afterNetwork.id()) == nullptr) {
-            result.createdNetworkIds.push_back(afterNetwork.id());
-            addNetworkChange(afterNetwork.id());
-            for (const auto& node : afterNetwork.graph().nodes()) {
-                result.createdNodeIds.push_back(ScopedNodeId{afterNetwork.id(), node.id});
-                addNodeChange(afterNetwork.id(), node.id);
-            }
-            for (const auto& edge : afterNetwork.graph().edges()) {
-                result.createdEdgeIds.push_back(ScopedEdgeId{afterNetwork.id(), edge.id});
-                addEdgeChange(afterNetwork.id(), edge.id);
-            }
+    // Networks created by this transition report every node and edge they hold.
+    for (const NetworkId id : touched.networks()) {
+        if (findNetwork(before, id) != nullptr)
+            continue;
+        const Network* current = findNetwork(after, id);
+        if (current == nullptr)
+            continue;
+        result.createdNetworkIds.push_back(id);
+        addNetworkChange(id);
+        for (const auto& node : current->graph().nodes()) {
+            result.createdNodeIds.push_back(ScopedNodeId{id, node.id});
+            addNodeChange(id, node.id);
+        }
+        for (const auto& edge : current->graph().edges()) {
+            result.createdEdgeIds.push_back(ScopedEdgeId{id, edge.id});
+            addEdgeChange(id, edge.id);
         }
     }
     if (before.rootNetworkId() != after.rootNetworkId()) {
@@ -284,46 +334,47 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
         addNetworkChange(after.rootNetworkId());
     }
 
-    for (const auto& instance : before.instances()) {
-        const NetworkInstance* current = after.instance(instance.id);
-        if (current == nullptr || *current != instance)
-            result.changedInstanceIds.push_back(instance.id);
-    }
-    for (const auto& instance : after.instances()) {
-        if (before.instance(instance.id) == nullptr) {
-            result.createdInstanceIds.push_back(instance.id);
-            result.changedInstanceIds.push_back(instance.id);
+    for (const NetworkInstanceId id : touched.instances()) {
+        const NetworkInstance* prior = before.instance(id);
+        const NetworkInstance* current = after.instance(id);
+        if (prior != nullptr) {
+            if (current == nullptr || *current != *prior)
+                result.changedInstanceIds.push_back(id);
+        } else if (current != nullptr) {
+            result.createdInstanceIds.push_back(id);
+            result.changedInstanceIds.push_back(id);
         }
     }
 
-    for (const auto& [id, source] : before.sources) {
+    for (const std::string& id : touched.sources()) {
+        const auto prior = before.sources.find(id);
         const auto current = after.sources.find(id);
-        if (current == after.sources.end() || current->second != source)
+        if (prior == before.sources.end() && current == after.sources.end())
+            continue;
+        if (prior == before.sources.end() || current == after.sources.end() || current->second != prior->second)
             result.changedSourceIds.push_back(id);
     }
-    for (const auto& [id, source] : after.sources)
-        if (!before.sources.contains(id))
-            result.changedSourceIds.push_back(id);
-    for (const auto& value : before.mediaCatalog.entries()) {
-        const auto* current = after.mediaCatalog.entry(value.id);
-        if (current == nullptr || *current != value)
-            result.changedMediaEntryIds.push_back(value.id);
-    }
-    for (const auto& value : after.mediaCatalog.entries()) {
-        if (before.mediaCatalog.entry(value.id) == nullptr) {
-            result.createdMediaEntryIds.push_back(value.id);
-            result.changedMediaEntryIds.push_back(value.id);
+
+    for (const MediaSourceId id : touched.mediaEntries()) {
+        const MediaCatalogEntry* prior = before.mediaCatalog().entry(id);
+        const MediaCatalogEntry* current = after.mediaCatalog().entry(id);
+        if (prior != nullptr) {
+            if (current == nullptr || *current != *prior)
+                result.changedMediaEntryIds.push_back(id);
+        } else if (current != nullptr) {
+            result.createdMediaEntryIds.push_back(id);
+            result.changedMediaEntryIds.push_back(id);
         }
     }
-    for (const auto& value : before.mediaCatalog.bins()) {
-        const auto* current = after.mediaCatalog.bin(value.id);
-        if (current == nullptr || *current != value)
-            result.changedMediaBinIds.push_back(value.id);
-    }
-    for (const auto& value : after.mediaCatalog.bins()) {
-        if (before.mediaCatalog.bin(value.id) == nullptr) {
-            result.createdMediaBinIds.push_back(value.id);
-            result.changedMediaBinIds.push_back(value.id);
+    for (const MediaBinId id : touched.mediaBins()) {
+        const MediaBin* prior = before.mediaCatalog().bin(id);
+        const MediaBin* current = after.mediaCatalog().bin(id);
+        if (prior != nullptr) {
+            if (current == nullptr || *current != *prior)
+                result.changedMediaBinIds.push_back(id);
+        } else if (current != nullptr) {
+            result.createdMediaBinIds.push_back(id);
+            result.changedMediaBinIds.push_back(id);
         }
     }
 
@@ -338,34 +389,32 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
                 result.changedInstanceIds.end())
             result.changedInstanceIds.push_back(channel.address.instance);
     };
-    for (const auto& channel : before.animationChannels()) {
-        const auto* current = after.animationChannel(channel.id);
-        if (current == nullptr || *current != channel)
-            addAnimationChange(channel);
-        if (current == nullptr)
-            for (const auto& key : channel.keys)
-                result.changedAnimationKeyIds.push_back(KeyframeRef{channel.id, key.id});
-        else {
-            for (const auto& key : channel.keys) {
-                const auto prior = std::find_if(current->keys.begin(), current->keys.end(),
+    for (const AnimationChannelId id : touched.animationChannels()) {
+        const AnimationChannel* prior = before.animationChannel(id);
+        const AnimationChannel* current = after.animationChannel(id);
+        if (prior != nullptr && (current == nullptr || *current != *prior))
+            addAnimationChange(*prior);
+        if (prior == nullptr && current != nullptr)
+            addAnimationChange(*current);
+        if (prior != nullptr) {
+            for (const auto& key : prior->keys) {
+                if (current == nullptr) {
+                    result.changedAnimationKeyIds.push_back(KeyframeRef{prior->id, key.id});
+                    continue;
+                }
+                const auto found = std::find_if(current->keys.begin(), current->keys.end(),
                                                 [&](const Keyframe& value) { return value.id == key.id; });
-                if (prior == current->keys.end() || *prior != key)
-                    result.changedAnimationKeyIds.push_back(KeyframeRef{channel.id, key.id});
+                if (found == current->keys.end() || *found != key)
+                    result.changedAnimationKeyIds.push_back(KeyframeRef{prior->id, key.id});
             }
         }
-    }
-    for (const auto& channel : after.animationChannels()) {
-        const auto* previous = before.animationChannel(channel.id);
-        if (previous == nullptr) {
-            addAnimationChange(channel);
-            for (const auto& key : channel.keys)
-                result.changedAnimationKeyIds.push_back(KeyframeRef{channel.id, key.id});
-        } else {
-            for (const auto& key : channel.keys) {
-                const auto prior = std::find_if(previous->keys.begin(), previous->keys.end(),
-                                                [&](const Keyframe& value) { return value.id == key.id; });
-                if (prior == previous->keys.end())
-                    result.changedAnimationKeyIds.push_back(KeyframeRef{channel.id, key.id});
+        if (current != nullptr) {
+            for (const auto& key : current->keys) {
+                if (prior != nullptr &&
+                    std::find_if(prior->keys.begin(), prior->keys.end(),
+                                 [&](const Keyframe& value) { return value.id == key.id; }) != prior->keys.end())
+                    continue;
+                result.changedAnimationKeyIds.push_back(KeyframeRef{current->id, key.id});
             }
         }
     }
@@ -404,6 +453,12 @@ void ProjectSession::preparePublication(const Document& before, const Document& 
         events_.pop_front();
 }
 
+bool ProjectSession::documentContentDiverged() const {
+    if (!hasSavedBaseline_)
+        return true;
+    return !documentContentEquals(document_, savedBaseline_);
+}
+
 EditResult ProjectSession::execute(Operation operation, Command* command, const EditOptions& options) {
     assertOwnerThread();
     if (mutating_ || notifying_)
@@ -428,8 +483,9 @@ EditResult ProjectSession::execute(Operation operation, Command* command, const 
     } guard(mutating_);
     EditResult result;
     try {
-        const CommandStack::BeforeCommit prepare = [&](const Document& before, const Document& after) {
-            preparePublication(before, after, result, options.requestId);
+        const CommandStack::BeforeCommit prepare = [&](const Document& before, const Document& after,
+                                                       const ChangeRecorder& touched) {
+            derivePublication(before, after, touched, result, options.requestId);
         };
         switch (operation) {
         case Operation::Submit:
@@ -532,15 +588,16 @@ ParameterGestureResult ProjectSession::beginParameterGestureInternal(std::vector
     }
     try {
         auto snapshot = std::make_shared<Document>(document_);
-        if (keyedTime) {
-            auto keyEdits = makeKeyframeEdits(document_, nullptr, *keyedTime, edits);
-            Command preview = setKeyframesCommand(std::move(keyEdits));
-            preview.apply(*snapshot);
-        } else {
-            Command preview = setParametersCommand(edits);
-            preview.apply(*snapshot);
-        }
-        snapshot->synchronizeReferences();
+        ChangeRecorder touched;
+        applyPreview(*snapshot, touched, [&] {
+            if (keyedTime) {
+                Command preview = setKeyframesCommand(makeKeyframeEdits(document_, nullptr, *keyedTime, edits));
+                preview.apply(*snapshot);
+            } else {
+                Command preview = setParametersCommand(edits);
+                preview.apply(*snapshot);
+            }
+        });
         const auto token = nextGestureToken_++;
         ParameterGestureState state{token,
                                     options.expectedRevision,
@@ -599,15 +656,17 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
                 existing->value = edit.value;
         }
         auto snapshot = std::make_shared<Document>(document_);
-        if (gesture_->keyed) {
-            auto keyEdits = makeKeyframeEdits(document_, gesture_->snapshot.get(), gesture_->time, merged);
-            Command preview = setKeyframesCommand(std::move(keyEdits));
-            preview.apply(*snapshot);
-        } else {
-            Command preview = setParametersCommand(merged);
-            preview.apply(*snapshot);
-        }
-        snapshot->synchronizeReferences();
+        ChangeRecorder touched;
+        applyPreview(*snapshot, touched, [&] {
+            if (gesture_->keyed) {
+                Command preview =
+                    setKeyframesCommand(makeKeyframeEdits(document_, gesture_->snapshot.get(), gesture_->time, merged));
+                preview.apply(*snapshot);
+            } else {
+                Command preview = setParametersCommand(merged);
+                preview.apply(*snapshot);
+            }
+        });
         gesture_->edits = std::move(merged);
         gesture_->snapshot = snapshot;
         return makeGesturePreview(gesture_->token, gesture_->expectedRevision, std::move(snapshot));
@@ -840,10 +899,10 @@ std::vector<MediaQueryResult> ProjectSession::queryMedia(std::string_view filter
     std::vector<MediaQueryResult> result;
     if (limit == 0)
         return result;
-    for (const auto id : document_.mediaCatalog.search(document_, filter, kind, offline, unused, scope)) {
+    for (const auto id : document_.mediaCatalog().search(document_, filter, kind, offline, unused, scope)) {
         if (id <= after)
             continue;
-        const auto* value = document_.mediaCatalog.entry(id);
+        const auto* value = document_.mediaCatalog().entry(id);
         result.push_back(MediaQueryResult{id, value->sourceKey, value->parent, value->metadata});
         if (result.size() == limit)
             break;
@@ -857,37 +916,29 @@ std::vector<MediaBin> ProjectSession::queryMediaBins(MediaBinId parent, std::siz
     std::vector<MediaBin> result;
     if (limit == 0)
         return result;
-    for (const auto id : document_.mediaCatalog.childBins(parent)) {
+    for (const auto id : document_.mediaCatalog().childBins(parent)) {
         if (id <= after)
             continue;
-        result.push_back(*document_.mediaCatalog.bin(id));
+        result.push_back(*document_.mediaCatalog().bin(id));
         if (result.size() == limit)
             break;
     }
     return result;
 }
 
-void ProjectSession::captureSavedBaseline() noexcept {
+void ProjectSession::captureSavedBaseline() {
     savedRevision_ = revision_;
-    try {
-        savedContent_ = ProjectFile::serializeContent(document_, presentation_, colorConfigPath_);
-        savedContentValid_ = true;
-    } catch (...) {
-        savedContent_.clear();
-        savedContentValid_ = false;
-    }
+    savedBaseline_ = document_;
+    savedPresentation_ = presentation_;
+    savedColorConfigPath_ = colorConfigPath_;
+    hasSavedBaseline_ = true;
 }
 
 bool ProjectSession::isDirty() const {
     assertOwnerThread();
-    if (dirtyCacheStamp_ == stateStamp_)
-        return dirtyCacheValue_;
-    if (savedContentValid_)
-        dirtyCacheValue_ = ProjectFile::serializeContent(document_, presentation_, colorConfigPath_) != savedContent_;
-    else
-        dirtyCacheValue_ = revision_ != savedRevision_;
-    dirtyCacheStamp_ = stateStamp_;
-    return dirtyCacheValue_;
+    if (presentation_ != savedPresentation_ || colorConfigPath_ != savedColorConfigPath_)
+        return true;
+    return documentContentDiverged();
 }
 
 void ProjectSession::setPresentation(nlohmann::json presentation) {
@@ -921,7 +972,6 @@ ProjectWriteRequest ProjectSession::prepareSave(std::filesystem::path target, Pa
     request.protectedTarget = recovered_ ? recoveryOriginal_ : std::filesystem::path{};
     request.expectedRevision = revision_;
     request.projectGeneration = projectGeneration_;
-    request.baseline = ProjectFile::serializeContent(document_, presentation_, colorConfigPath_);
     return request;
 }
 
@@ -951,10 +1001,15 @@ EditResult ProjectSession::commitSave(const ProjectWriteRequest& request, const 
     // past that snapshot the session stays dirty; newer edits are never
     // cleared by a stale completion.
     savedRevision_ = request.expectedRevision;
-    savedContent_ = request.baseline;
-    savedContentValid_ = !savedContent_.empty();
-    if (!savedContentValid_)
-        savedRevision_ = revision_;
+    if (request.snapshot) {
+        // The written version is the baseline. A completion for a snapshot the
+        // session has already advanced past leaves the session dirty, because
+        // the current content is compared against that exact version.
+        savedBaseline_ = *request.snapshot;
+        savedPresentation_ = request.presentation;
+        savedColorConfigPath_ = request.colorConfigPath;
+        hasSavedBaseline_ = true;
+    }
     // The recovered-copy guard persists for this session's lifetime: even after
     // saving to a copy, an explicit later choice of the original target is
     // still refused. Opening or creating another project retires it.
@@ -1001,8 +1056,7 @@ ProjectReplaceResult ProjectSession::replaceInternal(Document document, std::fil
     lastFileError_.clear();
     if (recovered) {
         // A recovery copy has no saved file: it is an unsaved document.
-        savedContent_.clear();
-        savedContentValid_ = false;
+        hasSavedBaseline_ = false;
         savedRevision_ = 0;
     } else {
         captureSavedBaseline();

@@ -864,7 +864,7 @@ TEST_F(SessionPersistenceTest, RelinkThroughSourceCommandSurvivesSaveAndReopen) 
     Document document = makeDocument("relink");
     document.sources["plate"] = SourceReference{};
     document.sources["plate"].path = missingPath.string();
-    const MediaSourceId entry = document.mediaCatalog.addEntry("plate", kInvalidMediaBin, MediaMetadata{});
+    const MediaSourceId entry = document.mediaCatalog().addEntry("plate", kInvalidMediaBin, MediaMetadata{});
     ASSERT_NE(entry, kInvalidMediaSource);
 
     ProjectSession session(document);
@@ -882,7 +882,7 @@ TEST_F(SessionPersistenceTest, RelinkThroughSourceCommandSurvivesSaveAndReopen) 
     EXPECT_EQ(reopened.document.sources.at("plate").path, missingPath.string());
     ASSERT_EQ(reopened.references.size(), 1u);
     EXPECT_EQ(reopened.references.front().state, ReferenceState::Missing);
-    const MediaCatalogEntry* kept = reopened.document.mediaCatalog.entry(entry);
+    const MediaCatalogEntry* kept = reopened.document.mediaCatalog().entry(entry);
     ASSERT_NE(kept, nullptr);
     EXPECT_EQ(kept->sourceKey, "plate");
 
@@ -904,7 +904,7 @@ TEST_F(SessionPersistenceTest, RelinkThroughSourceCommandSurvivesSaveAndReopen) 
     EXPECT_EQ(afterRelink.document.sources.at("plate").path, resolvedPath.string());
     ASSERT_EQ(afterRelink.references.size(), 1u);
     EXPECT_EQ(afterRelink.references.front().state, ReferenceState::Present);
-    EXPECT_NE(afterRelink.document.mediaCatalog.entry(entry), nullptr);
+    EXPECT_NE(afterRelink.document.mediaCatalog().entry(entry), nullptr);
 
     // Undo/redo stay correct across the relink and the saved baseline.
     ASSERT_TRUE(session.undo(EditOptions{session.revision(), {}}).committed);

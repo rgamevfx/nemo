@@ -321,7 +321,7 @@ TEST_F(PanelContextUiTest, InspectorRequestsAreGroupScopedAndMediaFree) {
 
     // The relay is media-free and never mutates the document.
     EXPECT_EQ(projectSession.revision(), revision);
-    EXPECT_TRUE(projectSession.document().mediaCatalog.entries().empty());
+    EXPECT_TRUE(projectSession.document().mediaCatalog().entries().empty());
 }
 
 TEST_F(PanelContextUiTest, PresentationEditRacingProjectWriteKeepsProjectDirtyAndFileUnchangedByIt) {

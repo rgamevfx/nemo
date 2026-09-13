@@ -27,7 +27,7 @@ void requireProbe(const MediaProbeMetadata& probe) {
 }
 
 const MediaCatalogEntry& requireEntry(const Document& document, MediaSourceId id, std::string_view action) {
-    const auto* entry = document.mediaCatalog.entry(id);
+    const auto* entry = document.mediaCatalog().entry(id);
     if (!entry)
         reject(GraphError::UnknownMediaEntry, std::string(action) + " unknown media entry " + std::to_string(id));
     return *entry;
@@ -58,7 +58,7 @@ Command importMediaReferenceCommand(std::string sourceKey, MediaBinId parent, Me
             requireSource(document, sourceKey);
             if (metadata.committedProbe)
                 reject(GraphError::InvalidMediaQuery, "probe metadata requires explicit commitMediaProbeCommand");
-            const auto id = document.mediaCatalog.addEntry(sourceKey, parent, metadata);
+            const auto id = document.mediaCatalog().addEntry(sourceKey, parent, metadata);
             if (createdId)
                 *createdId = id;
         }};
@@ -81,7 +81,7 @@ Command importMediaReferenceCommand(std::string sourceKey, MediaMetadata metadat
 
 Command createBinCommand(std::string name, MediaBinId parent, std::shared_ptr<MediaBinId> createdId) {
     return Command{"create media bin '" + name + "'", [name = std::move(name), parent, createdId](Document& document) {
-                       const auto id = document.mediaCatalog.addBin(name, parent);
+                       const auto id = document.mediaCatalog().addBin(name, parent);
                        if (createdId)
                            *createdId = id;
                    }};
@@ -92,22 +92,22 @@ Command createBinCommand(std::string name, std::shared_ptr<MediaBinId> createdId
 }
 Command renameMediaCommand(MediaSourceId id, std::string name) {
     return Command{"rename media entry " + std::to_string(id),
-                   [id, name = std::move(name)](Document& document) { document.mediaCatalog.renameEntry(id, name); }};
+                   [id, name = std::move(name)](Document& document) { document.mediaCatalog().renameEntry(id, name); }};
 }
 
 Command renameBinCommand(MediaBinId id, std::string name) {
     return Command{"rename media bin " + std::to_string(id),
-                   [id, name = std::move(name)](Document& document) { document.mediaCatalog.renameBin(id, name); }};
+                   [id, name = std::move(name)](Document& document) { document.mediaCatalog().renameBin(id, name); }};
 }
 
 Command moveMediaCommand(MediaSourceId id, MediaBinId parent) {
     return Command{"move media entry " + std::to_string(id),
-                   [id, parent](Document& document) { document.mediaCatalog.moveEntry(id, parent); }};
+                   [id, parent](Document& document) { document.mediaCatalog().moveEntry(id, parent); }};
 }
 
 Command moveBinCommand(MediaBinId id, MediaBinId parent) {
     return Command{"move media bin " + std::to_string(id),
-                   [id, parent](Document& document) { document.mediaCatalog.moveBin(id, parent); }};
+                   [id, parent](Document& document) { document.mediaCatalog().moveBin(id, parent); }};
 }
 
 Command setMediaMetadataCommand(MediaSourceId id, MediaMetadata metadata) {
@@ -115,60 +115,60 @@ Command setMediaMetadataCommand(MediaSourceId id, MediaMetadata metadata) {
         throw std::invalid_argument("set media metadata cannot commit probe data; use commitMediaProbeCommand");
     return Command{"set metadata on media entry " + std::to_string(id),
                    [id, metadata = std::move(metadata)](Document& document) mutable {
-                       const auto* entry = document.mediaCatalog.entry(id);
+                       const auto* entry = document.mediaCatalog().entry(id);
                        if (!entry)
                            reject(GraphError::UnknownMediaEntry,
                                   "cannot edit unknown media entry " + std::to_string(id));
                        metadata.committedProbe = entry->metadata.committedProbe;
-                       document.mediaCatalog.setMetadata(id, metadata);
+                       document.mediaCatalog().setMetadata(id, metadata);
                    }};
 }
 
 Command setMediaBinMetadataCommand(MediaBinId id, MediaBinMetadata metadata) {
     return Command{"set metadata on media bin " + std::to_string(id),
                    [id, metadata = std::move(metadata)](Document& document) mutable {
-                       document.mediaCatalog.setBinMetadata(id, std::move(metadata));
+                       document.mediaCatalog().setBinMetadata(id, std::move(metadata));
                    }};
 }
 
 Command setMediaMarksCommand(MediaSourceId id, std::vector<MediaMarkRange> marks) {
     return Command{"set marks on media entry " + std::to_string(id),
-                   [id, marks = std::move(marks)](Document& document) { document.mediaCatalog.setMarks(id, marks); }};
+                   [id, marks = std::move(marks)](Document& document) { document.mediaCatalog().setMarks(id, marks); }};
 }
 
 Command removeMediaEntryCommand(MediaSourceId id) {
     return Command{
         "remove media entry " + std::to_string(id), [id](Document& document) {
-            const auto* entry = document.mediaCatalog.entry(id);
+            const auto* entry = document.mediaCatalog().entry(id);
             if (!entry)
                 reject(GraphError::UnknownMediaEntry, "cannot remove unknown media entry " + std::to_string(id));
-            if (document.mediaCatalog.sourceUsed(document, entry->sourceKey))
+            if (document.mediaCatalog().sourceUsed(document, entry->sourceKey))
                 reject(GraphError::MediaSourceInUse, "cannot remove entry " + std::to_string(id) + ": source '" +
                                                          entry->sourceKey + "' is addressed by a source node");
-            document.mediaCatalog.removeEntry(id);
+            document.mediaCatalog().removeEntry(id);
         }};
 }
 
 Command removeBinCommand(MediaBinId id, bool keepContents) {
     return Command{"remove media bin " + std::to_string(id),
-                   [id, keepContents](Document& document) { document.mediaCatalog.removeBin(id, keepContents); }};
+                   [id, keepContents](Document& document) { document.mediaCatalog().removeBin(id, keepContents); }};
 }
 
 Command duplicateCatalogEntryCommand(MediaSourceId id, MediaBinId parent, std::shared_ptr<MediaSourceId> createdId) {
-    return Command{
-        "duplicate media entry " + std::to_string(id), [id, parent, createdId](Document& document) {
-            const auto* original = document.mediaCatalog.entry(id);
-            if (!original)
-                reject(GraphError::UnknownMediaEntry, "cannot duplicate unknown media entry " + std::to_string(id));
-            const MediaBinId destination = parent == kInvalidMediaBin ? original->parent : parent;
-            MediaMetadata metadata = original->metadata;
-            const std::string base = metadata.userName.empty() ? original->sourceKey : metadata.userName;
-            metadata.userName = document.mediaCatalog.nextAvailableName(destination, base);
-            const auto newId =
-                document.mediaCatalog.addEntry(original->sourceKey, destination, std::move(metadata), original->marks);
-            if (createdId)
-                *createdId = newId;
-        }};
+    return Command{"duplicate media entry " + std::to_string(id), [id, parent, createdId](Document& document) {
+                       const auto* original = document.mediaCatalog().entry(id);
+                       if (!original)
+                           reject(GraphError::UnknownMediaEntry,
+                                  "cannot duplicate unknown media entry " + std::to_string(id));
+                       const MediaBinId destination = parent == kInvalidMediaBin ? original->parent : parent;
+                       MediaMetadata metadata = original->metadata;
+                       const std::string base = metadata.userName.empty() ? original->sourceKey : metadata.userName;
+                       metadata.userName = document.mediaCatalog().nextAvailableName(destination, base);
+                       const auto newId = document.mediaCatalog().addEntry(original->sourceKey, destination,
+                                                                           std::move(metadata), original->marks);
+                       if (createdId)
+                           *createdId = newId;
+                   }};
 }
 
 Command duplicateCatalogEntryCommand(MediaSourceId id, std::shared_ptr<MediaSourceId> createdId) {
@@ -180,10 +180,10 @@ Command setMediaQueryCommand(MediaBinId id, std::optional<MediaQueryDescriptor> 
                        // A query authored against a missing bin is rejected up
                        // front; a scope removed later leaves the query
                        // unavailable rather than silently project-wide.
-                       if (query && !document.mediaCatalog.queryScopeAvailable(*query))
+                       if (query && !document.mediaCatalog().queryScopeAvailable(*query))
                            reject(GraphError::UnknownMediaBin,
                                   "smart query scope bin " + std::to_string(*query->scope) + " does not exist");
-                       document.mediaCatalog.setQuery(id, std::move(query));
+                       document.mediaCatalog().setQuery(id, std::move(query));
                    }};
 }
 
@@ -196,7 +196,7 @@ Command commitMediaProbeCommand(MediaSourceId id, SourceReference expectedSource
                        requireExpectedSource(document, entry, expectedSource, "cannot commit probe on");
                        MediaMetadata metadata = entry.metadata;
                        metadata.committedProbe = probe;
-                       document.mediaCatalog.setMetadata(id, std::move(metadata));
+                       document.mediaCatalog().setMetadata(id, std::move(metadata));
                    }};
 }
 
@@ -222,13 +222,13 @@ Command relinkMediaSourceCommand(MediaSourceId id, SourceReference expectedSourc
             // The committed probe described the previous file; it is
             // obsolete for every entry that shares this source key.
             std::vector<MediaSourceId> obsoleteProbes;
-            for (const auto& candidate : document.mediaCatalog.entries())
+            for (const auto& candidate : document.mediaCatalog().entries())
                 if (candidate.sourceKey == entry.sourceKey && candidate.metadata.committedProbe)
                     obsoleteProbes.push_back(candidate.id);
             for (const MediaSourceId candidate : obsoleteProbes) {
-                MediaMetadata metadata = document.mediaCatalog.entry(candidate)->metadata;
+                MediaMetadata metadata = document.mediaCatalog().entry(candidate)->metadata;
                 metadata.committedProbe.reset();
-                document.mediaCatalog.setMetadata(candidate, std::move(metadata));
+                document.mediaCatalog().setMetadata(candidate, std::move(metadata));
             }
         }};
 }

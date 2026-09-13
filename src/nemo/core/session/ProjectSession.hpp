@@ -243,13 +243,12 @@ public:
     // and never mutates the document outside replaceDocument(). All accessors
     // are owner-thread-only.
     //
-    // Dirty is authored-content equality: the current document, presentation
-    // envelope and color configuration serialize identically to the baseline
-    // captured when the project was last opened or written. Undoing back to the
-    // saved state therefore returns clean, and a save that completes for an
-    // older snapshot never clears newer edits. The result is cached per state
-    // stamp; isDirty() is not noexcept because serializing the baseline can
-    // throw.
+    // Dirty is authored-content equality against the version captured when the
+    // project was last opened or written: the document, presentation envelope
+    // and color configuration must all still match. Undoing back to the saved
+    // state therefore returns clean, and a save that completes for an older
+    // snapshot never clears newer edits. The comparison shares storage with the
+    // baseline, so it never serializes the project.
     [[nodiscard]] bool isDirty() const;
     [[nodiscard]] std::uint64_t savedRevision() const noexcept {
         assertOwnerThread();
@@ -381,13 +380,19 @@ private:
     [[nodiscard]] EditResult failure(std::string message, EditErrorCode code = EditErrorCode::InvalidArgument) const;
     [[nodiscard]] EditResult conflict(std::uint64_t expected) const;
     [[nodiscard]] std::optional<EditResult> duplicate(const std::string& requestId) const;
-    void preparePublication(const Document& before, const Document& after, EditResult& result,
-                            const std::string& requestId);
+    // Derives the exact changed/created identity result for one transition
+    // from the identities the transaction touched: each touched identity is
+    // compared between the two versions, so a recorded-but-unchanged write
+    // reports nothing and untouched state is never examined.
+    void derivePublication(const Document& before, const Document& after, const ChangeRecorder& touched,
+                           EditResult& result, const std::string& requestId);
+    // Exact content comparison against the saved baseline version.
+    [[nodiscard]] bool documentContentDiverged() const;
     [[nodiscard]] ProjectReplaceResult replaceInternal(Document document, std::filesystem::path path,
                                                        nlohmann::json presentation, std::string colorConfigPath,
                                                        bool recovered, std::filesystem::path recoveryOriginal);
-    void captureSavedBaseline() noexcept;
-    void invalidateDirtyCache() noexcept { ++stateStamp_; }
+    void captureSavedBaseline();
+    void invalidateDirtyCache() noexcept {}
 
     Document document_;
     CommandStack commands_;
@@ -411,14 +416,17 @@ private:
     nlohmann::json presentation_;
     std::string colorConfigPath_;
     std::string lastFileError_;
-    std::string savedContent_;
-    bool savedContentValid_{false};
+    // Exact saved baseline: the version, presentation and color-config path
+    // last captured by open or a completed write. The dirty query compares
+    // storage that share chunks as identical, so it never serializes the
+    // project and costs what the edit changed.
+    Document savedBaseline_;
+    nlohmann::json savedPresentation_;
+    std::string savedColorConfigPath_;
+    bool hasSavedBaseline_{false};
     bool recovered_{false};
     std::uint64_t savedRevision_{1};
     std::uint64_t projectGeneration_{1};
-    std::uint64_t stateStamp_{1};
-    mutable std::uint64_t dirtyCacheStamp_{0};
-    mutable bool dirtyCacheValue_{false};
 
     // Always present so the class layout is identical with and without NDEBUG.
     // Debug captures the constructing thread; release keeps the default

@@ -122,7 +122,6 @@ struct ProjectWriteRequest {
     // writer ignores all three fields.
     std::uint64_t expectedRevision{0};
     std::uint64_t projectGeneration{0};
-    std::string baseline;
 };
 
 struct ProjectWriteResult {

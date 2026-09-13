@@ -147,6 +147,9 @@ records, then publishes the document and history without allocation. Bounded
 history retains document states, not a second collection of mutable inverse
 callbacks. This trades whole-document history storage for atomic rollback
 and stable redo identities; there are no render-path copies added by history.
+The storage choice above (independently copied document states) was later
+superseded by structurally shared versions; see "Structurally shared document
+versions (#72)".
 Creation watermarks survive undo and serialization, including deletion of
 the highest live ID. Existing JSON schema-1 IDs are restored exactly; legacy
 missing IDs produce migration warnings. This does not select the final
@@ -342,3 +345,80 @@ GPU submission, command undo, and graph/timeline QML input. Native Wayland
 acceptance additionally exercises cached returns, edit-during-render, explicit
 range backlog, resizing, zoom, and workspace switching; machine-specific
 observations are recorded on issue #13.
+
+## Structurally shared document versions (#72)
+
+Date: 2026-09-13. Status: Accepted. Revises the storage choice of the
+"Revisioned editing integration (#29)" section above; the decisions it
+recorded about atomic publication, stable identities, monotonic watermarks,
+owner-thread access, request identity and content-derived reuse keys all
+stand unchanged.
+
+## Context
+
+#29 kept history as deep document copies: every submit copied the document,
+undo/redo copied it again, gesture previews and prepared saves copied it
+again, and publication discovered what changed by comparing the whole
+before/after document. #69 measured the result: a single-parameter edit
+costs p50 25 µs on an 82-node project and 1 479 µs on a 1 026-node
+parameter-heavy one, a retained history entry costs ≈ 49.2 kB, and each
+commit at capacity moves 255 retained documents to evict one. The cost
+scales with the project, not with the edit.
+
+## Decision
+
+A document version is a set of handles to structurally shared storage
+(`CowVector`/`CowMap`, `src/nemo/core/SharedContainers.hpp`). Copying a
+document copies handles; a controlled mutation copies the index and only the
+bounded records/chunks it changed. `CowVector` is a chunked sequence whose
+chunks and chunk index are shared independently, so a parameter or layout
+edit in one large network does not duplicate the network, and the adjacency
+index is a NodeId-sorted sequence rather than a copied map.
+
+Retained state is now a lightweight version handle plus the information
+needed for correct transition notifications:
+
+1. **Change recording, not a whole-document diff.** Controlled mutations
+   record the identities they touched (`ChangeRecorder`). Publication
+   compares the stored values of the touched identities between the two
+   versions, so a recorded-but-unchanged write reports nothing and untouched
+   records are never examined. Changed/created results stay directional.
+2. **History holds version handles.** `CommandStack` stores the retained
+   version and its transition's touched set in a preallocated bounded ring;
+   capacity is unchanged (default 256) and eviction overwrites the oldest
+   slot instead of moving the remaining entries. Undo/redo replay the same
+   touched set in reverse and compare values, so there is still no second
+   collection of mutable inverse callbacks.
+3. **Gestures and saves retain versions.** A parameter gesture's preview is a
+   shared candidate version, not a copy; commit stays one atomic history
+   entry and cancel releases transient ownership. A prepared save retains a
+   stable document version and the envelope fields; it no longer
+   synchronously serializes the project merely to prepare a write.
+4. **Saved-state comparison is structural.** `isDirty()` compares the current
+   version against the version captured at open/save, treating storage that
+   still shares chunks as identical. Content equality is still exact
+   (including preserved opaque data, presentation and the color-config
+   path); a revision/history-position check or an unverified hash alone is
+   not used.
+5. **Reference reconciliation is scoped.** `synchronizeReferences` runs over
+   the networks, instances and channels the transaction touched; the
+   complete pass remains for schema restoration and document replacement.
+6. **No mutable escape hatch.** Catalog access installs the transaction
+   recorder, the model exposes const-only lookups to consumers, and there is
+   no legacy deep-copy edit path.
+
+Worker isolation is unchanged and, if anything, cheaper: workers receive
+immutable shared document versions, never the live session or a mutable
+builder, and content-derived cache identities (ADR-0004) are untouched. A
+document revision is still not an evaluation reuse key.
+
+## Consequences
+
+Ordinary edits, snapshots, gesture previews and history growth scale with the
+changed records and bounded chunks rather than the project. Retained data is
+released when the last version referencing a chunk is dropped, so eviction
+does not need to destroy anything eagerly; reclaiming a genuinely deleted
+payload remains real work. Non-trivial per-edit costs that remain are the
+bounded chunk-index copy, dependency validation over the touched
+relationships, and genuinely broad edits (topology or shared-definition
+changes), which are reported rather than hidden.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "nemo/core/SharedContainers.hpp"
+#include "nemo/core/document/ChangeRecorder.hpp"
 #include "nemo/core/document/Ids.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include <cstdint>
@@ -115,8 +117,15 @@ private:
 // A directed acyclic processing graph. Input ports accept one edge each;
 // output ports may fan out. Node and edge identities are local to this graph,
 // and their high-water marks are never lowered by deletion or restoration.
+//
+// Storage is chunked and structurally shared (issue #72): a Graph copy shares
+// its node, edge and adjacency storage with the version it was copied from
+// until a controlled mutation replaces exactly the records it touched.
 class Graph {
 public:
+    using NodeStorage = CowVector<NodeInstance>;
+    using EdgeStorage = CowVector<Edge>;
+
     explicit Graph(std::shared_ptr<const NodeCatalog> catalog = builtinNodeCatalogPtr());
     [[nodiscard]] const NodeCatalog& catalog() const { return *catalog_; }
     [[nodiscard]] const NodeDescriptor* descriptor(std::string_view type) const { return catalog_->find(type); }
@@ -125,6 +134,14 @@ public:
     }
     [[nodiscard]] std::span<const int> samplingScalesFor(std::string_view type) const {
         return catalog_->samplingScalesSupported(type);
+    }
+
+    // Records this graph's scope so controlled mutations report the network
+    // they touched. A null recorder disables recording (queries, restoration
+    // and command application on a private candidate).
+    void setChangeRecorder(ChangeRecorder* recorder, NetworkId network) noexcept {
+        recorder_ = recorder;
+        recorderNetwork_ = network;
     }
 
     [[nodiscard]] NodeId addNode(std::string type, std::string name);
@@ -166,14 +183,14 @@ public:
     [[nodiscard]] std::optional<GraphErrorDetails> validateEdge(PortRef from, PortRef to) const;
     // Incoming adjacency owned by this graph: every edge whose destination is
     // `node`, in insertion order. Empty for an unknown or unfed node.
-    [[nodiscard]] const std::vector<Edge>& edgesInto(NodeId node) const;
+    [[nodiscard]] const EdgeStorage& edgesInto(NodeId node) const;
     // True when `target` is reachable from `origin` by following directed
     // edges. Walks the graph-owned incoming adjacency backward from `target`
     // with query-local visited state, so each discovered node is expanded once.
     // An origin equal to target is always reachable, including unknown ids.
     [[nodiscard]] bool reachable(NodeId origin, NodeId target) const;
-    [[nodiscard]] const std::vector<NodeInstance>& nodes() const { return nodes_; }
-    [[nodiscard]] const std::vector<Edge>& edges() const { return edges_; }
+    [[nodiscard]] const NodeStorage& nodes() const { return nodes_; }
+    [[nodiscard]] const EdgeStorage& edges() const { return edges_; }
     void setParam(NodeId id, const std::string& key, ParameterValue value);
     void eraseParam(NodeId id, const std::string& key);
     void restoreIdentityHighWatermarks(NodeId nextNodeId, EdgeId nextEdgeId);
@@ -185,19 +202,35 @@ public:
     [[nodiscard]] const std::vector<PortSpec>& outputPorts(NodeId id) const;
 
 private:
+    // Adjacency is a NodeId-sorted sequence so one connection or disconnection
+    // replaces one bounded entry without copying the project's edge list.
+    using IncomingEntry = std::pair<NodeId, EdgeStorage>;
+
+    [[nodiscard]] std::size_t nodeIndexOf(NodeId id) const {
+        return nodes_.indexOf([id](const NodeInstance& node) { return node.id == id; });
+    }
     [[nodiscard]] const NodeInstance* findNode(NodeId id) const;
     // Mutable lookup for this graph's own mutation helpers; callers never
     // receive mutable node access.
-    [[nodiscard]] NodeInstance* findNode(NodeId id);
-    void eraseIncomingEdge(const Edge& edge) noexcept;
+    [[nodiscard]] NodeInstance* mutableNode(NodeId id, std::size_t& index);
+    [[nodiscard]] std::size_t cacheLowerBound(NodeId id) const;
+    [[nodiscard]] std::size_t cacheIndexOf(NodeId id) const;
+    void recordNode(NodeId id);
+    void recordEdge(EdgeId id);
+    void recordGraph();
+    [[nodiscard]] EdgeId appendEdge(EdgeId id, PortRef from, PortRef to);
+    void addEdgeToCache(NodeId destination, const Edge& edge);
+    void removeEdgeFromCache(const Edge& edge);
     [[nodiscard]] const std::vector<PortSpec>* declaredInputs(const NodeInstance& node) const;
     [[nodiscard]] const std::vector<PortSpec>* declaredOutputs(const NodeInstance& node) const;
 
     std::shared_ptr<const NodeCatalog> catalog_;
-    std::vector<NodeInstance> nodes_;
-    std::vector<Edge> edges_;
-    std::map<NodeId, std::vector<Edge>> incomingCache_;
-    std::vector<PortRef> reservedInputs_;
+    NodeStorage nodes_;
+    EdgeStorage edges_;
+    CowVector<IncomingEntry> incomingCache_;
+    CowVector<PortRef> reservedInputs_;
+    ChangeRecorder* recorder_{};
+    NetworkId recorderNetwork_{kInvalidNetwork};
     NodeId nextNodeId_{1};
     EdgeId nextEdgeId_{1};
     std::uint64_t revision_{1};
@@ -236,6 +269,12 @@ public:
 
     [[nodiscard]] NetworkId id() const { return id_; }
     [[nodiscard]] const std::string& name() const { return name_; }
+    // Installs this network's identity into its graph so controlled mutations
+    // on the private candidate report the network they touched.
+    void setChangeRecorder(ChangeRecorder* recorder) noexcept {
+        recorder_ = recorder;
+        graph_.setChangeRecorder(recorder, id_);
+    }
     void rename(std::string name);
     [[nodiscard]] const Graph& graph() const { return graph_; }
     [[nodiscard]] Graph& graph() { return graph_; }
@@ -285,6 +324,10 @@ public:
 private:
     friend struct Document;
     void syncTerminalConnections();
+    void record() noexcept {
+        if (recorder_)
+            recorder_->network(id_);
+    }
     [[nodiscard]] InterfacePortId addFormalPortImpl(PortDirection direction, std::string name, PortKind kind,
                                                     InterfacePortId id, bool allowFanOut);
     [[nodiscard]] const FormalPort* findPort(const std::vector<FormalPort>& ports, InterfacePortId id) const;
@@ -294,6 +337,7 @@ private:
     [[nodiscard]] FormalPort* findPort(std::vector<FormalPort>& ports, InterfacePortId id);
 
     NetworkId id_{kInvalidNetwork};
+    ChangeRecorder* recorder_{};
     std::string name_;
     Graph graph_;
     NodeId defaultOutput_{kInvalidNode};

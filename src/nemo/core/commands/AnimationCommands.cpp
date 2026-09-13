@@ -21,26 +21,26 @@ std::uint64_t allocateId(std::uint64_t& next, const char* kind) {
     return next++;
 }
 
-AnimationChannel* channelAt(std::vector<AnimationChannel>& channels, const ParameterAddress& address) {
-    const auto found = std::find_if(channels.begin(), channels.end(),
-                                    [&](const AnimationChannel& channel) { return channel.address == address; });
-    return found == channels.end() ? nullptr : &*found;
+AnimationChannel* channelAt(Document::AnimationStorage& channels, const ParameterAddress& address) {
+    const std::size_t index =
+        channels.indexOf([&](const AnimationChannel& channel) { return channel.address == address; });
+    return index == channels.size() ? nullptr : &channels[index];
 }
 
-Keyframe& keyAt(std::vector<AnimationChannel>& channels, KeyframeRef ref) {
-    const auto channel = std::find_if(channels.begin(), channels.end(),
-                                      [&](const AnimationChannel& value) { return value.id == ref.channel; });
-    if (channel == channels.end())
+Keyframe& keyAt(Document::AnimationStorage& channels, KeyframeRef ref) {
+    const std::size_t index = channels.indexOf([&](const AnimationChannel& value) { return value.id == ref.channel; });
+    if (index == channels.size())
         reject("unknown channel " + std::to_string(ref.channel), GraphError::UnknownNode);
-    const auto key = std::find_if(channel->keys.begin(), channel->keys.end(),
+    AnimationChannel& channel = channels[index];
+    const auto key = std::find_if(channel.keys.begin(), channel.keys.end(),
                                   [&](const Keyframe& value) { return value.id == ref.key; });
-    if (key == channel->keys.end())
+    if (key == channel.keys.end())
         reject("channel " + std::to_string(ref.channel) + " has no key " + std::to_string(ref.key),
                GraphError::UnknownNode);
     return *key;
 }
 
-std::set<KeyframeId> validateTargets(std::vector<AnimationChannel>& channels, const std::vector<KeyframeRef>& refs) {
+std::set<KeyframeId> validateTargets(Document::AnimationStorage& channels, const std::vector<KeyframeRef>& refs) {
     std::set<KeyframeId> seen;
     for (const auto& ref : refs) {
         if (!seen.insert(ref.key).second)
@@ -91,6 +91,7 @@ Command setKeyframesCommand(std::vector<KeyframeEdit> edits) {
                         keyAt(channels, {channel->id, original->id}) = std::move(replacement);
                     else
                         channel->keys.push_back(std::move(replacement));
+                    document.touchAnimationChannel(channel->id);
                 }
                 // The document owns all channel/type/tangent/final-time validation.
                 document.restoreAnimationChannels(std::move(channels), nextChannel, nextKey);
@@ -103,9 +104,14 @@ Command removeKeyframesCommand(std::vector<KeyframeRef> refs) {
     return {"remove animation keyframes", [refs = std::move(refs)](Document& document) {
                 auto channels = document.animationChannels();
                 const auto removed = validateTargets(channels, refs);
-                for (auto& channel : channels)
+                for (std::size_t index = 0; index < channels.size(); ++index) {
+                    AnimationChannel& channel = channels[index];
+                    const std::size_t before = channel.keys.size();
                     std::erase_if(channel.keys, [&](const Keyframe& key) { return removed.contains(key.id); });
-                std::erase_if(channels, [](const AnimationChannel& channel) { return channel.keys.empty(); });
+                    if (channel.keys.size() != before)
+                        document.touchAnimationChannel(channel.id);
+                }
+                channels.eraseIf([](const AnimationChannel& channel) { return channel.keys.empty(); });
                 document.restoreAnimationChannels(std::move(channels), document.nextAnimationChannelId(),
                                                   document.nextKeyframeId());
             }};
@@ -117,8 +123,10 @@ Command moveKeyframesCommand(std::vector<KeyframeRef> refs, double deltaTime) {
     return {"move animation keyframes", [refs = std::move(refs), deltaTime](Document& document) {
                 auto channels = document.animationChannels();
                 validateTargets(channels, refs);
-                for (const auto& ref : refs)
+                for (const auto& ref : refs) {
                     keyAt(channels, ref).time += deltaTime;
+                    document.touchAnimationChannel(ref.channel);
+                }
                 document.restoreAnimationChannels(std::move(channels), document.nextAnimationChannelId(),
                                                   document.nextKeyframeId());
             }};
@@ -179,6 +187,7 @@ Command insertKeyframeCommand(ParameterAddress address, double time) {
                     }
                 }
                 channel->keys.push_back(std::move(key));
+                document.touchAnimationChannel(channel->id);
                 document.restoreAnimationChannels(std::move(channels), nextChannel, nextKey);
             }};
 }

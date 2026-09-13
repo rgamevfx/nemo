@@ -484,8 +484,8 @@ TEST(MediaLibraryModel, PersistentSmartQueryBinsTrackMetadataAndUndo) {
     }
     ASSERT_FALSE(everythingId.isEmpty());
     const nemo::Document& document = fixture.session_.document();
-    const std::vector<MediaSourceId> members =
-        document.mediaCatalog.smartMembers(document, static_cast<nemo::MediaBinId>(everythingId.mid(4).toULongLong()));
+    const std::vector<MediaSourceId> members = document.mediaCatalog().smartMembers(
+        document, static_cast<nemo::MediaBinId>(everythingId.mid(4).toULongLong()));
     EXPECT_EQ(members.size(), 2U);
 }
 
@@ -535,7 +535,7 @@ TEST(MediaLibraryModel, QueryHonorsCoreScopeAndMissingScopeIsUnavailable) {
     ASSERT_FALSE(scopedId.isEmpty());
     const nemo::Document& document = fixture.session_.document();
     const std::vector<MediaSourceId> members =
-        document.mediaCatalog.smartMembers(document, static_cast<nemo::MediaBinId>(scopedId.mid(4).toULongLong()));
+        document.mediaCatalog().smartMembers(document, static_cast<nemo::MediaBinId>(scopedId.mid(4).toULongLong()));
     ASSERT_EQ(members.size(), 1U);
     EXPECT_EQ(members.front(), binEntry);
 
@@ -691,7 +691,7 @@ TEST(MediaLibraryModel, RuntimeResultIsRejectedAfterRelinkAndReprobedPerEntry) {
         waitFor([&] { return fixture.model_.probeState(mediaId).value(QStringLiteral("hasResult")).toBool(); }));
 
     const auto committedProbe = [&]() -> const nemo::MediaProbeMetadata* {
-        const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog.entry(entryIdOf(mediaId));
+        const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog().entry(entryIdOf(mediaId));
         return entry && entry->metadata.committedProbe ? &*entry->metadata.committedProbe : nullptr;
     };
     ASSERT_TRUE(fixture.model_.applyProbe(mediaId));
@@ -739,7 +739,7 @@ TEST(MediaLibraryModel, ProjectResetDropsRuntimeStateAndRepopulatesLazily) {
     EXPECT_FALSE(fixture.model_.applyProbe(newId));
     ASSERT_TRUE(waitFor([&] { return fixture.model_.probeState(newId).value(QStringLiteral("hasResult")).toBool(); }));
     ASSERT_TRUE(fixture.model_.applyProbe(newId));
-    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog.entry(entryIdOf(newId));
+    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog().entry(entryIdOf(newId));
     ASSERT_NE(entry, nullptr);
     ASSERT_TRUE(entry->metadata.committedProbe.has_value());
     EXPECT_EQ(entry->metadata.committedProbe->width, 10);
@@ -776,7 +776,7 @@ TEST(MediaLibraryModel, MetadataEditsKeepAProbeFreshButAViewingTransformChangeIn
     ASSERT_TRUE(
         waitFor([&] { return fixture.model_.probeState(mediaId).value(QStringLiteral("hasResult")).toBool(); }));
     ASSERT_TRUE(fixture.model_.applyProbe(mediaId));
-    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog.entry(entryIdOf(mediaId));
+    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog().entry(entryIdOf(mediaId));
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->metadata.userName, "color");
     EXPECT_EQ(entry->metadata.description, "take 1");
@@ -813,7 +813,7 @@ TEST(MediaLibraryModel, RuntimeProbeOverlaysDisplayedRecordWithoutAuthoredMutati
 
     // Authored metadata is untouched, and the kind filter sees the validated
     // runtime kind through the core runtime-fact overlay.
-    const nemo::MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog.entry(entryIdOf(mediaId));
+    const nemo::MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog().entry(entryIdOf(mediaId));
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->metadata.kind, nemo::MediaKind::Unknown);
     EXPECT_FALSE(entry->metadata.committedProbe.has_value());
@@ -829,8 +829,8 @@ TEST(MediaLibraryModel, RuntimeProbeOverlaysDisplayedRecordWithoutAuthoredMutati
     // Explicit apply remains the only persistent mutation.
     ASSERT_TRUE(fixture.model_.applyProbe(mediaId));
     EXPECT_TRUE(
-        fixture.session_.document().mediaCatalog.entry(entryIdOf(mediaId))->metadata.committedProbe.has_value());
-    EXPECT_EQ(fixture.session_.document().mediaCatalog.entry(entryIdOf(mediaId))->metadata.kind,
+        fixture.session_.document().mediaCatalog().entry(entryIdOf(mediaId))->metadata.committedProbe.has_value());
+    EXPECT_EQ(fixture.session_.document().mediaCatalog().entry(entryIdOf(mediaId))->metadata.kind,
               nemo::MediaKind::Image);
 }
 
@@ -948,7 +948,7 @@ TEST(MediaLibraryModel, ReentrantProjectResetCannotLeakAnOldRuntimeOutcome) {
     EXPECT_FALSE(fixture.model_.applyProbe(newId));
     ASSERT_TRUE(waitFor([&] { return fixture.model_.probeState(newId).value(QStringLiteral("hasResult")).toBool(); }));
     ASSERT_TRUE(fixture.model_.applyProbe(newId));
-    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog.entry(entryIdOf(newId));
+    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog().entry(entryIdOf(newId));
     ASSERT_NE(entry, nullptr);
     ASSERT_TRUE(entry->metadata.committedProbe.has_value());
     EXPECT_EQ(entry->metadata.committedProbe->width, 14);
@@ -972,7 +972,7 @@ TEST(MediaLibraryModel, RuntimeOfflineDrivesTheOfflineFilterWithoutAuthoringMeta
     const QVariantMap item = fixture.model_.item(mediaId).toMap();
     EXPECT_TRUE(item.value(QStringLiteral("offline")).toBool());
     EXPECT_FALSE(item.value(QStringLiteral("authoredOffline")).toBool());
-    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog.entry(entryIdOf(mediaId));
+    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog().entry(entryIdOf(mediaId));
     ASSERT_NE(entry, nullptr);
     EXPECT_FALSE(entry->metadata.offline);
     EXPECT_FALSE(entry->metadata.committedProbe.has_value());

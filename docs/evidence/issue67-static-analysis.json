@@ -2,7 +2,7 @@
   "issue": "https://github.com/rgamevfx/nemo/issues/67",
   "baseline": "a77d935787801a40d7d070e75652a5b44c02aa17",
   "environment": {
-    "platform": "Ubuntu Linux local workstation; hosted CI not executed",
+    "platform": "Ubuntu 24.04 local workstation; hosted GitHub Actions CI executed (ubuntu-24.04)",
     "analyzer": "Ubuntu LLVM version 18.1.3\n  Optimized build.",
     "pin": "clang-tidy major 18 (Ubuntu 24.04 clang-tidy-18 package)",
     "compiler": "GCC 13.3.0; installed clang-tidy uses local GCC 14 standard-library headers",
@@ -129,8 +129,35 @@
   "production_correctness": "Actual analysis execution, selected diagnostic failure, fail-closed tool/config checks and compatibility runs recorded below; no product behavior or schema/API/shader/image-baseline changes.",
   "prototype_conformance": "Not applicable: internal build/CI system extension; no presentation changes.",
   "hosted_ci": {
-    "status": "not_run",
-    "reason": "User requested local current-branch commit, not a push or remote workflow execution. Local job command is verified; hosted clean/negative job outcomes remain open acceptance gates."
+    "status": "verified",
+    "clean_run": {
+      "repository": "rgamevfx/nemo",
+      "workflow": "CI: clang-tidy 18 analysis (core)",
+      "trigger": "push to main",
+      "head": "e062bb55 (Scope CI to the fast checks and make the build-test matrix manual)",
+      "run_id": 34736533664,
+      "job_id": 103668847742,
+      "started_at": "2026-09-13T03:52:09Z",
+      "completed_at": "2026-09-13T04:12:26Z",
+      "conclusion": "success",
+      "command": "cmake --workflow --preset analysis",
+      "notes": "The job installs clang-tidy-18 on ubuntu-24.04 and runs the documented command unmodified. This is the same tree as the local clean runs recorded under resumed_verification."
+    },
+    "negative_run": {
+      "branch": "probe/issue67-analysis-negative (throwaway, deleted after the run)",
+      "pull_request": 71,
+      "pull_request_state": "closed, branch deleted, nothing merged",
+      "head": "8511cb8f (throwaway commit appending the probe to src/nemo/core/document/Ids.hpp)",
+      "run_id": 34737456783,
+      "job_id": 103671237193,
+      "conclusion": "failure",
+      "observed": [
+        "FAILED: [code=1] src/nemo/CMakeFiles/nemo_core.dir/core/document/Animation.cpp.o",
+        "error: /home/runner/work/nemo/nemo/src/nemo/../nemo/core/document/Ids.hpp:30:62: result of integer division used in a floating point context; possible loss of precision [bugprone-integer-division,-warnings-as-errors]",
+        "FAILED: [code=1] src/nemo/CMakeFiles/nemo_core.dir/core/document/Graph.cpp.o"
+      ],
+      "notes": "The injected diagnostic is the same one used for the local negative probe; the hosted job reported the offending file, line and check name and exited non-zero. The branch was never merged into main."
+    }
   },
   "runs": [
     {
@@ -1019,7 +1046,8 @@
     "environment": {
       "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt"
     },
-    "disposition": "No new suppression or application change. Full native ASan green remains blocked by the external Vulkan stack; original core tests 1-260 pass separately. The native nemo_core_tests executable also includes GPU tests, so it is not a core-only isolation command."
+    "disposition": "No new suppression or application change was added. The leak was the external Vulkan stack, not Nemo ownership.",
+    "resolution": "Resolved in #70 (commit c88ee2c, docs/evidence/issue70-vulkan-lifetime.md): Mesa 26.1.6 allocated its EGL device list in the query-only eglQueryDevicesEXT path without registering the existing cleanup handler. Root cause and a one-line Mesa patch are retained in that evidence; no system package, suppression, GPU-off switch or Nemo change was used."
   },
   "compatibility": {
     "debug": {
@@ -1049,6 +1077,33 @@
     },
     "format": "clang-format --dry-run --Werror on the four changed C++ files: exit 0"
   },
+  "resumed_verification": {
+    "head": "e062bb550c3fee5b2d80e829c9f7eb542f9d6c49 (main; only .github/workflows/ci.yml, AGENTS.md and media formatting changed after the implementation commits 5779cbf/c88ee2c)",
+    "analyzer": "Ubuntu LLVM version 18.1.3, cmake 3.28.3, g++-13 13.3.0, Linux 7.1.5-76070105-generic",
+    "clean_run": {
+      "command": "cmake --workflow --preset analysis",
+      "result": "exit 0; 15/15 core translation units analyzed; no warning or error lines; empty analyzer output is treated as failure by the verbose invocation list",
+      "log": "build/issue67-evidence/clean-current-1789272931.log (untracked build artifact)"
+    },
+    "negative_run": {
+      "command": "append `inline double issue67AnalysisProbe(int value) { return 0.5 + value / 2; }` to src/nemo/core/document/Ids.hpp; cmake --workflow --preset analysis",
+      "result": "exit 1; src/nemo/../nemo/core/document/Ids.hpp:30:62: error: result of integer division used in a floating point context; possible loss of precision [bugprone-integer-division,-warnings-as-errors]",
+      "restoration": "git checkout -- src/nemo/core/document/Ids.hpp; file byte-identical to HEAD",
+      "log": "build/issue67-evidence/negative-current-1789273101.log (untracked build artifact)"
+    },
+    "clean_run_repeated_after_restore": {
+      "command": "cmake --workflow --preset analysis",
+      "result": "exit 0; 15/15 core translation units analyzed; no warning or error lines",
+      "log": "build/issue67-evidence/clean-restored-1789274155.log (untracked build artifact)"
+    },
+    "compatibility": {
+      "debug": "configure 0, build 0, ctest 505/505 passed",
+      "release": "configure 0, build 0, ctest 493/493 passed",
+      "asan_ubsan": "configure 0, build 0, full native suite 505/505 passed with leak detection enabled (ASAN_OPTIONS=detect_leaks=1, UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1, ctest --preset asan -j 2) under the documented #70 repaired-Mesa EGL selection (__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json:build/issue70-reproduction/stage-fixed/10_mesa_fixed.json, sha256 c87333f2725f14ec0679478dc251a26fbed2ee6be1896689762ccecb2c1658cd)",
+      "headless": "configure 0, build 0 for target nemo_core_tests; CatalogTest/ProjectSessionTest/CommandStackTest 63/63 passed",
+      "logs": "build/issue67-evidence/compat-*-current.log (untracked build artifacts)"
+    }
+  },
   "reviews": {
     "fixed_point": "a77d935787801a40d7d070e75652a5b44c02aa17",
     "diff": "git diff a77d935787801a40d7d070e75652a5b44c02aa17 (uncommitted implementation reviewed before commit)",
@@ -1057,12 +1112,9 @@
     },
     "spec": {
       "implementation_findings": 0,
-      "open_evidence_gates": [
-        "Hosted Linux CI clean and diagnostic-negative outcomes",
-        "Full native ASan green: isolated external Vulkan stack leak"
-      ]
+      "open_evidence_gates": []
     }
   },
-  "cleanup": "Injected Ids.hpp change restored byte-for-byte; wrong-version executable and standalone Vulkan probe source/binary removed. Existing issue34 autosaves preserved.",
-  "status": "Implemented and locally reviewed; issue remains open for hosted CI and full native ASan acceptance."
+  "cleanup": "Injected Ids.hpp change restored byte-for-byte before every clean run; the throwaway hosted-negative branch probe/issue67-analysis-negative and its pull request 71 were deleted after the run and nothing was merged; wrong-version executable and standalone Vulkan probe source/binary removed in the first session. Existing issue34 autosaves preserved.",
+  "status": "Complete. Local clean and negative analysis runs, hosted clean (job 103668847742, success) and hosted negative (job 103671237193, failure on the injected selected diagnostic) outcomes, fail-closed tool/config checks, and debug/release/ASan+UBSan/headless compatibility are all verified at main e062bb55."
 }

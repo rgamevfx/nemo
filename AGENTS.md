@@ -107,11 +107,23 @@ with slangc diagnostics. A compiled module loading is build plumbing only —
 execution and image validation are the native execution gate (issue #8).
 
 ```bash
-# Format (CI enforces)
+# Format (CI enforces). Use the Ubuntu 24.04 clang-format 18 (`clang-format-18`);
+# newer releases reformat differently and disagree with the gate.
 clang-format -i <changed .cpp/.hpp files>
 # Focused static analysis (clang-tidy 18; core module and its headers)
 cmake --workflow --preset analysis
 ```
+
+### CI scope
+
+Push and pull-request runs cover the fast checks only: `clang-format`, the
+focused clang-tidy 18 analysis, and the headless core/session/catalog job. The
+`debug`/`release`/`asan` matrix compiles the full Qt 6 + FFmpeg + vcpkg + GPU
+stack in three presets and is **manual** — start it with
+`gh workflow run ci.yml` before milestones and after dependency or toolchain
+changes. Until the application is functional, the local presets above are the
+day-to-day gate; a queued or red hosted run is not a blocker for unrelated work,
+and evidence of record stays in the task (see `docs/agents/issue-tracker.md`).
 
 Headless verification — use for model, evaluation, and render-path changes:
 

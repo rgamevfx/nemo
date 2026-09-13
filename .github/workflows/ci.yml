@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   format:
@@ -20,6 +21,11 @@ jobs:
   build-test:
     name: ${{ matrix.preset }} (${{ matrix.compiler }})
     runs-on: ubuntu-24.04
+    # Manual only. This matrix compiles the whole Qt 6/FFmpeg/vcpkg/GPU stack in
+    # three presets, which costs 20-40 minutes per job. Until the application is
+    # functional, the local presets are the day-to-day gate; run this with
+    # `gh workflow run ci.yml` before milestones and after dependency changes.
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:

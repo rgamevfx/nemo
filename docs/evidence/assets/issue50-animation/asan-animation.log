@@ -1,0 +1,43 @@
+[1/4] Automatic MOC for target nemo_workspace_ui_tests
+[2/3] Building CXX object tests/CMakeFiles/nemo_workspace_ui_tests.dir/AnimationUiTests.cpp.o
+[3/3] Linking CXX executable tests/nemo_workspace_ui_tests
+/usr/bin/ld: vcpkg_installed/x64-linux/debug/lib/libminizip-ng.a(mz_os_posix.c.o): in function `mz_os_get_temp_path':
+/home/rgame/.local/share/vcpkg/buildtrees/minizip-ng/src/4.1.0-776e85994d.clean/mz_os_posix.c:372:(.text+0x872): warning: the use of `mktemp' is dangerous, better use `mkstemp' or `mkdtemp'
+Note: Google Test filter = AnimationUi.*:AnimationSurface.*
+[==========] Running 12 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 5 tests from AnimationUi
+[ RUN      ] AnimationUi.ComponentMovesCoalesceTimeAndPreserveUnselectedValues
+[       OK ] AnimationUi.ComponentMovesCoalesceTimeAndPreserveUnselectedValues (7 ms)
+[ RUN      ] AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory
+[       OK ] AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory (3 ms)
+[ RUN      ] AnimationUi.StaleGestureCannotOverwriteAnotherEditOrReplacement
+[       OK ] AnimationUi.StaleGestureCannotOverwriteAnotherEditOrReplacement (2 ms)
+[ RUN      ] AnimationUi.TangentsAndInsertionUseSharedCurveSemantics
+[       OK ] AnimationUi.TangentsAndInsertionUseSharedCurveSemantics (8 ms)
+[ RUN      ] AnimationUi.ExposedOccurrenceChannelsDoNotEditTheirDefinition
+[       OK ] AnimationUi.ExposedOccurrenceChannelsDoNotEditTheirDefinition (3 ms)
+[----------] 5 tests from AnimationUi (25 ms total)
+
+[----------] 7 tests from AnimationSurface
+[ RUN      ] AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation
+[       OK ] AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation (991 ms)
+[ RUN      ] AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag
+[       OK ] AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag (2922 ms)
+[ RUN      ] AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly
+[       OK ] AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly (1431 ms)
+[ RUN      ] AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory
+qt.qml.context: file:///home/rgame/dev/Nemo_Dev2/apps/nemo-ui/qml/ParametersPanel.qml:1200:33 Parameter "mouse" is not declared. Injection of parameters into signal handlers is deprecated. Use JavaScript functions with formal parameters instead.
+[       OK ] AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory (1575 ms)
+[ RUN      ] AnimationSurface.DenseTrackCurvesTangentsAndCompactDock
+This plugin does not support propagateSizeHints()
+[       OK ] AnimationSurface.DenseTrackCurvesTangentsAndCompactDock (3363 ms)
+[ RUN      ] AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit
+[       OK ] AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit (1115 ms)
+[ RUN      ] AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit
+[       OK ] AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit (1001 ms)
+[----------] 7 tests from AnimationSurface (12401 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 2 test suites ran. (12427 ms total)
+[  PASSED  ] 12 tests.

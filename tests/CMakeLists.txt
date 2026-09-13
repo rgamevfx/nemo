@@ -107,6 +107,9 @@ if(NEMO_BUILD_UI)
     endif()
     add_executable(nemo_workspace_ui_tests
         ChooserOwnershipTests.cpp
+        AnimationUiTests.cpp
+        ../apps/nemo-ui/AnimationViewModel.cpp
+        ../apps/nemo-ui/AnimationViewModel.hpp
         WorkspaceDragTests.cpp
         InteractiveUiTests.cpp
         PanelContextRouterTests.cpp

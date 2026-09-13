@@ -1,4 +1,5 @@
 #include "ViewerController.hpp"
+#include "AnimationViewModel.hpp"
 #include "ViewerItem.hpp"
 #include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/commands/NetworkCommands.hpp"
@@ -807,6 +808,12 @@ void ViewerController::sessionDocumentChanged(void* context) noexcept {
 }
 
 ViewerController::~ViewerController() = default;
+
+QObject* ViewerController::createAnimationModel(QObject* owner) {
+    if (!owner)
+        return nullptr;
+    return std::make_unique<AnimationViewModel>(session_, owner).release();
+}
 
 void ViewerController::setDestination(std::optional<eval::ViewerDestination> destination) {
     if (destination_ == destination)

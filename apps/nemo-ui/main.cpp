@@ -206,6 +206,8 @@ int main(int argc, char* argv[]) {
                                 QStringLiteral("ParametersPanel.qml"), QString());
     workspace.registerPanelType(QStringLiteral("media"), QStringLiteral("Media Bin"),
                                 QStringLiteral("MediaBinPanel.qml"), QString());
+    workspace.registerPanelType(QStringLiteral("animation"), QStringLiteral("Animation"),
+                                QStringLiteral("AnimationPanel.qml"), QString());
     // The media library adapter owns the QML-facing catalog surface, the
     // asynchronous import/probe service and the bounded thumbnail provider.
     // Declared before the QML engine and after the workspace/router it reveals

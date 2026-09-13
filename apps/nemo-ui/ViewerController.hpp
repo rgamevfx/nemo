@@ -75,6 +75,9 @@ class ViewerController final : public QObject {
 public:
     explicit ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session);
     ~ViewerController() override;
+    // The panel owns its query adapter; the application-owned session outlives
+    // every QML panel. No per-panel document or animation history is created.
+    Q_INVOKABLE QObject* createAnimationModel(QObject* owner);
     // Panel-instance scheduler destination. Panel destinations are values >= 2;
     // Interactive and Cache stay reserved. Without a destination this
     // controller is a pure command/metadata facade: it never probes, submits,

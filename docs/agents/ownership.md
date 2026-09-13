@@ -201,6 +201,29 @@ editor. The effect task does not change graph selection/wiring, inspector card
 layout, theme or docking. Verify values and execution through shared commands,
 headless evaluation, and the native inspector host.
 
+### Extend animation editing
+
+`AnimationViewModel` is the panel-local query/edit adapter created by
+`ViewerController::createAnimationModel(owner)`. It projects immutable channels
+from the application `ProjectSession`: definition-local animation in the viewed
+network, plus exposed occurrence animation on child subnet nodes. Vector/color
+components have opaque presentation IDs but share the typed key's time; editing
+one component preserves the others. Unavailable scopes never fall back to root.
+
+`AnimationPanel.qml` and `AnimationHeaderTools.qml` port #50's archived Track/Curves
+presentation. Selection, visibility, framing, scroll and cancellable previews
+belong to the panel and its per-group workspace state. Scope/target requests use
+the existing `PanelContextRouter` inspector route; playhead changes use the shared
+group clock. New effects contribute catalog schema and ordinary animation
+channels, not their own editor or graph gestures.
+
+Every committed key edit uses the existing animation commands and shared session
+undo/redo. A gesture captures revision and project generation, then commits once;
+collisions and stale revisions preserve document/history. The adapter does not
+own another animation model, evaluator, save format or undo stack.
+[#50](https://github.com/rgamevfx/nemo/issues/50) retains the native comparison
+evidence and the outstanding owner image/internal-API review gate.
+
 ### Extend graph editing
 
 `ViewerController::graphSnapshot(networkId)` is the panel query seam. It returns

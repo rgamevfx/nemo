@@ -1,0 +1,624 @@
+{
+  "schema": "nemo.issue50.native-animation-evidence.v1",
+  "issue": "https://github.com/rgamevfx/nemo/issues/50",
+  "branch": "issue/50-animation-editor",
+  "pre_edit_contract": "https://github.com/rgamevfx/nemo/issues/50#issuecomment-5655682329",
+  "classification": "prototype port over existing production animation commands and ProjectSession",
+  "owner_acceptance": "Pending human image/internal-API review. Evidence is not baseline acceptance; issue remains open and branch is not merged or pushed.",
+  "reference": {
+    "archive": "assets/issue25-prototype-reference-v1.tar.gz",
+    "sha256": "0027b39f6ba20fc2168f83215f8ba036fcc408284e6b3a2702a21c2c37b8e57e",
+    "coverage": "issue25-coverage-v1.json",
+    "record": "animation-overhaul-session.json",
+    "assigned_current_entries": 58,
+    "current_checks": 47
+  },
+  "implementation": {
+    "query_owner": "apps/nemo-ui/AnimationViewModel.hpp and .cpp",
+    "presentation": [
+      "apps/nemo-ui/qml/AnimationPanel.qml",
+      "apps/nemo-ui/qml/AnimationHeaderTools.qml"
+    ],
+    "factory": "ViewerController::createAnimationModel(QObject *owner)",
+    "panel_type": "animation",
+    "scope": "Definition-local animation plus exposed occurrence channels; vector/color components share typed-key time and preserve unedited components.",
+    "edits": "Existing animation commands, one shared session history, captured revision/generation, cancellable GUI-only previews; no core schema, new node, dependency, evaluator or history stack.",
+    "protected": "TimelinePanel source timing; ParametersPanel keyed slider command grouping; graph double-click inspector routing; accepted shared chrome/theme/docking."
+  },
+  "environment": {
+    "platform": "Linux COSMIC Wayland; native Qt Quick window; DPR 1",
+    "native_driver": "NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland; real Main.qml and production adapters over real ProjectSession; QTest native window input",
+    "packaged_application": "build/debug/apps/nemo-ui/nemo-ui --project /tmp/nemo-issue50-initial/dense.nemo --viewer-cache-dir /tmp/nemo-issue50-cache",
+    "packaged_application_proof": "Restored generated workspace and switched Track to Curves with Linux evdev input; compositor capture cropped to Nemo client pixels. No render/performance claim.",
+    "computer_tool_limitations": [
+      "AT-SPI bus_1 unavailable",
+      "Wayland screenshot backend unavailable; used cosmic-screenshot and temporary evdev UInput devices after tool failures. Devices closed and only the launched review process stopped."
+    ],
+    "native_readiness": "Observed window and Track/Curves after restore; app emits no startup banner, so the supervisor log-only readiness probe timed out despite the running window."
+  },
+  "comparisons": [
+    {
+      "state": "track",
+      "image": "assets/issue50-animation/compare-track.png",
+      "reference_crop": [
+        8,
+        44,
+        1266,
+        632
+      ],
+      "each_side_pixels": [
+        1258,
+        588
+      ],
+      "ordering": "reference left; production right; 12px separator; no scaling"
+    },
+    {
+      "state": "curves",
+      "image": "assets/issue50-animation/compare-curves.png",
+      "reference_crop": [
+        8,
+        44,
+        1266,
+        632
+      ],
+      "each_side_pixels": [
+        1258,
+        588
+      ],
+      "ordering": "reference left; production right; 12px separator; no scaling"
+    },
+    {
+      "state": "isolated",
+      "image": "assets/issue50-animation/compare-isolated.png",
+      "reference_crop": [
+        8,
+        44,
+        1266,
+        632
+      ],
+      "each_side_pixels": [
+        1258,
+        588
+      ],
+      "ordering": "reference left; production right; 12px separator; no scaling"
+    },
+    {
+      "state": "narrow",
+      "image": "assets/issue50-animation/compare-narrow.png",
+      "reference_crop": [
+        0,
+        0,
+        323,
+        588
+      ],
+      "each_side_pixels": [
+        323,
+        588
+      ],
+      "ordering": "reference left; production right; 12px separator; no scaling"
+    },
+    {
+      "state": "narrow-paper",
+      "image": "assets/issue50-animation/compare-narrow-paper.png",
+      "reference_crop": [
+        0,
+        0,
+        323,
+        588
+      ],
+      "each_side_pixels": [
+        323,
+        588
+      ],
+      "ordering": "reference left; production right; 12px separator; no scaling"
+    },
+    {
+      "state": "key-edit",
+      "image": "assets/issue50-animation/compare-key-edit.png",
+      "reference_crop": [
+        395,
+        453,
+        633,
+        586
+      ],
+      "each_side_pixels": [
+        238,
+        133
+      ],
+      "ordering": "reference left; production right; 12px separator; no scaling"
+    }
+  ],
+  "comparison_notes": [
+    "Images are review evidence, not automated image oracles. Left is archived reference; right is native production. No scaling.",
+    "Full Track/Curves/isolated captures are 1274x640 at DPR 1; compared panel regions are 1258x588. Narrow production panels are 323x588; archived crops are 323x589, with the bottom one-pixel crop row omitted only in the comparison (raw reference retained).",
+    "Normal exact-editor comparison uses matched 238x133 popup crops; full normal and collision states are also retained.",
+    "Production fixtures use real built-in node schemas and commands (20 numeric channels / 160 keys), not StudioModel. Names, parameter labels, key values, identity-derived colors, selected state and playhead therefore differ from archived fixture content.",
+    "Native UI uses the approved production workspace/chrome baseline rather than recreating archived application tabs. Font rasterization and field focus state differ; review the unchanged geometry, spacing and gestures separately.",
+    "The contextual popup is clamped to the native window when a short dock cannot contain its collision feedback. Normal reference placement remains; owner review must account for this containment fix."
+  ],
+  "verification": [
+    {
+      "command": "cmake --build --preset debug -j 2",
+      "result": "passed"
+    },
+    {
+      "command": "cmake --build --preset release --target nemo-ui nemo-cli -j 2",
+      "result": "passed"
+    },
+    {
+      "command": "cmake --build --preset release -j 2",
+      "result": "passed; full repository release build including test targets"
+    },
+    {
+      "command": "ctest --preset debug -j 4 --output-on-failure",
+      "result": "547/547 passed; 36.88 seconds",
+      "log": "assets/issue50-animation/ctest-debug.log"
+    },
+    {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=AnimationUi.*:AnimationSurface.*",
+      "environment": "NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland NEMO_ANIMATION_CAPTURE_DIR=/tmp/nemo-issue50-final",
+      "result": "11 checks passed in the broad native pass; the dense scrollbar scenario was then corrected and passed in the focused native run below."
+    },
+    {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=AnimationSurface.DenseTrackCurvesTangentsAndCompactDock",
+      "environment": "same native capture environment",
+      "result": "1/1 passed after using the archived scrollbar gesture; 6.074 seconds"
+    },
+    {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag",
+      "environment": "same native capture environment",
+      "result": "1/1 passed after normal-popup capture refinement; 3.107 seconds; capture-only refinement after the full debug gate"
+    },
+    {
+      "command": "cmake --build --preset asan --target nemo_workspace_ui_tests -j 2 && build/asan/tests/nemo_workspace_ui_tests --gtest_filter=AnimationUi.*:AnimationSurface.*",
+      "result": "12/12 passed with ASan/UBSan/LSan enabled",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json"
+      },
+      "log": "assets/issue50-animation/asan-animation.log"
+    },
+    {
+      "command": "clang-format-18 --dry-run --Werror <changed C++ sources>",
+      "result": "passed"
+    }
+  ],
+  "limitations": [
+    "Known QtQml qmldir scanner and third-party minizip mktemp linker warnings remain; no new compiler warnings observed.",
+    "Sanitized UI checks use the repository #70 repaired Mesa environment and existing narrow leak suppressions; native captures use Wayland.",
+    "No hosted CI run or performance gate requested. No new image baseline accepted."
+  ],
+  "coverage": [
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[0]",
+      "requirement": "Graph double-click still opens Parameters",
+      "proof": [
+        "AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[1]",
+      "requirement": "Header icons switch into all-curve view",
+      "proof": [
+        "AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[2]",
+      "requirement": "Compact controls occupy existing panel header, not canvas",
+      "proof": [
+        "AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[3]",
+      "requirement": "Key row and blank clicks retain all curves and framing",
+      "proof": [
+        "AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[4]",
+      "requirement": "Native tree divider resizes without changing animation or time range",
+      "proof": [
+        "AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[5]",
+      "requirement": "Alt-click still inserts directly on visible curve",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[6]",
+      "requirement": "Native undo removes inserted key without moving playhead",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[7]",
+      "requirement": "Native redo restores inserted key",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[8]",
+      "requirement": "Context editor applies exact key time and value",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[9]",
+      "requirement": "Context interpolation menu converts selected key to Bezier",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[10]",
+      "requirement": "Native tangent mode menu selects Smooth",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[11]",
+      "requirement": "Native smooth handle edit changes both slopes together",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[12]",
+      "requirement": "Escape cancels tangent preview without a history edit",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[13]",
+      "requirement": "Native tangent mode menu selects Broken",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[14]",
+      "requirement": "Exact editor rejects occupied time without partial changes",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[15]",
+      "requirement": "Exact editor keeps collision feedback contextual",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[16]",
+      "requirement": "Shift-click frame icon frames selected keys",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[17]",
+      "requirement": "Home works immediately after header interaction",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[18]",
+      "requirement": "Compact editor menu exposes framing commands",
+      "proof": [
+        "AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[19]",
+      "requirement": "Neutral collapsed layer summary shifts every child key",
+      "proof": [
+        "AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[20]",
+      "requirement": "Layer movement undo restores all hidden child timings",
+      "proof": [
+        "AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[21]",
+      "requirement": "Native slider changes keyed value",
+      "proof": [
+        "AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[22]",
+      "requirement": "One undo reverses complete native keyed slider drag",
+      "proof": [
+        "AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[23]",
+      "requirement": "Explicit channel hide changes visibility only",
+      "proof": [
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[24]",
+      "requirement": "Selection does not override explicit visibility",
+      "proof": [
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[25]",
+      "requirement": "Explicit isolate shows only the chosen curve",
+      "proof": [
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[26]",
+      "requirement": "Show all restores every numeric curve",
+      "proof": [
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[27]",
+      "requirement": "Undo removes last key without changing playhead",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[28]",
+      "requirement": "Redo restores the same key and interpolated value",
+      "proof": [
+        "AnimationUi.TangentsAndInsertionUseSharedCurveSemantics"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[29]",
+      "requirement": "Grouped keyed parameter edits undo in one operation",
+      "proof": [
+        "AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[30]",
+      "requirement": "Grouped edit redo restores final slider value",
+      "proof": [
+        "AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[31]",
+      "requirement": "Exact key edit commits time value and slopes atomically",
+      "proof": [
+        "AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[32]",
+      "requirement": "Exact edit collision rejects every proposed field",
+      "proof": [
+        "AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[33]",
+      "requirement": "Rejected edits do not consume undo history",
+      "proof": [
+        "AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[34]",
+      "requirement": "New animation edit clears redo branch",
+      "proof": [
+        "AnimationUi.ComponentMovesCoalesceTimeAndPreserveUnselectedValues"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[35]",
+      "requirement": "Smooth tangent editing keeps incoming outgoing slopes linked",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[36]",
+      "requirement": "Broken tangent editing preserves opposite handle slope",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[37]",
+      "requirement": "Tangent edit can be undone",
+      "proof": [
+        "AnimationUi.TangentsAndInsertionUseSharedCurveSemantics"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[38]",
+      "requirement": "Dense fixture presents twenty animated channels and 160 keys",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[39]",
+      "requirement": "Dense curve view retains every numeric channel",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[40]",
+      "requirement": "Explicit frame all fits mixed-unit curve keys",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[41]",
+      "requirement": "Shift-drag constrains a selected curve key to time",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[42]",
+      "requirement": "Dense key drag undo restores exact key coordinates",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[43]",
+      "requirement": "Dense node isolate retains all its child curves",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[44]",
+      "requirement": "Hierarchy scrolling leaves curve visibility and framing stable",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[45]",
+      "requirement": "Narrow dock retains compact controls and usable canvas",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/verification/checks[46]",
+      "requirement": "Theme change repaints static curve canvas and header",
+      "proof": [
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/design_constraints[0]",
+      "requirement": "No persistent instructional sentences, debug/status footer, redundant tree headings, or large body toolbar.",
+      "proof": [
+        "matched-size native comparisons",
+        "AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation",
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly",
+        "AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/design_constraints[1]",
+      "requirement": "Four small monochrome glyph controls live in the existing panel header: Track, Curves, Frame, editor menu. Commands are discoverable through tooltips and contextual menus.",
+      "proof": [
+        "matched-size native comparisons",
+        "AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation",
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly",
+        "AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/design_constraints[2]",
+      "requirement": "Selection, hierarchy expansion and curve visibility are independent. All numeric curves are visible initially.",
+      "proof": [
+        "matched-size native comparisons",
+        "AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation",
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly",
+        "AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/design_constraints[3]",
+      "requirement": "Actual parameter units remain the default. View changes and visibility controls never rewrite animation data.",
+      "proof": [
+        "matched-size native comparisons",
+        "AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation",
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly",
+        "AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/changes[0]",
+      "requirement": "Resizable compact channel tree with neutral text, stable identity-derived color swatches, disclosure arrows and explicit contextual hide/isolate/show commands. Visibility glyphs appear on hover or when a curve is hidden.",
+      "proof": [
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly",
+        "AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/changes[1]",
+      "requirement": "22-pixel Track rows; consistent diamonds; subdued node extent brackets with aggregate time ticks; lighter child spans; accent reserved for actual selection/playhead.",
+      "proof": [
+        "AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit",
+        "compare-track.png"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/changes[2]",
+      "requirement": "Adaptive 1/2/5 time spacing, restrained curve grid and zero line, readable value axes, clipped edge labels, and unweighted tangent handles with usable screen-space lengths.",
+      "proof": [
+        "compare-curves.png",
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/changes[3]",
+      "requirement": "Right-click key context menu supplies interpolation, Smooth/Broken tangents and a nonmodal exact Time/Value/slope editor. Invalid edits remain in the popup with contextual errors, not a permanent footer.",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag",
+        "AnimationSurface.DenseTrackCurvesTangentsAndCompactDock",
+        "compare-key-edit.png"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/changes[4]",
+      "requirement": "Session animation undo/redo with bounded 100-edit history. Keyed parameter slider drags group into one undo step; graph edits are not included. Current time and viewport never roll back.",
+      "proof": [
+        "AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory",
+        "AnimationUi.TangentsAndInsertionUseSharedCurveSemantics"
+      ],
+      "production_contract": "Use the existing shared ProjectSession history, including graph edits. Do not port the prototype standalone animation-only 100-entry history."
+    },
+    {
+      "reference": "animation-overhaul-session.json:/changes[5]",
+      "requirement": "Shift-drag locks key motion to the dominant axis; Shift-click still toggles selection. Alt bypasses snap on key drags and inserts on curves. Escape cancels edit previews.",
+      "proof": [
+        "AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag",
+        "AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit"
+      ]
+    },
+    {
+      "reference": "animation-overhaul-session.json:/changes[6]",
+      "requirement": "Existing node double-click inspector dispatch and layer/parameter/group movements are retained.",
+      "proof": [
+        "AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory",
+        "AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit",
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly"
+      ]
+    }
+  ],
+  "captured_at": "2026-09-13T16:37:05-04:00"
+}

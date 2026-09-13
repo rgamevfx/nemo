@@ -154,6 +154,39 @@ humans inspect image differences. Headless is not a substitute for the real
 surface: verify presentation, input handling, and visible-latency changes
 on the actual running UI.
 
+### Code intelligence (clangd)
+
+C++ navigation, references, diagnostics, and rename use `clangd`, version-
+matched to the toolchain (clang 18 ↔ clangd 18). Every preset sets
+`CMAKE_EXPORT_COMPILE_COMMANDS`, so configuring is all clangd needs — but the
+database is written per-config, and clangd looks in `<dir>/build/`, not
+`<dir>/build/<preset>/`. Link the config you edit at the source root (the
+symlink is gitignored):
+
+```bash
+ln -sfn build/debug/compile_commands.json compile_commands.json
+```
+
+Drive it through the harness `lsp` tool — `references`, `definition`,
+`hover`, `diagnostics`, `rename`/`rename_file`. This is mandatory before
+changing an exported symbol; text search cannot follow overloads or
+out-of-line definitions.
+
+If clangd reports `'cstdint' file not found` or `No template named 'vector'`,
+its stdlib autodetection picked an incomplete GCC installation: a
+`/usr/lib/gcc/.../<N>` directory without the matching `/usr/include/c++/<N>`
+headers (newest version wins, existence is not completeness). Confirm with
+`clang++ -std=c++20 -fsyntax-only` on a file including `<cstdint>` — the same
+failure in plain `clang++` and `clang-tidy` proves the cause is the
+environment, not the server. Fix by installing the matching
+`libstdc++-<N>-dev`, or bound the search with `--query-driver=/usr/bin/c++`
+in the server's args. `--query-driver` executes the driver binary, so only
+trusted absolute paths belong there.
+
+QML has no server: Qt 6.4's `qmlls` exposes qmllint diagnostics only, and
+cannot be given import paths, so unresolved QtQuick types report false
+positives. Do not act on its output.
+
 ## Coding rules
 
 - C++20. RAII and explicit ownership; no raw `new`/`delete` outside

@@ -1,10 +1,18 @@
 name: CI
 
+# Cost policy (AGENTS.md "CI scope and evidence level"): the local presets are
+# the day-to-day gate. A push to main runs only the seconds-long format check;
+# the focused core analysis and the headless ownership job run on pull requests
+# and on demand; the full Qt/FFmpeg/vcpkg/GPU matrix is manual only.
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   format:
@@ -80,6 +88,9 @@ jobs:
   headless-core:
     name: headless core/session/catalog
     runs-on: ubuntu-24.04
+    # ~35 minutes. Pull requests and on-demand runs only; a main push must not
+    # queue it. Local presets cover day-to-day verification.
+    if: github.event_name != 'push'
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       CC: gcc-13
@@ -126,6 +137,9 @@ jobs:
   analysis:
     name: clang-tidy 18 analysis (core)
     runs-on: ubuntu-24.04
+    # ~20 minutes, clean-first so every run really re-analyzes all core
+    # translation units. Pull requests and on-demand runs only.
+    if: github.event_name != 'push'
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       CC: gcc-13

@@ -14,6 +14,7 @@ the missing source-to-production mapping. A claim alone does not pass this gate.
 | Authority | Approved prototype/current coverage entries for observable UI; spec/ADRs for production ownership; linked owner decision for new design |
 | Existing owner | Accepted production component and concrete extension entry point/callers; distinguish accepted code from unreviewed worktree changes |
 | Change boundary | What is missing and will change; accepted behavior and adjacent systems that remain unchanged |
+| Verification budget | Cheapest evidence level that catches the relevant bug class: the local command/preset, whether a full suite or sanitizer run is genuinely needed, and what is explicitly **not** required (hosted CI, extra configurations, repeated runs) |
 | Proof | Per-behavior production check and, for UI, reference scenario/capture and matched native interaction evidence |
 
 For every affected prototype behavior, map the current coverage entry and
@@ -73,9 +74,17 @@ of claiming runtime evidence.
 Before closing implementation work, account for every acceptance example
 with executable evidence or an explicitly approved scope change. Record
 unmet requirements and environment limitations; a passing suite or a
-zero-match test filter does not close an unexercised gate. A closed mapping
-ticket records planning completion, not completion of its implementation
-children.
+zero-match test filter does not close an unexercised gate.
+
+Keep that evidence at the level the ticket's verification budget names. Local
+runs close internal, build, CI and documentation work; a hosted run is required
+only when the change *is* the pipeline or a milestone gate asks for it. Do not
+write an acceptance criterion that requires a hosted CI job to fail unless the
+ticket is specifically about CI failure behavior — prove failure modes locally,
+where a deliberately broken tree costs seconds instead of a queued job.
+
+A closed mapping ticket records planning completion, not completion of its
+implementation children.
 
 When changing prerequisites, update both native blocked-by links and the
 body's Dependencies section, preserve an acyclic graph, and link each child

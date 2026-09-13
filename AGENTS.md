@@ -114,16 +114,30 @@ clang-format -i <changed .cpp/.hpp files>
 cmake --workflow --preset analysis
 ```
 
-### CI scope
+### CI scope and evidence level
 
-Push and pull-request runs cover the fast checks only: `clang-format`, the
-focused clang-tidy 18 analysis, and the headless core/session/catalog job. The
-`debug`/`release`/`asan` matrix compiles the full Qt 6 + FFmpeg + vcpkg + GPU
-stack in three presets and is **manual** — start it with
-`gh workflow run ci.yml` before milestones and after dependency or toolchain
-changes. Until the application is functional, the local presets above are the
-day-to-day gate; a queued or red hosted run is not a blocker for unrelated work,
-and evidence of record stays in the task (see `docs/agents/issue-tracker.md`).
+A push to `main` runs only `clang-format` (seconds). The focused clang-tidy 18
+analysis and the headless core/session/catalog job run on **pull requests and
+on demand**; the `debug`/`release`/`asan` matrix compiles the full Qt 6 +
+FFmpeg + vcpkg + GPU stack in three presets and is **manual**. Start any of
+them with `gh workflow run ci.yml` before milestones and after dependency or
+toolchain changes. Until the application is functional, the local presets
+above are the day-to-day gate: the default is to build, not to wait.
+
+**Match verification to the change, not to the largest available gate.**
+
+- Local evidence is the gate for internal, build, CI and documentation work.
+  A hosted run is required only when the change *is* the pipeline (workflow,
+  preset, analyzer integration) or a milestone gate asks for it.
+- One full-suite run per ticket, not per commit. Do not re-run a suite to
+  re-confirm a result the ticket already records.
+- Sanitizer presets are for changes touching ownership/concurrency and for
+  milestone gates — not a per-ticket checkbox.
+- Acceptance criteria must be provable at the cheapest level that catches the
+  relevant bug class. Never require a hosted CI job to fail unless the ticket is
+  specifically about CI failure behavior; prove failure modes locally.
+- A queued or red hosted run is not a blocker for unrelated work, and the
+  evidence of record stays in the task (see `docs/agents/issue-tracker.md`).
 
 Headless verification — use for model, evaluation, and render-path changes:
 
@@ -179,6 +193,9 @@ on the actual running UI.
 7. The task's pre-edit contract is accounted for: production correctness and,
    where applicable, matched prototype-conformance evidence are recorded.
    Unapproved deviations and unmet acceptance criteria remain open.
+8. The recorded evidence is the cheapest level that catches the relevant bug
+   class (see "CI scope and evidence level"). Escalating past the ticket's
+   stated verification budget needs owner direction, not a judgement call.
 
 ## Working conventions
 

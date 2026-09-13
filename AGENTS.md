@@ -118,11 +118,13 @@ cmake --workflow --preset analysis
 
 A push to `main` runs only `clang-format` (seconds). The focused clang-tidy 18
 analysis and the headless core/session/catalog job run on **pull requests and
-on demand**; the `debug`/`release`/`asan` matrix compiles the full Qt 6 +
-FFmpeg + vcpkg + GPU stack in three presets and is **manual**. Start any of
-them with `gh workflow run ci.yml` before milestones and after dependency or
-toolchain changes. Until the application is functional, the local presets
-above are the day-to-day gate: the default is to build, not to wait.
+on demand**, so work landed directly on `main` (the default here — see
+"Landing changes") does not trigger them; the `debug`/`release`/`asan` matrix
+compiles the full Qt 6 + FFmpeg + vcpkg + GPU stack in three presets and is
+**manual**. Start any of them with `gh workflow run ci.yml` when you want the
+hosted second opinion, before milestones, and after dependency or toolchain
+changes. Until the application is functional, the local presets above are the
+day-to-day gate: the default is to build, not to wait.
 
 **Match verification to the change, not to the largest available gate.**
 
@@ -172,37 +174,55 @@ on the actual running UI.
 - **Reuse before writing:** before adding logic, identify the existing owner
   of that responsibility and its callers. Reuse or consolidate it; if similar
   implementations remain, explain their concrete contract difference in the
-  PR. Preserve CPU/GPU reference independence, scene-linear source versus
-  display-referred replay semantics, and independently derived test oracles.
+  commit message and the task. Preserve CPU/GPU reference independence,
+  scene-linear source versus display-referred replay semantics, and
+  independently derived test oracles.
   Share responsibilities, not merely matching text; an abstraction must
   simplify ownership or maintenance without adding render-path copies/waits.
 
-## Definition of done (for a PR)
+## Definition of done (landing on `main`)
 
 1. Builds clean in `debug` and `release` with `-Wall -Wextra -Wpedantic`
    (warnings are errors in sanitizer presets).
 2. Relevant tests added/updated and green: `ctest --preset debug`; sanitizer
    preset green for anything touching ownership/concurrency.
 3. Commands identical locally and in CI — if you cannot run the checks, say
-   so explicitly in the PR.
-4. No new dependency without a pinned manifest entry + human review.
-5. No public API change, no changed image baseline, no new node type without
-   explicit human review in the PR description.
+   so explicitly in the commit message and the task.
+4. No new dependency without a pinned manifest entry and the owner's approval.
+5. No public API change, changed image baseline, new node type or new
+   dependency lands without being stated explicitly in the commit message and
+   the task, for owner review.
 6. Spec conformance checked for touched behavior; ADR added for any
    architectural decision.
 7. The task's pre-edit contract is accounted for: production correctness and,
    where applicable, matched prototype-conformance evidence are recorded.
-   Unapproved deviations and unmet acceptance criteria remain open.
+   Unapproved deviations and unmet acceptance criteria remain open — recorded
+   on the task rather than implied by a green build.
 8. The recorded evidence is the cheapest level that catches the relevant bug
    class (see "CI scope and evidence level"). Escalating past the ticket's
    stated verification budget needs owner direction, not a judgement call.
 
 ## Working conventions
 
+**Landing changes.** This repository currently has one contributor and no
+users, so a pull request is optional ceremony rather than a gate. The default
+landing path for a task is:
+
+1. Work on one branch (`issue/<n>-short-slug`), as above.
+2. Run the local gate from "Definition of done" on that branch.
+3. Merge the branch into `main` and push it (`git checkout main`,
+   `git merge --ff-only issue/<n>`, `git push origin main`).
+4. Close the task when the work is merged and its evidence recorded.
+
+Open a pull request only when you specifically want the hosted checks
+(`clang-tidy` analysis, headless core/session/catalog) as a second opinion, or
+when a second contributor needs to review. Do not open one to satisfy
+procedure, and do not wait on hosted runs that a local run already covers.
+
 - One issue per branch. Branch names `issue/<n>-short-slug`.
 - Issues specify: outcome, scope, non-goals, acceptance examples, verification
-  commands. PRs report: what changed, test evidence, limitations, and image
-  diffs where relevant.
+  commands. Landing reports what changed, test evidence, limitations, and image
+  diffs where relevant — in the commit message and on the task.
 - Follow the Development contract above for every task, including fixes and
   documentation work. Link newly requested work from #24; create a task issue
   when it needs its own scope or acceptance criteria.

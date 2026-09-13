@@ -1,0 +1,12 @@
+{"check":"preview_begin_update_publish_nothing","detail":{"can_undo_after_update":true,"can_undo_before":true,"content_unchanged":true,"revision_after_update":16,"revision_before":16},"ok":true,"record":"correctness"}
+{"check":"preview_cancel_publishes_nothing","detail":{"can_undo":true,"revision":16},"ok":true,"record":"correctness"}
+{"check":"gesture_commit_one_entry","detail":{"changed_node_ids":1,"committed":true,"history_entries_after_commit":6,"history_entries_before":5,"undo_restored_content":true},"ok":true,"record":"correctness"}
+{"check":"gesture_commit_changed_identity_list","detail":{"changed_node_ids":1,"created_node_ids":0},"ok":true,"record":"correctness"}
+{"check":"stale_and_rejected_publish_nothing","detail":{"content_unchanged":true,"history_entries_after":5,"history_entries_before":5,"revision_after":16,"revision_before":16,"stale_code":2,"stale_graph_error":false,"unknown_code":1,"unknown_graph_error":true},"ok":true,"record":"correctness"}
+{"check":"undo_redo_restore_content_and_monotonic_watermarks","detail":{"redo_matches_committed_document":true,"undo_differs_from_committed_document":true,"watermarks_after_redo":{"nextAnimationChannelId":1,"nextInstanceId":1,"nextKeyframeId":1,"nextMediaBinId":1,"nextMediaSourceId":1,"nextNetworkId":2},"watermarks_after_undo":{"nextAnimationChannelId":1,"nextInstanceId":1,"nextKeyframeId":1,"nextMediaBinId":1,"nextMediaSourceId":1,"nextNetworkId":2}},"ok":true,"record":"correctness"}
+{"check":"connect_changed_identity_list","detail":{"changed_edge_ids":1,"created_edge_ids":1},"ok":true,"record":"correctness"}
+{"check":"changed_created_identity_lists","detail":{"add_changed":1,"add_created":1,"edge_transaction_created_edges":1,"transaction_created_nodes":2,"transaction_one_history_entry":true},"ok":true,"record":"correctness"}
+{"check":"request_dedup_replays_without_history","detail":{"first_revision":5,"history_entries_after_replay":2,"history_entries_before":1,"replay_revision":5,"replay_with_stale_revision_committed":true},"ok":true,"record":"correctness"}
+{"check":"keyed_gesture_cancel_and_commit","detail":{"changed_channel_ids":1,"keys_after_cancel":4,"keys_after_commit":5,"keys_before":4},"ok":true,"record":"correctness"}
+{"check":"media_import_created_identity_list","detail":{"changed":1,"created":1},"ok":true,"record":"correctness"}
+{"build":"debug","failed":0,"passed":11,"record":"correctness_summary"}

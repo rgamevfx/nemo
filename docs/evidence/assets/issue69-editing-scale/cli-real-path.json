@@ -1,0 +1,159 @@
+{
+  "record": "cli_real_path_summary",
+  "start_revision": 2,
+  "passed": 9,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "file_state_opens_clean",
+      "ok": true,
+      "detail": {
+        "revision": 2,
+        "dirty": false,
+        "can_undo": false
+      }
+    },
+    {
+      "check": "add_node_reports_created_identity",
+      "ok": true,
+      "detail": {
+        "created_node_ids": [
+          {
+            "id": 66,
+            "network": 1
+          }
+        ],
+        "revision": 3
+      }
+    },
+    {
+      "check": "connect_reports_created_edge",
+      "ok": true,
+      "detail": {
+        "created_edge_ids": [
+          {
+            "id": 64,
+            "network": 1
+          }
+        ]
+      }
+    },
+    {
+      "check": "set_param_commits_and_is_queryable",
+      "ok": true,
+      "detail": {
+        "changed_node_ids": [
+          {
+            "id": 67,
+            "network": 1
+          }
+        ],
+        "gain": {
+          "type": "color",
+          "value": [
+            0.5,
+            0.5,
+            0.5,
+            1.0
+          ]
+        }
+      }
+    },
+    {
+      "check": "preview_publishes_nothing",
+      "ok": true,
+      "detail": {
+        "revision_before": 6,
+        "preview_revision": 6,
+        "published_revision": 6,
+        "preview_serialized_by_driver": true
+      }
+    },
+    {
+      "check": "cancel_publishes_nothing",
+      "ok": true,
+      "detail": {
+        "cancel": {
+          "changed_animation_channel_ids": [],
+          "changed_animation_key_ids": [],
+          "changed_edge_ids": [],
+          "changed_instance_ids": [],
+          "changed_network_ids": [],
+          "changed_node_ids": [],
+          "changed_source_ids": [],
+          "color_policy_changed": false,
+          "committed": false,
+          "created_edge_ids": [],
+          "created_instance_ids": [],
+          "created_network_ids": [],
+          "created_node_ids": [],
+          "ok": true,
+          "preview_only": true,
+          "revision": 6
+        },
+        "revision": 6,
+        "gain": {
+          "type": "color",
+          "value": [
+            0.5,
+            0.5,
+            0.5,
+            1.0
+          ]
+        }
+      }
+    },
+    {
+      "check": "gesture_commit_one_entry_undo_redo",
+      "ok": true,
+      "detail": {
+        "committed_gain": {
+          "type": "color",
+          "value": [
+            0.75,
+            0.75,
+            0.75,
+            1.0
+          ]
+        },
+        "undone_gain": {
+          "type": "color",
+          "value": [
+            0.5,
+            0.5,
+            0.5,
+            1.0
+          ]
+        },
+        "redo_restores_document": true
+      }
+    },
+    {
+      "check": "stale_and_rejected_publish_nothing",
+      "ok": true,
+      "detail": {
+        "stale_error": {
+          "code": "revision_conflict",
+          "message": "revision conflict: expected 18, current 9"
+        },
+        "rejected_error": {
+          "code": "missing_object",
+          "message": "cannot edit unknown node 999999"
+        },
+        "revision": 9,
+        "expected_revision": 9
+      }
+    },
+    {
+      "check": "undo_redo_restores_document",
+      "ok": true,
+      "detail": {
+        "undone_entries": 5,
+        "nodes_committed": 67,
+        "nodes_at_open": 65,
+        "nodes_restored": 67
+      }
+    }
+  ],
+  "driver_exit_code": 0
+}

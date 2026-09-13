@@ -769,7 +769,7 @@ std::unique_ptr<ClipDecoder> ClipDecoder::openInternal(gpu::Instance& instance, 
     // FFmpeg unrefs hw_frames_ctx before each get_format callback; attach
     // a fresh reference here, not before avcodec_open2.
     codec.context->opaque = &d;
-    codec.context->get_format = [](AVCodecContext* context, const enum AVPixelFormat* formats)->enum AVPixelFormat {
+    codec.context->get_format = [](AVCodecContext* context, const AVPixelFormat* formats) -> AVPixelFormat {
         auto& state = *static_cast<Impl*>(context->opaque);
         // Sequence headers may change after open; never force a new 10-bit
         // or 4:4:4 sequence into the eight-bit NV12 conversion contract.

@@ -20,17 +20,17 @@ namespace nemo::media {
 
 // What evidence backs a capability claim.
 enum class CapabilityEvidence {
-    Unavailable,        // not usable; `reason` explains precisely why
-    RegisteredOnly,     // compiled into libavcodec, not init-verified
-    QueueVerified,      // decoder: device reserved the video queue AND
-                        // libavcodec ships the hwaccel; not opened here
-    InitVerified,       // codec opened successfully (real engine test)
+    Unavailable,     // not usable; `reason` explains precisely why
+    RegisteredOnly,  // compiled into libavcodec, not init-verified
+    QueueVerified,   // decoder: device reserved the video queue AND
+                     // libavcodec ships the hwaccel; not opened here
+    InitVerified,    // codec opened successfully (real engine test)
 };
 
 // One decoder or encoder capability claim.
 struct MediaCapability {
-    std::string codec;   // e.g. "h264-vulkan", "hevc-nvenc", "libx264"
-    bool hardware;       // true = GPU engine (Vulkan video / NVDEC / NVENC)
+    std::string codec;  // e.g. "h264-vulkan", "hevc-nvenc", "libx264"
+    bool hardware;      // true = GPU engine (Vulkan video / NVDEC / NVENC)
     CapabilityEvidence evidence;
     std::string reason;  // empty exactly when evidence != Unavailable
 };

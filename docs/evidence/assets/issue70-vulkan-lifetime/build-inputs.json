@@ -1,0 +1,126 @@
+{
+  "mesa_version": "26.1.6-1pop0~1787580452~24.04~a5619ea",
+  "installed": {
+    "packages": ["libegl-mesa0:amd64", "mesa-libgallium:amd64"],
+    "libEGL_mesa": {
+      "path": "/usr/lib/x86_64-linux-gnu/libEGL_mesa.so.0.0.0",
+      "soname": "libEGL_mesa.so.0",
+      "sha256": "08dc55de6ebca703d6b4f0f392bfefb4ecfd30ab3cbdaba127d2e33b383c9e62"
+    },
+    "libgallium": {
+      "path": "/lib/x86_64-linux-gnu/libgallium-26.1.6-1pop0~1787580452~24.04~a5619ea.so",
+      "soname": "libgallium-26.1.6-1pop0~1787580452~24.04~a5619ea.so",
+      "sha256": "72471782d046ae49958f28c722bb569dbbe88c0b53835bad05e56c3b867f6b31"
+    }
+  },
+  "source": {
+    "package": "mesa",
+    "version": "26.1.6-1pop0~1787580452~24.04~a5619ea",
+    "dsc": {
+      "filename": "mesa_26.1.6-1pop0~1787580452~24.04~a5619ea.dsc",
+      "sha256": "743b37da92fb4b145033c2608e4ddcbbb491b2d639012ac9cc3f2148bd1b7a80"
+    },
+    "tar": {
+      "filename": "mesa_26.1.6-1pop0~1787580452~24.04~a5619ea.tar.xz",
+      "sha256": "0afc713715945c8908ec536f36e9bbaea3f6dd2c5c70f99ff179452eac89baf3"
+    },
+    "extracted_dir": "mesa-26.1.6",
+    "eglapi": "src/egl/main/eglapi.c",
+    "eglapi_sha256": "d103e93e472c9d799e604438e8ee28477020d7ee851cf92375414d503ef92369",
+    "note": "after extraction <src>/VERSION is written with version (as debian/rules does via dpkg-parsechangelog) so meson project_version() and the libgallium SONAME match the installed libgallium"
+  },
+  "meson": {
+    "libdir": "lib/x86_64-linux-gnu",
+    "target": "src/egl/libEGL_mesa.so.0.0.0",
+    "flags": [
+      "--buildtype=debug",
+      "-Db_ndebug=false",
+      "-Dplatforms=x11,wayland",
+      "-Dglvnd=enabled",
+      "-Dgbm=enabled",
+      "-Dglx-direct=true",
+      "-Dgallium-drivers=softpipe",
+      "-Dvulkan-drivers=",
+      "-Dvulkan-layers=",
+      "-Dgles1=disabled",
+      "-Dgles2=enabled",
+      "-Dbuild-tests=false",
+      "-Dtools=",
+      "-Ddri-drivers-path=/usr/lib/x86_64-linux-gnu/dri",
+      "-Dllvm=disabled",
+      "-Dgallium-va=disabled",
+      "-Dgallium-rusticl=false",
+      "-Dteflon=false",
+      "-Dlmsensors=disabled",
+      "-Dvalgrind=disabled"
+    ]
+  },
+  "tooling": {
+    "meson": "1.12.0",
+    "meson_wheel": {
+      "filename": "meson-1.12.0-py3-none-any.whl",
+      "sha256": "71f133147fa0fcfe8f4df49fa1045771064947834538409e5d97b3613aac8b4e"
+    },
+    "mako": "1.3.2",
+    "pyyaml": "6.0.1",
+    "ninja": "1.12.1",
+    "patch": "2.7.6"
+  },
+  "stages": {
+    "lib": "libEGL_mesa.so.0.0.0",
+    "symlinks": ["libEGL_mesa.so.0", "libEGL_mesa.so"],
+    "dirs": {"unmodified": "stage-unmodified", "fixed": "stage-fixed"},
+    "manifests": {"unmodified": "10_mesa_unmodified.json", "fixed": "10_mesa_fixed.json"},
+    "example_load": "__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json:<work>/stage-fixed/10_mesa_fixed.json"
+  },
+  "debs": [
+    {"name": "bison", "version": "2:3.8.2+dfsg-1build2", "filename": "bison_2%3a3.8.2+dfsg-1build2_amd64.deb", "sha256": "18f487c400da3e968a44ecb3783a443641bcd14e2b080ed9ed1167f4aa2c1612"},
+    {"name": "flex", "version": "2.6.4-8.2build1", "filename": "flex_2.6.4-8.2build1_amd64.deb", "sha256": "c5604f55827b50e3f568b4731b7799f86b147454c867be02bc141d9d8ce561ff"},
+    {"name": "libdrm-amdgpu1", "version": "2.4.134-3pop0~1787326260~24.04~3e90b25", "filename": "libdrm-amdgpu1_2.4.134-3pop0~1787326260~24.04~3e90b25_amd64.deb", "sha256": "e1bd6c689bbc640f730a2a8c3125d9938158d0daf136d1df18f279a102550ee5"},
+    {"name": "libdrm-dev", "version": "2.4.134-3pop0~1787326260~24.04~3e90b25", "filename": "libdrm-dev_2.4.134-3pop0~1787326260~24.04~3e90b25_amd64.deb", "sha256": "745babebc260a97bac5b67faf78bf167d66472eb94b9f540c4decd56e2e15c21"},
+    {"name": "libdrm-intel1", "version": "2.4.134-3pop0~1787326260~24.04~3e90b25", "filename": "libdrm-intel1_2.4.134-3pop0~1787326260~24.04~3e90b25_amd64.deb", "sha256": "b80a137dd841d3ea73c04f7955931b4d37e485878af8026055d9b6204133456d"},
+    {"name": "libdrm-nouveau2", "version": "2.4.134-3pop0~1787326260~24.04~3e90b25", "filename": "libdrm-nouveau2_2.4.134-3pop0~1787326260~24.04~3e90b25_amd64.deb", "sha256": "8576ad9a4951a3405fd700fe7a8309e353a477125be216d858f900688082508b"},
+    {"name": "libdrm-radeon1", "version": "2.4.134-3pop0~1787326260~24.04~3e90b25", "filename": "libdrm-radeon1_2.4.134-3pop0~1787326260~24.04~3e90b25_amd64.deb", "sha256": "2bbe5e8d4edd6b9340a3b1b57e331af87b508f927cfa61a006dbd8502dc29139"},
+    {"name": "libdrm2", "version": "2.4.134-3pop0~1787326260~24.04~3e90b25", "filename": "libdrm2_2.4.134-3pop0~1787326260~24.04~3e90b25_amd64.deb", "sha256": "1391779172755515a937e0a01cbd59174468dc6ac9924c6fe33091e0125aac04"},
+    {"name": "libudev-dev", "version": "255.4-1ubuntu8.15pop0~1778766128~24.04~85b5073", "filename": "libudev-dev_255.4-1ubuntu8.15pop0~1778766128~24.04~85b5073_amd64.deb", "sha256": "295a28cc8151c5027bdff90b570f1e4847657174f44844c6b49ba994e8c635e4"},
+    {"name": "libudev1", "version": "255.4-1ubuntu8.15pop0~1778766128~24.04~85b5073", "filename": "libudev1_255.4-1ubuntu8.15pop0~1778766128~24.04~85b5073_amd64.deb", "sha256": "e61a5d85ba88a969385e3c08140c63f3552289eee1753de610aeffe1b5642bda"},
+    {"name": "libwayland-egl-backend-dev", "version": "1.23.1-3pop1~1741692146~24.04~dcd01e0", "filename": "libwayland-egl-backend-dev_1.23.1-3pop1~1741692146~24.04~dcd01e0_amd64.deb", "sha256": "ef35f4993015d6b5d2fd4ed47807d0bbb18351153106bdd3deac36623c420e2f"},
+    {"name": "libx11-xcb-dev", "version": "2:1.8.7-1build1", "filename": "libx11-xcb-dev_2%3a1.8.7-1build1_amd64.deb", "sha256": "2939612cbe9a628ca123570718bd3183dd4b85d6080eee2af5996ab107f5931d"},
+    {"name": "libx11-xcb1", "version": "2:1.8.7-1build1", "filename": "libx11-xcb1_2%3a1.8.7-1build1_amd64.deb", "sha256": "7d0d357e47cd6e1042be34da1d37cea313420b000035e71e855087c8268ab127"},
+    {"name": "libxau-dev", "version": "1:1.0.9-1build6", "filename": "libxau-dev_1%3a1.0.9-1build6_amd64.deb", "sha256": "46783c6af2d87c06394d55dfaa21dac07396f13cfc5ea6afbd9313ab49fc0e50"},
+    {"name": "libxau6", "version": "1:1.0.9-1build6", "filename": "libxau6_1%3a1.0.9-1build6_amd64.deb", "sha256": "e40d29f1d1a62393bacaedebe0da3d9006084152a9f7e5e029293f08ce1c5c80"},
+    {"name": "libxcb-dri2-0", "version": "1.15-1ubuntu2", "filename": "libxcb-dri2-0_1.15-1ubuntu2_amd64.deb", "sha256": "21543459d0beede87ca815458bcfa717b85cf4d7b2939b3bb2fc0ffc321121ac"},
+    {"name": "libxcb-dri2-0-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-dri2-0-dev_1.15-1ubuntu2_amd64.deb", "sha256": "8253fa8eb7e405ff0fa9e76a70cefca34007d373a56fc224c9f951804a8caa4c"},
+    {"name": "libxcb-dri3-0", "version": "1.15-1ubuntu2", "filename": "libxcb-dri3-0_1.15-1ubuntu2_amd64.deb", "sha256": "3d3d0e95e56ae16010a84883196b8153cba62d6831f9aaee2a68c46f20c7c004"},
+    {"name": "libxcb-dri3-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-dri3-dev_1.15-1ubuntu2_amd64.deb", "sha256": "d9a863553c1dfad0550d21fd57bcea54145e997a187d51cbd087563c66096b45"},
+    {"name": "libxcb-glx0", "version": "1.15-1ubuntu2", "filename": "libxcb-glx0_1.15-1ubuntu2_amd64.deb", "sha256": "d07cde26c70fe92df7c327928371e495cc4570fed2d6518758a5db5715cb34c1"},
+    {"name": "libxcb-glx0-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-glx0-dev_1.15-1ubuntu2_amd64.deb", "sha256": "c1edb2c100393a3f81c8d56aa0a98c54b4d2e2cd8bea4792a48c0c77a3928798"},
+    {"name": "libxcb-keysyms1", "version": "0.4.0-1build4", "filename": "libxcb-keysyms1_0.4.0-1build4_amd64.deb", "sha256": "6c261aae923175b88a032018c530873ffb40f2bf96b045fdda42bd8bc74cb1c3"},
+    {"name": "libxcb-keysyms1-dev", "version": "0.4.0-1build4", "filename": "libxcb-keysyms1-dev_0.4.0-1build4_amd64.deb", "sha256": "f577c99ed04517f939e4f88968f8cca0c9a90e9c1ad948e5cd67a4d5a9c557d9"},
+    {"name": "libxcb-present-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-present-dev_1.15-1ubuntu2_amd64.deb", "sha256": "ce08d96f2ec7ecab172895fbd12e37481c21b377f0aaf87b5130c0e3f71aa20d"},
+    {"name": "libxcb-present0", "version": "1.15-1ubuntu2", "filename": "libxcb-present0_1.15-1ubuntu2_amd64.deb", "sha256": "2e36e6557e87dbfd64df3143cbf81a4f75c3447501a545b4730511d228b0dd17"},
+    {"name": "libxcb-randr0", "version": "1.15-1ubuntu2", "filename": "libxcb-randr0_1.15-1ubuntu2_amd64.deb", "sha256": "b5cb519823a05a617b543dc9b6a9289b7648b20048244abe021caa706309835a"},
+    {"name": "libxcb-randr0-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-randr0-dev_1.15-1ubuntu2_amd64.deb", "sha256": "cb3aaccc2d7252a1b48e7010a479f52798408c56216287319b6218ee8294e969"},
+    {"name": "libxcb-render-util0", "version": "0.3.9-1build4", "filename": "libxcb-render-util0_0.3.9-1build4_amd64.deb", "sha256": "95d895ceb921e38e4edd85555b407b1a0564d8ad097ec7566e261764ce27787b"},
+    {"name": "libxcb-render-util0-dev", "version": "0.3.9-1build4", "filename": "libxcb-render-util0-dev_0.3.9-1build4_amd64.deb", "sha256": "8e6ceaf8a9fed2c0294713c192a0f7fdcdec06fdea30612dd48d493e860a3281"},
+    {"name": "libxcb-render0", "version": "1.15-1ubuntu2", "filename": "libxcb-render0_1.15-1ubuntu2_amd64.deb", "sha256": "7d83a0668b1a693b5ea2e496206e8371fb6beda4c54a2b4b3902005915c272c5"},
+    {"name": "libxcb-render0-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-render0-dev_1.15-1ubuntu2_amd64.deb", "sha256": "73eebcba4a6366cd3b1088f7c1f36d136cfbb3d5f396a2955f3929c6f3a995cc"},
+    {"name": "libxcb-shape0", "version": "1.15-1ubuntu2", "filename": "libxcb-shape0_1.15-1ubuntu2_amd64.deb", "sha256": "ad57fed687ec9c2a4808b8e30ab1753d57daeddc9ad7fb883bfa0701f6da57c8"},
+    {"name": "libxcb-shape0-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-shape0-dev_1.15-1ubuntu2_amd64.deb", "sha256": "75c821a799ce3a430f91253e49b92c0c79a25277696f623a2fdc3202feb9f3b6"},
+    {"name": "libxcb-sync-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-sync-dev_1.15-1ubuntu2_amd64.deb", "sha256": "d6a53ff8e416c29e144822afb18954701de07c42015da6ad53ced0e757592903"},
+    {"name": "libxcb-sync1", "version": "1.15-1ubuntu2", "filename": "libxcb-sync1_1.15-1ubuntu2_amd64.deb", "sha256": "14286795a258593259923619073e50c15345673befae2733f7b0577b07359aa8"},
+    {"name": "libxcb-xfixes0", "version": "1.15-1ubuntu2", "filename": "libxcb-xfixes0_1.15-1ubuntu2_amd64.deb", "sha256": "0b2ab64af92a71e3d1a35e3c819880ee28d04bfac81360df68ae8d8e9663ebd2"},
+    {"name": "libxcb-xfixes0-dev", "version": "1.15-1ubuntu2", "filename": "libxcb-xfixes0-dev_1.15-1ubuntu2_amd64.deb", "sha256": "f34bb89a7d86076dece75da640c86d5bb0c1d0bde8e8ecd35c6c177be63c3f83"},
+    {"name": "libxcb1", "version": "1.15-1ubuntu2", "filename": "libxcb1_1.15-1ubuntu2_amd64.deb", "sha256": "e1c6611d11ad7398326f1bf028afc34c3b14c51d917a3426b966ed4b9687fa58"},
+    {"name": "libxcb1-dev", "version": "1.15-1ubuntu2", "filename": "libxcb1-dev_1.15-1ubuntu2_amd64.deb", "sha256": "1bafe3432feafc9e57f858721da524dfb3ee1f6fc4ef6b0c73023e79eadb9c28"},
+    {"name": "libxdmcp-dev", "version": "1:1.1.3-0ubuntu6", "filename": "libxdmcp-dev_1%3a1.1.3-0ubuntu6_amd64.deb", "sha256": "ba2f2230b391c292f5f399d6e04d48181be6b3100556f7870591ca95c9d00667"},
+    {"name": "libxdmcp6", "version": "1:1.1.3-0ubuntu6", "filename": "libxdmcp6_1%3a1.1.3-0ubuntu6_amd64.deb", "sha256": "bcd336fce11ce2a45f34d0f95e6980af22529f22147e8f98c156e5cee8ee42bb"},
+    {"name": "libxshmfence-dev", "version": "1.3-1build5", "filename": "libxshmfence-dev_1.3-1build5_amd64.deb", "sha256": "a7eec55941ef813aa3be41b667e1c31bd15b0ae34322d379085ec9079bfd87a3"},
+    {"name": "libxshmfence1", "version": "1.3-1build5", "filename": "libxshmfence1_1.3-1build5_amd64.deb", "sha256": "bc6de4bfaf9050a8ba83d4bcfb114131b081084a7972c03417f8523d52b5c742"},
+    {"name": "libxxf86vm-dev", "version": "1:1.1.4-1build4", "filename": "libxxf86vm-dev_1%3a1.1.4-1build4_amd64.deb", "sha256": "98587402f6928a2526a8fbae6bd8c7297ced187b3a34b4e461ffd3245910f1af"},
+    {"name": "libxxf86vm1", "version": "1:1.1.4-1build4", "filename": "libxxf86vm1_1%3a1.1.4-1build4_amd64.deb", "sha256": "48b2799f52b86505d2bc91dcb1bfa6536545635b9849cb693d274d934116a8da"},
+    {"name": "m4", "version": "1.4.19-4build1", "filename": "m4_1.4.19-4build1_amd64.deb", "sha256": "30ea715845a1863abd55d11e47ab91513130bf347852d4cdeae69e9d98fa795c"},
+    {"name": "patchelf", "version": "0.18.0-1.1build1", "filename": "patchelf_0.18.0-1.1build1_amd64.deb", "sha256": "962a43e33cd56061522554898557a038ccbb8aa4e1e0f421b2d6f6adf1f80c60"},
+    {"name": "xcb-proto", "version": "1.16.0-1", "filename": "xcb-proto_1.16.0-1_all.deb", "sha256": "15de0ec74875bdfabbddb2e42286b9be9584e01631e1c5d7460d8b397db195d0"}
+  ]
+}

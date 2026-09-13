@@ -1,0 +1,10 @@
+--- a/src/egl/main/eglapi.c
++++ b/src/egl/main/eglapi.c
+@@ -2709,6 +2709,7 @@ eglQueryDevicesEXT(EGLint max_devices, EGLDeviceEXT *devices,
+    EGLBoolean ret;
+ 
+    _EGL_FUNC_START(NULL, EGL_NONE, NULL);
++   _eglRegisterAtExit();
+    ret = _eglQueryDevicesEXT(max_devices, (_EGLDevice **)devices, num_devices);
+    RETURN_EGL_EVAL(NULL, ret);
+ }

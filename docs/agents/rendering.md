@@ -220,3 +220,14 @@ Every metric states its scope and units; transfers also state bytes and directio
 - Small diagnostic workloads (e.g. the 640×360 sweep) are evidence about
   themselves, not the reference gate; the integrated visible-latency
   benchmark belongs to #16. Corrected codec measurements are #23's.
+
+## Native Linux sanitizer environment
+
+The [issue #70 diagnosis and repair](../evidence/issue70-vulkan-lifetime.md)
+records a Mesa 26.1.6 EGL query-only cleanup defect reached indirectly during
+Vulkan startup, plus its source patch and reproducible process-local setup.
+The repaired environment passes the full native sanitizer suite without changing
+Nemo lifetimes, GPU coverage or suppressions. Installed system packages were not
+replaced; an unqualified run still uses the installed graphics stack. Consult the
+recorded library identities and reproducer before attributing unloaded LSan frames
+to a driver or changing application ownership.

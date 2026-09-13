@@ -1,0 +1,1123 @@
+{
+  "issue": "https://github.com/rgamevfx/nemo/issues/70",
+  "baseline": "5779cbfc743ba57f218bc5c50a8e032c843eb347",
+  "work_class": "Bounded external-stack lifecycle maintenance; no product/UI changes",
+  "approval": "Owner approved only isolated source/tool downloads, local Mesa build and process-local test selection; no system installation, upstream publishing, push or closure.",
+  "environment": {
+    "packages": "g++-13\t13.3.0-6ubuntu2~24.04.1\ngcc-13\t13.3.0-6ubuntu2~24.04.1\nlibasan8:amd64\t14.2.0-4ubuntu2~24.04.1\nlibc6:amd64\t2.39-0ubuntu8.8\nlibdrm2:amd64\t2.4.134-3pop0~1787326260~24.04~3e90b25\nlibegl-mesa0:amd64\t26.1.6-1pop0~1787580452~24.04~a5619ea\nlibegl1:amd64\t1.7.0-1build1\nlibglvnd0:amd64\t1.7.0-1build1\nlibnvidia-gl-580:amd64\t580.173.02-1pop1~1783343684~24.04~397d671\nlibubsan1:amd64\t14.2.0-4ubuntu2~24.04.1\nlibvulkan1:amd64\t1.3.280.0-1pop1~1722439676~24.04~a41a7d6\nmesa-libgallium:amd64\t26.1.6-1pop0~1787580452~24.04~a5619ea\nnvidia-driver-580\t580.173.02-1pop1~1783343684~24.04~397d671\nvulkan-validationlayers:amd64\t1.3.275.0-1\n",
+    "native_compiler": "c++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "native_build": {
+      "gpu": true,
+      "ui": true,
+      "sanitizers": [
+        "address",
+        "undefined"
+      ]
+    },
+    "initial_vulkan_sanitizer_environment": {},
+    "devices_after_patch": "'DISPLAY' environment variable not set... skipping surface info\n==========\nVULKANINFO\n==========\n\nVulkan Instance Version: 1.3.280\n\n\nInstance Extensions: count = 25\n-------------------------------\nVK_EXT_acquire_drm_display             : extension revision 1\nVK_EXT_acquire_xlib_display            : extension revision 1\nVK_EXT_debug_report                    : extension revision 10\nVK_EXT_debug_utils                     : extension revision 2\nVK_EXT_direct_mode_display             : extension revision 1\nVK_EXT_display_surface_counter         : extension revision 1\nVK_EXT_headless_surface                : extension revision 1\nVK_EXT_layer_settings                  : extension revision 2\nVK_EXT_surface_maintenance1            : extension revision 1\nVK_EXT_swapchain_colorspace            : extension revision 5\nVK_KHR_device_group_creation           : extension revision 1\nVK_KHR_display                         : extension revision 23\nVK_KHR_external_fence_capabilities     : extension revision 1\nVK_KHR_external_memory_capabilities    : extension revision 1\nVK_KHR_external_semaphore_capabilities : extension revision 1\nVK_KHR_get_display_properties2         : extension revision 1\nVK_KHR_get_physical_device_properties2 : extension revision 2\nVK_KHR_get_surface_capabilities2       : extension revision 1\nVK_KHR_portability_enumeration         : extension revision 1\nVK_KHR_surface                         : extension revision 25\nVK_KHR_surface_protected_capabilities  : extension revision 1\nVK_KHR_wayland_surface                 : extension revision 6\nVK_KHR_xcb_surface                     : extension revision 6\nVK_KHR_xlib_surface                    : extension revision 6\nVK_LUNARG_direct_driver_loading        : extension revision 1\n\nInstance Layers: count = 8\n--------------------------\nVK_LAYER_INTEL_nullhw       INTEL NULL HW                                                1.1.73   version 1\nVK_LAYER_KHRONOS_validation Khronos Validation Layer                                     1.3.275  version 1\nVK_LAYER_MESA_anti_lag      Open-source implementation of the VK_AMD_anti_lag extension. 1.4.303  version 1\nVK_LAYER_MESA_device_select Linux device selection layer                                 1.4.303  version 1\nVK_LAYER_MESA_overlay       Mesa Overlay layer                                           1.4.303  version 1\nVK_LAYER_MESA_screenshot    Mesa Screenshot layer                                        1.4.303  version 1\nVK_LAYER_NV_optimus         NVIDIA Optimus layer                                         1.4.312  version 1\nVK_LAYER_NV_present         NVIDIA GR2608 layer                                          1.4.312  version 1\n\nDevices:\n========\nGPU0:\n\tapiVersion         = 1.4.312\n\tdriverVersion      = 580.173.2.0\n\tvendorID           = 0x10de\n\tdeviceID           = 0x1be1\n\tdeviceType         = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU\n\tdeviceName         = NVIDIA GeForce GTX 1070\n\tdriverID           = DRIVER_ID_NVIDIA_PROPRIETARY\n\tdriverName         = NVIDIA\n\tdriverInfo         = 580.173.02\n\tconformanceVersion = 1.4.1.3\n\tdeviceUUID         = 330fe04b-f2d1-3725-a29d-0a23ee9e7147\n\tdriverUUID         = 6d5e1e18-4111-5cbd-ae1e-c369f9e3c390\nGPU1:\n\tapiVersion         = 1.4.354\n\tdriverVersion      = 26.1.6\n\tvendorID           = 0x10005\n\tdeviceID           = 0x0000\n\tdeviceType         = PHYSICAL_DEVICE_TYPE_CPU\n\tdeviceName         = llvmpipe (LLVM 20.1.2, 256 bits)\n\tdriverID           = DRIVER_ID_MESA_LLVMPIPE\n\tdriverName         = llvmpipe\n\tdriverInfo         = Mesa 26.1.6-1pop0~1787580452~24.04~a5619ea (LLVM 20.1.2)\n\tconformanceVersion = 1.3.1.1\n\tdeviceUUID         = 6d657361-3236-2e31-2e36-2d31706f7000\n\tdriverUUID         = 6c6c766d-7069-7065-5555-494400000000\n",
+    "system_egl_sha256": "08dc55de6ebca703d6b4f0f392bfefb4ecfd30ab3cbdaba127d2e33b383c9e62",
+    "unchanged_suppression_sha256": "f939c0bd2eb4954409740f7bba98d5c91aa68f3dc5eb2921bec9860960fba83d"
+  },
+  "cause": {
+    "owner": "Mesa EGL _eglGlobal.DeviceList",
+    "allocation": "_eglAddDRMDevice at src/egl/main/egldevice.c:151; 104-byte object owns a 144-byte drmDevice from drmGetDevices2",
+    "missing_operation": "eglQueryDevicesEXT did not register the existing _eglAtExit handler; eglInitialize did.",
+    "fix": "Register _eglAtExit in public eglQueryDevicesEXT before the internal query takes the nonrecursive global mutex.",
+    "symbolization": "Live sanitizer allocation hook captures still-loaded module+build ID; offline addr2line against the exact unmodified debug binary recovers source functions.",
+    "lsan_object_identities": [
+      "Objects leaked above:\n0x50b0000026c0 (104 bytes)",
+      "Objects leaked above:\n0x50d000000fb0 (144 bytes)"
+    ],
+    "symbolized_stack_file": "allocation-stacks.txt",
+    "unmodified_debug_library": {
+      "sha256": "e92c70b4424a0395e2c8931a9220752bc7f470e82859176d15549c2ca84436af",
+      "build_id": "91c5b6c7a5bd88fba2a60fb5c80dc648736e6dc2"
+    },
+    "patched_acceptance_library": {
+      "sha256": "0dbb43c63655e4d2b6552c87b03e5d1e056d2ff10fd56c8b697458889e4bb00d",
+      "manifest": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+    },
+    "temporary_hook_source": "#include <cstddef>\n#include <cstdio>\n#include <sanitizer/common_interface_defs.h>\n\nextern \"C\" void __sanitizer_malloc_hook(const volatile void* pointer, std::size_t size) {\n    static thread_local bool reporting = false;\n    if (reporting || (size != 104 && size != 144)) return;\n    reporting = true;\n    std::fprintf(stderr, \"[DEBUG-issue70-allocation] size=%zu address=%p\\n\", size, const_cast<const void*>(pointer));\n    __sanitizer_print_stack_trace();\n    reporting = false;\n}\n",
+    "initial_instrumented_probe_source": "#include <vulkan/vulkan.h>\n#include <cstdio>\n#include <cstdlib>\n#include <fstream>\n#include <sanitizer/lsan_interface.h>\n\nint main(int argc, char** argv) {\n    const int cycles = argc > 1 ? std::atoi(argv[1]) : 1;\n    const int enumerations = argc > 2 ? std::atoi(argv[2]) : 1;\n    for (int cycle = 0; cycle < cycles; ++cycle) {\n        VkInstanceCreateInfo info{};\n        info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;\n        VkInstance instance{};\n        if (vkCreateInstance(&info, nullptr, &instance) != VK_SUCCESS) return 1;\n        for (int enumeration = 0; enumeration < enumerations; ++enumeration) {\n            unsigned count = 0;\n            const VkResult result = vkEnumeratePhysicalDevices(instance, &count, nullptr);\n            std::printf(\"cycle=%d enumeration=%d result=%d devices=%u\\n\", cycle, enumeration, result, count);\n            if (result != VK_SUCCESS) return 2;\n        }\n        if (argc > 3) {\n            std::ifstream maps(\"/proc/self/maps\");\n            std::ofstream output(\"build/issue70-evidence/probe-maps.txt\");\n            output << maps.rdbuf();\n            __lsan_do_recoverable_leak_check();\n        }\n        vkDestroyInstance(instance, nullptr);\n    }\n}\n"
+  },
+  "measurements": [
+    {
+      "name": "create-only",
+      "cycles": 1,
+      "enumerations": 0,
+      "exit_code": 1,
+      "leaked_bytes": 248,
+      "log_sha256": "8ce88e8c7b0ea167fcea41ae1beed55a029d6ac7f1affc6a3e1f662888410a53",
+      "stdout": "63d7)\n    #15 0x72c036a2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #16 0x5fc37986c3e4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/probe+0xa3e4) (BuildId: 10ab034560842a353133dba9eebb4204df8c50b2)\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2321 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n"
+    },
+    {
+      "name": "enumerate-100",
+      "cycles": 1,
+      "enumerations": 100,
+      "exit_code": 1,
+      "leaked_bytes": 248,
+      "log_sha256": "ec4a21fd5c1bf2062e165e711288cea7cff32329ee6e722100caa911d0669dcf",
+      "stdout": "63d7)\n    #15 0x7f67e8c2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #16 0x604ef9e883e4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/probe+0xa3e4) (BuildId: 10ab034560842a353133dba9eebb4204df8c50b2)\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2321 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n"
+    },
+    {
+      "name": "cycles-10",
+      "cycles": 10,
+      "enumerations": 1,
+      "exit_code": 1,
+      "leaked_bytes": 2480,
+      "log_sha256": "db34519423192f3fb78ff40ff178db7ec5d7655c1697d05352da85e6a1f182cd",
+      "stdout": "d7)\n    #15 0x7fc9aa22a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #16 0x5995d191f3e4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/probe+0xa3e4) (BuildId: 10ab034560842a353133dba9eebb4204df8c50b2)\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n     30      24202 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 2480 byte(s) leaked in 20 allocation(s).\n"
+    },
+    {
+      "name": "no-device-select",
+      "environment": {
+        "NODEVICE_SELECT": "1"
+      },
+      "exit_code": 1,
+      "leaked_bytes": 248,
+      "log_sha256": "c1ef8044d276fd377f0bc9f57d88141406687081e2625e01d1ee06bea47c93e8",
+      "stdout": "63d7)\n    #15 0x74c0abc2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #16 0x5698e74be3e4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/probe+0xa3e4) (BuildId: 10ab034560842a353133dba9eebb4204df8c50b2)\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2321 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n"
+    },
+    {
+      "name": "no-implicit-layers",
+      "environment": {
+        "VK_LOADER_LAYERS_DISABLE": "~implicit~"
+      },
+      "exit_code": 1,
+      "leaked_bytes": 248,
+      "log_sha256": "ac65c9e4f6544c383fb6dfd03838270df9482342835dd3f905d6bb8ce0cc0289",
+      "stdout": "63d7)\n    #15 0x7872d4c2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #16 0x5c962b8f63e4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/probe+0xa3e4) (BuildId: 10ab034560842a353133dba9eebb4204df8c50b2)\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2321 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n"
+    },
+    {
+      "name": "nvidia-egl-vendor",
+      "cycles": 10,
+      "environment": {
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json"
+      },
+      "exit_code": 0,
+      "scope": "Bypass experiment, not accepted repair",
+      "log_sha256": "3ff41cf01eb1799505403867dc924a21f3a842208902ad1622eb4b69ccc84d0d",
+      "stdout": "numeration=0 result=0 devices=2\ncycle=2 enumeration=0 result=0 devices=2\ncycle=3 enumeration=0 result=0 devices=2\ncycle=4 enumeration=0 result=0 devices=2\ncycle=5 enumeration=0 result=0 devices=2\ncycle=6 enumeration=0 result=0 devices=2\ncycle=7 enumeration=0 result=0 devices=2\ncycle=8 enumeration=0 result=0 devices=2\ncycle=9 enumeration=0 result=0 devices=2\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n     30      24202 libdbus-1.so.3\n-----------------------------------------------------\n\n"
+    }
+  ],
+  "runs": [
+    {
+      "name": "versions",
+      "command": [
+        "dpkg-query",
+        "-W",
+        "g++-13",
+        "gcc-13",
+        "libasan8",
+        "libubsan1",
+        "libc6:amd64",
+        "libdrm2:amd64",
+        "libegl-mesa0",
+        "mesa-libgallium:amd64",
+        "libegl1",
+        "libglvnd0:amd64",
+        "libvulkan1:amd64",
+        "vulkan-validationlayers:amd64",
+        "libnvidia-gl-580:amd64",
+        "nvidia-driver-580"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.025,
+      "log": "build/issue70-evidence/versions.log",
+      "sha256": "374bedbd945fd9ed0b3d92ccedf88a13a0076c0b65831fd7168f615c167a56d7"
+    },
+    {
+      "name": "asan-discovery",
+      "command": [
+        "ctest",
+        "--preset",
+        "asan",
+        "--show-only=json-v1"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.03,
+      "log": "build/issue70-evidence/asan-discovery.log",
+      "sha256": "8abf9e988cb32290b9510e62f50dfd6e03ecb3083dcd27f827bf0bdf9f28bbb8"
+    },
+    {
+      "name": "retained-probe-compile",
+      "command": [
+        "g++-13",
+        "-std=c++20",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-fsanitize=address,undefined",
+        "-g",
+        "docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp",
+        "-lvulkan",
+        "-o",
+        "build/issue70-evidence/lifetime-probe"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.291,
+      "log": "build/issue70-evidence/retained-probe-compile.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "retained-probe-system-red",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "1",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0"
+      },
+      "exit_code": 1,
+      "seconds": 2.34,
+      "log": "build/issue70-evidence/retained-probe-system-red.log",
+      "sha256": "863592b878591acbdc3e81fe6763d89a93ca042bef391f8b87b78ae17c6aec90"
+    },
+    {
+      "name": "bootstrap-system-red",
+      "command": [
+        "ctest",
+        "--preset",
+        "asan",
+        "-R",
+        "^Gpu.BootstrapCreateDestroy$",
+        "-V"
+      ],
+      "environment_overrides": {
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0"
+      },
+      "exit_code": 8,
+      "seconds": 8.003,
+      "log": "build/issue70-evidence/bootstrap-system-red.log",
+      "sha256": "d751960baa3436aefac584537b6109e33690048063fa6efa240c73a3abd53f95"
+    },
+    {
+      "name": "system-vulkan-devices",
+      "command": [
+        "vulkaninfo",
+        "--summary"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 1.233,
+      "log": "build/issue70-evidence/system-vulkan-devices.log",
+      "sha256": "ecbb477a14341c9a7c7fa622f3011c7726fc2f84d1d2fc1bd04c2c269750b6aa"
+    },
+    {
+      "name": "allocation-hook-system",
+      "command": [
+        "build/issue70-evidence/allocation-probe",
+        "1",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0"
+      },
+      "exit_code": 1,
+      "seconds": 3.126,
+      "log": "build/issue70-evidence/allocation-hook-system.log",
+      "sha256": "6c3cd2bd64fe985b8227b86607350e572500f89da6dc2a68f1f9055c309b9f78"
+    },
+    {
+      "name": "native-core-compiler",
+      "command": [
+        "c++",
+        "--version"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.003,
+      "log": "build/issue70-evidence/native-core-compiler.log",
+      "sha256": "88b7c4b67564a146863224148116065fee418539f0a408f3636a68f3bde51805"
+    },
+    {
+      "name": "egl-only-probe-compile",
+      "command": [
+        "g++-13",
+        "-std=c++20",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-fsanitize=address,undefined",
+        "-g",
+        "build/issue70-evidence/egl-probe.cpp",
+        "-ldl",
+        "-o",
+        "build/issue70-evidence/egl-probe"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.191,
+      "log": "build/issue70-evidence/egl-only-probe-compile.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "egl-only-system-red",
+      "command": [
+        "build/issue70-evidence/egl-probe"
+      ],
+      "environment_overrides": {
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/50_mesa.json"
+      },
+      "exit_code": 1,
+      "seconds": 0.264,
+      "log": "build/issue70-evidence/egl-only-system-red.log",
+      "sha256": "a4037d431ed27c57e8938f29ab30dcb68a60ac972b2feace9cbe63351c7f257a"
+    },
+    {
+      "name": "local-unmodified-vulkan-red",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "1",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-debug/99_mesa_debug.json"
+      },
+      "exit_code": 1,
+      "seconds": 2.378,
+      "log": "build/issue70-evidence/local-unmodified-vulkan-red.log",
+      "sha256": "5a63e6d8ed62cc0689f2bf9481e7a9e2382d775d3279369c8a8652d2fbd7c653"
+    },
+    {
+      "name": "allocation-probe-compile",
+      "command": [
+        "g++-13",
+        "-std=c++20",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-fsanitize=address,undefined",
+        "-g",
+        "docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp",
+        "build/issue70-evidence/allocation-hook.cpp",
+        "-lvulkan",
+        "-o",
+        "build/issue70-evidence/allocation-probe"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.3,
+      "log": "build/issue70-evidence/allocation-probe-compile.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "local-unmodified-allocation-stacks",
+      "command": [
+        "build/issue70-evidence/allocation-probe",
+        "1",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt:report_objects=1",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-debug/99_mesa_debug.json"
+      },
+      "exit_code": 1,
+      "seconds": 3.025,
+      "log": "build/issue70-evidence/local-unmodified-allocation-stacks.log",
+      "sha256": "279b85281f9f8151cf746e3852f399fea563703ae54bbfb6caabfe55e0aa489b"
+    },
+    {
+      "name": "unmodified-addr2line",
+      "command": [
+        "addr2line",
+        "-f",
+        "-C",
+        "-e",
+        "build/issue70-evidence/mesa-egl-unmodified/libEGL_mesa.so.0.0.0",
+        "0x21870",
+        "0x22147",
+        "0x22233",
+        "0x1d14d",
+        "0x220df"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.009,
+      "log": "build/issue70-evidence/unmodified-addr2line.log",
+      "sha256": "a435e5cde2287a44c32b54528cd755fb67b5ee8cb529fc29c9ddf4c6c1bc7fbc"
+    },
+    {
+      "name": "unmodified-live-symbolized",
+      "command": [
+        "build/issue70-evidence/allocation-probe",
+        "1",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt:report_objects=1",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0:external_symbolizer_path=/usr/bin/llvm-symbolizer-18",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-debug/99_mesa_debug.json"
+      },
+      "exit_code": 1,
+      "seconds": 2.921,
+      "log": "build/issue70-evidence/unmodified-live-symbolized.log",
+      "sha256": "dfb84a4642f14a0b4c6c4277d0c3556e8de8db08f459d843f4af75abcd096b07"
+    },
+    {
+      "name": "mesa-cleanup-rebuild",
+      "command": [
+        "bash",
+        "build/issue70-evidence/mesa-build/build-egl.sh",
+        "build"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 2.525,
+      "log": "build/issue70-evidence/mesa-cleanup-rebuild.log",
+      "sha256": "277cf36f21835db78b2cf1f83b761e8e7590c553b3d0bd4b59e6e74ad178c20b"
+    },
+    {
+      "name": "mesa-cleanup-stage",
+      "command": [
+        "bash",
+        "build/issue70-evidence/mesa-build/build-egl.sh",
+        "stage"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.034,
+      "log": "build/issue70-evidence/mesa-cleanup-stage.log",
+      "sha256": "c28bb25c9b320297271dcb4303889110260623b869b39bee8ac56f3793a6b841"
+    },
+    {
+      "name": "fixed-vulkan-green",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "1",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 2.287,
+      "log": "build/issue70-evidence/fixed-vulkan-green.log",
+      "sha256": "5d571db4f42223aa64757893e1b521c3b08847338c5efdb64b6874be4243cdde"
+    },
+    {
+      "name": "fixed-create-only",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "1",
+        "0"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 2.333,
+      "log": "build/issue70-evidence/fixed-create-only.log",
+      "sha256": "60126f84eb823ee89a672fc4180571282dfa7007c5ba5097eb44eaa221f15843"
+    },
+    {
+      "name": "fixed-enumerate-100",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "1",
+        "100"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 2.421,
+      "log": "build/issue70-evidence/fixed-enumerate-100.log",
+      "sha256": "05a9cc02b963ba7de25fac0104956e960cc6500fbec056d6b91983d58c612af1"
+    },
+    {
+      "name": "fixed-cycles-10",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "10",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 27.243,
+      "log": "build/issue70-evidence/fixed-cycles-10.log",
+      "sha256": "ca1f7d47f59f72a98e1071b558f8bfcfdad41add6dc5c57be519d874fde3806b"
+    },
+    {
+      "name": "fixed-cycles-100",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "100",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 63.641,
+      "log": "build/issue70-evidence/fixed-cycles-100.log",
+      "sha256": "1b0d250c0d3bfa8f72990c3ee5643ecf624c445e528d5072639194d5d453d0af",
+      "acceptance_evidence": false,
+      "limitation": "Native device disappears after repeated loading exhausts static TLS; exit status alone is not GPU acceptance."
+    },
+    {
+      "name": "egl-probe-flushed-compile",
+      "command": [
+        "g++-13",
+        "-std=c++20",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-fsanitize=address,undefined",
+        "-g",
+        "build/issue70-evidence/egl-probe.cpp",
+        "-ldl",
+        "-o",
+        "build/issue70-evidence/egl-probe"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.094,
+      "log": "build/issue70-evidence/egl-probe-flushed-compile.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "egl-only-unmodified-red",
+      "command": [
+        "build/issue70-evidence/egl-probe"
+      ],
+      "environment_overrides": {
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-unmodified/mesa.json"
+      },
+      "exit_code": 1,
+      "seconds": 0.098,
+      "log": "build/issue70-evidence/egl-only-unmodified-red.log",
+      "sha256": "c9748a39beb8d0b11f45eebd785ebe0f7a2933d5ba088a75a3dd0d3380477c0a"
+    },
+    {
+      "name": "egl-only-fixed-green",
+      "command": [
+        "build/issue70-evidence/egl-probe"
+      ],
+      "environment_overrides": {
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 0.039,
+      "log": "build/issue70-evidence/egl-only-fixed-green.log",
+      "sha256": "3ee9e879f824eabda928d7435741ee94ec6fbb78ba79fc471ee5d077bcc4c018"
+    },
+    {
+      "name": "unmodified-cycle-limit",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "25",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-unmodified/mesa.json",
+        "VK_LOADER_DEBUG": "error,warn"
+      },
+      "exit_code": 1,
+      "seconds": 50.625,
+      "log": "build/issue70-evidence/unmodified-cycle-limit.log",
+      "sha256": "f1bbb986ec970590a77f914136c071cca087df206a7068f70084a1ce248f9112",
+      "acceptance_evidence": false,
+      "limitation": "Native device disappears after repeated loading exhausts static TLS; exit status alone is not GPU acceptance."
+    },
+    {
+      "name": "fixed-cycle-limit",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "25",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json",
+        "VK_LOADER_DEBUG": "error,warn"
+      },
+      "exit_code": 0,
+      "seconds": 51.668,
+      "log": "build/issue70-evidence/fixed-cycle-limit.log",
+      "sha256": "a3f4a1c9299e7ea8197c1080ef192d23a4489cf52c3623f0192781a4574ed4a0",
+      "acceptance_evidence": false,
+      "limitation": "Native device disappears after repeated loading exhausts static TLS; exit status alone is not GPU acceptance."
+    },
+    {
+      "name": "probe-coverage-guard-compile",
+      "command": [
+        "g++-13",
+        "-std=c++20",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-fsanitize=address,undefined",
+        "-g",
+        "docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp",
+        "-lvulkan",
+        "-o",
+        "build/issue70-evidence/lifetime-probe"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.288,
+      "log": "build/issue70-evidence/probe-coverage-guard-compile.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "fixed-cycle-coverage-guard",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "25",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 1,
+      "seconds": 49.298,
+      "log": "build/issue70-evidence/fixed-cycle-coverage-guard.log",
+      "sha256": "88174ab0086db9e0506c646e7db6ef773b2b445ece3410230e794dbb7de64141"
+    },
+    {
+      "name": "fixed-vulkan-device-inventory",
+      "command": [
+        "vulkaninfo",
+        "--summary"
+      ],
+      "environment_overrides": {
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 0.285,
+      "log": "build/issue70-evidence/fixed-vulkan-device-inventory.log",
+      "sha256": "ecbb477a14341c9a7c7fa622f3011c7726fc2f84d1d2fc1bd04c2c269750b6aa"
+    },
+    {
+      "name": "debug-gpu-compatibility",
+      "command": [
+        "ctest",
+        "--preset",
+        "debug",
+        "-R",
+        "^Gpu\\.",
+        "-j",
+        "2"
+      ],
+      "environment_overrides": {
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 3.866,
+      "log": "build/issue70-evidence/debug-gpu-compatibility.log",
+      "sha256": "7e7d876e08b1f93bb998f70cb78f79e095bf719675b8788dc923fcd348051d19"
+    },
+    {
+      "name": "release-gpu-compatibility",
+      "command": [
+        "ctest",
+        "--preset",
+        "release",
+        "-R",
+        "^Gpu\\.",
+        "-j",
+        "2"
+      ],
+      "environment_overrides": {
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 3.871,
+      "log": "build/issue70-evidence/release-gpu-compatibility.log",
+      "sha256": "21203ab524fe2f5a910d71af18900f7497a334558cd5f9314d0ea4b6bc79d759"
+    },
+    {
+      "name": "fixed-allocations-still-executed",
+      "command": [
+        "build/issue70-evidence/allocation-probe",
+        "1",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 3.395,
+      "log": "build/issue70-evidence/fixed-allocations-still-executed.log",
+      "sha256": "a39eefe05ac96bde8522e55f24498cbe5dbbecfac8e831b2c5ae58b216bb0579"
+    },
+    {
+      "name": "patched-device-dependencies",
+      "command": [
+        "ldd",
+        "build/issue70-evidence/mesa-egl-fixed/libEGL_mesa.so.0.0.0"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "seconds": 0.01,
+      "log": "build/issue70-evidence/patched-device-dependencies.log",
+      "sha256": "38b57691a30ab5df4fda8d18d99419495d830ac4847d60f9defcb5d548c29be6"
+    },
+    {
+      "name": "final-probe-vulkan-green",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "10",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 30.71,
+      "log": "build/issue70-evidence/final-probe-vulkan-green.log",
+      "sha256": "672696d9eef8a9613a03cdaeebbf6e0da5371f9fb394a95eeda7df47a7ae3ac2"
+    },
+    {
+      "name": "final-probe-egl-green",
+      "command": [
+        "build/issue70-evidence/egl-probe"
+      ],
+      "environment_overrides": {
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json"
+      },
+      "exit_code": 0,
+      "seconds": 0.037,
+      "log": "build/issue70-evidence/final-probe-egl-green.log",
+      "sha256": "3ee9e879f824eabda928d7435741ee94ec6fbb78ba79fc471ee5d077bcc4c018"
+    },
+    {
+      "name": "build-workdir-safety",
+      "command": [
+        "python3",
+        "docs/evidence/assets/issue70-vulkan-lifetime/build-mesa.py",
+        "build/issue70-evidence"
+      ],
+      "environment_overrides": {},
+      "exit_code": 2,
+      "seconds": 0.04,
+      "log": "build/issue70-evidence/build-workdir-safety.log",
+      "sha256": "2e4f1d79e83fc649822e2577f2fcc91f9ab3f5752cd443824566e655e887f017"
+    },
+    {
+      "name": "reproduced-build-vulkan-red",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "1",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-unmodified/10_mesa_unmodified.json"
+      },
+      "exit_code": 1,
+      "seconds": 2.457,
+      "log": "build/issue70-evidence/reproduced-build-vulkan-red.log",
+      "sha256": "1be5395c1282704440c1890e85cc0182b36aad19186fe41ea68f4522c54daf76"
+    },
+    {
+      "name": "reproduced-build-vulkan-green",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "10",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json"
+      },
+      "exit_code": 0,
+      "seconds": 26.67,
+      "log": "build/issue70-evidence/reproduced-build-vulkan-green.log",
+      "sha256": "672696d9eef8a9613a03cdaeebbf6e0da5371f9fb394a95eeda7df47a7ae3ac2"
+    },
+    {
+      "name": "reproduced-build-egl-green",
+      "command": [
+        "build/issue70-evidence/egl-probe"
+      ],
+      "environment_overrides": {
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json"
+      },
+      "exit_code": 0,
+      "seconds": 0.036,
+      "log": "build/issue70-evidence/reproduced-build-egl-green.log",
+      "sha256": "3ee9e879f824eabda928d7435741ee94ec6fbb78ba79fc471ee5d077bcc4c018"
+    },
+    {
+      "name": "reproduced-build-native-gpu",
+      "command": [
+        "ctest",
+        "--preset",
+        "asan",
+        "-R",
+        "^Gpu\\.",
+        "-j",
+        "2"
+      ],
+      "environment_overrides": {
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json",
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      },
+      "exit_code": 0,
+      "seconds": 17.261,
+      "log": "build/issue70-evidence/reproduced-build-native-gpu.log",
+      "sha256": "c5489e96323bfea72929875b5235d1c7ca36881417e081032d4d76575ad904e6"
+    },
+    {
+      "name": "probe-usage-guard",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "0",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0"
+      },
+      "exit_code": 2,
+      "seconds": 0.014,
+      "log": "build/issue70-evidence/probe-usage-guard.log",
+      "sha256": "e3913f43a0aa517104686d612d3c5c649fbb80b1ad6c613014f96b3b833c87ef"
+    },
+    {
+      "name": "probe-usage-guard-egl",
+      "command": [
+        "build/issue70-evidence/egl-probe",
+        "extra"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0"
+      },
+      "exit_code": 2,
+      "seconds": 0.016,
+      "log": "build/issue70-evidence/probe-usage-guard-egl.log",
+      "sha256": "aaa534243a634cf8550abdc796596caf8b846e774a9afd31c635620f30f83053"
+    },
+    {
+      "name": "probe-environment-guard",
+      "command": [
+        "/bin/sh",
+        "-c",
+        "build/issue70-evidence/lifetime-probe 1 1"
+      ],
+      "environment_overrides": {
+        "SHELL": "/bin/bash",
+        "SSH_AUTH_SOCK": "/run/user/1000/gcr/ssh",
+        "XDG_SEAT": "seat0",
+        "XDG_SESSION_DESKTOP": "COSMIC",
+        "LOGNAME": "rgame",
+        "XDG_SESSION_TYPE": "wayland",
+        "HOME": "/home/rgame",
+        "LANG": "en_US.UTF-8",
+        "XDG_CURRENT_DESKTOP": "COSMIC",
+        "TERM": "xterm-256color",
+        "USER": "rgame",
+        "XDG_VTNR": "1",
+        "XDG_SESSION_ID": "3",
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "XDG_DATA_DIRS": "/home/rgame/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share",
+        "PATH": "/home/rgame/.local/share/pi-node/node-v22.23.1-linux-x64/bin:/home/rgame/.local/bin:/home/rgame/.nvm/versions/node/v20.20.2/bin:/home/rgame/.opencode/bin:/home/rgame/.local/bin:/home/rgame/.cargo/bin:/home/rgame/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+        "PI_SESSION_FILE": "/home/rgame/.omp/agent/sessions/-dev-Nemo_Dev2/2026-09-13T01-21-18-252Z_01a0985a-bbac-7311-882d-3d05390e8105.jsonl",
+        "PI_ARTIFACTS_DIR": "/home/rgame/.omp/agent/sessions/-dev-Nemo_Dev2/2026-09-13T01-21-18-252Z_01a0985a-bbac-7311-882d-3d05390e8105",
+        "PI_TOOL_BRIDGE_URL": "http://127.0.0.1:38073",
+        "PI_TOOL_BRIDGE_TOKEN": "3383d3bb-ba97-4309-bf70-04d3d46c16b9",
+        "PI_TOOL_BRIDGE_SESSION": "python:session:/home/rgame/.omp/agent/sessions/-dev-Nemo_Dev2/2026-09-13T01-21-18-252Z_01a0985a-bbac-7311-882d-3d05390e8105.jsonl:cwd:/home/rgame/dev/Nemo_Dev2",
+        "PI_EVAL_LOCAL_ROOTS": "{\"local\":\"/home/rgame/.omp/agent/sessions/-dev-Nemo_Dev2/2026-09-13T01-21-18-252Z_01a0985a-bbac-7311-882d-3d05390e8105/local\"}",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "MPLBACKEND": "Agg",
+        "VK_ICD_FILENAMES": "/nonexistent.json",
+        "VK_DRIVER_FILES": "/nonexistent.json",
+        "VK_LOADER_DRIVERS_SELECT": "nonexistent"
+      },
+      "exit_code": 3,
+      "seconds": 0.014,
+      "log": "build/issue70-evidence/probe-environment-guard.log",
+      "sha256": "d1ac5f6807447e7ba85cbc277b042784d0dab7c47c0dfd003a3faad4b9b16a28"
+    },
+    {
+      "name": "probe-environment-guard-egl",
+      "command": [
+        "/bin/sh",
+        "-c",
+        "__EGL_VENDOR_LIBRARY_FILENAMES=/nonexistent.json build/issue70-evidence/egl-probe"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0"
+      },
+      "exit_code": 4,
+      "seconds": 0.024,
+      "log": "build/issue70-evidence/probe-environment-guard-egl.log",
+      "sha256": "3e55b7cc922cd1eb2e15f729b2ce07a15d7155687e81a53ee8c7c277cf8d9a2d"
+    },
+    {
+      "name": "gpu-fixed",
+      "command": [
+        "ctest",
+        "--preset",
+        "asan",
+        "-R",
+        "^Gpu\\.",
+        "-j",
+        "2"
+      ],
+      "environment_overrides": {
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json",
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      },
+      "exit_code": 0,
+      "tests": 11,
+      "passed": 11,
+      "skipped": 0,
+      "disabled": 0,
+      "seconds": 19.21,
+      "log": "build/issue70-evidence/gpu-fixed.log"
+    },
+    {
+      "name": "asan-full",
+      "command": [
+        "ctest",
+        "--preset",
+        "asan",
+        "-j",
+        "2"
+      ],
+      "environment_overrides": {
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json",
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      },
+      "exit_code": 0,
+      "discovered": 505,
+      "tests": 505,
+      "passed": 505,
+      "skipped": 0,
+      "disabled": 0,
+      "seconds": 430.1,
+      "log": "build/issue70-evidence/asan-full.log"
+    },
+    {
+      "name": "unmodified-cycles-100-tls-timeout",
+      "command": [
+        "build/issue70-evidence/lifetime-probe",
+        "100",
+        "1"
+      ],
+      "environment_overrides": {
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+        "ASAN_OPTIONS": "detect_leaks=1:fast_unwind_on_malloc=0",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-unmodified/mesa.json",
+        "VK_LOADER_DEBUG": "error,warn",
+        "GLIBC_TUNABLES": "glibc.rtld.optional_static_tls=32768"
+      },
+      "exit_code": null,
+      "timeout_seconds": 300,
+      "outcome": "subprocess.TimeoutExpired; child killed and waited; no partial stdout retained; not acceptance evidence"
+    }
+  ],
+  "retained_probe_outputs": {
+    "retained-probe-system-red.log": "cycle=0 enumeration=0 result=0 devices=2\n\n=================================================================\n==2069592==ERROR: LeakSanitizer: detected memory leaks\n\nDirect leak of 104 byte(s) in 1 object(s) allocated from:\n    #0 0x7b82ceefd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x7b82cd36753d  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x2e53d)\n    #2 0x7b82cd36766f  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x2e66f)\n    #3 0x7b82cd35b77b  (<unknown module>)\n    #4 0x7b82cd759efa  (<unknown module>)\n    #5 0x7b82cad74b1d  (<unknown module>)\n    #6 0x7b82cad73a1c  (<unknown module>)\n    #7 0x7b82cad74811  (<unknown module>)\n    #8 0x7b82cf575622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #9 0x7b82cf58bacd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #10 0x5c350efd1b07 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:24\n    #11 0x7b82cde2a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #12 0x7b82cde2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #13 0x5c350efd1444 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/lifetime-probe+0xd444) (BuildId: 5b7478e6d1479ace3a50174c29d2f789630c2b1f)\n\nIndirect leak of 144 byte(s) in 1 object(s) allocated from:\n    #0 0x7b82ceefd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x7b82ceceaf96  (/lib/x86_64-linux-gnu/libdrm.so.2+0x6f96) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #2 0x7b82ceceb30b  (/lib/x86_64-linux-gnu/libdrm.so.2+0x730b) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #3 0x7b82cecefe48 in drmGetDevices2 (/lib/x86_64-linux-gnu/libdrm.so.2+0xbe48) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #4 0x7b82cd3674cc  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x2e4cc)\n    #5 0x7b82cd36766f  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x2e66f)\n    #6 0x7b82cd35b77b  (<unknown module>)\n    #7 0x7b82cd759efa  (<unknown module>)\n    #8 0x7b82cad74b1d  (<unknown module>)\n    #9 0x7b82cad73a1c  (<unknown module>)\n    #10 0x7b82cad74811  (<unknown module>)\n    #11 0x7b82cf575622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #12 0x7b82cf58bacd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #13 0x5c350efd1b07 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:24\n    #14 0x7b82cde2a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #15 0x7b82cde2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #16 0x5c350efd1444 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/lifetime-probe+0xd444) (BuildId: 5b7478e6d1479ace3a50174c29d2f789630c2b1f)\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2337 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n",
+    "local-unmodified-vulkan-red.log": "cycle=0 enumeration=0 result=0 devices=2\n\n=================================================================\n==2087399==ERROR: LeakSanitizer: detected memory leaks\n\nDirect leak of 104 byte(s) in 1 object(s) allocated from:\n    #0 0x71de0e8fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x71de0cd82870  (<unknown module>)\n    #2 0x71de0cd83147  (<unknown module>)\n    #3 0x71de0cd83233  (<unknown module>)\n    #4 0x71de0cd7e14d  (<unknown module>)\n    #5 0x71de0d320efa  (<unknown module>)\n    #6 0x71de0a774b1d  (<unknown module>)\n    #7 0x71de0a773a1c  (<unknown module>)\n    #8 0x71de0a774811  (<unknown module>)\n    #9 0x71de0ef9b622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #10 0x71de0efb1acd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #11 0x5dc39e8ffb07 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:27\n    #12 0x71de0d82a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #13 0x71de0d82a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #14 0x5dc39e8ff444 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/lifetime-probe+0xd444) (BuildId: 5a8dad1dab161c4e96b63b93eb31c464964930c6)\n\nIndirect leak of 144 byte(s) in 1 object(s) allocated from:\n    #0 0x71de0e8fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x71de0eed9f96  (/lib/x86_64-linux-gnu/libdrm.so.2+0x6f96) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #2 0x71de0eeda30b  (/lib/x86_64-linux-gnu/libdrm.so.2+0x730b) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #3 0x71de0eedee48 in drmGetDevices2 (/lib/x86_64-linux-gnu/libdrm.so.2+0xbe48) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #4 0x71de0cd830df  (<unknown module>)\n    #5 0x71de0cd83233  (<unknown module>)\n    #6 0x71de0cd7e14d  (<unknown module>)\n    #7 0x71de0d320efa  (<unknown module>)\n    #8 0x71de0a774b1d  (<unknown module>)\n    #9 0x71de0a773a1c  (<unknown module>)\n    #10 0x71de0a774811  (<unknown module>)\n    #11 0x71de0ef9b622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #12 0x71de0efb1acd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #13 0x5dc39e8ffb07 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:27\n    #14 0x71de0d82a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #15 0x71de0d82a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #16 0x5dc39e8ff444 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/lifetime-probe+0xd444) (BuildId: 5a8dad1dab161c4e96b63b93eb31c464964930c6)\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2401 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n",
+    "fixed-vulkan-green.log": "cycle=0 enumeration=0 result=0 devices=2\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2401 libdbus-1.so.3\n-----------------------------------------------------\n\n",
+    "fixed-cycles-10.log": "cycle=0 enumeration=0 result=0 devices=2\ncycle=1 enumeration=0 result=0 devices=2\ncycle=2 enumeration=0 result=0 devices=2\ncycle=3 enumeration=0 result=0 devices=2\ncycle=4 enumeration=0 result=0 devices=2\ncycle=5 enumeration=0 result=0 devices=2\ncycle=6 enumeration=0 result=0 devices=2\ncycle=7 enumeration=0 result=0 devices=2\ncycle=8 enumeration=0 result=0 devices=2\ncycle=9 enumeration=0 result=0 devices=2\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n     30      25002 libdbus-1.so.3\n-----------------------------------------------------\n\n",
+    "egl-only-unmodified-red.log": "eglQueryDevicesEXT: result=1 devices=2\n\n=================================================================\n==2090619==ERROR: LeakSanitizer: detected memory leaks\n\nDirect leak of 104 byte(s) in 1 object(s) allocated from:\n    #0 0x7b78f40fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x7b78f2bf4870  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x5a870)\n    #2 0x7b78f2bf5147  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x5b147)\n    #3 0x7b78f2bf5233  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x5b233)\n    #4 0x7b78f2bf014d  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x5614d)\n    #5 0x7b78f3eabefa  (<unknown module>)\n    #6 0x56b5aec6d4c2 in main build/issue70-evidence/egl-probe.cpp:20\n    #7 0x7b78f302a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #8 0x7b78f302a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #9 0x56b5aec6d244 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/egl-probe+0x1244) (BuildId: ac225023a073daf7e148e7ed553096b11335022c)\n\nIndirect leak of 144 byte(s) in 1 object(s) allocated from:\n    #0 0x7b78f40fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x7b78f2bc2f96  (<unknown module>)\n    #2 0x7b78f2bc330b  (<unknown module>)\n    #3 0x7b78f2bc7e48  (<unknown module>)\n    #4 0x7b78f2bf50df  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x5b0df)\n    #5 0x7b78f2bf5233  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x5b233)\n    #6 0x7b78f2bf014d  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33+0x5614d)\n    #7 0x7b78f3eabefa  (<unknown module>)\n    #8 0x56b5aec6d4c2 in main build/issue70-evidence/egl-probe.cpp:20\n    #9 0x7b78f302a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #10 0x7b78f302a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #11 0x56b5aec6d244 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/egl-probe+0x1244) (BuildId: ac225023a073daf7e148e7ed553096b11335022c)\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n",
+    "egl-only-fixed-green.log": "eglQueryDevicesEXT: result=1 devices=2\n",
+    "bootstrap-system-red.log": "own module>)\n    #10 0x7b4762574811  (<unknown module>)\n    #11 0x7b4766d3d622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #12 0x7b4766d47fb1  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x29fb1) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #13 0x7b4766d52181 in vkEnumerateInstanceExtensionProperties (/lib/x86_64-linux-gnu/libvulkan.so.1+0x34181) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #14 0x5a2896fbfae9 in createInstance /home/rgame/dev/Nemo_Dev2/src/nemo/gpu/Instance.cpp:32\n    #15 0x5a2896fc0bd2 in nemo::gpu::Instance::create(nemo::gpu::InstanceConfig const&) /home/rgame/dev/Nemo_Dev2/src/nemo/gpu/Instance.cpp:92\n    #16 0x5a2896977764 in createBootstrap /home/rgame/dev/Nemo_Dev2/tests/GpuTests.cpp:43\n    #17 0x5a28969791a2 in Gpu_BootstrapCreateDestroy_Test::TestBody() /home/rgame/dev/Nemo_Dev2/tests/GpuTests.cpp:95\n    #18 0x5a28970d814c in void testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:2698\n    #19 0x5a28970d10b6 in void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:2734\n    #20 0x5a28970a8da9 in testing::Test::Run() /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:2773\n    #21 0x5a28970a98d3 in testing::TestInfo::Run() /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:2919\n    #22 0x5a28970aa314 in testing::TestSuite::Run() /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:3097\n    #23 0x5a28970bbdca in testing::internal::UnitTestImpl::RunAllTests() /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:6090\n    #24 0x5a28970d9263 in bool testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:2698\n    #25 0x5a28970d23d4 in bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:2734\n    #26 0x5a28970b9d75 in testing::UnitTest::Run() /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest.cc:5631\n    #27 0x5a2896ed30d5 in RUN_ALL_TESTS() /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/include/gtest/gtest.h:2344\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2337 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n\n\n0% tests passed, 1 tests failed out of 1\n\nTotal Test time (real) =   7.99 sec\n\nThe following tests FAILED:\n\t261 - Gpu.BootstrapCreateDestroy (Failed)\nErrors while running CTest\n",
+    "unmodified-addr2line.log": "_eglAddDRMDevice\n/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/egldevice.c:151\n_eglDeviceRefreshList\n/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/egldevice.c:448\n_eglQueryDevicesEXT\n/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/egldevice.c:476\neglQueryDevicesEXT\n/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/eglapi.c:2712\n_eglDeviceRefreshList\n/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/egldevice.c:441\n",
+    "fixed-cycle-coverage-guard.log": "cycle=0 enumeration=0 result=0 devices=2\ncycle=1 enumeration=0 result=0 devices=2\ncycle=2 enumeration=0 result=0 devices=2\ncycle=3 enumeration=0 result=0 devices=2\ncycle=4 enumeration=0 result=0 devices=2\ncycle=5 enumeration=0 result=0 devices=2\ncycle=6 enumeration=0 result=0 devices=2\ncycle=7 enumeration=0 result=0 devices=2\ncycle=8 enumeration=0 result=0 devices=2\ncycle=9 enumeration=0 result=0 devices=2\ncycle=10 enumeration=0 result=0 devices=2\ncycle=11 enumeration=0 result=0 devices=2\ncycle=12 enumeration=0 result=0 devices=2\ncycle=13 enumeration=0 result=0 devices=2\ncycle=14 enumeration=0 result=0 devices=2\ncycle=15 enumeration=0 result=0 devices=2\ncycle=16 enumeration=0 result=0 devices=2\ncycle=17 enumeration=0 result=0 devices=2\ncycle=18 enumeration=0 result=0 devices=1\nDevice count changed from 2 to 1; GPU coverage was lost.\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n     54      44850 libdbus-1.so.3\n-----------------------------------------------------\n\n",
+    "reproduced-build-vulkan-red.log": "cycle=0 enumeration=0 result=0 devices=2\n\n=================================================================\n==2124316==ERROR: LeakSanitizer: detected memory leaks\n\nDirect leak of 104 byte(s) in 1 object(s) allocated from:\n    #0 0x7724c7cfd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x7724c6321870  (<unknown module>)\n    #2 0x7724c6322147  (<unknown module>)\n    #3 0x7724c6322233  (<unknown module>)\n    #4 0x7724c631d14d  (<unknown module>)\n    #5 0x7724c6717efa  (<unknown module>)\n    #6 0x7724c3b74b1d  (<unknown module>)\n    #7 0x7724c3b73a1c  (<unknown module>)\n    #8 0x7724c3b74811  (<unknown module>)\n    #9 0x7724c842e622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #10 0x7724c8444acd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #11 0x5cb6ea530b51 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:28\n    #12 0x7724c6c2a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #13 0x7724c6c2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #14 0x5cb6ea530484 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/lifetime-probe+0xd484) (BuildId: 0747985ced2f1cdff8a3d2f610497a48618b6c24)\n\nIndirect leak of 144 byte(s) in 1 object(s) allocated from:\n    #0 0x7724c7cfd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x7724c7ab2f96  (/lib/x86_64-linux-gnu/libdrm.so.2+0x6f96) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #2 0x7724c7ab330b  (/lib/x86_64-linux-gnu/libdrm.so.2+0x730b) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #3 0x7724c7ab7e48 in drmGetDevices2 (/lib/x86_64-linux-gnu/libdrm.so.2+0xbe48) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)\n    #4 0x7724c63220df  (<unknown module>)\n    #5 0x7724c6322233  (<unknown module>)\n    #6 0x7724c631d14d  (<unknown module>)\n    #7 0x7724c6717efa  (<unknown module>)\n    #8 0x7724c3b74b1d  (<unknown module>)\n    #9 0x7724c3b73a1c  (<unknown module>)\n    #10 0x7724c3b74811  (<unknown module>)\n    #11 0x7724c842e622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #12 0x7724c8444acd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)\n    #13 0x5cb6ea530b51 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:28\n    #14 0x7724c6c2a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #15 0x7724c6c2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)\n    #16 0x5cb6ea530484 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/lifetime-probe+0xd484) (BuildId: 0747985ced2f1cdff8a3d2f610497a48618b6c24)\n\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n      3       2417 libdbus-1.so.3\n-----------------------------------------------------\n\nSUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).\n",
+    "reproduced-build-vulkan-green.log": "cycle=0 enumeration=0 result=0 devices=2\ncycle=1 enumeration=0 result=0 devices=2\ncycle=2 enumeration=0 result=0 devices=2\ncycle=3 enumeration=0 result=0 devices=2\ncycle=4 enumeration=0 result=0 devices=2\ncycle=5 enumeration=0 result=0 devices=2\ncycle=6 enumeration=0 result=0 devices=2\ncycle=7 enumeration=0 result=0 devices=2\ncycle=8 enumeration=0 result=0 devices=2\ncycle=9 enumeration=0 result=0 devices=2\n-----------------------------------------------------\nSuppressions used:\n  count      bytes template\n     30      25162 libdbus-1.so.3\n-----------------------------------------------------\n\n",
+    "reproduced-build-egl-green.log": "eglQueryDevicesEXT: result=1 devices=2\n",
+    "reproduced-build-native-gpu.log": "Test project /home/rgame/dev/Nemo_Dev2/build/asan\n      Start 267: Gpu.RetainedResourcesReleasedOnlyAfterCompletion\n      Start 266: Gpu.AsyncCapacityRejectsImmediately\n 1/11 Test #266: Gpu.AsyncCapacityRejectsImmediately ................   Passed    3.70 sec\n      Start 270: Gpu.LegacyTimeoutDrainsBeforeThrowing\n 2/11 Test #267: Gpu.RetainedResourcesReleasedOnlyAfterCompletion ...   Passed    3.71 sec\n      Start 269: Gpu.ConcurrentSubmittersSharePersistentQueue\n 3/11 Test #269: Gpu.ConcurrentSubmittersSharePersistentQueue .......   Passed    2.76 sec\n      Start 268: Gpu.RecordExceptionRecoversSlot\n 4/11 Test #270: Gpu.LegacyTimeoutDrainsBeforeThrowing ..............   Passed    3.21 sec\n      Start 265: Gpu.AsyncSubmitPollWaitLifecycle\n 5/11 Test #268: Gpu.RecordExceptionRecoversSlot ....................   Passed    2.66 sec\n      Start 271: Gpu.QueueTeardownDrainsPendingSubmissions\n 6/11 Test #265: Gpu.AsyncSubmitPollWaitLifecycle ...................   Passed    2.61 sec\n      Start 262: Gpu.VideoQueueFamiliesReportedWhenAdvertised\n 7/11 Test #271: Gpu.QueueTeardownDrainsPendingSubmissions ..........   Passed    2.99 sec\n      Start 264: Gpu.AllocatorBudgetAccounting\n 8/11 Test #262: Gpu.VideoQueueFamiliesReportedWhenAdvertised .......   Passed    2.68 sec\n      Start 263: Gpu.EmptySubmissionCompletes\n 9/11 Test #264: Gpu.AllocatorBudgetAccounting ......................   Passed    2.67 sec\n      Start 261: Gpu.BootstrapCreateDestroy\n10/11 Test #263: Gpu.EmptySubmissionCompletes .......................   Passed    2.64 sec\n11/11 Test #261: Gpu.BootstrapCreateDestroy .........................   Passed    2.59 sec\n\n100% tests passed, 0 tests failed out of 11\n\nTotal Test time (real) =  17.40 sec\n",
+    "build-workdir-safety.log": "usage: build-mesa.py [-h] [--jobs JOBS] workdir\nbuild-mesa.py: error: workdir must be absent or empty; existing files are never removed\n",
+    "probe-usage-guard.log": "instance_cycles must be at least 1\n",
+    "probe-usage-guard-egl.log": "usage: build/issue70-evidence/egl-probe\n",
+    "probe-environment-guard.log": "cycle 0: vkCreateInstance failed with VkResult -9; no usable Vulkan ICD\n",
+    "probe-environment-guard-egl.log": "eglQueryDevicesEXT: result=1 devices=0\neglQueryDevicesEXT returned 1 with 0 devices; no EGL device was enumerated\n"
+  },
+  "native_results": {
+    "discovered": 505,
+    "full_suite": {
+      "name": "(empty)",
+      "tests": "505",
+      "failures": "0",
+      "disabled": "0",
+      "skipped": "0",
+      "hostname": "",
+      "time": "430",
+      "timestamp": "2026-09-12T22:03:59"
+    },
+    "focused_gpu": {
+      "name": "(empty)",
+      "tests": "11",
+      "failures": "0",
+      "disabled": "0",
+      "skipped": "0",
+      "hostname": "",
+      "time": "19",
+      "timestamp": "2026-09-12T21:56:43"
+    },
+    "debug_gpu": {
+      "tests": 11,
+      "passed": 11
+    },
+    "release_gpu": {
+      "tests": 11,
+      "passed": 11
+    },
+    "asan_error_scan": {
+      "ubsan_runtime_errors": false,
+      "asan_errors": false,
+      "leak_reports": false,
+      "skipped_markers": false
+    }
+  },
+  "limitations": [
+    "System packages remain unmodified: plain ASan runs without the documented private EGL selection still encounter installed Mesa defect.",
+    "Default extended create/destroy cycling loses NVIDIA after 18 cycles due static TLS exhaustion, on both unmodified and fixed libraries. Guarded probe returns 1. Initial 100-cycle exit0 is not native acceptance.",
+    "Exploratory 100-cycle unmodified slow-unwind run with optional_static_tls=32768 timed out at 300 seconds; partial stdout unavailable; no acceptance claim.",
+    "No upstream publication/release, global package installation, Windows run, new full debug/release suite or hosted-CI result is claimed."
+  ],
+  "production_correctness": "One-line external lifecycle correction; Vulkan and Mesa-only EGL red/green, full native ASan+UBSan 505/505 zero skips, and debug/release GPU 11/11. Native rendering/tests and suppression policy unchanged.",
+  "prototype_conformance": "Not applicable; no UI, image, shader, public API or document change.",
+  "retained_native_logs": {
+    "asan-full.log.gz": "a463acea04822e2cc5980f0b03d2b1f9d05d9a86fba857867d43d0e60e1172ec",
+    "asan-full.xml.gz": "ba2235cc01f27a79e8960439a31cde146445b82c8ffbfe8dfb2c374d0b52c26d",
+    "gpu-fixed.log.gz": "97c2d6fd2c7313d255fe2c9b8508da017e57e971eeb41ca6a88152e4ce24224c",
+    "gpu-fixed.xml.gz": "a60faba2d481a19cafd5641e1bd6a4a1c6f41e509ca0b2ffe6210adc0c3b6442"
+  },
+  "cleanup": {
+    "removed_temporary_files": [
+      "build/issue70-evidence/allocation-probe",
+      "build/issue70-evidence/allocation-hook.cpp",
+      "build/issue70-evidence/probe",
+      "build/issue70-evidence/probe.cpp"
+    ],
+    "retained": "Source instrumentation is embedded in this evidence; final probes have no hooks. Isolated dependency source/build/stages and raw logs remain in ignored build directories. Unrelated issue34 autosaves remain untouched."
+  },
+  "retained_build": {
+    "command": "python3 docs/evidence/assets/issue70-vulkan-lifetime/build-mesa.py build/issue70-reproduction --jobs 4",
+    "exit_codes": [
+      0,
+      0
+    ],
+    "seconds": [
+      154.09,
+      68.98
+    ],
+    "summary": {
+      "mesa_version": "26.1.6-1pop0~1787580452~24.04~a5619ea",
+      "workdir": "/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction",
+      "patch": {
+        "file": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue70-vulkan-lifetime/mesa-egl-query-cleanup.patch",
+        "sha256": "1bb684bce994a768dc27009aa082d00ee39c41d3b4a06386aa37deba3ca8bc98",
+        "fuzz": 0
+      },
+      "tool_versions": {
+        "meson": "1.12.0",
+        "mako": "1.3.2",
+        "pyyaml": "6.0.1",
+        "ninja": "1.12.1",
+        "patch": "GNU patch 2.7.6"
+      },
+      "meson_flags": [
+        "--buildtype=debug",
+        "-Db_ndebug=false",
+        "-Dplatforms=x11,wayland",
+        "-Dglvnd=enabled",
+        "-Dgbm=enabled",
+        "-Dglx-direct=true",
+        "-Dgallium-drivers=softpipe",
+        "-Dvulkan-drivers=",
+        "-Dvulkan-layers=",
+        "-Dgles1=disabled",
+        "-Dgles2=enabled",
+        "-Dbuild-tests=false",
+        "-Dtools=",
+        "-Ddri-drivers-path=/usr/lib/x86_64-linux-gnu/dri",
+        "-Dllvm=disabled",
+        "-Dgallium-va=disabled",
+        "-Dgallium-rusticl=false",
+        "-Dteflon=false",
+        "-Dlmsensors=disabled",
+        "-Dvalgrind=disabled"
+      ],
+      "stages": {
+        "unmodified": {
+          "library": "/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-unmodified/libEGL_mesa.so.0.0.0",
+          "manifest": "/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-unmodified/10_mesa_unmodified.json",
+          "sha256": "1bd630ce2a6a03695bff5314607b68390d38dbea9e1d234442326b437563835b",
+          "build_id": "e52ba0d0232f789f379406368e91dccf9a6026e3",
+          "libgallium": "/lib/x86_64-linux-gnu/libgallium-26.1.6-1pop0~1787580452~24.04~a5619ea.so"
+        },
+        "fixed": {
+          "library": "/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/libEGL_mesa.so.0.0.0",
+          "manifest": "/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json",
+          "sha256": "c87333f2725f14ec0679478dc251a26fbed2ee6be1896689762ccecb2c1658cd",
+          "build_id": "d0967b2ba78076ee96f2e3b12b835c42ff8291e2",
+          "libgallium": "/lib/x86_64-linux-gnu/libgallium-26.1.6-1pop0~1787580452~24.04~a5619ea.so"
+        }
+      },
+      "fixed_differs_from_unmodified": true
+    },
+    "note": "Retained script executed twice from an absent workdir; the second run added pinned-tool verification and reproduced byte-identical stages (1bd630ce..., c87333f2...). DT_NEEDED set identical to the library that passed the full 505-test suite. Artifacts then reproduced red 248-byte leak, green ten-cycle run, EGL-only green and native GPU 11/11 (17.25 s)."
+  },
+  "review": {
+    "standards": {
+      "reviewer": "StandardsReview70 (fixed point 5779cbf, staged diff)",
+      "findings": [
+        "Bare exit codes in probe.cpp hid the failure cause",
+        "Bare exit codes in egl-query-probe.cpp hid the failure cause",
+        "Unreachable resume guards in build-mesa.py (judgement call)",
+        "Unconsumed tooling pins and stages.example_load in build-inputs.json (judgement call)"
+      ],
+      "dispositions": [
+        "Fixed: probes now print the offending cause and use exit 2 usage, 3 environment, 4 result, leaving 1 to the sanitizer.",
+        "Fixed: same scheme for the EGL probe; it also rejects unexpected arguments.",
+        "Kept with an explicit docstring note: the guards are postcondition checks on apt-get, not resume support.",
+        "Fixed: toolchain now fails closed when meson/mako/pyyaml/ninja/patch diverge from the pinned versions, and main prints the example_load line it records."
+      ],
+      "verdict": "No functional or evidence-integrity defect found; all findings addressed or explicitly dispositioned."
+    },
+    "spec": "Self-reviewed against the live issue body after the second reviewer was stood down on owner instruction; all six acceptance criteria are satisfied by the retained evidence (owner-symbolized allocation, growth measurements, repaired isolated environment, 505/505 with zero skips, preserved GPU coverage and detection, tracker updates)."
+  }
+}

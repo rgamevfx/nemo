@@ -1,0 +1,136 @@
+Installed library, live allocation stack:
+[DEBUG-issue70-allocation] size=104 address=0x50b000002770
+    #0 0x7650cc70b5a7 in __sanitizer_print_stack_trace ../../../../src/libsanitizer/asan/asan_stack.cpp:87
+    #1 0x62e3842fe338 in __sanitizer_malloc_hook build/issue70-evidence/allocation-hook.cpp:10
+    #2 0x7650cc713124 in __sanitizer::RunMallocHooks(void*, unsigned long) ../../../../src/libsanitizer/sanitizer_common/sanitizer_common.cpp:341
+    #3 0x7650cc642264 in __asan::Allocator::Allocate(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*, __asan::AllocType, bool) ../../../../src/libsanitizer/asan/asan_allocator.cpp:658
+    #4 0x7650cc63ebf2 in __asan::Allocator::Calloc(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*) ../../../../src/libsanitizer/asan/asan_allocator.cpp:779
+    #5 0x7650cc63ebf2 in __asan::asan_calloc(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*) ../../../../src/libsanitizer/asan/asan_allocator.cpp:1004
+    #6 0x7650cc6fd2f9 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:78
+    #7 0x7650c5c8b53d  (/lib/x86_64-linux-gnu/libEGL_mesa.so.0+0x1f53d) (BuildId: 1edc731c3d85674bc3ec19b086ce2e1f63e87e85)
+    #8 0x7650c5c8b66f  (/lib/x86_64-linux-gnu/libEGL_mesa.so.0+0x1f66f) (BuildId: 1edc731c3d85674bc3ec19b086ce2e1f63e87e85)
+    #9 0x7650c5c7f77b  (/lib/x86_64-linux-gnu/libEGL_mesa.so.0+0x1377b) (BuildId: 1edc731c3d85674bc3ec19b086ce2e1f63e87e85)
+    #10 0x7650c7598efa  (/lib/x86_64-linux-gnu/libEGL.so.1+0x7efa) (BuildId: e0bef13474530b1fe7427f94897a5db4ce262519)
+    #11 0x7650c5d76b1d  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9fb1d) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #12 0x7650c5d75a1c  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9ea1c) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #13 0x7650c5d76811  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9f811) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #14 0x7650cc5a1622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)
+    #15 0x7650cc5b7acd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)
+    #16 0x62e3842fbb67 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:24
+    #17 0x7650cb62a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #18 0x7650cb62a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #19 0x62e3842fb4a4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/allocation-probe+0xd4a4) (BuildId: ce38bbbe7c918aaf05dca8e294cf2f3ee3335b1d)
+
+
+Unmodified debug build, live allocation plus offline addr2line:
+[DEBUG-issue70-allocation] size=104 address=0x50b0000026c0
+    #0 0x73f70830b5a7 in __sanitizer_print_stack_trace ../../../../src/libsanitizer/asan/asan_stack.cpp:87
+    #1 0x63201a4c4338 in __sanitizer_malloc_hook build/issue70-evidence/allocation-hook.cpp:10
+    #2 0x73f708313124 in __sanitizer::RunMallocHooks(void*, unsigned long) ../../../../src/libsanitizer/sanitizer_common/sanitizer_common.cpp:341
+    #3 0x73f708242264 in __asan::Allocator::Allocate(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*, __asan::AllocType, bool) ../../../../src/libsanitizer/asan/asan_allocator.cpp:658
+    #4 0x73f70823ebf2 in __asan::Allocator::Calloc(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*) ../../../../src/libsanitizer/asan/asan_allocator.cpp:779
+    #5 0x73f70823ebf2 in __asan::asan_calloc(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*) ../../../../src/libsanitizer/asan/asan_allocator.cpp:1004
+    #6 0x73f7082fd2f9 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:78
+    #7 0x73f701847870  (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-debug/libEGL_mesa.so.0.0.0+0x21870) (BuildId: 91c5b6c7a5bd88fba2a60fb5c80dc648736e6dc2)
+    #8 0x73f701848147  (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-debug/libEGL_mesa.so.0.0.0+0x22147) (BuildId: 91c5b6c7a5bd88fba2a60fb5c80dc648736e6dc2)
+    #9 0x73f701848233  (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-debug/libEGL_mesa.so.0.0.0+0x22233) (BuildId: 91c5b6c7a5bd88fba2a60fb5c80dc648736e6dc2)
+    #10 0x73f70184314d  (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-debug/libEGL_mesa.so.0.0.0+0x1d14d) (BuildId: 91c5b6c7a5bd88fba2a60fb5c80dc648736e6dc2)
+    #11 0x73f704b32efa  (/lib/x86_64-linux-gnu/libEGL.so.1+0x7efa) (BuildId: e0bef13474530b1fe7427f94897a5db4ce262519)
+    #12 0x73f704174b1d  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9fb1d) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #13 0x73f704173a1c  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9ea1c) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #14 0x73f704174811  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9f811) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #15 0x73f7089b6622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)
+    #16 0x73f7089ccacd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)
+    #17 0x63201a4c1b67 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:27
+    #18 0x73f70722a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #19 0x73f70722a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #20 0x63201a4c14a4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/allocation-probe+0xd4a4) (BuildId: 0a0ab29b2f8c3dbe3673a07604e2eb3a5186d716)
+
+
+Offline source mapping 0x21870:
+_eglAddDRMDevice
+/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/egldevice.c:151
+
+Offline source mapping 0x22147:
+_eglDeviceRefreshList
+/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/egldevice.c:448
+
+Offline source mapping 0x22233:
+_eglQueryDevicesEXT
+/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/egldevice.c:476
+
+Offline source mapping 0x1d14d:
+eglQueryDevicesEXT
+/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-build/build/mesa-egl/../../src/mesa-26.1.6/src/egl/main/eglapi.c:2712
+
+LSan object identity in same unmodified process:
+6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #13 0x73f70722a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #14 0x63201a4c14a4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/allocation-probe+0xd4a4) (BuildId: 0a0ab29b2f8c3dbe3673a07604e2eb3a5186d716)
+
+Objects leaked above:
+0x50b0000026c0 (104 bytes)
+
+Indirect leak of 144 byte(s) in 1 object(s) allocated from:
+    #0 0x73f7082fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x73f7088f4f96  (/lib/x86_64-linux-gnu/libdrm.so.2+0x6f96) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)
+    #2 0x73f7088f530b  (/lib/x86_64-linux-gnu/libdrm.so.2+0x730b) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)
+    #3 0x73f7088f9e48 in drmGetDevices2 (/lib/x86_64-linux-gnu/libdrm.so.2+0xbe48) (BuildId: 6bd7592c725de93037805bc970dbe5cf0c413a7e)
+    #4 0x73f7018480df  (<unknown module>)
+    #5 0x73f701848233  (<unknown module>)
+    #6 0x73f70184314d  (<unknown module>)
+    #7 0x73f704b32efa  (<unknown module>)
+    #8 0x73f704174b1d  (<unknown module>)
+    #9 0x73f704173a1c  (<unknown module>)
+    #10 0x73f704174811  (<unknown module>)
+    #11 0x73f7089b6622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)
+    #12 0x73f7089ccacd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)
+    #13 0x63201a4c1b67 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:27
+    #14 0x73f70722a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #15 0x73f70722a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #16 0x63201a4c14a4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/allocation-probe+0xd4a4) (BuildId: 0a0ab29b2f8c3dbe3673a07604e2eb3a5186d716)
+
+Objects leaked above:
+0x50d000000fb0 (144 bytes)
+
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+      3       2401 libdbus-1.so.3
+-----------------------------------------------------
+
+SUMMARY: AddressSanitizer: 248 byte(s) leaked in 2 allocation(s).
+
+Patched library still allocates the device:
+[DEBUG-issue70-allocation] size=104 address=0x50b0000026c0
+    #0 0x76c501f0b5a7 in __sanitizer_print_stack_trace ../../../../src/libsanitizer/asan/asan_stack.cpp:87
+    #1 0x5e539b843338 in __sanitizer_malloc_hook build/issue70-evidence/allocation-hook.cpp:10
+    #2 0x76c501f13124 in __sanitizer::RunMallocHooks(void*, unsigned long) ../../../../src/libsanitizer/sanitizer_common/sanitizer_common.cpp:341
+    #3 0x76c501e42264 in __asan::Allocator::Allocate(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*, __asan::AllocType, bool) ../../../../src/libsanitizer/asan/asan_allocator.cpp:658
+    #4 0x76c501e3ebf2 in __asan::Allocator::Calloc(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*) ../../../../src/libsanitizer/asan/asan_allocator.cpp:779
+    #5 0x76c501e3ebf2 in __asan::asan_calloc(unsigned long, unsigned long, __sanitizer::BufferedStackTrace*) ../../../../src/libsanitizer/asan/asan_allocator.cpp:1004
+    #6 0x76c501efd2f9 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:78
+    #7 0x76c4fb459875  (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/libEGL_mesa.so.0.0.0+0x21875) (BuildId: b659a348e2587bef7dfe226341efdff160ce8bbb)
+    #8 0x76c4fb45a14c  (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/libEGL_mesa.so.0.0.0+0x2214c) (BuildId: b659a348e2587bef7dfe226341efdff160ce8bbb)
+    #9 0x76c4fb45a238  (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/libEGL_mesa.so.0.0.0+0x22238) (BuildId: b659a348e2587bef7dfe226341efdff160ce8bbb)
+    #10 0x76c4fb455152  (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/libEGL_mesa.so.0.0.0+0x1d152) (BuildId: b659a348e2587bef7dfe226341efdff160ce8bbb)
+    #11 0x76c4fdcb3efa  (/lib/x86_64-linux-gnu/libEGL.so.1+0x7efa) (BuildId: e0bef13474530b1fe7427f94897a5db4ce262519)
+    #12 0x76c4fb576b1d  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9fb1d) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #13 0x76c4fb575a1c  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9ea1c) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #14 0x76c4fb576811  (/lib/x86_64-linux-gnu/libGLX_nvidia.so.0+0x9f811) (BuildId: a74db5897e9fac329926467b02c1b5cf9c875364)
+    #15 0x76c501da1622  (/lib/x86_64-linux-gnu/libvulkan.so.1+0x1f622) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)
+    #16 0x76c501db7acd in vkCreateInstance (/lib/x86_64-linux-gnu/libvulkan.so.1+0x35acd) (BuildId: fdfd9780b3bb873ffcffd271a4b75067350d7007)
+    #17 0x5e539b840b67 in main docs/evidence/assets/issue70-vulkan-lifetime/probe.cpp:27
+    #18 0x76c500e2a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #19 0x76c500e2a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #20 0x5e539b8404a4 in _start (/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/allocation-probe+0xd4a4) (BuildId: 0a0ab29b2f8c3dbe3673a07604e2eb3a5186d716)
+
+
+Patched process final output:
+cycle=0 enumeration=0 result=0 devices=2
+-----------------------------------------------------
+Suppressions used:
+  count      bytes template
+      3       2401 libdbus-1.so.3
+-----------------------------------------------------
+

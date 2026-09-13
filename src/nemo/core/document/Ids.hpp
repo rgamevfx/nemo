@@ -26,3 +26,5 @@ inline constexpr EdgeId kInvalidEdge = 0;
 inline constexpr MediaSourceId kInvalidMediaSource = 0;
 inline constexpr MediaBinId kInvalidMediaBin = 0;
 }  // namespace nemo
+
+inline double issue67AnalysisProbe(int value) { return 0.5 + value / 2; }

@@ -32,6 +32,10 @@ class ViewerController final : public QObject {
     Q_PROPERTY(QString renderState READ renderState NOTIFY statusChanged)
     Q_PROPERTY(bool pending READ pending NOTIFY statusChanged)
     Q_PROPERTY(bool outdated READ outdated NOTIFY statusChanged)
+    // Whether a completed frame is retained. A panel needs this beside
+    // renderState to tell a stale image from an empty area: a failed or pending
+    // request may still have an image to show, while an unbound Read has none.
+    Q_PROPERTY(bool hasPresentation READ hasPresentation NOTIFY frameArrived)
     Q_PROPERTY(QString resolutionMode READ resolutionMode WRITE setResolutionMode NOTIFY resolutionChanged)
     Q_PROPERTY(double zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
     Q_PROPERTY(QPointF pan READ pan WRITE setPan NOTIFY panChanged)
@@ -218,6 +222,7 @@ public:
     [[nodiscard]] QString renderState() const;
     [[nodiscard]] bool pending() const { return pending_; }
     [[nodiscard]] bool outdated() const { return outdated_; }
+    [[nodiscard]] bool hasPresentation() const { return static_cast<bool>(presentation_); }
     [[nodiscard]] QString resolutionMode() const { return mode_; }
     [[nodiscard]] double zoom() const { return zoom_; }
     [[nodiscard]] QPointF pan() const { return pan_; }
@@ -314,6 +319,9 @@ private:
     [[nodiscard]] int frameDomainEnd() const;
     void buildGraph(const SourceReference& reference);
     void refreshRequest();
+    // Forgets the probed media when the request no longer addresses it: a
+    // cleared Read, a replaced target, or a target that names no reference.
+    void forgetProbedMedia();
     void invalidateRequest();
     void pollScheduler();
     void receive();
@@ -380,6 +388,18 @@ private:
     std::uint64_t lastRevision_{};
     std::optional<EvaluationRequest> lastRequest_;
     std::shared_ptr<const ViewerResult> presentation_;
+    // True when the attached target is a media source node that names no
+    // reference: an explicit empty viewer rather than a stale frame or the
+    // default composition canvas.
+    bool targetEmpty_{};
+    // Memoized target media resolution, keyed by document revision, request
+    // network and render target. The graph role's dependency walk then runs at
+    // most once per revision instead of once per zoom/pan/frame request.
+    std::uint64_t targetMediaRevision_{};
+    NetworkId targetMediaNetwork_{kInvalidNetwork};
+    NodeId targetMediaTarget_{kInvalidNode};
+    std::string targetMediaKey_;
+    bool targetMediaUnbound_{};
     // Panel-local display selection. `channel_` is the display name; the
     // presentation-only isolation travels with each submission.
     QString channel_{QStringLiteral("RGBA")};

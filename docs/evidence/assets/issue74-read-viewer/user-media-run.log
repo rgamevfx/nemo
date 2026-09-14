@@ -1,0 +1,4 @@
+user-document: has_presentation=1 destination=1 status=Displayed 960x540, 1:2, frame 0; live render; 1920x1080 h264; decode selection: Vulkan error= raster=960x540 full=1920x1080 output=1 source=1920x1080 frames=650 rate=25
+[       OK ] ReadViewerSurface.UserDocumentDisplaysItsAttachedRead (1933 ms)
+user-document: has_presentation=1 destination=1 status=Displayed 480x360, 1:4, frame 0; live render; 1920x1440 png; decode selection: image read (OpenImageIO) error= raster=480x360 full=1920x1440 output=1 source=1920x1440 frames=1 rate=24
+[       OK ] ReadViewerSurface.UserDocumentDisplaysItsAttachedRead (2634 ms)

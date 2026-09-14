@@ -115,6 +115,7 @@ if(NEMO_BUILD_UI)
         WorkspaceDragTests.cpp
         InteractiveUiTests.cpp
         Issue47ViewerDestinationUiTests.cpp
+        Issue74ReadViewerUiTests.cpp
         PanelContextRouterTests.cpp
         PanelContextUiTests.cpp
         MediaLibraryModelTests.cpp

@@ -59,11 +59,17 @@ FocusScope {
     readonly property real sourceWidth: hasImage ? compositionWidth : 0
     readonly property real sourceHeight: hasImage ? compositionHeight : 0
     // Display settings are panel-local. They deliberately do not use the
-    // controller's render state, so two panels may pan/zoom separately.
-    readonly property real displayZoom: panelState && panelState.zoom !== undefined ? Number(panelState.zoom) : 1
+    // controller's render state, so two panels may pan/zoom separately. Zoom is
+    // mode-driven exactly as in the prototype: Fit recomputes against the panel,
+    // and 100%/50% are absolute. A retired continuous wheel zoom is not a
+    // control mode, so a project that persisted it recovers at Fit instead of a
+    // silently shrunken image the selector reports as "Fit".
     readonly property point displayPan: Qt.point(panelState && panelState.panX !== undefined ? Number(panelState.panX) : 0,
                                                 panelState && panelState.panY !== undefined ? Number(panelState.panY) : 0)
-    readonly property string zoomMode: panelState && panelState.zoomMode ? panelState.zoomMode : "Fit"
+    readonly property string zoomMode: {
+        var stored = panelState && panelState.zoomMode ? String(panelState.zoomMode) : "Fit"
+        return stored === "100%" || stored === "50%" ? stored : "Fit"
+    }
     readonly property string viewerRole: panelContext && panelContext.viewerRole
                                         ? panelContext.viewerRole : "graph"
     readonly property string resolvedGroup: panelGroup
@@ -89,6 +95,25 @@ FocusScope {
                                         : targetAvailable && targetId.length > 0
                                           ? targetId
                                           : viewerRole === "timeline" ? "No timeline target" : "No media source"
+    // Actionable viewer state: the controller's own status/error, never a
+    // silently blank image area. A successfully displayed frame clears it; a
+    // pending or failed request keeps the previous frame visible beside its
+    // message rather than reporting nothing.
+    readonly property string viewerDiagnostic: {
+        var error = String(controller.error || "")
+        if (error.length > 0)
+            return error
+        var state = String(controller.renderState || "")
+        if (state === "pending" || state === "empty" || state === "unavailable")
+            return String(controller.status || "")
+        if (!targetAvailable)
+            return targetName
+        return ""
+    }
+    readonly property bool viewerShowsFrame: controller.hasPresentation === true
+    readonly property color viewerDiagnosticColor: String(controller.error || "").length > 0
+                                                   ? themeColor("errorText", "#f0d0d0")
+                                                   : themeColor("muted", "#979ea8")
     readonly property int firstFrame: 0
     readonly property int lastFrame: controller.frameCount > 0 ? controller.frameCount - 1 : 239
     readonly property int currentFrame: Math.max(firstFrame, Math.min(lastFrame, Math.round(routedClock)))
@@ -426,7 +451,7 @@ FocusScope {
     function imageScale() {
         if (zoomMode === "100%") return 1
         if (zoomMode === "50%") return 0.5
-        return displayScale() * displayZoom
+        return displayScale()
     }
 
     function computeDisplayRect() {
@@ -446,13 +471,11 @@ FocusScope {
                        region.width * sx, region.height * scale)
     }
 
+    // Prototype zoom is absolute and mode-driven; the panel recomputes Fit on
+    // resize instead of persisting a fit-relative scale that drifts.
     function setZoom(mode) {
-        var nextZoom = 1
-        if (mode === "100%")
-            nextZoom = 1 / displayScale()
-        else if (mode === "50%")
-            nextZoom = 0.5 / displayScale()
-        saveState({zoom: Math.max(0.05, Math.min(32, nextZoom)), panX: 0, panY: 0, zoomMode: mode})
+        var nextZoom = mode === "50%" ? 0.5 : 1
+        saveState({zoom: nextZoom, panX: 0, panY: 0, zoomMode: mode})
     }
 
 
@@ -546,16 +569,37 @@ FocusScope {
                 visible: viewerPanel.targetAvailable
             }
 
+            // Centered placeholder for "no frame": an unavailable target, an
+            // unbound Read, or a failure before the first frame. The controller
+            // owns the message, so a probe/render/color failure is never a
+            // silent blank area.
             Text {
                 anchors.centerIn: parent
                 width: Math.max(0, parent.width - 32)
-                visible: !viewerPanel.targetAvailable
+                visible: viewerPanel.viewerDiagnostic.length > 0 && !viewerPanel.viewerShowsFrame
                 objectName: "viewerUnavailable_" + viewerPanel.panelId
-                text: viewerPanel.targetName
-                color: viewerPanel.theme ? viewerPanel.theme.muted : "#979ea8"
+                text: viewerPanel.viewerDiagnostic
+                color: viewerPanel.viewerDiagnosticColor
                 font.pixelSize: 12
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
+            }
+
+            // A retained frame stays visible while a newer request is pending
+            // or has failed; the message sits at the bottom instead of covering
+            // the media the artist is inspecting.
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 8
+                width: Math.max(0, parent.width - 32)
+                visible: viewerPanel.viewerDiagnostic.length > 0 && viewerPanel.viewerShowsFrame
+                objectName: "viewerStatusLine_" + viewerPanel.panelId
+                text: viewerPanel.viewerDiagnostic
+                color: viewerPanel.viewerDiagnosticColor
+                font.pixelSize: 11
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
             }
 
             MouseArea {
@@ -567,10 +611,9 @@ FocusScope {
                 property real lastY: 0
                 onWheel: function(wheel) {
                     viewer.makePrimary()
-                    var relativeZoom = viewerPanel.imageScale() / viewerPanel.displayScale()
-                    var nextZoom = Math.max(0.05, Math.min(32,
-                        relativeZoom * Math.pow(1.15, wheel.angleDelta.y / 120)))
-                    viewerPanel.saveState({zoom: nextZoom, zoomMode: "Custom"})
+                    // Prototype wheel zoom selects a control mode, never a
+                    // private scale the selector cannot show.
+                    viewerPanel.setZoom(wheel.angleDelta.y > 0 ? "100%" : "50%")
                     wheel.accepted = true
                 }
                 onPressed: function(mouse) {

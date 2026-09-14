@@ -841,6 +841,10 @@ QString ViewerController::renderState() const {
         return QStringLiteral("failed");
     if (pending_)
         return QStringLiteral("pending");
+    // An attached Read that names no media is an explicit empty viewer, not a
+    // request that could still complete.
+    if (targetEmpty_)
+        return QStringLiteral("empty");
     if (outdated_)
         return QStringLiteral("outdated");
     if (presentation_)
@@ -927,6 +931,71 @@ namespace {
         reason =
             QStringLiteral("Media source '%1' has no source node in the root network").arg(QString::fromStdString(key));
     return found;
+}
+
+// The document source key a media source node addresses through its 'source'
+// parameter. Empty when the binding is absent or blank.
+[[nodiscard]] std::string sourceNodeKey(const NodeInstance& node) {
+    const auto parameter = node.params.find("source");
+    if (parameter == node.params.end())
+        return {};
+    const auto* value = std::get_if<std::string>(&parameter->second);
+    return value == nullptr ? std::string{} : *value;
+}
+
+// The media reference a render target displays. A source node names its own
+// through its 'source' parameter, so an attached Read drives the viewer with
+// the media it actually names — dimensions, pixel aspect, duration and rate —
+// instead of the command-line fixture key "src". A downstream target consumes
+// the single media source its dependency closure reaches, so an effect on a
+// Read keeps the Read's domain without inventing a multi-source composition
+// format: several sources (or none) keep the established default canvas.
+struct TargetMedia {
+    std::string key;
+    // The target itself is a media source node that names no reference: an
+    // explicit empty viewer, never a default canvas standing in for media the
+    // artist has not chosen.
+    bool unbound{};
+};
+
+[[nodiscard]] TargetMedia resolveTargetMedia(const nemo::Document& document, NetworkId network, NodeId target) {
+    TargetMedia media;
+    if (target == kInvalidNode)
+        return media;
+    try {
+        const auto& graph = document.network(network).graph();
+        const auto* instance = graph.node(target);
+        if (instance == nullptr)
+            return media;
+        const auto* descriptor = graph.descriptor(instance->type);
+        if (descriptor == nullptr)
+            return media;
+        if (descriptor->type == "source") {
+            media.key = sourceNodeKey(*instance);
+            media.unbound = media.key.empty();
+            return media;
+        }
+        // Downstream targets: the dependency owner resolves inputs through
+        // nested definitions and instance bindings, so this walks the same
+        // closure the evaluation schedules.
+        std::size_t sources = 0;
+        std::string key;
+        for (const auto& expanded : expandDependencies(document, network, target)) {
+            if (expanded.node == nullptr)
+                continue;
+            const auto* nodeDescriptor = graph.descriptor(expanded.node->type);
+            if (nodeDescriptor == nullptr || nodeDescriptor->type != "source")
+                continue;
+            ++sources;
+            key = sourceNodeKey(*expanded.node);
+        }
+        if (sources == 1 && !key.empty())
+            media.key = std::move(key);
+    } catch (const std::exception&) {
+        // An unresolvable target keeps the established default canvas; the
+        // evaluation reports the offending relationship.
+    }
+    return media;
 }
 }  // namespace
 
@@ -1405,6 +1474,16 @@ int ViewerController::clampFrame(int frame) const {
 
 int ViewerController::frameDomainEnd() const {
     return frameCount_ > 0 ? frameCount_ - 1 : kDefaultFrameCount - 1;
+}
+
+void ViewerController::forgetProbedMedia() {
+    const bool hadMedia = !sourceSize_.isEmpty() || !probedSource_.path.empty() || pixelAspect_ != 1.0;
+    sourceSize_ = {};
+    probedSource_ = {};
+    pixelAspect_ = 1.0;
+    frameCount_ = -1;
+    if (hadMedia)
+        emit sourceChanged();
 }
 
 void ViewerController::applyFrameCount(int frameCount) {
@@ -2961,11 +3040,17 @@ void ViewerController::receive() {
             return;
         const auto& info = probe->source.info;
         // Publish exactly the reference that was probed: the graph role keeps
-        // "src", the media role its routed catalog source. A reference removed
-        // before the result arrived is not republished as current media.
+        // the attached target's own key, the media role its routed catalog
+        // source. A reference removed before the result arrived is not
+        // republished as current media, and the request is re-resolved rather
+        // than left pending forever.
         const auto reference = session_.document().sources.find(probeSourceKey_);
-        if (reference == session_.document().sources.end())
+        if (reference == session_.document().sources.end()) {
+            pending_ = false;
+            forgetProbedMedia();
+            refreshRequest();
             return;
+        }
         probedSource_ = reference->second;
         pending_ = false;
         sourceSize_ = QSizeF(info.width, info.height);
@@ -3040,9 +3125,52 @@ void ViewerController::refreshRequest() {
         // own result look stale.
         const auto revision = document.stateRevision();
         const bool mediaContext = contextRole_ == ContextRole::Media;
-        // The graph role keeps the command-line "src" reference; the media role
-        // resolves the routed catalog reference.
-        const std::string sourceKey = mediaContext ? contextSourceKey_ : std::string{"src"};
+        // The media role addresses a source node in the root network; the graph
+        // role follows the active Viewer attachment's network.
+        const NetworkId targetNetwork =
+            !mediaContext && activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : document.rootNetworkId();
+        // Media reference this request renders. The media role resolves the
+        // routed catalog target; the graph role consumes the attached target's
+        // own reference, so a Read node drives the viewer with the dimensions,
+        // pixel aspect, duration and rate the media itself declares rather than
+        // the command-line fixture key "src".
+        NodeId target = renderTargetNode();
+        targetEmpty_ = false;
+        std::string sourceKey;
+        if (mediaContext) {
+            sourceKey = contextSourceKey_;
+        } else {
+            // The dependency walk runs once per document revision and target,
+            // not once per zoom/pan/frame request.
+            if (targetMediaRevision_ != revision || targetMediaNetwork_ != targetNetwork ||
+                targetMediaTarget_ != target) {
+                const auto media = resolveTargetMedia(document, targetNetwork, target);
+                targetMediaKey_ = media.key;
+                targetMediaUnbound_ = media.unbound;
+                targetMediaRevision_ = revision;
+                targetMediaNetwork_ = targetNetwork;
+                targetMediaTarget_ = target;
+            }
+            sourceKey = targetMediaKey_;
+            targetEmpty_ = targetMediaUnbound_;
+        }
+        if (targetEmpty_) {
+            // A Read that names no media is an explicit empty viewer: the
+            // previous image is not current output and must not linger, and no
+            // default canvas stands in for media that was never chosen.
+            const bool hadPresentation = static_cast<bool>(presentation_);
+            forgetProbedMedia();
+            presentation_.reset();
+            lastRequest_.reset();
+            pending_ = false;
+            outdated_ = false;
+            status_ = QStringLiteral("Read '%1' names no media; choose a file in its parameters")
+                          .arg(viewerTargetName_.isEmpty() ? QStringLiteral("source") : viewerTargetName_);
+            emit statusChanged();
+            if (hadPresentation)
+                emit frameArrived();
+            return;
+        }
         // An authored source node addressing the media key wins. Without one,
         // the routed catalog reference is still viewable: a temporary source
         // node is inserted into this request-owned snapshot only, so the same
@@ -3051,7 +3179,6 @@ void ViewerController::refreshRequest() {
         // revision, interpretation), so it is cache-equivalent to an authored
         // node and follows relink revisions, while no node, used-media mark or
         // history entry is ever persisted for a catalog open.
-        NodeId target = renderTargetNode();
         const bool privateMediaSource = mediaContext && target == kInvalidNode && !contextSourceKey_.empty();
         if (privateMediaSource) {
             const auto created = std::make_shared<NodeId>();
@@ -3077,17 +3204,13 @@ void ViewerController::refreshRequest() {
         const auto source = document.sources.find(sourceKey);
         bool mediaReady = false;
         if (source == document.sources.end()) {
-            const bool hadMedia = !sourceSize_.isEmpty() || !probedSource_.path.empty() || pixelAspect_ != 1.0;
-            sourceSize_ = {};
-            probedSource_ = {};
-            pixelAspect_ = 1.0;
-            frameCount_ = -1;
-            if (hadMedia)
-                emit sourceChanged();
+            forgetProbedMedia();
         } else {
             const auto& reference = source->second;
-            mediaReady = !sourceSize_.isEmpty() && reference.path == probedSource_.path &&
-                         reference.revision == probedSource_.revision &&
+            // The key is part of the probed identity: two keys can name the
+            // same path and revision, and a retargeted Read must re-probe.
+            mediaReady = !sourceSize_.isEmpty() && probeSourceKey_ == sourceKey &&
+                         reference.path == probedSource_.path && reference.revision == probedSource_.revision &&
                          reference.interpretation == probedSource_.interpretation;
             if (!mediaReady) {
                 // Probe and interactive render share one scheduler slot, so a
@@ -3115,10 +3238,7 @@ void ViewerController::refreshRequest() {
                           : mode_ == "quarter" ? ViewerResolution::Quarter
                                                : ViewerResolution::Auto;
         EvaluationRequest request;
-        // The media role addresses a source node in the root network; the graph
-        // role follows the active Viewer attachment's network.
-        request.network =
-            !mediaContext && activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : document.rootNetworkId();
+        request.network = targetNetwork;
         request.output = target;
         request.localTime = frame_;
         request.samplingScale =

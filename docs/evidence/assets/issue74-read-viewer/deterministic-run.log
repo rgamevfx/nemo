@@ -1,0 +1,15 @@
+[==========] Running 8 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 8 tests from ReadViewerSurface
+[       OK ] ReadViewerSurface.PngSelectedInReadAppearsInItsAttachedViewer (1756 ms)
+[       OK ] ReadViewerSurface.GraphViewerUsesTheAttachedTargetsReferenceNotTheLegacySrcKey (847 ms)
+[       OK ] ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt (880 ms)
+[       OK ] ReadViewerSurface.ClearingTheReadShowsTheExplicitEmptyState (910 ms)
+[       OK ] ReadViewerSurface.OfflineReadReportsItsPathOnTheViewer (692 ms)
+[       OK ] ReadViewerSurface.DownstreamEffectKeepsItsSingleMediaSourcesDomain (691 ms)
+[       OK ] ReadViewerSurface.SeveralMediaSourcesKeepTheDefaultCompositionCanvas (801 ms)
+[       OK ] ReadViewerSurface.RetiredContinuousZoomStateStillFitsTheImage (1045 ms)
+[----------] 8 tests from ReadViewerSurface (7626 ms total)
+[----------] Global test environment tear-down
+[==========] 8 tests from 1 test suite ran. (7626 ms total)
+[  PASSED  ] 8 tests.

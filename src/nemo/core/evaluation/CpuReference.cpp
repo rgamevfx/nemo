@@ -7,10 +7,10 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <span>
 #include <sstream>
 #include <utility>
 
-#include "nemo/core/evaluation/NativeEffects.hpp"
 #include "nemo/core/evaluation/Params.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
 namespace nemo {
@@ -60,117 +60,6 @@ ImageIdentity identityOf(const CpuImage& image, Residency residency) {
     identity.layout = image.layout();
     identity.residency = residency;
     return identity;
-}
-
-// ---------------------------------------------------------------------------
-// Node implementations. Each fills the effective parameters it actually
-// consumed, so the plan records resolved state, not authored guesses.
-// ---------------------------------------------------------------------------
-
-void evalTestpattern(const NodeInstance& /*node*/, const EvaluationRequest& request,
-                     ParameterValues& /*effectiveParams*/, CpuImage& out) {
-    // Deterministic reference pattern: horizontal red gradient, vertical
-    // green gradient, and a blue bar whose position tracks local time. Any
-    // change here is an observable image change.
-    //
-    // Sample the full-resolution image domain, not the ROI's dimensions.
-    // Cropping and reduced sampling never re-normalize the generator.
-    const int scale = request.samplingScale;
-    const int width = out.width();
-    const int height = out.height();
-    const int fullX = request.region.x;
-    const int fullY = request.region.y;
-    const int fullWidth = request.imageWidth();
-    const int fullHeight = request.imageHeight();
-    const int barWidth = std::max(2, fullWidth / 16);
-    const int barPos = static_cast<int>((request.localTime * (fullWidth / 8)) % (fullWidth + barWidth));
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            const int fullPixelX = fullX + x * scale;
-            const int fullPixelY = fullY + y * scale;
-            const double u = fullWidth > 1 ? static_cast<double>(fullPixelX) / (fullWidth - 1) : 0.0;
-            const double v = fullHeight > 1 ? static_cast<double>(fullPixelY) / (fullHeight - 1) : 0.0;
-            const bool inBar = fullPixelX >= barPos && fullPixelX < barPos + barWidth;
-            out.setPixel(x, y, {static_cast<float>(u), static_cast<float>(v), inBar ? 1.0F : 0.0F, 1.0F});
-        }
-    }
-}
-
-void evalConstcolor(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest& /*request*/,
-                    ParameterValues& effectiveParams, CpuImage& out) {
-    const std::array<float, 4> color = effectiveColor4(catalog, node, effectiveParams, "color");
-    for (int y = 0; y < out.height(); ++y) {
-        for (int x = 0; x < out.width(); ++x) {
-            out.setPixel(x, y, color);
-        }
-    }
-}
-
-void evalOutput(const NodeInstance&, const EvaluationRequest&, ParameterValues&,
-                const std::vector<const CpuImage*>& inputs, CpuImage& out) {
-    for (int y = 0; y < out.height(); ++y) {
-        for (int x = 0; x < out.width(); ++x) {
-            out.setPixel(x, y, inputs[0]->pixel(x, y));
-        }
-    }
-}
-
-// Real source media (issue #11). The reference lives in the Document; the
-// pixels come from the provider. There is NO synthetic fallback: an
-// unresolved or unprovided source is an explicit evaluation error that
-// identifies the node.
-void evalSource(const Document& document, const NodeInstance& node, const EvaluationRequest& request,
-                ParameterValues& effectiveParams, CpuImage& out, SourceProvider* provider) {
-    // One resolution owns mapping, coverage and policy (issue #75): the node's
-    // own mapping replaces the shared reference's, never composes with it, so
-    // offset/step apply exactly once.
-    const EffectiveSourceRequest source = resolveSourceRequest(document, node, request.localTime);
-    const std::string& key = source.sourceKey;
-    effectiveParams["source"] = std::string(key);
-    effectiveParams["sourcePath"] = source.path;
-    effectiveParams["frame"] = source.sourceFrame;
-    if (source.policyError) {
-        // The resolver never throws for a policy decision; the executor raises
-        // the node-identifying error here, before any frame is opened, using the
-        // one core-owned diagnostic so every executor reports the same source
-        // relationship (before/after range vs a missing member file).
-        failNode(node, sourcePolicyProblem(source));
-    }
-    if (provider == nullptr) {
-        failNode(node, "source '" + key + "' (" + source.path +
-                           ") requires a decode provider; this "
-                           "executor cannot evaluate real media and never substitutes synthetic content");
-    }
-    CpuImage decoded;
-    try {
-        // Transparent black stays the provider's job: it owns the raster layout,
-        // pixel aspect and any retained-resource path, and the request carries
-        // the decision rather than the pixels.
-        decoded = provider->frame(document, source, request);
-    } catch (const EvaluationException&) {
-        throw;
-    } catch (const std::exception& error) {
-        failNode(node, "source provider failed for '" + key + "' at frame " + std::to_string(source.readFrame) + ": " +
-                           error.what());
-    }
-    const int expectedWidth = scaledDimension(request.region.width, request.samplingScale);
-    const int expectedHeight = scaledDimension(request.region.height, request.samplingScale);
-    if (decoded.width() != expectedWidth || decoded.height() != expectedHeight) {
-        failNode(node, "source '" + key + "' decoded raster " + std::to_string(decoded.width()) + "x" +
-                           std::to_string(decoded.height()) + " does not cover the requested raster " +
-                           std::to_string(expectedWidth) + "x" + std::to_string(expectedHeight) +
-                           " (full-resolution region at sampling scale " + std::to_string(request.samplingScale) + ")");
-    }
-    // Real source pixel aspect travels with the decoded frame so downstream
-    // coordinate math honors anamorphic media. A non-finite or non-positive
-    // value is a node error, never silently replaced by square pixels
-    // (mirrors the GPU source session's validation). Adopting the decoded
-    // layout by move keeps its pixel aspect and avoids a pixel copy.
-    const float pixelAspect = decoded.layout().pixelAspect;
-    if (!std::isfinite(pixelAspect) || pixelAspect <= 0.0F) {
-        failNode(node, "source '" + key + "' reports an invalid pixel aspect (" + std::to_string(pixelAspect) + ")");
-    }
-    out = std::move(decoded);
 }
 
 const NodeInstance* findNode(const Document& document, NetworkId networkId, NodeId id) {
@@ -567,8 +456,10 @@ std::vector<NodeId> resolveStepInputs(const Document& document, NetworkId networ
 }
 
 CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, ResultCache<CpuImage>* reuse,
-                          SourceProvider* sources) {
+                          SourceProvider* sources, std::shared_ptr<const NodeContributions> contributions) {
     validateRequest(document, request);
+    if (!contributions)
+        throw std::invalid_argument("evaluateCpu requires a node registration snapshot");
 
     const std::vector<ExpandedNode> order = expandDependencies(document, request.network, request.output);
     // Publication freshness (issue #9): capture revision + generation at
@@ -597,6 +488,33 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         step.effectiveParams = effectiveNode->params;
         EvaluationRequest scopedRequest = request;
         scopedRequest.network = expandedNode.id.network;
+        const NodeCatalog& scopedCatalog = document.network(scopedRequest.network).graph().catalog();
+
+        // Registration compatibility precedes every cache, alias and
+        // implementation decision: a node this registration does not cover, or
+        // one whose declared schema the registered implementation no longer
+        // matches, is reported before a cached result could be reused for it.
+        const NodeContribution* contribution = nullptr;
+        if (!expandedNode.alias) {
+            contribution = contributions->find(effectiveNode->type);
+            if (contribution == nullptr) {
+                if (scopedCatalog.find(effectiveNode->type) != nullptr) {
+                    failNode(*effectiveNode,
+                             "declared node type has no CPU reference implementation (executor unavailable)");
+                }
+                failNode(*effectiveNode, "unknown node type has no CPU reference implementation");
+            }
+            contributions->validate(scopedCatalog, *effectiveNode);
+            const bool producesPixels = contribution->role == NodeRole::Image || contribution->role == NodeRole::Source;
+            if (producesPixels && !contribution->cpu) {
+                // A GPU-only (or otherwise unavailable) contribution is honest
+                // about it: report the node and its reason instead of inventing
+                // a fallback image.
+                failNode(*effectiveNode, contribution->cpuUnavailableReason.empty()
+                                             ? "no CPU reference implementation is registered for this node type"
+                                             : contribution->cpuUnavailableReason);
+            }
+        }
 
         std::vector<std::uint64_t> inputKeyHashes;
         inputKeyHashes.reserve(expandedNode.inputs.size());
@@ -629,11 +547,13 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         // media color against, so a changed configuration can never serve a
         // result produced under the previous one (issue #75).
         KeyContext keyContext;
-        if (sources != nullptr && effectiveNode->type == "source")
+        if (sources != nullptr && contribution != nullptr && contribution->role == NodeRole::Source)
             keyContext.colorConfigIdentity = sources->colorConfigIdentity();
         const ResultKey key = nodeResultKey(document, *effectiveNode, inputKeyHashes, scopedRequest, keyContext);
         keys.emplace(expandedNode.id, key);
 
+        // The registration is retained by `contributions` for the whole call,
+        // so an in-flight evaluation never observes a replaced snapshot.
         std::shared_ptr<const CpuImage> image;
         if (reuse != nullptr) {
             if (const std::optional<ResultCache<CpuImage>::Entry> hit = reuse->find(key)) {
@@ -653,66 +573,44 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
             for (const EvaluationNodeId& producer : expandedNode.inputs)
                 inputs.push_back(producer.node == kInvalidNode ? nullptr : images.at(producer).get());
 
-            std::shared_ptr<CpuImage> fresh;
-            if (effectiveNode->type == "grade" || effectiveNode->type == "blur" || effectiveNode->type == "transform") {
-                if (inputs.empty() || inputs[0] == nullptr) {
-                    failNode(*effectiveNode, "native effect requires a connected main image input");
-                }
-                // Optional mask absent -> null; the effect owns coverage and
-                // never invents a white source. The effect allocates its own
-                // result raster, so no placeholder buffer is allocated here.
-                const CpuImage* maskImage = inputs.size() > 1 ? inputs[1] : nullptr;
-                fresh = std::make_shared<CpuImage>(
-                    evaluateNativeEffect(document.network(scopedRequest.network).graph().catalog(), *effectiveNode,
-                                         step.effectiveParams, scopedRequest, *inputs[0], maskImage));
-            } else if (effectiveNode->type == "merge") {
-                // Port roles are the declared schema, not a convention: A
-                // (index 0) is the background base and B (index 1) the
-                // foreground source. The optional mask is the third declared
-                // port (issue #75); an absent mask is a null raster, never a
-                // manufactured source, and the shared mask/mix blend owns the
-                // absent/None/invert/Mix cases.
-                if (inputs.size() < 2 || inputs[0] == nullptr || inputs[1] == nullptr) {
-                    failNode(*effectiveNode, "merge requires a connected A (background) and B (foreground) input");
-                }
-                const CpuImage* maskImage = inputs.size() > 2 ? inputs[2] : nullptr;
-                fresh = std::make_shared<CpuImage>(
-                    evaluateMerge(document.network(scopedRequest.network).graph().catalog(), *effectiveNode,
-                                  step.effectiveParams, *inputs[0], *inputs[1], maskImage));
-            } else if (effectiveNode->type == "source") {
-                // The provider returns the decoded raster with its validated
-                // pixel aspect; adopt it directly instead of pre-allocating a
-                // buffer that the move would immediately discard.
-                fresh = std::make_shared<CpuImage>();
-                evalSource(document, *effectiveNode, scopedRequest, step.effectiveParams, *fresh, sources);
-            } else {
+            if (contribution->role == NodeRole::Output) {
+                if (inputs.empty() || inputs[0] == nullptr)
+                    failNode(*effectiveNode, "output requires a connected color input");
                 ImageLayout layout;
                 layout.width = scaledDimension(scopedRequest.region.width, scopedRequest.samplingScale);
                 layout.height = scaledDimension(scopedRequest.region.height, scopedRequest.samplingScale);
-                // Raster metadata follows the main input so pixel aspect is
-                // preserved through pass-through nodes; a node with no inputs
-                // keeps the square-pixel default.
-                if (!inputs.empty() && inputs[0] != nullptr)
-                    layout.pixelAspect = inputs[0]->layout().pixelAspect;
-                fresh = std::make_shared<CpuImage>(layout);
-                if (effectiveNode->type == "testpattern") {
-                    evalTestpattern(*effectiveNode, scopedRequest, step.effectiveParams, *fresh);
-                } else if (effectiveNode->type == "constcolor") {
-                    evalConstcolor(document.network(scopedRequest.network).graph().catalog(), *effectiveNode,
-                                   scopedRequest, step.effectiveParams, *fresh);
-                } else if (effectiveNode->type == "output") {
-                    evalOutput(*effectiveNode, scopedRequest, step.effectiveParams, inputs, *fresh);
-                } else if (document.network(scopedRequest.network).graph().descriptor(effectiveNode->type) != nullptr) {
-                    failNode(*effectiveNode,
-                             "declared node type has no CPU reference implementation (executor unavailable)");
+                layout.pixelAspect = inputs[0]->layout().pixelAspect;
+                if (inputs[0]->layout() == layout) {
+                    image = images.at(expandedNode.inputs[0]);
+                    step.produced = identities.at(expandedNode.inputs[0]);
                 } else {
-                    failNode(*effectiveNode, "unknown node type has no CPU reference implementation");
+                    // Preserve the existing Output interpretation contract;
+                    // do not relabel a shared upstream/cache image in place.
+                    auto fresh = std::make_shared<CpuImage>(layout);
+                    for (int y = 0; y < layout.height; ++y)
+                        for (int x = 0; x < layout.width; ++x)
+                            fresh->setPixel(x, y, inputs[0]->pixel(x, y));
+                    step.produced = identityOf(*fresh, Residency::HostCpuReference);
+                    image = std::move(fresh);
                 }
+            } else if (contribution->role == NodeRole::Viewer) {
+                // Unreachable through a valid request (the viewer is not a
+                // network output), but never silently rendered: a Viewer has no
+                // pixel implementation.
+                failNode(*effectiveNode, contribution->cpuUnavailableReason.empty()
+                                             ? "the Viewer role has no CPU pixel implementation"
+                                             : contribution->cpuUnavailableReason);
+            } else {
+                const std::span<const CpuImage* const> contextInputs(inputs.data(), inputs.size());
+                const CpuNodeContext context{document,      scopedCatalog,        *effectiveNode,
+                                             scopedRequest, step.effectiveParams, contextInputs,
+                                             sources};
+                auto fresh = std::make_shared<CpuImage>(contribution->cpu->execute(context));
+                step.produced = identityOf(*fresh, Residency::HostCpuReference);
+                image = std::move(fresh);
             }
-            step.produced = identityOf(*fresh, Residency::HostCpuReference);
-            image = fresh;
             if (reuse != nullptr)
-                reuse->publish(document, ticket, key, fresh, step.produced);
+                reuse->publish(document, ticket, key, image, step.produced);
         }
 
         identities.emplace(expandedNode.id, step.produced);

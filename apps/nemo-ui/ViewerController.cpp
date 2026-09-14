@@ -866,7 +866,8 @@ struct ParameterKeyState {
         }
         nemo::ParameterValues parameters = local.params;
         nemo::applyAnimationParameters(document, address.network, address.node, address.instance, frame, parameters);
-        if (const auto problem = nemo::validateEffectParameters(definition.graph().catalog(), local, parameters))
+        if (const auto problem =
+                nemo::builtinNodeContributions()->validateParameters(definition.graph().catalog(), local, parameters))
             return QString::fromStdString(*problem);
         // A Read's cross-field constraints (a Custom range must be ordered, a
         // non-default Step must be nonzero, choice/hint combinations) are owned

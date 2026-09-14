@@ -29,7 +29,8 @@ std::shared_ptr<const NodeCatalog> typedCatalog() {
     maskSink.type = "fixture.maskSink";
     maskSink.displayName = "Mask Sink";
     maskSink.inputs = {{PortKind::Mask, "mask"}};
-    return std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{pass, mask, maskSink});
+    return std::make_shared<const NodeCatalog>(
+        extendedBuiltinSchema(std::vector<NodeDescriptor>{pass, mask, maskSink}));
 }
 
 }  // namespace

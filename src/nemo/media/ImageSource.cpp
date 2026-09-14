@@ -362,7 +362,7 @@ CpuImage ImageSourceProvider::frame(const Document& document, const EffectiveSou
     layout.color = decoded.info.color;
     CpuImage out(layout);
 
-    // Source-fill contract, identical to src/nemo/gpu/shaders/source.slang:
+    // Source-fill contract, identical to src/nemo/nodes/source/source.slang:
     // raster pixel (x,y) reads the source pixel nearest full-resolution
     // coordinate (region.x + x*scale, region.y + y*scale) by the fill ratio.
     const std::int64_t fullWidth = std::max(request.imageWidth(), 1);

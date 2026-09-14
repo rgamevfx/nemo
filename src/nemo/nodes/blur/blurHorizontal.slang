@@ -1,13 +1,19 @@
-// Nemo native effect contract (spec section 10.4, issue #34)
+// Nemo native effect contract (spec section 10.4, issue #34; contribution-local
+// module per issue #83)
 // ---------------------------------------------------------
-// name: blurHorizontal (internal pass 1 of the `blur` effect)
+// name: blurHorizontal (internal pass 1 of the `blur` node)
 // version: 1
 // ports:
 //   - in_main : image2D input (main image, required port 0)
-//   - out_color : image2D output (intermediate of the separable filter)
-// bindings: shared effect contract (see testpattern.slang); set 1 binding 0
-//   = main image. This pass does NOT apply the mask/mix — that happens once,
-//   after the second (vertical) pass.
+//   - out_color : image2D output (scratch of the separable filter)
+// bindings (native binding contract v2, see testpattern.slang):
+//   set 0, binding 0 : common request uniforms
+//   set 0, binding 1 : node-local payload ("nemo.nodes.blur.payload.v1")
+//   set 1, binding 0 = main image
+//   set 2, binding 0 : scratch image2D
+//   set 3, binding 0 : normalized Gaussian weights (index i + raster support)
+//   This pass does NOT apply the mask/mix — that happens once, after the
+//   second (vertical) pass.
 // dependencies:
 //   region: output pixel (x, y) depends on the horizontal neighborhood
 //     [x - ceil(size/scale), x + ceil(size/scale)] — fixed support, no
@@ -34,24 +40,15 @@ cbuffer EffectUniforms {
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
-    float4 param0;
-    float4 param1;
-    // issue #34 native effects: append-only extension shared by EVERY effect
-    // kernel (existing offsets unchanged, so preexisting kernels stay
-    // ABI-aligned with the C++ EffectUniforms mirror).
-    float4 mask;             // (maskChannel, invertMask, mix, maskPresent)
-    float4 gradeBlackpoint;
-    float4 gradeWhitepoint;
-    float4 gradeLift;
-    float4 gradeGain;
-    float4 gradeMultiply;
-    float4 gradeOffset;
-    float4 gradeGamma;
-    float4 gradeFlags;       // (channels bitmask, reverse, clampBlack, clampWhite)
-    float4 blur;             // (size full-res, channels bitmask, 0, 0)
-    float4 transform;        // (translateX, translateY, scale, rotate degrees)
-    float4 transformFlags;   // (filter, pixelAspect, cos, sin)
-}
+};
+
+[[vk::binding(1, 0)]]
+cbuffer BlurPayload {
+    // (maskChannel, invertMask, mix, maskPresent)
+    float4 mask;
+    // (size full-res, channels bitmask, raster support, 0)
+    float4 blur;
+};
 
 [[vk::binding(0, 1)]]
 RWTexture2D<float4> in_main;

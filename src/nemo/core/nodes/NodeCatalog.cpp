@@ -1,6 +1,6 @@
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
-#include "nemo/core/evaluation/SourceRequest.hpp"
+#include "nemo/core/evaluation/NodeContributions.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -314,454 +314,45 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
     }
 }
 
-NodeCapabilities allBuiltinCapabilities(bool temporal = false) {
-    return NodeCapabilities{.samplingScales = {1, 2, 4},
-                            .qualityModes = {Quality::Full},
-                            .channels = {"RGBA"},
-                            .supportsRegion = true,
-                            .temporal = temporal};
-}
-
-NodeDescriptor constColorDescriptor() {
-    return NodeDescriptor{.type = "constcolor",
-                          .displayName = "Constant Color",
-                          .group = "Generators",
-                          .implementationVersion = 1,
-                          .inputs = {},
-                          .outputs = {{PortKind::Image, "color"}},
-                          .parameters = {{.name = "color",
-                                          .type = ParameterType::Color,
-                                          .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
-                                          .label = "Color",
-                                          .section = "Color",
-                                          .editor = {}}},
-                          .capabilities = allBuiltinCapabilities()};
-}
-
-NodeDescriptor mergeDescriptor() {
-    return NodeDescriptor{
-        .type = "merge",
-        .displayName = "Merge",
-        .group = "Compositing",
-        .implementationVersion = 2,
-        .inputs = {{PortKind::Image, "A", false}, {PortKind::Image, "B", false}, {PortKind::Mask, "mask", true}},
-        .outputs = {{PortKind::Image, "out"}},
-        .parameters = {{.name = "operation",
-                        .type = ParameterType::Choice,
-                        .defaultValue = ParameterValue{ChoiceValue{"over"}},
-                        .choices = {"over", "plus", "multiply", "screen", "difference"},
-                        .label = "Operation",
-                        .section = "Composite",
-                        .editor = "nemo.merge.operation"},
-                       {.name = "mix",
-                        .type = ParameterType::Float,
-                        .defaultValue = ParameterValue{1.0},
-                        .minimum = 0.0,
-                        .maximum = 1.0,
-                        .label = "Mix",
-                        .section = "Composite",
-                        .editor = {}},
-                       {.name = "maskChannel",
-                        .type = ParameterType::Choice,
-                        .defaultValue = ParameterValue{ChoiceValue{"A"}},
-                        .choices = {"none", "R", "G", "B", "A"},
-                        .label = "Mask Channel",
-                        .section = "Mask",
-                        .editor = {}},
-                       {.name = "invertMask",
-                        .type = ParameterType::Boolean,
-                        .defaultValue = ParameterValue{false},
-                        .label = "Invert Mask",
-                        .section = "Mask",
-                        .editor = {}}},
-        .capabilities = allBuiltinCapabilities()};
-}
-
-NodeDescriptor outputDescriptor() {
-    return NodeDescriptor{.type = "output",
-                          .displayName = "Output",
-                          .group = "I/O",
-                          .isOutput = true,
-                          .implementationVersion = 1,
-                          .inputs = {{PortKind::Image, "color"}},
-                          .outputs = {},
-                          .parameters = {},
-                          .capabilities = allBuiltinCapabilities()};
-}
-
-NodeDescriptor viewerDescriptor() {
-    return NodeDescriptor{.type = "viewer",
-                          .displayName = "Viewer",
-                          .group = "I/O",
-                          .isOutput = false,
-                          .implementationVersion = 1,
-                          .inputs = {{PortKind::Image, "color"}},
-                          .outputs = {},
-                          .parameters = {},
-                          .capabilities = allBuiltinCapabilities()};
-}
-
-NodeDescriptor sourceDescriptor() {
-    // Node-scoped Read settings. Names/defaults are the resolver's frozen
-    // semantic owner (evaluation/SourceRequest.hpp): the catalog declares the
-    // same keys so authoring/validation/presentation cannot drift from the one
-    // effective-request owner.
-    const auto choice = [](std::string_view name, std::string_view label, std::string_view section, std::string value,
-                           std::vector<std::string> choices) {
-        return ParameterSpec{.name = std::string{name},
-                             .type = ParameterType::Choice,
-                             .defaultValue = ParameterValue{ChoiceValue{std::string{value}}},
-                             .choices = std::move(choices),
-                             .label = std::string{label},
-                             .section = std::string{section},
-                             .editor = {}};
-    };
-    const auto integer = [](std::string_view name, std::string_view label, std::string_view section, std::int64_t value,
-                            bool nonzero = false) {
-        return ParameterSpec{.name = std::string{name},
-                             .type = ParameterType::Integer,
-                             .defaultValue = ParameterValue{value},
-                             .label = std::string{label},
-                             .section = std::string{section},
-                             .editor = {},
-                             .nonzero = nonzero};
-    };
-    return NodeDescriptor{
-        .type = "source",
-        .displayName = "Read",
-        .group = "I/O",
-        .implementationVersion = 2,
-        .inputs = {},
-        .outputs = {{PortKind::Image, "color"}},
-        .parameters =
-            {{.name = "source",
-              .type = ParameterType::String,
-              .defaultValue = ParameterValue{std::string{}},
-              .label = "File",
-              .section = "Source",
-              .editor = "nemo.read.source"},
-             choice(kReadParamRangeMode, "Range Mode", "Timing", "auto", {"auto", "custom"}),
-             integer(kReadParamRangeFirst, "First Frame", "Timing", 0),
-             integer(kReadParamRangeLast, "Last Frame", "Timing", 0),
-             integer(kReadParamFrameOffset, "Offset", "Timing", 0),
-             // Step is a nonzero signed integer; the catalog's
-             // nonzero constraint is the generic-edit validator, and
-             // no bounds are declared so a typed value is never
-             // clamped.
-             integer(kReadParamFrameStep, "Step", "Timing", 1, /*nonzero=*/true),
-             choice(kReadParamBeforePolicy, "Before", "Policies", "error", {"error", "hold", "black"}),
-             choice(kReadParamAfterPolicy, "After", "Policies", "error", {"error", "hold", "black"}),
-             choice(kReadParamMissingPolicy, "Missing Frames", "Policies", "error", {"error", "black"}),
-             choice(kReadParamInputTransform, "Input Transform", "Color", "auto", {"auto", "explicit", "raw"}),
-             {.name = std::string{kReadParamInputColorSpace},
-              .type = ParameterType::String,
-              .defaultValue = ParameterValue{std::string{}},
-              .label = "Input Color Space",
-              .section = "Color",
-              .editor = {}},
-             choice(kReadParamAlphaMode, "Alpha Mode", "Color", "auto", {"auto", "straight", "premultiplied"}),
-             choice(kReadParamSourceTransfer, "Transfer", "Encoding Hints", "auto",
-                    {"auto", "bt709", "srgb", "gamma22", "gamma28", "linear"}),
-             choice(kReadParamSourcePrimaries, "Primaries", "Encoding Hints", "auto", {"auto", "bt709"}),
-             choice(kReadParamSourceMatrix, "Matrix", "Encoding Hints", "auto", {"auto", "bt709", "bt601"}),
-             choice(kReadParamSourceRange, "Range", "Encoding Hints", "auto", {"auto", "limited", "full"}),
-             choice(kReadParamSourceChromaLocation, "Chroma Location", "Encoding Hints", "auto", {"auto", "left"})},
-        .capabilities = allBuiltinCapabilities(true)};
-}
-
-NodeDescriptor testPatternDescriptor() {
-    return NodeDescriptor{.type = "testpattern",
-                          .displayName = "Test Pattern",
-                          .group = "Generators",
-                          .implementationVersion = 2,
-                          .inputs = {},
-                          .outputs = {{PortKind::Image, "color"}},
-                          .parameters = {},
-                          .capabilities = allBuiltinCapabilities(true)};
-}
-
-// Every native effect shares the same optional-mask contract: a required
-// image at input 0 and an optional mask at input 1, plus the mask controls
-// below. The pixel math lives in the executor; only the schema is shared.
-std::vector<PortSpec> effectInputs() {
-    return {{PortKind::Image, "image", false}, {PortKind::Mask, "mask", true}};
-}
-
-std::vector<ParameterSpec> maskParameterSpecs() {
-    return {
-        {.name = "maskChannel",
-         .type = ParameterType::Choice,
-         .defaultValue = ParameterValue{ChoiceValue{"A"}},
-         .choices = {"none", "R", "G", "B", "A"},
-         .label = "Mask Channel",
-         .section = "Mask",
-         .editor = {}},
-        {.name = "invertMask",
-         .type = ParameterType::Boolean,
-         .defaultValue = ParameterValue{false},
-         .label = "Invert Mask",
-         .section = "Mask",
-         .editor = {}},
-    };
-}
-
-// Mix is an ordinary effect control, not a mask control: it must stay reachable
-// and usable with no mask connected (stories 38 and 71). Each effect appends it
-// to its primary list and the shared mask specs stay the only "Mask" section
-// members.
-ParameterSpec mixParameterSpec(std::string section) {
-    return {.name = "mix",
-            .type = ParameterType::Float,
-            .defaultValue = ParameterValue{1.0},
-            .minimum = 0.0,
-            .maximum = 1.0,
-            .label = "Mix",
-            .section = std::move(section),
-            .editor = {}};
-}
-
-std::vector<ParameterSpec> withMaskParameters(std::vector<ParameterSpec> specific) {
-    auto mask = maskParameterSpecs();
-    specific.reserve(specific.size() + mask.size());
-    for (auto& parameter : mask)
-        specific.push_back(std::move(parameter));
-    return specific;
-}
-
-// Whole-image effects reject region requests through the existing capability
-// validation; their spatial parameters stay full-resolution.
-NodeCapabilities wholeImageCapabilities() {
-    NodeCapabilities capabilities = allBuiltinCapabilities();
-    capabilities.supportsRegion = false;
-    return capabilities;
-}
-
-NodeDescriptor gradeDescriptor() {
-    const auto channelEditor = std::string{"nemo.channels.rgb"};
-    const ChannelHint additive{ChannelLink::Additive, true};
-    const ChannelHint multiplicative{ChannelLink::Multiplicative, true};
-    return NodeDescriptor{.type = "grade",
-                          .displayName = "Grade",
-                          .group = "Color",
-                          .implementationVersion = 1,
-                          .inputs = effectInputs(),
-                          .outputs = {{PortKind::Image, "out"}},
-                          .parameters = withMaskParameters({
-                              {.name = "lift",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
-                               .label = "Lift",
-                               .section = "Primary",
-                               .editor = channelEditor,
-                               .softMinimum = -1.0,
-                               .softMaximum = 1.0,
-                               .channels = additive},
-                              {.name = "gain",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
-                               .label = "Gain",
-                               .section = "Primary",
-                               .editor = channelEditor,
-                               .softMinimum = 0.0,
-                               .softMaximum = 2.0,
-                               .channels = multiplicative},
-                              {.name = "multiply",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
-                               .label = "Multiply",
-                               .section = "Primary",
-                               .editor = channelEditor,
-                               .softMinimum = 0.0,
-                               .softMaximum = 2.0,
-                               .channels = multiplicative},
-                              {.name = "offset",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
-                               .label = "Offset",
-                               .section = "Primary",
-                               .editor = channelEditor,
-                               .softMinimum = -1.0,
-                               .softMaximum = 1.0,
-                               .channels = additive},
-                              {.name = "gamma",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
-                               .label = "Gamma",
-                               .section = "Primary",
-                               .editor = channelEditor,
-                               .softMinimum = 0.01,
-                               .softMaximum = 4.0,
-                               .channels = multiplicative},
-                              mixParameterSpec("Primary"),
-                              {.name = "blackpoint",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
-                               .label = "Blackpoint",
-                               .section = "Range",
-                               .editor = channelEditor,
-                               .softMinimum = 0.0,
-                               .softMaximum = 1.0,
-                               .channels = additive},
-                              {.name = "whitepoint",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
-                               .label = "Whitepoint",
-                               .section = "Range",
-                               .editor = channelEditor,
-                               .softMinimum = 0.0,
-                               .softMaximum = 2.0,
-                               .channels = additive},
-                              {.name = "channels",
-                               .type = ParameterType::Choice,
-                               .defaultValue = ParameterValue{ChoiceValue{"RGB"}},
-                               .choices = {"RGB", "RGBA", "R", "G", "B", "Alpha", "None"},
-                               .label = "Channels",
-                               .section = "Options",
-                               .editor = {}},
-                              {.name = "reverse",
-                               .type = ParameterType::Boolean,
-                               .defaultValue = ParameterValue{false},
-                               .label = "Reverse",
-                               .section = "Options",
-                               .editor = {}},
-                              {.name = "clampBlack",
-                               .type = ParameterType::Boolean,
-                               .defaultValue = ParameterValue{true},
-                               .label = "Clamp Black",
-                               .section = "Options",
-                               .editor = {}},
-                              {.name = "clampWhite",
-                               .type = ParameterType::Boolean,
-                               .defaultValue = ParameterValue{false},
-                               .label = "Clamp White",
-                               .section = "Options",
-                               .editor = {}},
-                          }),
-                          .capabilities = allBuiltinCapabilities()};
-}
-
-NodeDescriptor blurDescriptor() {
-    return NodeDescriptor{.type = "blur",
-                          .displayName = "Blur",
-                          .group = "Blur",
-                          .implementationVersion = 1,
-                          .inputs = effectInputs(),
-                          .outputs = {{PortKind::Image, "out"}},
-                          .parameters = withMaskParameters({
-                              {.name = "size",
-                               .type = ParameterType::Float,
-                               .defaultValue = ParameterValue{0.0},
-                               .minimum = 0.0,
-                               .maximum = 100.0,
-                               .step = 0.1,
-                               .label = "Size",
-                               .section = "Blur",
-                               .editor = {}},
-                              {.name = "channels",
-                               .type = ParameterType::Choice,
-                               .defaultValue = ParameterValue{ChoiceValue{"RGBA"}},
-                               .choices = {"RGBA", "RGB", "Alpha"},
-                               .label = "Channels",
-                               .section = "Blur",
-                               .editor = {}},
-                              mixParameterSpec("Blur"),
-                          }),
-                          .capabilities = wholeImageCapabilities()};
-}
-
-NodeDescriptor transformDescriptor() {
-    return NodeDescriptor{.type = "transform",
-                          .displayName = "Transform",
-                          .group = "Transform",
-                          .implementationVersion = 1,
-                          .inputs = effectInputs(),
-                          .outputs = {{PortKind::Image, "out"}},
-                          .parameters = withMaskParameters({
-                              {.name = "translateX",
-                               .type = ParameterType::Float,
-                               .defaultValue = ParameterValue{0.0},
-                               .step = 1.0,
-                               .label = "X",
-                               .section = "Transform",
-                               .editor = {},
-                               .softMinimum = -200.0,
-                               .softMaximum = 200.0,
-                               .row = "Translate"},
-                              {.name = "translateY",
-                               .type = ParameterType::Float,
-                               .defaultValue = ParameterValue{0.0},
-                               .step = 1.0,
-                               .label = "Y",
-                               .section = "Transform",
-                               .editor = {},
-                               .softMinimum = -200.0,
-                               .softMaximum = 200.0,
-                               .row = "Translate"},
-                              {.name = "scale",
-                               .type = ParameterType::Float,
-                               .defaultValue = ParameterValue{1.0},
-                               .minimum = 0.0,
-                               .step = 0.001,
-                               .label = "Scale",
-                               .section = "Transform",
-                               .editor = {},
-                               .softMinimum = 0.1,
-                               .softMaximum = 3.0,
-                               .nonzero = true},
-                              {.name = "rotate",
-                               .type = ParameterType::Float,
-                               .defaultValue = ParameterValue{0.0},
-                               .step = 0.1,
-                               .label = "Rotate",
-                               .section = "Transform",
-                               .editor = {},
-                               .softMinimum = -180.0,
-                               .softMaximum = 180.0},
-                              mixParameterSpec("Transform"),
-                              {.name = "filter",
-                               .type = ParameterType::Choice,
-                               .defaultValue = ParameterValue{ChoiceValue{"Cubic"}},
-                               .choices = {"Cubic", "Linear", "Nearest"},
-                               .label = "Filter",
-                               .section = "Sampling",
-                               .editor = {}},
-                          }),
-                          .capabilities = wholeImageCapabilities()};
+// The authoritative built-in inventory: the schema projection of the single
+// explicit contribution list. Nothing else assembles built-in descriptors.
+[[nodiscard]] std::vector<NodeDescriptor> builtinDescriptorInventory() {
+    const auto& descriptors = builtinNodeCatalogPtr()->descriptors();
+    return std::vector<NodeDescriptor>(descriptors.begin(), descriptors.end());
 }
 
 }  // namespace
-NodeCatalog::NodeCatalog() {
-    const auto append = [this](NodeDescriptor descriptor) {
+
+NodeCatalog::NodeCatalog() : NodeCatalog(builtinDescriptorInventory()) {}
+
+NodeCatalog::NodeCatalog(std::vector<NodeDescriptor> descriptors) {
+    for (auto& descriptor : descriptors) {
+        // An unnamed display label falls back to the persistent identity; it is
+        // presentation only and never participates in identity.
+        if (descriptor.displayName.empty())
+            descriptor.displayName = descriptor.type;
         validateDescriptor(descriptor);
         if (find(descriptor.type) != nullptr)
             throw std::invalid_argument("duplicate node descriptor type '" + descriptor.type + "'");
         descriptors_.push_back(std::move(descriptor));
-    };
-    append(blurDescriptor());
-    append(constColorDescriptor());
-    append(gradeDescriptor());
-    append(mergeDescriptor());
-    append(outputDescriptor());
-    append(sourceDescriptor());
-    append(testPatternDescriptor());
-    append(transformDescriptor());
-    append(viewerDescriptor());
-}
-
-NodeCatalog::NodeCatalog(std::vector<NodeDescriptor> extensions) : NodeCatalog() {
-    for (auto& extension : extensions) {
-        if (extension.displayName.empty())
-            extension.displayName = extension.type;
-        validateDescriptor(extension);
-        if (find(extension.type) != nullptr)
-            throw std::invalid_argument("duplicate node descriptor type '" + extension.type + "'");
-        descriptors_.push_back(std::move(extension));
     }
 }
 
+std::vector<NodeDescriptor> extendedBuiltinSchema(std::vector<NodeDescriptor> extensions) {
+    const auto& builtins = builtinNodeCatalog().descriptors();
+    std::vector<NodeDescriptor> inventory;
+    inventory.reserve(builtins.size() + extensions.size());
+    inventory.insert(inventory.end(), builtins.begin(), builtins.end());
+    for (NodeDescriptor& extension : extensions)
+        inventory.push_back(std::move(extension));
+    return inventory;
+}
+
 std::shared_ptr<const NodeCatalog> builtinNodeCatalogPtr() {
-    static const auto catalog = std::make_shared<const NodeCatalog>();
-    return catalog;
+    // The authoritative built-in inventory is the contribution projection: the
+    // schema catalog is derived from the single explicit node list, so there is
+    // no second runtime inventory and no construction recursion.
+    return builtinNodeContributions()->catalog();
 }
 
 const NodeCatalog& builtinNodeCatalog() {

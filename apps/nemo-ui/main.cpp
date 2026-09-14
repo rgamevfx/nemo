@@ -8,6 +8,7 @@
 #include "ViewerControllerRegistry.hpp"
 #include "ViewerRuntime.hpp"
 #include "WorkspaceController.hpp"
+#include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 #include "nemo/media/MediaImportService.hpp"
 #include "nemo/media/ViewingTransform.hpp"
@@ -256,33 +257,21 @@ int main(int argc, char* argv[]) {
         engine.rootContext()->setContextProperty(QStringLiteral("parameterEditors"), &parameterEditors);
         engine.rootContext()->setContextProperty(QStringLiteral("readSourceController"), &readSource);
         engine.rootContext()->setContextProperty(QStringLiteral("mediaLibrary"), &mediaLibrary);
-        // The Read node's node-local file control is a registered namespaced
-        // editor, selected from catalog `editor` metadata; the inspector host
-        // owns its placement.
-        // The Read control is one aggregate editor: it declares the node
-        // parameters it owns so the inspector renders exactly one control per
-        // setting instead of duplicating the generic rows.
-        parameterEditors.registerEditor(
-            QStringLiteral("nemo.read.source"), QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/ReadSourceEditor.qml")),
-            {QStringLiteral("source"), QStringLiteral("rangeMode"), QStringLiteral("rangeFirst"),
-             QStringLiteral("rangeLast"), QStringLiteral("frameOffset"), QStringLiteral("frameStep"),
-             QStringLiteral("beforePolicy"), QStringLiteral("afterPolicy"), QStringLiteral("missingPolicy"),
-             QStringLiteral("inputTransform"), QStringLiteral("inputColorSpace"), QStringLiteral("alphaMode"),
-             // The encoded-interpretation hints are rendered inside the
-             // editor's collapsed advanced group, so the section they would
-             // otherwise fill disappears through the generic all-consumed rule.
-             QStringLiteral("sourceTransfer"), QStringLiteral("sourcePrimaries"), QStringLiteral("sourceMatrix"),
-             QStringLiteral("sourceRange"), QStringLiteral("sourceChromaLocation")},
-            // The Read control is an aggregate: it presents the file, summary,
-            // timing and color groups itself, so the host gives it the full row.
-            QStringLiteral("section"));
-        // The shared linked-RGB editor and the Merge operation/swap editor are
-        // registered namespaced editors selected from catalog `editor`
-        // metadata; the inspector host owns their placement.
-        parameterEditors.registerEditor(QStringLiteral("nemo.channels.rgb"),
-                                        QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/ChannelEditor.qml")));
-        parameterEditors.registerEditor(QStringLiteral("nemo.merge.operation"),
-                                        QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/MergeOperationEditor.qml")));
+        // The same contribution list supplies schema, execution and optional
+        // editor metadata. The existing presentation host still owns controls,
+        // consumed rows, unavailable-editor fallback and their lifetimes.
+        const auto contributions = nemo::builtinNodeContributions();
+        for (const auto& contribution : contributions->entries()) {
+            for (const auto& editor : contribution.editors) {
+                QStringList consumes;
+                for (const auto& key : editor.consumes)
+                    consumes.push_back(QString::fromStdString(key));
+                if (!parameterEditors.registerEditor(QString::fromStdString(editor.id),
+                                                     QUrl(QString::fromStdString(editor.source)), consumes,
+                                                     QString::fromStdString(editor.presentation)))
+                    std::cerr << "nemo-ui: unavailable parameter editor '" << editor.id << "'\n";
+            }
+        }
         // Wayland Vulkan renders our QML chrome, not Qt's client decorations.
         // Set the window policy before creation so input and pixels share an origin.
         engine.setInitialProperties(

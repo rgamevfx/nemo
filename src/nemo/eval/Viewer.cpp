@@ -47,7 +47,7 @@ ViewerSession::ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::
     : instance_(instance), device_(device), allocator_(allocator), ocioConfigPath_(std::move(ocioConfigPath)),
       replayShader_(shaderDirectory / "mediaConvert.spv"),
       sources_(instance, device, allocator, replayShader_, ocioConfigPath_),
-      effects_(loadSlangEffectLibrary(shaderDirectory, shaderDirectory)), reuse_(16) {}
+      effects_(loadSlangEffectLibrary(shaderDirectory)), reuse_(16) {}
 
 ViewerSession::~ViewerSession() = default;
 

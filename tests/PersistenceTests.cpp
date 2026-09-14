@@ -290,7 +290,7 @@ TEST(PersistenceTest, ActiveCatalogRestoresContributedPortValidation) {
     descriptor.capabilities.samplingScales = {1};
     descriptor.capabilities.qualityModes = {Quality::Full};
     descriptor.capabilities.channels = {"RGBA"};
-    auto catalog = std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{descriptor});
+    auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{descriptor}));
     Document original(catalog);
     auto& network = root(original);
     const auto source = network.graph().addNode(descriptor.type, "fixture");
@@ -368,7 +368,7 @@ TEST(PersistenceTest, LayoutInterfacesInstancesAndWatermarksRoundTrip) {
     mask.type = "mask.source";
     mask.displayName = "Mask";
     mask.outputs = {{PortKind::Mask, "mask"}};
-    const auto catalog = std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{mask});
+    const auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{mask}));
     Document original(catalog);
     auto& rootNetwork = root(original);
     const auto rootSource = rootNetwork.graph().addNode("mask.source", "parent-mask");
@@ -832,7 +832,8 @@ TEST(PersistenceTest, UnavailableNodeAnimationIsRetainedAndRecoversWithCatalog) 
     gain.type = ParameterType::Float;
     gain.defaultValue = 1.0;
     descriptor.parameters.push_back(gain);
-    const auto catalog = std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{descriptor});
+    const auto catalog =
+        std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{descriptor}));
     const auto recovered = loadDocument(retained, catalog);
     const auto* channel = recovered.document.animationChannel(ParameterAddress{rootId, 5, "gain"});
     ASSERT_NE(channel, nullptr);

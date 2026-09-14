@@ -31,7 +31,6 @@
 #include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
-#include "nemo/eval/EffectShaders.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Compile.hpp"
@@ -324,9 +323,25 @@ TEST(Effect, SlangAndGlslEffectsAgree) {
 namespace {
 
 [[nodiscard]] eval::EffectLibrary glslLibraryWithMerge(const char* mergeBody) {
-    eval::EffectLibrary library = eval::glslEffectLibrary();
-    library["merge"] = eval::EffectProgram{{}, std::string(eval::kGlslPreamble) + mergeBody, "test-only merge GLSL"};
-    return library;
+    auto contributions = eval::builtinGpuContributions();
+    const auto merge = std::find_if(contributions.begin(), contributions.end(),
+                                    [](const auto& entry) { return entry.node.descriptor.type == "merge"; });
+    // Independent deliberately wrong pixels still use the public declaration
+    // seam, before the immutable snapshot is assembled.
+    merge->gpu->passes[0].glsl = std::string(R"GLSL(
+#version 450
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(std140, set = 0, binding = 0) uniform Request {
+    uvec4 meta;
+    uvec4 meta2;
+    vec4 misc;
+};
+layout(std140, set = 0, binding = 1) uniform MergePayload {
+    vec4 mask;
+    vec4 op;
+};
+)GLSL") + mergeBody;
+    return eval::EffectLibrary(std::move(contributions), eval::EffectBackend::Glsl);
 }
 
 constexpr const char* kSwappedPortsMerge = R"GLSL(
@@ -434,7 +449,7 @@ void main() {
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
     vec4 bg = imageLoad(in_b, ivec2(p));  // WRONG: A/B roles exchanged
     vec4 fg = imageLoad(in_a, ivec2(p));
-    int operation = int(param0.x);
+    int operation = int(op.x);
     vec4 composite;
     if (operation == 0) {
         composite.xyz = fg.a * fg.xyz + (1.0 - fg.a) * bg.xyz;
@@ -686,11 +701,7 @@ void main() {
     } catch (const EvaluationException& error) {
         threw = true;
         const std::string message = error.what();
-        // The offending node...
-        EXPECT_NE(message.find("'over'"), std::string::npos) << message;
-        EXPECT_TRUE(error.hasNode());
-        // ...the effect...
-        EXPECT_NE(message.find("effect 'merge'"), std::string::npos) << message;
+        EXPECT_EQ(error.node, rootGraph(composition.doc).nodeByName("over")->id);
         // ...and the glslang source location (ERROR: 0:<line> marker in the
         // log) naming the bad identifier.
         EXPECT_NE(message.find("ERROR"), std::string::npos) << message;
@@ -703,35 +714,33 @@ void main() {
 }
 
 TEST(Effect, MissingSlangKernelFailsWithoutSubstitution) {
-    // Library-level: a missing kernel names the effect and path.
-    const std::filesystem::path emptyDir =
-        std::filesystem::temp_directory_path() / ("nemo-empty-spv-" + std::to_string(::getpid()));
-    std::filesystem::create_directories(emptyDir);
-    try {
-        (void)eval::loadSlangEffectLibrary(emptyDir);
-        ADD_FAILURE() << "expected GpuException for missing kernels";
-    } catch (const gpu::GpuException& error) {
-        const std::string message = error.what();
-        EXPECT_NE(message.find("effect 'testpattern'"), std::string::npos) << message;
-        EXPECT_NE(message.find(emptyDir.string()), std::string::npos) << message;
-    }
-
-    // Executor-level: a library missing 'merge' names the node and does not
-    // substitute another implementation.
-    const Bootstrap boot = createBootstrap();
-    NEMO_SKIP_OR_FAIL(boot);
-
+    const auto missingDir = slangSpvDir() / "uninstalled-node-kernels";
+    const auto unavailable = eval::loadSlangEffectLibrary(missingDir);
     const Composition composition = makeComposition();
     const EvaluationRequest request = requestFor(composition.doc, {0, 0, 16, 16}, 0);
-    eval::EffectLibrary partial = eval::glslEffectLibrary();
-    partial.erase("merge");
     try {
-        (void)evaluateGpu(composition.doc, request, partial, *boot.device, *boot.allocator);
-        ADD_FAILURE() << "expected EvaluationException for missing effect package";
+        static_cast<void>(eval::queryViewerResultKey(composition.doc, request, unavailable));
+        FAIL() << "a missing kernel must not admit cached output";
     } catch (const EvaluationException& error) {
-        EXPECT_NE(std::string(error.what()).find("no effect package"), std::string::npos) << error.what();
-        EXPECT_NE(std::string(error.what()).find("no silent substitution"), std::string::npos) << error.what();
+        EXPECT_TRUE(error.hasNode());
+        EXPECT_NE(std::string(error.what()).find(missingDir.string()), std::string::npos);
     }
+
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    auto contributions = eval::builtinGpuContributions();
+    const auto merge = std::find_if(contributions.begin(), contributions.end(),
+                                    [](const auto& entry) { return entry.node.descriptor.type == "merge"; });
+    merge->gpu.reset();
+    merge->gpuUnavailableReason = "test device has no Merge backend";
+    const eval::EffectLibrary partial(std::move(contributions), eval::EffectBackend::Glsl);
+    try {
+        static_cast<void>(evaluateGpu(composition.doc, request, partial, *boot.device, *boot.allocator));
+        FAIL() << "unavailable Merge must not produce substituted output";
+    } catch (const EvaluationException& error) {
+        EXPECT_EQ(error.node, rootGraph(composition.doc).nodeByName("over")->id);
+    }
+    expectValidationClean(*boot.instance);
 }
 
 // ---------------------------------------------------------------------------

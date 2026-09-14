@@ -9,7 +9,7 @@ if(NEMO_BUILD_GPU)
         target_compile_definitions(nemo-cli PRIVATE NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
     endif()
     target_compile_definitions(nemo-cli PRIVATE
-        NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/gpu/shaders")
+        NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/nodes")
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

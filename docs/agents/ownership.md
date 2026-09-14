@@ -90,12 +90,12 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | --- | --- | --- |
 | Persistent document, graph, IDs, serialization | `src/nemo/core/document/Document.hpp`, `Graph.hpp`, `Serialization.hpp`; `Document`, `Graph`, and `NodeCatalog` own persistent state | `apps/nemo-ui/ViewerController.cpp` submits commands; UI and automation do not mutate graph primitives directly |
 | Project file persistence, autosave, recovery | `src/nemo/core/session/ProjectFile.hpp`; `ProjectFile` owns read/write, path policy, file envelope and reference state; `AutosaveStore` owns bounded slots; `ProjectSession::prepareSave`/`commitSave` own path, dirty baseline and recovery guard | `apps/nemo-ui/ProjectFileController.*` and the CLI `file-state`/`open`/`save`/`save-as`/`autosave`/`recover` ops are the only callers; both go through this owner, never a second codec |
-| Node schemas and discovery | `src/nemo/core/nodes/NodeCatalog.hpp`; immutable `NodeDescriptor` records and `NodeCatalog(std::vector<NodeDescriptor>)` | Built-ins are assembled in `NodeCatalog.cpp`; `Graph::catalog()` and evaluation query the catalog. There is no unregister operation |
+| Node schemas and discovery | `src/nemo/core/nodes/NodeCatalog.hpp`; immutable `NodeDescriptor` records and exact-inventory `NodeCatalog(std::vector<NodeDescriptor>)` | `src/nemo/nodes/BuiltinNodes.inc` supplies the built-in inventory; `NodeContributions::catalog()` projects schema for `Graph::catalog()`, desktop and CLI. No mutation or unregister operation |
 | Validated edits and history | `src/nemo/core/document/Document.hpp` command factories plus `src/nemo/core/commands/`; `Command`, `CommandStack`, and `ProjectSession` | `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()` maps JSON operations; `ProjectSession::submit()` is the commit seam |
 | Structural document storage | `src/nemo/core/SharedContainers.hpp` (`CowVector`, `CowMap`) and the document's controlled mutations; `ChangeRecorder` (`src/nemo/core/document/ChangeRecorder.hpp`) records the identities a transaction touched | Commands and sessions retain version handles, never deep copies; publication/undo/redo derive their notifications from the touched identities. See ADR-0007 "Structurally shared document versions (#72)"; do not reintroduce a whole-document copy, diff or serialization on the ordinary edit path |
 | CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies`, and the external media seam `SourceProvider::frame`/`colorConfigIdentity` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned. The provider receives the resolved `EffectiveSourceRequest` and supplies the opaque color-config identity the source-node keys mix in; without a provider a source node is an explicit error, never a synthetic pattern |
 | GPU primitives and resource lifetime | `src/nemo/gpu/` (`Device`, `Allocator`, `Submit`, `ComputePass`) | `src/nemo/eval/GpuExecutor.cpp` records/submits work; follow [`rendering.md`](rendering.md) for retained ownership and synchronization rather than copying those rules here |
-| Native effect execution | `src/nemo/eval/GpuExecutor.hpp` (`EffectProgram`, `EffectLibrary`, `loadSlangEffectLibrary`, `glslEffectLibrary`, `submitGpu`, `evaluateGpu`) and the CPU reference [`NativeEffects.hpp`](../../src/nemo/core/evaluation/NativeEffects.hpp) (`evaluateNativeEffect`, `evaluateMerge`) | [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp) owns the typed effective parameters (`effectiveEffectMask`/`effectiveGrade`/`effectiveBlur`/`effectiveTransform`/`effectiveMergeOperation`) both executors consume; `CpuReference.cpp` dispatches `grade`/`blur`/`transform` to `evaluateNativeEffect` and `merge` to `evaluateMerge`. `ViewerSession` loads the Slang library (`merge.slang`; the retained GLSL `kGlslMerge` stays in `EffectShaders.hpp`). Numerical contract and spatial limits: [`rendering.md`](rendering.md) |
+| Native effect execution | `core/evaluation/NodeContributions.hpp` and `eval/GpuContribution.hpp` declare immutable CPU/native adapters; `eval/GpuExecutor.hpp` exposes `EffectLibrary`, `submitGpu`, and `evaluateGpu` | `src/nemo/nodes/<slug>/` owns schema, independent CPU/Slang/GLSL pixels, typed effect parameters and local pass preparation. Shared evaluators own traversal, requests, reuse and resource lifetime; see the contribution recipe below and [`rendering.md`](rendering.md) |
 | Optional input ports and absent slots | `src/nemo/core/nodes/NodeCatalog.hpp` (`PortSpec::optional`); `Plan.hpp` slot model with `CpuReference.cpp` expansion | An absent optional slot keeps its declared port position as `EvaluationNodeId{}` (node == `kInvalidNode`) in `ExpandedNode.inputs`/`PlanStep.inputs`; `Reuse.hpp` marks it in result identity with `kAbsentInputKeyHash`; `GpuExecutor` binds the main image as a valid dummy descriptor with `maskPresent=0`, never an allocated fallback. Grade/Blur/Transform's optional input is port 1 `mask`; Merge's is port 2 (its port 1 is the required foreground). Merge's `A`/`B` roles are production order — A background/base, B foreground/source — and are never silently reversed; `swapInputsCommand` (`Document.hpp`, exposed as `ViewerController::swapNodeInputs` and the `swap-inputs` CLI op) exchanges exactly the two *image* sources as one atomic undo step, retaining the mask, parameters, node identity and layout, and refuses an empty pair or two edges from one source before touching history |
 | Media and color adapters | `src/nemo/media/` public image/viewing contracts; external OIIO/OCIO/FFmpeg types stay behind `.cpp` adapters | CLI probe/render and `eval::SourceSession` consume the application media contract. `src/nemo/media/InputColor.{hpp,cpp}` is the ONE owner of an encoded source's RGB interpretation (`resolveInputColor`, retained per generation by `InputColorCache`); `ViewingTransform.hpp`'s `OcioConfigSnapshot` is the ONE retained config load (content identity, canonical space enumeration, file rules, processors). `src/nemo/media/ImageSource.{hpp,cpp}` owns still/sequence decode (`probeImageFrame`/`readImageFrame`, headless `ImageSourceProvider`); `VideoDecode.hpp` owns clip decode and takes the same input-color context. Reuse these rather than adding a second still reader or a second color resolver |
 | Effective source request (Read choices vs the shared reference) | `src/nemo/core/evaluation/SourceRequest.{hpp,cpp}`; `resolveSourceRequest`, `EffectiveSourceRequest`, `ReadNodeOverrides`, `readAuthoredOverrides`/`readOverrideParameters`/`readInitializationParameters`, `mapSourceFrame`/`startAtOffset` | One resolver combines a Read's node-scoped choices with the shared `SourceReference` and committed facts. The node-scoped entry point is used by Reads and by result keys; the source-scoped entry point (shared reference's own mapping, no node overrides) is used by `eval::SourceSession::probe`. The media import worker consumes a `SourceReference` snapshot and maps it with `SourceReference::frameAt` — a Read requester hands it the snapshot that already carries the Read's effective mapping. `CpuReference.cpp`, `Reuse.cpp`, `eval::SourceSession::acquire` and `ReadSourceController` consume the resolved request and never re-derive mapping or precedence; see ADR-0007 "Read source ownership, effective requests, and schema 5 (#79)" |
@@ -123,6 +123,14 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
   reaches the published version.
 - `NodeCatalog` is an immutable snapshot after construction. Descriptors contain
   schema facts only: no Qt, Vulkan, plugin, executor, or image objects.
+- `NodeContributions` and `EffectLibrary` are immutable, retained snapshots.
+  CPU callbacks and GPU preparation may execute concurrently; captures must
+  remain immutable or synchronize their own state. Context references, input
+  spans and effective-parameter maps are borrowed for that invocation only.
+  A CPU request retains its registration until return; GPU submissions retain
+  the library, programs and prepared resources until actual completion, even
+  when their result handle is dropped. Compilation/assembly is preparation,
+  never per-frame inventory rebuilding or UI-thread device initialization.
 - Evaluation consumes an immutable document view. `ViewerScheduler` is the
   thread-safe queue/policy boundary and retains immutable snapshots; it rejects
   stale publication without waiting for in-flight GPU work.
@@ -149,45 +157,53 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 
 ### Add a node or effect
 
-There is no generic runtime effect registry in the current tree. A built-in
-node/effect is a coordinated change to the existing catalog and executor seams:
+Built-ins use one explicit inventory, `src/nemo/nodes/BuiltinNodes.inc`.
+`builtinNodeContributions()` derives immutable schema/CPU/editor declarations;
+`builtinGpuContributions()` derives the native projection from the same list.
+Desktop and CLI use these builders, not private inventories. See
+[ADR-0008](../decisions/0008-built-in-node-contributions.md).
 
-1. Add the immutable schema in `src/nemo/core/nodes/NodeCatalog.cpp` and append
-   it in `NodeCatalog::NodeCatalog()`. For a supplied extension/fixture,
-   construct `NodeCatalog(std::vector<NodeDescriptor>)`; keep identifiers
-   namespaced and descriptors free of runtime objects.
-2. Add the CPU reference implementation beside the existing implementations in
-   `src/nemo/core/evaluation/CpuReference.cpp` and its explicit type dispatch in
-   `evaluateCpu` (for example, the `constcolor` branch). An effect with its own
-   numerical contract follows the Grade/Blur/Transform shape: shared typed
-   metadata and admissibility in `src/nemo/core/evaluation/Params.hpp`, pixel
-   math in `evaluateNativeEffect` (`NativeEffects.{hpp,cpp}`), dispatched from
-   the `grade`/`blur`/`transform` branch.
-3. For a native GPU effect, add the Slang kernel under
-   `src/nemo/gpu/shaders/`, include its type in
-   `eval::loadSlangEffectLibrary`; keep the runtime GLSL reference in
-   `src/nemo/eval/EffectShaders.hpp` and its type in `glslEffectLibrary`. A
-   multi-pass effect registers each pass as its own library key (`blurHorizontal`
-   is the internal first pass beside the node-visible `blur`). `EffectLibrary`
-   is the current execution input, not a new public registry.
-4. Keep catalog ports/parameters (including the optional mask port declared by
-   `effectInputs()`), CPU behavior, GPU binding contract, and implementation
-   version aligned, and update the numerical contract in
-   [`rendering.md`](rendering.md). A new node type, public interface, shader,
-   dependency, or image baseline requires owner review; a performance claim
-   additionally requires the #16 reference gate. Passing an agent check is not
-   approval.
+1. Add `src/nemo/nodes/<slug>/Contribution.cpp`: a namespaced persistent type,
+   immutable descriptor, role, versioned CPU adapter, and optional namespaced
+   editor declarations. Preserve legacy built-in identifiers. Keep Qt/GPU
+   runtime objects out of the descriptor. Add effect-local typed interpretation
+   in `Parameters.hpp` when both CPU and GPU need it; reuse generic typed reads,
+   mask/channel rules and effective animation from `core/evaluation/Params.hpp`.
+2. Add `Gpu.cpp` with versioned `GpuImplementation`, independent GLSL pixels,
+   node-local payload preparation and local pass definitions; keep independent
+   Slang kernels beside it. `eval/GpuContribution.hpp` defines the supported
+   binding/pass contract. Blur demonstrates scratch images and retained weights;
+   Constcolor demonstrates a generator. Do not allocate, submit, wait or access
+   the UI from a contribution callback.
+3. Add one `NEMO_NODE(slug)` entry to `BuiltinNodes.inc` and normal source/shader
+   build wiring. No effect-specific edit belongs in central CPU/GPU dispatch,
+   shared request uniforms, the inspector, Commands or serialization.
+   `NodeCatalog(vector)` is an exact schema inventory; metadata-only fixtures
+   can use `extendedBuiltinSchema(...)`. Executable extensions must instead
+   assemble `NodeContributions`/`EffectLibrary` with their real adapters.
+4. Assemble before publishing. Duplicate identities, incompatible versions,
+   invalid metadata/payload/pass references and promised-but-missing adapters
+   fail atomically with the affected relationship. Explicitly unavailable
+   backends and missing shader files stay node-local; requesting them fails
+   honestly while unrelated supported nodes remain usable. Bump descriptor and
+   adapter versions together when pixel code or payload semantics change.
+5. Keep ports, parameters, numerical contracts and independent image
+   expectations aligned. Read delegates source mapping/media to their existing
+   owners; Output and Viewer keep distinct roles. Network instances and formal
+   inputs remain structural Evaluation behavior. A genuinely new shared
+   execution capability needs a scoped change in its existing owner, not an
+   effect-local bypass.
 
-Current examples/use sites: `constColorDescriptor()` plus the `constcolor`
-CPU/GPU paths; the #34 native effects — `gradeDescriptor()`/`blurDescriptor()`/
-`transformDescriptor()` with `evaluateNativeEffect`, `Params.hpp` metadata and
-the matching Slang kernels (contract in [`rendering.md`](rendering.md)); and the
-#75 Merge — `mergeDescriptor()` (ports `A`/`B` required plus optional `mask`) with
-`evaluateMerge`, `effectiveMergeOperation`, `src/nemo/gpu/shaders/merge.slang`
-and the retained GLSL `kGlslMerge`, plus `swapInputsCommand` for its A/B action;
-and catalog-backed graph creation submitting `addNodeCommand(...)`. Unknown
-declared types fail explicitly when an executor has no implementation; do not
-silently substitute another effect.
+The executable addition example is `tests/contributions/Affine.{hpp,cpp,slang}`
+plus `ContributionTests.cpp`: append its declaration to a supplied contribution
+vector, assemble through the production builders, and use the resulting catalog
+with the ordinary ProjectSession, persistence and CPU/GPU APIs. It is test-only,
+not shipped in the artist catalog. Its scale/offset RGB operation preserves
+negative/HDR values and alpha; the expected pixels are independently derived.
+
+These internal C++ interfaces are not a plugin loader or stable binary SDK.
+New types, public interfaces, shaders, dependencies and image baselines still
+require owner review; performance claims additionally need the #16 gate.
 
 #### Parameter and inspector boundary
 
@@ -240,12 +256,14 @@ with no outer wrapper for an aggregate control. Consumed keys are omitted from
 the generic rows and a fully consumed section is dropped, so exactly one control
 renders each setting; an unavailable editor consumes nothing and the generic
 rows stay usable, with the refusal reason reported by `editor(id)`.
-`main.cpp` registers the three production editors: `nemo.read.source`
+`main.cpp` projects the node contributions into `ParameterEditorRegistry`:
+Read declares `nemo.read.source`
 (section — the Read control presents file/summary/timing/color itself),
-`nemo.channels.rgb` (`ChannelEditor.qml`, linked RGB with an expandable labelled
-R/G/B view and a separate Alpha — Grade's Primary/Range coefficients) and
-`nemo.merge.operation` (`MergeOperationEditor.qml`, the operation menu plus the
-Swap A/B action). Linking or collapsing is presentation state: it never
+Grade declares `nemo.channels.rgb` (`ChannelEditor.qml`, linked RGB with an
+expandable labelled R/G/B view and a separate Alpha for Primary/Range
+coefficients), and Merge declares `nemo.merge.operation`
+(`MergeOperationEditor.qml`, the operation menu plus the Swap A/B action).
+Linking or collapsing is presentation state: it never
 equalizes stored values, Alpha is never edited by a linked RGB change, and
 changing editor presentation never changes the effect's execution parameters.
 

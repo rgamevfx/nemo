@@ -163,18 +163,28 @@ mean*; neither re-implements the other.
 
 ## Native effects — Grade, Blur, Transform, Merge
 
-The contract below is implemented by the CPU reference `evaluateNativeEffect`
-and `evaluateMerge`
-([`NativeEffects.hpp`](../../src/nemo/core/evaluation/NativeEffects.hpp) /
-`NativeEffects.cpp`) and independently by the GPU path
-(`src/nemo/eval/GpuExecutor.cpp` plus `src/nemo/gpu/shaders/`). The shared
-metadata seam [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp)
-(`effectiveEffectMask`/`effectiveGrade`/`effectiveBlur`/`effectiveTransform`/
-`effectiveMergeOperation`)
-owns typed interpretation and admissibility; independent analytic fixtures and
-interpretations, not agreement between the two implementations, remain the
-correctness oracle (ADR-0004, Fidelity below). Change both implementations when
-a contract changes.
+The independent CPU, Slang and retained GLSL implementations live in
+`src/nemo/nodes/{grade,blur,transform,merge}/`. Each module contributes schema and
+CPU execution in `Contribution.cpp`, native payload/pass preparation and GLSL in
+`Gpu.cpp`, and its Slang kernel(s). Module-local `Parameters.hpp` owns typed
+effect interpretation; shared [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp)
+owns generic reads, effective animation, channels and `effectiveEffectMask`.
+The shared evaluators consume immutable contributions and retain traversal,
+request validation, source mapping, reuse and GPU resource ownership.
+Independent analytic fixtures, not agreement between implementations, remain
+the correctness oracle (ADR-0004, Fidelity below). Change the independent
+implementations together when a numerical contract changes.
+
+The internal native binding contract is version 2: set 0/binding 0 contains only
+the 48-byte common coordinate/time request; set 0/binding 1 is the node-local
+16-byte-aligned payload, if any. Pass inputs bind at set 1 in declaration order,
+output at set 2/binding 0, and optional float weights at set 3/binding 0.
+`GpuPreparation` selects local passes and supplies owned payload/weight values.
+Scratch images have the request raster/layout and remain retained GPU resources.
+This is not another scheduler: allocation, barriers, submission and retirement
+stay in `GpuExecutor` and the existing GPU owners. See
+[ADR-0008](../decisions/0008-built-in-node-contributions.md) and
+[`ownership.md`](ownership.md#add-a-node-or-effect).
 
 ### Optional mask and mix (Grade, Blur, Transform, Merge)
 
@@ -259,11 +269,12 @@ transform.
 Merge has two required `Image` inputs and one optional `Mask` input: port A
 (index 0) is the background/base, port B (index 1) the foreground/source, and
 port 2 the optional mask. The A/B order is the production contract; Nuke-like
-usability never silently reverses existing graphs. The CPU entry point is
-`evaluateMerge` (`NativeEffects.hpp`); the GPU path executes the `merge` effect
-program (`src/nemo/gpu/shaders/merge.slang`, retained GLSL `kGlslMerge`) with the
-operation code in `param0.x`. Both resolve `operation` through
-`effectiveMergeOperation` and the mask controls through `effectiveEffectMask`.
+usability never silently reverses existing graphs. CPU pixels live in
+`nodes/merge/Contribution.cpp`; the GPU path uses `nodes/merge/merge.slang`
+and independent GLSL in `nodes/merge/Gpu.cpp`. Its local `MergePayload` carries
+the operation in `op.x`, separate from the common request uniforms. Both resolve
+`operation` through the module's `effectiveMergeOperation` and mask controls
+through the shared `effectiveEffectMask`.
 
 `operation` ∈ {over, plus, multiply, screen, difference}, default `over`. An
 unknown value is rejected by the descriptor on authoring and deserialize and by

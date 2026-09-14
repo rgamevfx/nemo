@@ -1,50 +1,15 @@
 #pragma once
 
-// Native GPU effect execution (issue #8, spec sections 10.3-10.4, ADR-0004).
+// Native execution consumes immutable contribution snapshots and the shared
+// dependency plan. Node modules prepare values and local pass descriptions;
+// this owner performs allocation, barriers, recording and submission.
 //
-// The executor consumes the same scheduled plan as the CPU reference
-// (nemo::scheduleDependencies) and executes each step as a Vulkan compute
-// pass over the declared effect contract:
-//
-//   set 0, binding 0 : EffectUniforms (std140 uint4/float4 words only)
-//   set 1, binding n : input image2D  (rgba32f storage image, straight alpha)
-//   set 2, binding 0 : output image2D (rgba32f storage image)
-//
-// issue #34 native effects: grade/transform/blur bind their optional mask at
-// set 1 binding 1 (blur's final pass instead binds processed scratch at 0,
-// original main at 1, mask at 2, because the mask/mix blend happens once
-// after both separable passes). Blur's two passes additionally read the
-// precomputed normalized Gaussian weights from a retained read-only storage
-// buffer at set 3 binding 0 (index i+support). An unconnected optional slot
-// keeps its declared port index in the plan with an invalid sentinel; the
-// executor binds the main image as a valid dummy descriptor and sets
-// maskPresent=0 — no allocated white fallback. Blur's first (horizontal)
-// pass is an internal program held under the `blurHorizontal` library key;
-// the node-visible `blur` key is the final vertical pass. Both are recorded
-// into one submission with a retained scratch image and no per-node wait.
-//
-// Effects are packages keyed by node type; both front ends meet this
-// contract — build-time Slang SPIR-V (the native path) and runtime GLSL
-// (glslang, the reference-equivalence path, see EffectShaders.hpp).
-//
-// Residency and lifetime (spec section 10.4, ADR-0004): every step writes a
-// device-resident image in GENERAL layout; dependent passes read the same
-// image through an explicit imageBarrier (write→read dependency). Nothing
-// on this path reads pixels back to the host — GpuEvaluation::readBack is
-// the declared test/diagnostic-only seam.
-//
-// Real-media sources (issue #11, spec section 10.2/10.4): a `source` node
-// resolves against Document::sources through the session layer
-// (SourceSession). The decoded frame enters the SAME dependency plan as a
-// set 1 input of the source fill kernel — the executor owns no decode
-// state; runtime decode objects live in the SourceSession supplied by the
-// caller. Decoded frames are retained by the submitted completion
-// (issue #22 mechanism) until the effect batch that consumes them
-// completes; nothing is borrowed across a submission boundary.
-//
-// Failures identify the offending node and the available shader source
-// location (spec section 10.4); a failed effect never silently substitutes
-// another implementation.
+// Bindings: set 0/0 common request; set 0/1 optional node-local payload;
+// set 1/n pass inputs; set 2/0 result; set 3/0 optional float weights.
+// Intermediates remain RGBA32F device images in GENERAL layout. Submission
+// retention covers registrations and all resources until actual completion,
+// including cancellation/timeouts. Device initialization and execution run
+// on workers, never the UI event thread. readBack is diagnostic-only.
 
 #include <cstdint>
 #include <filesystem>
@@ -60,6 +25,7 @@
 #include "nemo/core/evaluation/Plan.hpp"
 #include "nemo/core/evaluation/Request.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
+#include "nemo/eval/GpuContribution.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Device.hpp"
 
@@ -67,71 +33,41 @@ namespace nemo::eval {
 
 class SourceSession;
 
-// std140 image of the Slang/GLSL cbuffer: uint4/float4 words only, so the
-// C++ mirror matches both front ends regardless of scalar packing rules.
-// Representation contract (issue #11, spec section 8/10.4): the request
-// Region is FULL-RESOLUTION; the executed raster samples it at
-// samplingScale, so images are ceil(width/scale) x ceil(height/scale)
-// while every coordinate semantic stays full-res:
-//   meta  = (full image width, full image height, region.x, region.y)
-//   meta2 = (image width, image height, samplingScale, 0)     [raster]
-//   misc = (localTime, 0, 0, 0); param0/param1 are effect-specific
-//   declared parameters.
-//
-// The issue #34 block is an APPEND-ONLY extension shared by every effect
-// kernel: existing member offsets are unchanged, so preexisting kernels stay
-// ABI-aligned. Effect semantics:
-//   mask     = (maskChannel [-1 none,0R,1G,2B,3A], invertMask, mix,
-//               maskPresent) — an absent optional mask binds the main image
-//               as a valid dummy descriptor with maskPresent=0, never an
-//               allocated fallback.
-//   grade*   = per-channel Color parameters; gradeFlags = channels bitmask
-//               (R1/G2/B4/A8), reverse, clampBlack, clampWhite.
-//   blur     = (size full-res support radius, channels bitmask, raster
-//               support, 0); the normalized Gaussian weights are precomputed
-//               once per Blur preparation into a retained read-only storage
-//               buffer bound at set 3 binding 0 (index i+support).
-//   transform/transformFlags = (translateX, translateY, scale, rotate
-//               degrees) and (filter 0Cubic/1Linear/2Nearest, pixelAspect,
-//               host-precomputed cos, sin — double-precision radians).
-struct EffectUniforms {
-    std::uint32_t meta[4]{};
-    std::uint32_t meta2[4]{};
-    float misc[4]{};
-    float param0[4]{};
-    float param1[4]{};
-    float mask[4]{};
-    float gradeBlackpoint[4]{};
-    float gradeWhitepoint[4]{};
-    float gradeLift[4]{};
-    float gradeGain[4]{};
-    float gradeMultiply[4]{};
-    float gradeOffset[4]{};
-    float gradeGamma[4]{};
-    float gradeFlags[4]{};
-    float blur[4]{};
-    float transform[4]{};
-    float transformFlags[4]{};
-};
-
 struct EffectProgram {
-    std::vector<std::uint32_t> spirv;  // prebuilt SPIR-V (Slang path) when non-empty
-    std::string glsl;                  // runtime GLSL (glslang path) when non-empty
-    std::string sourcePath;            // available shader source location for diagnostics
+    std::shared_ptr<const std::vector<std::uint32_t>> spirv;
+    std::string sourcePath;
 };
 
-// Effect packages keyed by node type (the initial inventory from #1:
-// testpattern, constcolor, merge, output; #11 adds the real-media
-// `source` fill; #34 adds grade, blur, transform plus the internal
-// `blurHorizontal` first pass). Every package loads through this one
-// library; the internal key is registered alongside node types so blur's
-// two passes share the same loading, fingerprint, and diagnostics path.
-using EffectLibrary = std::map<std::string, EffectProgram>;
+enum class EffectBackend { Slang, Glsl };
 
-// Loads the build-time Slang effect kernels (<type>.spv) from `spvDir`,
-// recording `sourceDir`/<type>.slang as the source location when present.
-// Throws GpuException naming the effect and path when a kernel is missing
-// or not SPIR-V — no silent substitution of another effect.
+// Prepared once before publication. Consumers only receive const entries;
+// callbacks and programs stay alive through the immutable library snapshot.
+struct RegisteredGpuEffect {
+    std::optional<GpuImplementation> implementation;
+    std::vector<EffectProgram> programs;
+    std::string unavailableReason;
+};
+
+class EffectLibrary {
+public:
+    EffectLibrary();
+    EffectLibrary(std::vector<GpuNodeContribution> contributions, EffectBackend backend,
+                  const std::filesystem::path& spvDir = {}, const std::filesystem::path& sourceDir = {});
+    [[nodiscard]] std::shared_ptr<const NodeContributions> contributions() const;
+    [[nodiscard]] const RegisteredGpuEffect* find(std::string_view type) const;
+    [[nodiscard]] std::uint64_t fingerprint() const;
+    [[nodiscard]] std::shared_ptr<const void> retain() const;
+    // Check schema and backend availability before reuse as well as execution.
+    [[nodiscard]] const RegisteredGpuEffect& require(const NodeCatalog& catalog, const NodeInstance& node) const;
+
+private:
+    struct Data;
+    std::shared_ptr<const Data> data_;
+};
+
+// Both backend projections use the single explicit built-in contribution list.
+// Missing kernels are node-local unavailability, not failure of unrelated
+// registrations. Evaluation reports the node and available shader path.
 [[nodiscard]] EffectLibrary loadSlangEffectLibrary(const std::filesystem::path& spvDir,
                                                    const std::filesystem::path& sourceDir = {});
 

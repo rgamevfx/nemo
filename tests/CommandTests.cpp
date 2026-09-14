@@ -1081,7 +1081,8 @@ TEST(CommandStackTest, SwapInputsConnectionRejectionLeavesBothConnectionsUntouch
     maskSource.outputs = {{PortKind::Mask, "mask"}};
     maskSource.capabilities =
         NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Full}, .channels = {"RGBA"}};
-    Document document(std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{maskSource}));
+    Document document(
+        std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{maskSource})));
     rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
     const NetworkId network = document.rootNetworkId();
     auto& graph = rootGraph(document);

@@ -1,4 +1,5 @@
-// Nemo native effect contract (spec section 10.4, issue #34)
+// Nemo native effect contract (spec section 10.4, issue #34; contribution-local
+// module per issue #83)
 // ---------------------------------------------------------
 // name: blur (pass 2 of 2: vertical support + final result)
 // version: 1
@@ -8,8 +9,12 @@
 //   - in_mask : image2D input (optional mask; bound to the main image as a
 //     valid dummy descriptor with maskPresent=0 when unconnected)
 //   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
-// bindings: shared effect contract (see testpattern.slang). Port order is
-//   declared: set 1 binding 0 = scratch, 1 = main, 2 = mask.
+// bindings (native binding contract v2, see testpattern.slang):
+//   set 0, binding 0 : common request uniforms
+//   set 0, binding 1 : node-local payload ("nemo.nodes.blur.payload.v1")
+//   set 1, binding 0 = scratch, 1 = main, 2 = mask
+//   set 2, binding 0 : output image2D
+//   set 3, binding 0 : normalized Gaussian weights (index i + raster support)
 // dependencies:
 //   region: output pixel (x, y) depends on the vertical neighborhood of the
 //     intermediate plus the original pixel at (x, y).
@@ -21,6 +26,10 @@
 //   RGB) before the single mask/mix blend against the original pixel; the
 //   mask stays in output-raster space and is never transformed. RGB and
 //   Alpha modes preserve the unselected channels exactly.
+//
+// The identity selection (size 0) runs this same program with the original
+// main image bound to the scratch slot: the blur.x <= 0 branch never reads
+// it, so size 0 is an exact, single-pass identity.
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
@@ -30,24 +39,15 @@ cbuffer EffectUniforms {
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
-    float4 param0;
-    float4 param1;
-    // issue #34 native effects: append-only extension shared by EVERY effect
-    // kernel (existing offsets unchanged, so preexisting kernels stay
-    // ABI-aligned with the C++ EffectUniforms mirror).
-    float4 mask;             // (maskChannel, invertMask, mix, maskPresent)
-    float4 gradeBlackpoint;
-    float4 gradeWhitepoint;
-    float4 gradeLift;
-    float4 gradeGain;
-    float4 gradeMultiply;
-    float4 gradeOffset;
-    float4 gradeGamma;
-    float4 gradeFlags;       // (channels bitmask, reverse, clampBlack, clampWhite)
-    float4 blur;             // (size full-res, channels bitmask, 0, 0)
-    float4 transform;        // (translateX, translateY, scale, rotate degrees)
-    float4 transformFlags;   // (filter, pixelAspect, cos, sin)
-}
+};
+
+[[vk::binding(1, 0)]]
+cbuffer BlurPayload {
+    // (maskChannel, invertMask, mix, maskPresent)
+    float4 mask;
+    // (size full-res, channels bitmask, raster support, 0)
+    float4 blur;
+};
 
 [[vk::binding(0, 1)]]
 RWTexture2D<float4> in_scratch;

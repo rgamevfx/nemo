@@ -1,5 +1,5 @@
 // Nemo native effect contract (spec section 10.4, issue #8; operations and
-// masking per issue #75)
+// masking per issue #75; contribution-local module per issue #83)
 // ---------------------------------------------------------
 // name: merge
 // version: 2
@@ -14,12 +14,15 @@
 //   - operation = "over" | "plus" | "multiply" | "screen" | "difference"
 //     (over is the default; an unknown value is rejected by the schema and
 //     by both executors, never a silent fallback). The code travels in
-//     param0.x: 0 Over, 1 Plus, 2 Multiply, 3 Screen, 4 Difference.
+//     op.x: 0 Over, 1 Plus, 2 Multiply, 3 Screen, 4 Difference.
 //   - mask = (maskChannel, invertMask, mix, maskPresent), the shared effect
 //     mask word.
-// bindings: shared effect contract (see testpattern.slang). Port order is
-//   declared: set 1 binding 0 = A, binding 1 = B, binding 2 = mask — swapping
-//   A/B is a different result and fails declared image comparison.
+// bindings (native binding contract v2, see testpattern.slang):
+//   set 0, binding 0 : common request uniforms
+//   set 0, binding 1 : node-local payload ("nemo.nodes.merge.payload.v1")
+//   set 1, binding 0 = A, binding 1 = B, binding 2 = mask — swapping A/B is a
+//     different result and fails declared image comparison
+//   set 2, binding 0 : output image2D
 // dependencies:
 //   region: output pixel (x, y) depends only on inputs (x, y); no
 //     neighborhood reads, so no support-region expansion.
@@ -45,24 +48,15 @@ cbuffer EffectUniforms {
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
-    float4 param0;
-    float4 param1;
-    // issue #34 native effects: append-only extension shared by EVERY effect
-    // kernel (existing offsets unchanged, so preexisting kernels stay
-    // ABI-aligned with the C++ EffectUniforms mirror).
-    float4 mask;             // (maskChannel, invertMask, mix, maskPresent)
-    float4 gradeBlackpoint;
-    float4 gradeWhitepoint;
-    float4 gradeLift;
-    float4 gradeGain;
-    float4 gradeMultiply;
-    float4 gradeOffset;
-    float4 gradeGamma;
-    float4 gradeFlags;       // (channels bitmask, reverse, clampBlack, clampWhite)
-    float4 blur;             // (size full-res, channels bitmask, 0, 0)
-    float4 transform;        // (translateX, translateY, scale, rotate degrees)
-    float4 transformFlags;   // (filter, pixelAspect, cos, sin)
-}
+};
+
+[[vk::binding(1, 0)]]
+cbuffer MergePayload {
+    // (maskChannel, invertMask, mix, maskPresent)
+    float4 mask;
+    // x = operation code
+    float4 op;
+};
 
 [[vk::binding(0, 1)]]
 RWTexture2D<float4> in_a;
@@ -86,7 +80,7 @@ void main(uint3 tid : SV_DispatchThreadID)
     float4 bg = in_a.Load(p);   // port A: background (base)
     float4 fg = in_b.Load(p);   // port B: foreground (source)
 
-    int operation = int(param0.x);
+    int operation = int(op.x);
     float4 composite;
     if (operation == 0) {
         // Over keeps the CPU reference's existing expression exactly.

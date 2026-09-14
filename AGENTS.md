@@ -91,8 +91,9 @@ cmake --build --preset debug --target nemo_shaders  # Rebuild SPIR-V from .slang
 
 ### Shader tooling (Slang → SPIR-V)
 
-The `nemo_shaders` target compiles `src/nemo/gpu/shaders/*.slang` to SPIR-V
-binaries as part of the normal build. `slangc` is resolved in this order:
+The `nemo_shaders` target compiles node-local `src/nemo/nodes/*/*.slang` and
+shared `src/nemo/gpu/shaders/*.slang` kernels to SPIR-V binaries as part of the
+normal build. `slangc` is resolved in this order:
 
 1. `-D NEMO_SLANGC=<path>` — explicit path (put it in `CMakeUserPresets.json`).
 2. `find_program(slangc)` — e.g. install the Slang release `bin/slangc` on PATH.

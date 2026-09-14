@@ -42,7 +42,7 @@ NodeDescriptor fixtureDescriptor() {
 TEST(CatalogTest, RegisteredFixtureSnapshotIsDiscoverableAndTyped) {
     auto descriptor = fixtureDescriptor();
     descriptor.outputs.push_back({PortKind::Image, "aux"});
-    auto catalog = std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{descriptor});
+    auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{descriptor}));
     ASSERT_NE(catalog->find("fixture.catalog"), nullptr);
     const auto& ports = catalog->outputPorts("fixture.catalog");
     const auto aux = std::find_if(ports.begin(), ports.end(), [](const PortSpec& port) { return port.name == "aux"; });
@@ -65,7 +65,8 @@ TEST(CatalogTest, RegisteredFixtureSnapshotIsDiscoverableAndTyped) {
 }
 
 TEST(CatalogTest, DeclaredFixtureReportsUnavailableExecutor) {
-    auto catalog = std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{fixtureDescriptor()});
+    auto catalog =
+        std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{fixtureDescriptor()}));
     Document document(catalog);
     const NodeId fixture = rootGraph(document).addNode("fixture.catalog", "fixture");
     const NodeId output = rootGraph(document).addNode("output", "out");
@@ -109,7 +110,8 @@ TEST(CatalogTest, InvalidDeclaredParametersIdentifyNodeAndPreserveState) {
 TEST(CatalogTest, InvalidDescriptorSchemaIsRejectedBeforeSnapshotPublication) {
     NodeDescriptor invalid = fixtureDescriptor();
     invalid.type.clear();
-    EXPECT_THROW(static_cast<void>(NodeCatalog(std::vector<NodeDescriptor>{invalid})), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(NodeCatalog(extendedBuiltinSchema(std::vector<NodeDescriptor>{invalid}))),
+                 std::invalid_argument);
 
     invalid = fixtureDescriptor();
     invalid.parameters = {{.name = "value",
@@ -120,9 +122,11 @@ TEST(CatalogTest, InvalidDescriptorSchemaIsRejectedBeforeSnapshotPublication) {
 
     invalid = fixtureDescriptor();
     invalid.capabilities.samplingScales = {1, 1};
-    EXPECT_THROW(static_cast<void>(NodeCatalog(std::vector<NodeDescriptor>{invalid})), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(NodeCatalog(extendedBuiltinSchema(std::vector<NodeDescriptor>{invalid}))),
+                 std::invalid_argument);
 
-    EXPECT_THROW(static_cast<void>(NodeCatalog(std::vector<NodeDescriptor>{fixtureDescriptor(), fixtureDescriptor()})),
+    EXPECT_THROW(static_cast<void>(NodeCatalog(
+                     extendedBuiltinSchema(std::vector<NodeDescriptor>{fixtureDescriptor(), fixtureDescriptor()}))),
                  std::invalid_argument);
 }
 
@@ -133,7 +137,7 @@ TEST(CatalogTest, ColorEditsRespectDeclaredBoundsAndFloatStorageAtomically) {
                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 1.0F}}},
                               .minimum = 0.0,
                               .maximum = 1.0}};
-    auto catalog = std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{descriptor});
+    auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{descriptor}));
     Document document(catalog);
     const NodeId node = rootGraph(document).addNode("fixture.catalog", "fixture");
     const auto revision = rootGraph(document).revision();
@@ -180,7 +184,8 @@ NodeDescriptor inspectorParameters(ParameterSpec parameter) {
 
 [[nodiscard]] bool rejectsInspectorParameter(const ParameterSpec& parameter) {
     try {
-        static_cast<void>(NodeCatalog(std::vector<NodeDescriptor>{inspectorParameters(parameter)}));
+        static_cast<void>(
+            NodeCatalog(extendedBuiltinSchema(std::vector<NodeDescriptor>{inspectorParameters(parameter)})));
     } catch (const std::invalid_argument&) {
         return true;
     }
@@ -228,16 +233,16 @@ TEST(CatalogTest, InspectorMetadataIsValidatedBeforeSnapshotPublication) {
                                                         .editor = std::string{"nemo.linear\t"}}));
 
     // A fully specified numeric parameter is accepted with its metadata intact.
-    auto catalog =
-        NodeCatalog(std::vector<NodeDescriptor>{inspectorParameters(ParameterSpec{.name = "value",
-                                                                                  .type = ParameterType::Float,
-                                                                                  .defaultValue = ParameterValue{0.0},
-                                                                                  .minimum = -1.0,
-                                                                                  .maximum = 1.0,
-                                                                                  .step = 0.25,
-                                                                                  .label = "Exposure",
-                                                                                  .section = "Tone Map",
-                                                                                  .editor = "nemo.exposure"})});
+    auto catalog = NodeCatalog(extendedBuiltinSchema(
+        std::vector<NodeDescriptor>{inspectorParameters(ParameterSpec{.name = "value",
+                                                                      .type = ParameterType::Float,
+                                                                      .defaultValue = ParameterValue{0.0},
+                                                                      .minimum = -1.0,
+                                                                      .maximum = 1.0,
+                                                                      .step = 0.25,
+                                                                      .label = "Exposure",
+                                                                      .section = "Tone Map",
+                                                                      .editor = "nemo.exposure"})}));
     const auto* spec = catalog.parameterSpec("fixture.catalog", "value");
     ASSERT_NE(spec, nullptr);
     ASSERT_TRUE(spec->step.has_value());
@@ -322,7 +327,7 @@ TEST(CatalogTest, PresentationMetadataRejectsInvalidDeclarations) {
                                                         .defaultValue = ParameterValue{std::string{}},
                                                         .nonzero = true}));
 
-    auto catalog = std::make_shared<const NodeCatalog>(
+    auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema(
         std::vector<NodeDescriptor>{inspectorParameters(ParameterSpec{.name = "value",
                                                                       .type = ParameterType::Float,
                                                                       .defaultValue = ParameterValue{1.0},
@@ -335,7 +340,7 @@ TEST(CatalogTest, PresentationMetadataRejectsInvalidDeclarations) {
                                                                       .softMaximum = 3.0,
                                                                       .displayDecimals = 2,
                                                                       .row = "Pair",
-                                                                      .nonzero = true})});
+                                                                      .nonzero = true})}));
     const auto* spec = catalog->parameterSpec("fixture.catalog", "value");
     ASSERT_NE(spec, nullptr);
     ASSERT_TRUE(spec->softMinimum.has_value());

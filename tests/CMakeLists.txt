@@ -83,9 +83,25 @@ if(NEMO_BUILD_GPU)
     if(DEFINED NEMO_SLANG_SPV_DIR)
         target_compile_definitions(nemo_effect_tests PRIVATE
             NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}"
-            NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/gpu/shaders")
+            NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/nodes")
     endif()
     gtest_discover_tests(nemo_effect_tests)
+
+    add_executable(nemo_contribution_tests
+        ContributionTests.cpp
+        contributions/Affine.cpp)
+    target_link_libraries(nemo_contribution_tests PRIVATE nemo::eval nemo::gpu GTest::gtest_main)
+    if(DEFINED NEMO_SLANG_SPV_DIR)
+        nemo_add_slang_shaders(nemo_contribution_shaders
+            OUTPUT_DIRECTORY "${NEMO_SLANG_SPV_DIR}"
+            SHADERS contributions/Affine.slang)
+        target_compile_definitions(nemo_contribution_tests PRIVATE
+            NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}"
+            NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/nodes")
+        add_dependencies(nemo_contribution_tests nemo_contribution_shaders nemo_shaders)
+    endif()
+    gtest_discover_tests(nemo_contribution_tests)
+
     add_executable(nemo_viewer_tests ViewerTests.cpp)
     target_sources(nemo_viewer_tests PRIVATE InteractiveSchedulerTests.cpp)
     target_link_libraries(nemo_viewer_tests PRIVATE nemo::eval nemo::media GTest::gtest_main)

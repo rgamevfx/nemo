@@ -1,17 +1,21 @@
-// Nemo native effect contract (spec section 10.4, issue #11)
+// Nemo native effect contract (spec section 10.4, issue #11; contribution-local
+// module per issue #83)
 // ---------------------------------------------------------
 // name: source
-// version: 1
+// version: 2
 // ports:
 //   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
 // parameters:
 //   - the node's `source` parameter names a Document source reference
-//     (setSourceCommand); the executor resolves the decoded frame and passes
-//     its full-resolution dimensions in param0.
-// bindings: shared effect contract (see testpattern.slang), plus
-//   set 1, binding 0 : the decoded scene-linear full-resolution source frame
-//   (rgba32f storage image, GENERAL, straight alpha) — supplied by
-//   SourceSession, not by a graph edge.
+//     (setSourceCommand); the shared runtime resolves the decoded frame and
+//     only its full-resolution dimensions reach this node's preparation.
+// bindings (native binding contract v2, see testpattern.slang):
+//   set 0, binding 0 : common request uniforms
+//   set 0, binding 1 : node-local payload ("nemo.nodes.source.payload.v1")
+//   set 1, binding 0 : the decoded full-resolution source frame
+//     (rgba32f storage image, GENERAL, straight alpha) — supplied by the
+//     shared source session, not by a graph edge
+//   set 2, binding 0 : output image2D
 // dependencies:
 //   region: output pixel (x, y) depends only on the source pixel mapped
 //     from the full-res coordinate (region.x + x*scale, region.y + y*scale)
@@ -19,7 +23,7 @@
 //     reduced (spec section 8/10.4: ROI and sampling resolution are distinct
 //     concerns, and the reduction is explicit in meta2).
 //   channels: RGBA uniform.
-//   temporal: the frame is resolved by the executor's source time mapping
+//   temporal: the frame is resolved by the shared source-time mapping
 //     (frameOffset + localTime*frameStep); the kernel is time-independent.
 // quality_modes: 1
 // precision: rgba32f (full float)
@@ -40,25 +44,13 @@ cbuffer EffectUniforms {
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
-    // param0 = (source width, source height, 0, 0)
-    float4 param0;
-    float4 param1;
-    // issue #34 native effects: append-only extension shared by EVERY effect
-    // kernel (existing offsets unchanged, so preexisting kernels stay
-    // ABI-aligned with the C++ EffectUniforms mirror).
-    float4 mask;             // (maskChannel, invertMask, mix, maskPresent)
-    float4 gradeBlackpoint;
-    float4 gradeWhitepoint;
-    float4 gradeLift;
-    float4 gradeGain;
-    float4 gradeMultiply;
-    float4 gradeOffset;
-    float4 gradeGamma;
-    float4 gradeFlags;       // (channels bitmask, reverse, clampBlack, clampWhite)
-    float4 blur;             // (size full-res, channels bitmask, 0, 0)
-    float4 transform;        // (translateX, translateY, scale, rotate degrees)
-    float4 transformFlags;   // (filter, pixelAspect, cos, sin)
-}
+};
+
+[[vk::binding(1, 0)]]
+cbuffer SourcePayload {
+    // xy = decoded frame dimensions, zw = 0
+    float4 sourceSize;
+};
 
 [[vk::binding(0, 1)]]
 RWTexture2D<float4> in_source;
@@ -78,8 +70,8 @@ void main(uint3 tid : SV_DispatchThreadID)
     int fullY = (int)meta.w + (int)p.y * scale;
     int fullWidth = (int)meta.x;
     int fullHeight = (int)meta.y;
-    int srcWidth = (int)param0.x;
-    int srcHeight = (int)param0.y;
+    int srcWidth = (int)sourceSize.x;
+    int srcHeight = (int)sourceSize.y;
     // Integer nearest fill, identical to the GLSL reference. Plain 32-bit
     // math: full <= 2*kMaxDimension and src <= 64k bound the product well
     // below 2^31.

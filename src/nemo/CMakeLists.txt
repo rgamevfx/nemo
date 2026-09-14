@@ -16,9 +16,19 @@ add_library(nemo_core
     core/session/ProjectFile.cpp
     core/nodes/NodeCatalog.cpp
     core/evaluation/CpuReference.cpp
-    core/evaluation/NativeEffects.cpp
+    core/evaluation/NodeContributions.cpp
     core/evaluation/Reuse.cpp
     core/evaluation/SourceRequest.cpp
+    nodes/Builtins.cpp
+    nodes/blur/Contribution.cpp
+    nodes/constcolor/Contribution.cpp
+    nodes/grade/Contribution.cpp
+    nodes/merge/Contribution.cpp
+    nodes/output/Contribution.cpp
+    nodes/source/Contribution.cpp
+    nodes/testpattern/Contribution.cpp
+    nodes/transform/Contribution.cpp
+    nodes/viewer/Contribution.cpp
 )
 add_library(nemo::core ALIAS nemo_core)
 

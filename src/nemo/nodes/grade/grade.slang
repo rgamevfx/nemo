@@ -1,4 +1,5 @@
-// Nemo native effect contract (spec section 10.4, issue #34)
+// Nemo native effect contract (spec section 10.4, issue #34; contribution-local
+// module per issue #83)
 // ---------------------------------------------------------
 // name: grade
 // version: 1
@@ -12,8 +13,11 @@
 //     channel; channels: [RGB, RGBA, R, G, B, Alpha, None]; reverse;
 //     clampBlack (default true); clampWhite (default false); plus the common
 //     maskChannel/invertMask/mix controls.
-// bindings: shared effect contract (see testpattern.slang). Port order is
-//   declared: set 1 binding 0 = main, binding 1 = mask.
+// bindings (native binding contract v2, see testpattern.slang):
+//   set 0, binding 0 : common request uniforms
+//   set 0, binding 1 : node-local payload ("nemo.nodes.grade.payload.v1")
+//   set 1, binding 0 = main, binding 1 = mask
+//   set 2, binding 0 : output image2D
 // dependencies:
 //   region: output pixel (x, y) depends only on inputs (x, y); no
 //     neighborhood reads, so no support-region expansion.
@@ -43,12 +47,12 @@ cbuffer EffectUniforms {
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
-    float4 param0;
-    float4 param1;
-    // issue #34 native effects: append-only extension shared by EVERY effect
-    // kernel (existing offsets unchanged, so preexisting kernels stay
-    // ABI-aligned with the C++ EffectUniforms mirror).
-    float4 mask;             // (maskChannel, invertMask, mix, maskPresent)
+};
+
+[[vk::binding(1, 0)]]
+cbuffer GradePayload {
+    // (maskChannel, invertMask, mix, maskPresent)
+    float4 mask;
     float4 gradeBlackpoint;
     float4 gradeWhitepoint;
     float4 gradeLift;
@@ -56,11 +60,9 @@ cbuffer EffectUniforms {
     float4 gradeMultiply;
     float4 gradeOffset;
     float4 gradeGamma;
-    float4 gradeFlags;       // (channels bitmask, reverse, clampBlack, clampWhite)
-    float4 blur;             // (size full-res, channels bitmask, 0, 0)
-    float4 transform;        // (translateX, translateY, scale, rotate degrees)
-    float4 transformFlags;   // (filter, pixelAspect, cos, sin)
-}
+    // (channels bitmask, reverse, clampBlack, clampWhite)
+    float4 gradeFlags;
+};
 
 [[vk::binding(0, 1)]]
 RWTexture2D<float4> in_main;

@@ -23,7 +23,7 @@
 // co-sited with even luma columns, vertically midway between luma rows.
 // Alpha is opaque (video has no alpha).
 //
-// bindings (shared effect contract, see testpattern.slang):
+// Media conversion bindings (independent of the node-effect payload contract):
 //   set 0, binding 0 : EffectUniforms (std140) — meta = (width, height, 0, 0)
 //                      param0 = (transfer, range, matrix, 0)
 //   set 1, binding 0 : Y plane  (sampler2D, R8)

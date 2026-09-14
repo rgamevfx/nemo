@@ -665,7 +665,8 @@ TEST(Interactive, IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically) 
         .displayName = "Integer",
         .group = "Tests",
         .parameters = {{.name = "count", .type = nemo::ParameterType::Integer, .defaultValue = std::int64_t{0}}}};
-    auto catalog = std::make_shared<nemo::NodeCatalog>(std::vector<nemo::NodeDescriptor>{descriptor});
+    auto catalog =
+        std::make_shared<nemo::NodeCatalog>(nemo::extendedBuiltinSchema(std::vector<nemo::NodeDescriptor>{descriptor}));
     nemo::Document document(catalog);
     const auto network = document.rootNetworkId();
     const auto node = document.network(network).graph().addNode("test.integer", "control");
@@ -787,7 +788,8 @@ InspectorFixture inspectorFixture() {
              .editor = "nemo.text"},
         }};
     InspectorFixture fixture;
-    fixture.catalog = std::make_shared<nemo::NodeCatalog>(std::vector<nemo::NodeDescriptor>{descriptor});
+    fixture.catalog =
+        std::make_shared<nemo::NodeCatalog>(nemo::extendedBuiltinSchema(std::vector<nemo::NodeDescriptor>{descriptor}));
     fixture.document = nemo::Document{fixture.catalog};
     const auto network = fixture.document.rootNetworkId();
     fixture.node = fixture.document.network(network).graph().addNode("test.inspector", "inspector");

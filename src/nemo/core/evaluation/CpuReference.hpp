@@ -11,6 +11,7 @@
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Ids.hpp"
 #include "nemo/core/evaluation/Image.hpp"
+#include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/evaluation/Plan.hpp"
 #include "nemo/core/evaluation/Request.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
@@ -130,8 +131,17 @@ public:
 // (issue #11), source nodes are served by the provider; without one,
 // evaluation rejects them explicitly. Throws EvaluationException with
 // node-identifying messages.
-[[nodiscard]] CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request,
-                                        ResultCache<CpuImage>* reuse = nullptr, SourceProvider* sources = nullptr);
+//
+// `contributions` (issue #83) is the immutable node registration this
+// evaluation executes: the caller may hold its own snapshot (a test-only
+// contribution extends builtinContributions()), and the default is the
+// built-in registration. Every non-structural node's schema/backend
+// compatibility is checked against it before any cache or alias hit, and the
+// snapshot is retained for the call's duration.
+[[nodiscard]] CpuEvaluation
+evaluateCpu(const Document& document, EvaluationRequest request, ResultCache<CpuImage>* reuse = nullptr,
+            SourceProvider* sources = nullptr,
+            std::shared_ptr<const NodeContributions> contributions = builtinNodeContributions());
 
 // Validates a request for any executor (CPU reference and native GPU,
 // issue #8): quality must be Full (spec section 8), channels RGBA, region

@@ -3,6 +3,7 @@
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include <array>
 #include <cmath>
@@ -75,44 +76,6 @@ struct EffectMaskParameters {
     float mix{1.0F};
 };
 
-// Grade coefficients are per-channel color values; `channels` selects which
-// bitmask channels are transformed. Gamma is per channel.
-struct GradeParameters {
-    std::array<float, 4> blackpoint{0.0F, 0.0F, 0.0F, 0.0F};
-    std::array<float, 4> whitepoint{1.0F, 1.0F, 1.0F, 1.0F};
-    std::array<float, 4> lift{0.0F, 0.0F, 0.0F, 0.0F};
-    std::array<float, 4> gain{1.0F, 1.0F, 1.0F, 1.0F};
-    std::array<float, 4> multiply{1.0F, 1.0F, 1.0F, 1.0F};
-    std::array<float, 4> offset{0.0F, 0.0F, 0.0F, 0.0F};
-    std::array<float, 4> gamma{1.0F, 1.0F, 1.0F, 1.0F};
-    std::uint32_t channels{kEffectChannelR | kEffectChannelG | kEffectChannelB};
-    bool reverse{false};
-    bool clampBlack{true};
-    bool clampWhite{false};
-};
-
-struct BlurParameters {
-    float size{0.0F};
-    std::uint32_t channels{kEffectChannelR | kEffectChannelG | kEffectChannelB | kEffectChannelA};
-};
-
-struct TransformParameters {
-    float translateX{0.0F};
-    float translateY{0.0F};
-    float scale{1.0F};
-    float rotate{0.0F};
-    // 0 Cubic, 1 Linear, 2 Nearest (a plain int, not an enum, per contract).
-    int filter{0};
-};
-
-// Merge composite operations (issue #75). Over stays the default and keeps
-// its existing numerical output; the other four extend the foreground-coverage
-// convention to an explicit per-channel blend target. The typed interpretation
-// is shared by the CPU reference, the GPU executor, and both shader front ends,
-// so an unknown authored value fails explicitly in every executor instead of
-// silently selecting a fallback.
-enum class MergeOperation { Over, Plus, Multiply, Screen, Difference };
-
 [[nodiscard]] inline float effectiveNumber(const NodeCatalog& catalog, const NodeInstance& node,
                                            ParameterValues& effectiveParams, const char* key) {
     const auto& value = effectiveParameter(catalog, node, effectiveParams, key);
@@ -170,158 +133,6 @@ enum class MergeOperation { Over, Plus, Multiply, Screen, Difference };
     return mask;
 }
 
-// Merge's typed operation (issue #75). Both executors resolve the authored
-// choice through this one function, so an unsupported value names the same
-// supported set in every execution path (the descriptor's choices reject it
-// earlier still, on author and on deserialize).
-[[nodiscard]] inline MergeOperation effectiveMergeOperation(const NodeCatalog& catalog, const NodeInstance& node,
-                                                            ParameterValues& effectiveParams) {
-    const std::string& operation = effectiveChoice(catalog, node, effectiveParams, "operation");
-    if (operation == "over") {
-        return MergeOperation::Over;
-    }
-    if (operation == "plus") {
-        return MergeOperation::Plus;
-    }
-    if (operation == "multiply") {
-        return MergeOperation::Multiply;
-    }
-    if (operation == "screen") {
-        return MergeOperation::Screen;
-    }
-    if (operation == "difference") {
-        return MergeOperation::Difference;
-    }
-    failNode(node,
-             "parameter 'operation' must be one of over, plus, multiply, screen, difference, got '" + operation + "'");
-}
-
-[[nodiscard]] inline GradeParameters effectiveGrade(const NodeCatalog& catalog, const NodeInstance& node,
-                                                    ParameterValues& effectiveParams) {
-    GradeParameters grade;
-    grade.blackpoint = effectiveColor4(catalog, node, effectiveParams, "blackpoint");
-    grade.whitepoint = effectiveColor4(catalog, node, effectiveParams, "whitepoint");
-    grade.lift = effectiveColor4(catalog, node, effectiveParams, "lift");
-    grade.gain = effectiveColor4(catalog, node, effectiveParams, "gain");
-    grade.multiply = effectiveColor4(catalog, node, effectiveParams, "multiply");
-    grade.offset = effectiveColor4(catalog, node, effectiveParams, "offset");
-    grade.gamma = effectiveColor4(catalog, node, effectiveParams, "gamma");
-    const std::string& channels = effectiveChoice(catalog, node, effectiveParams, "channels");
-    if (channels == "RGB") {
-        grade.channels = kEffectChannelR | kEffectChannelG | kEffectChannelB;
-    } else if (channels == "RGBA") {
-        grade.channels = kEffectChannelR | kEffectChannelG | kEffectChannelB | kEffectChannelA;
-    } else if (channels == "R") {
-        grade.channels = kEffectChannelR;
-    } else if (channels == "G") {
-        grade.channels = kEffectChannelG;
-    } else if (channels == "B") {
-        grade.channels = kEffectChannelB;
-    } else if (channels == "Alpha") {
-        grade.channels = kEffectChannelA;
-    } else if (channels == "None") {
-        grade.channels = 0U;
-    } else {
-        failNode(node, "parameter 'channels' must be one of RGB, RGBA, R, G, B, Alpha, None, got '" + channels + "'");
-    }
-    grade.reverse = effectiveFlag(catalog, node, effectiveParams, "reverse");
-    grade.clampBlack = effectiveFlag(catalog, node, effectiveParams, "clampBlack");
-    grade.clampWhite = effectiveFlag(catalog, node, effectiveParams, "clampWhite");
-
-    // Shared admissibility: every enabled channel must admit a finite forward
-    // operation, and a reverse grade must also be invertible. Disabled
-    // (unselected) channels pass through untouched and are not constrained,
-    // even when their coefficients are singular.
-    for (int channel = 0; channel < 4; ++channel) {
-        if ((grade.channels & (1U << channel)) == 0)
-            continue;
-        const float gamma = grade.gamma[static_cast<std::size_t>(channel)];
-        if (!(gamma > 0.0F) || !std::isfinite(gamma)) {
-            failNode(node, "parameter 'gamma' must be finite and positive for every enabled channel");
-        }
-        // Every coefficient component of an enabled channel must itself be
-        // finite; disabled channels are exempt.
-        const auto componentFinite = [&](const std::array<float, 4>& values) {
-            return std::isfinite(values[static_cast<std::size_t>(channel)]);
-        };
-        if (!componentFinite(grade.blackpoint) || !componentFinite(grade.whitepoint) || !componentFinite(grade.lift) ||
-            !componentFinite(grade.gain) || !componentFinite(grade.multiply) || !componentFinite(grade.offset) ||
-            !componentFinite(grade.gamma)) {
-            failNode(node, "grade color coefficients must be finite for every enabled channel");
-        }
-        // Forward uses 1/gamma, reverse uses gamma; the exponent actually
-        // applied must be representable as a finite float.
-        const float exponent = grade.reverse ? gamma : 1.0F / gamma;
-        if (!std::isfinite(exponent)) {
-            failNode(node, "parameter 'gamma' has no finite exponent for an enabled channel");
-        }
-        const float blackpoint = grade.blackpoint[static_cast<std::size_t>(channel)];
-        const float whitepoint = grade.whitepoint[static_cast<std::size_t>(channel)];
-        if (whitepoint == blackpoint) {
-            failNode(node, "parameters 'whitepoint' and 'blackpoint' must differ for every enabled channel");
-        }
-        const float slope =
-            (grade.gain[static_cast<std::size_t>(channel)] - grade.lift[static_cast<std::size_t>(channel)]) *
-            grade.multiply[static_cast<std::size_t>(channel)] / (whitepoint - blackpoint);
-        const float intercept = grade.lift[static_cast<std::size_t>(channel)] +
-                                grade.offset[static_cast<std::size_t>(channel)] - blackpoint * slope;
-        if (!std::isfinite(slope) || !std::isfinite(intercept)) {
-            failNode(node, "grade parameters produce unrepresentable coefficients for an enabled channel");
-        }
-        if (grade.reverse && slope == 0.0F) {
-            failNode(node, "reverse grade requires a nonzero slope for every enabled channel");
-        }
-    }
-    return grade;
-}
-
-[[nodiscard]] inline BlurParameters effectiveBlur(const NodeCatalog& catalog, const NodeInstance& node,
-                                                  ParameterValues& effectiveParams) {
-    BlurParameters blur;
-    blur.size = effectiveNumber(catalog, node, effectiveParams, "size");
-    if (!(blur.size >= 0.0F) || !(blur.size <= 100.0F)) {
-        failNode(node, "parameter 'size' must be within [0, 100]");
-    }
-    const std::string& channels = effectiveChoice(catalog, node, effectiveParams, "channels");
-    if (channels == "RGBA") {
-        blur.channels = kEffectChannelR | kEffectChannelG | kEffectChannelB | kEffectChannelA;
-    } else if (channels == "RGB") {
-        blur.channels = kEffectChannelR | kEffectChannelG | kEffectChannelB;
-    } else if (channels == "Alpha") {
-        blur.channels = kEffectChannelA;
-    } else {
-        failNode(node, "parameter 'channels' must be one of RGBA, RGB, Alpha, got '" + channels + "'");
-    }
-    return blur;
-}
-
-[[nodiscard]] inline TransformParameters effectiveTransform(const NodeCatalog& catalog, const NodeInstance& node,
-                                                            ParameterValues& effectiveParams) {
-    TransformParameters transform;
-    transform.translateX = effectiveNumber(catalog, node, effectiveParams, "translateX");
-    transform.translateY = effectiveNumber(catalog, node, effectiveParams, "translateY");
-    transform.scale = effectiveNumber(catalog, node, effectiveParams, "scale");
-    // Positive finite scale with a finite reciprocal: the archive's 0.1..3 was
-    // a useful slider range, not an equation limit, so typed scale 4 or 0.05
-    // stay usable while zero, negatives and reciprocals that overflow remain
-    // inadmissible.
-    if (!(transform.scale > 0.0F) || !std::isfinite(1.0F / transform.scale)) {
-        failNode(node, "parameter 'scale' must be positive and finite with a finite reciprocal");
-    }
-    transform.rotate = effectiveNumber(catalog, node, effectiveParams, "rotate");
-    const std::string& filter = effectiveChoice(catalog, node, effectiveParams, "filter");
-    if (filter == "Cubic") {
-        transform.filter = 0;
-    } else if (filter == "Linear") {
-        transform.filter = 1;
-    } else if (filter == "Nearest") {
-        transform.filter = 2;
-    } else {
-        failNode(node, "parameter 'filter' must be one of Cubic, Linear, Nearest, got '" + filter + "'");
-    }
-    return transform;
-}
-
 // Resolves one expanded occurrence's static overrides and request-local
 // animation without copying nodes that have neither. The returned pointer is
 // valid while `localNode` remains in scope. This metadata seam is shared by
@@ -361,37 +172,6 @@ enum class MergeOperation { Over, Plus, Multiply, Screen, Difference };
         effectiveNode = &*localNode;
     }
     return effectiveNode;
-}
-
-// Authoring-time admissibility (issue #75). Runs the same effective-parameter
-// owners the executors use, so a parameter gesture cannot publish a value the
-// executor would reject (a non-positive gamma on an enabled Grade channel, a
-// mask Mix outside [0, 1], a Transform scale outside its domain, ...). Only
-// the typed interpretation is checked: no graph is evaluated and no image is
-// produced. `effectiveParams` must already hold the resolved static and
-// animated values for `node`. Returns the failure message, or nullopt when the
-// resolved parameters are admissible.
-[[nodiscard]] inline std::optional<std::string>
-validateEffectParameters(const NodeCatalog& catalog, const NodeInstance& node, ParameterValues& effectiveParams) {
-    try {
-        if (node.type == "grade") {
-            static_cast<void>(effectiveGrade(catalog, node, effectiveParams));
-        } else if (node.type == "blur") {
-            static_cast<void>(effectiveBlur(catalog, node, effectiveParams));
-        } else if (node.type == "transform") {
-            static_cast<void>(effectiveTransform(catalog, node, effectiveParams));
-        } else if (node.type == "merge") {
-            static_cast<void>(effectiveMergeOperation(catalog, node, effectiveParams));
-        } else {
-            return std::nullopt;
-        }
-        // The shared optional-mask controls carry their own admissibility for
-        // every effect that declares them.
-        static_cast<void>(effectiveEffectMask(catalog, node, effectiveParams));
-    } catch (const std::exception& error) {
-        return std::string{error.what()};
-    }
-    return std::nullopt;
 }
 
 }  // namespace nemo

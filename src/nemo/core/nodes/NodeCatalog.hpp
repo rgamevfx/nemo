@@ -114,13 +114,16 @@ struct NodeDescriptor {
 };
 class NodeCatalog {
 public:
-    // The default catalog contains only the immutable built-in descriptors.
+    // The built-in catalog: exactly the authoritative built-in descriptor
+    // projection (the schema side of the single explicit contribution list,
+    // src/nemo/nodes/BuiltinNodes.inc). It assembles no descriptor of its own.
     NodeCatalog();
-    // A snapshot is assembled once from built-ins plus explicitly supplied
-    // extension/fixture descriptors. There is no mutation or unregister API.
-    // Invalid descriptors throw std::invalid_argument before the snapshot is
-    // observable.
-    explicit NodeCatalog(std::vector<NodeDescriptor> extensions);
+    // An exact schema inventory: the snapshot contains exactly `descriptors`
+    // and nothing else. There is no mutation or unregister API, and invalid
+    // descriptors throw std::invalid_argument before the snapshot is
+    // observable. Fixtures that need the built-ins as well build their
+    // inventory with extendedBuiltinSchema() and say so explicitly.
+    explicit NodeCatalog(std::vector<NodeDescriptor> descriptors);
     [[nodiscard]] const std::deque<NodeDescriptor>& descriptors() const { return descriptors_; }
     [[nodiscard]] const NodeDescriptor* find(std::string_view type) const;
     [[nodiscard]] std::span<const int> samplingScalesSupported(std::string_view type) const;
@@ -139,5 +142,10 @@ private:
 };
 [[nodiscard]] const NodeCatalog& builtinNodeCatalog();
 [[nodiscard]] std::shared_ptr<const NodeCatalog> builtinNodeCatalogPtr();
+
+// The built-in schema inventory plus explicitly supplied extension descriptors,
+// ready for the exact-inventory constructor. Duplicate identities, including a
+// redeclared built-in, remain duplicates and are rejected by the catalog.
+[[nodiscard]] std::vector<NodeDescriptor> extendedBuiltinSchema(std::vector<NodeDescriptor> extensions);
 
 }  // namespace nemo

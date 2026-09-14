@@ -1,0 +1,314 @@
+{
+  "issue": 83,
+  "date": "2026-09-14",
+  "branch": "issue/83-node-contributions",
+  "baseline": "16f953f",
+  "status": "Implemented locally; owner review required before merge, push or closure",
+  "classification": "System extension/internal architectural restructuring; unchanged artist-facing surface",
+  "decision": "docs/decisions/0008-built-in-node-contributions.md",
+  "change_boundary": {
+    "inventory": "src/nemo/nodes/BuiltinNodes.inc",
+    "builtins": [
+      {
+        "type": "blur",
+        "display_name": "Blur"
+      },
+      {
+        "type": "constcolor",
+        "display_name": "Constant Color"
+      },
+      {
+        "type": "grade",
+        "display_name": "Grade"
+      },
+      {
+        "type": "merge",
+        "display_name": "Merge"
+      },
+      {
+        "type": "output",
+        "display_name": "Output"
+      },
+      {
+        "type": "source",
+        "display_name": "Read"
+      },
+      {
+        "type": "testpattern",
+        "display_name": "Test Pattern"
+      },
+      {
+        "type": "transform",
+        "display_name": "Transform"
+      },
+      {
+        "type": "viewer",
+        "display_name": "Viewer"
+      }
+    ],
+    "modules": "src/nemo/nodes/<slug> owns schema, CPU pixels, typed effect parameters, GPU payload/pass preparation, Slang and retained GLSL pixels",
+    "public_internal_api": [
+      "NodeContributions immutable schema/CPU/editor projection",
+      "GpuContribution value-only preparation/pass contract",
+      "EffectLibrary immutable validated native projection replacing the mutable map",
+      "NodeCatalog(vector) exact-inventory construction; extendedBuiltinSchema for metadata-only extensions",
+      "evaluateCpu accepts a retained contribution snapshot"
+    ],
+    "removed": [
+      "central per-effect CPU dispatch",
+      "central GPU effect packing and pass selection",
+      "shared effect-specific uniform fields",
+      "independent manual runtime shader inventories",
+      "NativeEffects.hpp/.cpp",
+      "EffectShaders.hpp"
+    ],
+    "unchanged": [
+      "persistent node and parameter identities",
+      "document schema and serialization",
+      "Commands/ProjectSession history",
+      "scoped animation and overrides",
+      "source mapping and color ownership",
+      "GPU allocator/submission/scheduling/cache policy",
+      "shared inspector, graph gestures and QML"
+    ],
+    "dependencies": "No new dependency; no shipped affine node",
+    "example": {
+      "before": "An ordinary effect required schema construction, CPU dispatch, GPU packing, shared uniforms, shader-library lists and build edits.",
+      "after": "Add the local module, one NEMO_NODE(slug) entry and normal build wiring. The test-only affine has one append in affineGpuContributions(); its schema/CPU projection derives from that same declaration list.",
+      "files": [
+        "tests/contributions/Affine.hpp",
+        "tests/contributions/Affine.cpp",
+        "tests/contributions/Affine.slang",
+        "tests/ContributionTests.cpp",
+        "tests/CMakeLists.txt"
+      ],
+      "proof": "No affine-specific central executor, common uniform, inspector, Command or serialization change.",
+      "operation": "out.rgb = scale.rgb * in.rgb + offset.rgb; out.a = in.a",
+      "input": [
+        -2,
+        8,
+        0.5,
+        0.25
+      ],
+      "scale": [
+        2,
+        3,
+        0.5,
+        9
+      ],
+      "offset": [
+        0.5,
+        -1,
+        4,
+        7
+      ],
+      "independent_expected": [
+        -3.5,
+        23,
+        4.25,
+        0.25
+      ]
+    }
+  },
+  "verification": {
+    "build_environment": {
+      "VCPKG_ROOT": "/home/rgame/.local/share/vcpkg",
+      "gpu": "NVIDIA GeForce GTX 1070 Mobile",
+      "driver": "580.173.02",
+      "slang": "2026.17"
+    },
+    "builds": [
+      {
+        "command": "cmake --build --preset debug -j 2",
+        "result": "Passed final integration build"
+      },
+      {
+        "command": "cmake --build --preset release -j 2",
+        "result": "Passed final integration build"
+      },
+      {
+        "command": "cmake --build --preset debug --target nemo_viewer_tests -j 2",
+        "result": "Passed source-error correction build"
+      },
+      {
+        "command": "cmake --build --preset release --target nemo_eval -j 2",
+        "result": "Passed source-error correction build"
+      },
+      {
+        "command": "cmake --build --preset debug --target nemo-ui nemo-cli -j 2",
+        "result": "Passed corrected client relink"
+      },
+      {
+        "command": "cmake --build --preset release --target nemo-ui nemo-cli -j 2",
+        "result": "Passed corrected client relink"
+      }
+    ],
+    "build_notes": "Integration compile failures were corrected incrementally. Existing minizip-ng mktemp linker warnings remain; no new dependency or hosted build was introduced.",
+    "full_debug": {
+      "command": "XDG_RUNTIME_DIR=/run/user/1000 ctest --preset debug -j 2 --output-junit /home/rgame/dev/Nemo_Dev2/build/issue83-evidence/debug-ctest.xml",
+      "runs": 1,
+      "registered": 677,
+      "passed": 665,
+      "skipped": 11,
+      "failed": 1,
+      "seconds": 89.42,
+      "local_report": "build/issue83-debug-ctest.xml",
+      "failure": "Viewer.UnsupportedFormatRejectedWithPreciseReason exposed conversion of MediaDecodeError into EvaluationException.",
+      "correction": "Removed the new catch around SourceSession::acquire, preserving its existing typed media errors. The behavioral test was kept unchanged.",
+      "focused_command": "ctest --preset debug -R '^Viewer.UnsupportedFormatRejectedWithPreciseReason$' --output-on-failure",
+      "focused_result": "1/1 passed after correction; the full suite was not rerun.",
+      "skipped_names": [
+        "ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations",
+        "ReadViewerSurface.PngSelectedInReadAppearsInItsAttachedViewer",
+        "ReadViewerSurface.GraphViewerUsesTheAttachedTargetsReferenceNotTheLegacySrcKey",
+        "ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt",
+        "ReadViewerSurface.ClearingTheReadShowsTheExplicitEmptyState",
+        "ReadViewerSurface.OfflineReadReportsItsPathOnTheViewer",
+        "ReadViewerSurface.DownstreamEffectKeepsItsSingleMediaSourcesDomain",
+        "ReadViewerSurface.SeveralMediaSourcesKeepTheDefaultCompositionCanvas",
+        "ReadViewerSurface.RetiredContinuousZoomStateStillFitsTheImage",
+        "ReadViewerSurface.UserDocumentDisplaysItsAttachedRead",
+        "PreparedConfigSurface.SamePathConfigRewriteRefreshesOnFirstReplacement"
+      ]
+    },
+    "native_effects": {
+      "command": "XDG_RUNTIME_DIR=/run/user/1000 build/debug/tests/nemo_effect_tests",
+      "result": "16/16 passed, no skips; independent analytic/CPU expectations, Slang/GLSL, masks, multipass, reuse, animation and retained resources"
+    },
+    "cli": {
+      "command": "build/debug/apps/nemo-cli/nemo-cli project-session build/issue83-evidence/native-workflow.nemo",
+      "stdin": "{\"op\":\"catalog\"}\n",
+      "result": "Exit 0, empty stderr, exact nine migrated built-ins; isolated fixture removed during cleanup"
+    },
+    "sanitizer_environment": {
+      "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json",
+      "ASAN_OPTIONS": "detect_leaks=1",
+      "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+      "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+      "XDG_RUNTIME_DIR": "/run/user/1000"
+    },
+    "sanitizer_build": "cmake --preset asan && cmake --build --preset asan --target nemo_contribution_tests nemo_effect_tests nemo_core_tests -j 2",
+    "sanitizer_effects": {
+      "command": "build/asan/tests/nemo_effect_tests --gtest_filter=Effect.InvalidShaderSourceIdentifiesNodeAndLocation:Effect.MissingSlangKernelFailsWithoutSubstitution:Effect.GpuReuseAvoidsRecomputationAndPreservesResults:Effect.AnimatedParametersReachNativeGpuExecution:Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion:Effect.NativeGradeBlurTransformMatchCpuReference",
+      "result": "6/6 passed; process exited cleanly with existing libdbus suppression only",
+      "earlier_attempt": "The initial contribution-tests && all-effect-tests command had a 240-second deadline. Contribution 7/7 completed and exited cleanly, then 10 effect cases passed before the command timed out in the next case. The six remaining effect cases were run explicitly; a clean full sanitizer effect-suite invocation is not claimed."
+    },
+    "sanitizer_queue": {
+      "command": "build/asan/tests/nemo_core_tests --gtest_filter=Gpu.RetainedResourcesReleasedOnlyAfterCompletion:Gpu.AsyncSubmitPollWaitLifecycle:Gpu.QueueTeardownDrainsPendingSubmissions",
+      "result": "3/3 passed, no skips; process exited cleanly with existing libdbus suppression only"
+    },
+    "affine_debug": {
+      "command": "cmake --build --preset debug --target nemo_contribution_tests -j 2 && build/debug/tests/nemo_contribution_tests",
+      "result": "7/7 passed, no skips, after reducing the test assembly to one affine entry with a derived CPU/schema projection; real native Slang execution and validation included."
+    },
+    "affine_sanitizers": {
+      "command": "cmake --build --preset asan --target nemo_contribution_tests -j 2 && build/asan/tests/nemo_contribution_tests",
+      "result": "Final 7/7 passed, no skips, with ASan/UBSan and leak checking enabled; real affine CPU/Slang workflow, invalid assembly, unavailability, implementation reuse and CPU/GPU registration lifetime covered."
+    }
+  },
+  "native_surface": {
+    "environment": "Production Qt Quick application on Linux/COSMIC Wayland, 1280x720 client, DPR 1, Graphite",
+    "reference": [
+      "docs/evidence/issue25-prototype-acceptance-v1.md",
+      "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+      "node-creation-deletion-session.json checks[0-1]",
+      "graph-behaviors-session.json controls/open",
+      "#75 NumericField/shared inspector supersedes historical prototype numeric clamping"
+    ],
+    "fixture": "Isolated copy of docs/evidence/assets/issue34-native-effects/workflow.nemo, with the real EXR and docs/evidence/issue12-view.ocio paths rebased to this checkout",
+    "command": "build/debug/apps/nemo-ui/nemo-ui --project /home/rgame/dev/Nemo_Dev2/build/issue83-evidence/native-workflow.nemo --viewer-cache-dir /home/rgame/dev/Nemo_Dev2/build/issue83-evidence/after-cache",
+    "environment_overrides": {
+      "DISPLAY": ":1",
+      "WAYLAND_DISPLAY": "wayland-1",
+      "XDG_RUNTIME_DIR": "/run/user/1000",
+      "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+      "QT_QPA_PLATFORM": "wayland",
+      "QT_ACCESSIBILITY": "1",
+      "XDG_CONFIG_HOME": "/home/rgame/dev/Nemo_Dev2/build/issue83-evidence/after-config"
+    },
+    "observed": [
+      "Opened the same existing Blur2 inspector as the pre-edit production baseline",
+      "Tab opened shared catalog; typing Blur filtered it; Enter immediately inserted Blur3 into the selected chain",
+      "Frame all exposed the full Read/Grade/Blur/Transform/Blur/Merge/Output/Viewer chain; double-click opened Blur3 in the existing inspector",
+      "Shared Size numeric field committed 12 and the viewer rendered the visibly blurred multi-pass result",
+      "Revealed the existing Media Bin history surface and used Ctrl+Z; Blur3 stayed present, Size returned to 0 and the viewer sharpened"
+    ],
+    "comparison": {
+      "graph_region": [
+        644,
+        108,
+        1270,
+        401
+      ],
+      "baseline_vs_initial_after_changed_graph_pixels": 0,
+      "viewer_region": [
+        110,
+        84,
+        534,
+        324
+      ],
+      "baseline_vs_after_undo_changed_viewer_pixels": 0,
+      "initial_viewer_difference": "Initial pre/post captures differed at 80,803 pixels (maximum channel delta 56). Exactly the same two pixel arrays were observed in the unchanged after build before the size edit and after undo. The after-undo viewer is pixel-identical to the pre-edit baseline; this transient capture difference is not treated as an effect-image baseline change.",
+      "gate": "Observed layout/gesture preservation and live rendered transitions; owner acceptance remains separate from agent verification."
+    },
+    "tool_limitations": "Harness screenshot failed because Wayland capture lacks wayland-pipewire; input had no coordinate frame. After these errors, cosmic-screenshot and a temporary kernel/libinput driver were used. Two unmodified baseline exits occurred around accessibility inspection (1/139); no causal attribution or new Qt investigation was made.",
+    "assets": [
+      {
+        "path": "docs/evidence/assets/issue83-contributions/baseline-blur.png",
+        "sha256": "3f20f7ae3f6407d55c7eb538e286f4479073a062c9d30ed959ae317f83b5c414",
+        "size": [
+          1280,
+          720
+        ]
+      },
+      {
+        "path": "docs/evidence/assets/issue83-contributions/after-blur.png",
+        "sha256": "4a9ada009e9c938bbf63ce64f27c5fafb8e7d5725030502993eef0ac4b6c4777",
+        "size": [
+          1280,
+          720
+        ]
+      },
+      {
+        "path": "docs/evidence/assets/issue83-contributions/catalog-blur.png",
+        "sha256": "46d96cb7ef638a301bb37f51cfe64452a52833d24853b1f6091f08736c324a86",
+        "size": [
+          1280,
+          720
+        ]
+      },
+      {
+        "path": "docs/evidence/assets/issue83-contributions/blur-new-inspector.png",
+        "sha256": "d954968f619bae65e9069e0dec32e9f5fd560a8bee21fa2827f4d3c56dd6c027",
+        "size": [
+          1280,
+          720
+        ]
+      },
+      {
+        "path": "docs/evidence/assets/issue83-contributions/blur-edited.png",
+        "sha256": "58b0f5b85dfa2f24ee6768ea227acc18dc7abe4df36e5c8fc9f624d935f4d7a5",
+        "size": [
+          1280,
+          720
+        ]
+      },
+      {
+        "path": "docs/evidence/assets/issue83-contributions/blur-undone.png",
+        "sha256": "0fce2488274416dd67725ecfc81c38116833b8e88379d375ecef159145b20a2f",
+        "size": [
+          1280,
+          720
+        ]
+      }
+    ]
+  },
+  "limitations": [
+    "No merge, push or closure; internal API/ADR and native evidence require owner review.",
+    "#75 Standards/Spec reviewers reported no review performed; that baseline gate remains incomplete.",
+    "#75 Qt/QML/Wayland leak report remains unresolved and is not reclassified as passing by these headless/native-effect sanitizer checks.",
+    "No new suppressions, disabled leak checking, hosted CI, benchmark campaign, Windows matrix or blanket sanitizer suite.",
+    "The 11 opt-in native surface tests remained skipped; the separate production Wayland smoke is the UI evidence."
+  ],
+  "cleanup": "Temporary native input service/application stopped; driver, full-desktop captures, private fixture/autosaves and viewer caches removed. Six cropped application images and the local full-suite XML retained. Existing user autosaves outside the task directory were untouched."
+}

@@ -304,7 +304,7 @@ TEST(GraphTest, MaskInputsAcceptImageOrMaskButMaskCannotFeedImage) {
         .inputs = {{PortKind::Mask, "mask"}},
         .outputs = {{PortKind::Mask, "mask"}},
         .capabilities = NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Full}, .channels = {"RGBA"}}};
-    auto catalog = std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{descriptor});
+    auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{descriptor}));
     Graph g(catalog);
     const NodeId maskSource = g.addNode("mask.fixture", "mask-source");
     const NodeId maskSink = g.addNode("mask.fixture", "mask-sink");

@@ -101,7 +101,7 @@ function(_nemo_slang_find_or_download)
     set(NEMO_SLANGC_TOOL "${_compiler}" PARENT_SCOPE)
 endfunction()
 function(nemo_add_slang_shaders target)
-    cmake_parse_arguments(ARG "ALL" "" "SHADERS" ${ARGN})
+    cmake_parse_arguments(ARG "ALL" "OUTPUT_DIRECTORY" "SHADERS;DEPENDS" ${ARGN})
     if(NOT ARG_SHADERS)
         message(FATAL_ERROR "nemo_add_slang_shaders(${target}): no SHADERS given")
     endif()
@@ -128,16 +128,21 @@ function(nemo_add_slang_shaders target)
 
     message(STATUS "Shader compilation: ${NEMO_SLANGC_TOOL}")
     set(_spv_dir "${CMAKE_CURRENT_BINARY_DIR}/spv")
+    if(ARG_OUTPUT_DIRECTORY)
+        set(_spv_dir "${ARG_OUTPUT_DIRECTORY}")
+    endif()
     file(MAKE_DIRECTORY "${_spv_dir}")
     set(_outputs)
     foreach(_shader ${ARG_SHADERS})
+        cmake_path(ABSOLUTE_PATH _shader BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            NORMALIZE OUTPUT_VARIABLE _source)
         cmake_path(GET _shader STEM _name)
         set(_spv "${_spv_dir}/${_name}.spv")
         add_custom_command(OUTPUT "${_spv}"
             COMMAND "${NEMO_SLANGC_TOOL}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/${_shader}"
+                "${_source}"
                 -target spirv -entry main -o "${_spv}"
-            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${_shader}" "${NEMO_SLANGC_TOOL}"
+            DEPENDS "${_source}" "${NEMO_SLANGC_TOOL}" ${ARG_DEPENDS}
             COMMENT "slangc ${_shader} -> ${_name}.spv"
             VERBATIM)
     list(APPEND _outputs "${_spv}")

@@ -4,13 +4,14 @@
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
-#include "nemo/core/evaluation/NativeEffects.hpp"
+#include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -166,35 +167,6 @@ void setMergeParam(Document& document, const char* key, ParameterValue value) {
 
 [[nodiscard]] std::array<float, 4> mergePixel(const Document& document) {
     return evaluateCpu(document, fullFrameRequest(document, 0)).image.pixel(0, 0);
-}
-
-[[nodiscard]] CpuImage solidPixel(const std::array<float, 4>& pixel) {
-    ImageLayout layout;
-    layout.width = 1;
-    layout.height = 1;
-    CpuImage image(layout);
-    image.setPixel(0, 0, pixel);
-    return image;
-}
-
-NodeDescriptor mergeOperationFixture(std::vector<std::string> choices) {
-    // The descriptor's default must itself be a declared choice, so the
-    // fixture's default is the first choice unless the caller overrides it.
-    const std::string defaultChoice = choices.empty() ? std::string{"over"} : choices.front();
-    return NodeDescriptor{
-        .type = "fixture.mergeoperation",
-        .displayName = "Merge Operation Fixture",
-        .group = "Tests",
-        .inputs = {{PortKind::Image, "A", false}, {PortKind::Image, "B", false}},
-        .outputs = {{PortKind::Image, "out"}},
-        .parameters = {{.name = "operation",
-                        .type = ParameterType::Choice,
-                        .defaultValue = ParameterValue{ChoiceValue{defaultChoice}},
-                        .choices = std::move(choices),
-                        .label = "Operation",
-                        .section = "Composite",
-                        .editor = {}}},
-        .capabilities = NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Full}, .channels = {"RGBA"}}};
 }
 
 }  // namespace
@@ -380,37 +352,28 @@ TEST(EvaluationTest, SwapInputsCommandExchangesTheRenderedSources) {
 
 // Story 42: an unsupported operation value fails explicitly instead of
 // silently falling back. The descriptor rejects it on authoring/deserialize;
-// the executor rejects it for any value a catalog could still admit.
+// the registered implementation's typed interpretation rejects any value a
+// document catalog could still admit, and never selects a fallback.
 TEST(EvaluationTest, MergeUnknownOperationFailsExplicitlyInsteadOfFallingBack) {
     // The descriptor rejects an unknown value on authoring.
-    Document document(std::make_shared<const NodeCatalog>(
-        std::vector<NodeDescriptor>{mergeOperationFixture({"over", "plus", "multiply", "screen", "difference"})}));
+    Document document;
     const NodeId merge = rootGraph(document).addNode("merge", "comp");
     EXPECT_THROW(rootGraph(document).setParam(merge, "operation", ParameterValue{ChoiceValue{"average"}}),
                  GraphException);
 
-    // The executor rejects any value a catalog could still admit, naming the
+    // The registered interpretation rejects any value a document catalog could
+    // still admit (a fixture may declare a wider vocabulary), naming the
     // supported set instead of selecting a fallback.
-    const auto catalog =
-        std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{mergeOperationFixture({"average", "over"})});
     NodeInstance node;
-    node.id = 7;
-    node.type = "fixture.mergeoperation";
+    node.type = "merge";
     node.name = "comp";
     node.params.emplace("operation", ParameterValue{ChoiceValue{"average"}});
     ParameterValues effective = node.params;
-    const CpuImage background = solidPixel(kMergeBackground);
-    const CpuImage foreground = solidPixel(kMergeForeground);
 
-    try {
-        static_cast<void>(evaluateMerge(*catalog, node, effective, background, foreground, nullptr));
-        FAIL() << "expected an unsupported operation to be rejected";
-    } catch (const EvaluationException& error) {
-        const std::string message = error.what();
-        EXPECT_NE(message.find("over, plus, multiply, screen, difference"), std::string::npos) << message;
-        EXPECT_NE(message.find("average"), std::string::npos) << message;
-        EXPECT_TRUE(error.hasNode());
-    }
+    const auto problem = builtinNodeContributions()->validateParameters(builtinNodeCatalog(), node, effective);
+    ASSERT_TRUE(problem.has_value());
+    EXPECT_NE(problem->find("over, plus, multiply, screen, difference"), std::string::npos) << *problem;
+    EXPECT_NE(problem->find("average"), std::string::npos) << *problem;
 }
 
 // Acceptance for the interactive viewer: a request whose target is a
@@ -627,7 +590,7 @@ TEST(RequestValidation, EnforcesEachDependencyCapabilityWithNodeContext) {
     const auto check = [](NodeCapabilities capabilities, const EvaluationRequest& request,
                           const std::string& expected) {
         auto catalog = std::make_shared<const NodeCatalog>(
-            std::vector<NodeDescriptor>{capabilityFixture(std::move(capabilities))});
+            extendedBuiltinSchema(std::vector<NodeDescriptor>{capabilityFixture(std::move(capabilities))}));
         Document document(catalog);
         const NodeId fixture = rootGraph(document).addNode("fixture.capability", "fixture");
         const NodeId output = rootGraph(document).addNode("output", "out");
@@ -785,8 +748,8 @@ namespace {
     return request;
 }
 
-// Drives the CPU pixel kernel directly with a synthetic raster: blur and
-// transform need inputs no built-in generator produces.
+// Drives the registered CPU pixel adapter directly with a synthetic raster:
+// blur and transform need inputs no built-in generator produces.
 [[nodiscard]] CpuImage applyNativeEffect(const char* type, ParameterValues params, const CpuImage& input,
                                          const CpuImage* mask = nullptr) {
     NodeInstance node;
@@ -794,8 +757,17 @@ namespace {
     node.name = type;
     node.hasPortContract = true;
     node.params = std::move(params);
-    return evaluateNativeEffect(builtinNodeCatalog(), node, node.params,
-                                wholeRasterRequest(input.width(), input.height()), input, mask);
+    const auto contributions = builtinNodeContributions();
+    const NodeContribution* contribution = contributions->find(type);
+    if (contribution == nullptr || !contribution->cpu)
+        throw EvaluationException(std::string{"node type '"} + type + "' has no CPU implementation");
+    const NodeCatalog& catalog = builtinNodeCatalog();
+    const Document document(builtinNodeCatalogPtr());
+    const EvaluationRequest request = wholeRasterRequest(input.width(), input.height());
+    const std::array<const CpuImage*, 2> inputs{&input, mask};
+    const std::span<const CpuImage* const> contextInputs(inputs.data(), inputs.size());
+    const CpuNodeContext context{document, catalog, node, request, node.params, contextInputs, nullptr};
+    return contribution->cpu->execute(context);
 }
 
 // Separable Gaussian weights for the declared blur: sigma = size/3, support

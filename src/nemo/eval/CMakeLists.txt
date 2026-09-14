@@ -4,6 +4,16 @@
 # native path, built only when the GPU module is available.
 add_library(nemo_eval
     GpuExecutor.cpp
+    EffectLibrary.cpp
+    ../nodes/blur/Gpu.cpp
+    ../nodes/constcolor/Gpu.cpp
+    ../nodes/grade/Gpu.cpp
+    ../nodes/merge/Gpu.cpp
+    ../nodes/output/Gpu.cpp
+    ../nodes/source/Gpu.cpp
+    ../nodes/testpattern/Gpu.cpp
+    ../nodes/transform/Gpu.cpp
+    ../nodes/viewer/Gpu.cpp
     SourceSession.cpp
     Viewer.cpp
     ViewerCache.cpp

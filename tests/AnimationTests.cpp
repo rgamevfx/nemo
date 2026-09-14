@@ -89,14 +89,14 @@ TEST(AnimationTest, HoldInterpolationAndDiscreteValuesDoNotBlend) {
                         .apply(document));
     EXPECT_EQ(animatedParameterValue(document, address, 5.0), ParameterValue{color(1.0F, 0.0F, 0.0F)});
 
-    auto catalog = std::make_shared<NodeCatalog>(std::vector<NodeDescriptor>{NodeDescriptor{
+    auto catalog = std::make_shared<NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{NodeDescriptor{
         .type = "discrete.fixture",
         .displayName = "Discrete Fixture",
         .parameters = {{.name = "choice",
                         .type = ParameterType::Choice,
                         .defaultValue = ParameterValue{ChoiceValue{"A"}},
                         .choices = {"A", "B"}},
-                       {.name = "toggle", .type = ParameterType::Boolean, .defaultValue = ParameterValue{false}}}}});
+                       {.name = "toggle", .type = ParameterType::Boolean, .defaultValue = ParameterValue{false}}}}}));
     Document discreteDocument(catalog);
     auto& discreteGraph = discreteDocument.network(discreteDocument.rootNetworkId()).graph();
     const auto discreteNode = discreteGraph.addNode("discrete.fixture", "discrete");
@@ -150,7 +150,7 @@ TEST(AnimationTest, BezierInsertionPreservesNonlinearCurveAndEndpointExtrapolati
     checkCurve();
 }
 TEST(AnimationTest, ContinuousValuesUseActualUnitsForScalarVectorAndColor) {
-    auto catalog = std::make_shared<NodeCatalog>(std::vector<NodeDescriptor>{NodeDescriptor{
+    auto catalog = std::make_shared<NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{NodeDescriptor{
         .type = "numeric.fixture",
         .displayName = "Numeric Fixture",
         .parameters = {{.name = "scalar", .type = ParameterType::Float, .defaultValue = ParameterValue{0.0}},
@@ -159,7 +159,7 @@ TEST(AnimationTest, ContinuousValuesUseActualUnitsForScalarVectorAndColor) {
                         .defaultValue = ParameterValue{Vector2Value{{0.0F, 0.0F}}}},
                        {.name = "color",
                         .type = ParameterType::Color,
-                        .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}}}}}});
+                        .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}}}}}}));
     Document document(catalog);
     auto& graph = document.network(document.rootNetworkId()).graph();
     const auto node = graph.addNode("numeric.fixture", "numeric");

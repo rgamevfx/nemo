@@ -608,7 +608,8 @@ TEST(RequestValidation, UnsupportedReductionIsExplicitPerNode) {
     NodeDescriptor descriptor = *builtinNodeCatalog().find("constcolor");
     descriptor.type = "custom";
     descriptor.capabilities.samplingScales = {1};
-    Document document(std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{descriptor}));
+    Document document(
+        std::make_shared<const NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{descriptor})));
     const NodeId custom = rootGraph(document).addNode("custom", "plugin");
     const NodeId output = document.network(document.rootNetworkId()).defaultOutput();
     rootGraph(document).connect(PortRef{custom, 0}, PortRef{output, 0});

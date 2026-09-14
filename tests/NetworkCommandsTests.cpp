@@ -16,7 +16,7 @@ Network& root(Document& document) {
 }  // namespace
 
 TEST(NetworkCommandsTest, CollapseClassifiesCrossingsAndUndoRestoresBothScopes) {
-    auto catalog = std::make_shared<NodeCatalog>(std::vector<NodeDescriptor>{
+    auto catalog = std::make_shared<NodeCatalog>(extendedBuiltinSchema(std::vector<NodeDescriptor>{
         {.type = "test.mask",
          .displayName = "Mask",
          .group = "Test",
@@ -27,7 +27,7 @@ TEST(NetworkCommandsTest, CollapseClassifiesCrossingsAndUndoRestoresBothScopes) 
          .group = "Test",
          .inputs = {{PortKind::Image, "A"}, {PortKind::Image, "B"}, {PortKind::Mask, "mask"}},
          .outputs = {{PortKind::Image, "out"}},
-         .capabilities = {{1}, {Quality::Full}, {"RGBA"}}}});
+         .capabilities = {{1}, {Quality::Full}, {"RGBA"}}}}));
     Document document(catalog);
     const auto parentId = document.rootNetworkId();
     auto& graph = root(document).graph();

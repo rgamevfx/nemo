@@ -1,12 +1,17 @@
-// Nemo native effect contract (spec section 10.4, issue #8)
+// Nemo native effect contract (spec section 10.4, issue #8; contribution-local
+// module per issue #83)
 // ---------------------------------------------------------
 // name: output
 // version: 1
 // ports:
-//   - in_color : image2D input (the composed result)
+//   - in_color : image2D input (the composed result, port 0)
 //   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
 // parameters: none
-// bindings: shared effect contract (see testpattern.slang)
+// bindings (native binding contract v2, see testpattern.slang):
+//   set 0, binding 0 : common request uniforms
+//   set 1, binding 0 : input image2D (port 0)
+//   set 2, binding 0 : output image2D
+//   This node declares no payload of its own, so set 0 binding 1 is unused.
 // dependencies:
 //   region: output pixel (x, y) depends only on input (x, y).
 //   channels: RGBA uniform.
@@ -22,24 +27,7 @@ cbuffer EffectUniforms {
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
-    float4 param0;
-    float4 param1;
-    // issue #34 native effects: append-only extension shared by EVERY effect
-    // kernel (existing offsets unchanged, so preexisting kernels stay
-    // ABI-aligned with the C++ EffectUniforms mirror).
-    float4 mask;             // (maskChannel, invertMask, mix, maskPresent)
-    float4 gradeBlackpoint;
-    float4 gradeWhitepoint;
-    float4 gradeLift;
-    float4 gradeGain;
-    float4 gradeMultiply;
-    float4 gradeOffset;
-    float4 gradeGamma;
-    float4 gradeFlags;       // (channels bitmask, reverse, clampBlack, clampWhite)
-    float4 blur;             // (size full-res, channels bitmask, 0, 0)
-    float4 transform;        // (translateX, translateY, scale, rotate degrees)
-    float4 transformFlags;   // (filter, pixelAspect, cos, sin)
-}
+};
 
 [[vk::binding(0, 1)]]
 RWTexture2D<float4> in_color;

@@ -42,11 +42,13 @@ namespace {
     }
 }
 
-// A reference whose resolved path names still-image data (issue #62) takes
-// the shared image read path; everything else is a clip. The pattern is
-// expanded first so a sequence reference classifies by its frame path.
-[[nodiscard]] bool resolvesToImageData(const std::string& pattern, std::int64_t frame) {
-    return media::isImagePath(media::resolveFramePath(pattern, frame));
+// A reference whose path names still-image data (issue #62) takes the shared
+// image read path; everything else is a clip. Classification reads the
+// reference's own path: a '#'/'@' pattern is an image sequence by
+// construction, so an out-of-range or missing frame is reported by the image
+// reader (path + authored range) instead of being misclassified as a clip.
+[[nodiscard]] bool resolvesToImageData(const std::string& path) {
+    return media::isImagePath(path);
 }
 
 }  // namespace
@@ -71,7 +73,7 @@ SourceSession::Probe SourceSession::probe(const Document& document, const std::s
     // A still or image-sequence reference is evidence from the shared image
     // read path (issue #62), not from a clip decoder; frame 0 only expands
     // the pattern for classification.
-    if (resolvesToImageData(reference.path, 0)) {
+    if (resolvesToImageData(reference.path)) {
         const media::ImageFrameInfo info = media::probeImageFrame(reference, "source '" + key + "'");
         return Probe{media::ClipInfo{.path = info.path,
                                      .codecName = info.formatName,
@@ -179,7 +181,7 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, Net
     if (kindIt != decodeKinds_.end()) {
         kind = kindIt->second;
     } else {
-        kind = resolvesToImageData(reference.path, frame) ? DecodeKind::Image : DecodeKind::Clip;
+        kind = resolvesToImageData(reference.path) ? DecodeKind::Image : DecodeKind::Clip;
         decodeKinds_.emplace(runtimeKey, kind);
     }
 

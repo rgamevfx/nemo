@@ -37,6 +37,12 @@ struct SourceReference {
     std::string path;
     std::int64_t frameOffset{0};
     std::int64_t frameStep{1};
+    // Authored inclusive source-frame range for a '#'/'@' image sequence
+    // (issue #61). Absent means unbounded, so existing references and stills
+    // keep the previous behavior exactly; when engaged the shared image
+    // adapter reports a frame outside the range instead of clamping it.
+    std::optional<std::int64_t> firstFrame;
+    std::optional<std::int64_t> lastFrame;
     std::map<std::string, std::string> interpretation;
     std::uint64_t revision{0};
     // Authored fields of the persisted source this build does not model,

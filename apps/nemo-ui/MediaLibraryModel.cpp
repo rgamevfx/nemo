@@ -1,5 +1,6 @@
 #include "MediaLibraryModel.hpp"
 
+#include "MediaChooserSupport.hpp"
 #include "NativeFileChooser.hpp"
 #include "WorkspaceController.hpp"
 #include "nemo/core/commands/MediaCatalogCommands.hpp"
@@ -489,39 +490,7 @@ QVariantMap prototypeQuery(const MediaQueryDescriptor& query) {
     return map;
 }
 
-// Media formats the chooser offers. The suffix is a chooser convenience only;
-// format validation stays with the import adapters.
-[[nodiscard]] const std::vector<NativeFileChooser::Filter>& mediaChooserFilters() {
-    static const std::vector<NativeFileChooser::Filter> filters{
-        NativeFileChooser::Filter{QStringLiteral("Media files"),
-                                  {QStringLiteral("*.exr"), QStringLiteral("*.png"), QStringLiteral("*.jpg"),
-                                   QStringLiteral("*.jpeg"), QStringLiteral("*.tif"), QStringLiteral("*.tiff"),
-                                   QStringLiteral("*.dpx"), QStringLiteral("*.mov"), QStringLiteral("*.mp4"),
-                                   QStringLiteral("*.mkv"), QStringLiteral("*.wav")}},
-        NativeFileChooser::Filter{QStringLiteral("All files"), {QStringLiteral("*")}}};
-    return filters;
-}
-
-// The chooser reports local files only. A non-local URL or an empty selection
-// is a failure the panel must see, never a path this model may import; `failure`
-// is set, and the returned list left empty, when that happens.
-QStringList chooserLocalPaths(const QList<QUrl>& urls, QString& failure) {
-    QStringList paths;
-    paths.reserve(urls.size());
-    for (const QUrl& url : urls) {
-        const QString path = url.toLocalFile();
-        if (path.isEmpty()) {
-            failure = QStringLiteral("The file dialog returned a non-local path.");
-            return {};
-        }
-        paths.push_back(path);
-    }
-    if (paths.isEmpty()) {
-        failure = QStringLiteral("The file dialog returned no file path.");
-    }
-    return paths;
-}
-
+// Prototype-shaped mark records, one per authored range.
 QVariantList markList(const std::vector<nemo::MediaMarkRange>& ranges) {
     QVariantList out;
     out.reserve(static_cast<qsizetype>(ranges.size()));
@@ -2142,6 +2111,58 @@ bool MediaLibraryModel::enqueueRuntime(MediaSourceId entry) {
     return true;
 }
 
+std::uint64_t MediaLibraryModel::requestReferenceProbe(nemo::SourceReference reference,
+                                                       ReferenceProbeOutcome onOutcome) {
+    if (!onOutcome || reference.path.empty())
+        return 0;
+    const std::uint64_t requestId = nextRequestId_++;
+    nemo::media::MediaImportRequest request;
+    request.requestId = requestId;
+    // A per-request key: this probe addresses no document source, so it is never
+    // coalesced with a catalog probe or another requester's probe.
+    request.sourceKey = "__read-probe-" + std::to_string(requestId);
+    request.reference = std::move(reference);
+    request.colorPolicy = session_.document().color;
+    request.colorConfig = session_.colorConfigPath();
+    // No thumbnail: the requester needs the validated probe facts only.
+    request.thumbnailWidth = 0;
+    request.thumbnailHeight = 0;
+    request.frame = 0;
+
+    if (queued_.size() >= kQueuedRequestLimit) {
+        // The one shared queue is full; the requester gets an explicit refusal
+        // (token 0) rather than a pending state that never resolves.
+        return 0;
+    }
+
+    InFlightProbe inflight;
+    inflight.requestId = requestId;
+    inflight.entry = kInvalidMediaSource;
+    inflight.expected = request.reference;
+    inflight.colorPolicy = request.colorPolicy;
+    inflight.colorConfig = request.colorConfig;
+    inFlight_[request.sourceKey] = inflight;
+    const std::string key = request.sourceKey;
+    referenceProbes_.emplace(requestId, ReferenceProbe{key, std::move(onOutcome)});
+    if (!trySubmitRuntime(request))
+        queued_.push_back(std::move(request));
+    startPollingIfNeeded();
+    return requestId;
+}
+
+void MediaLibraryModel::cancelReferenceProbe(std::uint64_t token) {
+    const auto probe = referenceProbes_.find(token);
+    if (probe == referenceProbes_.end())
+        return;
+    const std::string key = probe->second.sourceKey;
+    referenceProbes_.erase(probe);
+    inFlight_.erase(key);
+    queued_.erase(
+        std::remove_if(queued_.begin(), queued_.end(),
+                       [&](const nemo::media::MediaImportRequest& queued) { return queued.sourceKey == key; }),
+        queued_.end());
+}
+
 bool MediaLibraryModel::runtimePending(const std::string& sourceKey) const {
     if (inFlight_.find(sourceKey) != inFlight_.end()) {
         return true;
@@ -2364,6 +2385,18 @@ void MediaLibraryModel::handleRuntimeResult(nemo::media::MediaImportResult resul
     const auto inflight = inFlight_.find(key);
     if (inflight == inFlight_.end() || inflight->second.requestId != requestId) {
         return;  // superseded by a newer request for the same source key
+    }
+    // A requester-scoped probe (Read node control, issue #61) addresses no
+    // catalog entry: consume it here and hand the validated proposal back to
+    // its one requester. The callback runs on the GUI thread; it may submit a
+    // command, so nothing owned by this model is held across the call.
+    if (const auto foreign = referenceProbes_.find(requestId); foreign != referenceProbes_.end()) {
+        ReferenceProbeOutcome outcome = std::move(foreign->second.outcome);
+        referenceProbes_.erase(foreign);
+        inFlight_.erase(inflight);
+        if (outcome)
+            outcome(result);
+        return;
     }
     // Read the published document and capture only values before any signal:
     // a slot may mutate the catalog or replace the project during any emit

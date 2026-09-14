@@ -294,6 +294,60 @@ TEST(MediaTest, ExrSequenceResolvesFramesThroughTimeMapping) {
     EXPECT_NE(first.image.pixel(0, 0), second.image.pixel(0, 0));
 }
 
+// (ii-b) An authored sequence range is honored by both the evaluation provider
+// and the header-only probe: a frame inside the range decodes, a frame outside
+// is reported with the path and range instead of being clamped, and a still
+// ignores the range because it resolves one file regardless of the time.
+TEST(MediaTest, AuthoredSequenceRangeRejectsOutOfRangeFrames) {
+    const auto pattern = (tempDir() / "range-seq.####.exr").string();
+    writeImage(resolveFramePath(pattern, 5), knownFrame({0.5F, 0.5F, 0.5F}), OutputPrecision::Float32);
+    writeImage(resolveFramePath(pattern, 6), knownFrame({0.25F, 0.25F, 0.25F}), OutputPrecision::Float32);
+
+    SourceReference reference;
+    reference.path = pattern;
+    reference.frameOffset = 5;
+    reference.frameStep = 1;
+    reference.firstFrame = 5;
+    reference.lastFrame = 6;
+    Document document = stillSourceGraph(reference, "plate", "plate");
+    ImageSourceProvider sources;
+
+    // In range, through the reference's time mapping.
+    const CpuEvaluation head = evaluateCpu(document, rasterRequest(document, 2, 2, 0), nullptr, &sources);
+    EXPECT_EQ(head.image.pixel(0, 0), knownFrame({0.5F, 0.5F, 0.5F}).pixel(0, 0));
+
+    try {
+        static_cast<void>(evaluateCpu(document, rasterRequest(document, 2, 2, 2), nullptr, &sources));
+        FAIL() << "expected a frame after the authored range to fail";
+    } catch (const EvaluationException& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find("after the authored last frame 6"), std::string::npos) << what;
+    }
+    try {
+        static_cast<void>(evaluateCpu(document, rasterRequest(document, 2, 2, -1), nullptr, &sources));
+        FAIL() << "expected a frame before the authored range to fail";
+    } catch (const EvaluationException& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find("before the authored first frame 5"), std::string::npos) << what;
+    }
+
+    // The header-only probe used for import/registration agrees.
+    try {
+        static_cast<void>(probeImageFrame(reference, "range probe", 2));
+        FAIL() << "expected the probe to reject a frame after the range";
+    } catch (const ImageIoException& error) {
+        EXPECT_NE(std::string(error.what()).find(pattern), std::string::npos) << error.what();
+    }
+
+    // A still has no frame range: the same authored range never rejects it.
+    SourceReference still;
+    still.path = (tempDir() / "range-still.exr").string();
+    still.firstFrame = 5;
+    still.lastFrame = 6;
+    writeImage(still.path, knownFrame({0.5F, 0.5F, 0.5F}), OutputPrecision::Float32);
+    EXPECT_NO_THROW(static_cast<void>(probeImageFrame(still, "still probe", 40)));
+}
+
 // (iii) Negative and overflowing source times and a missing sequence frame
 // are explicit errors, never clamped to a neighboring frame.
 TEST(MediaTest, SourceTimeMappingAndMissingFramesFailExplicitly) {

@@ -87,6 +87,7 @@
 #include <QVariantMap>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -235,6 +236,18 @@ public:
     Q_INVOKABLE void chooseImportPaths(const QString& parentId);
     Q_INVOKABLE void chooseRelinkPath(const QString& id);
 
+    // Requester-scoped probe of an arbitrary SourceReference that may not be in
+    // the catalog yet (the Read node's node-local file control, issue #61). The
+    // single import worker and its queue stay owned here; the requester receives
+    // exactly one outcome, on the GUI thread, unless it cancels first. Returns an
+    // opaque token, or 0 when the reference is empty or the shared queue is full
+    // (the caller then owns the refusal message). A result is a validated
+    // proposal only: committing it to the document stays with the caller.
+    using ReferenceProbeOutcome = std::function<void(const nemo::media::MediaImportResult&)>;
+    [[nodiscard]] std::uint64_t requestReferenceProbe(nemo::SourceReference reference, ReferenceProbeOutcome onOutcome);
+    // Drops the pending probe and its outcome; no callback is delivered.
+    void cancelReferenceProbe(std::uint64_t token);
+
 signals:
     void revisionChanged();
     void errorChanged();
@@ -279,6 +292,11 @@ private:
         std::uint64_t requestId{0};
         ColorPolicy colorPolicy;
         std::string colorConfig;
+    };
+    // One outstanding requester-scoped probe, keyed by its runtime request id.
+    struct ReferenceProbe {
+        std::string sourceKey;
+        ReferenceProbeOutcome outcome;
     };
 
     static void sessionChanged(void* context) noexcept;
@@ -334,6 +352,9 @@ private:
     std::map<std::string, InFlightProbe> inFlight_;
     std::map<std::string, StoredProbe> stored_;
     std::map<std::string, ThumbnailIndexEntry> latestRequest_;
+    // Requester-scoped probes that do not address a catalog entry, keyed by
+    // runtime request id (the token returned to the requester).
+    std::map<std::uint64_t, ReferenceProbe> referenceProbes_;
     // Requests the service could not accept because its outstanding bound was
     // reached; retried from the poll timer as results are collected.
     std::vector<nemo::media::MediaImportRequest> queued_;

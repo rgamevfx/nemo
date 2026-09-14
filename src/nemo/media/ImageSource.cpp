@@ -34,6 +34,30 @@ constexpr float kChromaticityTolerance = 1e-4F;
     return path.find('#') != std::string::npos || path.find('@') != std::string::npos;
 }
 
+// Authored sequence range (issue #61). Only a '#'/'@' pattern has a frame
+// range; a still resolves to one file regardless of the requested time, so an
+// authored range never rejects it. A frame outside the range is an error that
+// names the path and the range — never a clamped or substituted frame.
+void requireFrameInRange(const SourceReference& reference, const std::int64_t frame, const std::string& context) {
+    if (!hasPattern(reference.path))
+        return;
+    if (reference.firstFrame && frame < *reference.firstFrame) {
+        fail(reference.path,
+             "requested frame " + std::to_string(frame) + " is before the authored first frame " +
+                 std::to_string(*reference.firstFrame) +
+                 note(context, "sequence range " + std::to_string(*reference.firstFrame) + ".." +
+                                   (reference.lastFrame ? std::to_string(*reference.lastFrame) : std::string{"end"})));
+    }
+    if (reference.lastFrame && frame > *reference.lastFrame) {
+        fail(reference.path, "requested frame " + std::to_string(frame) + " is after the authored last frame " +
+                                 std::to_string(*reference.lastFrame) +
+                                 note(context, "sequence range " +
+                                                   (reference.firstFrame ? std::to_string(*reference.firstFrame)
+                                                                         : std::string{"start"}) +
+                                                   ".." + std::to_string(*reference.lastFrame)));
+    }
+}
+
 [[nodiscard]] std::vector<std::string> splitTokens(const std::string& declared) {
     std::vector<std::string> tokens;
     std::string current;
@@ -268,6 +292,7 @@ ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::stri
     } catch (const std::exception& error) {
         fail(reference.path, std::string("source time mapping failed: ") + error.what());
     }
+    requireFrameInRange(reference, frame, context);
     const std::string path = resolveFramePath(reference.path, frame);
     const FrameHeader header = readFrameHeader(path);
 
@@ -288,6 +313,7 @@ ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::stri
 }
 
 ImageFrame readImageFrame(const SourceReference& reference, const std::int64_t frame, const std::string& context) {
+    requireFrameInRange(reference, frame, context);
     const std::string path = resolveFramePath(reference.path, frame);
     // Resolve the declared interpretation from a header-only probe before
     // any plane is touched, matching the clip path's discipline: an

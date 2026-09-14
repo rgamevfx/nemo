@@ -22,6 +22,7 @@ if(NEMO_BUILD_UI)
         NativeFileChooser.cpp NativeFileChooser.hpp
         ParameterEditorRegistry.cpp ParameterEditorRegistry.hpp
         ProjectFileController.cpp ProjectFileController.hpp
+        ReadSourceController.cpp ReadSourceController.hpp
         WorkspaceController.cpp WorkspaceController.hpp
         ViewerController.cpp ViewerController.hpp
         ViewerControllerRegistry.cpp ViewerControllerRegistry.hpp
@@ -34,7 +35,7 @@ if(NEMO_BUILD_UI)
         QML_FILES qml/Main.qml qml/WorkspaceNode.qml qml/Panel.qml qml/DockDrag.qml qml/PanelDragHandler.qml
                   qml/Theme.qml qml/ChromeButton.qml qml/StudioComboBox.qml qml/UnavailablePanel.qml
                   qml/ViewerPanel.qml qml/GraphPanel.qml qml/TimelinePanel.qml qml/ParametersPanel.qml
-                  qml/MediaBinPanel.qml qml/SubnetParameters.qml
+                  qml/ReadSourceEditor.qml qml/MediaBinPanel.qml qml/SubnetParameters.qml
                   qml/AnimationPanel.qml qml/AnimationHeaderTools.qml qml/PinButton.qml
     )
     target_link_libraries(nemo-ui PRIVATE nemo::core nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)

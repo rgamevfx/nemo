@@ -213,8 +213,14 @@ TEST(CatalogTest, BuiltinDescriptorsPublishInspectorMetadata) {
     ASSERT_NE(source, nullptr);
     EXPECT_EQ(source->type, ParameterType::String);
     EXPECT_EQ(source->defaultValue, (ParameterValue{std::string{}}));
-    EXPECT_EQ(source->label, "Source");
+    EXPECT_EQ(source->label, "File");
     EXPECT_EQ(source->section, "Source");
+    // The Read node hosts a file/path control through the generic custom-editor
+    // seam rather than a private inspector branch (issue #61).
+    EXPECT_EQ(source->editor, "nemo.read.source");
+    const auto* read = catalog.find("source");
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->displayName, "Read");
 }
 
 TEST(CatalogTest, InspectorMetadataIsValidatedBeforeSnapshotPublication) {

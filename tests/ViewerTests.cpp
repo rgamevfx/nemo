@@ -1308,15 +1308,9 @@ TEST(Viewer, StillSequenceOutOfRangeFrameFailsNamingPath) {
     eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
     const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
 
-    // Resolve a real frame first: the sequence is classified as image data
-    // from its resolved path, so frame 0 establishes the source's kind
-    // before the out-of-range request below.
-    const EvaluationRequest inRange = stillRequest(composition.doc, {0, 0, 2, 2}, 2, 2, 0);
-    (void)eval::evaluateGpu(composition.doc, inRange, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr,
-                            &sources);
-
-    // Past the end: the resolved frame path does not exist. The error must
-    // name that exact path.
+    // Classification reads the reference's own path (a '#'/'@' pattern is an
+    // image sequence by construction), so no priming frame is needed; the
+    // decode of the requested frame reports its own failure.
     const std::string missingPath = media::resolveFramePath(pattern, 5);
     const EvaluationRequest pastEnd = stillRequest(composition.doc, {0, 0, 2, 2}, 2, 2, 5);
     try {
@@ -1356,6 +1350,22 @@ TEST(Viewer, StillSequenceOutOfRangeFrameFailsNamingPath) {
         const std::string what = error.what();
         EXPECT_NE(what.find("overflow"), std::string::npos) << what;
         EXPECT_NE(what.find(overflowing.path), std::string::npos) << what;
+    }
+    // An authored sequence range (issue #61) rejects a frame outside it with
+    // the range, before any frame path is opened, on the GPU path too.
+    SourceReference ranged = reference;
+    ranged.firstFrame = 0;
+    ranged.lastFrame = 1;
+    SourceComposition rangedComposition = makeSourceComposition("plate", ranged, false);
+    const EvaluationRequest rangedRequest = stillRequest(rangedComposition.doc, {0, 0, 2, 2}, 2, 2, 5);
+    try {
+        (void)eval::evaluateGpu(rangedComposition.doc, rangedRequest, slang, *boot.device, *boot.allocator,
+                                10'000'000'000ULL, nullptr, &sources);
+        ADD_FAILURE() << "expected a frame after the authored range to fail";
+    } catch (const std::exception& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find("after the authored last frame 1"), std::string::npos) << what;
+        EXPECT_NE(what.find(ranged.path), std::string::npos) << what;
     }
     expectValidationClean(*boot.instance);
 }

@@ -1,0 +1,93 @@
+{
+  "schema": 4,
+  "requiredFeatures": [],
+  "sources": {
+    "plate": {
+      "path": "seq.####.exr",
+      "frameOffset": 5,
+      "frameStep": 1,
+      "firstFrame": 5,
+      "lastFrame": 6,
+      "revision": 1,
+      "interpretation": {}
+    }
+  },
+  "rootNetworkId": 1,
+  "networks": [
+    {
+      "id": 1,
+      "name": "Root",
+      "defaultOutput": 3,
+      "nextNodeId": 4,
+      "nextEdgeId": 3,
+      "nextInterfacePortId": 1,
+      "inputs": [],
+      "outputs": [],
+      "nodes": [
+        {
+          "id": 1,
+          "type": "source",
+          "name": "Read1",
+          "params": {
+            "source": {
+              "type": "string",
+              "value": "plate"
+            }
+          },
+          "layout": {
+            "x": 60,
+            "y": 30
+          }
+        },
+        {
+          "id": 2,
+          "type": "viewer",
+          "name": "Viewer1",
+          "params": {},
+          "layout": {
+            "x": 60,
+            "y": 160
+          }
+        },
+        {
+          "id": 3,
+          "type": "output",
+          "name": "out",
+          "params": {},
+          "layout": {
+            "x": 220,
+            "y": 30
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": 1,
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "to": {
+            "node": 3,
+            "port": 0
+          }
+        },
+        {
+          "id": 2,
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "to": {
+            "node": 2,
+            "port": 0
+          }
+        }
+      ],
+      "outputInputBindings": [],
+      "exposedParameters": [],
+      "inputConnections": [],
+      "outputConnections": []
+    }
+  ]
+}

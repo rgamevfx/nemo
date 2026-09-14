@@ -1230,6 +1230,12 @@ nlohmann::json saveDocument(const Document& document) {
                              {"frameStep", source.frameStep},
                              {"revision", source.revision},
                              {"interpretation", source.interpretation}};
+        // Additive optional fields: omitted when unauthored so existing
+        // documents keep their exact byte shape.
+        if (source.firstFrame)
+            value["firstFrame"] = *source.firstFrame;
+        if (source.lastFrame)
+            value["lastFrame"] = *source.lastFrame;
         applyUnknownFields(value, source.extension);
         sources[key] = std::move(value);
     }
@@ -1377,6 +1383,12 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                 source.frameOffset = signedValue(e.at("frameOffset"), "source frameOffset");
             if (e.contains("frameStep"))
                 source.frameStep = signedValue(e.at("frameStep"), "source frameStep");
+            if (e.contains("firstFrame"))
+                source.firstFrame = signedValue(e.at("firstFrame"), "source firstFrame");
+            if (e.contains("lastFrame"))
+                source.lastFrame = signedValue(e.at("lastFrame"), "source lastFrame");
+            if (source.firstFrame && source.lastFrame && *source.firstFrame > *source.lastFrame)
+                throw DeserializeError("source '" + it.key() + "': firstFrame must not exceed lastFrame");
             if (e.contains("revision"))
                 source.revision = unsignedValue(e.at("revision"), "source revision");
             if (source.frameStep == 0)
@@ -1390,8 +1402,8 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
                     source.interpretation[tag.key()] = tag.value().get<std::string>();
                 }
             }
-            source.extension =
-                collectUnknownFields(e, {"path", "frameOffset", "frameStep", "revision", "interpretation"});
+            source.extension = collectUnknownFields(
+                e, {"path", "frameOffset", "frameStep", "firstFrame", "lastFrame", "revision", "interpretation"});
             result.document.sources[it.key()] = std::move(source);
         }
     }

@@ -3,6 +3,7 @@
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
 #include "ProjectFileController.hpp"
+#include "ReadSourceController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
 #include "ViewerRuntime.hpp"
@@ -218,6 +219,10 @@ int main(int argc, char* argv[]) {
     nemo::ui::MediaLibraryModel mediaLibrary(projectSession, mediaImportService, &panelContextRouter, &workspace);
     mediaLibrary.setNativeFileChooser(&nativeFileChooser);
     nemo::ui::ParameterEditorRegistry parameterEditors;
+    // The Read node's node-local media control (issue #61). It shares the one
+    // media import worker (through the Media Bin adapter) and the one native
+    // chooser; it owns no decoder or catalog of its own.
+    nemo::ui::ReadSourceController readSource(projectSession, mediaLibrary, nativeFileChooser);
     // The project file adapter wraps the same ProjectSession and the existing
     // workspace/context presentation owners; it is declared before the QML
     // engine so the context property outlives every binding. Both file-choosing
@@ -237,7 +242,13 @@ int main(int argc, char* argv[]) {
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerControllers"), &viewerControllers);
         engine.rootContext()->setContextProperty(QStringLiteral("parameterEditors"), &parameterEditors);
+        engine.rootContext()->setContextProperty(QStringLiteral("readSourceController"), &readSource);
         engine.rootContext()->setContextProperty(QStringLiteral("mediaLibrary"), &mediaLibrary);
+        // The Read node's node-local file control is a registered namespaced
+        // editor, selected from catalog `editor` metadata; the inspector host
+        // owns its placement.
+        parameterEditors.registerEditor(QStringLiteral("nemo.read.source"),
+                                        QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/ReadSourceEditor.qml")));
         // Wayland Vulkan renders our QML chrome, not Qt's client decorations.
         // Set the window policy before creation so input and pixels share an origin.
         engine.setInitialProperties(

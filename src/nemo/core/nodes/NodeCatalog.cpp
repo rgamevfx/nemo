@@ -342,7 +342,7 @@ NodeDescriptor viewerDescriptor() {
 
 NodeDescriptor sourceDescriptor() {
     return NodeDescriptor{.type = "source",
-                          .displayName = "Source",
+                          .displayName = "Read",
                           .group = "I/O",
                           .implementationVersion = 1,
                           .inputs = {},
@@ -350,9 +350,9 @@ NodeDescriptor sourceDescriptor() {
                           .parameters = {{.name = "source",
                                           .type = ParameterType::String,
                                           .defaultValue = ParameterValue{std::string{}},
-                                          .label = "Source",
+                                          .label = "File",
                                           .section = "Source",
-                                          .editor = {}}},
+                                          .editor = "nemo.read.source"}},
                           .capabilities = allBuiltinCapabilities(true)};
 }
 

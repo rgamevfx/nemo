@@ -14,6 +14,7 @@ add_executable(nemo_core_tests
     GraphTests.cpp
     NetworkTests.cpp
     NetworkCommandsTests.cpp
+    ReadSourceTests.cpp
     ViewerModelTests.cpp
     AnimationTests.cpp
 )
@@ -108,6 +109,7 @@ if(NEMO_BUILD_UI)
     add_executable(nemo_workspace_ui_tests
         ChooserOwnershipTests.cpp
         AnimationUiTests.cpp
+        ReadSourceUiTests.cpp
         ../apps/nemo-ui/AnimationViewModel.cpp
         ../apps/nemo-ui/AnimationViewModel.hpp
         WorkspaceDragTests.cpp
@@ -126,6 +128,8 @@ if(NEMO_BUILD_UI)
         ../apps/nemo-ui/ParameterEditorRegistry.hpp
         ../apps/nemo-ui/ProjectFileController.cpp
         ../apps/nemo-ui/ProjectFileController.hpp
+        ../apps/nemo-ui/ReadSourceController.cpp
+        ../apps/nemo-ui/ReadSourceController.hpp
         ../apps/nemo-ui/WorkspaceController.cpp
         ../apps/nemo-ui/WorkspaceController.hpp
         ../apps/nemo-ui/ViewerController.cpp

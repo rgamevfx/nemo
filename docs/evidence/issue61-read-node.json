@@ -1,0 +1,397 @@
+{
+  "issue": 61,
+  "title": "Read node headless evaluation (CPU reference and native GPU)",
+  "cli": "build/debug/apps/nemo-cli/nemo-cli",
+  "cases": [
+    {
+      "name": "still-in-range",
+      "args": [
+        "evaluate",
+        "docs/evidence/assets/issue61-read-node/read-still.nemo",
+        "--out",
+        "docs/evidence/assets/issue61-read-node/still-frame0.ppm",
+        "--frame",
+        "0",
+        "--width",
+        "32",
+        "--height",
+        "24"
+      ],
+      "exit": 0,
+      "report": {
+        "errors": [],
+        "evaluation": {
+          "request": {
+            "channels": "RGBA",
+            "fullHeight": 24,
+            "fullWidth": 32,
+            "localTime": 0,
+            "network": 1,
+            "output": 3,
+            "quality": "full",
+            "region": {
+              "height": 24,
+              "width": 32,
+              "x": 0,
+              "y": 0
+            },
+            "samplingScale": 1
+          },
+          "result": {
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "scene-linear",
+            "contentHash": "4392b40f405220b5",
+            "height": 24,
+            "pixelAspect": 1.0,
+            "precision": "float32",
+            "residency": "host-cpu-reference",
+            "width": 32
+          },
+          "steps": [
+            {
+              "effectiveParams": {
+                "frame": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "source": {
+                  "type": "string",
+                  "value": "plate"
+                },
+                "sourcePath": {
+                  "type": "string",
+                  "value": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/plate.exr"
+                }
+              },
+              "inputImages": [],
+              "inputs": [],
+              "instance": 0,
+              "name": "Read1",
+              "network": 1,
+              "node": 1,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "scene-linear",
+                "contentHash": "4392b40f405220b5",
+                "height": 24,
+                "pixelAspect": 1.0,
+                "precision": "float32",
+                "residency": "host-cpu-reference",
+                "width": 32
+              },
+              "reused": false,
+              "scopedInputs": []
+            },
+            {
+              "effectiveParams": {},
+              "inputImages": [
+                {
+                  "channels": [
+                    "R",
+                    "G",
+                    "B",
+                    "A"
+                  ],
+                  "color": "scene-linear",
+                  "contentHash": "4392b40f405220b5",
+                  "height": 24,
+                  "pixelAspect": 1.0,
+                  "precision": "float32",
+                  "residency": "host-cpu-reference",
+                  "width": 32
+                }
+              ],
+              "inputs": [
+                1
+              ],
+              "instance": 0,
+              "name": "out",
+              "network": 1,
+              "node": 3,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "scene-linear",
+                "contentHash": "4392b40f405220b5",
+                "height": 24,
+                "pixelAspect": 1.0,
+                "precision": "float32",
+                "residency": "host-cpu-reference",
+                "width": 32
+              },
+              "reused": false,
+              "scopedInputs": [
+                {
+                  "instance": 0,
+                  "network": 1,
+                  "node": 1,
+                  "outputPort": 4294967295,
+                  "path": []
+                }
+              ]
+            }
+          ]
+        },
+        "ok": true,
+        "rendered": {
+          "frame": 0,
+          "height": 24,
+          "network": 1,
+          "path": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/still-frame0.ppm",
+          "width": 32
+        },
+        "warnings": []
+      },
+      "stderr": ""
+    },
+    {
+      "name": "sequence-in-range",
+      "args": [
+        "evaluate",
+        "docs/evidence/assets/issue61-read-node/read-seq-range.nemo",
+        "--out",
+        "docs/evidence/assets/issue61-read-node/seq-local0.ppm",
+        "--frame",
+        "0",
+        "--width",
+        "16",
+        "--height",
+        "16"
+      ],
+      "exit": 0,
+      "report": {
+        "errors": [],
+        "evaluation": {
+          "request": {
+            "channels": "RGBA",
+            "fullHeight": 16,
+            "fullWidth": 16,
+            "localTime": 0,
+            "network": 1,
+            "output": 3,
+            "quality": "full",
+            "region": {
+              "height": 16,
+              "width": 16,
+              "x": 0,
+              "y": 0
+            },
+            "samplingScale": 1
+          },
+          "result": {
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "scene-linear",
+            "contentHash": "73662afa1136617d",
+            "height": 16,
+            "pixelAspect": 1.0,
+            "precision": "float32",
+            "residency": "host-cpu-reference",
+            "width": 16
+          },
+          "steps": [
+            {
+              "effectiveParams": {
+                "frame": {
+                  "type": "integer",
+                  "value": 5
+                },
+                "source": {
+                  "type": "string",
+                  "value": "plate"
+                },
+                "sourcePath": {
+                  "type": "string",
+                  "value": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/seq.####.exr"
+                }
+              },
+              "inputImages": [],
+              "inputs": [],
+              "instance": 0,
+              "name": "Read1",
+              "network": 1,
+              "node": 1,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "scene-linear",
+                "contentHash": "73662afa1136617d",
+                "height": 16,
+                "pixelAspect": 1.0,
+                "precision": "float32",
+                "residency": "host-cpu-reference",
+                "width": 16
+              },
+              "reused": false,
+              "scopedInputs": []
+            },
+            {
+              "effectiveParams": {},
+              "inputImages": [
+                {
+                  "channels": [
+                    "R",
+                    "G",
+                    "B",
+                    "A"
+                  ],
+                  "color": "scene-linear",
+                  "contentHash": "73662afa1136617d",
+                  "height": 16,
+                  "pixelAspect": 1.0,
+                  "precision": "float32",
+                  "residency": "host-cpu-reference",
+                  "width": 16
+                }
+              ],
+              "inputs": [
+                1
+              ],
+              "instance": 0,
+              "name": "out",
+              "network": 1,
+              "node": 3,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "scene-linear",
+                "contentHash": "73662afa1136617d",
+                "height": 16,
+                "pixelAspect": 1.0,
+                "precision": "float32",
+                "residency": "host-cpu-reference",
+                "width": 16
+              },
+              "reused": false,
+              "scopedInputs": [
+                {
+                  "instance": 0,
+                  "network": 1,
+                  "node": 1,
+                  "outputPort": 4294967295,
+                  "path": []
+                }
+              ]
+            }
+          ]
+        },
+        "ok": true,
+        "rendered": {
+          "frame": 0,
+          "height": 16,
+          "network": 1,
+          "path": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/seq-local0.ppm",
+          "width": 16
+        },
+        "warnings": [
+          "unresolved sequence dependency source:plate: /home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/seq.####.exr (authored as 'seq.####.exr'); frame range needs media-owned sequence resolution"
+        ]
+      },
+      "stderr": ""
+    },
+    {
+      "name": "sequence-out-of-range",
+      "args": [
+        "evaluate",
+        "docs/evidence/assets/issue61-read-node/read-seq-range.nemo",
+        "--out",
+        "docs/evidence/assets/issue61-read-node/seq-local2.ppm",
+        "--frame",
+        "2",
+        "--width",
+        "16",
+        "--height",
+        "16"
+      ],
+      "exit": 1,
+      "report": {
+        "errors": [
+          "node 'Read1' (id 1, type 'source'): source provider failed for 'plate' at frame 7: image: /home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/seq.####.exr: requested frame 7 is after the authored last frame 6 (context: source '/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/seq.####.exr'; sequence range 5..6)"
+        ],
+        "ok": false,
+        "warnings": [
+          "unresolved sequence dependency source:plate: /home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/seq.####.exr (authored as 'seq.####.exr'); frame range needs media-owned sequence resolution"
+        ]
+      },
+      "stderr": ""
+    },
+    {
+      "name": "sequence-out-of-range-gpu",
+      "args": [
+        "evaluate-gpu",
+        "docs/evidence/assets/issue61-read-node/read-seq-range.nemo",
+        "--out",
+        "docs/evidence/assets/issue61-read-node/seq-local2-gpu.ppm",
+        "--frame",
+        "2",
+        "--width",
+        "16",
+        "--height",
+        "16"
+      ],
+      "exit": 1,
+      "report": {
+        "errors": [
+          "error: image: /home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/seq.####.exr: requested frame 7 is after the authored last frame 6 (context: source node 'Read1'; sequence range 5..6)"
+        ],
+        "ok": false,
+        "warnings": [
+          "unresolved sequence dependency source:plate: /home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/seq.####.exr (authored as 'seq.####.exr'); frame range needs media-owned sequence resolution"
+        ]
+      },
+      "stderr": ""
+    }
+  ],
+  "cpu_gpu_agreement": [
+    {
+      "reference": "still",
+      "frame": "0",
+      "width": 24,
+      "height": 16,
+      "identical": true,
+      "max_channel_difference": 0
+    },
+    {
+      "reference": "sequence-in-range",
+      "frame": "0",
+      "width": 24,
+      "height": 16,
+      "identical": true,
+      "max_channel_difference": 0
+    }
+  ]
+}

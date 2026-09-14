@@ -10,6 +10,7 @@ add_library(nemo_core
     core/commands/AnimationCommands.cpp
     core/commands/MediaCatalogCommands.cpp
     core/commands/NetworkCommands.cpp
+    core/commands/ReadSourceCommands.cpp
     core/document/Serialization.cpp
     core/session/ProjectSession.cpp
     core/session/ProjectFile.cpp

@@ -365,7 +365,39 @@ the adapter.
 4. **The native chooser** `apps/nemo-ui/NativeFileChooser.hpp` is the shared
    platform seam. It is shared with `ProjectFileController`; each is a separate
    requester and receives only its own requests' outcomes. The panel owns the
-   follow-up `importPaths`/`relink` call and its failure presentation.
+   follow-up `importPaths`/`relink` call and its failure presentation. The
+   shared filter list and local-path translation live in
+   [`MediaChooserSupport.hpp`](../../apps/nemo-ui/MediaChooserSupport.hpp) so the
+   Media Bin and the Read node's control cannot drift apart.
+
+### Read node media control (issue #61)
+
+The Read node is the persistent `source` catalog type with display name "Read";
+its `source` parameter names a `Document` source key exactly as `evalSource` and
+`eval::SourceSession` already resolve it. Authored media is added through
+[`ReadSourceCommands.hpp`](../../src/nemo/core/commands/ReadSourceCommands.hpp):
+
+- `registerReadSourceCommand` resolves or creates the reference for a chosen
+  path (reusing an existing reference and Media Bin entry with the same
+  normalized path + interpretation) and points the node at it, in one undoable
+  command.
+- `relinkReadSourceCommand` updates the keyed reference's path in place,
+  preserving identity, timing and interpretation, so every node sharing it
+  recovers; `setReadSourceTimingCommand` edits the authored range/time mapping
+  with a stale-reference guard.
+- `SourceReference::firstFrame`/`lastFrame` are optional authored sequence
+  bounds, enforced only for `#`/`@` patterns in the shared image adapter so CPU
+  and GPU report an out-of-range frame instead of clamping it.
+
+`apps/nemo-ui/ReadSourceController` is the presentation adapter behind the
+registered editor id `nemo.read.source` (the Read node's parameter carries that
+`editor` id). It owns no decoder: it probes through the Media Bin adapter's one
+import worker with `MediaLibraryModel::requestReferenceProbe` (a
+requester-scoped probe of a reference that may not be in the catalog yet) and
+only then submits a ReadSource command. The hosted control is
+`apps/nemo-ui/qml/ReadSourceEditor.qml`, loaded by the existing
+`ParameterEditorRegistry` host. There is no effect-name switch and no second
+media model.
 
 Issue #43 evidence: [`session.json`](../evidence/assets/issue43-media-import/session.json).
 The human image/API/schema review of this surface remains open; passing an agent

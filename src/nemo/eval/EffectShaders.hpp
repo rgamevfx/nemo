@@ -93,21 +93,50 @@ void main() {
 )GLSL";
 
 inline constexpr const char* kGlslMerge = R"GLSL(
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_a;  // port A: over base
-layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_b;  // port B: over source
+// Issue #75: A (background) at set 1 binding 0, B (foreground) at binding 1,
+// optional mask at binding 2. The operation code travels in param0.x
+// (0 Over, 1 Plus, 2 Multiply, 3 Screen, 4 Difference) and the shared mask
+// word drives the final coverage*mix interpolation. An absent mask is bound
+// to a valid dummy descriptor with maskPresent = 0.
+layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_a;     // port A: background
+layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_b;     // port B: foreground
+layout(rgba32f, set = 1, binding = 2) restrict readonly uniform image2D in_mask;  // optional port 2
 layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // Straight-alpha "over", exactly the CPU reference expression. A
-    // premultiplied interpretation is a declared comparison failure.
     vec4 bg = imageLoad(in_a, ivec2(p));
     vec4 fg = imageLoad(in_b, ivec2(p));
-    vec4 result;
-    result.xyz = fg.a * fg.xyz + (1.0 - fg.a) * bg.xyz;
-    result.w = fg.a + (1.0 - fg.a) * bg.a;
-    imageStore(out_color, ivec2(p), result);
+
+    int operation = int(param0.x);
+    vec4 composite;
+    if (operation == 0) {
+        // Over keeps the CPU reference's existing expression exactly. A
+        // premultiplied interpretation is a declared comparison failure.
+        composite.xyz = fg.a * fg.xyz + (1.0 - fg.a) * bg.xyz;
+    } else {
+        vec3 target;
+        if (operation == 1) { target = bg.xyz + fg.xyz; }
+        else if (operation == 2) { target = bg.xyz * fg.xyz; }
+        else if (operation == 3) { target = vec3(1.0) - (vec3(1.0) - bg.xyz) * (vec3(1.0) - fg.xyz); }
+        else { target = abs(bg.xyz - fg.xyz); }  // Difference
+        composite.xyz = bg.xyz + fg.a * (target - bg.xyz);
+    }
+    // Alpha is operation-independent, as in current Over.
+    composite.w = fg.a + (1.0 - fg.a) * bg.a;
+
+    // Shared mask/mix coverage; scene-linear RGB is never clamped.
+    float coverage = 1.0;
+    int channel = int(mask.x);
+    if (mask.w > 0.5 && channel >= 0) {
+        float selected = clamp(imageLoad(in_mask, ivec2(p))[channel], 0.0, 1.0);
+        coverage = mask.y > 0.5 ? 1.0 - selected : selected;
+    }
+    // Endpoints are exact: weight 0 keeps the background, weight 1 the
+    // unmasked composite, so Mix 0 or zero coverage returns the background.
+    float weight = coverage * mask.z;
+    imageStore(out_color, ivec2(p), weight <= 0.0 ? bg : (weight >= 1.0 ? composite : mix(bg, composite, weight)));
 }
 )GLSL";
 

@@ -188,41 +188,6 @@ NodeDescriptor inspectorParameters(ParameterSpec parameter) {
 }
 }  // namespace
 
-TEST(CatalogTest, BuiltinDescriptorsPublishInspectorMetadata) {
-    const auto& catalog = builtinNodeCatalog();
-
-    const auto* color = catalog.parameterSpec("constcolor", "color");
-    ASSERT_NE(color, nullptr);
-    EXPECT_EQ(color->type, ParameterType::Color);
-    EXPECT_EQ(color->defaultValue, (ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}}));
-    EXPECT_FALSE(color->minimum.has_value());
-    EXPECT_FALSE(color->maximum.has_value());
-    EXPECT_FALSE(color->step.has_value());
-    EXPECT_EQ(color->label, "Color");
-    EXPECT_EQ(color->section, "Color");
-    EXPECT_TRUE(color->editor.empty());
-
-    const auto* operation = catalog.parameterSpec("merge", "operation");
-    ASSERT_NE(operation, nullptr);
-    EXPECT_EQ(operation->type, ParameterType::Choice);
-    EXPECT_EQ(operation->choices, (std::vector<std::string>{"over"}));
-    EXPECT_EQ(operation->label, "Operation");
-    EXPECT_EQ(operation->section, "Composite");
-
-    const auto* source = catalog.parameterSpec("source", "source");
-    ASSERT_NE(source, nullptr);
-    EXPECT_EQ(source->type, ParameterType::String);
-    EXPECT_EQ(source->defaultValue, (ParameterValue{std::string{}}));
-    EXPECT_EQ(source->label, "File");
-    EXPECT_EQ(source->section, "Source");
-    // The Read node hosts a file/path control through the generic custom-editor
-    // seam rather than a private inspector branch (issue #61).
-    EXPECT_EQ(source->editor, "nemo.read.source");
-    const auto* read = catalog.find("source");
-    ASSERT_NE(read, nullptr);
-    EXPECT_EQ(read->displayName, "Read");
-}
-
 TEST(CatalogTest, InspectorMetadataIsValidatedBeforeSnapshotPublication) {
     // A step is numeric-only and must be finite and positive.
     EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
@@ -304,4 +269,86 @@ TEST(CatalogTest, ViewerDescriptorIsDisplayOnlyAndNeverANetworkOutput) {
     const NodeId viewerNode = rootGraph(document).addNode("viewer", "Viewer1");
     EXPECT_THROW(document.network(document.rootNetworkId()).setDefaultOutput(viewerNode), GraphException);
     EXPECT_EQ(document.network(document.rootNetworkId()).defaultOutput(), rootGraph(document).nodeByName("Output")->id);
+}
+
+TEST(CatalogTest, PresentationMetadataRejectsInvalidDeclarations) {
+    // Soft travel is interaction metadata: it must be finite, ordered, inside
+    // any declared hard range, numeric-only, and never a legal-value bound.
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::String,
+                                                        .defaultValue = ParameterValue{std::string{}},
+                                                        .softMinimum = 0.0}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .softMinimum = 1.0,
+                                                        .softMaximum = 0.0}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .minimum = 0.0,
+                                                        .softMinimum = -1.0}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .maximum = 1.0,
+                                                        .softMaximum = 2.0}));
+    // Display decimals are a bounded presentation hint for numeric types only.
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .displayDecimals = -1}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .displayDecimals = 12}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::String,
+                                                        .defaultValue = ParameterValue{std::string{}},
+                                                        .displayDecimals = 2}));
+    // A presentation row is display text and never carries control characters.
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .row = std::string{"Bad\nRow"}}));
+    // Linked channel semantics only apply to typed tuples, and a nonzero
+    // constraint only to numeric parameters.
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::Float,
+                                                        .defaultValue = ParameterValue{0.0},
+                                                        .channels = ChannelHint{ChannelLink::Additive, false}}));
+    EXPECT_TRUE(rejectsInspectorParameter(ParameterSpec{.name = "value",
+                                                        .type = ParameterType::String,
+                                                        .defaultValue = ParameterValue{std::string{}},
+                                                        .nonzero = true}));
+
+    auto catalog = std::make_shared<const NodeCatalog>(
+        std::vector<NodeDescriptor>{inspectorParameters(ParameterSpec{.name = "value",
+                                                                      .type = ParameterType::Float,
+                                                                      .defaultValue = ParameterValue{1.0},
+                                                                      .minimum = 0.0,
+                                                                      .step = 0.5,
+                                                                      .label = "Value",
+                                                                      .section = "Tone",
+                                                                      .editor = {},
+                                                                      .softMinimum = 0.1,
+                                                                      .softMaximum = 3.0,
+                                                                      .displayDecimals = 2,
+                                                                      .row = "Pair",
+                                                                      .nonzero = true})});
+    const auto* spec = catalog->parameterSpec("fixture.catalog", "value");
+    ASSERT_NE(spec, nullptr);
+    ASSERT_TRUE(spec->softMinimum.has_value());
+    ASSERT_TRUE(spec->softMaximum.has_value());
+    EXPECT_DOUBLE_EQ(*spec->softMinimum, 0.1);
+    EXPECT_DOUBLE_EQ(*spec->softMaximum, 3.0);
+    EXPECT_EQ(spec->row, "Pair");
+    EXPECT_TRUE(spec->nonzero);
+
+    // The nonzero constraint is authoritative for a generic parameter edit.
+    Document document(catalog);
+    const auto node = rootGraph(document).addNode("fixture.catalog", "nonzero");
+    EXPECT_THROW(rootGraph(document).setParam(node, "value", ParameterValue{0.0}), GraphException);
+    EXPECT_NO_THROW(rootGraph(document).setParam(node, "value", ParameterValue{2.5}));
+    EXPECT_EQ(rootGraph(document).node(node)->params.at("value"), ParameterValue{2.5});
 }

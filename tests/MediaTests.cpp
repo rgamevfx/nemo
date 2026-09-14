@@ -296,8 +296,11 @@ TEST(MediaTest, ExrSequenceResolvesFramesThroughTimeMapping) {
 
 // (ii-b) An authored sequence range is honored by both the evaluation provider
 // and the header-only probe: a frame inside the range decodes, a frame outside
-// is reported with the path and range instead of being clamped, and a still
-// ignores the range because it resolves one file regardless of the time.
+// is reported instead of being clamped, and a still ignores the range because it
+// resolves one file regardless of the time. The Read owns its mapping (issue
+// #75), so the node authors the offset the shared reference used to carry, while
+// the shared authored interval remains the source-scoped policy both consumers
+// read.
 TEST(MediaTest, AuthoredSequenceRangeRejectsOutOfRangeFrames) {
     const auto pattern = (tempDir() / "range-seq.####.exr").string();
     writeImage(resolveFramePath(pattern, 5), knownFrame({0.5F, 0.5F, 0.5F}), OutputPrecision::Float32);
@@ -310,28 +313,44 @@ TEST(MediaTest, AuthoredSequenceRangeRejectsOutOfRangeFrames) {
     reference.firstFrame = 5;
     reference.lastFrame = 6;
     Document document = stillSourceGraph(reference, "plate", "plate");
+    const NodeId node = rootGraph(document).nodeByName("plate")->id;
+    rootGraph(document).setParam(node, "frameOffset", std::int64_t{5});
+    rootGraph(document).setParam(node, "frameStep", std::int64_t{1});
     ImageSourceProvider sources;
 
-    // In range, through the reference's time mapping.
+    // In range, through the Read's own time mapping.
     const CpuEvaluation head = evaluateCpu(document, rasterRequest(document, 2, 2, 0), nullptr, &sources);
     EXPECT_EQ(head.image.pixel(0, 0), knownFrame({0.5F, 0.5F, 0.5F}).pixel(0, 0));
 
+    // Outside the interval the request resolves to the authored Error policy
+    // (structured, no message wording): the offending node and the mapped frame
+    // are what the caller can act on.
+    const EffectiveSourceRequest after = resolveSourceRequest(document, *rootGraph(document).nodeByName("plate"), 2);
+    EXPECT_EQ(after.sourceFrame, 7);
+    EXPECT_EQ(after.mapping.firstFrame, std::optional<std::int64_t>{5});
+    EXPECT_EQ(after.mapping.lastFrame, std::optional<std::int64_t>{6});
+    EXPECT_EQ(after.status, SourceRequestStatus::AfterRange);
+    EXPECT_TRUE(after.policyError);
     try {
         static_cast<void>(evaluateCpu(document, rasterRequest(document, 2, 2, 2), nullptr, &sources));
         FAIL() << "expected a frame after the authored range to fail";
     } catch (const EvaluationException& error) {
-        const std::string what = error.what();
-        EXPECT_NE(what.find("after the authored last frame 6"), std::string::npos) << what;
+        EXPECT_EQ(error.node, node);
     }
+
+    const EffectiveSourceRequest before = resolveSourceRequest(document, *rootGraph(document).nodeByName("plate"), -1);
+    EXPECT_EQ(before.sourceFrame, 4);
+    EXPECT_EQ(before.status, SourceRequestStatus::BeforeRange);
+    EXPECT_TRUE(before.policyError);
     try {
         static_cast<void>(evaluateCpu(document, rasterRequest(document, 2, 2, -1), nullptr, &sources));
         FAIL() << "expected a frame before the authored range to fail";
     } catch (const EvaluationException& error) {
-        const std::string what = error.what();
-        EXPECT_NE(what.find("before the authored first frame 5"), std::string::npos) << what;
+        EXPECT_EQ(error.node, node);
     }
 
-    // The header-only probe used for import/registration agrees.
+    // The header-only source-scoped probe used for import/registration agrees,
+    // and reports the file it rejected.
     try {
         static_cast<void>(probeImageFrame(reference, "range probe", 2));
         FAIL() << "expected the probe to reject a frame after the range";
@@ -348,8 +367,11 @@ TEST(MediaTest, AuthoredSequenceRangeRejectsOutOfRangeFrames) {
     EXPECT_NO_THROW(static_cast<void>(probeImageFrame(still, "still probe", 40)));
 }
 
-// (iii) Negative and overflowing source times and a missing sequence frame
-// are explicit errors, never clamped to a neighboring frame.
+// (iii) Negative and overflowing source times and a missing sequence frame are
+// explicit errors, never clamped to a neighboring frame. The Read owns its
+// mapping (issue #75), so the fixture authors the node params; the invariants
+// asserted are the structured request outcome and the actionable source error,
+// never message wording.
 TEST(MediaTest, SourceTimeMappingAndMissingFramesFailExplicitly) {
     const auto pattern = (tempDir() / "eval-errors.####.exr").string();
     writeImage(resolveFramePath(pattern, 0), knownFrame({0.5F, 0.5F, 0.5F}), OutputPrecision::Float32);
@@ -359,25 +381,50 @@ TEST(MediaTest, SourceTimeMappingAndMissingFramesFailExplicitly) {
     reference.frameOffset = 0;
     reference.frameStep = 1;
     Document document = stillSourceGraph(reference, "plate", "plate");
+    const NodeId node = rootGraph(document).nodeByName("plate")->id;
+    rootGraph(document).setParam(node, "frameOffset", std::int64_t{0});
+    rootGraph(document).setParam(node, "frameStep", std::int64_t{1});
     ImageSourceProvider sources;
 
+    // A negative mapped frame with no authored interval is not silently
+    // clamped: the request stays unbounded, and the source adapter reports the
+    // frame it could not find by path (an actionable source error).
+    const EffectiveSourceRequest negative =
+        resolveSourceRequest(document, *rootGraph(document).nodeByName("plate"), -1);
+    EXPECT_EQ(negative.sourceFrame, -1);
+    EXPECT_FALSE(negative.mapping.boundsEnforced);
+    EXPECT_EQ(negative.status, SourceRequestStatus::Ok);
+    EXPECT_FALSE(negative.policyError);
     try {
         static_cast<void>(evaluateCpu(document, rasterRequest(document, 2, 2, -1), nullptr, &sources));
-        FAIL() << "expected a negative source time to fail";
+        FAIL() << "expected a negative source time to fail with a missing frame";
     } catch (const EvaluationException& error) {
-        EXPECT_NE(std::string(error.what()).find("negative"), std::string::npos) << error.what();
+        EXPECT_EQ(error.node, node);
+        // The source it failed on is identifiable (the referenced pattern).
+        EXPECT_NE(std::string(error.what()).find("eval-errors."), std::string::npos) << error.what();
     }
 
-    SourceReference overflowing = reference;
-    overflowing.frameStep = std::numeric_limits<std::int64_t>::max();
-    Document overflowDocument = stillSourceGraph(overflowing, "plate", "plate");
+    // An overflowing mapping is an arithmetic error before any boundary or
+    // policy logic: the resolver refuses it and names the node.
+    Document overflowDocument = stillSourceGraph(reference, "plate", "plate");
+    const NodeId overflowNode = rootGraph(overflowDocument).nodeByName("plate")->id;
+    rootGraph(overflowDocument).setParam(overflowNode, "frameStep", std::numeric_limits<std::int64_t>::max());
+    EXPECT_THROW(static_cast<void>(mapSourceFrame(0, std::numeric_limits<std::int64_t>::max(), 2)),
+                 std::overflow_error);
+    try {
+        static_cast<void>(resolveSourceRequest(overflowDocument, *rootGraph(overflowDocument).nodeByName("plate"), 2));
+        FAIL() << "expected an overflowing source time to be refused";
+    } catch (const EvaluationException& error) {
+        EXPECT_EQ(error.node, overflowNode);
+    }
     try {
         static_cast<void>(evaluateCpu(overflowDocument, rasterRequest(overflowDocument, 2, 2, 2), nullptr, &sources));
         FAIL() << "expected an overflowing source time to fail";
     } catch (const EvaluationException& error) {
-        EXPECT_NE(std::string(error.what()).find("overflow"), std::string::npos) << error.what();
+        EXPECT_EQ(error.node, overflowNode);
     }
 
+    // A gap in the pattern is reported with the file that was requested.
     try {
         static_cast<void>(evaluateCpu(document, rasterRequest(document, 2, 2, 5), nullptr, &sources));
         FAIL() << "expected a missing sequence frame to fail";
@@ -623,8 +670,9 @@ TEST(MediaTest, ProviderRejectsNonImagePathExplicitly) {
     EvaluationRequest request;
     request.region = {0, 0, 2, 2};
     ImageSourceProvider provider;
+    EffectiveSourceRequest source = resolveSourceRequest("media", reference, nullptr, 0);
     try {
-        static_cast<void>(provider.frame(document, reference, 0, request));
+        static_cast<void>(provider.frame(document, source, request));
         FAIL() << "expected the non-image path to be rejected";
     } catch (const ImageIoException& error) {
         // The image adapter reports its own reason and names the path; the
@@ -649,8 +697,9 @@ TEST(MediaTest, ProviderRejectsUnsupportedDocumentWorkingSpace) {
     EvaluationRequest request;
     request.region = {0, 0, 2, 2};
     ImageSourceProvider provider;
+    EffectiveSourceRequest source = resolveSourceRequest("media", reference, nullptr, 0);
     try {
-        static_cast<void>(provider.frame(document, reference, 0, request));
+        static_cast<void>(provider.frame(document, source, request));
         FAIL() << "expected the unsupported working space to be rejected";
     } catch (const ImageIoException& error) {
         const std::string what = error.what();

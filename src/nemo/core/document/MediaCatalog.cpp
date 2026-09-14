@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -46,8 +47,55 @@ void normalizeTags(std::vector<std::string>& tags) {
 
 }  // namespace
 
+const char* coverageQualityName(CoverageQuality quality) noexcept {
+    switch (quality) {
+    case CoverageQuality::Unknown:
+        return "unknown";
+    case CoverageQuality::Estimated:
+        return "estimated";
+    case CoverageQuality::Validated:
+        return "validated";
+    }
+    return "unknown";
+}
+
 bool MediaMarkRange::valid() const noexcept {
     return !inFrame || !outFrame || *inFrame <= *outFrame;
+}
+
+std::optional<std::string> probeFactProblem(const MediaProbeMetadata& probe) {
+    if (probe.width < 0 || probe.height < 0 || probe.duration < 0)
+        return "probe dimensions and duration must be nonnegative";
+    if (probe.firstFrame && probe.lastFrame && *probe.firstFrame > *probe.lastFrame)
+        return "probe firstFrame must not exceed lastFrame";
+    if (probe.availableFrameCount && *probe.availableFrameCount < 0)
+        return "probe availableFrameCount must be nonnegative";
+    if (probe.missingFrameCount && *probe.missingFrameCount < 0)
+        return "probe missingFrameCount must be nonnegative";
+    if (probe.availableFrameCount && probe.missingFrameCount && *probe.missingFrameCount > *probe.availableFrameCount)
+        return "probe missingFrameCount must not exceed availableFrameCount";
+    if (!probe.missingRanges.empty() && !(probe.firstFrame && probe.lastFrame))
+        return "probe missing ranges require the discovered firstFrame/lastFrame interval they describe";
+    std::optional<std::int64_t> previousLast;
+    for (const MediaFrameRange& hole : probe.missingRanges) {
+        if (!hole.valid())
+            return "probe missing range " + std::to_string(hole.first) + ".." + std::to_string(hole.last) +
+                   " must not have first greater than last";
+        if (previousLast && hole.first <= *previousLast)
+            return "probe missing ranges must be sorted and non-overlapping (range starting at " +
+                   std::to_string(hole.first) + " follows " + std::to_string(*previousLast) + ")";
+        if (probe.firstFrame && (hole.first < *probe.firstFrame || hole.last > *probe.lastFrame))
+            return "probe missing range " + std::to_string(hole.first) + ".." + std::to_string(hole.last) +
+                   " lies outside the discovered interval";
+        previousLast = hole.last;
+    }
+    if (probe.pixelAspect && (!std::isfinite(*probe.pixelAspect) || *probe.pixelAspect <= 0.0))
+        return "probe pixelAspect must be finite and positive";
+    if (probe.rateNumerator.has_value() != probe.rateDenominator.has_value())
+        return "probe frame rate requires both rateNumerator and rateDenominator";
+    if (probe.rateNumerator && (*probe.rateNumerator == 0 || *probe.rateDenominator == 0))
+        return "probe frame rate numerator and denominator must be positive";
+    return std::nullopt;
 }
 
 const MediaCatalogEntry* MediaCatalog::entry(MediaSourceId id) const noexcept {
@@ -590,6 +638,34 @@ std::uint64_t MediaCatalog::stateHash() const noexcept {
             hash = mixText(hash, probe.colorMatrix);
             hash = mixText(hash, probe.provenance);
             hash = mix(hash, static_cast<std::uint64_t>(probe.status));
+            // Discovered source facts (issue #75) are part of publication
+            // freshness: a reload that rediscovers coverage must advance the
+            // document revision so stale publications are discarded and
+            // affected results are invalidated.
+            hash = mix(hash, probe.firstFrame ? static_cast<std::uint64_t>(*probe.firstFrame) + 1 : 0);
+            hash = mix(hash, probe.lastFrame ? static_cast<std::uint64_t>(*probe.lastFrame) + 1 : 0);
+            hash = mix(hash, probe.firstFrame ? 1 : 0);
+            hash = mix(hash, probe.lastFrame ? 1 : 0);
+            hash = mix(hash, static_cast<std::uint64_t>(probe.coverageQuality));
+            hash =
+                mix(hash, probe.availableFrameCount ? static_cast<std::uint64_t>(*probe.availableFrameCount) + 1 : 0);
+            hash = mix(hash, probe.missingFrameCount ? static_cast<std::uint64_t>(*probe.missingFrameCount) + 1 : 0);
+            hash = mix(hash, probe.availableFrameCount ? 1 : 0);
+            hash = mix(hash, probe.missingFrameCount ? 1 : 0);
+            for (const MediaFrameRange& hole : probe.missingRanges) {
+                hash = mix(hash, static_cast<std::uint64_t>(hole.first));
+                hash = mix(hash, static_cast<std::uint64_t>(hole.last));
+            }
+            hash = mix(hash, probe.missingRanges.size());
+            hash = mix(hash, probe.pixelAspect ? static_cast<std::uint64_t>(*probe.pixelAspect) : 0);
+            hash = mix(hash, probe.pixelAspect ? 1 : 0);
+            hash = mix(hash, probe.rateNumerator ? *probe.rateNumerator : 0);
+            hash = mix(hash, probe.rateDenominator ? *probe.rateDenominator : 0);
+            hash = mix(hash, probe.rateNumerator ? 1 : 0);
+            hash = mix(hash, probe.rateDenominator ? 1 : 0);
+            hash = mixText(hash, probe.precision);
+            hash = mixText(hash, probe.channels);
+            hash = mixText(hash, probe.declaredInputColorSpace);
         }
         hash = mix(hash, value.metadata.committedProbe ? 1 : 0);
         for (const auto& mark : value.marks) {

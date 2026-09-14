@@ -24,9 +24,11 @@
 #include <string>
 #include <vector>
 
+#include <OpenImageIO/imageio.h>
 #include <nlohmann/json.hpp>
 
 #include "nemo/core/document/Serialization.hpp"
+#include "nemo/core/evaluation/SourceRequest.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
@@ -34,6 +36,9 @@
 #include "nemo/gpu/GpuViewingTransform.hpp"
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/gpu/Submit.hpp"
+#include "nemo/media/ImageIO.hpp"
+#include "nemo/media/ImageSource.hpp"
+#include "nemo/media/InputColor.hpp"
 #include "nemo/media/ViewingTransform.hpp"
 
 using namespace nemo;
@@ -64,9 +69,22 @@ const Graph& rootGraph(const Document& document) {
     std::string config;
     config += "ocio_profile_version: 2\n";
     config += "search_path: \"\"\n";
-    config += "roles:\n  default: linear\n  scene_linear: linear\n";
+    config += "roles:\n  default: linear\n  scene_linear: working_rec709\n";
     config += "colorspaces:\n";
     config += "  - !<ColorSpace>\n    name: linear\n    allocation: linear\n";
+    // The config-backed working space these tests use: identity with the config
+    // reference, i.e. scene-linear. It is NOT named "linear" so it exercises the
+    // config-backed policy path (the legacy sentinel keeps its own meaning).
+    config += "  - !<ColorSpace>\n    name: working_rec709\n    allocation: linear\n";
+    // An encoded input space with a real nonlinear transfer (gamma 2.2), so the
+    // input-to-working conversion and the encoded-domain alpha contract are
+    // exercised by an actual op chain rather than a matrix.
+    config += "  - !<ColorSpace>\n    name: rec709_texture\n";
+    config += "    to_reference: !<ExponentTransform> {value: [2.2, 2.2, 2.2, 1.0]}\n";
+    // A name that lies: linear-looking name, encoded transfer. The working-space
+    // validation must reject it by measurement, never by its name or a role.
+    config += "  - !<ColorSpace>\n    name: Linear Rec.709 (sRGB)\n";
+    config += "    to_reference: !<ExponentTransform> {value: [2.2, 2.2, 2.2, 1.0]}\n";
     config += "  - !<ColorSpace>\n    name: display_matrix\n";
     config +=
         "    from_reference: !<MatrixTransform> {matrix: [1.2, 0.0, 0.0, 0.0, 0.0, 1.1, 0.0, 0.0, 0.0, 0.0, 0.9, 0.0, "
@@ -80,6 +98,12 @@ const Graph& rootGraph(const Document& document) {
     config += "        - !<ExponentWithLinearTransform> {gamma: 2.4, offset: 0.055, direction: inverse}\n";
     config +=
         "        - !<RangeTransform> {min_in_value: 0.0, min_out_value: 0.0, max_in_value: 1.0, max_out_value: 1.0}\n";
+    // A file rule for TIFF (and a Default fallback), so the config-file-rule
+    // step of Auto resolution is a real configured rule rather than an
+    // assumed built-in behavior.
+    config += "file_rules:\n";
+    config += "  - !<Rule> {name: NemoTIFF, pattern: '*', extension: tif, colorspace: rec709_texture}\n";
+    config += "  - !<Rule> {name: Default, colorspace: linear}\n";
     config += "displays:\n  sRGB:\n    - !<View> {name: rec709, colorspace: display_view}\n";
     config += "    - !<View> {name: matrix, colorspace: display_matrix}\n";
 
@@ -557,5 +581,682 @@ TEST(Color, ComputeRetainedExecutionSurvivesPassDestruction) {
     const float expectedC[4] = {3.0F, 6.0F, 9.0F, 12.0F};
     for (int i = 0; i < 4; ++i)
         EXPECT_FLOAT_EQ(gotC[i], expectedC[i]) << "retained dispatch element " << i;
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Input color: OCIO input-to-working conversion, Raw/Data, alpha (issue #81)
+//
+// The acceptance bar is an independently derived pixel, not the adapter
+// agreeing with itself: every expected value below is computed in the test
+// from a published definition (the sRGB EOTF, a gamma power, the Rec.709
+// working space being linear) and the resolved interpretation/identity is
+// asserted from the public resolution seam.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+using nemo::media::EncodedColorFacts;
+using nemo::media::ImageFrame;
+using nemo::media::ImageFrameInfo;
+using nemo::media::ImagePrimaries;
+using nemo::media::ImageTransfer;
+using nemo::media::InputColorCache;
+using nemo::media::InputColorChoice;
+using nemo::media::InputTransformKind;
+using nemo::media::InputTransformOrigin;
+using nemo::media::ResolvedAlpha;
+using nemo::media::ResolvedInputColor;
+using nemo::media::SourceColorPolicy;
+
+// The declared RGB accuracy bar for every independent analytical comparison in
+// this section, one owner: the pinned OCIO 2.5.2 CPU/GPU processors fast-math
+// their op chains, and the measured divergence for these input transforms is
+// <=4.5e-6 per channel (2.408e-5 for the pinned Studio config's sRGB space).
+// 1e-4 carries ~20x headroom over the measured divergence — the same bar the
+// CPU/GPU parity checks use — while a wrong or missing conversion differs by
+// 1e-1 or more, so the check still has full discriminating power. Alpha is
+// exact and is asserted with EXPECT_FLOAT_EQ, never through this bar.
+constexpr float kRgbAccuracyTolerance = 1e-4F;
+
+// The published sRGB inverse EOTF, computed here rather than taken from the
+// adapter.
+[[nodiscard]] double srgbToLinear(const double value) {
+    return value < 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+}
+
+[[nodiscard]] CpuImage knownPixel(const std::array<float, 4>& rgba) {
+    CpuImage image(1, 1);
+    image.setPixel(0, 0, rgba);
+    return image;
+}
+
+// One EXR pixel with an explicit declared color space and an alpha channel:
+// OIIO reports EXR alpha as premultiplied by convention, so this fixture
+// exercises Auto association AND a declared transfer at once.
+[[nodiscard]] std::filesystem::path writeDeclaredExr(const std::string& name, const std::array<float, 4>& pixel,
+                                                     const char* colorSpace) {
+    const auto dir =
+        std::filesystem::temp_directory_path() / ("nemo-input-color-" + std::to_string(static_cast<long>(::getpid())));
+    std::filesystem::create_directories(dir);
+    const auto path = dir / name;
+    auto output = OIIO::ImageOutput::create(path.string());
+    if (!output) {
+        throw std::runtime_error(OIIO::geterror());
+    }
+    OIIO::ImageSpec spec(1, 1, 4, OIIO::TypeDesc::FLOAT);
+    spec.channelnames = {"R", "G", "B", "A"};
+    if (colorSpace != nullptr) {
+        spec.attribute("oiio:ColorSpace", colorSpace);
+    }
+    if (!output->open(path.string(), spec) || !output->write_image(OIIO::TypeDesc::FLOAT, pixel.data()) ||
+        !output->close()) {
+        throw std::runtime_error(OIIO::geterror());
+    }
+    return path;
+}
+
+// A TIFF that declares nothing, written through the shared still writer.
+[[nodiscard]] std::filesystem::path writeUndeclaredTiff(const std::string& name, const std::array<float, 4>& pixel) {
+    const auto dir =
+        std::filesystem::temp_directory_path() / ("nemo-input-color-" + std::to_string(static_cast<long>(::getpid())));
+    std::filesystem::create_directories(dir);
+    const auto path = dir / name;
+    nemo::media::writeImage(path.string(), knownPixel(pixel), nemo::media::OutputPrecision::Float32);
+    return path;
+}
+
+[[nodiscard]] EvaluationRequest rasterRequest(int width, int height) {
+    EvaluationRequest request;
+    request.region = {0, 0, width, height};
+    return request;
+}
+
+// A hand-built resolved request: this test drives the provider seam directly,
+// so no catalog/node authoring is involved.
+[[nodiscard]] EffectiveSourceRequest sourceRequest(const std::string& key, const std::string& path) {
+    EffectiveSourceRequest source;
+    source.sourceKey = key;
+    source.path = path;
+    source.sourceFrame = 0;
+    source.readFrame = 0;
+    return source;
+}
+
+// Rewrites the fixture config at the SAME path with a different gamma and an
+// extra comment line, so both the content and the file size change (the
+// freshness stamp is then guaranteed to move on any filesystem).
+void rewriteConfigGamma(const std::filesystem::path& configPath, const std::string& gamma) {
+    std::ifstream in(configPath);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    std::string replaced;
+    const std::string needle = "2.2, 2.2, 2.2";
+    for (std::size_t pos = 0; pos < text.size();) {
+        const auto hit = text.find(needle, pos);
+        if (hit == std::string::npos) {
+            replaced.append(text, pos, std::string::npos);
+            break;
+        }
+        replaced.append(text, pos, hit - pos);
+        replaced += gamma + ", " + gamma + ", " + gamma;
+        pos = hit + needle.size();
+    }
+    replaced += "\n# rewritten by the input-color test\n";
+    std::ofstream out(configPath, std::ios::trunc);
+    out << replaced;
+}
+
+}  // namespace
+
+// The owner-approved new-project default: the pinned built-in ACES Studio
+// config, its real scene-linear Rec.709 working space and the ACES 2.0 SDR
+// view, with an explicit $OCIO override preserved.
+TEST(InputColor, NewProjectDefaultIsThePinnedAcesStudioConfig) {
+    {
+        // No environment override: the project authors the registered reference.
+        const test::ScopedEnvironment ocio("OCIO", std::nullopt);
+        const nemo::media::NewProjectColorDefault defaulted = nemo::media::newProjectColorDefault();
+        EXPECT_EQ(defaulted.configUri, std::string{nemo::kBuiltinColorConfigUri});
+        EXPECT_TRUE(nemo::isRegisteredColorConfigReference(defaulted.configUri));
+        EXPECT_EQ(defaulted.policy.workingSpace, "Linear Rec.709 (sRGB)");
+        EXPECT_EQ(defaulted.policy.viewerTransform, "sRGB - Display/ACES 2.0 - SDR 100 nits (Rec.709)");
+        EXPECT_EQ(defaulted.policy.deliveryTransform, defaulted.policy.viewerTransform);
+
+        // The named working space really is scene-linear Rec.709 in that config,
+        // and the searchable Input Transform list comes from the config itself.
+        nemo::media::requireSceneLinearRec709(defaulted.configUri, defaulted.policy.workingSpace, "test");
+        const std::vector<std::string> spaces = nemo::media::configInputColorSpaces(defaulted.configUri);
+        EXPECT_GT(spaces.size(), 40u);
+        EXPECT_NE(std::find(spaces.begin(), spaces.end(), defaulted.policy.workingSpace), spaces.end());
+        // Canonical published entries, not incidental alias inventory: the
+        // active list is what the Input Transform control offers.
+        for (const char* canonical : {"sRGB Encoded Rec.709 (sRGB)", "ACES2065-1", "ACEScg"}) {
+            EXPECT_NE(std::find(spaces.begin(), spaces.end(), std::string{canonical}), spaces.end()) << canonical;
+        }
+        EXPECT_TRUE(std::is_sorted(spaces.begin(), spaces.end()));
+        EXPECT_EQ(std::adjacent_find(spaces.begin(), spaces.end()), spaces.end());
+        EXPECT_FALSE(nemo::media::colorConfigIdentity(defaulted.configUri).empty());
+    }
+    {
+        // An explicit OCIO environment is an owner override: the new project
+        // authors no reference and resolves through the environment instead.
+        const test::ScopedEnvironment ocio("OCIO", "/tmp/nemo-explicit-env.ocio");
+        const nemo::media::NewProjectColorDefault overridden = nemo::media::newProjectColorDefault();
+        EXPECT_TRUE(overridden.configUri.empty());
+        EXPECT_EQ(overridden.policy.workingSpace, "Linear Rec.709 (sRGB)");
+    }
+}
+
+// The working target is validated by MEANING: a name that claims Rec.709 but
+// carries an encoded transfer, the ACES scene_linear role (ACEScg), and a
+// display space are all rejected; the pinned config's real Rec.709 space and
+// the config's own linear space are accepted.
+TEST(InputColor, WorkingTargetIsVerifiedByMeaningNotNameOrRole) {
+    const auto configPath = writeColorConfig();
+    SCOPED_TRACE("config " + configPath.string());
+    nemo::media::requireSceneLinearRec709(configPath.string(), "working_rec709", "test");
+    nemo::media::requireSceneLinearRec709(configPath.string(), "linear", "test");
+
+    for (const char* encoded : {"rec709_texture", "Linear Rec.709 (sRGB)", "display_view"}) {
+        try {
+            nemo::media::requireSceneLinearRec709(configPath.string(), encoded, "test");
+            ADD_FAILURE() << "expected '" << encoded << "' to be rejected as a working space";
+        } catch (const nemo::media::OcioException& error) {
+            EXPECT_NE(std::string(error.what()).find(encoded), std::string::npos) << error.what();
+        }
+    }
+    try {
+        nemo::media::requireSceneLinearRec709(configPath.string(), "not-a-space", "test");
+        ADD_FAILURE() << "expected an unknown working space to be rejected";
+    } catch (const nemo::media::OcioException& error) {
+        EXPECT_NE(std::string(error.what()).find("not-a-space"), std::string::npos) << error.what();
+    }
+
+    // The pinned default: accepted, while the role-named scene_linear space
+    // (ACEScg) is a different gamut and is refused.
+    const std::string pinned{nemo::kBuiltinColorConfigUri};
+    nemo::media::requireSceneLinearRec709(pinned, "Linear Rec.709 (sRGB)", "test");
+    for (const char* other : {"ACEScg", "sRGB Encoded Rec.709 (sRGB)", "sRGB - Display"}) {
+        try {
+            nemo::media::requireSceneLinearRec709(pinned, other, "test");
+            ADD_FAILURE() << "expected '" << other << "' to be rejected as a working space";
+        } catch (const nemo::media::OcioException& error) {
+            EXPECT_NE(std::string(error.what()).find(other), std::string::npos) << error.what();
+        }
+    }
+}
+
+// The real config-backed conversion: a named input space converts encoded
+// samples into the working space, checked against the published sRGB EOTF
+// computed in the test, with alpha passing through untouched.
+TEST(InputColor, NamedInputSpaceConvertsToWorkingAgainstPublishedReference) {
+    const std::string pinned{nemo::kBuiltinColorConfigUri};
+    const nemo::media::OcioInputTransform transform(pinned, "Linear Rec.709 (sRGB)", "sRGB Encoded Rec.709 (sRGB)");
+    EXPECT_EQ(transform.inputColorSpace(), "sRGB Encoded Rec.709 (sRGB)");
+    EXPECT_NE(transform.identity().find("sRGB Encoded Rec.709 (sRGB)"), std::string::npos);
+
+    CpuImage image(2, 1);
+    image.setPixel(0, 0, {0.5F, 0.25F, 0.75F, 1.0F});
+    image.setPixel(1, 0, {0.0F, 1.0F, 0.04045F, 0.25F});
+    transform.apply(image);
+    EXPECT_EQ(image.layout().color, ColorInterpretation::SceneLinear);
+
+    const auto pixel = image.pixel(0, 0);
+    EXPECT_NEAR(pixel[0], srgbToLinear(0.5), 1e-4F);
+    EXPECT_NEAR(pixel[1], srgbToLinear(0.25), 1e-4F);
+    EXPECT_NEAR(pixel[2], srgbToLinear(0.75), 1e-4F);
+    EXPECT_FLOAT_EQ(pixel[3], 1.0F);
+    const auto alphaPixel = image.pixel(1, 0);
+    EXPECT_NEAR(alphaPixel[0], 0.0F, kRgbAccuracyTolerance);
+    EXPECT_NEAR(alphaPixel[1], 1.0F, kRgbAccuracyTolerance);
+    // The sRGB linear-segment knee: 0.04045 encodes 0.0031308.
+    EXPECT_NEAR(alphaPixel[2], srgbToLinear(0.04045), kRgbAccuracyTolerance);
+    EXPECT_FLOAT_EQ(alphaPixel[3], 0.25F);
+
+    // A missing input space is an error naming the space and the config.
+    try {
+        const nemo::media::OcioInputTransform missing(pinned, "Linear Rec.709 (sRGB)", "no-such-space");
+        ADD_FAILURE() << "expected the missing input space to be rejected";
+    } catch (const nemo::media::OcioException& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find("no-such-space"), std::string::npos) << what;
+        EXPECT_NE(what.find("config"), std::string::npos) << what;
+    }
+}
+
+// Precedence and origin: an explicit override wins; Auto lets tagged media
+// win over fill-only hints; an undeclared file falls through to the config's
+// own file rule (reported as a rule, never as file metadata); Raw bypasses;
+// and a partial hint is an error rather than a silent completion.
+TEST(InputColor, ResolutionPrecedenceAndOrigin) {
+    const auto configPath = writeColorConfig();
+    const SourceColorPolicy policy{configPath.string(), "working_rec709"};
+    const std::string tiff = (configPath.parent_path() / "undeclared.tif").string();
+
+    // 1. Explicit named input space wins over a conflicting hint.
+    {
+        InputColorChoice choice;
+        choice.mode = nemo::InputTransformMode::Explicit;
+        choice.inputColorSpace = "rec709_texture";
+        choice.hints["transfer"] = "linear";
+        EncodedColorFacts facts;
+        facts.formatName = "openexr";
+        const ResolvedInputColor resolved = nemo::media::resolveInputColor(policy, choice, facts, tiff, "test");
+        EXPECT_EQ(resolved.kind, InputTransformKind::OcioColorspace);
+        EXPECT_EQ(resolved.colorSpace, "rec709_texture");
+        EXPECT_EQ(resolved.origin, InputTransformOrigin::NodeOcioOverride);
+    }
+
+    // 2. Auto with tagged media: the file declaration wins, the hint is inert.
+    {
+        InputColorChoice choice;
+        choice.hints["transfer"] = "gamma28";
+        EncodedColorFacts facts;
+        facts.formatName = "png";
+        facts.declaredColorSpace = "srgb_rec709_scene";
+        const ResolvedInputColor resolved = nemo::media::resolveInputColor(policy, choice, facts, tiff, "test");
+        EXPECT_EQ(resolved.kind, InputTransformKind::MetadataTransfer);
+        EXPECT_EQ(resolved.transfer, ImageTransfer::Srgb);
+        EXPECT_EQ(resolved.origin, InputTransformOrigin::FileMetadata);
+    }
+
+    // 3. Auto with nothing declared: the config's file rule for the path.
+    {
+        InputColorChoice choice;
+        EncodedColorFacts facts;
+        facts.formatName = "tiff";
+        const ResolvedInputColor tiffRule = nemo::media::resolveInputColor(policy, choice, facts, tiff, "test");
+        EXPECT_EQ(tiffRule.kind, InputTransformKind::OcioColorspace);
+        EXPECT_EQ(tiffRule.colorSpace, "rec709_texture");
+        EXPECT_EQ(tiffRule.origin, InputTransformOrigin::ConfigFileRule);
+        // A path the file rules do not match resolves through the DEFAULT rule,
+        // reported as a configured default rather than a media declaration.
+        const ResolvedInputColor defaultRule = nemo::media::resolveInputColor(
+            policy, choice, facts, (configPath.parent_path() / "undeclared.png").string(), "test");
+        EXPECT_EQ(defaultRule.kind, InputTransformKind::OcioColorspace);
+        EXPECT_EQ(defaultRule.origin, InputTransformOrigin::ConfigDefaultRule);
+    }
+
+    // 4. Auto with only hints: the legacy metadata interpretation, with the
+    // node scope distinguishing NodeInterpretation from SourceInterpretation.
+    {
+        InputColorChoice choice;
+        choice.hints["transfer"] = "gamma22";
+        choice.hints["primaries"] = "bt709";
+        EncodedColorFacts facts;
+        facts.formatName = "tiff";
+        const ResolvedInputColor sourceScoped = nemo::media::resolveInputColor(policy, choice, facts, tiff, "test");
+        EXPECT_EQ(sourceScoped.kind, InputTransformKind::MetadataTransfer);
+        EXPECT_EQ(sourceScoped.transfer, ImageTransfer::Gamma22);
+        EXPECT_EQ(sourceScoped.origin, InputTransformOrigin::SourceInterpretation);
+        choice.nodeHintKeys = nemo::kSourceHintTransferBit | nemo::kSourceHintPrimariesBit;
+        const ResolvedInputColor nodeScoped = nemo::media::resolveInputColor(policy, choice, facts, tiff, "test");
+        EXPECT_EQ(nodeScoped.origin, InputTransformOrigin::NodeInterpretation);
+    }
+
+    // 5. A partial hint is an authored but incomplete interpretation: an error
+    // naming the missing half, never a silent config completion.
+    {
+        InputColorChoice choice;
+        choice.hints["transfer"] = "gamma22";
+        EncodedColorFacts facts;
+        facts.formatName = "tiff";
+        try {
+            static_cast<void>(nemo::media::resolveInputColor(policy, choice, facts, tiff, "test"));
+            ADD_FAILURE() << "expected a partial interpretation hint to be rejected";
+        } catch (const nemo::media::InputColorException& error) {
+            EXPECT_NE(std::string(error.what()).find("primaries"), std::string::npos) << error.what();
+        }
+    }
+
+    // 6. Raw/Data bypasses transfer and gamut conversion.
+    {
+        InputColorChoice choice;
+        choice.mode = nemo::InputTransformMode::Raw;
+        EncodedColorFacts facts;
+        facts.formatName = "png";
+        facts.declaredColorSpace = "srgb_rec709_scene";
+        const ResolvedInputColor resolved = nemo::media::resolveInputColor(policy, choice, facts, tiff, "test");
+        EXPECT_EQ(resolved.kind, InputTransformKind::Raw);
+        EXPECT_EQ(resolved.origin, InputTransformOrigin::Raw);
+    }
+
+    // 7. The legacy policy (no config) keeps its strict ambiguity error, and
+    // the config-backed policy with CLIP decode-only fields still rejects them.
+    {
+        InputColorChoice choice;
+        EncodedColorFacts facts;
+        facts.formatName = "tiff";
+        try {
+            static_cast<void>(nemo::media::resolveInputColor(SourceColorPolicy{}, choice, facts, tiff, "test"));
+            ADD_FAILURE() << "expected an undeclared transfer to stay ambiguous without a project config";
+        } catch (const nemo::media::InputColorException& error) {
+            EXPECT_NE(std::string(error.what()).find("ambiguous"), std::string::npos) << error.what();
+        }
+        choice.hints["matrix"] = "bt709";
+        try {
+            static_cast<void>(nemo::media::resolveInputColor(policy, choice, facts, tiff, "test"));
+            ADD_FAILURE() << "expected a Y'CbCr decode field on an RGB source to be rejected";
+        } catch (const nemo::media::InputColorException& error) {
+            EXPECT_NE(std::string(error.what()).find("not applicable to an RGB image source"), std::string::npos)
+                << error.what();
+        }
+    }
+}
+
+// The encoded-domain alpha contract through the public still read: a
+// premultiplied image is unassociated BEFORE the nonlinear conversion (so the
+// result is not the wrong quantity), a zero-alpha pixel is a deterministic
+// zero RGB, a straight image keeps its hidden RGB, and Raw/Data leaves both
+// samples and association untouched.
+TEST(InputColor, AlphaIsNormalizedInTheEncodedDomainAndRawStaysUntouched) {
+    const auto configPath = writeColorConfig();
+    const InputColorCache color(SourceColorPolicy{configPath.string(), "working_rec709"});
+
+    // Auto association: EXR + declared sRGB means premultiplied, and the
+    // declared transfer applies.
+    {
+        const auto path = writeDeclaredExr("premultiplied.exr", {0.25F, 0.0F, 0.375F, 0.5F}, "srgb_rec709_scene");
+        InputColorChoice choice;
+        const ImageFrame frame = nemo::media::readImageFrame(color, choice, path.string(), 0, "alpha test");
+        EXPECT_EQ(frame.info.inputColor.alpha, ResolvedAlpha::Premultiplied);
+        EXPECT_EQ(frame.info.transfer, ImageTransfer::Srgb);
+        EXPECT_EQ(frame.info.color, ColorInterpretation::SceneLinear);
+        const auto pixel = frame.image.pixel(0, 0);
+        // unassociate 0.25/0.5 = 0.5, then sRGB-decode: the value the
+        // "linearize first, divide later" order could never produce.
+        EXPECT_NEAR(pixel[0], srgbToLinear(0.5), 1e-4F);
+        EXPECT_NEAR(pixel[2], srgbToLinear(0.75), 1e-4F);
+        EXPECT_FLOAT_EQ(pixel[3], 0.5F);
+        EXPECT_NE(pixel[0], static_cast<float>(srgbToLinear(0.25) / 0.5));
+    }
+
+    // Zero alpha: deterministic zero RGB, never a division blow-up or a
+    // hidden colour.
+    {
+        const auto path = writeDeclaredExr("zero-alpha.exr", {0.3F, 0.2F, 0.1F, 0.0F}, "srgb_rec709_scene");
+        InputColorChoice choice;
+        const ImageFrame frame = nemo::media::readImageFrame(color, choice, path.string(), 0, "zero alpha");
+        const auto pixel = frame.image.pixel(0, 0);
+        EXPECT_FLOAT_EQ(pixel[0], 0.0F);
+        EXPECT_FLOAT_EQ(pixel[1], 0.0F);
+        EXPECT_FLOAT_EQ(pixel[2], 0.0F);
+        EXPECT_FLOAT_EQ(pixel[3], 0.0F);
+    }
+
+    // An explicit Straight choice keeps valid hidden RGB.
+    {
+        const auto path = writeDeclaredExr("straight.exr", {0.25F, 0.5F, 0.75F, 0.5F}, "srgb_rec709_scene");
+        InputColorChoice choice;
+        choice.alpha = nemo::AlphaMode::Straight;
+        const ImageFrame frame = nemo::media::readImageFrame(color, choice, path.string(), 0, "straight alpha");
+        EXPECT_EQ(frame.info.inputColor.alpha, ResolvedAlpha::Straight);
+        const auto pixel = frame.image.pixel(0, 0);
+        EXPECT_NEAR(pixel[0], srgbToLinear(0.25), 1e-4F);
+        EXPECT_NEAR(pixel[1], srgbToLinear(0.5), 1e-4F);
+        EXPECT_FLOAT_EQ(pixel[3], 0.5F);
+    }
+
+    // Raw/Data: the stored samples and the association are untouched, and the
+    // frame is reported as Data — never as managed scene-linear.
+    {
+        const auto path = writeDeclaredExr("raw.exr", {0.25F, 0.5F, 0.75F, 0.5F}, "srgb_rec709_scene");
+        InputColorChoice choice;
+        choice.mode = nemo::InputTransformMode::Raw;
+        const ImageFrame frame = nemo::media::readImageFrame(color, choice, path.string(), 0, "raw");
+        EXPECT_EQ(frame.info.color, ColorInterpretation::Data);
+        EXPECT_EQ(frame.image.layout().color, ColorInterpretation::Data);
+        EXPECT_EQ(frame.info.inputColor.kind, InputTransformKind::Raw);
+        const auto pixel = frame.image.pixel(0, 0);
+        EXPECT_FLOAT_EQ(pixel[0], 0.25F);
+        EXPECT_FLOAT_EQ(pixel[1], 0.5F);
+        EXPECT_FLOAT_EQ(pixel[2], 0.75F);
+        EXPECT_FLOAT_EQ(pixel[3], 0.5F);  // premultiplied association left alone
+    }
+}
+
+// The public CPU provider seam: the resolved request's authored choices drive
+// the pixels, transparent black is real source output, a policy error is
+// refused, and two independent requests over the SAME file produce different
+// pixels without touching the shared reference.
+TEST(InputColor, ProviderAppliesTheResolvedRequestIndependently) {
+    const auto configPath = writeColorConfig();
+    const auto still = writeUndeclaredTiff("provider.tif", {0.5F, 0.5F, 0.5F, 1.0F});
+
+    Document document;
+    document.color.workingSpace = "working_rec709";
+    SourceReference reference;
+    reference.path = still.string();
+    document.setSourceReference("media", reference);
+
+    nemo::media::ImageSourceProvider provider(configPath.string());
+    const EvaluationRequest request = rasterRequest(1, 1);
+    EXPECT_FALSE(provider.colorConfigIdentity().empty());
+
+    // Explicit named input space: the gamma-2.2 conversion of the encoded 0.5.
+    EffectiveSourceRequest explicitRequest = sourceRequest("media", still.string());
+    explicitRequest.inputTransform = nemo::InputTransformMode::Explicit;
+    explicitRequest.inputColorSpace = "rec709_texture";
+    const CpuImage converted = provider.frame(document, explicitRequest, request);
+    EXPECT_EQ(converted.layout().color, ColorInterpretation::SceneLinear);
+    EXPECT_NEAR(converted.pixel(0, 0)[0], std::pow(0.5, 2.2), kRgbAccuracyTolerance);
+
+    // Auto with no declaration resolves through the config's TIFF rule: a
+    // DIFFERENT space, so the same file yields different pixels while the
+    // shared reference is never mutated.
+    EffectiveSourceRequest autoRequest = sourceRequest("media", still.string());
+    const CpuImage ruled = provider.frame(document, autoRequest, request);
+    EXPECT_NEAR(ruled.pixel(0, 0)[0], std::pow(0.5, 2.2), kRgbAccuracyTolerance);
+    EXPECT_EQ(reference.path, still.string());
+    EXPECT_TRUE(reference.interpretation.empty());
+
+    // Raw keeps the encoded sample, labelled Data.
+    EffectiveSourceRequest rawRequest = sourceRequest("media", still.string());
+    rawRequest.inputTransform = nemo::InputTransformMode::Raw;
+    const CpuImage raw = provider.frame(document, rawRequest, request);
+    EXPECT_EQ(raw.layout().color, ColorInterpretation::Data);
+    EXPECT_FLOAT_EQ(raw.pixel(0, 0)[0], 0.5F);
+
+    // Two independent explicit interpretations over one file differ.
+    EffectiveSourceRequest other = sourceRequest("media", still.string());
+    other.inputTransform = nemo::InputTransformMode::Explicit;
+    other.inputColorSpace = "linear";
+    const CpuImage alternative = provider.frame(document, other, request);
+    EXPECT_FLOAT_EQ(alternative.pixel(0, 0)[0], 0.5F);
+    EXPECT_NE(alternative.pixel(0, 0)[0], converted.pixel(0, 0)[0]);
+
+    // Transparent black is the request's own raster, not a substituted frame.
+    EffectiveSourceRequest blackRequest = sourceRequest("media", still.string());
+    blackRequest.transparentBlack = true;
+    const CpuImage black = provider.frame(document, blackRequest, rasterRequest(2, 2));
+    EXPECT_EQ(black.width(), 2);
+    EXPECT_EQ(black.height(), 2);
+    for (int y = 0; y < 2; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            for (const float channel : black.pixel(x, y)) {
+                EXPECT_FLOAT_EQ(channel, 0.0F);
+            }
+        }
+    }
+
+    // A policy error never opens a frame.
+    EffectiveSourceRequest failed = sourceRequest("media", still.string());
+    failed.policyError = true;
+    try {
+        static_cast<void>(provider.frame(document, failed, request));
+        ADD_FAILURE() << "expected a policy error to be refused";
+    } catch (const nemo::media::ImageIoException& error) {
+        EXPECT_NE(std::string(error.what()).find("error policy"), std::string::npos) << error.what();
+    }
+
+    // A missing named input space names the space when the conversion runs.
+    EffectiveSourceRequest missing = sourceRequest("media", still.string());
+    missing.inputTransform = nemo::InputTransformMode::Explicit;
+    missing.inputColorSpace = "no-such-input";
+    try {
+        static_cast<void>(provider.frame(document, missing, request));
+        ADD_FAILURE() << "expected the missing input space to be rejected";
+    } catch (const nemo::media::ImageIoException& error) {
+        EXPECT_NE(std::string(error.what()).find("no-such-input"), std::string::npos) << error.what();
+    }
+}
+
+// A warm source result must NEVER hide a changed working target: the same
+// request evaluated again after the document's working target becomes
+// unsupported has to report that target, not serve the previously cached image.
+// This is the real provider + reuse-cache seam (no call counts, no test-only
+// API): the first evaluation decodes through ImageSourceProvider into a warm
+// ResultCache, the second reuses it, and the third must fail naming the target.
+TEST(InputColor, WarmSourceCacheReportsAChangedWorkingTarget) {
+    const auto configPath = writeColorConfig();
+    const auto still = writeUndeclaredTiff("warm-target.tif", {0.25F, 0.5F, 0.75F, 1.0F});
+
+    Document document;
+    document.color.workingSpace = "working_rec709";
+    const NodeId plate = rootGraph(document).addNode("source", "plate");
+    rootGraph(document).setParam(plate, "source", nemo::ParameterValue{std::string{"media"}});
+    const NodeId output = rootGraph(document).addNode("output", "out");
+    static_cast<void>(rootGraph(document).connect(PortRef{plate, 0}, PortRef{output, 0}));
+    SourceReference reference;
+    reference.path = still.string();
+    document.setSourceReference("media", reference);
+
+    nemo::media::ImageSourceProvider provider(configPath.string());
+    ResultCache<CpuImage> cache;
+    EvaluationRequest request;
+    request.network = document.rootNetworkId();
+    request.output = output;
+    request.region = {0, 0, 1, 1};
+
+    // The produced source result is the TIFF file rule's gamma-2.2 conversion.
+    const CpuEvaluation first = evaluateCpu(document, request, &cache, &provider);
+    EXPECT_NEAR(first.image.pixel(0, 0)[0], std::pow(0.25, 2.2), kRgbAccuracyTolerance);
+    // A second identical evaluation is the warm path; it must stay valid.
+    const CpuEvaluation second = evaluateCpu(document, request, &cache, &provider);
+    EXPECT_NEAR(second.image.pixel(0, 0)[2], std::pow(0.75, 2.2), kRgbAccuracyTolerance);
+
+    // The same request with an unsupported working target: reported, never
+    // served from the warm cache, and the message names the authored value.
+    document.color.workingSpace = "aces2065";
+    try {
+        static_cast<void>(evaluateCpu(document, request, &cache, &provider));
+        ADD_FAILURE() << "expected the changed unsupported working target to be reported";
+    } catch (const std::exception& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find("aces2065"), std::string::npos) << what;
+        EXPECT_NE(what.find("scene-linear Rec.709"), std::string::npos) << what;
+    }
+}
+
+// A configuration edited in place (same path, different content) must change
+// the content identity AND the pixels on the next evaluation through the
+// public provider seam once the explicit refresh boundary has run: a path-only
+// cache can never serve the stale transform, and nothing polls the config.
+TEST(InputColor, SamePathConfigEditRefreshesIdentityAndPixels) {
+    const auto configPath = writeColorConfig();
+    const auto still = writeUndeclaredTiff("reload.tif", {0.5F, 0.5F, 0.5F, 1.0F});
+
+    Document document;
+    document.color.workingSpace = "working_rec709";
+    EvaluationRequest request = rasterRequest(1, 1);
+    nemo::media::ImageSourceProvider provider(configPath.string());
+
+    EffectiveSourceRequest source = sourceRequest("media", still.string());
+    source.inputTransform = nemo::InputTransformMode::Explicit;
+    source.inputColorSpace = "rec709_texture";
+
+    const std::string beforeIdentity = std::string(provider.colorConfigIdentity());
+    const CpuImage before = provider.frame(document, source, request);
+    EXPECT_NEAR(before.pixel(0, 0)[0], std::pow(0.5, 2.2), kRgbAccuracyTolerance);
+
+    // The engine does not poll the configuration: a same-path content change is
+    // seen at the explicit refresh boundary (project replacement / deliberate
+    // reload).
+    rewriteConfigGamma(configPath, "2.8");
+    provider.refreshColorConfig();
+
+    const std::string afterIdentity = std::string(provider.colorConfigIdentity());
+    EXPECT_FALSE(beforeIdentity.empty());
+    EXPECT_NE(beforeIdentity, afterIdentity) << "a same-path config edit must change the content identity";
+    const CpuImage after = provider.frame(document, source, request);
+    EXPECT_NEAR(after.pixel(0, 0)[0], std::pow(0.5, 2.8), kRgbAccuracyTolerance);
+    EXPECT_NE(before.pixel(0, 0)[0], after.pixel(0, 0)[0]);
+}
+
+// Native GPU parity: the retained OCIO pass produces the same working-space
+// samples as the CPU reference for the pinned default conversion, with alpha
+// untouched. Skips without a usable device.
+TEST(InputColor, GpuInputTransformMatchesCpuReference) {
+    const std::string pinned{nemo::kBuiltinColorConfigUri};
+    const nemo::media::OcioGpuProgram program =
+        nemo::media::buildInputTransformGpu(pinned, "Linear Rec.709 (sRGB)", "sRGB Encoded Rec.709 (sRGB)");
+    EXPECT_NE(program.description.find("sRGB Encoded Rec.709 (sRGB)"), std::string::npos);
+
+    CpuImage cpuImage = sample2x2();
+    const nemo::media::OcioInputTransform transform(pinned, "Linear Rec.709 (sRGB)", "sRGB Encoded Rec.709 (sRGB)");
+    transform.apply(cpuImage);
+
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    const std::vector<float> gpuPixels = runGpuProgram(boot, program, sample2x2Flat());
+
+    // Independent expectation as well as CPU parity: the known sRGB decode of
+    // one sample, computed in this test.
+    const auto known = cpuImage.pixel(1, 0);
+    EXPECT_NEAR(known[0], srgbToLinear(0.25), 1e-4F);
+    EXPECT_NEAR(gpuPixels[(static_cast<std::size_t>(0) * 2 + 1) * 4 + 0], srgbToLinear(0.25), 1e-4F);
+    for (int y = 0; y < cpuImage.height(); ++y) {
+        for (int x = 0; x < cpuImage.width(); ++x) {
+            const auto expected = cpuImage.pixel(x, y);
+            const float* actual = &gpuPixels[(static_cast<std::size_t>(y) * 2 + x) * 4];
+            // Measured OCIO 2.5.2 CPU-vs-GPU divergence for this transform is
+            // 2.408e-5 per channel (CPU fast-math pow vs generated GLSL); the
+            // transform's own correctness is asserted above against the
+            // published sRGB curve.
+            EXPECT_NEAR(actual[0], expected[0], 1e-4F) << "pixel (" << x << "," << y << ") R";
+            EXPECT_NEAR(actual[1], expected[1], 1e-4F) << "pixel (" << x << "," << y << ") G";
+            EXPECT_NEAR(actual[2], expected[2], 1e-4F) << "pixel (" << x << "," << y << ") B";
+            EXPECT_FLOAT_EQ(actual[3], expected[3]) << "pixel (" << x << "," << y << ") A";
+        }
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// Native GPU parity on the fixture config as well: a real nonlinear input
+// space in a config-backed working space, with the expected value computed
+// independently as a gamma power.
+TEST(InputColor, GpuInputTransformMatchesCpuForAConfigBackedWorkingSpace) {
+    const auto configPath = writeColorConfig();
+    const nemo::media::OcioGpuProgram program =
+        nemo::media::buildInputTransformGpu(configPath.string(), "working_rec709", "rec709_texture");
+
+    CpuImage cpuImage = sample2x2();
+    const nemo::media::OcioInputTransform transform(configPath.string(), "working_rec709", "rec709_texture");
+    transform.apply(cpuImage);
+
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    const std::vector<float> gpuPixels = runGpuProgram(boot, program, sample2x2Flat());
+
+    // Declared operation-specific bar for this input transform: measured
+    // OCIO 2.5.2 CPU-vs-GPU divergence is 2.408e-5 (pinned Studio config) and
+    // 2.229e-5 (this fixture) per channel, because the CPU processor
+    // vectorizes/fast-maths the pow chain while the generated GLSL does not.
+    // The bar carries headroom above the measured divergence; the
+    // TRANSFORM's correctness is asserted separately against the published
+    // curve (1e-4 on a value computed in this test), so this comparison only
+    // has to catch the two backends disagreeing. Alpha is exact on both sides.
+    constexpr float kNonlinearChainTolerance = 1e-4F;
+    for (int y = 0; y < cpuImage.height(); ++y) {
+        for (int x = 0; x < cpuImage.width(); ++x) {
+            const auto expected = cpuImage.pixel(x, y);
+            const float* actual = &gpuPixels[(static_cast<std::size_t>(y) * 2 + x) * 4];
+            EXPECT_NEAR(actual[0], expected[0], kNonlinearChainTolerance) << "pixel (" << x << "," << y << ") R";
+            EXPECT_NEAR(actual[1], expected[1], kNonlinearChainTolerance) << "pixel (" << x << "," << y << ") G";
+            EXPECT_NEAR(actual[2], expected[2], kNonlinearChainTolerance) << "pixel (" << x << "," << y << ") B";
+            EXPECT_FLOAT_EQ(actual[3], expected[3]) << "pixel (" << x << "," << y << ") A";
+        }
+    }
     expectValidationClean(*boot.instance);
 }

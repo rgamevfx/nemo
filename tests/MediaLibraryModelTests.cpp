@@ -716,6 +716,33 @@ TEST(MediaLibraryModel, RuntimeResultIsRejectedAfterRelinkAndReprobedPerEntry) {
         waitFor([&] { return fixture.model_.probeState(mediaId).value(QStringLiteral("hasResult")).toBool(); }));
 }
 
+TEST(MediaLibraryModel, ReprobePicksUpOverwrittenMediaAndReplacesItsThumbnail) {
+    MediaLibraryFixture fixture;
+    const auto source = writeExrFixture(fixture.temporary_.path().toStdString(), "overwrite", 8, 4);
+    ASSERT_TRUE(fixture.model_.importPaths({QString::fromStdString(source.string())}, QStringLiteral("root"), 0));
+    const QString mediaId = firstMediaId(fixture.model_);
+    ASSERT_FALSE(mediaId.isEmpty());
+    ASSERT_TRUE(
+        waitFor([&] { return fixture.model_.probeState(mediaId).value(QStringLiteral("hasResult")).toBool(); }));
+    const QString before = fixture.model_.thumbnailUrl(mediaId);
+    ASSERT_FALSE(before.isEmpty());
+
+    // The render overwrites the file with different content; the shipped
+    // rescan action re-reads it and the previous representation is not shown
+    // as current.
+    writeExrFixture(fixture.temporary_.path().toStdString(), "overwrite", 16, 6);
+    ASSERT_TRUE(fixture.model_.reprobe(mediaId));
+    ASSERT_TRUE(waitFor([&] { return fixture.model_.thumbnailUrl(mediaId) != before; }));
+    EXPECT_FALSE(fixture.model_.thumbnailUrl(mediaId).isEmpty());
+
+    ASSERT_TRUE(fixture.model_.applyProbe(mediaId));
+    const MediaCatalogEntry* entry = fixture.session_.document().mediaCatalog().entry(entryIdOf(mediaId));
+    ASSERT_NE(entry, nullptr);
+    ASSERT_TRUE(entry->metadata.committedProbe.has_value());
+    EXPECT_EQ(entry->metadata.committedProbe->width, 16);
+    EXPECT_EQ(entry->metadata.committedProbe->height, 6);
+}
+
 TEST(MediaLibraryModel, ProjectResetDropsRuntimeStateAndRepopulatesLazily) {
     MediaLibraryFixture fixture;
     const auto source = writeExrFixture(fixture.temporary_.path().toStdString(), "reset", 10, 8);

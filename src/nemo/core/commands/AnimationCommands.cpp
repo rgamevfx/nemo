@@ -11,6 +11,73 @@
 namespace nemo {
 namespace {
 
+// A discrete value cannot interpolate: a new key for it holds rather than
+// ramping. (Choice/string/boolean channels require Hold.)
+[[nodiscard]] bool isDiscreteValue(const ParameterValue& value) {
+    return std::holds_alternative<bool>(value) || std::holds_alternative<std::string>(value) ||
+           std::holds_alternative<ChoiceValue>(value) || std::holds_alternative<std::int64_t>(value);
+}
+
+}  // namespace
+
+Keyframe keyframeForParameterEdit(const Document& document, const Document* priorSnapshot, const ParameterEdit& edit,
+                                  double time) {
+    Keyframe key;
+    key.time = time;
+    key.value = *edit.value;
+    if (const auto* channel = document.animationChannel(edit.address)) {
+        const auto found = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                        [time](const Keyframe& candidate) { return candidate.time == time; });
+        if (found != channel->keys.end()) {
+            key = *found;
+            key.value = *edit.value;
+            return key;
+        }
+    }
+    if (priorSnapshot != nullptr) {
+        if (const auto* channel = priorSnapshot->animationChannel(edit.address)) {
+            const auto found = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                            [time](const Keyframe& candidate) { return candidate.time == time; });
+            if (found != channel->keys.end()) {
+                key = *found;
+                key.id = kInvalidKeyframe;
+                key.value = *edit.value;
+                return key;
+            }
+        }
+    }
+    key.interpolation = isDiscreteValue(*edit.value) ? KeyInterpolation::Hold : KeyInterpolation::Linear;
+    return key;
+}
+
+std::vector<KeyframeEdit> keyframeEditsForParameters(const Document& document, const Document* priorSnapshot,
+                                                     double time, const std::vector<ParameterEdit>& edits) {
+    std::vector<KeyframeEdit> result;
+    result.reserve(edits.size());
+    for (const auto& edit : edits) {
+        if (!edit.value)
+            throw std::invalid_argument("keyed parameter edits cannot reset a parameter");
+        result.push_back(KeyframeEdit{edit.address, keyframeForParameterEdit(document, priorSnapshot, edit, time)});
+    }
+    return result;
+}
+
+Command parameterValueCommand(const Document& document, const Document* priorSnapshot, double time,
+                              const std::vector<ParameterEdit>& keyed, const std::vector<ParameterEdit>& staticValues) {
+    if (keyed.empty())
+        return setParametersCommand(staticValues);
+    Command keys = setKeyframesCommand(keyframeEditsForParameters(document, priorSnapshot, time, keyed));
+    if (staticValues.empty())
+        return keys;
+    Command values = setParametersCommand(staticValues);
+    return Command{"edit parameter values", [keys = std::move(keys), values = std::move(values)](Document& target) {
+                       keys.apply(target);
+                       values.apply(target);
+                   }};
+}
+
+namespace {
+
 [[noreturn]] void reject(const std::string& message, GraphError code = GraphError::ParameterValue) {
     throw GraphException(code, "animation: " + message);
 }

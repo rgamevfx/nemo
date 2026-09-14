@@ -233,6 +233,50 @@ TEST(ReuseTest, TimeVariantsCoexistWithoutBlanketDeletion) {
     EXPECT_EQ(afterRevisit.misses, afterTwoFrames.misses);
 }
 
+// Issue #75: the declared optional mask slot participates in the content
+// key, so an absent mask and a connected mask are different results — a
+// disconnected optional input never aliases the masked evaluation.
+TEST(ReuseTest, MergeMaskSlotParticipatesInTheContentKey) {
+    Document doc = makeDocument({{"testpattern", "plate"},
+                                 {"constcolor", "tint"},
+                                 {"constcolor", "mask"},
+                                 {"merge", "comp"},
+                                 {"output", "out"}});
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", ColorValue{{0.0F, 0.0F, 1.0F, 0.5F}});
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("mask")->id, "color", ColorValue{{0.0F, 0.0F, 0.0F, 0.25F}});
+    connect(rootGraph(doc), "plate", "comp", 0, 0);
+    connect(rootGraph(doc), "tint", "comp", 0, 1);
+    connect(rootGraph(doc), "comp", "out");
+    const EvaluationRequest request = requestFor(doc, "out", 0);
+
+    ResultCache<CpuImage> cache;
+    const CpuEvaluation absentMask = evaluateCpu(doc, request, &cache);
+    const CacheCounts afterAbsent = cache.counts();
+
+    // Connecting the optional mask changes the merge's effective input
+    // identity: the newly reachable mask is computed, the merge and its
+    // consumer re-render, and the unchanged upstream results stay valid.
+    connect(rootGraph(doc), "mask", "comp", 0, 2);
+    const CpuEvaluation masked = evaluateCpu(doc, request, &cache);
+    const CacheCounts afterMasked = cache.counts();
+    EXPECT_NE(masked.plan.result.contentHash, absentMask.plan.result.contentHash);
+    EXPECT_FALSE(samePixels(masked.image, absentMask.image));
+    EXPECT_GT(afterMasked.misses, afterAbsent.misses);
+    EXPECT_GT(afterMasked.hits, afterAbsent.hits);
+
+    // The masked request is stable: every step is served from the cache and
+    // the pixels and identity match the first masked evaluation.
+    const CpuEvaluation repeated = evaluateCpu(doc, request, &cache);
+    const CacheCounts afterRepeat = cache.counts();
+    EXPECT_EQ(afterRepeat.misses, afterMasked.misses);
+    EXPECT_GT(afterRepeat.hits, afterMasked.hits);
+    for (const PlanStep& step : repeated.plan.steps) {
+        EXPECT_TRUE(step.cacheReused) << "step " << step.name;
+    }
+    EXPECT_EQ(repeated.plan.result.contentHash, masked.plan.result.contentHash);
+    EXPECT_TRUE(samePixels(repeated.image, masked.image));
+}
+
 TEST(ReuseTest, AnimatedEffectiveValuesReuseAcrossHistoryRevisions) {
     Document doc =
         makeDocument({{"testpattern", "plate"}, {"constcolor", "animated"}, {"merge", "comp"}, {"output", "out"}});

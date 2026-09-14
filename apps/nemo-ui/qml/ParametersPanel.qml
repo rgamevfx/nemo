@@ -32,6 +32,11 @@ FocusScope {
     property var inspectors: []
     property int inspectorLimit: 3
     property bool twoColumns: true
+    // Two columns are shown only when both minimum-width cards fit inside the
+    // scroll viewport. The saved `twoColumns` preference is preserved; a narrow
+    // panel overrides it for display only and never rewrites it.
+    readonly property bool effectiveTwoColumns: twoColumns
+                                                && inspectorScroll.availableWidth >= 2 * 260 + 6 + 14
     property string restoredForPanelId: ""
     property bool stateReady: false
     property bool savingState: false
@@ -44,8 +49,14 @@ FocusScope {
     property bool refreshPending: false
 
     // Only one parameter gesture is active at a time (beginNodeParameterEdit
-    // rejects a second begin). The panel tracks the single live token.
+    // rejects a second begin). The panel tracks the single live token and the
+    // row it belongs to, so a rejected edit can name the parameter.
     property string activeToken: ""
+    property var activeRow: null
+    // The most recent rejected edit, attributed to one row. It is presentation
+    // only; the controller/catalog remain the validation authority.
+    property string gestureError: ""
+    property string gestureErrorKey: ""
 
     property alias headerTools: headerToolsComponent
 
@@ -284,7 +295,7 @@ FocusScope {
     }
 
     function columnEntries(columnIndex) {
-        if (!twoColumns)
+        if (!effectiveTwoColumns)
             return columnIndex === 0 ? inspectors : [];
         var result = [];
         for (var i = 0; i < inspectors.length; ++i) {
@@ -331,7 +342,47 @@ FocusScope {
         if (token.length === 0)
             return "";
         activeToken = token;
+        activeRow = {
+            "networkId": String(networkId),
+            "nodeId": String(nodeId),
+            "parameterKey": String(parameterKey)
+        };
         return token;
+    }
+
+    // Batch shape of the same panel gesture: several keys of ONE target edit
+    // atomically (an animated key and a static companion together). The single
+    // shapes below are the one-element case of these, so both go through one
+    // owner in the controller.
+    function beginEditForMany(networkId, nodeId, parameterKeys) {
+        if (!controller || activeToken.length > 0)
+            return "";
+        if (!validIdentity(networkId) || !validIdentity(nodeId) || !parameterKeys || parameterKeys.length === 0)
+            return "";
+        var keys = [];
+        for (var i = 0; i < parameterKeys.length; ++i) {
+            var key = String(parameterKeys[i]);
+            if (key.length === 0)
+                return "";
+            keys.push(key);
+        }
+        var token = controller.beginNodeParameterEdits(String(networkId), String(nodeId), keys);
+        token = token === undefined || token === null ? "" : String(token);
+        if (token.length === 0)
+            return "";
+        activeToken = token;
+        activeRow = {
+            "networkId": String(networkId),
+            "nodeId": String(nodeId),
+            "parameterKey": keys[0]
+        };
+        return token;
+    }
+
+    function updateEditMany(values) {
+        if (activeToken.length === 0)
+            return false;
+        return controller.updateNodeParameterEdits(activeToken, values);
     }
 
     function beginEdit(row) {
@@ -341,15 +392,25 @@ FocusScope {
     function updateEdit(value) {
         if (activeToken.length === 0)
             return false;
-        return controller.updateNodeParameterEdit(activeToken, value);
+        if (!activeRow)
+            return false;
+        var values = {};
+        values[String(activeRow.parameterKey)] = value;
+        return updateEditMany(values);
     }
 
     function commitEdit() {
         if (activeToken.length === 0)
             return false;
+        var row = activeRow;
         var result = controller.commitNodeParameterEdit(activeToken);
         activeToken = "";
+        activeRow = null;
         flushRefresh();
+        if (!result) {
+            gestureError = controller ? String(controller.error) : "";
+            gestureErrorKey = row ? String(row.parameterKey) : "";
+        }
         return result;
     }
 
@@ -358,57 +419,183 @@ FocusScope {
             return false;
         var result = controller.cancelNodeParameterEdit(activeToken);
         activeToken = "";
+        activeRow = null;
         flushRefresh();
         return result;
     }
 
-    // One discrete control action (toggle, choice, typed field, vector/color
-    // component) is a single begin/update/commit gesture, hence one undo step.
-    // A rejected value cancels instead of committing an empty transaction.
-    function gestureSingle(row, value) {
-        if (beginEdit(row).length === 0)
+    // --- row errors -------------------------------------------------------
+    function recordError() {
+        if (!controller)
+            return;
+        gestureError = String(controller.error);
+        gestureErrorKey = activeRow ? String(activeRow.parameterKey) : "";
+    }
+
+    function clearGestureError() {
+        if (gestureError.length === 0 && gestureErrorKey.length === 0)
+            return;
+        gestureError = "";
+        gestureErrorKey = "";
+    }
+
+    // Invalid typed text keeps the previous value and explains the parameter
+    // without a second validation contract: the message names the control.
+    function rejectText(row, text) {
+        gestureError = "Parameter '" + (row && row.label ? String(row.label) : (row ? row.parameterKey : "")) + "' rejects '" + text + "'";
+        gestureErrorKey = row ? String(row.parameterKey) : "";
+    }
+
+    // --- gestures ---------------------------------------------------------
+    function sameNumber(a, b) {
+        return Math.abs(Number(a) - Number(b)) < 1e-12;
+    }
+
+    function sameValue(current, next) {
+        if (current === undefined || current === null)
             return false;
+        if (current.length !== undefined) {
+            if (!next || next.length !== current.length)
+                return false;
+            for (var i = 0; i < current.length; ++i)
+                if (!sameNumber(current[i], next[i]))
+                    return false;
+            return true;
+        }
+        return sameNumber(current, next);
+    }
+
+    // One discrete control action (toggle, choice, typed field, vector/color
+    // component, arrow-key step) is a single begin/update/commit gesture, hence
+    // one undo step. A no-op and a rejected value create no history entry.
+    function gestureSingle(row, value) {
+        // Identity and parameter key are the required contract: a row may omit
+        // its inspector metadata (registered editors build these rows locally),
+        // in which case only the no-op comparison is skipped. Nothing here is
+        // effect-specific.
+        if (!row || String(row.parameterKey).length === 0)
+            return false;
+        clearGestureError();
+        if (row.parameter && sameValue(row.parameter.value, value))
+            return true;
+        if (beginEdit(row).length === 0) {
+            gestureError = controller ? String(controller.error) : "";
+            gestureErrorKey = String(row.parameterKey);
+            return false;
+        }
         if (updateEdit(value) === false) {
+            var message = controller ? String(controller.error) : "";
             cancelEdit();
+            gestureError = message;
+            gestureErrorKey = String(row.parameterKey);
             return false;
         }
         return commitEdit();
     }
 
-    function formatParameter(value, step) {
-        return Number(value).toFixed(step >= 1 ? 0 : step < 0.01 ? 3 : 2);
+    // Typed numeric entry keeps the exact text; the catalog parses it, so an
+    // exact 64-bit integer is never rounded through a JavaScript number.
+    function gestureText(row, entered) {
+        if (!row || String(row.parameterKey).length === 0)
+            return false;
+        var text = String(entered).trim();
+        if (text.length === 0)
+            return false;
+        clearGestureError();
+        if (row.parameter && String(row.parameter.type) === "integer") {
+            if (row.parameter.valueText !== undefined && String(row.parameter.valueText) === text)
+                return true;
+        } else if (row.parameter) {
+            var numeric = Number(text);
+            if (Number.isFinite(numeric) && sameValue(row.parameter.value, numeric))
+                return true;
+        }
+        if (beginEdit(row).length === 0) {
+            gestureError = controller ? String(controller.error) : "";
+            gestureErrorKey = String(row.parameterKey);
+            return false;
+        }
+        if (updateEdit(text) === false) {
+            var message = controller ? String(controller.error) : "";
+            cancelEdit();
+            gestureError = message;
+            gestureErrorKey = String(row.parameterKey);
+            return false;
+        }
+        return commitEdit();
     }
 
-    function commitNumeric(row, text) {
-        var parameter = row.parameter;
-        if (!parameter)
-            return false;
-        var number = Number(text);
-        if (!Number.isFinite(number))
-            return false;
-        if (row.integerParameter)
-            number = Math.round(number);
-        var minimum = parameter.minimum !== undefined ? Number(parameter.minimum) : number;
-        var maximum = parameter.maximum !== undefined ? Number(parameter.maximum) : number;
-        number = Math.max(minimum, Math.min(maximum, number));
-        var step = parameter.step !== undefined ? Number(parameter.step) : 0;
-        if (step > 0)
-            number = minimum + Math.round((number - minimum) / step) * step;
-        return gestureSingle(row, number);
+    // Continuous scrub shares the one live gesture; a scrub that never changed
+    // the value cancels instead of publishing a no-op history entry.
+    function beginScrub(row) {
+        clearGestureError();
+        if (beginEdit(row).length === 0) {
+            gestureError = controller ? String(controller.error) : "";
+            gestureErrorKey = row ? String(row.parameterKey) : "";
+        }
     }
 
-    function commitVectorComponent(row, index, text) {
-        var value = row.parameter ? row.parameter.value : null;
-        if (!value || value.length === undefined)
+    function updateScrub(value) {
+        return updateEdit(value);
+    }
+
+    function finishScrub() {
+        if (activeToken.length === 0)
             return false;
-        var number = Number(text);
-        if (!Number.isFinite(number))
+        return commitEdit();
+    }
+
+    function cancelScrub() {
+        if (activeToken.length === 0)
             return false;
-        var next = [];
-        for (var i = 0; i < value.length; ++i)
-            next.push(Number(value[i]));
-        next[index] = number;
-        return gestureSingle(row, next);
+        return cancelEdit();
+    }
+
+    // Reset delegates to the identity-scoped controller command: one history
+    // entry, schema default, never Remove Animation.
+    function resetValue(row) {
+        if (!controller || !row)
+            return false;
+        clearGestureError();
+        var result = controller.resetNodeParameterEdit(String(row.networkId), String(row.nodeId), String(row.parameterKey));
+        if (!result) {
+            gestureError = String(controller.error);
+            gestureErrorKey = String(row.parameterKey);
+        }
+        flushRefresh();
+        return result;
+    }
+
+    // "Show in Animation" is a group-scoped presentation relay. When the group
+    // has no Animation panel the action explains itself instead of repointing
+    // or creating another panel. `workspace.root` is the WorkspaceController's
+    // published tree property (not a call), and it is the only available
+    // group->panel query: neither the workspace controller nor the context
+    // router exposes one, so this panel owns the walk.
+    function groupHasAnimationPanel() {
+        if (!workspace || workspace.root === undefined || workspace.root === null)
+            return false;
+        var stack = [workspace.root];
+        while (stack.length > 0) {
+            var node = stack.pop();
+            if (!node)
+                continue;
+            var panels = node.panels || [];
+            for (var i = 0; i < panels.length; ++i) {
+                if (String(panels[i].type) === "animation" && String(panels[i].group) === panelGroup)
+                    return true;
+            }
+            var children = node.children || [];
+            for (var c = 0; c < children.length; ++c)
+                stack.push(children[c]);
+        }
+        return false;
+    }
+
+    function revealInAnimation(networkId, nodeId, parameterKey) {
+        if (!contextRouter)
+            return false;
+        return contextRouter.requestAnimationReveal(panelGroup, String(networkId), String(nodeId), String(parameterKey));
     }
 
     // Stable identity-scoped seams for registered custom editors: the same
@@ -624,8 +811,12 @@ FocusScope {
             id: inspectorContent
             property real columnGap: 6
             property real minCardWidth: 260
-            property real columnWidth: parametersPanel.twoColumns ? Math.max(minCardWidth, (inspectorScroll.availableWidth - columnGap) / 2) : Math.max(minCardWidth, inspectorScroll.availableWidth)
-            width: parametersPanel.twoColumns ? columnWidth * 2 + columnGap : columnWidth
+            // Two columns are shown only when they fit without horizontal
+            // scrolling; the saved preference is preserved either way and is
+            // never rewritten by a narrow layout.
+            readonly property bool twoColumnLayout: parametersPanel.effectiveTwoColumns
+            property real columnWidth: twoColumnLayout ? Math.max(minCardWidth, (inspectorScroll.availableWidth - columnGap) / 2) : Math.max(minCardWidth, inspectorScroll.availableWidth)
+            width: twoColumnLayout ? columnWidth * 2 + columnGap : columnWidth
             height: Math.max(leftInspectorColumn.implicitHeight, rightInspectorColumn.implicitHeight)
 
             Column {
@@ -643,7 +834,7 @@ FocusScope {
             Column {
                 id: rightInspectorColumn
                 objectName: "inspectorColumn_1"
-                visible: parametersPanel.twoColumns
+                visible: inspectorContent.twoColumnLayout
                 x: leftInspectorColumn.width + inspectorContent.columnGap
                 width: inspectorContent.columnWidth
                 spacing: inspectorContent.columnGap
@@ -691,19 +882,80 @@ FocusScope {
             property var sectionModel: []
             property string sectionSignature: ""
 
+            // A registered editor may declare the parameter keys it owns (for
+            // example the Read control's timing/color settings). An available
+            // editor consumes those keys so exactly one control renders each
+            // setting; an unavailable editor consumes nothing and the generic
+            // rows stay usable.
+            function consumedKeys() {
+                var result = {};
+                if (typeof parameterEditors === "undefined" || !parameterEditors)
+                    return result;
+                for (var i = 0; i < sections.length; ++i) {
+                    var params = sections[i].parameters || [];
+                    for (var j = 0; j < params.length; ++j) {
+                        var editorId = params[j].editor !== undefined ? String(params[j].editor) : "";
+                        if (editorId.length === 0)
+                            continue;
+                        var info = parameterEditors.editor(editorId);
+                        if (!info || info.available !== true)
+                            continue;
+                        var declared = info.consumes || [];
+                        for (var k = 0; k < declared.length; ++k) {
+                            var key = String(declared[k]);
+                            if (key.length > 0 && key !== String(params[j].key))
+                                result[key] = true;
+                        }
+                    }
+                }
+                return result;
+            }
+
             function refreshSectionModel() {
                 var signature = "";
                 var model = [];
+                var consumed = consumedKeys();
+                var consumedSignature = Object.keys(consumed).sort().join(",");
                 for (var i = 0; i < sections.length; ++i) {
                     var section = sections[i];
-                    var keys = [];
                     var params = section.parameters || [];
-                    for (var j = 0; j < params.length; ++j)
-                        keys.push(String(params[j].key));
-                    signature += String(section.name) + ":" + keys.join(",") + "|";
+                    // A section whose every parameter is consumed by a
+                    // registered editor has nothing left to render: drop the
+                    // whole section instead of leaving an empty heading.
+                    var allConsumed = params.length > 0;
+                    for (var c = 0; c < params.length && allConsumed; ++c)
+                        allConsumed = consumed[String(params[c].key)] === true;
+                    if (allConsumed)
+                        continue;
+                    var entries = [];
+                    var keys = [];
+                    for (var j = 0; j < params.length; ++j) {
+                        var parameter = params[j];
+                        if (consumed[String(parameter.key)] === true)
+                            continue;
+                        var rowName = parameter.row !== undefined ? String(parameter.row) : "";
+                        keys.push(String(parameter.key) + "=" + rowName);
+                        if (rowName.length > 0) {
+                            var last = entries.length > 0 ? entries[entries.length - 1] : null;
+                            if (last && String(last.row) === rowName) {
+                                last.keys.push(String(parameter.key));
+                                continue;
+                            }
+                            entries.push({
+                                    "row": rowName,
+                                    "keys": [String(parameter.key)]
+                                });
+                            continue;
+                        }
+                        entries.push({
+                                "row": "",
+                                "keys": [String(parameter.key)]
+                            });
+                    }
+                    signature += String(section.name) + ":" + keys.join(",") + "+" + consumedSignature + "|";
                     model.push({
                             "name": String(section.name),
-                            "keys": keys
+                            "entries": entries
                         });
                 }
                 if (signature === sectionSignature)
@@ -725,6 +977,14 @@ FocusScope {
 
             onSectionsChanged: refreshSectionModel()
             Component.onCompleted: refreshSectionModel()
+
+            Connections {
+                target: typeof parameterEditors === "undefined" ? null : parameterEditors
+                function onEditorsChanged() {
+                    card.sectionSignature = "";
+                    card.refreshSectionModel();
+                }
+            }
 
             width: parent ? parent.width : implicitWidth
             height: bodyColumn.implicitHeight + 2
@@ -901,8 +1161,17 @@ FocusScope {
                     spacing: 4
 
                     Repeater {
-                        model: section.sectionData.keys
-                        delegate: parameterComponent
+                        model: section.sectionData.entries
+                        delegate: Loader {
+                            id: rowLoader
+                            property var entry: modelData
+                            Layout.fillWidth: true
+                            sourceComponent: entry.row.length > 0 && entry.keys.length > 1 ? rowGroupComponent : parameterComponent
+                            onEntryChanged: if (item)
+                                item.entryData = entry
+                            onLoaded: if (item)
+                                item.entryData = entry
+                        }
                     }
                 }
             }
@@ -914,27 +1183,44 @@ FocusScope {
         id: parameterComponent
         Item {
             id: parameterRow
+            property var entryData: null
 
             readonly property var card: parametersPanel.owningCard(parameterRow)
             readonly property int revision: parametersPanel.revision
-            readonly property string parameterKey: String(modelData)
+            readonly property string parameterKey: entryData && entryData.keys && entryData.keys.length > 0 ? String(entryData.keys[0]) : ""
             readonly property string networkId: card ? card.networkId : ""
             readonly property string instanceId: card ? card.instanceId : ""
             readonly property string nodeId: card ? card.nodeId : ""
             readonly property var parameter: card ? card.parameterByKey(parameterRow.parameterKey) : null
             readonly property string kind: parameter && parameter.kind !== undefined ? String(parameter.kind) : ""
+            readonly property string rowLabel: parameter && parameter.label !== undefined && String(parameter.label).length > 0 ? String(parameter.label) : parameterRow.parameterKey
             readonly property string keyStatus: {
                 parametersPanel.revision;
                 if (!parametersPanel.controller || parameterRow.parameterKey.length === 0)
                     return "none";
                 return String(parametersPanel.controller.nodeParameterKeyStatus(parameterRow.networkId, parameterRow.nodeId, parameterRow.parameterKey));
             }
-            readonly property real numberValue: parameter ? Number(parameter.value) : 0
+            readonly property bool modified: parameter ? parameter.modified === true : false
+            readonly property string scope: parameter && parameter.scope !== undefined ? String(parameter.scope) : ""
             readonly property bool integerParameter: parameter && String(parameter.type) === "integer"
+            readonly property var rawValue: parameter && parameter.value !== undefined && parameter.value !== null && parameter.value.length !== undefined ? parameter.value : []
+            readonly property real numberValue: parameter && parameter.value !== undefined && parameter.value !== null && parameter.value.length === undefined ? Number(parameter.value) : 0
             readonly property real numberStep: parameterRow.integerParameter ? 1 : (parameter && parameter.step !== undefined ? Number(parameter.step) : 0.01)
-            readonly property string formattedNumber: parameterRow.integerParameter ? String(Math.round(parameterRow.numberValue)) : parametersPanel.formatParameter(parameterRow.numberValue, parameter && parameter.step !== undefined ? parameter.step : undefined)
+            readonly property bool hasMinimum: parameter && parameter.minimum !== undefined
+            readonly property bool hasMaximum: parameter && parameter.maximum !== undefined
+            readonly property real minimum: parameterRow.hasMinimum ? Number(parameter.minimum) : 0
+            readonly property real maximum: parameterRow.hasMaximum ? Number(parameter.maximum) : 0
+            readonly property bool hasSoftMinimum: parameter && parameter.softMinimum !== undefined
+            readonly property bool hasSoftMaximum: parameter && parameter.softMaximum !== undefined
+            readonly property real softMinimum: parameterRow.hasSoftMinimum ? Number(parameter.softMinimum) : 0
+            readonly property real softMaximum: parameterRow.hasSoftMaximum ? Number(parameter.softMaximum) : 0
+            readonly property int decimals: parameter && parameter.displayDecimals !== undefined ? Number(parameter.displayDecimals) : -1
+            // Slider travel is the soft adjustment range when declared; it never
+            // bounds a typed value.
+            readonly property real sliderFrom: parameterRow.hasSoftMinimum ? parameterRow.softMinimum : (parameterRow.hasMinimum ? parameterRow.minimum : 0)
+            readonly property real sliderTo: parameterRow.hasSoftMaximum ? parameterRow.softMaximum : (parameterRow.hasMaximum ? parameterRow.maximum : 1)
             readonly property bool boolValue: parameter ? parameter.value === true : false
-            readonly property string stringValue: parameter && parameter.value !== undefined ? String(parameter.value) : ""
+            readonly property string stringValue: parameter && parameter.value !== undefined && parameter.value !== null ? String(parameter.value) : ""
             readonly property int choiceIndex: {
                 if (!parameter || !parameter.choices)
                     return 0;
@@ -942,8 +1228,8 @@ FocusScope {
                 return index < 0 ? 0 : index;
             }
             readonly property color colorValue: {
-                var value = parameter ? parameter.value : null;
-                if (!value || value.length === undefined || value.length < 3)
+                var value = parameterRow.rawValue;
+                if (value.length < 3)
                     return "transparent";
                 return Qt.rgba(Number(value[0]), Number(value[1]), Number(value[2]), value.length > 3 ? Number(value[3]) : 1);
             }
@@ -960,26 +1246,65 @@ FocusScope {
             }
             readonly property bool editorAvailable: parameterRow.editorInfo && parameterRow.editorInfo.available === true
             readonly property bool customEditorActive: parameterRow.hasCustomEditor && parameterRow.editorAvailable
+            // The registered editor's declared host layout. A "section" editor
+            // is an aggregate control: it spans the full row and provides its own
+            // per-parameter affordances, so no outer label/key/marker cell wraps
+            // it. No parameter type is special-cased here.
+            readonly property string editorPresentation:
+                parameterRow.customEditorActive && parameterRow.editorInfo && parameterRow.editorInfo.presentation !== undefined
+                    ? String(parameterRow.editorInfo.presentation) : "row"
+            readonly property bool sectionEditor: parameterRow.editorPresentation === "section"
+            // Row-local feedback for the most recent rejected edit. The message
+            // comes from the controller/catalog; the panel never re-validates.
+            readonly property string rowError: parametersPanel.gestureErrorKey === parameterRow.parameterKey ? parametersPanel.gestureError : ""
+            // Exact authored text for numeric rows; Integer values must never
+            // be displayed or committed through a lossy JavaScript number.
+            readonly property string exactText: parameter && parameter.valueText !== undefined ? String(parameter.valueText) : ""
+            readonly property int dragThreshold: parametersPanel.controller ? Number(parametersPanel.controller.dragDistance) : 4
+            readonly property var componentLabels: parameterRow.kind === "vector3" ? ["X", "Y", "Z"]
+                                                     : parameterRow.kind === "vector2" ? ["X", "Y"]
+                                                                                       : ["R", "G", "B", "A"]
+
+            implicitHeight: rowLayout.implicitHeight
+            width: parent ? parent.width : implicitWidth
+            Layout.fillWidth: true
 
             // Capture identities at drag start. Native MIME transport crosses
             // QQuickWindow boundaries without moving the inspector's layout.
-            property var dragPayload: ({})
-
-            implicitHeight: Math.max(labelText.implicitHeight, controlColumn.implicitHeight)
-            Layout.fillWidth: true
-
-            Drag.dragType: Drag.Automatic
-            Drag.supportedActions: Qt.CopyAction
-            Drag.proposedAction: Qt.CopyAction
-            Drag.mimeData: ({
-                    "application/x-nemo-parameter": JSON.stringify(parameterRow.dragPayload)
-                })
-
             function componentValue(index) {
-                var value = parameter ? parameter.value : null;
-                if (!value || value.length === undefined || index >= value.length)
-                    return "0";
-                return parametersPanel.formatParameter(Number(value[index]), parameter.step !== undefined ? parameter.step : undefined);
+                var value = parameterRow.rawValue;
+                return index < value.length ? Number(value[index]) : 0;
+            }
+
+            function componentEdited(index, value) {
+                var next = [];
+                for (var i = 0; i < parameterRow.rawValue.length; ++i)
+                    next.push(Number(parameterRow.rawValue[i]));
+                if (index >= 0 && index < next.length)
+                    next[index] = value;
+                return next;
+            }
+
+            function rowRef() {
+                return {
+                    "networkId": parameterRow.networkId,
+                    "nodeId": parameterRow.nodeId,
+                    "parameterKey": parameterRow.parameterKey,
+                    "parameter": parameterRow.parameter,
+                    "label": parameterRow.rowLabel
+                };
+            }
+
+            function commitDiscrete(value) {
+                return parametersPanel.gestureSingle(parameterRow.rowRef(), value);
+            }
+
+            function commitText(entered) {
+                return parametersPanel.gestureText(parameterRow.rowRef(), entered);
+            }
+
+            function commitComponent(index, value) {
+                return parameterRow.commitDiscrete(parameterRow.componentEdited(index, value));
             }
 
             function keyAtFrame() {
@@ -994,232 +1319,103 @@ FocusScope {
                 return parametersPanel.controller.removeNodeParameterKey(parameterRow.networkId, parameterRow.nodeId, parameterRow.parameterKey);
             }
 
-            function altOnly(mouse) {
-                mouse.accepted = !!(mouse.modifiers & Qt.AltModifier);
+            // Adapter for the shared numeric bundle: the row supplies its own
+            // identity, metadata and gesture entry points.
+            function bindNumericBundle(bundle) {
+                if (!bundle)
+                    return;
+                bundle.theme = parametersPanel.theme;
+                bundle.panel = parametersPanel;
+                bundle.row = parameterRow;
+                bundle.showSlider = true;
+                bundle.compact = false;
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.RightButton
+                onClicked: rowMenu.popup()
             }
 
             RowLayout {
+                id: rowLayout
                 anchors.fill: parent
                 spacing: 6
 
-                Item {
-                    id: labelRegion
-                    Layout.preferredWidth: 78
-                    Layout.minimumWidth: 48
+                // Modified-from-default marker: distinct position plus an
+                // accessible name, so it does not rely on color alone.
+                Rectangle {
+                    objectName: "modified_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
+                    visible: !parameterRow.sectionEditor
+                    Layout.preferredWidth: 6
+                    Layout.maximumWidth: 6
+                    Layout.preferredHeight: 6
                     Layout.alignment: Qt.AlignVCenter
-                    implicitHeight: labelText.implicitHeight
-
-                    Text {
-                        id: labelText
-                        anchors.fill: parent
-                        objectName: "label_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                        text: parameterRow.parameter && parameterRow.parameter.label !== undefined && String(parameterRow.parameter.label).length > 0 ? String(parameterRow.parameter.label) : parameterRow.parameterKey
-                        color: theme.text
-                        font.pixelSize: theme.fontSize
-                        elide: Text.ElideRight
-                        verticalAlignment: Text.AlignVCenter
-                    }
-
-                    // Alt-click the label keys at the current frame; a plain
-                    // press is released so the label stays selectable for #49.
-                    MouseArea {
-                        anchors.fill: parent
-                        onPressed: function (mouse) {
-                            parameterRow.altOnly(mouse);
-                        }
-                        onClicked: parameterRow.keyAtFrame()
-                    }
-
-                    DragHandler {
-                        id: labelDrag
-                        target: null
-                        acceptedButtons: Qt.LeftButton
-                        acceptedModifiers: Qt.NoModifier
-                        enabled: !parameterRow.parameterKey.startsWith("exposed:")
-                        onActiveChanged: {
-                            if (!active) {
-                                parameterRow.Drag.active = false;
-                                return;
-                            }
-                            parameterRow.dragPayload = {
-                                "networkId": parameterRow.networkId,
-                                "instanceId": parameterRow.instanceId,
-                                "nodeId": parameterRow.nodeId,
-                                "parameterKey": parameterRow.parameterKey
-                            };
-                            labelRegion.grabToImage(function (image) {
-                                    if (!labelDrag.active)
-                                        return;
-                                    parameterRow.Drag.imageSource = image.url;
-                                    parameterRow.Drag.active = true;
-                                });
-                        }
-                    }
-
-                    ToolTip.visible: labelHover.hovered
-                    ToolTip.text: (parameterRow.parameterKey.startsWith("exposed:") ? "Exposed control. " : "Drag to Edit exposed parameters. ") + (parameterRow.keyStatus === "key" ? "Keyed at frame " + parametersPanel.controller.frame : parameterRow.keyStatus === "animated" ? "Animated; Alt-click to key at frame " + parametersPanel.controller.frame : "Alt-click to add a key at frame " + parametersPanel.controller.frame)
+                    radius: 3
+                    color: parameterRow.modified ? theme.accent : "transparent"
+                    Accessible.name: parameterRow.modified ? "Modified from default" : "At default value"
+                    ToolTip.visible: markerHover.hovered
+                    ToolTip.text: parameterRow.modified ? "Modified from default" : "At default value"
                     HoverHandler {
-                        id: labelHover
+                        id: markerHover
                     }
                 }
 
-                Rectangle {
-                    id: keyIndicator
-                    objectName: "key_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                    Layout.preferredWidth: 24
-                    Layout.preferredHeight: 22
+                ExposureLabel {
+                    visible: !parameterRow.sectionEditor
+                    Layout.preferredWidth: 72
+                    Layout.minimumWidth: 44
+                    Layout.maximumWidth: 72
                     Layout.alignment: Qt.AlignVCenter
-                    radius: theme.smallRadius
-                    color: keyIndicatorMouse.containsMouse ? theme.hover : "transparent"
-                    border.width: 1
-                    border.color: parameterRow.keyStatus === "key" ? theme.accent : parameterRow.keyStatus === "animated" ? theme.muted : theme.border
-                    Accessible.name: "Animation key status: " + parameterRow.keyStatus
-                    Accessible.description: "Click to insert or update a key at the current frame. Right-click to remove a key at the current frame."
+                    theme: parametersPanel.theme
+                    networkId: parameterRow.networkId
+                    instanceId: parameterRow.instanceId
+                    nodeId: parameterRow.nodeId
+                    parameterKey: parameterRow.parameterKey
+                    labelText: parameterRow.rowLabel
+                    keyStatus: parameterRow.keyStatus
+                    frame: parametersPanel.controller ? parametersPanel.controller.frame : 0
+                    onKeyRequested: parameterRow.keyAtFrame()
+                }
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: parameterRow.keyStatus === "key" ? "\u25c6" : parameterRow.keyStatus === "animated" ? "\u25c7" : "\u25cb"
-                        color: parameterRow.keyStatus === "none" ? theme.muted : theme.accent
-                        font.pixelSize: 15
+                KeyIndicator {
+                    objectName: "key_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
+                    visible: !parameterRow.sectionEditor
+                    Layout.preferredWidth: 24
+                    Layout.maximumWidth: 24
+                    Layout.alignment: Qt.AlignVCenter
+                    theme: parametersPanel.theme
+                    networkId: parameterRow.networkId
+                    nodeId: parameterRow.nodeId
+                    parameterKey: parameterRow.parameterKey
+                    parameterLabel: parameterRow.rowLabel
+                    keyStatus: parameterRow.keyStatus
+                    scope: parameterRow.scope
+                    frame: parametersPanel.controller ? parametersPanel.controller.frame : 0
+                    revealAvailable: {
+                        parametersPanel.revision;
+                        return parametersPanel.groupHasAnimationPanel();
                     }
-
-                    MouseArea {
-                        id: keyIndicatorMouse
-                        anchors.fill: parent
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        hoverEnabled: true
-                        onClicked: function (mouse) {
-                            if (mouse.button === Qt.RightButton) {
-                                keyContextMenu.popup();
-                                return;
-                            }
-                            parameterRow.keyAtFrame();
-                        }
-                    }
-
-                    Menu {
-                        id: keyContextMenu
-                        MenuItem {
-                            text: "Key at frame " + parametersPanel.controller.frame
-                            onTriggered: parameterRow.keyAtFrame()
-                        }
-                        MenuItem {
-                            text: "Remove key at frame " + parametersPanel.controller.frame
-                            enabled: parameterRow.keyStatus === "key"
-                            onTriggered: parameterRow.removeKey()
-                        }
-                    }
-
-                    ToolTip.visible: indicatorHover.hovered
-                    ToolTip.text: parameterRow.keyStatus === "key" ? "Key at frame " + parametersPanel.controller.frame + ". Click to update; right-click to remove." : parameterRow.keyStatus === "animated" ? "Animated parameter. Click to add a key at frame " + parametersPanel.controller.frame : "Not animated. Click to add a key at frame " + parametersPanel.controller.frame
-                    HoverHandler {
-                        id: indicatorHover
-                    }
+                    onKeyRequested: parameterRow.keyAtFrame()
+                    onRemoveKeyRequested: parameterRow.removeKey()
+                    onRevealRequested: parametersPanel.revealInAnimation(parameterRow.networkId, parameterRow.nodeId, parameterRow.parameterKey)
                 }
 
                 ColumnLayout {
                     id: controlColumn
                     Layout.fillWidth: true
+                    Layout.maximumWidth: Infinity
                     spacing: 2
 
-                    // number: slider + typed field. A drag is one gesture.
-                    RowLayout {
+                    // number: the shared numeric control bundle (slider, typed
+                    // field, error) — one owner for ordinary and grouped rows.
+                    Loader {
+                        id: numberBundle
                         visible: parameterRow.kind === "number" && !parameterRow.customEditorActive
+                        active: parameterRow.kind === "number" && !parameterRow.customEditorActive
                         Layout.fillWidth: true
-                        spacing: 4
-
-                        Slider {
-                            id: numberSlider
-                            property int revision: parameterRow.revision
-                            objectName: "slider_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                            from: parameterRow.parameter && parameterRow.parameter.minimum !== undefined ? Number(parameterRow.parameter.minimum) : 0
-                            to: parameterRow.parameter && parameterRow.parameter.maximum !== undefined ? Number(parameterRow.parameter.maximum) : 1
-                            stepSize: parameterRow.numberStep
-                            snapMode: Slider.SnapAlways
-                            value: parameterRow.numberValue
-                            Layout.fillWidth: true
-                            implicitHeight: 20
-                            onMoved: parametersPanel.updateEdit(value)
-                            onPressedChanged: {
-                                if (pressed) {
-                                    parametersPanel.beginEdit(parameterRow);
-                                } else if (parametersPanel.activeToken.length > 0) {
-                                    parametersPanel.commitEdit();
-                                } else {
-                                    numberSlider.value = parameterRow.numberValue;
-                                }
-                            }
-                            Component.onDestruction: if (pressed)
-                                parametersPanel.cancelEdit()
-                            onRevisionChanged: if (!pressed)
-                                value = parameterRow.numberValue
-                            background: Rectangle {
-                                x: 0
-                                y: numberSlider.topPadding + numberSlider.availableHeight / 2 - height / 2
-                                width: numberSlider.availableWidth
-                                height: 3
-                                radius: 2
-                                color: theme.border
-                            }
-                            handle: Rectangle {
-                                x: numberSlider.leftPadding + numberSlider.visualPosition * (numberSlider.availableWidth - width)
-                                y: numberSlider.topPadding + numberSlider.availableHeight / 2 - height / 2
-                                width: 10
-                                height: 10
-                                radius: 5
-                                color: theme.accent
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                onPressed: parameterRow.altOnly(mouse)
-                                onClicked: parameterRow.keyAtFrame()
-                            }
-                        }
-
-                        TextField {
-                            id: numberField
-                            property bool pendingNumericEdit: false
-                            property int revision: parameterRow.revision
-                            objectName: "param_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                            text: parameterRow.formattedNumber
-                            implicitWidth: 52
-                            implicitHeight: 23
-                            font.pixelSize: theme.fontSize
-                            color: theme.text
-                            selectByMouse: true
-                            horizontalAlignment: Text.AlignRight
-                            validator: DoubleValidator {
-                                bottom: parameterRow.parameter && parameterRow.parameter.minimum !== undefined ? Number(parameterRow.parameter.minimum) : -1e9
-                                top: parameterRow.parameter && parameterRow.parameter.maximum !== undefined ? Number(parameterRow.parameter.maximum) : 1e9
-                            }
-                            onEditingFinished: {
-                                if (pendingNumericEdit)
-                                    parametersPanel.commitNumeric(parameterRow, numberField.text);
-                                pendingNumericEdit = false;
-                            }
-                            onTextEdited: pendingNumericEdit = true
-                            Keys.onEscapePressed: function (event) {
-                                event.accepted = true;
-                                pendingNumericEdit = false;
-                                numberField.text = parameterRow.formattedNumber;
-                            }
-                            onRevisionChanged: {
-                                if (!activeFocus || !pendingNumericEdit) {
-                                    numberField.text = parameterRow.formattedNumber;
-                                    pendingNumericEdit = false;
-                                }
-                            }
-                            background: Rectangle {
-                                color: theme.field
-                                border.color: numberField.activeFocus ? theme.accent : theme.border
-                                radius: theme.smallRadius
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                onPressed: parameterRow.altOnly(mouse)
-                                onClicked: parameterRow.keyAtFrame()
-                            }
-                        }
+                        sourceComponent: numericControlComponent
+                        onLoaded: parameterRow.bindNumericBundle(item)
                     }
 
                     StudioComboBox {
@@ -1232,11 +1428,14 @@ FocusScope {
                         currentIndex: parameterRow.choiceIndex
                         Layout.fillWidth: true
                         implicitHeight: 23
+                        Accessible.name: parameterRow.rowLabel
                         onRevisionChanged: currentIndex = parameterRow.choiceIndex
-                        onActivated: parametersPanel.gestureSingle(parameterRow, String(currentText))
+                        onActivated: parameterRow.commitDiscrete(String(currentText))
                         MouseArea {
                             anchors.fill: parent
-                            onPressed: parameterRow.altOnly(mouse)
+                            onPressed: function (mouse) {
+                                mouse.accepted = !!(mouse.modifiers & Qt.AltModifier);
+                            }
                             onClicked: parameterRow.keyAtFrame()
                         }
                     }
@@ -1251,11 +1450,13 @@ FocusScope {
                         checked: parameterRow.boolValue
                         implicitWidth: 30
                         implicitHeight: 20
+                        Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                        Accessible.name: parameterRow.rowLabel
                         Component.onCompleted: ready = true
                         onToggled: {
                             if (!ready || syncing)
                                 return;
-                            parametersPanel.gestureSingle(parameterRow, checked);
+                            parameterRow.commitDiscrete(checked);
                         }
                         onRevisionChanged: {
                             syncing = true;
@@ -1283,12 +1484,16 @@ FocusScope {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onPressed: parameterRow.altOnly(mouse)
+                            onPressed: function (mouse) {
+                                mouse.accepted = !!(mouse.modifiers & Qt.AltModifier);
+                            }
                             onClicked: parameterRow.keyAtFrame()
                         }
                     }
 
-                    // vector2/vector3: N numeric fields (owner-approved new design).
+                    // vector2/vector3: one NumericField per component, labelled
+                    // and individually scrub-able. Only the intended component
+                    // of the evaluated typed value changes.
                     RowLayout {
                         visible: (parameterRow.kind === "vector2" || parameterRow.kind === "vector3") && !parameterRow.customEditorActive
                         Layout.fillWidth: true
@@ -1296,41 +1501,60 @@ FocusScope {
 
                         Repeater {
                             model: parameterRow.kind === "vector3" ? 3 : 2
-                            delegate: TextField {
+                            delegate: RowLayout {
                                 required property int index
-                                property int revision: parameterRow.revision
-                                objectName: "vector_" + index + "_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                                text: parameterRow.componentValue(index)
                                 Layout.fillWidth: true
-                                implicitHeight: 23
-                                font.pixelSize: theme.fontSize
-                                color: theme.text
-                                selectByMouse: true
-                                horizontalAlignment: Text.AlignRight
-                                validator: DoubleValidator {
+                                spacing: 2
+                                Text {
+                                    text: parameterRow.componentLabels[index]
+                                    color: theme.muted
+                                    font.pixelSize: theme.fontSize
+                                    Layout.alignment: Qt.AlignVCenter
                                 }
-                                onEditingFinished: parametersPanel.commitVectorComponent(parameterRow, index, text)
-                                Keys.onEscapePressed: function (event) {
-                                    event.accepted = true;
-                                    text = parameterRow.componentValue(index);
-                                }
-                                onRevisionChanged: if (!activeFocus)
-                                    text = parameterRow.componentValue(index)
-                                background: Rectangle {
-                                    color: theme.field
-                                    border.color: activeFocus ? theme.accent : theme.border
-                                    radius: theme.smallRadius
-                                }
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onPressed: parameterRow.altOnly(mouse)
-                                    onClicked: parameterRow.keyAtFrame()
+                                NumericField {
+                                    objectName: "vector_" + index + "_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
+                                    theme: parametersPanel.theme
+                                    value: parameterRow.componentValue(index)
+                                    hasMinimum: parameterRow.hasMinimum
+                                    hasMaximum: parameterRow.hasMaximum
+                                    minimum: parameterRow.minimum
+                                    maximum: parameterRow.maximum
+                                    hasSoftMinimum: parameterRow.hasSoftMinimum
+                                    hasSoftMaximum: parameterRow.hasSoftMaximum
+                                    softMinimum: parameterRow.softMinimum
+                                    softMaximum: parameterRow.softMaximum
+                                    step: parameterRow.numberStep
+                                    decimals: parameterRow.decimals
+                                    integer: parameterRow.integerParameter
+                                    label: parameterRow.rowLabel + " " + parameterRow.componentLabels[index]
+                                    errorText: parameterRow.rowError
+                                    dragThreshold: parameterRow.dragThreshold
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                    onTextCommitted: function (text) {
+                                        var numeric = Number(text);
+                                        if (Number.isFinite(numeric))
+                                            parameterRow.commitComponent(index, numeric);
+                                        else
+                                            parametersPanel.rejectText(parameterRow.rowRef(), text);
+                                    }
+                                    onTextRejected: parametersPanel.rejectText(parameterRow.rowRef(), text)
+                                    onStepped: function (value) {
+                                        parameterRow.commitComponent(index, value);
+                                    }
+                                    onScrubStarted: parametersPanel.beginScrub(parameterRow.rowRef())
+                                    onScrubbed: parametersPanel.updateScrub(parameterRow.componentEdited(index, value))
+                                    onScrubFinished: parametersPanel.finishScrub()
+                                    onScrubCancelled: parametersPanel.cancelScrub()
+                                    onKeyRequested: parameterRow.keyAtFrame()
                                 }
                             }
                         }
                     }
 
-                    // color: swatch + 4 numeric fields (owner-approved new design).
+                    // color: labelled R/G/B/A component fields. Grade selects
+                    // the registered linked-RGB editor instead; this generic
+                    // fallback stays usable when no editor is registered.
                     RowLayout {
                         visible: parameterRow.kind === "color" && !parameterRow.customEditorActive
                         Layout.fillWidth: true
@@ -1343,45 +1567,62 @@ FocusScope {
                             radius: theme.smallRadius
                             color: parameterRow.colorValue
                             border.color: theme.border
+                            Accessible.name: parameterRow.rowLabel + " color"
                         }
 
                         Repeater {
                             model: 4
-                            delegate: TextField {
+                            delegate: RowLayout {
                                 required property int index
-                                property int revision: parameterRow.revision
-                                objectName: "color_" + index + "_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                                text: parameterRow.componentValue(index)
                                 Layout.fillWidth: true
-                                implicitHeight: 23
-                                font.pixelSize: theme.fontSize
-                                color: theme.text
-                                selectByMouse: true
-                                horizontalAlignment: Text.AlignRight
-                                validator: DoubleValidator {
+                                spacing: 2
+                                Text {
+                                    text: parameterRow.componentLabels[index]
+                                    color: theme.muted
+                                    font.pixelSize: theme.fontSize
+                                    Layout.alignment: Qt.AlignVCenter
                                 }
-                                onEditingFinished: parametersPanel.commitVectorComponent(parameterRow, index, text)
-                                Keys.onEscapePressed: function (event) {
-                                    event.accepted = true;
-                                    text = parameterRow.componentValue(index);
-                                }
-                                onRevisionChanged: if (!activeFocus)
-                                    text = parameterRow.componentValue(index)
-                                background: Rectangle {
-                                    color: theme.field
-                                    border.color: activeFocus ? theme.accent : theme.border
-                                    radius: theme.smallRadius
-                                }
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onPressed: parameterRow.altOnly(mouse)
-                                    onClicked: parameterRow.keyAtFrame()
+                                NumericField {
+                                    objectName: "color_" + index + "_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
+                                    theme: parametersPanel.theme
+                                    value: parameterRow.componentValue(index)
+                                    hasMinimum: parameterRow.hasMinimum
+                                    hasMaximum: parameterRow.hasMaximum
+                                    minimum: parameterRow.minimum
+                                    maximum: parameterRow.maximum
+                                    hasSoftMinimum: parameterRow.hasSoftMinimum
+                                    hasSoftMaximum: parameterRow.hasSoftMaximum
+                                    softMinimum: parameterRow.softMinimum
+                                    softMaximum: parameterRow.softMaximum
+                                    step: parameterRow.numberStep
+                                    decimals: parameterRow.decimals
+                                    label: parameterRow.rowLabel + " " + parameterRow.componentLabels[index]
+                                    errorText: parameterRow.rowError
+                                    dragThreshold: parameterRow.dragThreshold
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                    onTextCommitted: function (text) {
+                                        var numeric = Number(text);
+                                        if (Number.isFinite(numeric))
+                                            parameterRow.commitComponent(index, numeric);
+                                        else
+                                            parametersPanel.rejectText(parameterRow.rowRef(), text);
+                                    }
+                                    onTextRejected: parametersPanel.rejectText(parameterRow.rowRef(), text)
+                                    onStepped: function (value) {
+                                        parameterRow.commitComponent(index, value);
+                                    }
+                                    onScrubStarted: parametersPanel.beginScrub(parameterRow.rowRef())
+                                    onScrubbed: parametersPanel.updateScrub(parameterRow.componentEdited(index, value))
+                                    onScrubFinished: parametersPanel.finishScrub()
+                                    onScrubCancelled: parametersPanel.cancelScrub()
+                                    onKeyRequested: parameterRow.keyAtFrame()
                                 }
                             }
                         }
                     }
 
-                    // string: single text field (owner-approved new design).
+                    // string: single text field.
                     TextField {
                         id: stringField
                         visible: parameterRow.kind === "string" && !parameterRow.customEditorActive
@@ -1393,7 +1634,8 @@ FocusScope {
                         font.pixelSize: theme.fontSize
                         color: theme.text
                         selectByMouse: true
-                        onEditingFinished: parametersPanel.gestureSingle(parameterRow, String(text))
+                        Accessible.name: parameterRow.rowLabel
+                        onEditingFinished: parameterRow.commitDiscrete(String(text))
                         Keys.onEscapePressed: function (event) {
                             event.accepted = true;
                             stringField.text = parameterRow.stringValue;
@@ -1409,9 +1651,25 @@ FocusScope {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onPressed: parameterRow.altOnly(mouse)
+                            onPressed: function (mouse) {
+                                mouse.accepted = !!(mouse.modifiers & Qt.AltModifier);
+                            }
                             onClicked: parameterRow.keyAtFrame()
                         }
+                    }
+
+                    // Row-local error feedback for the non-numeric kinds; the
+                    // numeric bundle renders its own.
+                    Text {
+                        objectName: "error_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
+                        visible: parameterRow.rowError.length > 0 && parameterRow.kind !== "number"
+                        Layout.fillWidth: true
+                        text: parameterRow.rowError
+                        color: theme.errorText
+                        font.pixelSize: Math.max(9, theme.fontSize - 1)
+                        elide: Text.ElideRight
+                        wrapMode: Text.WordWrap
+                        Accessible.name: parameterRow.rowError
                     }
 
                     // Registered namespaced editor host. When the editor is
@@ -1421,28 +1679,13 @@ FocusScope {
                         id: customEditorLoader
                         visible: parameterRow.customEditorActive
                         active: parameterRow.customEditorActive
+                        property int revision: parameterRow.revision
                         Layout.fillWidth: true
                         source: parameterRow.editorAvailable ? parameterRow.editorInfo.source : ""
-                        onLoaded: {
-                            if (!item)
-                                return;
-                            if ("theme" in item)
-                                item.theme = parametersPanel.theme;
-                            if ("networkId" in item)
-                                item.networkId = parameterRow.networkId;
-                            if ("instanceId" in item)
-                                item.instanceId = parameterRow.instanceId;
-                            if ("nodeId" in item)
-                                item.nodeId = parameterRow.nodeId;
-                            if ("parameterKey" in item)
-                                item.parameterKey = parameterRow.parameterKey;
-                            if ("parameter" in item)
-                                item.parameter = parameterRow.parameter;
-                            if ("controller" in item)
-                                item.controller = parametersPanel.controller;
-                            if ("panel" in item)
-                                item.panel = parametersPanel;
-                        }
+                        // The host owns the current row; a refresh must not leave
+                        // a custom editor showing a stale value.
+                        onRevisionChanged: parameterRow.syncCustomEditor()
+                        onLoaded: parameterRow.syncCustomEditor()
                     }
 
                     Text {
@@ -1456,10 +1699,416 @@ FocusScope {
                     }
 
                     Text {
-                        visible: parameterRow.kind !== "" && parameterRow.kind !== "number" && parameterRow.kind !== "choice" && parameterRow.kind !== "toggle" && parameterRow.kind !== "vector2" && parameterRow.kind !== "vector3" && parameterRow.kind !== "color" && parameterRow.kind !== "string"
+                        visible: parameterRow.kind.length > 0 && parameterRow.kind !== "number" && parameterRow.kind !== "choice" && parameterRow.kind !== "toggle" && parameterRow.kind !== "vector2" && parameterRow.kind !== "vector3" && parameterRow.kind !== "color" && parameterRow.kind !== "string"
                         text: "Unsupported parameter kind '" + parameterRow.kind + "'"
                         color: theme.muted
                         font.pixelSize: theme.fontSize
+                    }
+                }
+            }
+
+            function syncCustomEditor() {
+                var item = customEditorLoader.item;
+                if (!item)
+                    return;
+                if ("theme" in item)
+                    item.theme = parametersPanel.theme;
+                if ("networkId" in item)
+                    item.networkId = parameterRow.networkId;
+                if ("instanceId" in item)
+                    item.instanceId = parameterRow.instanceId;
+                if ("nodeId" in item)
+                    item.nodeId = parameterRow.nodeId;
+                if ("parameterKey" in item)
+                    item.parameterKey = parameterRow.parameterKey;
+                if ("parameter" in item)
+                    item.parameter = parameterRow.parameter;
+                if ("controller" in item)
+                    item.controller = parametersPanel.controller;
+                if ("panel" in item)
+                    item.panel = parametersPanel;
+            }
+
+            // Right-click anywhere on the row opens the row actions; the
+            // animation column keeps its own menu, and left clicks pass through
+            // to the controls.
+            Menu {
+                id: rowMenu
+                MenuItem {
+                    text: "Reset Value"
+                    enabled: parameterRow.modified
+                    Accessible.name: "Reset value to the schema default"
+                    onTriggered: parametersPanel.resetValue(parameterRow.rowRef())
+                }
+            }
+
+        }
+    }
+
+    // The numeric control bundle: ONE owner for the soft-travel slider, the typed
+    // field and the rejected-edit message used by an ordinary number row and by
+    // a grouped pair row alike. Callers supply a `row` adapter object exposing
+    // the same members both row kinds already have, plus whether the slider is
+    // shown at this width. Grouping therefore adds no second control semantics.
+    Component {
+        id: numericControlComponent
+        ColumnLayout {
+            id: numericControl
+
+            property var theme: null
+            property var panel: null
+            property var row: null
+            // Live fit: a pair cell hides only the slider when there is no room
+            // for it; the field, key, marker and error always remain.
+            property bool showSlider: true
+            property bool compact: false
+
+            width: parent ? parent.width : implicitWidth
+            spacing: 2
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Slider {
+                    id: bundleSlider
+                    visible: numericControl.showSlider
+                    objectName: numericControl.row ? "slider_" + numericControl.row.nodeId + "_" + numericControl.row.parameterKey : ""
+                    property bool movedDuringPress: false
+                    property int revision: numericControl.panel ? numericControl.panel.revision : 0
+                    from: numericControl.row && numericControl.row.hasSoftMinimum ? numericControl.row.softMinimum : (numericControl.row && numericControl.row.hasMinimum ? numericControl.row.minimum : 0)
+                    to: {
+                        var low = bundleSlider.from;
+                        var high = numericControl.row && numericControl.row.hasSoftMaximum ? numericControl.row.softMaximum
+                                   : (numericControl.row && numericControl.row.hasMaximum ? numericControl.row.maximum : 1);
+                        return Math.max(low + 1e-9, high);
+                    }
+                    stepSize: numericControl.row ? numericControl.row.numberStep : 0.01
+                    snapMode: Slider.SnapAlways
+                    value: Math.min(bundleSlider.to, Math.max(bundleSlider.from, numericControl.row ? numericControl.row.numberValue : 0))
+                    Layout.fillWidth: true
+                    implicitHeight: 20
+                    Accessible.name: (numericControl.row ? numericControl.row.rowLabel : "") + " slider"
+                    onMoved: {
+                        movedDuringPress = true;
+                        if (numericControl.panel && numericControl.row)
+                            numericControl.panel.updateEdit(numericControl.row.integerParameter ? Math.round(value) : value);
+                    }
+                    onPressedChanged: {
+                        if (pressed) {
+                            movedDuringPress = false;
+                            if (numericControl.panel && numericControl.row)
+                                numericControl.panel.beginScrub(numericControl.row.rowRef());
+                        } else if (numericControl.panel && numericControl.panel.activeToken.length > 0) {
+                            if (movedDuringPress)
+                                numericControl.panel.commitEdit();
+                            else
+                                numericControl.panel.cancelEdit();
+                        }
+                    }
+                    Component.onDestruction: if (pressed && numericControl.panel)
+                        numericControl.panel.cancelEdit()
+                    onRevisionChanged: if (!pressed)
+                        value = Math.min(bundleSlider.to, Math.max(bundleSlider.from, numericControl.row ? numericControl.row.numberValue : 0))
+                    background: Rectangle {
+                        x: 0
+                        y: bundleSlider.topPadding + bundleSlider.availableHeight / 2 - height / 2
+                        width: bundleSlider.availableWidth
+                        height: 3
+                        radius: 2
+                        color: numericControl.theme.border
+                    }
+                    handle: Rectangle {
+                        x: bundleSlider.leftPadding + bundleSlider.visualPosition * (bundleSlider.availableWidth - width)
+                        y: bundleSlider.topPadding + bundleSlider.availableHeight / 2 - height / 2
+                        width: 10
+                        height: 10
+                        radius: 5
+                        color: numericControl.theme.accent
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onPressed: function (mouse) {
+                            mouse.accepted = !!(mouse.modifiers & Qt.AltModifier);
+                        }
+                        onClicked: if (numericControl.row)
+                            numericControl.row.keyAtFrame()
+                    }
+                }
+
+                NumericField {
+                    id: bundleField
+                    objectName: numericControl.row ? "param_" + numericControl.row.nodeId + "_" + numericControl.row.parameterKey : ""
+                    theme: numericControl.theme
+                    value: numericControl.row ? numericControl.row.numberValue : 0
+                    text: numericControl.row && numericControl.row.exactText !== undefined ? numericControl.row.exactText : ""
+                    hasMinimum: numericControl.row ? numericControl.row.hasMinimum : false
+                    hasMaximum: numericControl.row ? numericControl.row.hasMaximum : false
+                    minimum: numericControl.row ? numericControl.row.minimum : 0
+                    maximum: numericControl.row ? numericControl.row.maximum : 0
+                    hasSoftMinimum: numericControl.row ? numericControl.row.hasSoftMinimum : false
+                    hasSoftMaximum: numericControl.row ? numericControl.row.hasSoftMaximum : false
+                    softMinimum: numericControl.row ? numericControl.row.softMinimum : 0
+                    softMaximum: numericControl.row ? numericControl.row.softMaximum : 0
+                    step: numericControl.row ? numericControl.row.numberStep : 0.01
+                    decimals: numericControl.row ? numericControl.row.decimals : -1
+                    integer: numericControl.row ? numericControl.row.integerParameter : false
+                    label: numericControl.row ? numericControl.row.rowLabel : ""
+                    errorText: numericControl.row ? numericControl.row.rowError : ""
+                    dragThreshold: numericControl.row ? numericControl.row.dragThreshold : 4
+                    fieldWidth: numericControl.compact ? 56 : 62
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 56
+                    Layout.preferredWidth: numericControl.compact ? 56 : 62
+                    Layout.maximumWidth: numericControl.compact ? 56 : 1000000
+                    Layout.alignment: Qt.AlignVCenter
+                    onTextCommitted: function (text) {
+                        if (numericControl.row)
+                            numericControl.row.commitText(text);
+                    }
+                    onTextRejected: if (numericControl.panel && numericControl.row)
+                        numericControl.panel.rejectText(numericControl.row.rowRef(), text)
+                    onStepped: function (value) {
+                        if (numericControl.row)
+                            numericControl.row.commitDiscrete(value);
+                    }
+                    onScrubStarted: if (numericControl.panel && numericControl.row)
+                        numericControl.panel.beginScrub(numericControl.row.rowRef())
+                    onScrubbed: function (value) {
+                        if (numericControl.panel)
+                            numericControl.panel.updateScrub(value);
+                    }
+                    onScrubFinished: if (numericControl.panel)
+                        numericControl.panel.finishScrub()
+                    onScrubCancelled: if (numericControl.panel)
+                        numericControl.panel.cancelScrub()
+                    onKeyRequested: if (numericControl.row)
+                        numericControl.row.keyAtFrame()
+                }
+            }
+
+            Text {
+                objectName: numericControl.row ? "error_" + numericControl.row.nodeId + "_" + numericControl.row.parameterKey : ""
+                visible: numericControl.row ? numericControl.row.rowError.length > 0 : false
+                Layout.fillWidth: true
+                text: numericControl.row ? numericControl.row.rowError : ""
+                color: numericControl.theme.errorText
+                font.pixelSize: Math.max(9, numericControl.theme.fontSize - 1)
+                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
+                Accessible.name: numericControl.row ? numericControl.row.rowError : ""
+            }
+        }
+    }
+
+    // --- grouped row ------------------------------------------------------
+    // Consecutive parameters sharing a schema `row` render side by side with
+    // their labels as component labels (Transform "Translate" X/Y). Their
+    // identities, animation channels, commands and exposure stay independent.
+    Component {
+        id: rowGroupComponent
+        Item {
+            id: rowGroup
+            property var entryData: null
+
+            readonly property var card: parametersPanel.owningCard(rowGroup)
+            readonly property int revision: parametersPanel.revision
+            readonly property string rowName: entryData ? String(entryData.row) : ""
+            readonly property var keys: entryData && entryData.keys ? entryData.keys : []
+            readonly property string networkId: card ? card.networkId : ""
+            readonly property string instanceId: card ? card.instanceId : ""
+            readonly property string nodeId: card ? card.nodeId : ""
+            readonly property int dragThreshold: parametersPanel.controller ? Number(parametersPanel.controller.dragDistance) : 4
+
+            implicitHeight: groupLayout.implicitHeight
+            width: parent ? parent.width : implicitWidth
+            Layout.fillWidth: true
+
+            RowLayout {
+                id: groupLayout
+                anchors.fill: parent
+                spacing: 6
+
+                Rectangle {
+                    Layout.preferredWidth: 6
+                    Layout.maximumWidth: 6
+                    Layout.preferredHeight: 6
+                    Layout.alignment: Qt.AlignVCenter
+                    radius: 3
+                    color: "transparent"
+                }
+
+                Item {
+                    Layout.preferredWidth: 72
+                    Layout.minimumWidth: 44
+                    Layout.maximumWidth: 72
+                    Layout.alignment: Qt.AlignVCenter
+                    implicitHeight: groupLabelText.implicitHeight
+                    Text {
+                        id: groupLabelText
+                        anchors.fill: parent
+                        text: rowGroup.rowName
+                        color: theme.text
+                        font.pixelSize: theme.fontSize
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                        Accessible.name: rowGroup.rowName
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Repeater {
+                        model: rowGroup.keys
+                        delegate: RowLayout {
+                            id: groupedRow
+                            required property string modelData
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            readonly property var parameter: rowGroup.card ? rowGroup.card.parameterByKey(groupedRow.modelData) : null
+                            readonly property string componentLabel: parameter && parameter.label !== undefined && String(parameter.label).length > 0 ? String(parameter.label) : groupedRow.modelData
+                            readonly property string keyStatus: {
+                                parametersPanel.revision;
+                                if (!parametersPanel.controller || groupedRow.modelData.length === 0)
+                                    return "none";
+                                return String(parametersPanel.controller.nodeParameterKeyStatus(rowGroup.networkId, rowGroup.nodeId, groupedRow.modelData));
+                            }
+                            readonly property string scope: parameter && parameter.scope !== undefined ? String(parameter.scope) : ""
+                            readonly property bool integerParameter: parameter && String(parameter.type) === "integer"
+                            readonly property bool hasMinimum: parameter && parameter.minimum !== undefined
+                            readonly property bool hasMaximum: parameter && parameter.maximum !== undefined
+                            readonly property bool hasSoftMinimum: parameter && parameter.softMinimum !== undefined
+                            readonly property bool hasSoftMaximum: parameter && parameter.softMaximum !== undefined
+                            readonly property int decimals: parameter && parameter.displayDecimals !== undefined ? Number(parameter.displayDecimals) : -1
+                            readonly property real numberStep: groupedRow.integerParameter ? 1 : (parameter && parameter.step !== undefined ? Number(parameter.step) : 0.01)
+                            readonly property string rowError: parametersPanel.gestureErrorKey === groupedRow.modelData ? parametersPanel.gestureError : ""
+                            // Every grouped control reads its numbers through these
+                            // guarded accessors, so a row whose inspector data is
+                            // momentarily absent cannot dereference null.
+                            readonly property real minimumValue: groupedRow.hasMinimum && groupedRow.parameter ? Number(groupedRow.parameter.minimum) : 0
+                            readonly property real maximumValue: groupedRow.hasMaximum && groupedRow.parameter ? Number(groupedRow.parameter.maximum) : 0
+                            readonly property real softMinimumValue: groupedRow.hasSoftMinimum && groupedRow.parameter ? Number(groupedRow.parameter.softMinimum) : 0
+                            readonly property real softMaximumValue: groupedRow.hasSoftMaximum && groupedRow.parameter ? Number(groupedRow.parameter.softMaximum) : 0
+                            readonly property real currentValue: groupedRow.parameter && groupedRow.parameter.value !== undefined ? Number(groupedRow.parameter.value) : 0
+                            // Bundle adapter surface, identical to a plain row's.
+                            readonly property real numberValue: groupedRow.currentValue
+                            readonly property string nodeId: rowGroup.nodeId
+                            readonly property string parameterKey: groupedRow.modelData
+                            readonly property string exactText: groupedRow.parameter && groupedRow.parameter.valueText !== undefined ? String(groupedRow.parameter.valueText) : ""
+                            readonly property string rowLabel: rowGroup.rowName + " " + groupedRow.componentLabel
+                            readonly property real minimum: groupedRow.minimumValue
+                            readonly property real maximum: groupedRow.maximumValue
+                            readonly property real softMinimum: groupedRow.softMinimumValue
+                            readonly property real softMaximum: groupedRow.softMaximumValue
+                            readonly property int dragThreshold: rowGroup.dragThreshold
+
+                            function rowRef() {
+                                return {
+                                    "networkId": rowGroup.networkId,
+                                    "nodeId": rowGroup.nodeId,
+                                    "parameterKey": groupedRow.modelData,
+                                    "parameter": groupedRow.parameter,
+                                    "label": rowGroup.rowName + " " + groupedRow.componentLabel
+                                };
+                            }
+
+                            function keyAtFrame() {
+                                if (!parametersPanel.controller)
+                                    return false;
+                                return parametersPanel.controller.keyNodeParameter(rowGroup.networkId, rowGroup.nodeId, groupedRow.modelData);
+                            }
+
+                            function commitText(entered) {
+                                return parametersPanel.gestureText(groupedRow.rowRef(), entered);
+                            }
+
+                            function commitDiscrete(value) {
+                                return parametersPanel.gestureSingle(groupedRow.rowRef(), value);
+                            }
+
+                            function bindNumericBundle(bundle) {
+                                if (!bundle)
+                                    return;
+                                bundle.theme = parametersPanel.theme;
+                                bundle.panel = parametersPanel;
+                                bundle.row = groupedRow;
+                                // A paired cell is narrow: keep the slider only
+                                // when the whole grouped row is wide enough for it.
+                                bundle.showSlider = Qt.binding(function () { return rowGroup.width >= 520; });
+                                bundle.compact = true;
+                            }
+
+                            ExposureLabel {
+                                Layout.preferredWidth: 34
+                                Layout.maximumWidth: 34
+                                Layout.alignment: Qt.AlignVCenter
+                                theme: parametersPanel.theme
+                                networkId: rowGroup.networkId
+                                instanceId: rowGroup.instanceId
+                                nodeId: rowGroup.nodeId
+                                parameterKey: groupedRow.modelData
+                                labelText: groupedRow.componentLabel
+                                keyStatus: groupedRow.keyStatus
+                                frame: parametersPanel.controller ? parametersPanel.controller.frame : 0
+                                onKeyRequested: groupedRow.keyAtFrame()
+                            }
+
+                            // Modified-from-default marker: same identity as a
+                            // plain numeric row.
+                            Rectangle {
+                                objectName: "modified_" + rowGroup.nodeId + "_" + groupedRow.modelData
+                                Layout.preferredWidth: 6
+                                Layout.maximumWidth: 6
+                                Layout.preferredHeight: 6
+                                Layout.alignment: Qt.AlignVCenter
+                                radius: 3
+                                color: groupedRow.parameter && groupedRow.parameter.modified === true ? theme.accent : "transparent"
+                                Accessible.name: groupedRow.parameter && groupedRow.parameter.modified === true ? "Modified from default" : "At default value"
+                            }
+
+                            // The same shared numeric control bundle as a plain
+                            // number row, in its compact presentation: the soft
+                            // slider is shown only when this row genuinely has
+                            // room for it (the row width, not the field width, so
+                            // the decision cannot feed back into the layout). The
+                            // field, prefix, marker, error and key cell always
+                            // remain, and a keyed slider stays draggable when it
+                            // fits.
+                            Loader {
+                                id: groupedBundle
+                                Layout.fillWidth: true
+                                sourceComponent: numericControlComponent
+                                onLoaded: groupedRow.bindNumericBundle(item)
+                            }
+
+                            KeyIndicator {
+                                objectName: "key_" + rowGroup.nodeId + "_" + groupedRow.modelData
+                                Layout.preferredWidth: 24
+                                Layout.maximumWidth: 24
+                                Layout.alignment: Qt.AlignVCenter
+                                theme: parametersPanel.theme
+                                networkId: rowGroup.networkId
+                                nodeId: rowGroup.nodeId
+                                parameterKey: groupedRow.modelData
+                                parameterLabel: rowGroup.rowName + " " + groupedRow.componentLabel
+                                keyStatus: groupedRow.keyStatus
+                                scope: groupedRow.scope
+                                frame: parametersPanel.controller ? parametersPanel.controller.frame : 0
+                                revealAvailable: {
+                                    parametersPanel.revision;
+                                    return parametersPanel.groupHasAnimationPanel();
+                                }
+                                onKeyRequested: groupedRow.keyAtFrame()
+                                onRemoveKeyRequested: {
+                                    if (parametersPanel.controller)
+                                        parametersPanel.controller.removeNodeParameterKey(rowGroup.networkId, rowGroup.nodeId, groupedRow.modelData);
+                                }
+                                onRevealRequested: parametersPanel.revealInAnimation(rowGroup.networkId, rowGroup.nodeId, groupedRow.modelData)
+                            }
+                        }
                     }
                 }
             }

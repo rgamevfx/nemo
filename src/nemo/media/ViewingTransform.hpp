@@ -21,6 +21,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -86,6 +87,168 @@ struct OcioGpuProgram {
     // diagnostics ("working -> display/view").
     std::string description;
 };
+
+// ---------------------------------------------------------------------------
+// Input color: encoded source RGB -> working space (issue #81)
+// ---------------------------------------------------------------------------
+//
+// This is the same OCIO adapter applied in the *other* direction. A source's
+// samples are ENCODED (camera/display transfer, Rec.709/sRGB or any named
+// config space); the composition contract is scene-linear working RGB. The
+// Input Transform of a Read is a real config-backed conversion, never a
+// viewing transform: it runs before the compositing graph and its result is
+// what downstream effects and the Viewer consume.
+//
+// The adapter owns four things and nothing else: enumerating the active
+// config's color spaces (the Input Transform list has no hardcoded names),
+// the OCIO content identity that makes reuse keys config-content aware,
+// resolving one request's kind/origin, and the retained processor that
+// converts encoded RGB into the working space. Core types stay media-free and
+// runtime OCIO objects never enter the Document.
+
+// True for the OCIO built-in-config URI form ("ocio://<name>"): a config
+// compiled into the OCIO library, not a file on disk. Only this scheme is
+// treated specially; any other URI is an ordinary path and is reported
+// missing when it does not exist.
+[[nodiscard]] bool isBuiltinConfigUri(std::string_view path);
+
+// The owner-approved color policy for a NEW project: the OCIO-embedded,
+// version-pinned ACES Studio config, its real scene-linear Rec.709 working
+// space, and the ACES 2.0 SDR viewing on sRGB. It is a creation-time default
+// only — existing documents keep their authored policy, and an explicit OCIO
+// environment override is untouched — and it is applied through the existing
+// project owner (ProjectSession), never by changing ColorPolicy's literals
+// (legacy documents must keep decoding to their previous meaning).
+struct NewProjectColorDefault {
+    std::string configUri;  // registered config reference persisted with the project
+    ColorPolicy policy;     // working/view/delivery for the new project
+};
+[[nodiscard]] NewProjectColorDefault newProjectColorDefault();
+
+// Every ACTIVE color space of the resolved config, ordered by name. The
+// searchable Input Transform list comes from the project's real config, so
+// adding a config space needs no code change. Throws OcioException naming the
+// config when it cannot be resolved or loaded.
+[[nodiscard]] std::vector<std::string> configInputColorSpaces(const std::string& configPath);
+
+// Opaque content identity of the resolved config and its context
+// (`Config::getCacheID`), mixed into a source node's canonical reuse key. A
+// config edited in place — same path, different content — therefore cannot
+// serve a stale decoded frame or a stale input transform. Empty when the
+// request names no config at all (the legacy 'linear' working space).
+[[nodiscard]] std::string colorConfigIdentity(const std::string& configPath);
+
+// The project config's file rule for one media path, as plain strings: the
+// resolved color-space name and whether it came from the config's DEFAULT rule
+// (a configured fallback — reported as a configured default, never as file
+// metadata). `found` is false when the config resolves nothing for the path.
+struct ConfigFileRule {
+    bool found{false};
+    std::string colorSpace;
+    bool defaultRule{false};
+};
+[[nodiscard]] ConfigFileRule configFileRuleFor(const std::string& configPath, const std::string& filePath);
+
+// The supported-working-space diagnostic suffix, in one owner: a working-target
+// failure must always name the authored working value and the supported target,
+// whether the configuration failed to load or failed validation.
+[[nodiscard]] std::string workingTargetContext(const std::string& context, const std::string& workingSpace);
+
+// Validates that `workingSpace` really IS scene-linear Rec.709 in this config
+// before source samples are converted into it: the name is resolved, must not
+// be a data space, must have a linear transfer, and must carry the Rec.709
+// primaries. The primaries are proved by evaluating the config's own
+// processor and comparing it against the published Rec.709 -> ACES AP0
+// matrix, never by trusting the name or a role (in the pinned ACES config the
+// `scene_linear` role is ACEScg, not Rec.709). Throws OcioException naming
+// the config, the space and the offending relationship.
+void requireSceneLinearRec709(const std::string& configPath, const std::string& workingSpace,
+                              const std::string& context);
+
+class OcioInputTransform;
+
+// An immutable, retained OCIO configuration snapshot: ONE load per generation,
+// reused for the content identity, the working-target validation, the file-rule
+// lookup, the canonical space enumeration, the CPU processors and the GPU
+// program extraction. A path loader is never called twice for the same
+// generation, so new config bytes can never be paired with an old identity, and
+// a per-frame consumer (a sequence decode) never re-opens the config.
+class OcioConfigSnapshot {
+public:
+    // Resolves the reference (authored path or 'ocio://' URI, else $OCIO) and
+    // loads it once. Throws OcioException naming the missing/broken reference.
+    explicit OcioConfigSnapshot(std::string configPath);
+    ~OcioConfigSnapshot();
+    OcioConfigSnapshot(OcioConfigSnapshot&&) noexcept;
+    OcioConfigSnapshot& operator=(OcioConfigSnapshot&&) noexcept;
+    OcioConfigSnapshot(const OcioConfigSnapshot&) = delete;
+    OcioConfigSnapshot& operator=(const OcioConfigSnapshot&) = delete;
+
+    // Resolved reference this snapshot was loaded from.
+    [[nodiscard]] const std::string& reference() const noexcept;
+    // Content identity of THIS snapshot: reference + Config::getCacheID of the
+    // loaded bytes and the current context.
+    [[nodiscard]] const std::string& identity() const noexcept;
+    // Every active color space, ordered by name: the searchable Input Transform
+    // list of this snapshot.
+    [[nodiscard]] std::vector<std::string> colorSpaces() const;
+    // Validates that `workingSpace` really is scene-linear Rec.709 in THIS
+    // snapshot (by measurement, see the free function below).
+    void requireSceneLinearRec709(const std::string& workingSpace, const std::string& context) const;
+    // The config's own file rule for a media path. Cheap: an in-memory rule
+    // lookup on the retained snapshot, never a reload and never a per-frame
+    // cache of resolved frame paths.
+    [[nodiscard]] ConfigFileRule fileRuleFor(const std::string& filePath) const;
+    // Retained encoded->working conversion for one input space of this snapshot.
+    [[nodiscard]] std::shared_ptr<const OcioInputTransform> inputTransform(const std::string& workingSpace,
+                                                                           const std::string& inputColorSpace) const;
+    // GPU-native description of the same conversion, extracted from this
+    // snapshot (no reload, no path lookup).
+    [[nodiscard]] OcioGpuProgram inputTransformGpu(const std::string& workingSpace,
+                                                   const std::string& inputColorSpace) const;
+
+private:
+    friend class OcioInputTransform;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+// Retained encoded-RGB -> working conversion for one resolved input color
+// space. Construction resolves the names once (and validates the working
+// target); `apply` converts a decoded buffer in place: RGB only, alpha
+// untouched, no primaries/transfer assumption of its own.
+class OcioInputTransform {
+public:
+    OcioInputTransform(std::string configPath, std::string workingSpace, std::string inputColorSpace);
+    // Builds the conversion from a retained snapshot: no reload, and the
+    // identity always belongs to the bytes the processor was built from.
+    OcioInputTransform(const OcioConfigSnapshot& snapshot, std::string workingSpace, std::string inputColorSpace);
+    ~OcioInputTransform();
+    OcioInputTransform(OcioInputTransform&&) noexcept;
+    OcioInputTransform& operator=(OcioInputTransform&&) noexcept;
+    OcioInputTransform(const OcioInputTransform&) = delete;
+    OcioInputTransform& operator=(const OcioInputTransform&) = delete;
+
+    // Converts the image's RGB in place from the encoded input space into the
+    // working space. Alpha passes through unchanged.
+    void apply(CpuImage& image) const;
+
+    [[nodiscard]] const std::string& inputColorSpace() const noexcept;
+    // Config reference + config cache id + working space + input space +
+    // processor cache id: the exact content identity of this conversion.
+    [[nodiscard]] const std::string& identity() const noexcept;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+// GPU-native input transform for the same conversion, consumed by the
+// retained OCIO executor (gpu::GpuViewingTransform) with a scene-linear
+// output: hardware-decoded frames are converted on the device without any
+// host readback.
+[[nodiscard]] OcioGpuProgram buildInputTransformGpu(const std::string& configPath, const std::string& workingSpace,
+                                                    const std::string& inputColorSpace);
 
 // Resolves the config path the same way OCIO applications do: an explicit
 // path when given, otherwise the OCIO environment variable. Returns the

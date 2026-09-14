@@ -6,6 +6,25 @@ seams, plus the owner-approved new-design slice (node-local media control).
 **Headless capture:** [`issue61-read-node.json`](issue61-read-node.json)
 **Assets:** [`assets/issue61-read-node/`](assets/issue61-read-node/)
 
+## Superseded by #75
+
+This page is the **historical** #61 record. Issue #75 replaced the Read
+ownership, discovery and color/control contracts it describes: the shared
+`SourceReference` now owns media identity (path, content revision, committed
+facts, and its own authored mapping/interpretation for non-Read consumers),
+while the Read's range, mapping, boundary/missing policy, input transform,
+alpha and interpretation hints are ordinary node parameters resolved by core's
+`resolveSourceRequest` and migrated by schema 5. The decisions and results above
+remain what #61 delivered; they are not the current contract, and a run recorded
+here is not current #75 evidence.
+
+Current contracts live in
+[ADR-0007 "Read source ownership, effective requests, and schema 5 (#79)"](../decisions/0007-evaluator-reuse-invalidation.md)
+and [`ownership.md` "Read node media control"](../agents/ownership.md); the #75
+inspector evidence is [`issue75-inspector.json`](issue75-inspector.json).
+The #75 evidence records the full-debug run and focused corrections separately
+from the owner appearance/API review, which remains open.
+
 ## Recorded decisions
 
 The issue's unresolved observable decisions were implemented with the choices
@@ -36,7 +55,7 @@ review gate, not a blocker for implementation):
 
 - **One undoable command per edit.** `registerReadSourceCommand` resolves or
   creates the reference + entry and points the node at it; `relinkReadSourceCommand`
-  and `setReadSourceTimingCommand` carry a stale-reference guard
+  and `reloadReadSourceCommand` carry a stale-reference guard
   (`GraphError::StaleMediaSource`). A cancelled browse, a rejected path and an
   ambiguous/unsupported file submit nothing (proven by tests).
 - **Persistence.** `firstFrame`/`lastFrame` are additive optional fields:

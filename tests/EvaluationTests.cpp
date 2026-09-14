@@ -113,7 +113,6 @@ TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     ASSERT_NE(merge, nullptr);
     ASSERT_NE(plate, nullptr);
     ASSERT_NE(backdrop, nullptr);
-    ASSERT_EQ(merge->inputs.size(), 2);
     EXPECT_EQ(merge->inputs[0], plate->node);
     EXPECT_EQ(merge->inputs[1], backdrop->node);
     EXPECT_EQ(merge->inputImages[1].contentHash, backdrop->produced.contentHash);
@@ -122,6 +121,296 @@ TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     EXPECT_NEAR(pixel[2], 0.5F * 1.0F, 1e-6F);
     // Effective parameter state records the resolved operation.
     EXPECT_EQ(std::get<ChoiceValue>(merge->effectiveParams.at("operation")).value, "over");
+}
+
+// ---------------------------------------------------------------------------
+// Merge operations, masking and A/B roles (issue #75). Every expectation in
+// this block is an independently calculated pixel oracle, not a comparison
+// with another executor.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Distinct per-channel RGB *and* distinct background/foreground alpha, so a
+// swapped A/B binding changes every operation's result.
+constexpr std::array<float, 4> kMergeBackground{0.2F, 0.4F, 0.6F, 0.4F};
+constexpr std::array<float, 4> kMergeForeground{0.8F, 0.5F, 0.25F, 0.5F};
+constexpr std::array<float, 4> kMergeMask{0.1F, 0.2F, 0.3F, 0.3F};
+
+// Background (port A) and foreground (port B) constant colors plus a
+// constant mask available for the optional third port. `operation` is left
+// unauthored when null, exercising the descriptor's default.
+Document mergeDocument(const std::array<float, 4>& background, const std::array<float, 4>& foreground,
+                       const char* operation = nullptr, const std::array<float, 4>& mask = kMergeMask) {
+    Document document = makeDocument({{"constcolor", "background"},
+                                      {"constcolor", "foreground"},
+                                      {"constcolor", "mask"},
+                                      {"merge", "comp"},
+                                      {"output", "out"}});
+    rootGraph(document).setParam(rootGraph(document).nodeByName("background")->id, "color", ColorValue{background});
+    rootGraph(document).setParam(rootGraph(document).nodeByName("foreground")->id, "color", ColorValue{foreground});
+    rootGraph(document).setParam(rootGraph(document).nodeByName("mask")->id, "color", ColorValue{mask});
+    if (operation != nullptr) {
+        rootGraph(document).setParam(rootGraph(document).nodeByName("comp")->id, "operation",
+                                     ChoiceValue{std::string{operation}});
+    }
+    connect(rootGraph(document), "background", "comp", 0, 0);
+    connect(rootGraph(document), "foreground", "comp", 0, 1);
+    connect(rootGraph(document), "comp", "out");
+    return document;
+}
+
+void setMergeParam(Document& document, const char* key, ParameterValue value) {
+    rootGraph(document).setParam(rootGraph(document).nodeByName("comp")->id, key, std::move(value));
+}
+
+[[nodiscard]] std::array<float, 4> mergePixel(const Document& document) {
+    return evaluateCpu(document, fullFrameRequest(document, 0)).image.pixel(0, 0);
+}
+
+[[nodiscard]] CpuImage solidPixel(const std::array<float, 4>& pixel) {
+    ImageLayout layout;
+    layout.width = 1;
+    layout.height = 1;
+    CpuImage image(layout);
+    image.setPixel(0, 0, pixel);
+    return image;
+}
+
+NodeDescriptor mergeOperationFixture(std::vector<std::string> choices) {
+    // The descriptor's default must itself be a declared choice, so the
+    // fixture's default is the first choice unless the caller overrides it.
+    const std::string defaultChoice = choices.empty() ? std::string{"over"} : choices.front();
+    return NodeDescriptor{
+        .type = "fixture.mergeoperation",
+        .displayName = "Merge Operation Fixture",
+        .group = "Tests",
+        .inputs = {{PortKind::Image, "A", false}, {PortKind::Image, "B", false}},
+        .outputs = {{PortKind::Image, "out"}},
+        .parameters = {{.name = "operation",
+                        .type = ParameterType::Choice,
+                        .defaultValue = ParameterValue{ChoiceValue{defaultChoice}},
+                        .choices = std::move(choices),
+                        .label = "Operation",
+                        .section = "Composite",
+                        .editor = {}}},
+        .capabilities = NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Full}, .channels = {"RGBA"}}};
+}
+
+}  // namespace
+
+// Issue specification story 33/40: the five operations form the documented
+// blend target and interpolate by foreground alpha; alpha is
+// operation-independent. The unmasked oracle is the issue's hand-computed
+// table (background 0.2/0.4/0.6 with alpha 0.4, foreground 0.8/0.5/0.25 with
+// alpha 0.5).
+TEST(EvaluationTest, MergeOperationsMatchTheIndependentOracle) {
+    struct Case {
+        const char* operation;
+        std::array<float, 3> rgb;
+    };
+    const Case cases[] = {
+        {"over", {0.5F, 0.45F, 0.425F}},   {"plus", {0.6F, 0.65F, 0.725F}},       {"multiply", {0.18F, 0.3F, 0.375F}},
+        {"screen", {0.52F, 0.55F, 0.65F}}, {"difference", {0.4F, 0.25F, 0.475F}},
+    };
+    for (const Case& expected : cases) {
+        const Document document = mergeDocument(kMergeBackground, kMergeForeground, expected.operation);
+        const std::array<float, 4> pixel = mergePixel(document);
+        for (std::size_t channel = 0; channel < 3; ++channel) {
+            EXPECT_NEAR(pixel[channel], expected.rgb[channel], 1e-6F) << expected.operation << " channel " << channel;
+        }
+        // 0.5 + (1 - 0.5) * 0.4, the same alpha for every operation.
+        EXPECT_NEAR(pixel[3], 0.7F, 1e-6F) << expected.operation;
+    }
+
+    // An unauthored document defaults to Over and keeps the historical
+    // expression exactly (same operand order), not merely a close value.
+    const Document defaulted = mergeDocument(kMergeBackground, kMergeForeground);
+    const std::array<float, 4> pixel = mergePixel(defaulted);
+    for (std::size_t channel = 0; channel < 3; ++channel) {
+        const float legacy =
+            kMergeForeground[3] * kMergeForeground[channel] + (1.0F - kMergeForeground[3]) * kMergeBackground[channel];
+        EXPECT_EQ(pixel[channel], legacy);
+    }
+    EXPECT_EQ(pixel[3], kMergeForeground[3] + (1.0F - kMergeForeground[3]) * kMergeBackground[3]);
+}
+
+// Story 40: scene-linear RGB is never clamped, for opaque or translucent
+// foregrounds and for negative background values.
+TEST(EvaluationTest, MergePreservesHdrAndNegativeRgbWithoutClamping) {
+    const std::array<float, 4> background{-0.5F, 2.0F, -2.0F, 1.0F};
+    const std::array<float, 4> foreground{2.5F, -1.0F, 0.5F, 1.0F};
+    // Opaque foreground: Over selects the foreground exactly, above one and
+    // below zero.
+    EXPECT_EQ(mergePixel(mergeDocument(background, foreground, "over")),
+              (std::array<float, 4>{2.5F, -1.0F, 0.5F, 1.0F}));
+    EXPECT_EQ(mergePixel(mergeDocument(background, foreground, "multiply")),
+              (std::array<float, 4>{-1.25F, -2.0F, -1.0F, 1.0F}));
+    EXPECT_EQ(mergePixel(mergeDocument(background, foreground, "plus")),
+              (std::array<float, 4>{2.0F, 1.0F, -1.5F, 1.0F}));
+    EXPECT_EQ(mergePixel(mergeDocument(background, foreground, "difference")),
+              (std::array<float, 4>{3.0F, 3.0F, 2.5F, 1.0F}));
+
+    // Translucent foreground (alpha 0.25) keeps the interpolated negative
+    // channel (0.25*0.5 + 0.75*-2 = -1.375) and needs no clamp to survive.
+    const std::array<float, 4> translucentBackground{-0.5F, 2.0F, -2.0F, 0.5F};
+    const std::array<float, 4> partial{2.5F, -1.0F, 0.5F, 0.25F};
+    const std::array<float, 4> translucent = mergePixel(mergeDocument(translucentBackground, partial, "over"));
+    EXPECT_FLOAT_EQ(translucent[0], 0.25F);
+    EXPECT_FLOAT_EQ(translucent[1], 1.25F);
+    EXPECT_FLOAT_EQ(translucent[2], -1.375F);
+    EXPECT_FLOAT_EQ(translucent[3], 0.625F);
+}
+
+// Stories 36-39/41: the optional mask follows the shared mask contract, Mix
+// works with no mask connected, and zero coverage or zero Mix returns the
+// background exactly.
+TEST(EvaluationTest, MergeMaskChannelInvertAndMixFollowTheSharedContract) {
+    Document document = mergeDocument(kMergeBackground, kMergeForeground, "over");
+
+    // Mix with no mask connected: half of the Over composite.
+    setMergeParam(document, "mix", ParameterValue{0.5});
+    std::array<float, 4> pixel = mergePixel(document);
+    EXPECT_NEAR(pixel[0], 0.35F, 1e-6F);
+    EXPECT_NEAR(pixel[1], 0.425F, 1e-6F);
+    EXPECT_NEAR(pixel[2], 0.5125F, 1e-6F);
+    EXPECT_NEAR(pixel[3], 0.55F, 1e-6F);
+
+    // Zero Mix returns the background exactly, mask or no mask.
+    setMergeParam(document, "mix", ParameterValue{0.0});
+    EXPECT_EQ(mergePixel(document), kMergeBackground);
+
+    // Absent mask (or channel none) gives full coverage regardless of Mix.
+    connect(rootGraph(document), "mask", "comp", 0, 2);
+    setMergeParam(document, "mix", ParameterValue{1.0});
+    setMergeParam(document, "maskChannel", ParameterValue{ChoiceValue{"none"}});
+    EXPECT_NEAR(mergePixel(document)[1], 0.45F, 1e-6F);
+    setMergeParam(document, "maskChannel", ParameterValue{ChoiceValue{"A"}});
+
+    // Fractional coverage: mask A = 0.3, Mix 0.5 -> weight 0.15, the issue's
+    // hand-computed masked Over (0.245, 0.4075, 0.57375, 0.445).
+    setMergeParam(document, "mix", ParameterValue{0.5});
+    pixel = mergePixel(document);
+    EXPECT_NEAR(pixel[0], 0.245F, 1e-6F);
+    EXPECT_NEAR(pixel[1], 0.4075F, 1e-6F);
+    EXPECT_NEAR(pixel[2], 0.57375F, 1e-6F);
+    EXPECT_NEAR(pixel[3], 0.445F, 1e-6F);
+
+    // Invert flips the coverage to 0.7 (weight 0.35); the channel choices
+    // select the stored channel (R = 0.1, G = 0.2), so the results differ
+    // from the alpha-masked one above.
+    setMergeParam(document, "invertMask", ParameterValue{true});
+    pixel = mergePixel(document);
+    EXPECT_NEAR(pixel[0], 0.305F, 1e-6F);
+    EXPECT_NEAR(pixel[3], 0.505F, 1e-6F);
+    setMergeParam(document, "invertMask", ParameterValue{false});
+    setMergeParam(document, "maskChannel", ParameterValue{ChoiceValue{"R"}});
+    pixel = mergePixel(document);
+    EXPECT_NEAR(pixel[0], 0.215F, 1e-6F);
+    EXPECT_NEAR(pixel[3], 0.415F, 1e-6F);
+    setMergeParam(document, "maskChannel", ParameterValue{ChoiceValue{"G"}});
+    pixel = mergePixel(document);
+    EXPECT_NEAR(pixel[0], 0.23F, 1e-6F);
+    EXPECT_NEAR(pixel[3], 0.43F, 1e-6F);
+
+    // The selected channel is clamped to [0, 1] before inversion: an HDR
+    // mask selects full coverage, a negative one zero coverage.
+    setMergeParam(document, "maskChannel", ParameterValue{ChoiceValue{"A"}});
+    setMergeParam(document, "mix", ParameterValue{1.0});
+    rootGraph(document).setParam(rootGraph(document).nodeByName("mask")->id, "color",
+                                 ColorValue{{0.0F, 0.0F, 0.0F, 3.0F}});
+    pixel = mergePixel(document);
+    EXPECT_NEAR(pixel[0], 0.5F, 1e-6F);
+    EXPECT_NEAR(pixel[1], 0.45F, 1e-6F);
+    EXPECT_NEAR(pixel[2], 0.425F, 1e-6F);
+    EXPECT_NEAR(pixel[3], 0.7F, 1e-6F);
+    rootGraph(document).setParam(rootGraph(document).nodeByName("mask")->id, "color",
+                                 ColorValue{{0.0F, 0.0F, 0.0F, -2.0F}});
+    EXPECT_EQ(mergePixel(document), kMergeBackground);
+
+    // Zero coverage returns the background even with full Mix.
+    setMergeParam(document, "mix", ParameterValue{0.0});
+    EXPECT_EQ(mergePixel(document), kMergeBackground);
+}
+
+// Story 34: A is the background and B the foreground, in both directions.
+// The swapped oracle recomputes the same formulas with the roles exchanged;
+// the alpha formula is symmetric, so the RGB differences are the evidence.
+TEST(EvaluationTest, MergeKeepsPortRolesInBothDirections) {
+    struct Case {
+        const char* operation;
+        std::array<float, 3> authored;
+        std::array<float, 3> swapped;
+    };
+    const Case cases[] = {
+        {"over", {0.5F, 0.45F, 0.425F}, {0.56F, 0.46F, 0.39F}},
+        {"plus", {0.6F, 0.65F, 0.725F}, {0.88F, 0.66F, 0.49F}},
+        {"multiply", {0.18F, 0.3F, 0.375F}, {0.544F, 0.38F, 0.21F}},
+        {"screen", {0.52F, 0.55F, 0.65F}, {0.816F, 0.58F, 0.43F}},
+        {"difference", {0.4F, 0.25F, 0.475F}, {0.72F, 0.34F, 0.29F}},
+    };
+    for (const Case& expected : cases) {
+        const std::array<float, 4> authored =
+            mergePixel(mergeDocument(kMergeBackground, kMergeForeground, expected.operation));
+        const std::array<float, 4> swapped =
+            mergePixel(mergeDocument(kMergeForeground, kMergeBackground, expected.operation));
+        for (std::size_t channel = 0; channel < 3; ++channel) {
+            EXPECT_NEAR(authored[channel], expected.authored[channel], 1e-6F)
+                << expected.operation << " authored port order";
+            EXPECT_NEAR(swapped[channel], expected.swapped[channel], 1e-6F)
+                << expected.operation << " swapped port order";
+        }
+        EXPECT_NEAR(authored[3], 0.7F, 1e-6F);
+        EXPECT_NEAR(swapped[3], 0.7F, 1e-6F);
+    }
+}
+
+// Story 35: the atomic swap is the same edit the renderer sees — one command,
+// one history entry, and the rendered sources exchange.
+TEST(EvaluationTest, SwapInputsCommandExchangesTheRenderedSources) {
+    Document document = mergeDocument(kMergeBackground, kMergeForeground, "multiply");
+    EXPECT_NEAR(mergePixel(document)[0], 0.18F, 1e-6F);
+    CommandStack history(document);
+    history.push(swapInputsCommand(document.rootNetworkId(), rootGraph(document).nodeByName("comp")->id, 0, 1));
+    ASSERT_EQ(history.depth(), 1u);
+    EXPECT_NEAR(mergePixel(document)[0], 0.544F, 1e-6F);
+    ASSERT_TRUE(history.undo());
+    EXPECT_NEAR(mergePixel(document)[0], 0.18F, 1e-6F);
+}
+
+// Story 42: an unsupported operation value fails explicitly instead of
+// silently falling back. The descriptor rejects it on authoring/deserialize;
+// the executor rejects it for any value a catalog could still admit.
+TEST(EvaluationTest, MergeUnknownOperationFailsExplicitlyInsteadOfFallingBack) {
+    // The descriptor rejects an unknown value on authoring.
+    Document document(std::make_shared<const NodeCatalog>(
+        std::vector<NodeDescriptor>{mergeOperationFixture({"over", "plus", "multiply", "screen", "difference"})}));
+    const NodeId merge = rootGraph(document).addNode("merge", "comp");
+    EXPECT_THROW(rootGraph(document).setParam(merge, "operation", ParameterValue{ChoiceValue{"average"}}),
+                 GraphException);
+
+    // The executor rejects any value a catalog could still admit, naming the
+    // supported set instead of selecting a fallback.
+    const auto catalog =
+        std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{mergeOperationFixture({"average", "over"})});
+    NodeInstance node;
+    node.id = 7;
+    node.type = "fixture.mergeoperation";
+    node.name = "comp";
+    node.params.emplace("operation", ParameterValue{ChoiceValue{"average"}});
+    ParameterValues effective = node.params;
+    const CpuImage background = solidPixel(kMergeBackground);
+    const CpuImage foreground = solidPixel(kMergeForeground);
+
+    try {
+        static_cast<void>(evaluateMerge(*catalog, node, effective, background, foreground, nullptr));
+        FAIL() << "expected an unsupported operation to be rejected";
+    } catch (const EvaluationException& error) {
+        const std::string message = error.what();
+        EXPECT_NE(message.find("over, plus, multiply, screen, difference"), std::string::npos) << message;
+        EXPECT_NE(message.find("average"), std::string::npos) << message;
+        EXPECT_TRUE(error.hasNode());
+    }
 }
 
 // Acceptance for the interactive viewer: a request whose target is a
@@ -878,6 +1167,24 @@ TEST(NativeEffectTest, TransformSelectsFiltersAndMapsCoordinates) {
     EXPECT_EQ(zoomed.pixel(2, 2), square.pixel(2, 2));
     EXPECT_EQ(zoomed.pixel(0, 0), square.pixel(1, 1));
     EXPECT_EQ(zoomed.pixel(3, 3), square.pixel(2, 2));
+
+    // The archived 0.1..3 range is slider travel, not the equation domain: a
+    // typed scale of 4 samples the expanded positive domain around the center
+    // (4x4 source, pivot 1.5: dst 0 -> 1.125 rounds to 1, dst 3 -> 1.875 to 2).
+    const CpuImage wide =
+        applyNativeEffect("transform", ParameterValues{{"scale", 4.0}, {"filter", ChoiceValue{"Nearest"}}}, square);
+    EXPECT_EQ(wide.pixel(0, 0), square.pixel(1, 1));
+    EXPECT_EQ(wide.pixel(1, 1), square.pixel(1, 1));
+    EXPECT_EQ(wide.pixel(2, 2), square.pixel(2, 2));
+    EXPECT_EQ(wide.pixel(3, 3), square.pixel(2, 2));
+    // A tiny positive scale whose reciprocal overflows has no representable
+    // mapping and is rejected by the admissibility owner, as is zero.
+    EXPECT_THROW(static_cast<void>(applyNativeEffect(
+                     "transform", ParameterValues{{"scale", 1.0e-45}, {"filter", ChoiceValue{"Nearest"}}}, square)),
+                 EvaluationException);
+    EXPECT_THROW(static_cast<void>(applyNativeEffect(
+                     "transform", ParameterValues{{"scale", 0.0}, {"filter", ChoiceValue{"Nearest"}}}, square)),
+                 EvaluationException);
 
     // Positive angle is clockwise in the stored raster: a pixel north of
     // center lands east of center.

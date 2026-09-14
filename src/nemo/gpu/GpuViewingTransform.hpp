@@ -18,7 +18,11 @@ struct GpuViewedImage {
 // Device/Instance must outlive this object and all submitted work. Calls to
 // submit may run concurrently; the source must be an RGBA32F 1D/2D image in
 // GENERAL with TRANSFER_SRC usage, produced on the same graphics queue (or
-// externally synchronized). Output is display-referred, never scene-linear.
+// externally synchronized). The executor applies one OCIO processor, so it
+// serves the viewer's display transform and the source path's retained
+// input-to-working transform alike; the output interpretation is the
+// caller's, and a display-referred input is always refused (never viewed
+// twice).
 class GpuViewingTransform {
 public:
     GpuViewingTransform(const GpuViewingTransform&) = delete;

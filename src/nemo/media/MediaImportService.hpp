@@ -29,6 +29,7 @@
 //     `error`/`offline` and leaves the probe Failed. `inspectMediaSource`
 //     never throws.
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -38,8 +39,21 @@
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/MediaCatalog.hpp"
 #include "nemo/core/evaluation/Image.hpp"
+#include "nemo/media/InputColor.hpp"
+#include "nemo/media/SequenceDiscovery.hpp"
 
 namespace nemo::media {
+
+// How a selection's frames are probed (issue #80).
+enum class ProbeAlignment {
+    // Probe exactly the frame the reference's mapping resolves to. A missing
+    // frame is the offline/missing-frame diagnostic (existing behavior).
+    Established,
+    // A fresh selection: when the mapping's frame is absent but discovery
+    // finds a numbered sequence, probe one available member so a sequence
+    // beginning above zero loads without authoring a nonexistent zero frame.
+    DiscoverAvailable,
+};
 
 // Plain request. `reference` is a snapshot: the worker never reads Document
 // state, it decodes exactly the path/interpretation/revision given here.
@@ -52,6 +66,22 @@ struct MediaImportRequest {
     int thumbnailWidth{160};     // maximum preview width; both zero = none
     int thumbnailHeight{90};     // maximum preview height, not a forced size
     std::int64_t frame{0};       // source-local time; mapped via reference.frameAt
+    // The project this request belongs to (ProjectSession::projectGeneration).
+    // Retained worker state — the input-color generation in particular — is
+    // keyed on it, so reopening/replacing a project never lets a probe or
+    // thumbnail of the previous project reuse the previous color context, even
+    // when the config reference and working space are unchanged.
+    std::uint64_t projectGeneration{0};
+    // Input-color choices for this source: the Read's authored override plus the
+    // fill-only hint map core's resolver already merged (node scope first, else
+    // the shared reference). Empty with mode Auto is the source-scoped legacy
+    // metadata path.
+    InputColorChoice inputColor;
+    ProbeAlignment alignment{ProbeAlignment::Established};
+    // Optional: set to stop an in-flight bounded directory scan early. The
+    // service owns the flag it hands to the worker; other callers may leave
+    // it null.
+    std::shared_ptr<std::atomic<bool>> cancel;
 };
 
 // Plain result. `probe` is a proposal until a caller commits it through the
@@ -79,6 +109,15 @@ struct MediaImportResult {
     std::string fallbackReason;  // measured software reason; empty iff hardware
     bool offline{false};         // the resolved source path does not exist
     std::string error;           // path/format/reason diagnostic; empty on success
+    // Discovered numbered-sequence coverage for the requested path (issue
+    // #80): Still unless a numbered run/padding matched files. `probedFrame`
+    // is the source frame actually inspected; it differs from the mapped frame
+    // only when a fresh selection was aligned to an available member.
+    SequenceDiscovery discovery;
+    std::int64_t probedFrame{0};
+    // The input interpretation the media color owner actually resolved and
+    // applied (kind/space/origin/alpha) — reported, never re-derived.
+    ResolvedInputColor inputColor;
     // Display-referred, square-pixel: the raster carries the source's
     // displayed shape (pixelAspect baked in), fitted inside the requested
     // maximum bounds with the source aspect preserved.
@@ -86,8 +125,17 @@ struct MediaImportResult {
 };
 
 // Synchronous single-source inspect on the calling thread. Used by smoke
-// drivers and by tests; exceptions are converted into `result.error`.
+// drivers and by tests; exceptions are converted into `result.error`. The
+// overload without a context builds a temporary one for the request's policy,
+// so a caller that inspects repeatedly should pass a retained context.
+//
+// The retained context is SHARED ownership: a decoder keeps its cache alive for
+// as long as it can still produce frames, so refreshing the context never
+// invalidates a decode in flight. A null context means "build one for this
+// request's policy" (the temporary is owned by the call).
 [[nodiscard]] MediaImportResult inspectMediaSource(const MediaImportRequest& request);
+[[nodiscard]] MediaImportResult inspectMediaSource(const MediaImportRequest& request,
+                                                   const std::shared_ptr<const InputColorCache>& sourceColor);
 
 class MediaImportService {
 public:

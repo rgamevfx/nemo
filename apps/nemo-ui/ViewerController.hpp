@@ -24,6 +24,10 @@ class WindowPresentationState;
 class ViewerController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool hasSource READ hasSource NOTIFY sourceChanged)
+    // Platform drag threshold in logical pixels. The shared numeric editor uses
+    // the same distance the rest of the application treats as a drag, without
+    // depending on a Qt version that exposes style hints to QML.
+    Q_PROPERTY(int dragDistance READ dragDistance CONSTANT)
     Q_PROPERTY(QSizeF sourceSize READ sourceSize NOTIFY sourceChanged)
     Q_PROPERTY(double pixelAspect READ pixelAspect NOTIFY sourceChanged)
     Q_PROPERTY(int frameCount READ frameCount NOTIFY sourceChanged)
@@ -108,6 +112,14 @@ public:
                                            const QVariant& toNode, int toPort);
     Q_INVOKABLE bool rewireGraphEdge(const QString& networkId, const QVariant& edgeId, const QVariant& fromNode,
                                      int fromPort, const QVariant& toNode, int toPort);
+    // Atomic swap of two declared input slots. Both occupied exchanges the
+    // sources, one occupied moves the occupancy, and an empty pair or two edges
+    // from the same source are refused without touching history. The mask slot,
+    // operation parameters and node layout are retained.
+    Q_INVOKABLE bool swapNodeInputs(const QString& networkId, const QVariant& nodeId, int firstPort, int secondPort);
+    // Presentation query for the Merge A/B roles: whether a meaningful swap
+    // exists, plus the connected state of each declared input.
+    Q_INVOKABLE QVariantMap nodeInputOccupancy(const QString& networkId, const QVariant& nodeId) const;
     Q_INVOKABLE bool disconnectGraphEdge(const QString& networkId, const QVariant& edgeId);
     Q_INVOKABLE bool commitGraphMove(const QString& networkId, const QVariantList& positions);
     Q_INVOKABLE bool commitGraphRoute(const QString& networkId, const QVariant& edgeId, const QVariantList& points);
@@ -148,8 +160,14 @@ public:
     // Explicit text-entry adapter; parsing remains catalog-owned and avoids
     // converting signed 64-bit values through JavaScript Number.
     Q_INVOKABLE void setNodeParameterText(const QVariant& nodeId, const QString& key, const QString& text);
-    Q_INVOKABLE void resetNodeParameter(const QVariant& nodeId, const QString& key);
     Q_INVOKABLE void setNodeParameters(const QVariantList& edits);
+    // Identity-scoped reset to the schema default. It resolves the same
+    // occurrence/exposed target as the inspector gestures, so a subnet
+    // occurrence or exposed control resets its own scope. A static parameter
+    // resets its authored value; an animated parameter authors the default at
+    // the current frame and never removes the channel or its other keys. One
+    // history entry; a rejected or stale reset changes nothing.
+    Q_INVOKABLE bool resetNodeParameterEdit(const QString& networkId, const QVariant& nodeId, const QString& key);
     // Schema-driven parameter inspector: one map with the node identity, its
     // descriptor metadata, and sectioned parameter rows carrying the value
     // evaluated at the current frame plus animation/key state.
@@ -164,6 +182,14 @@ public:
     // update previews, commit publishes one history entry, cancel discards.
     Q_INVOKABLE QString beginNodeParameterEdit(const QString& networkId, const QVariant& nodeId, const QString& key);
     Q_INVOKABLE bool updateNodeParameterEdit(const QString& token, const QVariant& value);
+    // Batch shape of the same gesture. Each address follows the core owner's
+    // per-address rule (an existing channel authors the current-frame key, an
+    // unanimated parameter takes the static value), so one atomic edit can
+    // change an animated choice and its static companion together: one preview,
+    // one history entry, one semantic validation of the whole resolved set.
+    Q_INVOKABLE QString beginNodeParameterEdits(const QString& networkId, const QVariant& nodeId,
+                                                const QStringList& keys);
+    Q_INVOKABLE bool updateNodeParameterEdits(const QString& token, const QVariantMap& values);
     Q_INVOKABLE bool commitNodeParameterEdit(const QString& token);
     Q_INVOKABLE bool cancelNodeParameterEdit(const QString& token);
     // The current persistent model exposes source timing, not timeline clip
@@ -214,6 +240,7 @@ public:
     void setPrimaryViewerItem(ViewerItem* item);
     void viewportChanged(QSizeF physicalPixels);
     [[nodiscard]] bool hasSource() const { return !sourceSize_.isEmpty(); }
+    [[nodiscard]] int dragDistance() const;
     [[nodiscard]] QSizeF sourceSize() const { return sourceSize_; }
     [[nodiscard]] double pixelAspect() const { return pixelAspect_; }
     [[nodiscard]] int frameCount() const { return frameCount_; }
@@ -417,9 +444,22 @@ private:
     nemo::ProjectSession::Subscription sessionSubscription_;
     // One continuous parameter gesture at a time, owner-thread-only. The
     // token is the session's; this facade only remembers its scope.
+    // Last observed ProjectSession project generation. A change means the
+    // published project was reopened or replaced, which is the explicit
+    // config-freshness boundary the runtime refreshes on.
+    std::uint64_t observedProjectGeneration_{0};
+    // One internal owner for both shapes: the convenience single-key calls are
+    // the one-element case of these.
+    [[nodiscard]] QString beginParameterGestureFor(const QString& networkValue, const QVariant& nodeValue,
+                                                   const QStringList& keys);
+    bool updateParameterGestureValues(const QString& tokenValue, const QVariantMap& values);
+
     std::optional<nemo::ParameterAddress> parameterGestureAddress_;
-    nemo::ParameterGestureToken parameterGestureToken_{};
-    bool parameterGestureKeyed_{false};
+    nemo::ParameterGestureToken parameterGestureToken_{0};
+    // Set when an update preview is inadmissible: the live session gesture is
+    // kept so the caller's token discipline still works, but it can never be
+    // committed. A later admissible update clears it.
+    bool parameterGestureInvalid_{false};
     // Presentation-only clipboard: the source network and node identities of
     // the last graphical copy. Never part of the document or its history.
     std::optional<nemo::NetworkId> clipboardNetwork_;

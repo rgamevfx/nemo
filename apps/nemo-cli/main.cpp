@@ -393,9 +393,14 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
                 if (mediaShaderDir.empty())
                     mediaShaderDir = NEMO_SLANG_SPV_DIR;
 #endif
-                nemo::eval::SourceSession sources(*instance, *device, *allocator, mediaShaderDir / "mediaConvert.spv");
-                nemo::eval::GpuEvaluation evaluation = nemo::eval::evaluateGpu(
-                    loaded.document, request, effects, *device, *allocator, 10'000'000'000ULL, nullptr, &sources);
+                // The authored project color config drives the session's OCIO
+                // decode, and its content identity participates in the plan
+                // keys so an edited config can never reuse a stale decode.
+                nemo::eval::SourceSession sources(*instance, *device, *allocator, mediaShaderDir / "mediaConvert.spv",
+                                                  loaded.colorConfigPath);
+                nemo::eval::GpuEvaluation evaluation =
+                    nemo::eval::evaluateGpu(loaded.document, request, effects, *device, *allocator, 10'000'000'000ULL,
+                                            nullptr, &sources, sources.colorConfigIdentity());
 
                 // Declared diagnostic-only readback of the requested output.
                 const nemo::CpuImage image = evaluation.readBack(request.output, *device, *allocator);
@@ -406,6 +411,10 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
                 } else {
                     writeCpuPpm(out, image);
                     report["ok"] = true;
+                    // Report what the produced image actually is, through the
+                    // shared identity encoder: a Raw/Data source result is not
+                    // managed scene-linear (issue #81).
+                    const nlohmann::json produced = nemo::imageIdentityToJson(evaluation.plan.result);
                     report["rendered"] = {
                         {"path", std::filesystem::absolute(outPath).string()},
                         {"network", request.network},
@@ -415,7 +424,7 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
                         {"backend", backend},
                         {"device", device->properties().deviceName},
                         {"precision", image.layout().precision == nemo::Precision::Float32 ? "float32" : "unknown"},
-                        {"color", "scene-linear"}};
+                        {"color", produced.at("color")}};
                     report["readback"] = {
                         {"network", request.network},
                         {"node", request.output},

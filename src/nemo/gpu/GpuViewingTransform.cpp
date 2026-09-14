@@ -32,9 +32,12 @@ GpuViewingTransform::GpuViewingTransform(gpu::Device& device, gpu::Allocator& al
 
 std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& source, ColorInterpretation sourceColor,
                                                           uint64_t admissionTimeout_ns) const {
-    if (sourceColor != ColorInterpretation::SceneLinear)
+    // Scene-linear composition results and non-color Data both still need their
+    // display transform; a display-referred buffer already has it, so applying
+    // it again is refused (the transform is applied exactly once).
+    if (sourceColor == ColorInterpretation::DisplayReferred)
         throw gpu::GpuException(gpu::GpuError::InvalidRequest,
-                                "GPU viewing transform requires scene-linear input; display-referred input "
+                                "GPU viewing transform requires scene-linear or data input; display-referred input "
                                 "already has its viewing transform");
     if (source.format() != VK_FORMAT_R32G32B32A32_SFLOAT || source.dimensions() == 0 || source.dimensions() > 2)
         throw gpu::GpuException(gpu::GpuError::InvalidRequest, "GPU viewing transform requires a 1D/2D RGBA32F source");

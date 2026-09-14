@@ -5,6 +5,7 @@
 
 #include "nemo/core/Hashing.hpp"
 #include "nemo/core/document/ParameterValue.hpp"
+#include "nemo/core/evaluation/SourceRequest.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 namespace nemo {
 namespace {
@@ -28,34 +29,34 @@ namespace {
     return canonical;
 }
 
-// Canonical source-reference content for a source node's key (issue #11):
-// the key it addresses plus the full reference (path, time mapping,
-// interpretation policy), length-prefixed and injective. A source edit
-// therefore invalidates only this node and its dependents, while the rest
-// of the graph keeps its reuse identity.
-[[nodiscard]] std::string canonicalSource(const Document& document, const NodeInstance& node) {
+// Canonical effective-source content for a source node's key (issues #11/#75):
+// the resolved request — path, content revision, effective mapping, selected
+// coverage, policies, media-interpretation hints and authored color choices —
+// plus the color-config content identity the executor supplied. Node identity
+// and the shared source key are deliberately absent, so equivalent effective
+// requests match wherever they are reached from, while two Reads of one file
+// with different mapping, policies or interpretation never alias.
+//
+// The color-config identity is mixed here rather than into every key: it enters
+// the graph at the source seam, and every dependent inherits it through its
+// inputs' key hashes (ADR-0004/ADR-0007).
+[[nodiscard]] std::string canonicalSource(const Document& document, const NodeInstance& node, std::int64_t localTime,
+                                          std::string_view colorConfigIdentity) {
     const auto paramIt = node.params.find("source");
     const auto* sourceValue = paramIt != node.params.end() ? std::get_if<std::string>(&paramIt->second) : nullptr;
     const std::string key = sourceValue != nullptr ? *sourceValue : std::string{};
-    const auto it = document.sources.find(key);
-    std::string out;
-    if (it == document.sources.end()) {
+    if (!document.sources.contains(key)) {
+        std::string out;
         appendCanonicalField(out, "key", key);
         appendCanonicalField(out, "unresolved", "1");
         return out;
     }
-    appendCanonicalField(out, "key", key);
-    appendCanonicalField(out, "path", it->second.path);
-    appendCanonicalField(out, "offset", std::to_string(it->second.frameOffset));
-    appendCanonicalField(out, "step", std::to_string(it->second.frameStep));
-    appendCanonicalField(out, "revision", std::to_string(it->second.revision));
-    appendCanonicalField(out, "interpretation", [&] {
-        std::string text;
-        for (const auto& [tag, value] : it->second.interpretation) {
-            appendCanonicalField(text, tag.c_str(), value);
-        }
-        return text;
-    }());
+    // A malformed authored choice or an unrepresentable mapping is an
+    // evaluation error with node identity; letting it surface here keeps key
+    // computation from inventing a fallback identity for a node that cannot run.
+    const EffectiveSourceRequest request = resolveSourceRequest(document, node, localTime);
+    std::string out;
+    appendEffectiveSourceIdentity(out, request, document.color.workingSpace, colorConfigIdentity);
     return out;
 }
 
@@ -96,7 +97,8 @@ ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
     }
     canonical.push_back('\x1F');
     if (node.type == "source") {
-        appendCanonicalField(canonical, "source", canonicalSource(document, node));
+        appendCanonicalField(canonical, "source",
+                             canonicalSource(document, node, request.localTime, context.colorConfigIdentity));
     }
     appendCanonicalField(canonical, "time", std::to_string(request.localTime));
     appendCanonicalField(canonical, "region",

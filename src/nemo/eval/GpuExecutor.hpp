@@ -51,6 +51,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "nemo/core/document/Document.hpp"
@@ -144,8 +145,13 @@ using EffectLibrary = std::map<std::string, EffectProgram>;
 // dispatch. The returned key includes the effect-library implementation tag
 // and the document's viewer policy; callers append their concrete OCIO
 // program/config identity and encoding representation settings.
+//
+// `colorConfigIdentity` (issue #81) is the media module's opaque OCIO
+// config/context content identity; it participates in every source node's
+// key, so a changed config can never serve a stale transform. Empty means
+// "no config" and is a defined value, not a fallback.
 [[nodiscard]] ResultKey queryViewerResultKey(const Document& document, EvaluationRequest request,
-                                             const EffectLibrary& effects);
+                                             const EffectLibrary& effects, std::string_view colorConfigIdentity = {});
 
 // One executed step's device-resident result. Shared ownership: a cache
 // entry (issue #9) and a returned evaluation can hold the same image.
@@ -186,9 +192,17 @@ public:
 // freshness/publication after completion. With `sources` (issue #11),
 // `source` nodes resolve their decoded frames through that session —
 // pass nullptr for graphs without real-media sources (the default).
+//
+// `colorConfigIdentity` (issue #81) is the media module's opaque OCIO
+// config/context content identity; it participates in every source node's
+// key, so a changed config can never serve a stale transform. Empty means
+// "no config" and is a defined value, not a fallback. The caller that owns
+// the color state supplies it (the same value it passes to
+// queryViewerResultKey), so this executor stays OCIO-agnostic.
 [[nodiscard]] std::optional<GpuEvaluation> submitGpu(const Document& document, EvaluationRequest request,
                                                      const EffectLibrary& effects, gpu::Device& device,
-                                                     gpu::Allocator& allocator, SourceSession* sources = nullptr);
+                                                     gpu::Allocator& allocator, SourceSession* sources = nullptr,
+                                                     std::string_view colorConfigIdentity = {});
 
 // Executes `request` on `device` through the effect library's native
 // kernels, keeping every intermediate GPU-resident. With `reuse` (issue
@@ -196,8 +210,10 @@ public:
 // and are reused in place; computed results publish under the evaluation
 // ticket's freshness guard. Throws EvaluationException (node-identifying)
 // for plan/effect failures and GpuException for Vulkan failures.
+// `colorConfigIdentity` follows submitGpu (issue #81).
 [[nodiscard]] GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request,
                                         const EffectLibrary& effects, gpu::Device& device, gpu::Allocator& allocator,
                                         std::uint64_t timeout_ns = 10'000'000'000ULL,
-                                        ResultCache<GpuNodeImage>* reuse = nullptr, SourceSession* sources = nullptr);
+                                        ResultCache<GpuNodeImage>* reuse = nullptr, SourceSession* sources = nullptr,
+                                        std::string_view colorConfigIdentity = {});
 }  // namespace nemo::eval

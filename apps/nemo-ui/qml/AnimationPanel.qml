@@ -158,23 +158,35 @@ FocusScope {
             "component": row.channel.component
         };
     }
-    function pinIdentity(target) {
-        return JSON.stringify([String(target.network), String(target.node), target.parameter || "", target.component === undefined ? -1 : Number(target.component)]);
+    // One pin registry covers whole-parameter and component targets. A pin
+    // without `component` is the superset identity: it covers every component
+    // row of that parameter, so a reveal never needs a second registry.
+    function pinScopeKey(target) {
+        return JSON.stringify([String(target.network), String(target.node), target.parameter || ""]);
     }
     function rowPinned(row) {
-        var identity = pinIdentity(pinTarget(row));
-        for (var i = 0; i < pinnedTargets.length; ++i)
-            if (pinIdentity(pinnedTargets[i]) === identity)
+        var target = pinTarget(row);
+        var scope = pinScopeKey(target);
+        for (var i = 0; i < pinnedTargets.length; ++i) {
+            var pin = pinnedTargets[i];
+            if (pinScopeKey(pin) !== scope)
+                continue;
+            if (target.parameter === undefined || pin.parameter === undefined)
                 return true;
+            if (pin.component === undefined || target.component === undefined)
+                return true;
+            if (Number(pin.component) === Number(target.component))
+                return true;
+        }
         return false;
     }
     function togglePin(row) {
         var target = pinTarget(row);
-        var identity = pinIdentity(target);
+        var scope = pinScopeKey(target);
         var found = false;
         var next = [];
         for (var i = 0; i < pinnedTargets.length; ++i) {
-            if (pinIdentity(pinnedTargets[i]) === identity)
+            if (pinScopeKey(pinnedTargets[i]) === scope)
                 found = true;
             else
                 next.push(pinnedTargets[i]);
@@ -182,6 +194,42 @@ FocusScope {
         if (!found)
             next.push(target);
         pinnedTargets = next;
+    }
+    // Reveals a whole typed parameter in this panel: the pin carries no
+    // component so it covers the parameter's channel rows, and selection uses
+    // the same path as an inspector request. Presentation only; the document,
+    // revision and every other group are untouched.
+    function revealTarget(network, node, parameter) {
+        if (!model || String(network).length === 0 || String(node).length === 0)
+            return false;
+        var target = {
+            "network": String(network),
+            "node": String(node)
+        };
+        if (String(parameter).length > 0)
+            target.parameter = String(parameter);
+        var scope = pinScopeKey(target);
+        var found = false;
+        for (var i = 0; i < pinnedTargets.length; ++i) {
+            if (pinScopeKey(pinnedTargets[i]) === scope) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            var next = pinnedTargets.slice();
+            next.push(target);
+            pinnedTargets = next;
+        }
+        cancelPreview();
+        keyEditPopup.close();
+        networkId = String(network);
+        targetNodeId = String(node);
+        Qt.callLater(function () {
+                animationPanel.selectNode(String(network) + "_" + String(node));
+            });
+        queueSave();
+        return true;
     }
     onSelectedKeyIdsChanged: {
         animationSurface.requestPaint();
@@ -225,6 +273,11 @@ FocusScope {
                     animationPanel.selectNode(network + "_" + nodeId);
                 });
             animationPanel.queueSave();
+        }
+        function onAnimationRevealRequested(group, network, nodeId, parameter) {
+            if (group !== animationPanel.panelGroup)
+                return;
+            animationPanel.revealTarget(network, nodeId, parameter);
         }
     }
 

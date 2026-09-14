@@ -127,21 +127,16 @@ std::uint32_t prepareEffectStep(const NodeCatalog& catalog, const NodeInstance& 
         }
         inputs = 0;
     } else if (node.type == "merge") {
-        // Identical operation bookkeeping as the CPU reference: 'over' is
-        // the only implemented operation; anything else is a declared
-        // limitation, never a silent substitution.
-        const auto& operationValue = effectiveParameter(catalog, node, effectiveParams, "operation");
-        const auto* operationChoice = std::get_if<ChoiceValue>(&operationValue);
-        if (operationChoice == nullptr) {
-            failEffect(node, program,
-                       "parameter 'operation' must be a choice, got '" + parameterValueText(operationValue) + "'");
-        }
-        const std::string& operation = operationChoice->value;
-        if (operation != "over") {
-            failEffect(node, program,
-                       "unsupported merge operation '" + operation + "' (this inventory implements 'over' only)");
-        }
-        inputs = 2;
+        // Issue #75: the operation is shared typed metadata (Params.hpp), so
+        // this executor and the CPU reference reject the same authored values
+        // with the same message, and the code travels in param0.x for both
+        // shader front ends. A (0) stays the background base and B (1) the
+        // foreground source; mask/mix reuse the shared effect-mask word and
+        // the declared optional mask slot (port 2 for merge).
+        uniforms.param0[0] =
+            static_cast<float>(static_cast<int>(effectiveMergeOperation(catalog, node, effectiveParams)));
+        fillMaskUniforms(effectiveEffectMask(catalog, node, effectiveParams), maskPresent, uniforms);
+        inputs = 3;
     } else if (node.type == "grade") {
         // issue #34: per-channel Color parameters plus the enabled-channel
         // bitmask, reverse, and the two clamps; mask controls are common.
@@ -264,10 +259,11 @@ EffectLibrary glslEffectLibrary() {
     return library;
 }
 
-ResultKey queryViewerResultKey(const Document& document, EvaluationRequest request, const EffectLibrary& effects) {
+ResultKey queryViewerResultKey(const Document& document, EvaluationRequest request, const EffectLibrary& effects,
+                               std::string_view colorConfigIdentity) {
     validateRequest(document, request);
     const auto order = expandDependencies(document, request.network, request.output);
-    const KeyContext context{fingerprintEffectLibrary(effects)};
+    KeyContext context{fingerprintEffectLibrary(effects), std::string(colorConfigIdentity)};
     std::map<EvaluationNodeId, ResultKey> keys;
     ImageIdentity placeholder;
     placeholder.layout.width = scaledDimension(request.region.width, request.samplingScale);
@@ -333,7 +329,8 @@ CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocato
 static std::optional<GpuEvaluation> executeGpu(const Document& document, EvaluationRequest request,
                                                const EffectLibrary& effects, gpu::Device& device,
                                                gpu::Allocator& allocator, std::optional<std::uint64_t> timeout_ns,
-                                               ResultCache<GpuNodeImage>* reuse, SourceSession* sources) {
+                                               ResultCache<GpuNodeImage>* reuse, SourceSession* sources,
+                                               std::string_view colorConfigIdentity) {
     validateRequest(document, request);
     if (request.samplingScale != 1 && request.samplingScale != 2 && request.samplingScale != 4) {
         throw EvaluationException("samplingScale " + std::to_string(request.samplingScale) +
@@ -353,7 +350,9 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
     // expanded graph has been recorded into one submission.
     std::map<std::string, std::vector<std::uint32_t>> compiled;
     const EvaluationTicket ticket = reuse != nullptr ? reuse->beginTicket(document) : EvaluationTicket{};
-    const KeyContext keyContext{fingerprintEffectLibrary(effects)};
+    // The caller-supplied OCIO identity participates in every key (issue
+    // #81): a changed config/context can never serve a stale source result.
+    KeyContext keyContext{fingerprintEffectLibrary(effects), std::string(colorConfigIdentity)};
     std::map<EvaluationNodeId, ResultKey> keys;
 
     GpuEvaluation evaluation;
@@ -467,27 +466,53 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                        availability + " (no effect package in the supplied effect library; no silent substitution)");
         }
         const EffectProgram& program = programIt->second;
-        // Connected/absent optional inputs (issue #34): port 0 is the
-        // required main image, port 1 the optional mask. An absent mask
-        // binds the main image as a valid dummy descriptor with
-        // maskPresent=0 (no allocated white fallback).
+        // Connected/absent optional inputs (issue #75): port 0 is the
+        // required main image and the optional mask slot comes from the
+        // declared schema (grade/blur/transform port 1, merge port 2) instead
+        // of a hardcoded index. An absent optional slot still binds the main
+        // image as a valid dummy descriptor with maskPresent=0 (no allocated
+        // white fallback and no manufactured source).
+        const NodeCatalog& catalog = document.network(scopedRequest.network).graph().catalog();
+        const std::vector<PortSpec>& declaredInputs = catalog.inputPorts(effectiveNode->type);
+        std::size_t optionalMaskPort = declaredInputs.size();
+        for (std::size_t i = 0; i < declaredInputs.size(); ++i) {
+            if (declaredInputs[i].optional && declaredInputs[i].kind == PortKind::Mask) {
+                optionalMaskPort = i;
+                break;
+            }
+        }
         const gpu::Image* mainImage = inputs.empty() ? nullptr : inputs[0];
-        const gpu::Image* maskImage = inputs.size() > 1 ? inputs[1] : nullptr;
+        const gpu::Image* maskImage = optionalMaskPort < inputs.size() ? inputs[optionalMaskPort] : nullptr;
         const bool maskPresent = maskImage != nullptr;
         const gpu::Image* dummyMask = maskPresent ? maskImage : mainImage;
 
         std::shared_ptr<const gpu::Image> sourceFrame;
         float pixelAspect = 1.0F;
+        // Interpretation of the source node's produced image: SceneLinear for a
+        // managed source, Data when the request bypassed color conversion. A
+        // non-display-referred image is never assumed to be managed
+        // scene-linear (issue #81).
+        ColorInterpretation sourceColor = ColorInterpretation::SceneLinear;
         if (effectiveNode->type == "source") {
             if (sources == nullptr)
                 failEffect(*effectiveNode, program, "real-media source node evaluated without a SourceSession");
             const auto sourceParam = effectiveNode->params.find("source");
             if (sourceParam == effectiveNode->params.end())
                 failEffect(*effectiveNode, program, "parameter 'source' (the document source key) is required");
-            const SourceSession::DecodedFrame decoded =
-                sources->acquire(document, scopedRequest.network, *effectiveNode, scopedRequest.localTime,
-                                 timeout_ns.value_or(10'000'000'000ULL));
+            // One resolution owns mapping, coverage, boundary policies and the
+            // authored color choices; the session consumes it verbatim (issue
+            // #75: no consumer re-derives the effective request).
+            const EffectiveSourceRequest sourceRequest =
+                resolveSourceRequest(document, *effectiveNode, scopedRequest.localTime);
+            SourceSession::DecodedFrame decoded;
+            try {
+                decoded =
+                    sources->acquire(document, sourceRequest, scopedRequest, timeout_ns.value_or(10'000'000'000ULL));
+            } catch (const std::exception& error) {
+                failEffect(*effectiveNode, program, error.what());
+            }
             sourceFrame = std::move(decoded.image);
+            sourceColor = decoded.color;
             step.effectiveParams.emplace("frame", decoded.frame);
             // The decoded frame's actual pixel aspect drives this node's
             // output and propagates through every downstream node.
@@ -523,10 +548,9 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         EffectUniforms uniforms{};
         std::vector<ComputeBinding> baseBindings;
         gpu::Buffer uniformBuffer;
-        const std::uint32_t inputCount =
-            prepareEffectStep(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
-                              program, maskPresent, pixelAspect, step.effectiveParams, uniforms, baseBindings,
-                              uniformBuffer, allocator, sourceFrame ? &*sourceFrame : nullptr);
+        const std::uint32_t inputCount = prepareEffectStep(
+            catalog, *effectiveNode, scopedRequest, program, maskPresent, pixelAspect, step.effectiveParams, uniforms,
+            baseBindings, uniformBuffer, allocator, sourceFrame ? &*sourceFrame : nullptr);
         if (inputCount != inputs.size())
             failEffect(*effectiveNode, program,
                        "effect declares " + std::to_string(inputCount) + " inputs but the plan wires " +
@@ -534,6 +558,12 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
         ImageLayout nodeLayout = layout;
         nodeLayout.pixelAspect = pixelAspect;
+        if (effectiveNode->type == "source") {
+            // The source node's produced metadata reports the decoded
+            // interpretation truthfully: Data when the request bypassed color
+            // conversion, scene-linear otherwise.
+            nodeLayout.color = sourceColor;
+        }
         auto resident = std::make_shared<GpuNodeImage>();
         resident->layout = nodeLayout;
         try {
@@ -657,8 +687,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             for (std::uint32_t i = 0; i < inputCount; ++i) {
                 const gpu::Image* bound = inputs[i];
                 if (bound == nullptr) {
-                    if (i == 1 && mainImage != nullptr) {
-                        bound = mainImage;  // absent optional mask: valid dummy descriptor
+                    // Only a declared optional slot may be absent; it binds the
+                    // main image as a valid dummy descriptor.
+                    if (i < declaredInputs.size() && declaredInputs[i].optional && mainImage != nullptr) {
+                        bound = mainImage;
                     } else {
                         failEffect(*effectiveNode, program,
                                    "input port " + std::to_string(i) + " is required but not connected");
@@ -738,14 +770,17 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
 std::optional<GpuEvaluation> submitGpu(const Document& document, EvaluationRequest request,
                                        const EffectLibrary& effects, gpu::Device& device, gpu::Allocator& allocator,
-                                       SourceSession* sources) {
-    return executeGpu(document, request, effects, device, allocator, std::nullopt, nullptr, sources);
+                                       SourceSession* sources, std::string_view colorConfigIdentity) {
+    return executeGpu(document, request, effects, device, allocator, std::nullopt, nullptr, sources,
+                      colorConfigIdentity);
 }
 
 GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, const EffectLibrary& effects,
                           gpu::Device& device, gpu::Allocator& allocator, std::uint64_t timeout_ns,
-                          ResultCache<GpuNodeImage>* reuse, SourceSession* sources) {
-    auto evaluation = executeGpu(document, request, effects, device, allocator, timeout_ns, reuse, sources);
+                          ResultCache<GpuNodeImage>* reuse, SourceSession* sources,
+                          std::string_view colorConfigIdentity) {
+    auto evaluation =
+        executeGpu(document, request, effects, device, allocator, timeout_ns, reuse, sources, colorConfigIdentity);
     if (!evaluation)
         throw gpu::GpuException(gpu::GpuError::InvalidRequest, "GPU submission capacity exhausted");
     return std::move(*evaluation);

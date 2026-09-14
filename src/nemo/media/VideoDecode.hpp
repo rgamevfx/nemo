@@ -5,13 +5,17 @@
 // Two distinct color contracts, never conflated:
 //
 //   * Source decode (`ClipDecoder::next`, `decodeClipSoftware`) interprets
-//     the source and produces scene-linear working images in the project
-//     ColorPolicy's working space. The Y′CbCr → matrix/range step yields
-//     NONLINEAR R′G′B′ only; the declared transfer is inverted afterwards
-//     (matrix conversion is not linearization). Interpretation honors
-//     transfer, primaries, matrix, range, chroma location and bit depth
-//     from the stream's declared color metadata; ambiguous metadata is an
-//     error (or an explicit `ColorOverride`), never a silent guess.
+//     the source and produces scene-linear working images in the project's
+//     working space (or Data for a Raw bypass, issue #81). The Y′CbCr →
+//     matrix/range step yields NONLINEAR R′G′B′ only and is mandatory codec
+//     layout work; the resolved RGB input color — a named OCIO input space,
+//     the declared transfer, or no conversion at all — is applied afterwards
+//     exactly once (matrix conversion is not linearization). Decode
+//     interpretation honors matrix, range, chroma location and bit depth from
+//     the stream's declared metadata with the fill-only interpretation hints;
+//     ambiguous metadata is an error, never a silent guess. A `ClipColorInput`
+//     with a project input-color context also lets the config's own file rule
+//     resolve an otherwise undeclared RGB interpretation.
 //   * Viewer-cache replay (`decodeViewerChunkSoftware`) decodes the baked
 //     display-referred representation without re-applying any source
 //     linearization or view transform; the chunk's interpretation metadata
@@ -52,6 +56,7 @@
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/gpu/MediaInterop.hpp"
+#include "nemo/media/InputColor.hpp"
 
 namespace nemo::media {
 
@@ -67,6 +72,12 @@ struct MediaDecodeError : std::runtime_error {
     std::string reason;
 };
 
+// Provenance of a clip's frame count. A container-declared count is
+// `Reliable`; a value derived from duration and rate is `Estimated` and must
+// never be promoted to authoritative coverage; `Unknown` means the container
+// declared nothing (the count stays -1 and no bounds may be invented from it).
+enum class FrameCountQuality { Unknown, Estimated, Reliable };
+
 struct ClipInfo {
     std::string path;
     std::string codecName;  // e.g. "h264"
@@ -75,6 +86,7 @@ struct ClipInfo {
     double frameRate = 0.0;
     int64_t frameCount = -1;   // -1 when the container does not declare it
     double pixelAspect = 1.0;  // Display width / height of one source pixel.
+    FrameCountQuality frameCountQuality{FrameCountQuality::Unknown};
 };
 
 // How the clip is being decoded, with the measured reason when the
@@ -108,20 +120,44 @@ struct ColorOverride {
     std::optional<gpu::MediaChromaLocation> chromaLocation;
 };
 
+// Encoded-RGB interpretation of a clip's frames (issue #81). A null `cache`
+// keeps the previous declared-transfer behavior (the source-scoped path the
+// media import worker and viewer replay use). A cache resolves the authored
+// choices and the fill-only hints through the shared media resolver
+// (InputColor.hpp) and converts the frames into the cache's working space: a
+// named OCIO input color space, the declared metadata transfer, or a Raw/Data
+// bypass. Y'CbCr matrix/range/chroma decoding is mandatory codec layout work
+// and is never provided by the RGB input color space.
+struct ClipColorInput {
+    InputColorChoice choice;
+    // Shared owner: a decoder holds its cache for as long as it can produce
+    // frames, so a refresh never invalidates a decode in flight.
+    std::shared_ptr<const InputColorCache> cache;
+};
+
+// The clip's resolved color: the decode necessities plus the resolved
+// encoded-RGB interpretation the frames are converted by.
+struct ClipColorResolution {
+    MediaColorMetadata decode;
+    ResolvedInputColor rgb;
+};
+
 // Thread-confined: calls on a decoder must not overlap.
 class ClipDecoder {
 public:
     // Opens `path` and chooses the decode path. `convertSpirv` is the
     // compiled mediaConvert kernel (Vulkan-resident path). `policy` names
     // the working space the source is linearized into; `overrides` resolve
-    // unspecified stream color metadata. Throws MediaDecodeError naming
-    // the clip when it cannot be opened, or when the color interpretation
-    // is not in the supported subset; unsupported hardware is NOT an
-    // error — it downgrades to the measured software path with the reason
-    // recorded.
+    // unspecified stream color metadata; `color` supplies the project's
+    // retained input-color context for a source decode. Throws
+    // MediaDecodeError naming the clip when it cannot be opened, or when the
+    // color interpretation is not in the supported subset; unsupported
+    // hardware is NOT an error — it downgrades to the measured software path
+    // with the reason recorded.
     static std::unique_ptr<ClipDecoder> open(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
                                              const std::string& path, const std::filesystem::path& convertSpirv,
-                                             const ColorPolicy& policy = {}, const ColorOverride& overrides = {});
+                                             const ColorPolicy& policy = {}, const ColorOverride& overrides = {},
+                                             const ClipColorInput& color = {});
 
     // Opens a viewer-cache chunk in display-referred mode. This mode keeps
     // the encoded transfer untouched and never applies source linearization
@@ -141,6 +177,10 @@ public:
     ClipDecoder& operator=(const ClipDecoder&) = delete;
 
     [[nodiscard]] const ClipInfo& info() const;
+    // The resolved encoded-RGB interpretation this decoder converts frames by
+    // (issue #81): its kind tells a consumer whether the produced frames are
+    // working-space scene-linear or Raw/Data.
+    [[nodiscard]] const ResolvedInputColor& inputColor() const;
     // Before the first next(): selected candidate. After next(): actual
     // produced frame path, including any FFmpeg hardware fallback.
     [[nodiscard]] const DecodeDecision& decision() const;
@@ -151,21 +191,28 @@ public:
     [[nodiscard]] std::unique_ptr<gpu::Image> nextViewer(uint64_t timeout_ns);
 
 private:
-    static std::unique_ptr<ClipDecoder>
-    openInternal(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator, const std::string& path,
-                 const std::filesystem::path& convertSpirv, const ColorPolicy& policy, const ColorOverride& overrides,
-                 bool viewerReplay, std::shared_ptr<const std::vector<std::uint8_t>> memoryBytes);
+    static std::unique_ptr<ClipDecoder> openInternal(gpu::Instance& instance, gpu::Device& device,
+                                                     gpu::Allocator& allocator, const std::string& path,
+                                                     const std::filesystem::path& convertSpirv,
+                                                     const ColorPolicy& policy, const ColorOverride& overrides,
+                                                     const ClipColorInput& color, bool viewerReplay,
+                                                     std::shared_ptr<const std::vector<std::uint8_t>> memoryBytes);
     ClipDecoder() = default;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
 
-// Software decoded storage. Source frames are SceneLinear; viewer replay
-// frames are DisplayReferred. metadata describes the encoded samples.
+// Software decoded storage. Source frames are SceneLinear (or Data for a Raw
+// bypass); viewer replay frames are DisplayReferred. metadata describes the
+// encoded samples.
 struct SoftwareClip {
     ClipInfo info;
     std::vector<CpuImage> frames;
     MediaColorMetadata metadata;
+    // The resolved encoded-RGB interpretation the frames were converted by
+    // (kind, space, origin, alpha), so a consumer reports the real choice
+    // instead of re-deriving it.
+    ResolvedInputColor inputColor;
     // Actual decoded frame pixel format (e.g. "yuv420p"), validated from the
     // frame itself before plane access. Empty when no frame was produced.
     std::string pixelFormat;
@@ -188,7 +235,8 @@ struct SoftwareClip {
 // working spaces, and changes of interpretation within a software clip
 // fail explicitly rather than silently relabeling samples.
 [[nodiscard]] SoftwareClip decodeClipSoftware(const std::string& path, int64_t maxFrames = -1,
-                                              const ColorPolicy& policy = {}, const ColorOverride& overrides = {});
+                                              const ColorPolicy& policy = {}, const ColorOverride& overrides = {},
+                                              const ClipColorInput& color = {});
 
 // Bounded source-frame read for import/probe/preview (issue #43): decodes
 // forward from the container start to `frameIndex` (0-based), retaining at
@@ -205,7 +253,8 @@ struct SoftwareClip {
 // accumulation: earlier frames are discarded as they decode.
 [[nodiscard]] SoftwareClip decodeClipFrameSoftware(const std::string& path, int64_t frameIndex, int width = 0,
                                                    int height = 0, const ColorPolicy& policy = {},
-                                                   const ColorOverride& overrides = {});
+                                                   const ColorOverride& overrides = {},
+                                                   const ClipColorInput& color = {});
 
 // Resolve a Document source's interpretation map into the decoder's explicit
 // ColorOverride vocabulary. `context` names the offending relationship
@@ -236,6 +285,10 @@ public:
     ViewerReferenceDecoder(const ViewerReferenceDecoder&) = delete;
     ViewerReferenceDecoder& operator=(const ViewerReferenceDecoder&) = delete;
     [[nodiscard]] const ClipInfo& info() const;
+    // The resolved encoded-RGB interpretation this decoder converts frames by
+    // (issue #81): its kind tells a consumer whether the produced frames are
+    // working-space scene-linear or Raw/Data.
+    [[nodiscard]] const ResolvedInputColor& inputColor() const;
     [[nodiscard]] std::optional<CpuImage> next();
 
 private:

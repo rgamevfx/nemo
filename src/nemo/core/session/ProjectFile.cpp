@@ -758,11 +758,19 @@ std::vector<ExternalReference> ProjectFile::referenceState(const Document& docum
         reference.identity = "colorConfig";
         reference.storedPath = std::string(colorConfigPath);
         reference.resolvedPath = resolveReferencePath(base, colorConfigPath);
-        reference.state =
-            isPatterned(reference.resolvedPath)
-                ? ReferenceState::Unresolved
-                : (referenceExists(reference.resolvedPath) ? ReferenceState::Present : ReferenceState::Missing);
-        reference.relativeCapable = relativeCapable(base, reference.resolvedPath);
+        if (isRegisteredColorConfigReference(colorConfigPath)) {
+            // A registered built-in reference is compiled into the build, so it
+            // is present by construction and is never rebased or proven missing
+            // as a file. An unregistered URI-looking string stays an ordinary
+            // path below and is reported honestly rather than assumed present.
+            reference.state = ReferenceState::Present;
+        } else {
+            reference.state =
+                isPatterned(reference.resolvedPath)
+                    ? ReferenceState::Unresolved
+                    : (referenceExists(reference.resolvedPath) ? ReferenceState::Present : ReferenceState::Missing);
+            reference.relativeCapable = relativeCapable(base, reference.resolvedPath);
+        }
         references.push_back(std::move(reference));
     }
     return references;
@@ -794,6 +802,12 @@ std::vector<std::string> ProjectFile::unresolvedDependencyWarnings(const std::ve
 std::string ProjectFile::resolveReferencePath(const fs::path& projectBase, std::string_view stored) {
     if (stored.empty())
         return {};
+    // A registered built-in config reference is not a file and is never resolved
+    // against the project directory; it is stored and reopened verbatim so
+    // save/reopen/Save As/recovery keep the exact reference the project was
+    // authored with.
+    if (isRegisteredColorConfigReference(stored))
+        return std::string(stored);
     const fs::path path{std::string(stored)};
     if (path.is_absolute())
         return path.lexically_normal().string();
@@ -806,6 +820,11 @@ std::string ProjectFile::rebaseReferencePath(const fs::path& projectBase, std::s
                                              PathPolicy policy) {
     if (inMemoryPath.empty())
         return {};
+    // Registered references ignore the path policy: RebaseRelative would turn a
+    // URI into a relative path and RebaseAbsolute into an absolute one, and
+    // either would break the reference on the next open.
+    if (isRegisteredColorConfigReference(inMemoryPath))
+        return std::string(inMemoryPath);
     const std::string stored(inMemoryPath);
     if (policy == PathPolicy::KeepStored)
         return stored;

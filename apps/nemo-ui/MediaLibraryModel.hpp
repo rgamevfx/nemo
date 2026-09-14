@@ -244,7 +244,10 @@ public:
     // (the caller then owns the refusal message). A result is a validated
     // proposal only: committing it to the document stays with the caller.
     using ReferenceProbeOutcome = std::function<void(const nemo::media::MediaImportResult&)>;
-    [[nodiscard]] std::uint64_t requestReferenceProbe(nemo::SourceReference reference, ReferenceProbeOutcome onOutcome);
+    [[nodiscard]] std::uint64_t
+    requestReferenceProbe(nemo::SourceReference reference, ReferenceProbeOutcome onOutcome,
+                          nemo::media::ProbeAlignment alignment = nemo::media::ProbeAlignment::Established,
+                          nemo::media::InputColorChoice inputColor = {});
     // Drops the pending probe and its outcome; no callback is delivered.
     void cancelReferenceProbe(std::uint64_t token);
 
@@ -292,6 +295,10 @@ private:
         std::uint64_t requestId{0};
         ColorPolicy colorPolicy;
         std::string colorConfig;
+        // The source reference the thumbnail was produced from: an explicit
+        // reload (overwritten media) advances the revision, so a thumbnail of
+        // the previous content is never shown as current.
+        SourceReference expected;
     };
     // One outstanding requester-scoped probe, keyed by its runtime request id.
     struct ReferenceProbe {

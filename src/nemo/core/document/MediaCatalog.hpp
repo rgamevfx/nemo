@@ -20,6 +20,24 @@ struct Document;
 enum class MediaKind { Unknown, Image, Video, Audio, Sequence, Other };
 enum class MediaProbeStatus { Unknown, Pending, Ready, Failed };
 
+// How far a discovered coverage interval may be trusted (issue #75). Only
+// Validated facts describe the media's real extent; Estimated/Unknown facts are
+// reported truthfully and never converted into an authoritative count or used
+// to fabricate a boundary failure.
+enum class CoverageQuality { Unknown, Estimated, Validated };
+[[nodiscard]] const char* coverageQualityName(CoverageQuality quality) noexcept;
+
+// One inclusive, compact run of frames inside a discovered interval. Missing
+// frames are recorded as runs of holes: a sparse sequence costs one record per
+// gap instead of one per frame.
+struct MediaFrameRange {
+    std::int64_t first{0};
+    std::int64_t last{0};
+    [[nodiscard]] bool valid() const noexcept { return first <= last; }
+    [[nodiscard]] bool contains(std::int64_t frame) const noexcept { return frame >= first && frame <= last; }
+    [[nodiscard]] bool operator==(const MediaFrameRange&) const = default;
+};
+
 struct MediaMarkRange {
     std::optional<std::int64_t> inFrame;
     std::optional<std::int64_t> outFrame;
@@ -42,6 +60,28 @@ struct MediaProbeMetadata {
     std::string colorMatrix;
     std::string provenance;
     MediaProbeStatus status{MediaProbeStatus::Unknown};
+    // --- Discovered source facts (issue #75). Every field is absent when the
+    // producer could not establish it: absence is a reported fact, never a
+    // guessed value. `firstFrame`/`lastFrame` are the inclusive original
+    // (available) range, `missingRanges` the holes inside it, and
+    // `rateNumerator`/`rateDenominator` a rational rate that is never reduced to
+    // a floating average.
+    std::optional<std::int64_t> firstFrame;
+    std::optional<std::int64_t> lastFrame;
+    CoverageQuality coverageQuality{CoverageQuality::Unknown};
+    std::optional<std::int64_t> availableFrameCount;
+    std::optional<std::int64_t> missingFrameCount;
+    std::vector<MediaFrameRange> missingRanges;
+    std::optional<double> pixelAspect;
+    std::optional<std::uint32_t> rateNumerator;
+    std::optional<std::uint32_t> rateDenominator;
+    // File-declared input metadata as the reader reported it (precision such as
+    // "16f", channel layout, and the declared input color space). Empty when the
+    // reader declared nothing; a consumer distinguishes "declared" from
+    // "guessed" by emptiness, not by a sentinel value.
+    std::string precision;
+    std::string channels;
+    std::string declaredInputColorSpace;
     // Authored fields of the persisted probe this build does not model,
     // retained verbatim for lossless save.
     nlohmann::json extension{};
@@ -49,6 +89,14 @@ struct MediaProbeMetadata {
 };
 using MediaProbeResult = MediaProbeMetadata;
 using MediaProbeProposal = MediaProbeMetadata;
+
+// Single owner of probe-fact admissibility (issue #75): dimensions/duration,
+// the discovered interval, hole records (sorted, non-overlapping, inside the
+// interval), pixel aspect, the rational rate pair and the counts. Returns the
+// offending relationship, or nothing when the fact set is admissible. Callers
+// (probe commit, Read registration/reload, deserialization) report the text in
+// their own error vocabulary.
+[[nodiscard]] std::optional<std::string> probeFactProblem(const MediaProbeMetadata& probe);
 
 struct MediaMetadata {
     std::string userName;

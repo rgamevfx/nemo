@@ -124,7 +124,10 @@ explicitly composed ProjectSession. The session owns one Document and
 CommandStack per open project, so both panels share history. The graph exposes
 node creation, connections, parameter editing, and output selection. Timeline
 source strips expose the existing persistent source offset/step mapping and
-shared playhead. They do not claim clip-occurrence move/trim support: that
+shared playhead. That strip mapping is the *shared* `SourceReference`'s; a Read's
+own mapping and policies are node parameters resolved by `resolveSourceRequest`
+and are not edited from the timeline (see "Read source ownership…(#79)").
+They do not claim clip-occurrence move/trim support: that
 model is not yet present. Unknown source coverage is
 shown explicitly rather than inferred from the ruler's visible extent.
 Dense graph and timeline content uses culled, batched C++ scene-graph items.
@@ -278,6 +281,18 @@ The CLI exposes `begin-parameter-gesture`, `update-parameter-gesture`,
 `expected_revision`. Successful previews/cancellation report `ok: true`
 and `committed: false`, not a document change.
 
+Value edits are routed by state captured at begin (issue #76).
+`beginValueParameterGesture` records, per edited address, whether that address
+authors the current-frame key on an existing animation channel — through the
+existing keyframe factory, so interpolation, tangents and key identities are
+preserved — or takes a static value and creates no channel. The routing cannot
+change while the gesture lives, and commit is ONE command and one history entry
+applying both parts atomically, so one inspector gesture may mix an animated
+choice with its static companion. The UI controller's single-key calls
+(`beginNodeParameterEdit`) and the Read editor's `commitValues` are the
+one-element and batch shapes of this same owner; the CLI still exposes only the
+static batch.
+
 ## Parameter animation integration (#48)
 
 `Document` owns animation channels addressed by `{network, node, key, instance}`.
@@ -422,3 +437,144 @@ payload remains real work. Non-trivial per-edit costs that remain are the
 bounded chunk-index copy, dependency validation over the touched
 relationships, and genuinely broad edits (topology or shared-definition
 changes), which are reported rather than hidden.
+
+## Read source ownership, effective requests, and schema 5 (#79)
+
+Date: 2026-09-14. Status: Accepted. Scope: issue #75 (Read slice), delivered in
+#79. Narrows the source-scoped reuse identity introduced by "Content-derived
+keys" above; the freshness, publication and structurally shared version
+decisions all stand unchanged.
+
+## Context
+
+Before schema 5 a Read's usable range, offset/step mapping and media
+interpretation lived on the *shared* `SourceReference`, so two Reads of one file
+could not disagree and an edit on one node silently retimed another consumer of
+that source. Reuse identity was likewise derived from that shared record. Issue
+#75 separates the shared media identity (path, content revision, committed
+facts) from the per-Read choices (range mode and endpoints, mapping, before/
+after/missing policy, explicit input transform, alpha association, migrated
+interpretation hints), and requires migration of saved documents without
+changing their pixels or times.
+
+## Decision
+
+1. **One resolver, no second owner.** `resolveSourceRequest`
+   (`src/nemo/core/evaluation/SourceRequest.hpp/.cpp`) is the single place that
+   combines a Read's effective node parameters with the shared reference and the
+   committed facts. The CPU provider (`ImageSourceProvider::frame`), the GPU
+   source session (`eval::SourceSession::acquire`) and the Read inspector
+   (`ReadSourceController`) consume the resolved request, and source-node result
+   keys are derived from it (`Reuse.cpp`); none of them re-derives mapping,
+   coverage, policy precedence or interpretation. The media import worker is
+   narrower rather than an exception: it receives the resolver's merged
+   `InputColorChoice` plus the frozen source-local frame and maps that through
+   the shared reference, so it re-derives no precedence either. Two resolver
+   entry points exist: the node-scoped one used by Reads and by result keys, and
+   a source-scoped one used by `eval::SourceSession::probe` (decode-path
+   evidence) and available to any consumer that holds only a reference, which
+   keeps the shared reference's authored mapping exactly. The request is plain,
+   media-free data: it carries authored color *choices*, never an OCIO object or
+   a config handle. The fill-only hint merge is itself one core owner,
+   `applyReadInterpretationHints` (node scope first, else the shared
+   reference, returning the node-origin bit mask); it accepts an empty map, so
+   the same owner produces a not-yet-bound Read's probe hints and a bound
+   request's merged interpretation, and admissibility is core's
+   `readOverridesProblem` — the authoring commands and the resolver share it.
+
+2. **Resolution is exclusive, never compositional.** A Read's node mapping
+   *replaces* the shared mapping, so a legacy offset/step is applied exactly
+   once after migration, and a migrated document resolves the same source frame
+   as before. An overflow in the mapping is always an error before any policy is
+   considered; a policy decision is reported (`status`, `policyError`,
+   `transparentBlack`, `readFrame`) rather than thrown by the resolver, so a
+   facts query and an evaluation see the same outcome. The Start At editor is
+   the checked, step-magnitude-aware alias of the same mapping: `startAtOffset`
+   anchors the selected first frame for a forward step and the selected last for
+   a reverse one and throws when no offset is representable, while a fractional
+   or otherwise unrepresentable alignment is reported as no value
+   (`EffectiveSourceMapping::startAt()` returns `std::nullopt`), never as zero.
+   The pre-binding lifecycle commands (`register`/`relink`/`reload`) carry the
+   probe's classified `MediaKind` explicitly, so a movie keeps its container
+   kind and interval rather than having one inferred from the path.
+
+3. **Coverage facts are shared, policies are per Read.** Discovered facts extend
+   the existing committed probe (original inclusive range, coverage quality,
+   available/missing counts, compact hole runs, pixel aspect, rational rate,
+   declared precision/channels/input color space) and stay in the media catalog,
+   which already owns `stateRevision()` freshness. An Auto range follows those
+   facts; a Custom range keeps its authored endpoints across reload and
+   replacement. Boundary policies are enforced only against an authoritative
+   interval (authored, or discovered and Validated): an Estimated or Unknown
+   interval is reported truthfully and never fabricates a boundary failure, and
+   a Hold whose boundary frame is itself a hole stays a missing-frame condition.
+
+4. **Schema 5 migration.** Loading a schema-4 document materializes the shared
+   timing and recognized interpretation keys onto each Read (every network,
+   including nested definitions, and each instance occurrence that repoints a
+   Read at another source key), writing through the deserialization path so no
+   controlled-edit transition is recorded. The shared reference is left intact:
+   source-scoped interpretation remains intentional policy for other consumers,
+   and a migrated node hint is fill-only, so reliably tagged media still wins.
+   Only keys that carry information are written, migration is applied once, and
+   the loader reports it as a warning.
+
+5. **Effective identity, config content included.** A source node's result key
+   is the resolved request's canonical form (path, content revision, effective
+   mapping, enforced interval, coverage, policies, mapped/read frames, transparent
+   -black decision, interpretation hints, authored color choices, alpha) plus the
+   opaque color-config content identity supplied by the executor
+   (`KeyContext::colorConfigIdentity`, from the provider/session that owns the
+   config). Node identity and the shared source key are **excluded**, so two
+   Reads with equivalent effective requests share results through different node
+   identities, while a differing mapping, policy, interpretation or config
+   content can never alias. The config identity enters at the source seam, so
+   dependents inherit it through their inputs' keys; provenance bits (which scope
+   authored a hint) are deliberately excluded because they do not change pixels.
+
+6. **Registered configuration references.** A color-configuration reference is
+   either a filesystem path or one URI registered in the build
+   (`kBuiltinColorConfigUri`, the pinned owner-approved ACES Studio config).
+   Registered references are persisted verbatim, never rebased, and reported
+   present by construction; any other URI-looking string stays an ordinary path
+   and is reported honestly rather than assumed present. New-project defaults
+   come from the existing project/session owner and never override an explicit
+   `$OCIO`; legacy `ColorPolicy` defaults are unchanged, so existing documents
+   keep their authored working space and viewing transform.
+
+## Consequences
+
+- Two Reads of one file share one media reference, one Media Bin entry and one
+  set of discovered facts, yet keep independent timing, policies and
+  interpretation; retiming one cannot silently retime another.
+- Reload is the only shared refresh: it advances the content revision once and
+  replaces the committed facts, so affected results invalidate through the
+  existing content-keyed path and node-authored choices survive.
+- A migrated document is indistinguishable from one authored under the new
+  model: there is no legacy/new Read mode, no second per-node interpretation
+  record, and no hidden per-Read copy of shared facts.
+- Changing the OCIO configuration (or resolving a different input transform)
+  changes the source identity, so a stale transform can never be served from a
+  path-only identity; non-source branches keep their reuse.
+- A stream rejected for missing interpretation is recoverable without changing
+  the shared reference: the missing decode fields are authored as the Read's own
+  hints (merged by `applyReadInterpretationHints`, which also serves an unbound
+  Read's probe) and the artist explicitly retries the same selection — there is
+  no automatic retry — while the shared reference keeps the path only and every
+  other consumer's policy is untouched.
+
+## Verification
+
+`tests/ReadSourceTests.cpp` (command authoring, node independence, coverage and
+hole policy, Start At/reverse/overflow arithmetic, identity equivalence,
+schema-4 migration, hint precedence, save/load), `tests/PersistenceTests.cpp`
+(discovered facts round trip and malformed-fact rejection),
+`tests/SessionPersistenceTests.cpp` (ProjectSession independence, one undo entry,
+save/reopen/Save As, registered reference persistence),
+`tests/ViewerModelTests.cpp` (provider seam and node-over-shared replacement),
+plus the media and viewer cases owned by #80/#81 for decoded pixels and the
+native path. `tests/ReadSourceUiTests.cpp` covers the presentation adapter:
+movie binding keeps its validated interval, an untagged movie is recovered only
+by authoring the missing interpretation and explicitly retrying the same
+selection, per-occurrence error/pending state, and Start At deriving the offset
+through core rather than UI arithmetic.

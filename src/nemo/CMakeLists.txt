@@ -18,6 +18,7 @@ add_library(nemo_core
     core/evaluation/CpuReference.cpp
     core/evaluation/NativeEffects.cpp
     core/evaluation/Reuse.cpp
+    core/evaluation/SourceRequest.cpp
 )
 add_library(nemo::core ALIAS nemo_core)
 

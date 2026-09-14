@@ -51,7 +51,20 @@ struct ImageIdentity {
     json["pixelAspect"] = identity.layout.pixelAspect;
     json["channels"] = identity.layout.channels;
     json["precision"] = "float32";
-    json["color"] = "scene-linear";
+    // Report what the image actually is: a Raw/Data source result is not
+    // managed scene-linear, and a display-referred viewer result is not either
+    // (issue #81).
+    json["color"] = [](ColorInterpretation color) {
+        switch (color) {
+        case ColorInterpretation::SceneLinear:
+            return "scene-linear";
+        case ColorInterpretation::DisplayReferred:
+            return "display-referred";
+        case ColorInterpretation::Data:
+            return "data";
+        }
+        return "scene-linear";
+    }(identity.layout.color);
     json["residency"] = residencyName(identity.residency);
     return json;
 }

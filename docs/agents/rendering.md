@@ -23,6 +23,55 @@ them.
   (transfer and primaries included) travels inside the chunk and round-trips
   through pixel verification.
 
+### Input color (an input transform is not a viewing transform)
+
+- One owner resolves an encoded source's RGB interpretation
+  (`media::resolveInputColor`, retained per decode session by
+  `media::InputColorCache`): a Read's explicit OCIO input color space wins,
+  Raw/Data bypasses transfer+gamut conversion, and otherwise the file/stream
+  declaration wins over the fill-only interpretation hints (node scope, else
+  the shared reference), then the project config's own file rule, then an error
+  naming the offending relationship. Consumers never re-derive that precedence.
+  Core's `applyReadInterpretationHints` is the one owner of the fill-only hint
+  merge (node scope first, else the shared reference); it also accepts an empty
+  map, so an unbound Read's probe carries authored hints before any reference
+  exists. Raw/Data bypasses the RGB transfer/gamut half only: the mandatory
+  Y′CbCr matrix, range and chroma-location decode still applies, so a stream
+  that declares no matrix is refused naming that relationship until the fields
+  are authored rather than guessed.
+- `OcioInputTransform` (CPU) and `buildInputTransformGpu` (device pass, no
+  readback) convert encoded RGB into the working space; the working target is
+  validated by MEANING — a linear response measured against the pinned Rec.709
+  gamut matrix — never by its name or a role (in the pinned ACES config the
+  `scene_linear` role is ACEScg).
+- Alpha is normalized in the ENCODED domain before any nonlinear conversion;
+  a premultiplied zero-alpha pixel becomes a deterministic zero RGB and a
+  straight source keeps its valid hidden RGB. Raw/Data changes neither samples
+  nor association and is reported as `ColorInterpretation::Data`, never as
+  managed scene-linear.
+- Core resolves the request, media resolves the color.
+  `resolveSourceRequest` (`src/nemo/core/evaluation/SourceRequest.hpp/.cpp`)
+  combines a Read's node-scoped mapping, coverage choice, boundary/missing
+  policy, alpha and authored color choices with the shared reference and its
+  committed facts into one plain `EffectiveSourceRequest`; the
+  `SourceProvider::frame` seam receives that resolved request, so no provider
+  re-derives mapping, precedence or coverage (see "Ownership boundaries").
+- A source node's reuse key mixes the OCIO config CONTENT identity
+  (`OcioConfigSnapshot::identity()`: the resolved reference plus
+  `Config::getCacheID`) through the provider's `colorConfigIdentity()`, so a
+  same-path config edit or a source-content reload can never serve a stale
+  decode; dependents inherit the key through their inputs. Nothing polls for a
+  content change: the identity and the retained processors are replaced at the
+  explicit refresh boundary (`refreshColorConfig` on project replacement or a
+  deliberate config reload), and a decode already running keeps its own
+  generation alive.
+- Decoder reuse identity is frame-INDEPENDENT (`appendSourceDecodeIdentity`):
+  media identity, effective interpretation and color context, never the frame,
+  so successive frames of one clip reuse one decoder while a changed
+  interpretation or configuration can never reuse another's.
+  `appendEffectiveSourceIdentity` adds the frame-specific mapping, policies and
+  outcome on top of that decode identity for result reuse.
+
 ## Media import previews
 
 A Media Bin thumbnail is display-referred, but does not use the compressed
@@ -43,6 +92,21 @@ synthesized. The source-linear decode contract above still owns interpretation.
 - Import polling preserves synchronous publication. The adapter finishes its
   internal cache/index updates before emitting notifications, then re-checks
   result identity after a slot may have edited or reset the project.
+- A request carries its own color choices and lifecycle identity, not just a
+  path: the merged `InputColorChoice`, the frozen admitted frame and
+  `projectGeneration` travel with `MediaImportRequest`, and `ProbeAlignment`
+  chooses between the established mapped frame and one discovered available
+  member for a fresh sequence selection. The worker therefore never reads
+  `Document` state and never re-derives node/shared precedence, and retained
+  worker color state is keyed on the project generation, so reopening or
+  replacing a project cannot reuse the previous project's color context even
+  when the config reference and working space are unchanged.
+
+- A result carries its classified `MediaKind` (`Image` for a still, `Sequence`
+  for a discovered numbered run, `Video` for a clip) alongside the validated
+  probe. A Read lifecycle command commits that kind explicitly, so a movie keeps
+  its container kind and interval; the only still conversion is the Read
+  controller's explicit Sequence-vs-Single-Image choice for a numbered run.
 
 Issue #43 evidence: [`session.json`](../evidence/assets/issue43-media-import/session.json).
 
@@ -76,10 +140,14 @@ Issue #43 evidence: [`session.json`](../evidence/assets/issue43-media-import/ses
 | Byte budgets, admission, eviction of cached results | Cache accounting (#14) |
 | Viewer-cache storage and replay orchestration | #12 |
 | Media contract correctness: interpretation, format validation, FFmpeg ownership | #21 |
+| Effective source request: node-vs-shared mapping, coverage and policy resolution | Core `SourceRequest` (#79), consumed by every provider/session/inspector |
+| Encoded RGB interpretation and the retained OCIO conversion | Media input-color owner (#81): `resolveInputColor`/`InputColorCache`, `OcioConfigSnapshot` |
 
 GPU owns the mechanism; #13 owns policy on top of it. #14 adds accounting
 and admission to the retained-resource mechanism. A bug at one boundary is
-filed against its owner, not patched in a neighbor.
+filed against its owner, not patched in a neighbor. `SourceRequest` decides
+*what frame and policy*; the media input-color owner decides *what the samples
+mean*; neither re-implements the other.
 
 ## Execution shape
 
@@ -93,26 +161,30 @@ filed against its owner, not patched in a neighbor.
   measurement shows the benefit; a reduced API-call count alone is not a
   performance win.
 
-## Native effects — Grade, Blur, Transform
+## Native effects — Grade, Blur, Transform, Merge
 
 The contract below is implemented by the CPU reference `evaluateNativeEffect`
+and `evaluateMerge`
 ([`NativeEffects.hpp`](../../src/nemo/core/evaluation/NativeEffects.hpp) /
 `NativeEffects.cpp`) and independently by the GPU path
 (`src/nemo/eval/GpuExecutor.cpp` plus `src/nemo/gpu/shaders/`). The shared
 metadata seam [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp)
-(`effectiveEffectMask`/`effectiveGrade`/`effectiveBlur`/`effectiveTransform`)
+(`effectiveEffectMask`/`effectiveGrade`/`effectiveBlur`/`effectiveTransform`/
+`effectiveMergeOperation`)
 owns typed interpretation and admissibility; independent analytic fixtures and
 interpretations, not agreement between the two implementations, remain the
 correctness oracle (ADR-0004, Fidelity below). Change both implementations when
 a contract changes.
 
-### Optional mask and mix (Grade, Blur, Transform)
+### Optional mask and mix (Grade, Blur, Transform, Merge)
 
-These three effects each have a required `Image` input at port 0 and an optional
-`Mask` input at port 1 (`PortSpec::optional`). An absent mask keeps its declared
-plan slot as the invalid sentinel `EvaluationNodeId{}` (node == `kInvalidNode`);
-the GPU binds the main image as a dummy descriptor with `maskPresent=0`, never an
-allocated fallback.
+These effects each have a required `Image` input at port 0 and an optional
+`Mask` input (`PortSpec::optional`): port 1 for Grade/Blur/Transform, port 2 for
+Merge (its port 1 is the required foreground). The executor resolves the
+optional slot from the declared schema, not a hardcoded index. An absent mask
+keeps its declared plan slot as the invalid sentinel `EvaluationNodeId{}`
+(node == `kInvalidNode`); the GPU binds the main image as a dummy descriptor
+with `maskPresent=0`, never an allocated fallback.
 
 `maskChannel` ∈ {none, R, G, B, A}, `invertMask`, `mix` ∈ [0, 1]. An absent mask
 or `none` gives coverage 1 independent of inversion. A connected mask
@@ -173,18 +245,69 @@ alpha-aware (premultiplied, then straight output with zero-alpha RGB = 0 and no
 implicit RGB clamp). `rotate` converts through double-precision radians; cos/sin
 are precomputed on the host and rounded once to float so CPU and GPU rotation
 residuals agree. The mask is not transformed. Declared metadata maps the
-archived prototype Transform surface: `translateX`/`translateY` ∈ [-200, 200]
-step 1, `scale` ∈ [0.1, 3] step 0.001, `rotate` ∈ [-180, 180] step 0.1, and
-`filter` in the Sampling section; production defaults remain the identity
+archived prototype Transform surface as SOFT adjustment travel
+(`softMinimum`/`softMaximum`): `translateX`/`translateY` ±200 step 1 sharing one
+`Translate` row, `scale` soft [0.1, 3] step 0.001, `rotate` soft ±180 step 0.1,
+and `filter` in the Sampling section. Soft travel is an interaction hint, never
+a legal bound: a typed value outside it is neither clamped nor quantized, and
+the persistent parameter identities stay independent. Scale must be positive
+and finite with a finite reciprocal; production defaults remain the identity
 transform.
+
+### Merge
+
+Merge has two required `Image` inputs and one optional `Mask` input: port A
+(index 0) is the background/base, port B (index 1) the foreground/source, and
+port 2 the optional mask. The A/B order is the production contract; Nuke-like
+usability never silently reverses existing graphs. The CPU entry point is
+`evaluateMerge` (`NativeEffects.hpp`); the GPU path executes the `merge` effect
+program (`src/nemo/gpu/shaders/merge.slang`, retained GLSL `kGlslMerge`) with the
+operation code in `param0.x`. Both resolve `operation` through
+`effectiveMergeOperation` and the mask controls through `effectiveEffectMask`.
+
+`operation` ∈ {over, plus, multiply, screen, difference}, default `over`. An
+unknown value is rejected by the descriptor on authoring and deserialize and by
+both executors with the supported set named — never a fallback.
+
+For each RGB channel the unmasked composite forms a blend target and
+interpolates from the background by foreground alpha:
+
+```text
+over        target = fg
+plus        target = bg + fg
+multiply    target = bg * fg
+screen      target = 1 - (1 - bg) * (1 - fg)
+difference  target = |bg - fg|
+composite.rgb = bg + fg.a * (target - bg)     # Over keeps fg.a*fg + (1-fg.a)*bg
+composite.a   = fg.a + (1 - fg.a) * bg.a      # operation-independent
+```
+
+The shared mask/mix blend then runs once: `out = bg + coverage * mix *
+(composite - bg)`, so `mix` 0 or zero coverage returns the background exactly and
+full coverage/mix returns the selected composite. Scene-linear RGB is never
+clamped; HDR and negative values pass through, and partially transparent inputs
+use the same expression.
+
+Independent oracle: `bg = (0.2, 0.4, 0.6, 0.4)`, `fg = (0.8, 0.5, 0.25, 0.5)`
+gives alpha `0.5 + 0.5*0.4 = 0.7` for every operation and unmasked RGB over
+`(0.5, 0.45, 0.425)`, plus `(0.6, 0.65, 0.725)`, multiply `(0.18, 0.3, 0.375)`,
+screen `(0.52, 0.55, 0.65)`, difference `(0.4, 0.25, 0.475)`. With mask A `0.3`
+and `mix = 0.5` the weight is `0.15`, so masked Over is
+`(0.245, 0.4075, 0.57375, 0.445)`.
+
+Swap A/B (`swapInputsCommand`, exposed as the Swap A/B action and the
+`swap-inputs` session command) exchanges the two sources as one atomic undo
+step, retaining the mask connection, the parameters and the node layout; a
+rejected swap changes neither connection.
 
 ### Spatial limits and capabilities
 
-Grade is neighborhood-free and keeps `supportsRegion=true`. Blur and Transform
-resample or read neighborhoods, so both declare `supportsRegion=false` and are
-whole-image only: region requests are rejected by the existing capability
-validation. All three are RGBA at sampling scales 1/2/4, and their spatial
-parameters stay full-resolution, so coordinates are preserved at reduced scales.
+Grade and Merge are neighborhood-free and keep `supportsRegion=true` (Merge's
+mask is read at output coordinates). Blur and Transform resample or read
+neighborhoods, so both declare `supportsRegion=false` and are whole-image only:
+region requests are rejected by the existing capability validation. All four are
+RGBA at sampling scales 1/2/4, and the spatial parameters of Grade/Blur/Transform
+stay full-resolution, so coordinates are preserved at reduced scales.
 
 The owner accepted the issue34 native-effects controls, API/node behavior and
 images in chat; the #16 reference benchmark remains an open gate. Passing

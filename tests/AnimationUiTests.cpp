@@ -916,4 +916,367 @@ TEST_F(AnimationSurface, RestoringPresentationRetainsInspectorMembershipAndPinne
     EXPECT_EQ(js("animation.channels.length").toInt(), 1);
     EXPECT_EQ(js("animation.channels[0].id").toString(), red);
 }
+
+// ---------------------------------------------------------------------------
+// Issue #75 shared-editing regressions driven by real Qt input on the loaded
+// application: ordinary click/type/scrub/keyboard behavior on the numeric
+// editor, row grouping, adaptive columns, linked RGB editing and the Merge
+// operation/swap control. Captures are written when NEMO_ANIMATION_CAPTURE_DIR
+// is set, next to the existing workflow captures.
+// ---------------------------------------------------------------------------
+
+QQuickItem* parameterPanelItem(QQuickWindow* window) {
+    return visual(window->contentItem(), QStringLiteral("parametersPanel"));
+}
+
+QQuickItem* parameterItem(QQuickItem* root, const QString& name) {
+    return root ? visual(root, name) : nullptr;
+}
+
+// Crops the Parameters panel (not the Animation panel) for the shared-editing
+// captures, so the normal-width and 411 logical px appearance evidence is
+// recorded from the same production surface the gestures ran against.
+void captureParameters(QQuickWindow* window, const QString& name) {
+    const auto dir = qEnvironmentVariable("NEMO_ANIMATION_CAPTURE_DIR");
+    if (dir.isEmpty())
+        return;
+    QDir().mkpath(dir);
+    QTest::qWait(100);
+    auto* panel = parameterPanelItem(window);
+    if (!panel)
+        return;
+    const auto origin = panel->mapToScene(QPointF{});
+    const QRect crop = QRectF(origin, QSizeF(panel->width(), panel->height())).toAlignedRect();
+    EXPECT_TRUE(window->grabWindow().copy(crop).save(dir + '/' + name + "-parameters.png"));
+}
+
+QString panelGroupOf(QQuickWindow* window) {
+    auto* panel = parameterPanelItem(window);
+    return panel ? panel->property("panelGroup").toString() : QString{};
+}
+
+// A click without movement must not publish anything; a horizontal drag past
+// the platform drag threshold must be exactly one gesture and one undo step,
+// and cancelling mid-drag must leave the document untouched.
+TEST_F(AnimationSurface, NumericEditorClickScrubAndCancellationUseOneGesture) {
+    const auto scope = controller.rootNetworkId();
+    const auto node = controller.createGraphNode(scope, "transform", "ScrubMotion", 20, 200, {}, {});
+    ASSERT_FALSE(node.isEmpty());
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
+    QTest::qWait(40);
+    auto* field = item("param_" + node + "_translateX");
+    ASSERT_NE(field, nullptr);
+
+    const auto startRevision = session.revision();
+    const auto center = field->mapToScene(QPointF(field->width() / 2, field->height() / 2)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center);
+    QTest::qWait(20);
+    EXPECT_EQ(session.revision(), startRevision) << "a click that never moved must not commit";
+    // A click starts a text edit on the control; leave it before scrubbing, so
+    // the gesture under test is the drag itself.
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::qWait(20);
+    EXPECT_EQ(session.revision(), startRevision) << "cancelling a text buffer must not publish";
+
+    // A scrub that never leaves the captured value cancels instead of
+    // publishing a no-op history entry.
+    drag(center, center + QPoint(30, 0), Qt::NoModifier, /*cancel=*/false);
+    const auto scrubbed = session.queryValues(scope.toULongLong(), node.toULongLong(), "translateX");
+    ASSERT_FALSE(scrubbed.empty());
+    EXPECT_EQ(session.revision(), startRevision + 1);
+    EXPECT_NE(scrubbed.front().value, nemo::ParameterValue{0.0});
+
+    const auto afterScrub = session.revision();
+    const auto& captured = session.document().network(scope.toULongLong()).graph().node(node.toULongLong())->params;
+    drag(center, center + QPoint(40, 0), Qt::NoModifier, /*cancel=*/true);
+    EXPECT_EQ(session.revision(), afterScrub) << "Escape mid-drag must not publish";
+    EXPECT_EQ(session.document().network(scope.toULongLong()).graph().node(node.toULongLong())->params, captured);
+    EXPECT_EQ(controller.frame(), 0);
+    captureParameters(window, "numeric-scrub");
+}
+
+// Typed values commit exactly once; invalid text names the parameter, keeps the
+// previous value and leaves the revision unchanged.
+TEST_F(AnimationSurface, NumericEditorTypedCommitAndRejectionPreserveState) {
+    const auto scope = controller.rootNetworkId();
+    const auto node = controller.createGraphNode(scope, "transform", "TypedMotion", 20, 320, {}, {});
+    ASSERT_FALSE(node.isEmpty());
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
+    QTest::qWait(40);
+    auto* field = item("param_" + node + "_translateX");
+    ASSERT_NE(field, nullptr);
+
+    enter("param_" + node + "_translateX", "12.5");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    const auto committed = session.queryValues(scope.toULongLong(), node.toULongLong(), "translateX");
+    ASSERT_FALSE(committed.empty());
+    EXPECT_EQ(committed.front().value, nemo::ParameterValue{12.5});
+
+    const auto revision = session.revision();
+    enter("param_" + node + "_translateX", "not-a-number");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    EXPECT_EQ(session.revision(), revision) << "invalid text must not publish";
+    const auto kept = session.queryValues(scope.toULongLong(), node.toULongLong(), "translateX");
+    ASSERT_FALSE(kept.empty());
+    EXPECT_EQ(kept.front().value, nemo::ParameterValue{12.5});
+    auto* error = item("error_" + node + "_translateX");
+    ASSERT_NE(error, nullptr);
+    EXPECT_TRUE(error->isVisible());
+    EXPECT_FALSE(error->property("text").toString().isEmpty());
+    captureParameters(window, "numeric-error");
+}
+
+// Arrow keys step by the parameter increment and the modified marker tracks the
+// authored value; Reset Value restores the schema default without touching the
+// animation channel.
+TEST_F(AnimationSurface, NumericEditorKeyboardStepModifiedMarkerAndReset) {
+    const auto scope = controller.rootNetworkId();
+    const auto node = controller.createGraphNode(scope, "transform", "ResetMotion", 20, 440, {}, {});
+    ASSERT_FALSE(node.isEmpty());
+    const auto network = scope.toULongLong();
+    const auto nodeId = node.toULongLong();
+    ASSERT_TRUE(controller.keyNodeParameter(scope, node, "translateY"));
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
+    QTest::qWait(40);
+
+    // Y was keyed above, so it is modified; X is still at its schema default.
+    auto* keyedMarker = item("modified_" + node + "_translateY");
+    ASSERT_NE(keyedMarker, nullptr);
+    EXPECT_TRUE(keyedMarker->property("color").value<QColor>().alpha() > 0) << "an animated parameter is modified";
+    auto* marker = item("modified_" + node + "_translateX");
+    ASSERT_NE(marker, nullptr);
+    EXPECT_FALSE(marker->property("color").value<QColor>().alpha() > 0)
+        << "a scalar at its schema default is not modified";
+
+    // A click focuses the control and starts a text buffer; Escape returns to
+    // the control itself, and an arrow key then applies the declared increment
+    // as one edit (story 5).
+    auto* field = item("param_" + node + "_translateY");
+    ASSERT_NE(field, nullptr);
+    const auto beforeStep = session.revision();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      field->mapToScene(QPointF(field->width() / 2, field->height() / 2)).toPoint());
+    QTest::qWait(20);
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::qWait(20);
+    ASSERT_TRUE(field->hasActiveFocus()) << "the numeric editor keeps focus after cancelling a buffer";
+    QTest::keyClick(window, Qt::Key_Up);
+    QTest::qWait(30);
+    field = item("param_" + node + "_translateY");
+    ASSERT_NE(field, nullptr);
+    EXPECT_DOUBLE_EQ(field->property("value").toDouble(), 1.0);
+    EXPECT_EQ(session.revision(), beforeStep + 1);
+    marker = item("modified_" + node + "_translateX");
+    ASSERT_NE(marker, nullptr);
+    EXPECT_FALSE(marker->property("color").value<QColor>().alpha() > 0) << "editing Y leaves X at its default";
+
+    // Reset restores the default in one entry and keeps the animation channel.
+    const auto beforeReset = session.revision();
+    auto* parametersPanel = parameterPanelItem(window);
+    ASSERT_NE(parametersPanel, nullptr);
+    QVariant resetRow = QVariant::fromValue(QVariantMap{{QStringLiteral("networkId"), scope},
+                                                        {QStringLiteral("nodeId"), node},
+                                                        {QStringLiteral("parameterKey"), QStringLiteral("translateY")},
+                                                        {QStringLiteral("label"), QStringLiteral("Y")}});
+    QVariant resetResult;
+    ASSERT_TRUE(QMetaObject::invokeMethod(parametersPanel, "resetValue", Q_RETURN_ARG(QVariant, resetResult),
+                                          Q_ARG(QVariant, resetRow)));
+    EXPECT_TRUE(resetResult.toBool());
+    QTest::qWait(30);
+    field = item("param_" + node + "_translateY");
+    ASSERT_NE(field, nullptr);
+    EXPECT_DOUBLE_EQ(field->property("value").toDouble(), 0.0);
+    const auto* channel = session.document().animationChannel(
+        nemo::ParameterAddress{network, nodeId, "translateY", nemo::kInvalidNetworkInstance});
+    ASSERT_NE(channel, nullptr) << "reset must not remove the animation channel";
+    EXPECT_EQ(session.revision(), beforeReset + 1);
+    EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "translateY"), QStringLiteral("key"));
+}
+
+// The grouped Transform Translate row keeps two independent identities: one is
+// keyed and edited without touching the other.
+TEST_F(AnimationSurface, TransformTranslatePairKeepsIndependentIdentities) {
+    const auto scope = controller.rootNetworkId();
+    const auto node = controller.createGraphNode(scope, "transform", "PairedMotion", 20, 560, {}, {});
+    ASSERT_FALSE(node.isEmpty());
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
+    QTest::qWait(40);
+    auto* pairedX = item("param_" + node + "_translateX");
+    auto* pairedY = item("param_" + node + "_translateY");
+    ASSERT_NE(pairedX, nullptr);
+    ASSERT_NE(pairedY, nullptr);
+
+    click("key_" + node + "_translateX");
+    QTest::qWait(30);
+    EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "translateX"), QStringLiteral("key"));
+    EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "translateY"), QStringLiteral("none"))
+        << "keying one identity must not key its row partner";
+
+    const auto before = session.queryValues(scope.toULongLong(), node.toULongLong(), "translateX");
+    enter("param_" + node + "_translateY", "7");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    const auto why = session.queryValues(scope.toULongLong(), node.toULongLong(), "translateY");
+    ASSERT_FALSE(why.empty());
+    EXPECT_EQ(why.front().value, nemo::ParameterValue{7.0});
+    const auto ex = session.queryValues(scope.toULongLong(), node.toULongLong(), "translateX");
+    ASSERT_FALSE(ex.empty());
+    ASSERT_FALSE(before.empty());
+    EXPECT_EQ(ex.front().value, before.front().value) << "editing Y must not change the independent X identity";
+    EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "translateX"), QStringLiteral("key"));
+    captureParameters(window, "transform-pair");
+}
+
+// Grade uses one registered linked-RGB editor: equal channels take a common
+// value, mixed channels take an explicit factor while retaining their ratios,
+// and alpha stays untouched.
+TEST_F(AnimationSurface, GradeLinkedRgbEditingPreservesComponentsAndAlpha) {
+    const auto scope = controller.rootNetworkId();
+    const auto node = controller.createGraphNode(scope, "grade", "LinkedGrade", 20, 680, {}, {});
+    ASSERT_FALSE(node.isEmpty());
+    ASSERT_TRUE(editors.registerEditor(QStringLiteral("nemo.channels.rgb"),
+                                       QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/ChannelEditor.qml"))));
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
+    QTest::qWait(60);
+    const auto network = scope.toULongLong();
+    const auto nodeId = node.toULongLong();
+    auto* linked = item("channels_linked_" + node + "_gain");
+    auto* alpha = item("channels_alpha_" + node + "_gain");
+    ASSERT_NE(linked, nullptr);
+    ASSERT_NE(alpha, nullptr);
+
+    // Equal RGB takes one typed linked value and leaves alpha alone.
+    enter("channels_linked_" + node + "_gain", "2");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(40);
+    const auto equal = session.queryValues(network, nodeId, "gain");
+    ASSERT_FALSE(equal.empty());
+    EXPECT_EQ(equal.front().value, (nemo::ParameterValue{nemo::ColorValue{{2.0F, 2.0F, 2.0F, 1.0F}}}));
+
+    // Expand and make one channel differ, then apply a mixed linked factor: the
+    // ratios are retained and alpha is still untouched.
+    click("channels_expand_" + node + "_gain");
+    QTest::qWait(30);
+    auto* redField = item("channels_R_" + node + "_gain");
+    ASSERT_NE(redField, nullptr);
+    ASSERT_TRUE(redField->isVisible()) << "the expanded channel field must be visible before it is driven";
+    // Visibility is not enough: the control must also lie inside the inspector's
+    // clipping viewport for a click to reach it.
+    const auto insideInspectorViewport = [this](const QString& name) {
+        auto* target = item(name);
+        if (!target || !target->isVisible())
+            return false;
+        auto* viewport = item("inspectorScroll");
+        if (!viewport)
+            return true;
+        const QRectF bounds(target->mapToItem(viewport, QPointF(0, 0)), target->size());
+        return QRectF(0, 0, viewport->width(), viewport->height()).intersects(bounds);
+    };
+    ASSERT_TRUE(insideInspectorViewport("channels_R_" + node + "_gain"))
+        << "the expanded channel field is outside the visible inspector viewport";
+    enter("channels_R_" + node + "_gain", "3");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(40);
+    EXPECT_TRUE(controller.error().isEmpty())
+        << "the expanded component edit must reach the document: " << controller.error().toStdString();
+    // The editor stays expanded across the edit, so the compact row (and its
+    // mixed delta/factor field) is reached by collapsing again — the real user
+    // flow, not a hidden control.
+    click("channels_expand_" + node + "_gain");
+    QTest::qWait(30);
+    auto* relinked = item("channels_linked_" + node + "_gain");
+    ASSERT_NE(relinked, nullptr);
+    ASSERT_TRUE(relinked->isVisible()) << "the compact linked field returns when the row is collapsed";
+    const auto mixed = session.queryValues(network, nodeId, "gain");
+    ASSERT_FALSE(mixed.empty());
+    EXPECT_EQ(mixed.front().value, (nemo::ParameterValue{nemo::ColorValue{{3.0F, 2.0F, 2.0F, 1.0F}}}));
+    enter("channels_linked_" + node + "_gain", "2");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(40);
+    EXPECT_TRUE(controller.error().isEmpty())
+        << "the linked mixed edit must reach the document: " << controller.error().toStdString();
+    ASSERT_TRUE(insideInspectorViewport("channels_linked_" + node + "_gain"))
+        << "the compact linked field is outside the visible inspector viewport";
+    const auto scaled = session.queryValues(network, nodeId, "gain");
+    ASSERT_FALSE(scaled.empty());
+    EXPECT_EQ(scaled.front().value, (nemo::ParameterValue{nemo::ColorValue{{6.0F, 4.0F, 4.0F, 1.0F}}}));
+    captureParameters(window, "grade-linked-expanded");
+
+    // Toggling presentation is value-preserving in both directions.
+    click("channels_expand_" + node + "_gain");
+    QTest::qWait(30);
+    EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value,
+              (nemo::ParameterValue{nemo::ColorValue{{6.0F, 4.0F, 4.0F, 1.0F}}}));
+}
+
+// The Parameters panel keeps its saved two-column preference but renders one
+// column when two do not fit; the narrow appearance is captured at 411 logical
+// pixels next to the normal-width one.
+TEST_F(AnimationSurface, ParametersPanelAdaptsColumnsWithoutRewritingThePreference) {
+    const auto scope = controller.rootNetworkId();
+    const auto first = controller.createGraphNode(scope, "transform", "NarrowA", 20, 800, {}, {});
+    const auto second = controller.createGraphNode(scope, "blur", "NarrowB", 180, 800, {}, {});
+    ASSERT_FALSE(first.isEmpty());
+    ASSERT_FALSE(second.isEmpty());
+    const auto group = panelGroupOf(window);
+    ASSERT_TRUE(router.requestInspector(group, scope, first));
+    ASSERT_TRUE(router.requestInspector(group, scope, second));
+    QTest::qWait(40);
+    auto* panel = parameterPanelItem(window);
+    ASSERT_NE(panel, nullptr);
+    ASSERT_TRUE(panel->property("twoColumns").toBool()) << "the saved preference defaults to two columns";
+
+    window->setMaximumSize(QSize(411, 1004));
+    window->resize(411, 1004);
+    QTest::qWait(120);
+    auto* secondColumn = item("inspectorColumn_1");
+    ASSERT_NE(secondColumn, nullptr);
+    EXPECT_FALSE(secondColumn->isVisible()) << "two columns must not overflow a 411 logical px panel";
+    EXPECT_TRUE(panel->property("twoColumns").toBool())
+        << "a narrow layout must not rewrite the saved column preference";
+    captureParameters(window, "parameters-411");
+
+    window->setMaximumSize(QSize(1274, 900));
+    window->resize(1274, 900);
+    QTest::qWait(120);
+    EXPECT_TRUE(secondColumn->isVisible()) << "the saved two-column preference returns when it fits";
+    captureParameters(window, "parameters-normal");
+}
+
+// The registered Merge editor presents the explicit A/B roles and refuses a
+// meaningless swap without touching history.
+TEST_F(AnimationSurface, MergeOperationEditorSwapsConnectedInputsAtomically) {
+    const auto scope = controller.rootNetworkId();
+    const auto first = controller.createGraphNode(scope, "constcolor", "SwapA", 20, 920, {}, {});
+    const auto second = controller.createGraphNode(scope, "constcolor", "SwapB", 20, 1000, {}, {});
+    const auto merge = controller.createGraphNode(scope, "merge", "SwapMerge", 200, 920, {}, {});
+    ASSERT_FALSE(first.isEmpty());
+    ASSERT_FALSE(second.isEmpty());
+    ASSERT_FALSE(merge.isEmpty());
+    ASSERT_TRUE(
+        editors.registerEditor(QStringLiteral("nemo.merge.operation"),
+                               QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/MergeOperationEditor.qml"))));
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, merge));
+    QTest::qWait(40);
+    auto* swap = item("merge_swap_" + merge);
+    ASSERT_NE(swap, nullptr);
+    EXPECT_FALSE(swap->property("enabled").toBool()) << "a swap with no connected input is meaningless";
+
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, first, 0, merge, 0));
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, second, 0, merge, 1));
+    QTest::qWait(40);
+    swap = item("merge_swap_" + merge);
+    ASSERT_NE(swap, nullptr);
+    ASSERT_TRUE(swap->property("enabled").toBool());
+    const auto edges = controller.graphEdges();
+    const auto revision = session.revision();
+    click("merge_swap_" + merge);
+    QTest::qWait(40);
+    EXPECT_EQ(session.revision(), revision + 1) << "one swap is one undo step";
+    EXPECT_NE(controller.graphEdges(), edges);
+    ASSERT_TRUE(controller.undo());
+    EXPECT_EQ(controller.graphEdges(), edges);
+}
 }  // namespace

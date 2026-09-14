@@ -12,117 +12,66 @@
 #include <OpenImageIO/imageio.h>
 
 #include "nemo/media/ImageIO.hpp"
+#include "nemo/media/ViewingTransform.hpp"
 
 namespace nemo::media {
 
 namespace {
 
-// Rec.709 / sRGB primaries with D65 white: the document working space.
-constexpr std::array<float, 8> kRec709Chromaticities{0.64F, 0.33F, 0.30F, 0.60F, 0.15F, 0.06F, 0.3127F, 0.3290F};
-constexpr float kChromaticityTolerance = 1e-4F;
-
 [[noreturn]] void fail(const std::string& path, const std::string& message) {
     throw ImageIoException(path, message);
 }
 
-// Mirror the clip path's strict field errors: "(context: ...; ...)".
-[[nodiscard]] std::string note(const std::string& context, const std::string& details) {
-    return " (context: " + (context.empty() ? std::string{"image source"} : context) + "; " + details + ")";
+// Media color failures keep this adapter's own diagnostic shape: the input
+// color layer reports the body and the reader names the file.
+[[noreturn]] void failColor(const std::string& path, const std::string& message) {
+    throw ImageIoException(path, message);
 }
 
 [[nodiscard]] bool hasPattern(const std::string& path) {
     return path.find('#') != std::string::npos || path.find('@') != std::string::npos;
 }
 
-// Authored sequence range (issue #61). Only a '#'/'@' pattern has a frame
-// range; a still resolves to one file regardless of the requested time, so an
-// authored range never rejects it. A frame outside the range is an error that
-// names the path and the range — never a clamped or substituted frame.
+// Authored sequence range (issue #61) for the source-scoped read path. Only a
+// '#'/'@' pattern has a frame range; a still resolves to one file regardless of
+// the requested time, so an authored range never rejects it. A frame outside
+// the range is an error that names the path and the range — never a clamped or
+// substituted frame. The resolved-request path does not need this: the core
+// resolver owns the selected interval and the boundary/missing policies.
 void requireFrameInRange(const SourceReference& reference, const std::int64_t frame, const std::string& context) {
     if (!hasPattern(reference.path))
         return;
     if (reference.firstFrame && frame < *reference.firstFrame) {
-        fail(reference.path,
-             "requested frame " + std::to_string(frame) + " is before the authored first frame " +
-                 std::to_string(*reference.firstFrame) +
-                 note(context, "sequence range " + std::to_string(*reference.firstFrame) + ".." +
-                                   (reference.lastFrame ? std::to_string(*reference.lastFrame) : std::string{"end"})));
+        fail(reference.path, "requested frame " + std::to_string(frame) + " is before the authored first frame " +
+                                 std::to_string(*reference.firstFrame) + " (context: " + context + "; sequence range " +
+                                 std::to_string(*reference.firstFrame) + ".." +
+                                 (reference.lastFrame ? std::to_string(*reference.lastFrame) : std::string{"end"}) +
+                                 ")");
     }
     if (reference.lastFrame && frame > *reference.lastFrame) {
         fail(reference.path, "requested frame " + std::to_string(frame) + " is after the authored last frame " +
-                                 std::to_string(*reference.lastFrame) +
-                                 note(context, "sequence range " +
-                                                   (reference.firstFrame ? std::to_string(*reference.firstFrame)
-                                                                         : std::string{"start"}) +
-                                                   ".." + std::to_string(*reference.lastFrame)));
+                                 std::to_string(*reference.lastFrame) + " (context: " + context + "; sequence range " +
+                                 (reference.firstFrame ? std::to_string(*reference.firstFrame) : std::string{"start"}) +
+                                 ".." + std::to_string(*reference.lastFrame) + ")");
     }
 }
 
-[[nodiscard]] std::vector<std::string> splitTokens(const std::string& declared) {
-    std::vector<std::string> tokens;
-    std::string current;
-    for (const char character : declared) {
-        if (character == '_') {
-            tokens.push_back(current);
-            current.clear();
-        } else {
-            current.push_back(character);
-        }
-    }
-    tokens.push_back(current);
-    return tokens;
-}
-
-[[nodiscard]] ImageTransfer transferFromDeclared(const std::string& token, const std::string& declared,
-                                                 const std::string& path, const std::string& context) {
-    static const std::map<std::string, ImageTransfer> byName{{"lin", ImageTransfer::Linear},
-                                                             {"srgb", ImageTransfer::Srgb},
-                                                             {"g22", ImageTransfer::Gamma22},
-                                                             {"g28", ImageTransfer::Gamma28},
-                                                             {"bt709", ImageTransfer::Bt709}};
-    const auto it = byName.find(token);
-    if (it == byName.end()) {
-        fail(path, "declared color space '" + declared + "' has unsupported transfer '" + token + "'" +
-                       note(context, "supported: lin, srgb, g22, g28, bt709"));
-    }
-    return it->second;
-}
-
-[[nodiscard]] ImagePrimaries primariesFromDeclared(const std::string& token, const std::string& declared,
-                                                   const std::string& path, const std::string& context) {
-    if (token != "rec709") {
-        fail(path, "declared color space '" + declared + "' has unsupported primaries '" + token + "'" +
-                       note(context, "supported: rec709 (the working space is scene-linear Rec.709)"));
-    }
-    return ImagePrimaries::Rec709;
-}
-
-// Strict parsing of the reference's interpretation map. Only the two fields
-// an RGB image source can honor are accepted; Y'CbCr-only fields are
-// rejected explicitly instead of being silently ignored.
-[[nodiscard]] ImageTransfer parseTransferOverride(const std::string& value, const std::string& path,
-                                                  const std::string& context) {
-    static const std::map<std::string, ImageTransfer> byName{{"linear", ImageTransfer::Linear},
-                                                             {"srgb", ImageTransfer::Srgb},
-                                                             {"gamma22", ImageTransfer::Gamma22},
-                                                             {"gamma28", ImageTransfer::Gamma28},
-                                                             {"bt709", ImageTransfer::Bt709}};
-    const auto it = byName.find(value);
-    if (it == byName.end()) {
-        fail(path, "source interpretation field 'transfer' has unsupported value '" + value + "'" +
-                       note(context, "supported: linear, srgb, gamma22, gamma28, bt709"));
-    }
-    return it->second;
-}
-
-[[nodiscard]] ImagePrimaries parsePrimariesOverride(const std::string& value, const std::string& path,
-                                                    const std::string& context) {
-    if (value != "bt709") {
-        fail(path, "source interpretation field 'primaries' has unsupported value '" + value + "'" +
-                       note(context, "supported: bt709"));
-    }
-    return ImagePrimaries::Rec709;
-}
+// Header-only facts about one resolved frame path. The stat probe and the
+// decoding read resolve the declared interpretation from exactly these fields,
+// so a declaration is always validated from the header — before any plane is
+// read into memory.
+struct FrameHeader {
+    std::string path;
+    std::string formatName;
+    std::string declaredColorSpace;
+    std::vector<float> chromaticities;
+    std::string nativePrecision;
+    std::vector<std::string> channelNames;
+    int width{0};
+    int height{0};
+    double pixelAspect{1.0};
+    bool hasAlpha{false};
+};
 
 // Declared `chromaticities`, if the file declares them: 8 values
 // (rx,ry,gx,gy,bx,by,wx,wy). Absent attributes stay empty.
@@ -139,95 +88,6 @@ void requireFrameInRange(const SourceReference& reference, const std::int64_t fr
     return values;
 }
 
-struct Interpretation {
-    ImageTransfer transfer{ImageTransfer::Linear};
-    ImagePrimaries primaries{ImagePrimaries::Rec709};
-};
-
-// Resolve what the source's RGB samples mean. Precedence: the file's
-// declared color space wins, the EXR format default covers a file that
-// declares nothing, and the reference's interpretation map fills only the
-// fields still unspecified. Ambiguous or unsupported metadata is an error
-// naming the file — never guessed.
-[[nodiscard]] Interpretation resolveInterpretation(const std::string& path, const std::string& formatName,
-                                                   const std::string& declaredColorSpace,
-                                                   const std::vector<float>& chromaticities,
-                                                   const std::map<std::string, std::string>& overrides,
-                                                   const std::string& context) {
-    std::optional<ImageTransfer> transfer;
-    std::optional<ImagePrimaries> primaries;
-    if (!declaredColorSpace.empty()) {
-        const std::vector<std::string> tokens = splitTokens(declaredColorSpace);
-        transfer = transferFromDeclared(tokens.front(), declaredColorSpace, path, context);
-        if (tokens.size() < 2 || tokens[1].empty()) {
-            fail(path, "declared color space '" + declaredColorSpace + "' does not declare primaries" +
-                           note(context, "supported: rec709 (the working space is scene-linear Rec.709)"));
-        }
-        primaries = primariesFromDeclared(tokens[1], declaredColorSpace, path, context);
-    } else if (formatName == "openexr") {
-        // EXR declares scene-linear Rec.709 by format default. Any other
-        // declared chromaticities contradict the working space.
-        if (!chromaticities.empty()) {
-            if (chromaticities.size() != kRec709Chromaticities.size()) {
-                fail(path, "declared chromaticities are malformed" + note(context, "expected 8 values"));
-            }
-            for (std::size_t i = 0; i < kRec709Chromaticities.size(); ++i) {
-                if (std::abs(chromaticities[i] - kRec709Chromaticities[i]) > kChromaticityTolerance) {
-                    fail(path, "declared chromaticities are not Rec.709; the image source working space is "
-                               "scene-linear Rec.709" +
-                                   note(context, formatName + " file"));
-                }
-            }
-        }
-    } else {
-        fail(path, "no declared color space and no format default: the source transfer is ambiguous" +
-                       note(context, formatName + " file"));
-    }
-
-    for (const auto& [field, value] : overrides) {
-        if (field == "transfer") {
-            const ImageTransfer parsed = parseTransferOverride(value, path, context);
-            if (!transfer) {
-                transfer = parsed;
-            }
-        } else if (field == "primaries") {
-            const ImagePrimaries parsed = parsePrimariesOverride(value, path, context);
-            if (!primaries) {
-                primaries = parsed;
-            }
-        } else if (field == "matrix" || field == "range" || field == "chromaLocation") {
-            fail(path, "source interpretation field '" + field + "' is not applicable to an RGB image source" +
-                           note(context, "known fields: transfer, primaries"));
-        } else {
-            fail(path, "source interpretation has unknown field '" + field + "'" +
-                           note(context, "known fields: transfer, primaries"));
-        }
-    }
-
-    if (!transfer) {
-        transfer = ImageTransfer::Linear;
-    }
-    if (!primaries) {
-        primaries = ImagePrimaries::Rec709;
-    }
-    return Interpretation{*transfer, *primaries};
-}
-
-// Header-only facts about one resolved frame path. The stat probe and the
-// decoding read resolve the declared interpretation from exactly these
-// fields, so a declaration is always validated from the header — before
-// any plane is read into memory.
-struct FrameHeader {
-    std::string path;
-    std::string formatName;
-    std::string declaredColorSpace;
-    std::vector<float> chromaticities;
-    std::string nativePrecision;
-    int width{0};
-    int height{0};
-    double pixelAspect{1.0};
-};
-
 [[nodiscard]] FrameHeader readFrameHeader(const std::string& path) {
     auto input = OIIO::ImageInput::open(path);
     if (!input) {
@@ -240,6 +100,9 @@ struct FrameHeader {
     header.declaredColorSpace = spec.get_string_attribute("oiio:ColorSpace");
     header.chromaticities = declaredChromaticities(spec);
     header.nativePrecision = spec.format.c_str();
+    header.channelNames.assign(spec.channelnames.begin(), spec.channelnames.end());
+    header.hasAlpha = std::find(header.channelNames.begin(), header.channelNames.end(), std::string{"A"}) !=
+                      header.channelNames.end();
     header.width = spec.full_width > 0 ? spec.full_width : spec.width;
     header.height = spec.full_height > 0 ? spec.full_height : spec.height;
     header.pixelAspect = spec.get_float_attribute("pixelaspectratio", 1.0F);
@@ -248,22 +111,50 @@ struct FrameHeader {
     return header;
 }
 
-// Inverse of the declared transfer for one channel. Alpha is never
-// transferred; the CPU reference contract is scene-linear straight alpha.
-[[nodiscard]] float toLinear(const float value, const ImageTransfer transfer) {
-    switch (transfer) {
-    case ImageTransfer::Linear:
-        return value;
-    case ImageTransfer::Srgb:
-        return value < 0.04045F ? value / 12.92F : std::pow((value + 0.055F) / 1.055F, 2.4F);
-    case ImageTransfer::Gamma22:
-        return std::copysign(std::pow(std::abs(value), 2.2F), value);
-    case ImageTransfer::Gamma28:
-        return std::copysign(std::pow(std::abs(value), 2.8F), value);
-    case ImageTransfer::Bt709:
-        return value < 0.081F ? value / 4.5F : std::pow((value + 0.099F) / 1.099F, 1.0F / 0.45F);
+// The file's own declaration, in the input-color layer's vocabulary.
+[[nodiscard]] EncodedColorFacts headerFacts(const FrameHeader& header) {
+    EncodedColorFacts facts;
+    facts.declaredColorSpace = header.declaredColorSpace;
+    facts.chromaticities = header.chromaticities;
+    facts.formatName = header.formatName;
+    facts.associationKnown = header.hasAlpha;
+    facts.premultiplied =
+        declaredAlphaAssociation(header.formatName, header.hasAlpha) == AlphaAssociation::Premultiplied;
+    return facts;
+}
+
+// Runs `fn`, translating the color layer's diagnostics into this adapter's
+// path-naming exception (never masking the offending relationship).
+template <typename Function>
+auto translated(const std::string& path, Function&& fn) -> decltype(fn()) {
+    try {
+        return fn();
+    } catch (const ImageIoException&) {
+        throw;
+    } catch (const InputColorException& error) {
+        failColor(path, error.what());
+    } catch (const OcioException& error) {
+        failColor(path, error.what());
     }
-    return value;
+}
+
+[[nodiscard]] ImageFrameInfo frameInfo(const FrameHeader& header, const ResolvedInputColor& resolved) {
+    ImageFrameInfo info;
+    info.path = header.path;
+    info.formatName = header.formatName;
+    info.declaredColorSpace = header.declaredColorSpace;
+    info.nativePrecision = header.nativePrecision;
+    info.channelNames = header.channelNames;
+    info.width = header.width;
+    info.height = header.height;
+    info.pixelAspect = header.pixelAspect;
+    info.transfer = resolved.transfer;
+    info.primaries = resolved.primaries;
+    info.inputColor = resolved;
+    // Truthful labeling: Raw/Data samples are non-color data, never managed
+    // scene-linear; everything else is working-space scene-linear.
+    info.color = resolved.raw() ? ColorInterpretation::Data : ColorInterpretation::SceneLinear;
+    return info;
 }
 
 }  // namespace
@@ -284,6 +175,17 @@ bool isImagePath(const std::string& path) {
     return true;
 }
 
+ImageFrameInfo probeImageFrame(const InputColorCache& color, const InputColorChoice& choice, const std::string& path,
+                               const std::string& context) {
+    const FrameHeader header = readFrameHeader(path);
+    const EncodedColorFacts facts = headerFacts(header);
+    const ResolvedInputColor resolved =
+        translated(path, [&] { return color.resolve(choice, facts, header.path, context); });
+    ImageFrameInfo info = frameInfo(header, resolved);
+    info.sequence = hasPattern(path);
+    return info;
+}
+
 ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::string& context,
                                const std::int64_t localTime) {
     std::int64_t frame = 0;
@@ -293,88 +195,160 @@ ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::stri
         fail(reference.path, std::string("source time mapping failed: ") + error.what());
     }
     requireFrameInRange(reference, frame, context);
-    const std::string path = resolveFramePath(reference.path, frame);
-    const FrameHeader header = readFrameHeader(path);
-
-    ImageFrameInfo info;
-    info.path = header.path;
-    info.formatName = header.formatName;
-    info.declaredColorSpace = header.declaredColorSpace;
-    info.nativePrecision = header.nativePrecision;
-    info.width = header.width;
-    info.height = header.height;
-    info.pixelAspect = header.pixelAspect;
-    const Interpretation interpretation = resolveInterpretation(
-        path, header.formatName, header.declaredColorSpace, header.chromaticities, reference.interpretation, context);
-    info.transfer = interpretation.transfer;
-    info.primaries = interpretation.primaries;
+    // Source-scoped probe: the shared reference's own mapping and
+    // interpretation, with no project configuration engaged.
+    const InputColorCache color(SourceColorPolicy{});
+    InputColorChoice choice;
+    choice.hints = reference.interpretation;
+    ImageFrameInfo info = probeImageFrame(color, choice, resolveFramePath(reference.path, frame), context);
+    // The source-scoped probe reports the sequence it was asked about, not the
+    // expanded frame path.
     info.sequence = hasPattern(reference.path);
     return info;
 }
 
-ImageFrame readImageFrame(const SourceReference& reference, const std::int64_t frame, const std::string& context) {
-    requireFrameInRange(reference, frame, context);
-    const std::string path = resolveFramePath(reference.path, frame);
-    // Resolve the declared interpretation from a header-only probe before
-    // any plane is touched, matching the clip path's discipline: an
-    // ambiguous or unsupported declaration is rejected before the pixels
-    // are pulled into memory, not after.
-    const FrameHeader header = readFrameHeader(path);
-    const Interpretation interpretation = resolveInterpretation(
-        path, header.formatName, header.declaredColorSpace, header.chromaticities, reference.interpretation, context);
+ImageFrame readImageFrame(const InputColorCache& color, const InputColorChoice& choice, const std::string& path,
+                          const std::int64_t frame, const std::string& context) {
+    const std::string resolvedPath = resolveFramePath(path, frame);
+    // The declared interpretation is validated from the header before any
+    // plane is touched, matching the clip path's discipline: an ambiguous or
+    // unsupported declaration is rejected before the pixels are pulled into
+    // memory, not after.
+    const FrameHeader header = readFrameHeader(resolvedPath);
+    const EncodedColorFacts facts = headerFacts(header);
+    const ResolvedInputColor resolved =
+        translated(resolvedPath, [&] { return color.resolve(choice, facts, header.path, context); });
 
-    ImageReadResult read = readImage(path);
-
+    ImageReadResult read = readImage(resolvedPath);
     CpuImage image = std::move(read.image);
-    image.setColorInterpretation(ColorInterpretation::SceneLinear);
-    const bool premultiplied = read.alpha == AlphaAssociation::Premultiplied;
-    for (int y = 0; y < image.height(); ++y) {
-        for (int x = 0; x < image.width(); ++x) {
-            std::array<float, kImageChannels> pixel = image.pixel(x, y);
-            pixel[0] = toLinear(pixel[0], interpretation.transfer);
-            pixel[1] = toLinear(pixel[1], interpretation.transfer);
-            pixel[2] = toLinear(pixel[2], interpretation.transfer);
-            if (premultiplied && pixel[3] > 0.0F) {
-                pixel[0] /= pixel[3];
-                pixel[1] /= pixel[3];
-                pixel[2] /= pixel[3];
-            }
-            image.setPixel(x, y, pixel);
-        }
+    if (resolved.raw()) {
+        // Raw/Data: the samples are the encoded values exactly as stored, and
+        // their association is left alone.
+        image.setColorInterpretation(ColorInterpretation::Data);
+    } else {
+        // Encoded-domain unassociation, then the resolved transfer/gamut
+        // conversion, applied exactly once.
+        translated(resolvedPath, [&] {
+            color.apply(image, resolved);
+            return 0;
+        });
+        image.setColorInterpretation(ColorInterpretation::SceneLinear);
     }
 
     ImageFrame result;
-    result.info.path = path;
+    result.info = frameInfo(header, resolved);
+    result.info.path = resolvedPath;
     result.info.formatName = read.formatName;
     result.info.declaredColorSpace = read.declaredColorSpace;
     result.info.nativePrecision = read.nativePrecision;
     result.info.width = image.width();
     result.info.height = image.height();
     result.info.pixelAspect = image.layout().pixelAspect;
-    result.info.transfer = interpretation.transfer;
-    result.info.primaries = interpretation.primaries;
-    result.info.sequence = hasPattern(reference.path);
+    result.info.sequence = hasPattern(path);
     result.image = std::move(image);
     return result;
 }
 
-CpuImage ImageSourceProvider::frame(const Document& document, const SourceReference& source,
-                                    const std::int64_t mappedFrame, const EvaluationRequest& request) {
-    if (document.color.workingSpace != "linear") {
-        fail(source.path, "working space '" + document.color.workingSpace +
-                              "' is outside the image source's explicit supported subset; only the declared "
-                              "default 'linear' (scene-linear Rec.709) is supported for source interpretation");
+ImageFrame readImageFrame(const SourceReference& reference, const std::int64_t frame, const std::string& context) {
+    requireFrameInRange(reference, frame, context);
+    // Source-scoped read: the shared reference's own interpretation with no
+    // project configuration, so existing non-Read consumers keep their exact
+    // behavior.
+    const InputColorCache color(SourceColorPolicy{});
+    InputColorChoice choice;
+    choice.hints = reference.interpretation;
+    return readImageFrame(color, choice, reference.path, frame, context);
+}
+
+ImageSourceProvider::ImageSourceProvider(std::string configPath) : configPath_(std::move(configPath)) {}
+
+std::shared_ptr<const OcioConfigSnapshot> ImageSourceProvider::snapshotLocked() const {
+    if (!snapshot_) {
+        try {
+            // The effective configuration: the authored reference, or the OCIO
+            // application default when the project declares none.
+            snapshot_ = std::make_shared<const OcioConfigSnapshot>(configPath_);
+        } catch (const OcioException&) {
+            // No usable configuration: the legacy metadata-only policy. A
+            // config-backed working space fails explicitly at resolve time.
+            return nullptr;
+        }
     }
-    // No pre-classification here: readImageFrame reports the reader's own
-    // reason naming the path (unreadable data, unsupported layout,
-    // ambiguous or unsupported interpretation). A reference that is a video
-    // clip simply cannot be read as image data, which is the honest
-    // diagnostic for a provider that decodes stills/sequences only.
-    const std::string context = "source '" + source.path + "'";
-    const ImageFrame decoded = readImageFrame(source, mappedFrame, context);
+    return snapshot_;
+}
+
+void ImageSourceProvider::refreshColorConfig() const {
+    const std::lock_guard lock(colorMutex_);
+    // Owner-side generation replacement: the next read loads the configuration
+    // content afresh and rebuilds every working-space cache. A read already
+    // running holds its own shared owner on the previous generation until it
+    // finishes, and the last identity string is left in place rather than
+    // cleared underneath a caller.
+    snapshot_.reset();
+    colors_.clear();
+    identityResolved_ = false;
+}
+
+std::string ImageSourceProvider::colorConfigIdentity() const {
+    std::lock_guard lock(colorMutex_);
+    if (!identityResolved_) {
+        identityResolved_ = true;
+        const std::shared_ptr<const OcioConfigSnapshot> snapshot = snapshotLocked();
+        identity_ = snapshot ? snapshot->identity() : std::string{};
+    }
+    return identity_;
+}
+
+std::shared_ptr<const InputColorCache> ImageSourceProvider::colorFor(const std::string& workingSpace) const {
+    std::lock_guard lock(colorMutex_);
+    const auto found = colors_.find(workingSpace);
+    if (found != colors_.end()) {
+        return found->second;
+    }
+    // Same snapshot as the identity: new config bytes can never produce pixels
+    // under an old identity.
+    auto created =
+        std::make_shared<const InputColorCache>(SourceColorPolicy{configPath_, workingSpace}, snapshotLocked());
+    colors_.emplace(workingSpace, created);
+    return created;
+}
+
+CpuImage ImageSourceProvider::frame(const Document& document, const EffectiveSourceRequest& source,
+                                    const EvaluationRequest& request) {
     const int scale = request.samplingScale;
     const int width = scaledDimension(request.region.width, scale);
     const int height = scaledDimension(request.region.height, scale);
+    const std::string context = "source '" + source.sourceKey + "'";
+
+    // A resolved policy decision is never re-decided here: a policy error is
+    // raised and a Black policy produces real transparent black in the requested
+    // raster (never a substituted frame).
+    if (source.policyError) {
+        fail(source.path, "the source request resolves to an error policy; the evaluator must report it before any "
+                          "frame is opened");
+    }
+    if (source.transparentBlack) {
+        ImageLayout layout;
+        layout.width = width;
+        layout.height = height;
+        // The buffer default is zero everywhere: transparent black, alpha 0.
+        return CpuImage(layout);
+    }
+
+    const std::shared_ptr<const InputColorCache> color = colorFor(document.color.workingSpace);
+    InputColorChoice choice;
+    choice.mode = source.inputTransform;
+    choice.inputColorSpace = source.inputColorSpace;
+    choice.alpha = source.alpha;
+    choice.hints = source.interpretation;
+    choice.nodeHintKeys = source.nodeInterpretationKeys;
+
+    // No pre-classification here: the reader reports its own reason naming the
+    // path (unreadable data, unsupported layout, ambiguous or unsupported
+    // interpretation). A reference that is a video clip simply cannot be read
+    // as image data, which is the honest diagnostic for a provider that decodes
+    // stills/sequences only.
+    const ImageFrame decoded = readImageFrame(*color, choice, source.path, source.readFrame, context);
     const int sourceWidth = decoded.image.width();
     const int sourceHeight = decoded.image.height();
     if (sourceWidth <= 0 || sourceHeight <= 0) {
@@ -385,6 +359,7 @@ CpuImage ImageSourceProvider::frame(const Document& document, const SourceRefere
     layout.width = width;
     layout.height = height;
     layout.pixelAspect = decoded.info.pixelAspect;
+    layout.color = decoded.info.color;
     CpuImage out(layout);
 
     // Source-fill contract, identical to src/nemo/gpu/shaders/source.slang:

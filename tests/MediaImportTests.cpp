@@ -18,6 +18,7 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -555,4 +556,338 @@ TEST(MediaImport, ServiceBoundsOutstandingAndReleasesOnCollect) {
     const auto second = waitForResult(service, std::chrono::seconds(30));
     ASSERT_TRUE(second.has_value());
     EXPECT_EQ(second->request.requestId, 302u);
+}
+
+// ---------------------------------------------------------------------------
+// Numbered-sequence discovery (issue #80)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A private directory per discovery test, so neighbouring tests' fixtures do
+// not become sequence members.
+std::filesystem::path discoveryDir(const std::string& name) {
+    const auto dir = std::filesystem::temp_directory_path() / ("nemo-discovery-" + name);
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    return dir;
+}
+
+}  // namespace
+
+// A numbered selection discovers real coverage: first/last from the available
+// members, the file count, and compact holes — never a presumed frame zero.
+TEST(SequenceDiscovery, FindsFirstLastAndHoles) {
+    const auto dir = discoveryDir("holes");
+    const auto pattern = dir / "shot.####.exr";
+    writeSequenceFrame(pattern, 1001);
+    writeSequenceFrame(pattern, 1002);
+    writeSequenceFrame(pattern, 1004);
+
+    // Selected from a concrete member: the last numbered run is the frame, the
+    // pattern is canonicalized, and coverage comes from the directory.
+    const SequenceDiscovery fromFile = discoverSequenceRange((dir / "shot.1002.exr").string());
+    ASSERT_EQ(fromFile.status, SequenceDiscoveryStatus::Sequence);
+    EXPECT_EQ(fromFile.pattern, pattern.string());
+    EXPECT_EQ(fromFile.first, 1001);
+    EXPECT_EQ(fromFile.last, 1004);
+    EXPECT_EQ(fromFile.availableCount, 3);
+    EXPECT_EQ(fromFile.missingCount, 1);
+    ASSERT_EQ(fromFile.holes.size(), 1u);
+    EXPECT_EQ(fromFile.holes.front(), (SequenceFrameRange{1003, 1003}));
+
+    // The explicit pattern form denotes the same coverage.
+    const SequenceDiscovery fromPattern = discoverSequenceRange(pattern.string());
+    ASSERT_EQ(fromPattern.status, SequenceDiscoveryStatus::Sequence);
+    EXPECT_EQ(fromPattern.first, 1001);
+    EXPECT_EQ(fromPattern.last, 1004);
+    EXPECT_EQ(fromPattern.missingCount, 1);
+}
+
+// A version token can be WIDER than the frame run ("plate_v00012.1001.exr").
+// Which run is the frame is decided by matching-member evidence — the run that
+// has sibling members is the numbering — never by run width.
+TEST(SequenceDiscovery, LongerVersionRunIsNotMistakenForTheFrame) {
+    const auto dir = discoveryDir("versioned");
+    const auto pattern = dir / "plate_v00012.####.exr";
+    writeSequenceFrame(pattern, 1001);
+    writeSequenceFrame(pattern, 1002);
+
+    const SequenceDiscovery discovery = discoverSequenceRange((dir / "plate_v00012.1001.exr").string());
+    ASSERT_EQ(discovery.status, SequenceDiscoveryStatus::Sequence);
+    EXPECT_EQ(discovery.pattern, pattern.string());
+    EXPECT_EQ(discovery.first, 1001);
+    EXPECT_EQ(discovery.last, 1002);
+    EXPECT_EQ(discovery.availableCount, 2);
+    EXPECT_EQ(discovery.missingCount, 0);
+}
+
+// Two numbered runs that BOTH select real members is an ambiguity: guessing
+// would silently reinterpret one of them, so no facts are claimed and an
+// explicit '#'/'@' pattern is requested instead.
+TEST(SequenceDiscovery, AmbiguousNumberingRequestsAnExplicitPattern) {
+    const auto dir = discoveryDir("ambiguous");
+    // a.1.1, a.2.1 and a.1.2: the FIRST numbered run selects a column
+    // (a.1.1 + a.2.1) and the SECOND selects a row (a.1.1 + a.1.2), so both
+    // runs have real sibling members and neither is a version token.
+    writeSequenceFrame(dir / "a.#.1.exr", 1);
+    writeSequenceFrame(dir / "a.#.1.exr", 2);
+    writeSequenceFrame(dir / "a.1.#.exr", 2);
+
+    const std::string selection = (dir / "a.1.1.exr").string();
+    const SequenceDiscovery discovery = discoverSequenceRange(selection);
+    ASSERT_EQ(discovery.status, SequenceDiscoveryStatus::Ambiguous);
+    // The diagnostic identifies the offending selection, and NO facts are
+    // claimed for an ambiguous numbering.
+    EXPECT_NE(discovery.detail.find(selection), std::string::npos) << discovery.detail;
+    EXPECT_FALSE(discovery.detail.empty());
+    EXPECT_EQ(discovery.availableCount, 0);
+    EXPECT_EQ(discovery.first, 0);
+    EXPECT_EQ(discovery.last, 0);
+    EXPECT_TRUE(discovery.holes.empty());
+    EXPECT_EQ(discovery.pattern, selection);
+}
+
+// Not every digit in a basename is a sequence: a version-like token is not the
+// frame, a still with no numbered run stays a still, and a numbered name that
+// matches exactly one file is NOT silently reinterpreted as a sequence.
+TEST(SequenceDiscovery, NumberedRunSelectionIsHonest) {
+    const auto dir = discoveryDir("honest");
+    const auto pattern = dir / "plate_v2.####.exr";
+    writeSequenceFrame(pattern, 3);
+    writeSequenceFrame(pattern, 4);
+    const SequenceDiscovery versioned = discoverSequenceRange((dir / "plate_v2.3.exr").string());
+    ASSERT_EQ(versioned.status, SequenceDiscoveryStatus::Sequence);
+    EXPECT_EQ(versioned.first, 3);
+    EXPECT_EQ(versioned.last, 4);
+
+    const auto still = dir / "plate.exr";
+    {
+        CpuImage image(2, 2);
+        writeImage(still.string(), image, OutputPrecision::Half);
+    }
+    const SequenceDiscovery plain = discoverSequenceRange(still.string());
+    EXPECT_EQ(plain.status, SequenceDiscoveryStatus::Still);
+    EXPECT_EQ(plain.pattern, still.string());
+
+    const auto one = dir / "solo.####.exr";
+    writeSequenceFrame(one, 1001);
+    const SequenceDiscovery single = discoverSequenceRange((dir / "solo.1001.exr").string());
+    EXPECT_EQ(single.status, SequenceDiscoveryStatus::Still);
+}
+
+// Discovery is bounded and cancellable; reaching either limit is an explicit
+// failure, never a partial claim.
+TEST(SequenceDiscovery, CancelsAndBoundsExplicitly) {
+    const auto dir = discoveryDir("bounds");
+    const auto pattern = dir / "shot.####.exr";
+    writeSequenceFrame(pattern, 1);
+    writeSequenceFrame(pattern, 2);
+    writeSequenceFrame(pattern, 3);
+
+    std::atomic<bool> cancelled{true};
+    const SequenceDiscovery stopped = discoverSequenceRange(pattern.string(), &cancelled);
+    EXPECT_EQ(stopped.status, SequenceDiscoveryStatus::Failed);
+    EXPECT_FALSE(stopped.detail.empty());
+    // A cancelled scan claims NO partial facts.
+    EXPECT_EQ(stopped.availableCount, 0);
+    EXPECT_EQ(stopped.first, 0);
+    EXPECT_TRUE(stopped.holes.empty());
+
+    SequenceDiscoveryLimits limits;
+    limits.maxDirectoryEntries = 1;
+    const SequenceDiscovery bounded = discoverSequenceRange(pattern.string(), nullptr, limits);
+    EXPECT_EQ(bounded.status, SequenceDiscoveryStatus::Failed);
+    EXPECT_FALSE(bounded.detail.empty());
+    EXPECT_EQ(bounded.availableCount, 0);
+
+    // A directory it cannot read is reported against that directory.
+    const std::string absent = (discoveryDir("absent") / "sub" / "shot.####.exr").string();
+    const SequenceDiscovery unreadable = discoverSequenceRange(absent);
+    EXPECT_EQ(unreadable.status, SequenceDiscoveryStatus::Failed);
+    EXPECT_EQ(unreadable.availableCount, 0);
+
+    // An explicit pattern with no matching file fails and identifies the
+    // offending pattern (the authored path), claiming no facts.
+    const auto empty = discoveryDir("empty");
+    const std::string gone = (empty / "gone.####.exr").string();
+    const SequenceDiscovery missing = discoverSequenceRange(gone);
+    EXPECT_EQ(missing.status, SequenceDiscoveryStatus::Failed);
+    EXPECT_NE(missing.detail.find(gone), std::string::npos) << missing.detail;
+    EXPECT_EQ(missing.availableCount, 0);
+    EXPECT_EQ(missing.first, 0);
+    EXPECT_TRUE(missing.holes.empty());
+}
+
+// A fresh selection is probed through an available member: a sequence
+// beginning at 1001 loads without authoring a nonexistent zero frame, and the
+// discovered facts (first/last, count, holes) travel with the probe.
+TEST(MediaImport, FreshSequenceSelectionAlignsToAnAvailableMember) {
+    const auto dir = discoveryDir("align");
+    const auto pattern = dir / "align.####.exr";
+    writeSequenceFrame(pattern, 1001, 4, 2);
+    writeSequenceFrame(pattern, 1002, 6, 3);
+    writeSequenceFrame(pattern, 1004, 8, 4);
+
+    MediaImportRequest request = makeRequest("seq", resolveFramePath(pattern.string(), 1001), 401, 0, 0);
+    request.alignment = ProbeAlignment::DiscoverAvailable;
+    const MediaImportResult result = inspectMediaSource(request);
+
+    EXPECT_TRUE(result.error.empty()) << result.error;
+    EXPECT_FALSE(result.offline);
+    EXPECT_EQ(result.kind, MediaKind::Sequence);
+    EXPECT_EQ(result.probedFrame, 1001);  // a discovered member, never frame 0
+    EXPECT_EQ(result.probe.firstFrame, std::optional<std::int64_t>{1001});
+    EXPECT_EQ(result.probe.lastFrame, std::optional<std::int64_t>{1004});
+    EXPECT_EQ(result.probe.coverageQuality, CoverageQuality::Validated);
+    EXPECT_EQ(result.probe.availableFrameCount, std::optional<std::int64_t>{3});
+    EXPECT_EQ(result.probe.missingFrameCount, std::optional<std::int64_t>{1});
+    ASSERT_EQ(result.probe.missingRanges.size(), 1u);
+    EXPECT_EQ(result.probe.missingRanges.front(), (MediaFrameRange{1003, 1003}));
+    // The probed member's own header, not the missing frame 0's.
+    EXPECT_EQ(result.probe.width, 4);
+    EXPECT_EQ(result.probe.height, 2);
+
+    // Established semantics are preserved: a reference whose own mapping
+    // resolves to a frame that is not there reports THAT frame as offline. It
+    // never realigns to a discovered member, so the distinction between a fresh
+    // selection (DiscoverAvailable) and an established request is explicit.
+    MediaImportRequest established = makeRequest("seq", pattern.string(), 402, 0, 0);
+    const MediaImportResult missing = inspectMediaSource(established);
+    EXPECT_TRUE(missing.offline);
+    EXPECT_NE(missing.error.find(resolveFramePath(pattern.string(), 0)), std::string::npos) << missing.error;
+
+    // The same reference WITH DiscoverAvailable (the fresh-selection shape)
+    // probes a discovered member instead — the two modes are not interchangeable.
+    MediaImportRequest fresh = makeRequest("seq", pattern.string(), 403, 0, 0);
+    fresh.alignment = ProbeAlignment::DiscoverAvailable;
+    const MediaImportResult aligned = inspectMediaSource(fresh);
+    EXPECT_TRUE(aligned.error.empty()) << aligned.error;
+    EXPECT_EQ(aligned.probedFrame, 1001);
+}
+
+// An ambiguous numbering claims no sequence facts: the probe still inspects the
+// selected file (it is real image data) but reports no discovered range, so
+// nothing interprets a version run as a frame on the artist's behalf.
+TEST(MediaImport, AmbiguousNumberingClaimsNoSequenceFacts) {
+    const auto dir = discoveryDir("ambiguous-import");
+    writeSequenceFrame(dir / "a.#.1.exr", 1);
+    writeSequenceFrame(dir / "a.#.1.exr", 2);
+    writeSequenceFrame(dir / "a.1.#.exr", 2);
+
+    MediaImportRequest request = makeRequest("ambiguous", (dir / "a.1.1.exr").string(), 421, 0, 0);
+    request.alignment = ProbeAlignment::DiscoverAvailable;
+    const MediaImportResult result = inspectMediaSource(request);
+
+    EXPECT_TRUE(result.error.empty()) << result.error;
+    EXPECT_EQ(result.discovery.status, SequenceDiscoveryStatus::Ambiguous);
+    // NO SEQUENCE FACTS are claimed: no interval and no holes, so nothing
+    // invents a numbering on the artist's behalf. The probe still classifies the
+    // selection as the single image it actually inspected, whose ONE-image
+    // availability IS an authoritative fact (Validated) and is deliberately not
+    // a sequence range — an unknown SEQUENCE coverage is expressed by the absent
+    // interval/count span, not by downgrading the still's own fact.
+    EXPECT_FALSE(result.probe.firstFrame.has_value());
+    EXPECT_FALSE(result.probe.lastFrame.has_value());
+    EXPECT_TRUE(result.probe.missingRanges.empty());
+    EXPECT_FALSE(result.probe.missingFrameCount.value_or(0) > 0);
+    EXPECT_EQ(result.kind, MediaKind::Image);
+    EXPECT_EQ(result.probe.duration, 1);
+    EXPECT_EQ(result.probe.availableFrameCount, std::optional<std::int64_t>{1});
+}
+
+// A still is one image with time-independent availability, even when its file
+// name is numbered: binding it declares one frame and NO interval, so every
+// local time resolves the one image instead of a one-frame composition.
+TEST(MediaImport, StillIsOneImageEvenWhenItsNameIsNumbered) {
+    const auto dir = discoveryDir("still");
+    const auto path = dir / "plate.1001.exr";
+    writeSequenceFrame(path, 1001, 8, 4);
+
+    MediaImportRequest request = makeRequest("still", path.string(), 411, 0, 0);
+    request.alignment = ProbeAlignment::DiscoverAvailable;
+    const MediaImportResult result = inspectMediaSource(request);
+
+    EXPECT_TRUE(result.error.empty()) << result.error;
+    EXPECT_EQ(result.kind, MediaKind::Image);
+    EXPECT_EQ(result.probe.duration, 1);
+    EXPECT_FALSE(result.probe.firstFrame.has_value());
+    EXPECT_FALSE(result.probe.lastFrame.has_value());
+    EXPECT_EQ(result.probe.availableFrameCount, std::optional<std::int64_t>{1});
+    EXPECT_EQ(result.probe.missingFrameCount, std::optional<std::int64_t>{0});
+    EXPECT_TRUE(result.probe.missingRanges.empty());
+    EXPECT_EQ(result.probe.coverageQuality, CoverageQuality::Validated);
+
+    // A plain still (no numbered run) is the same shape.
+    const auto plain = dir / "plain.exr";
+    writeSequenceFrame(dir / "plain.####.exr", 0);
+    std::filesystem::rename(resolveFramePath((dir / "plain.####.exr").string(), 0), plain);
+    const MediaImportResult plainResult = inspectMediaSource(makeRequest("plain", plain.string(), 412, 0, 0));
+    EXPECT_TRUE(plainResult.error.empty()) << plainResult.error;
+    EXPECT_EQ(plainResult.kind, MediaKind::Image);
+    EXPECT_FALSE(plainResult.probe.firstFrame.has_value());
+    EXPECT_FALSE(plainResult.probe.lastFrame.has_value());
+}
+
+// A movie's coverage quality traces to the reader's declared-frame-count
+// provenance: a bounded range is only ever reported as Validated, and a
+// container that declares nothing yields no bounds (never a nominal-rate
+// guess). The rate itself is the container's rational, not an average.
+TEST(MediaImport, ClipCoverageTracesToDeclaredCountProvenance) {
+    const ClipFixture clip("coverage", AVCOL_TRC_BT709);
+    const MediaImportResult result = inspectMediaSource(makeRequest("clip", clip.path.string(), 501, 0, 0));
+
+    EXPECT_TRUE(result.error.empty()) << result.error;
+    ASSERT_EQ(result.probe.status, MediaProbeStatus::Ready);
+    EXPECT_EQ(result.probe.rateNumerator, std::optional<std::uint32_t>{24});
+    EXPECT_EQ(result.probe.rateDenominator, std::optional<std::uint32_t>{1});
+    if (result.probe.firstFrame.has_value() || result.probe.lastFrame.has_value()) {
+        EXPECT_EQ(result.probe.coverageQuality, CoverageQuality::Validated);
+        ASSERT_TRUE(result.probe.firstFrame.has_value());
+        ASSERT_TRUE(result.probe.lastFrame.has_value());
+        ASSERT_TRUE(result.probe.availableFrameCount.has_value());
+        EXPECT_EQ(*result.probe.firstFrame, 0);
+        EXPECT_EQ(*result.probe.lastFrame, *result.probe.availableFrameCount - 1);
+    } else {
+        EXPECT_NE(result.probe.coverageQuality, CoverageQuality::Validated);
+        EXPECT_FALSE(result.probe.firstFrame.has_value());
+        EXPECT_FALSE(result.probe.lastFrame.has_value());
+    }
+}
+
+// Re-probing a source picks up overwritten media and appended sequence frames:
+// the same mapping resolves the same frame, whose real header/facts changed,
+// and the discovered range grew.
+TEST(MediaImport, ReprobePicksUpOverwrittenAndAppendedSequenceFrames) {
+    const auto dir = discoveryDir("reload");
+    const auto pattern = dir / "seq.####.exr";
+    writeSequenceFrame(pattern, 1001, 4, 2);
+    writeSequenceFrame(pattern, 1002, 6, 3);
+
+    SourceReference reference;
+    reference.path = pattern.string();
+    reference.frameOffset = 1001;
+    reference.frameStep = 1;
+
+    MediaImportRequest before = makeRequest("seq", pattern.string(), 601, 0, 0);
+    before.reference = reference;
+    const MediaImportResult first = inspectMediaSource(before);
+    ASSERT_TRUE(first.error.empty()) << first.error;
+    EXPECT_EQ(first.probedFrame, 1001);
+    EXPECT_EQ(first.probe.width, 4);
+    EXPECT_EQ(first.probe.lastFrame, std::optional<std::int64_t>{1002});
+
+    // Overwrite the mapped frame and append a new member.
+    writeSequenceFrame(pattern, 1001, 10, 5);
+    writeSequenceFrame(pattern, 1003, 10, 5);
+
+    MediaImportRequest after = makeRequest("seq", pattern.string(), 602, 0, 0);
+    after.reference = reference;
+    const MediaImportResult second = inspectMediaSource(after);
+    ASSERT_TRUE(second.error.empty()) << second.error;
+    EXPECT_EQ(second.probedFrame, 1001);  // the mapping did not shift
+    EXPECT_EQ(second.probe.width, 10);    // the overwritten pixels' real header
+    EXPECT_EQ(second.probe.height, 5);
+    EXPECT_EQ(second.probe.lastFrame, std::optional<std::int64_t>{1003});
+    EXPECT_EQ(second.probe.availableFrameCount, std::optional<std::int64_t>{3});
 }

@@ -58,8 +58,18 @@ struct ResultKey {
 // Executor-supplied implementation identity mixed into every key: the GPU
 // path fingerprints its effect library so Slang and GLSL front ends (or any
 // change to either) never share cache entries; the CPU reference uses 0.
+//
+// `colorConfigIdentity` is the opaque identity of the color conversion
+// configuration actually in effect (issue #75): the OCIO config/context cache
+// ID plus the descriptor of the resolved transform, computed by the media
+// module that owns the config. It is empty when no configuration is in effect
+// (the legacy fixed interpretation), which is a defined value rather than a
+// fallback: a result produced under an unknown configuration is never shared
+// with one produced under a known configuration, and editing a config in place
+// cannot alias a previously cached result.
 struct KeyContext {
     std::uint64_t implementationTag{0};
+    std::string colorConfigIdentity;
 };
 
 // Input-key contribution for a declared-but-absent optional input slot. It is

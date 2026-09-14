@@ -48,6 +48,12 @@ public:
     // group-scoped request to open a node's parameter inspector. No Document
     // access and no media lookup.
     Q_INVOKABLE bool requestInspector(const QString& group, const QString& network, const QString& nodeId);
+    // Presentation-only reveal relay: asks the group's Animation panel to pin
+    // and frame a whole typed parameter. An empty `parameter` reveals the
+    // parameter's channel set without naming a component. No Document access
+    // and no media lookup; a group with no Animation panel simply does nothing.
+    Q_INVOKABLE bool requestAnimationReveal(const QString& group, const QString& network, const QString& nodeId,
+                                            const QString& parameter = {});
 
     [[nodiscard]] QString activePanel() const { return activePanel_; }
 
@@ -69,6 +75,8 @@ signals:
     void groupContextChanged(const QString& group);
     void activePanelChanged(const QString& panelId);
     void inspectorRequested(const QString& group, const QString& network, const QString& nodeId);
+    void animationRevealRequested(const QString& group, const QString& network, const QString& nodeId,
+                                  const QString& parameter);
 
 private:
     struct GroupContext {

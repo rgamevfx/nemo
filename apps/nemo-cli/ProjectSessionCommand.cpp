@@ -239,6 +239,13 @@ template <typename T>
             networkIdAt(command), interfaceIdAt(command, "input_id"),
             {nodeIdAt(command, "node_id"), unsignedValue<std::uint32_t>(command, "port")});
     }
+    if (op == "swap-inputs") {
+        // Issue #75 Merge "Swap A/B": one atomic command, one undo entry.
+        // Rejected meaningless/invalid swaps fail before any connection change.
+        return nemo::swapInputsCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
+                                       unsignedValue<std::uint32_t>(command, "first_port"),
+                                       unsignedValue<std::uint32_t>(command, "second_port"));
+    }
     if (op == "replace-output") {
         return nemo::replaceOutputConnectionCommand(
             networkIdAt(command), interfaceIdAt(command, "output_id"),

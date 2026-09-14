@@ -1,11 +1,13 @@
 #include "nemo/core/commands/ReadSourceCommands.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <limits>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace nemo {
 namespace {
@@ -15,8 +17,8 @@ void reject(GraphError code, const std::string& message) {
 }
 
 [[nodiscard]] bool probeCommittable(const MediaProbeMetadata& probe) {
-    if (probe.width < 0 || probe.height < 0 || probe.duration < 0)
-        reject(GraphError::InvalidMediaQuery, "probe dimensions and duration must be nonnegative");
+    if (const auto problem = probeFactProblem(probe))
+        reject(GraphError::InvalidMediaQuery, "probe is not admissible: " + *problem);
     return !probe.provenance.empty();
 }
 
@@ -52,13 +54,14 @@ void reject(GraphError code, const std::string& message) {
     return key;
 }
 
-// Reuse is by normalized path + interpretation, which is exactly the pair that
-// names one media reference; authored timing belongs to that shared reference.
+// One media reference per normalized path: that reference is what the Media Bin
+// and every non-Read consumer address, so a second Read of the same file joins
+// it instead of duplicating the media identity. A Read's own interpretation
+// choices live on the node, so they never take part in this match.
 [[nodiscard]] const SourceReference* findReusableReference(const Document& document, const std::string& normalized,
-                                                           const std::map<std::string, std::string>& interpretation,
                                                            std::string& key) {
     for (const auto& [candidateKey, reference] : document.sources) {
-        if (reference.interpretation == interpretation && normalizedSourcePath(reference.path) == normalized) {
+        if (normalizedSourcePath(reference.path) == normalized) {
             key = candidateKey;
             return &reference;
         }
@@ -84,7 +87,7 @@ void requireExpected(const SourceReference& current, const SourceReference& expe
 
 // Commits the (already validated) probe on every catalog entry that names the
 // source key, so a shared reference never shows stale metadata.
-void commitProbe(Document& document, const std::string& key, const MediaProbeMetadata& probe) {
+void commitProbe(Document& document, const std::string& key, MediaKind kind, const MediaProbeMetadata& probe) {
     if (probe.provenance.empty())
         return;
     for (const auto& entry : document.mediaCatalog().entries()) {
@@ -92,15 +95,16 @@ void commitProbe(Document& document, const std::string& key, const MediaProbeMet
             continue;
         MediaMetadata metadata = entry.metadata;
         metadata.committedProbe = probe;
+        if (kind != MediaKind::Unknown)
+            metadata.kind = kind;
         document.mediaCatalog().setMetadata(entry.id, std::move(metadata));
     }
 }
 
-void requireValidTiming(const ReadSourceTiming& timing, const std::string& what) {
-    if (timing.frameStep == 0)
-        throw std::invalid_argument("read source command: " + what + " frameStep must not be zero");
-    if (timing.firstFrame && timing.lastFrame && *timing.firstFrame > *timing.lastFrame)
-        throw std::invalid_argument("read source command: " + what + " firstFrame must not exceed lastFrame");
+[[nodiscard]] std::string overrideProblemMessage(const ReadNodeOverrides& overrides, std::string_view what) {
+    if (const auto problem = readOverridesProblem(overrides))
+        return std::string(what) + ": " + *problem;
+    return {};
 }
 
 }  // namespace
@@ -113,52 +117,118 @@ std::string normalizedSourcePath(std::string_view path) {
     return std::filesystem::path(path).lexically_normal().generic_string();
 }
 
-Command registerReadSourceCommand(NetworkId network, NodeId node, std::string path, ReadSourceTiming timing,
+Command registerReadSourceCommand(ParameterAddress target, double time, std::string path,
+                                  std::optional<ReadNodeOverrides> initializeOverrides, MediaKind kind,
                                   MediaProbeMetadata probe, std::shared_ptr<std::string> assignedKey) {
     if (path.empty())
         throw std::invalid_argument("register read source: media path must not be empty");
-    requireValidTiming(timing, "media path");
+    if (target.key != kReadParamSourceKey)
+        throw std::invalid_argument("register read source: target parameter must be '" +
+                                    std::string(kReadParamSourceKey) + "', got '" + target.key + "'");
+    if (!std::isfinite(time))
+        throw std::invalid_argument("register read source: gesture frame must be finite");
+    if (initializeOverrides) {
+        if (const std::string problem = overrideProblemMessage(*initializeOverrides, "register read source");
+            !problem.empty())
+            throw std::invalid_argument(problem);
+    }
     const bool wantsProbe = probeCommittable(probe);
     return Command{
-        "read media '" + path + "'", [network, node, path = std::move(path), timing = std::move(timing),
-                                      probe = std::move(probe), wantsProbe, assignedKey](Document& document) {
-            const NodeInstance* target = document.network(network).graph().node(node);
-            if (target == nullptr)
-                reject(GraphError::UnknownNode, "unknown Read node " + std::to_string(node));
-            if (target->type != "source")
-                reject(GraphError::ParameterValue,
-                       "node '" + target->name + "' is not a Read node (" + target->type + ")");
+        "read media '" + path + "'",
+        [target, time, path = std::move(path), initializeOverrides = std::move(initializeOverrides), kind,
+         probe = std::move(probe), wantsProbe, assignedKey](Document& document) -> void {
+            auto& graph = document.network(target.network).graph();
+            const NodeInstance* node = graph.node(target.node);
+            if (node == nullptr)
+                reject(GraphError::UnknownNode, "unknown Read node " + std::to_string(target.node) + " in network " +
+                                                    std::to_string(target.network));
+            if (node->type != "source")
+                reject(GraphError::ParameterValue, "node '" + node->name + "' is not a Read node (" + node->type + ")");
+            if (target.instance != kInvalidNetworkInstance) {
+                const NetworkInstance* occurrence = document.instance(target.instance);
+                if (occurrence == nullptr)
+                    reject(GraphError::InvalidNetwork,
+                           "unknown network instance " + std::to_string(target.instance) + " for this Read binding");
+                if (occurrence->definition != target.network)
+                    reject(GraphError::InvalidNetwork,
+                           "network instance " + std::to_string(target.instance) + " does not instantiate network " +
+                               std::to_string(target.network) + ", so it cannot address node " +
+                               std::to_string(target.node));
+            }
+            if (initializeOverrides) {
+                // Authored choices describe the Read definition. Initializing them
+                // through an occurrence would rewrite every other occurrence, and
+                // re-initializing a bound Read would silently discard the choices
+                // already authored on it.
+                if (target.instance != kInvalidNetworkInstance)
+                    reject(GraphError::ParameterValue,
+                           "authored Read choices can be initialized only on the first binding of the definition "
+                           "node, not through occurrence " +
+                               std::to_string(target.instance));
+                // First binding is an admission edge, not a string test: a
+                // cleared Read authors an empty source, and an animated source
+                // address holds its value in a channel, so both are already bound.
+                const bool authorsSource = node->params.find(std::string(kReadParamSourceKey)) != node->params.end();
+                const bool animatesSource =
+                    document.animationChannel(ParameterAddress{target.network, target.node, "source"}) != nullptr;
+                if (authorsSource || animatesSource)
+                    reject(GraphError::ParameterValue,
+                           "node '" + node->name +
+                               "' already binds or animates its media source; replace it without re-initializing "
+                               "authored choices");
+            }
 
             const std::string normalized = normalizedSourcePath(path);
             std::string key;
-            const SourceReference* reused = findReusableReference(document, normalized, timing.interpretation, key);
+            const SourceReference* reused = findReusableReference(document, normalized, key);
             if (reused == nullptr) {
                 key = uniqueSourceKey(document, path);
+                // The shared reference carries media identity only (path and
+                // content revision): mapping, policies and interpretation are the
+                // Read's own choices now, so a new Read authors nothing shared.
                 SourceReference reference;
                 reference.path = path;
-                reference.frameOffset = timing.frameOffset;
-                reference.frameStep = timing.frameStep;
-                reference.firstFrame = timing.firstFrame;
-                reference.lastFrame = timing.lastFrame;
-                reference.interpretation = timing.interpretation;
                 reference.revision = 1;
                 document.setSourceReference(key, std::move(reference));
 
                 MediaMetadata metadata;
                 metadata.userName = document.mediaCatalog().nextAvailableName(kInvalidMediaBin, baseName(path));
-                metadata.kind = MediaKind::Image;
+                metadata.kind = kind;
                 document.mediaCatalog().addEntry(key, kInvalidMediaBin, std::move(metadata));
             }
             if (assignedKey)
                 *assignedKey = key;
 
             if (wantsProbe)
-                commitProbe(document, key, probe);
-            document.network(network).graph().setParam(node, "source", ParameterValue{std::string{key}});
+                commitProbe(document, key, kind, probe);
+
+            // One batch, one command: the binding and the initial choices travel
+            // together, and each address follows the same rule parameter authoring
+            // always uses - an address that already has animation is keyed at the
+            // gesture frame, every other address holds a static value.
+            std::vector<ParameterEdit> edits;
+            edits.push_back(ParameterEdit{target, ParameterValue{std::string{key}}});
+            if (initializeOverrides) {
+                // Fill only the fields this Read does not already hold, so
+                // initialization never overwrites an authored or animated choice.
+                for (auto& [name, value] : readInitializationParameters(
+                         document, ParameterAddress{target.network, target.node, "source"}, *initializeOverrides))
+                    edits.push_back(
+                        ParameterEdit{ParameterAddress{target.network, target.node, name}, std::move(value)});
+            }
+            std::vector<ParameterEdit> keyed;
+            std::vector<ParameterEdit> staticValues;
+            for (auto& edit : edits) {
+                if (document.animationChannel(edit.address) != nullptr)
+                    keyed.push_back(std::move(edit));
+                else
+                    staticValues.push_back(std::move(edit));
+            }
+            parameterValueCommand(document, nullptr, time, keyed, staticValues).apply(document);
         }};
 }
 
-Command relinkReadSourceCommand(std::string sourceKey, SourceReference expected, std::string path,
+Command relinkReadSourceCommand(std::string sourceKey, SourceReference expected, std::string path, MediaKind kind,
                                 MediaProbeMetadata probe) {
     if (sourceKey.empty())
         throw std::invalid_argument("relink read source: source key must not be empty");
@@ -166,7 +236,7 @@ Command relinkReadSourceCommand(std::string sourceKey, SourceReference expected,
         throw std::invalid_argument("relink read source: source '" + sourceKey + "' must reference a non-empty path");
     const bool wantsProbe = probeCommittable(probe);
     return Command{"relink read source '" + sourceKey + "'",
-                   [sourceKey = std::move(sourceKey), expected = std::move(expected), path = std::move(path),
+                   [sourceKey = std::move(sourceKey), expected = std::move(expected), path = std::move(path), kind,
                     probe = std::move(probe), wantsProbe](Document& document) {
                        const SourceReference& current = requireReference(document, sourceKey, "cannot relink");
                        requireExpected(current, expected, sourceKey, "cannot relink");
@@ -180,36 +250,40 @@ Command relinkReadSourceCommand(std::string sourceKey, SourceReference expected,
                        // The committed probe described the previous file; it is
                        // obsolete for every entry that shares the source key.
                        for (const auto& entry : document.mediaCatalog().entries()) {
-                           if (entry.sourceKey != sourceKey || !entry.metadata.committedProbe)
+                           if (entry.sourceKey != sourceKey)
                                continue;
                            MediaMetadata metadata = entry.metadata;
                            metadata.committedProbe.reset();
+                           metadata.kind = kind;
                            document.mediaCatalog().setMetadata(entry.id, std::move(metadata));
                        }
                        if (wantsProbe)
-                           commitProbe(document, sourceKey, probe);
+                           commitProbe(document, sourceKey, kind, probe);
                    }};
 }
 
-Command setReadSourceTimingCommand(std::string sourceKey, SourceReference expected, ReadSourceTiming timing) {
+Command reloadReadSourceCommand(std::string sourceKey, SourceReference expected, MediaKind kind,
+                                MediaProbeMetadata probe) {
     if (sourceKey.empty())
-        throw std::invalid_argument("set read source timing: source key must not be empty");
-    requireValidTiming(timing, "source '" + sourceKey + "'");
-    return Command{"set read source timing '" + sourceKey + "'",
-                   [sourceKey = std::move(sourceKey), expected = std::move(expected),
-                    timing = std::move(timing)](Document& document) {
-                       const SourceReference& current = requireReference(document, sourceKey, "cannot set timing");
-                       requireExpected(current, expected, sourceKey, "cannot set timing");
+        throw std::invalid_argument("reload read source: source key must not be empty");
+    const bool wantsProbe = probeCommittable(probe);
+    if (!wantsProbe)
+        throw std::invalid_argument("reload read source: source '" + sourceKey +
+                                    "' reload requires a probe identifying its provenance");
+    return Command{"reload read source '" + sourceKey + "'",
+                   [sourceKey = std::move(sourceKey), expected = std::move(expected), kind,
+                    probe = std::move(probe)](Document& document) {
+                       const SourceReference& current = requireReference(document, sourceKey, "cannot reload");
+                       requireExpected(current, expected, sourceKey, "cannot reload");
                        if (current.revision == std::numeric_limits<std::uint64_t>::max())
                            reject(GraphError::InvalidMediaQuery, "source '" + sourceKey + "' revision exhausted");
-                       SourceReference updated = current;
-                       updated.frameOffset = timing.frameOffset;
-                       updated.frameStep = timing.frameStep;
-                       updated.firstFrame = timing.firstFrame;
-                       updated.lastFrame = timing.lastFrame;
-                       updated.interpretation = timing.interpretation;
-                       updated.revision = current.revision + 1;
-                       document.setSourceReference(sourceKey, std::move(updated));
+                       // Exactly one revision advance per reload: overwritten
+                       // media becomes a new content identity, and dependents of
+                       // this source are the only results invalidated.
+                       SourceReference reloaded = current;
+                       reloaded.revision = current.revision + 1;
+                       document.setSourceReference(sourceKey, std::move(reloaded));
+                       commitProbe(document, sourceKey, kind, probe);
                    }};
 }
 

@@ -12,52 +12,47 @@ namespace nemo {
 namespace {
 constexpr std::size_t kRequestCapacity = 256;
 
-bool isDiscreteValue(const ParameterValue& value) {
-    return std::holds_alternative<bool>(value) || std::holds_alternative<std::int64_t>(value) ||
-           std::holds_alternative<std::string>(value) || std::holds_alternative<ChoiceValue>(value);
-}
+// Parameter authoring shares the animation owner's keyframe/value command
+// helpers (AnimationCommands): the key identity, interpolation and tangent
+// policy has one implementation there.
 
-Keyframe keyframeForEdit(const Document& document, const Document* priorSnapshot, const ParameterEdit& edit,
-                         double time) {
-    Keyframe key;
-    key.time = time;
-    key.value = *edit.value;
-    if (const auto* channel = document.animationChannel(edit.address)) {
-        const auto found = std::find_if(channel->keys.begin(), channel->keys.end(),
-                                        [time](const Keyframe& candidate) { return candidate.time == time; });
-        if (found != channel->keys.end()) {
-            key = *found;
-            key.value = *edit.value;
-            return key;
+[[nodiscard]] std::optional<std::string> duplicateAddressProblem(const std::vector<ParameterEdit>& edits) {
+    for (std::size_t index = 0; index < edits.size(); ++index) {
+        for (std::size_t other = index + 1; other < edits.size(); ++other) {
+            if (edits[other].address == edits[index].address)
+                return "a parameter batch cannot edit '" + edits[index].address.key + "' twice";
         }
     }
-    if (priorSnapshot != nullptr) {
-        if (const auto* channel = priorSnapshot->animationChannel(edit.address)) {
-            const auto found = std::find_if(channel->keys.begin(), channel->keys.end(),
-                                            [time](const Keyframe& candidate) { return candidate.time == time; });
-            if (found != channel->keys.end()) {
-                key = *found;
-                key.id = kInvalidKeyframe;
-                key.value = *edit.value;
-                return key;
-            }
-        }
-    }
-    key.interpolation = isDiscreteValue(*edit.value) ? KeyInterpolation::Hold : KeyInterpolation::Linear;
-    return key;
+    return std::nullopt;
 }
 
-std::vector<KeyframeEdit> makeKeyframeEdits(const Document& document, const Document* priorSnapshot, double time,
-                                            const std::vector<ParameterEdit>& edits) {
-    std::vector<KeyframeEdit> result;
-    result.reserve(edits.size());
-    for (const auto& edit : edits) {
-        if (!edit.value)
-            throw std::invalid_argument("keyed parameter edits cannot reset a parameter");
-        result.push_back(KeyframeEdit{edit.address, keyframeForEdit(document, priorSnapshot, edit, time)});
-    }
-    return result;
+// True when this edit actually moves its target away from the value frozen at
+// gesture begin (a reset counts as a change only where a reset is meaningful).
+[[nodiscard]] bool valueEditChanged(const ParameterEdit& edit, const std::vector<ParameterEdit>& frozen) {
+    const auto baseline = std::find_if(frozen.begin(), frozen.end(), [&](const ParameterEdit& candidate) {
+        return candidate.address == edit.address;
+    });
+    if (baseline == frozen.end())
+        return true;
+    if (!edit.value && !baseline->value)
+        return false;
+    if (!edit.value || !baseline->value)
+        return true;
+    return *edit.value != *baseline->value;
 }
+
+// Splits one mixed value batch by the routing captured at gesture begin. An
+// address that had animation keeps the keyed contract; every other address is a
+// plain static value and never creates a channel.
+void partitionValueEdits(const std::vector<ParameterEdit>& edits, const std::vector<ParameterAddress>& keyedAddresses,
+                         std::vector<ParameterEdit>& keyed, std::vector<ParameterEdit>& staticValues) {
+    for (const ParameterEdit& edit : edits) {
+        const bool animated =
+            std::find(keyedAddresses.begin(), keyedAddresses.end(), edit.address) != keyedAddresses.end();
+        (animated ? keyed : staticValues).push_back(edit);
+    }
+}
+
 }  // namespace
 
 ProjectSession::Subscription::~Subscription() {
@@ -591,7 +586,8 @@ ParameterGestureResult ProjectSession::beginParameterGestureInternal(std::vector
         ChangeRecorder touched;
         applyPreview(*snapshot, touched, [&] {
             if (keyedTime) {
-                Command preview = setKeyframesCommand(makeKeyframeEdits(document_, nullptr, *keyedTime, edits));
+                Command preview =
+                    setKeyframesCommand(keyframeEditsForParameters(document_, nullptr, *keyedTime, edits));
                 preview.apply(*snapshot);
             } else {
                 Command preview = setParametersCommand(edits);
@@ -599,12 +595,13 @@ ParameterGestureResult ProjectSession::beginParameterGestureInternal(std::vector
             }
         });
         const auto token = nextGestureToken_++;
-        ParameterGestureState state{token,
-                                    options.expectedRevision,
-                                    snapshot,
-                                    std::move(edits),
-                                    keyedTime.has_value(),
-                                    keyedTime.value_or(0.0)};
+        ParameterGestureState state;
+        state.token = token;
+        state.expectedRevision = options.expectedRevision;
+        state.snapshot = snapshot;
+        state.edits = std::move(edits);
+        state.mode = keyedTime ? GestureMode::KeyedAll : GestureMode::Static;
+        state.time = keyedTime.value_or(0.0);
         gesture_.emplace(std::move(state));
         return makeGesturePreview(token, options.expectedRevision, std::move(snapshot));
     } catch (const GraphException& error) {
@@ -623,6 +620,78 @@ ParameterGestureResult ProjectSession::beginKeyedParameterGesture(double time, s
 
 ParameterGestureResult ProjectSession::beginParameterGesture(std::vector<ParameterEdit> edits, EditOptions options) {
     return beginParameterGestureInternal(std::move(edits), std::move(options), std::nullopt);
+}
+
+ParameterGestureResult ProjectSession::beginValueParameterGesture(double time, std::vector<ParameterEdit> edits,
+                                                                  EditOptions options) {
+    assertOwnerThread();
+    if (!std::isfinite(time))
+        return gestureFailure("value parameter gesture time must be finite");
+    if (edits.empty())
+        return gestureFailure("parameter batch must contain at least one edit");
+    if (mutating_ || notifying_)
+        return gestureFailure("project session mutation is not allowed during an edit or notification",
+                              EditErrorCode::ReentrantMutation);
+    if (options.requestId.size() > 256)
+        return gestureFailure("request identity exceeds the 256-byte session limit");
+    if (options.expectedRevision != revision_)
+        return gestureFailure(conflict(options.expectedRevision));
+    if (gesture_)
+        return gestureFailure("a parameter gesture is already active", EditErrorCode::Unavailable);
+    if (nextGestureToken_ == std::numeric_limits<ParameterGestureToken>::max())
+        return gestureFailure("parameter gesture token space exhausted", EditErrorCode::Unavailable);
+    try {
+        if (const auto problem = duplicateAddressProblem(edits))
+            return gestureFailure(*problem);
+        // Freeze the routing and the effective values once, here: which addresses
+        // are keyed and which counts as "changed" cannot move while the gesture
+        // lives.
+        std::vector<ParameterAddress> keyedAddresses;
+        keyedAddresses.reserve(edits.size());
+        std::vector<ParameterEdit> frozen;
+        frozen.reserve(edits.size());
+        std::vector<ParameterEdit> changed;
+        changed.reserve(edits.size());
+        for (const ParameterEdit& edit : edits) {
+            // animatedParameterValue already resolves the authored static/default or animated
+            // value through the catalog and animation owner, including definition
+            // animation for an occurrence address and occurrence-override precedence.
+            frozen.push_back(ParameterEdit{edit.address, animatedParameterValue(document_, edit.address, time)});
+            if (document_.animationChannel(edit.address) != nullptr)
+                keyedAddresses.push_back(edit.address);
+            if (valueEditChanged(edit, frozen))
+                changed.push_back(edit);
+        }
+        std::vector<ParameterEdit> keyed;
+        std::vector<ParameterEdit> staticValues;
+        partitionValueEdits(changed, keyedAddresses, keyed, staticValues);
+        auto snapshot = std::make_shared<Document>(document_);
+        ChangeRecorder touched;
+        if (!changed.empty()) {
+            applyPreview(*snapshot, touched, [&] {
+                Command preview = parameterValueCommand(document_, nullptr, time, keyed, staticValues);
+                preview.apply(*snapshot);
+            });
+        }
+        const auto token = nextGestureToken_++;
+        ParameterGestureState state;
+        state.token = token;
+        state.expectedRevision = options.expectedRevision;
+        state.snapshot = snapshot;
+        state.edits = std::move(edits);
+        state.time = time;
+        state.mode = GestureMode::Mixed;
+        state.keyedAddresses = std::move(keyedAddresses);
+        state.frozenValues = std::move(frozen);
+        gesture_.emplace(std::move(state));
+        return makeGesturePreview(token, options.expectedRevision, std::move(snapshot));
+    } catch (const GraphException& error) {
+        return previewFailure(error);
+    } catch (const std::exception& error) {
+        return previewFailure(error);
+    } catch (...) {
+        return gestureFailure("parameter gesture preview failed with an unknown error");
+    }
 }
 
 ParameterGestureResult ProjectSession::previewFailure(const std::exception& error) const {
@@ -644,9 +713,25 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
 
     try {
         std::vector<ParameterEdit> merged = gesture_->edits;
+        merged.reserve(gesture_->edits.size() + edits.size());
         for (const auto& edit : edits) {
-            if (gesture_->keyed && !edit.value)
+            if (gesture_->mode == GestureMode::KeyedAll && !edit.value)
                 throw std::invalid_argument("keyed parameter edits cannot reset a parameter");
+            if (gesture_->mode == GestureMode::Mixed) {
+                // Routing was frozen at begin: an address that was not admitted
+                // there could otherwise join with no routing (and an animated one
+                // would shadow its channel with a static write).
+                const bool admitted = std::find_if(gesture_->frozenValues.begin(), gesture_->frozenValues.end(),
+                                                   [&](const ParameterEdit& candidate) {
+                                                       return candidate.address == edit.address;
+                                                   }) != gesture_->frozenValues.end();
+                if (!admitted)
+                    throw std::invalid_argument("parameter '" + edit.address.key +
+                                                "' was not part of this value gesture");
+                if (!edit.value && std::find(gesture_->keyedAddresses.begin(), gesture_->keyedAddresses.end(),
+                                             edit.address) != gesture_->keyedAddresses.end())
+                    throw std::invalid_argument("a parameter with animation cannot be reset by a value gesture");
+            }
             const auto existing = std::find_if(merged.begin(), merged.end(), [&](const ParameterEdit& previous) {
                 return previous.address == edit.address;
             });
@@ -658,10 +743,23 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
         auto snapshot = std::make_shared<Document>(document_);
         ChangeRecorder touched;
         applyPreview(*snapshot, touched, [&] {
-            if (gesture_->keyed) {
-                Command preview =
-                    setKeyframesCommand(makeKeyframeEdits(document_, gesture_->snapshot.get(), gesture_->time, merged));
+            if (gesture_->mode == GestureMode::KeyedAll) {
+                Command preview = setKeyframesCommand(
+                    keyframeEditsForParameters(document_, gesture_->snapshot.get(), gesture_->time, merged));
                 preview.apply(*snapshot);
+            } else if (gesture_->mode == GestureMode::Mixed) {
+                std::vector<ParameterEdit> changed;
+                for (const ParameterEdit& edit : merged)
+                    if (valueEditChanged(edit, gesture_->frozenValues))
+                        changed.push_back(edit);
+                std::vector<ParameterEdit> keyed;
+                std::vector<ParameterEdit> staticValues;
+                partitionValueEdits(changed, gesture_->keyedAddresses, keyed, staticValues);
+                if (!changed.empty()) {
+                    Command preview =
+                        parameterValueCommand(document_, gesture_->snapshot.get(), gesture_->time, keyed, staticValues);
+                    preview.apply(*snapshot);
+                }
             } else {
                 Command preview = setParametersCommand(merged);
                 preview.apply(*snapshot);
@@ -682,7 +780,7 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
 ParameterGestureResult ProjectSession::updateKeyedParameterGesture(ParameterGestureToken token,
                                                                    std::vector<ParameterEdit> edits) {
     assertOwnerThread();
-    if (!gesture_ || !gesture_->keyed)
+    if (!gesture_ || gesture_->mode != GestureMode::KeyedAll)
         return gestureFailure("unknown keyed parameter gesture token", EditErrorCode::Unavailable);
     return updateParameterGesture(token, std::move(edits));
 }
@@ -701,9 +799,28 @@ EditResult ProjectSession::commitParameterGesture(ParameterGestureToken token, E
 
     Command command;
     try {
-        if (gesture_->keyed) {
-            auto keyEdits = makeKeyframeEdits(document_, gesture_->snapshot.get(), gesture_->time, gesture_->edits);
+        if (gesture_->mode == GestureMode::KeyedAll) {
+            auto keyEdits =
+                keyframeEditsForParameters(document_, gesture_->snapshot.get(), gesture_->time, gesture_->edits);
             command = setKeyframesCommand(std::move(keyEdits));
+        } else if (gesture_->mode == GestureMode::Mixed) {
+            std::vector<ParameterEdit> changed;
+            for (const ParameterEdit& edit : gesture_->edits)
+                if (valueEditChanged(edit, gesture_->frozenValues))
+                    changed.push_back(edit);
+            if (changed.empty()) {
+                // Every target still holds the value frozen at begin: a no-op
+                // gesture publishes no history entry and does not move the
+                // revision.
+                gesture_.reset();
+                EditResult unchanged;
+                unchanged.revision = revision_;
+                return unchanged;
+            }
+            std::vector<ParameterEdit> keyed;
+            std::vector<ParameterEdit> staticValues;
+            partitionValueEdits(changed, gesture_->keyedAddresses, keyed, staticValues);
+            command = parameterValueCommand(document_, gesture_->snapshot.get(), gesture_->time, keyed, staticValues);
         } else {
             command = setParametersCommand(gesture_->edits);
         }

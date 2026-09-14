@@ -36,6 +36,20 @@ struct PortSpec {
 
 enum class ParameterType { Boolean, Integer, Float, Choice, Vector2, Vector3, Color, String };
 
+// How a linked multichannel editor composes one shared adjustment onto a typed
+// tuple. Additive applies one common delta; Multiplicative applies one common
+// factor. It is presentation semantics consumed by the registered tuple editor,
+// never a second stored representation of the parameter value.
+enum class ChannelLink { None, Additive, Multiplicative };
+
+struct ChannelHint {
+    ChannelLink linked{ChannelLink::None};
+    // Alpha is always presented separately from the linked RGB adjustment.
+    bool alphaSeparate{false};
+
+    friend bool operator==(const ChannelHint&, const ChannelHint&) = default;
+};
+
 struct ParameterSpec {
     std::string name;
     ParameterType type{ParameterType::String};
@@ -51,6 +65,26 @@ struct ParameterSpec {
     std::string label;
     std::string section;
     std::string editor;
+    // Soft adjustment travel for scrubbing and sliders. It is an interaction
+    // hint, never a legal-value bound: typed values are not clamped or
+    // quantized to it. When both are present they must be finite, ordered, and
+    // inside the declared hard range.
+    std::optional<double> softMinimum{};
+    std::optional<double> softMaximum{};
+    // Display rounding hint for numeric controls (0..9). Stored precision is
+    // unchanged; integer parameters ignore it.
+    std::optional<int> displayDecimals{};
+    // Presentation row id. Consecutive parameters in one section sharing a
+    // non-empty row render side-by-side and their `label` becomes the per-field
+    // component label (Transform: row "Translate", labels "X"/"Y"). The
+    // persisted parameter identities remain independent.
+    std::string row{};
+    // Multichannel editing semantics for Color/Vector2/Vector3 parameters.
+    std::optional<ChannelHint> channels{};
+    // Semantic constraint for numeric parameters: zero is not a legal value.
+    // The catalog is the authoritative validator, so a generic parameter edit
+    // cannot create an invalid mapping that only the evaluator would catch.
+    bool nonzero{false};
 };
 
 // Capabilities are schema facts only. They do not contain executor, Qt,

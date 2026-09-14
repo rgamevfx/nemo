@@ -7,11 +7,12 @@
 // for CPU-reference and GPU-native consumption; it imposes no CPU-only
 // residency contract (GPU interop validation is issue #10).
 //
-// Pass-through values, explicit metadata: the read path does not apply
-// color management or alpha-association conversion (the OCIO viewing
-// transform is a separate, explicit viewing operation — ViewingTransform.hpp,
-// issue #6). It reports what the file declares so downstream stages can
-// honor it explicitly.
+// Pass-through values, explicit metadata: this reader does not itself apply
+// color management or alpha-association conversion. It reports what the file
+// declares (declared color space, chromaticities, alpha association) so the
+// source adapter applies the *resolved input color* explicitly and exactly
+// once (ImageSource.hpp / InputColor.hpp, issue #81) — an input transform is a
+// source operation, never a viewing transform.
 
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,12 @@ namespace nemo::media {
 // Alpha association of the read buffer, per the source's declaration. EXR
 // files are premultiplied by convention when an alpha channel is present.
 enum class AlphaAssociation { None, Straight, Premultiplied };
+
+// The association a reader reports for `formatName` when it has an alpha
+// channel: EXR is premultiplied by convention, every other format keeps
+// straight alpha. One owner for the rule, so a header-only probe and the read
+// itself agree by construction.
+[[nodiscard]] AlphaAssociation declaredAlphaAssociation(std::string_view formatName, bool hasAlpha);
 
 // Inclusive pixel window (spec section 10.4 bounds).
 struct PixelWindow {

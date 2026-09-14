@@ -157,22 +157,34 @@ int main(int argc, char* argv[]) {
     // The application composes one project owner; presentation facades may
     // come and go without taking the document or shared history with them.
     nemo::ProjectSession projectSession;
-    // A fresh project records the OCIO configuration the viewer resolves from
-    // the environment, so saving keeps the color configuration the app renders
-    // with. replaceDocument re-captures the saved baseline, so this does not
-    // make an otherwise-empty project dirty.
+    // A fresh project adopts the owner-approved creation-time color default:
+    // the version-pinned OCIO-embedded ACES Studio config with its scene-linear
+    // Rec.709 working space and ACES 2.0 SDR viewing, recorded through the
+    // project owner so saving keeps the configuration the app renders with. An
+    // explicit $OCIO override wins: newProjectColorDefault() then reports an
+    // empty config reference and the environment configuration is recorded
+    // instead, leaving the authored policy at its legacy literals.
+    // replaceDocument re-captures the saved baseline, so this does not make an
+    // otherwise-empty project dirty.
     try {
-        const std::string environmentConfig = nemo::media::resolveConfigPath({});
-        if (!environmentConfig.empty()) {
+        const nemo::media::NewProjectColorDefault creation = nemo::media::newProjectColorDefault();
+        nemo::Document fresh = projectSession.snapshot();
+        std::string configPath = creation.configUri;
+        if (configPath.empty()) {
+            configPath = nemo::media::resolveConfigPath({});
+        } else {
+            fresh.color = creation.policy;
+        }
+        if (!configPath.empty()) {
             const nemo::ProjectReplaceResult adopted =
-                projectSession.replaceDocument(projectSession.snapshot(), {}, {}, environmentConfig);
+                projectSession.replaceDocument(std::move(fresh), {}, {}, configPath);
             if (!adopted.replaced) {
-                std::cerr << "nemo-ui: could not record the environment color configuration\n";
+                std::cerr << "nemo-ui: could not record the project color configuration\n";
             }
         }
     } catch (const std::exception&) {
-        // No usable $OCIO: the viewer's lazy fallback and an empty project
-        // color configuration stay in effect.
+        // No usable color configuration: the viewer's lazy fallback and an
+        // empty project color configuration stay in effect.
     }
     nemo::ui::PanelContextRouter panelContextRouter(projectSession);
     nemo::ui::ViewerController viewerController(&runtime, projectSession);
@@ -247,8 +259,30 @@ int main(int argc, char* argv[]) {
         // The Read node's node-local file control is a registered namespaced
         // editor, selected from catalog `editor` metadata; the inspector host
         // owns its placement.
-        parameterEditors.registerEditor(QStringLiteral("nemo.read.source"),
-                                        QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/ReadSourceEditor.qml")));
+        // The Read control is one aggregate editor: it declares the node
+        // parameters it owns so the inspector renders exactly one control per
+        // setting instead of duplicating the generic rows.
+        parameterEditors.registerEditor(
+            QStringLiteral("nemo.read.source"), QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/ReadSourceEditor.qml")),
+            {QStringLiteral("source"), QStringLiteral("rangeMode"), QStringLiteral("rangeFirst"),
+             QStringLiteral("rangeLast"), QStringLiteral("frameOffset"), QStringLiteral("frameStep"),
+             QStringLiteral("beforePolicy"), QStringLiteral("afterPolicy"), QStringLiteral("missingPolicy"),
+             QStringLiteral("inputTransform"), QStringLiteral("inputColorSpace"), QStringLiteral("alphaMode"),
+             // The encoded-interpretation hints are rendered inside the
+             // editor's collapsed advanced group, so the section they would
+             // otherwise fill disappears through the generic all-consumed rule.
+             QStringLiteral("sourceTransfer"), QStringLiteral("sourcePrimaries"), QStringLiteral("sourceMatrix"),
+             QStringLiteral("sourceRange"), QStringLiteral("sourceChromaLocation")},
+            // The Read control is an aggregate: it presents the file, summary,
+            // timing and color groups itself, so the host gives it the full row.
+            QStringLiteral("section"));
+        // The shared linked-RGB editor and the Merge operation/swap editor are
+        // registered namespaced editors selected from catalog `editor`
+        // metadata; the inspector host owns their placement.
+        parameterEditors.registerEditor(QStringLiteral("nemo.channels.rgb"),
+                                        QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/ChannelEditor.qml")));
+        parameterEditors.registerEditor(QStringLiteral("nemo.merge.operation"),
+                                        QUrl(QStringLiteral("qrc:/qt/qml/Nemo/qml/MergeOperationEditor.qml")));
         // Wayland Vulkan renders our QML chrome, not Qt's client decorations.
         // Set the window policy before creation so input and pixels share an origin.
         engine.setInitialProperties(

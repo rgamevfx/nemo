@@ -43,13 +43,16 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/core/evaluation/Request.hpp"
+#include "nemo/core/evaluation/SourceRequest.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
+#include "nemo/media/InputColor.hpp"
 #include "nemo/media/VideoDecode.hpp"
 
 namespace nemo::eval {
@@ -57,8 +60,8 @@ namespace nemo::eval {
 class SourceSession {
 public:
     // One decoded source frame handed to the executor. Scene-linear
-    // (project working space), full resolution, rgba32f, straight alpha,
-    // GENERAL layout, GPU-complete.
+    // (project working space) or Data for a Raw bypass, full resolution,
+    // rgba32f, straight alpha, GENERAL layout, GPU-complete.
     struct DecodedFrame {
         std::shared_ptr<const gpu::Image> image;
         int width{0};
@@ -69,6 +72,11 @@ public:
         // math honors anamorphic media (issue #34 transform). 1.0 for
         // square-pixel sources; the image itself carries no metadata.
         float pixelAspect{1.0F};
+        // Interpretation of the decoded pixels: SceneLinear working-space
+        // samples, or Data when the request bypassed color conversion (issue
+        // #81). A consumer must not assume every non-display-referred frame is
+        // managed scene-linear.
+        ColorInterpretation color{ColorInterpretation::SceneLinear};
     };
 
     // `mediaConvertSpirv` is the compiled mediaConvert kernel (the
@@ -77,18 +85,40 @@ public:
     // is outside the supported subset; unsupported hardware is NOT an
     // error — it downgrades to the measured software path.
     SourceSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                  const std::filesystem::path& mediaConvertSpirv);
+                  const std::filesystem::path& mediaConvertSpirv, std::string ocioConfigPath = {});
     ~SourceSession();
     SourceSession(const SourceSession&) = delete;
     SourceSession& operator=(const SourceSession&) = delete;
 
-    // Resolves `node`'s `source` parameter against document.sources within
-    // the explicit network scope, maps frame = frameOffset + localTime*frameStep
-    // (rejecting overflow and negative frames), parses the reference's
-    // interpretation map strictly into a ColorOverride, and returns the
-    // decoded frame for the mapped frame.
-    [[nodiscard]] DecodedFrame acquire(const Document& document, NetworkId network, const NodeInstance& node,
-                                       std::int64_t localTime, std::uint64_t timeout_ns);
+    // Returns the decoded frame for one RESOLVED effective source request:
+    // mapping, selected coverage, boundary/missing policy outcome and the
+    // authored color choices are decided once by the core resolver, and this
+    // session resolves the RGB input color through the shared media owner
+    // against the project configuration it was constructed with. A request
+    // whose policy resolved to transparent black yields a real cleared
+    // transparent-black raster in the requested geometry; a policy error is
+    // refused here rather than decoding a substituted frame.
+    [[nodiscard]] DecodedFrame acquire(const Document& document, const EffectiveSourceRequest& source,
+                                       const EvaluationRequest& request, std::uint64_t timeout_ns);
+
+    // OCIO content identity of the configuration this session resolves source
+    // color against ("" when no configuration is available). The GPU executor
+    // mixes it into source-node reuse keys, so a config edited in place can
+    // never serve a stale decoded frame. The identity and every retained
+    // processor are refreshed when the configuration's content changes.
+    // Owned: the identity is recomputed per generation, so a caller never holds
+    // a view into storage this session may replace.
+    [[nodiscard]] std::string colorConfigIdentity() const;
+
+    // Explicit refresh boundary for the color configuration. The owner that
+    // replaced the project or deliberately reloaded the configuration calls
+    // this so the retained identity, the retained OCIO processors and every
+    // dependent source key are recomputed from the new content — the same
+    // boundary ViewerRuntime and the headless entry points observe. Nothing
+    // polls the configuration: a same-path content change is seen at this
+    // boundary, never by a background watcher. Already-running decodes keep
+    // their own handle on the previous generation until they finish.
+    void refreshColorConfig();
 
     // Decode-path evidence for `key`'s reference without touching session
     // decode state: opens a transient decoder and reports its ClipInfo plus
@@ -101,16 +131,6 @@ public:
         media::DecodeDecision decision;
     };
     [[nodiscard]] Probe probe(const Document& document, const std::string& key) const;
-
-    // Strict parsing of a SourceReference interpretation map into the
-    // media module's ColorOverride. An EMPTY map means strict stream tags:
-    // the decoder resolves the declared color metadata and ambiguous or
-    // unsupported metadata is an error, never a silent guess. A non-empty
-    // map fills only UNSPECIFIED fields (a stream-tagged field keeps its
-    // declared value — the stream is authoritative). Unknown fields or
-    // values are rejected with `context` in the message.
-    [[nodiscard]] static media::ColorOverride interpretationOverride(const std::map<std::string, std::string>& map,
-                                                                     const std::string& context);
 
 private:
     // One open source: sequential decoder plus the frame its next next()
@@ -126,20 +146,56 @@ private:
     // interpretation changes.
     enum class DecodeKind { Clip, Image };
 
-    [[nodiscard]] DecoderState openState(const Document& document, const NodeInstance& node,
-                                         const SourceReference& reference) const;
+    [[nodiscard]] DecoderState openState(const Document& document, const EffectiveSourceRequest& source,
+                                         const std::shared_ptr<const media::InputColorCache>& color) const;
+
+    // Retained input-color context for one working space; a sequence or clip
+    // decodes many frames through a single validated OCIO processor.
+    // Shared owner of the retained color state for one working space: the caller
+    // holds it for as long as it uses the cache, so a refresh only drops this
+    // lookup reference.
+    [[nodiscard]] std::shared_ptr<const media::InputColorCache> colorFor(const std::string& workingSpace) const;
+
+    // The retained snapshot (nullptr when no configuration is available).
+    // Requires colorMutex_.
+    [[nodiscard]] std::shared_ptr<const media::OcioConfigSnapshot> snapshotLocked() const;
+
+    // A cleared transparent-black device image in the requested geometry,
+    // retained and reused per raster size.
+    [[nodiscard]] std::shared_ptr<const gpu::Image> transparentBlack(int width, int height, std::uint64_t timeout_ns);
 
     // Inserts a decoded frame into the bounded least-recently-used cache.
     // target frame shares ownership with the returned DecodedFrame. The
     // frame's actual pixel aspect is cached alongside it so a reused raster
     // reports the same source metadata.
+    // One retained decoded raster plus the metadata a reuse must report with
+    // it: the source pixel aspect and the frame's interpretation.
+    struct CachedFrame {
+        std::shared_ptr<const gpu::Image> image;
+        float pixelAspect{1.0F};
+        ColorInterpretation color{ColorInterpretation::SceneLinear};
+    };
+
     void cachePut(const std::pair<std::string, std::int64_t>& cacheKey, std::shared_ptr<const gpu::Image> image,
-                  float pixelAspect);
+                  float pixelAspect, ColorInterpretation color);
 
     gpu::Instance& instance_;
     gpu::Device& device_;
     gpu::Allocator& allocator_;
     std::filesystem::path mediaConvertSpirv_;
+    std::string ocioConfigPath_;
+
+    // Color state is separate from decode state: the identity query runs on
+    // caller threads, while decode is serialized on mutex_.
+    mutable std::mutex colorMutex_;
+    // ONE retained configuration snapshot for this session generation: the
+    // identity the executor mixes into reuse keys and the snapshot every color
+    // cache (and therefore every decode) is built from are the same bytes.
+    mutable std::shared_ptr<const media::OcioConfigSnapshot> snapshot_;
+    mutable std::map<std::string, std::shared_ptr<const media::InputColorCache>> colors_;
+    mutable bool identityResolved_{false};
+    mutable std::string identity_;
+    std::map<std::pair<int, int>, std::shared_ptr<const gpu::Image>> blackFrames_;
 
     // Bounded runtime state. kMaxDecoders bounds open decoder contexts
     // (decode queues and NVDEC surfaces are the expensive resource);
@@ -150,8 +206,8 @@ private:
     std::map<std::string, DecoderState> decoders_;
     std::deque<std::string> decoderOrder_;           // LRU: front = least recently used
     std::map<std::string, DecodeKind> decodeKinds_;  // memoized, guarded by mutex_
-    // cached image plus its actual source pixel aspect (see DecodedFrame).
-    std::map<std::pair<std::string, std::int64_t>, std::pair<std::shared_ptr<const gpu::Image>, float>> frames_;
+    // cached image plus its actual source pixel aspect and interpretation.
+    std::map<std::pair<std::string, std::int64_t>, CachedFrame> frames_;
     std::deque<std::pair<std::string, std::int64_t>> frameOrder_;  // LRU, same convention
 };
 

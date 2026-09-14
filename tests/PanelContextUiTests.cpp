@@ -421,3 +421,63 @@ TEST_F(PanelContextUiTest, SaveAsToExtensionlessPathNeverRewritesAnExistingSibli
     ASSERT_TRUE(unchanged.open(QIODevice::ReadOnly));
     EXPECT_EQ(unchanged.readAll(), siblingBytes);
 }
+
+TEST_F(PanelContextUiTest, AnimationRevealRequestsAreGroupScopedAndPresentationOnly) {
+    const auto parameters = panelByType(root(), QStringLiteral("parameters"));
+    ASSERT_FALSE(parameters.isEmpty());
+    const auto parametersId = parameters.value(QStringLiteral("id")).toString();
+    auto* parametersPanel = panelBody(QStringLiteral("parametersPanel"), parametersId);
+    ASSERT_NE(parametersPanel, nullptr);
+    const auto revision = projectSession.revision();
+    const auto inspectorsBefore = parametersPanel->property("inspectors").toList();
+
+    // No Animation panel in the group yet: the relay broadcasts, repoints
+    // nothing and creates nothing.
+    EXPECT_TRUE(router.requestAnimationReveal(QStringLiteral("A"), QStringLiteral("7"), QStringLiteral("42"),
+                                              QStringLiteral("gain")));
+    QTest::qWait(30);
+    EXPECT_EQ(parametersPanel->property("inspectors").toList(), inspectorsBefore);
+    EXPECT_EQ(projectSession.revision(), revision);
+    EXPECT_TRUE(projectSession.document().mediaCatalog().entries().empty());
+
+    // A live Animation panel in the same group receives the reveal: the pin is
+    // a whole typed parameter with no component and the node is selected.
+    workspace.registerPanelType(QStringLiteral("animation"), QStringLiteral("Animation"),
+                                QStringLiteral("AnimationPanel.qml"));
+    const auto timeline = panelByType(root(), QStringLiteral("timeline"));
+    ASSERT_FALSE(timeline.isEmpty());
+    const auto animationId = timeline.value(QStringLiteral("id")).toString();
+    workspace.setPanelType(animationId, QStringLiteral("animation"));
+    QQuickItem* animationPanel = nullptr;
+    for (int attempt = 0; attempt < 40 && animationPanel == nullptr; ++attempt) {
+        animationPanel = panelBody(QStringLiteral("animationPanel"), animationId);
+        if (animationPanel == nullptr)
+            QTest::qWait(25);
+    }
+    ASSERT_NE(animationPanel, nullptr);
+    ASSERT_TRUE(router.setGroup(animationId, QStringLiteral("A")));
+    workspace.setGroup(animationId, QStringLiteral("A"));
+    QTest::qWait(30);
+    EXPECT_EQ(animationPanel->property("panelGroup").toString(), QStringLiteral("A"));
+
+    ASSERT_TRUE(router.requestAnimationReveal(QStringLiteral("A"), QStringLiteral("7"), QStringLiteral("42"),
+                                              QStringLiteral("gain")));
+    QTest::qWait(30);
+    EXPECT_EQ(animationPanel->property("networkId").toString(), QStringLiteral("7"));
+    EXPECT_EQ(animationPanel->property("targetNodeId").toString(), QStringLiteral("42"));
+    const auto pins = animationPanel->property("pinnedTargets").toList();
+    ASSERT_EQ(pins.size(), 1);
+    const auto pin = pins.first().toMap();
+    EXPECT_EQ(pin.value(QStringLiteral("network")).toString(), QStringLiteral("7"));
+    EXPECT_EQ(pin.value(QStringLiteral("node")).toString(), QStringLiteral("42"));
+    EXPECT_EQ(pin.value(QStringLiteral("parameter")).toString(), QStringLiteral("gain"));
+    EXPECT_FALSE(pin.contains(QStringLiteral("component"))) << "a whole-parameter reveal must not name a component";
+
+    // A request for another group never reaches this panel.
+    ASSERT_TRUE(router.requestAnimationReveal(QStringLiteral("B"), QStringLiteral("9"), QStringLiteral("11"),
+                                              QStringLiteral("gain")));
+    QTest::qWait(30);
+    EXPECT_EQ(animationPanel->property("pinnedTargets").toList().size(), 1);
+    EXPECT_EQ(animationPanel->property("networkId").toString(), QStringLiteral("7"));
+    EXPECT_EQ(projectSession.revision(), revision);
+}

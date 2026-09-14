@@ -99,6 +99,15 @@ public:
 
     bool submit(Document document, EvaluationRequest request, std::uint64_t id, eval::ViewerDestination destination,
                 gpu::ViewerChannel channel = gpu::ViewerChannel::RGBA, std::string colorConfigPath = {});
+
+    // Queues a color-configuration refresh for the active worker session. The
+    // runtime owns the session on its worker thread, so this is fire-and-forget
+    // from any caller (the project-replacement observer) and retires nothing on
+    // the calling thread. Idempotent and safe from several controllers: the
+    // flag coalesces and the next worker iteration retires the retained OCIO
+    // processors/viewing programs exactly once.
+    void refreshColorConfig();
+
     bool probe(Document document, std::string source, std::uint64_t id,
                eval::ViewerDestination destination = eval::ViewerDestination::Interactive,
                std::string colorConfigPath = {});
@@ -181,6 +190,8 @@ private:
     // Destinations retired by the GUI but not yet applied to the worker-owned
     // session. Drained before any later work for that destination executes.
     std::vector<eval::ViewerDestination> retireQueue_;
+    // Coalesced color-configuration refresh request for the worker.
+    bool colorRefresh_{false};
     eval::ViewerCacheOptions cacheOptions_;
     // Borrowed only under mutex_; worker clears before destroying its session.
     // GUI counter reads use try-lock snapshots, never a blocking cache query.

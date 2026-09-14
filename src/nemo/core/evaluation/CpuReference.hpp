@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "nemo/core/evaluation/Plan.hpp"
 #include "nemo/core/evaluation/Request.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
+#include "nemo/core/evaluation/SourceRequest.hpp"
 #include <stdexcept>
 
 namespace nemo {
@@ -85,21 +87,38 @@ struct ExpandedNode {
 // External seam for real source media (issue #11). The persistent Document
 // carries only source references; the decoded frames live behind this
 // interface, supplied by the execution layer (eval's SourceSession / any
-// decode provider). A provider returns the frame interpreted into the
-// document's declared scene-linear working space per the reference's
-// encoding (issue #21 semantics) and covering the request's raster —
-// full-resolution region at the request's sampling scale.
+// decode provider). The provider receives the *resolved* effective source
+// request (issue #75): mapping, selected coverage, boundary/missing policy
+// outcome, media-interpretation hints and authored color choices are already
+// combined by `resolveSourceRequest`, so no provider re-derives them.
 //
-// The CPU reference NEVER evaluates a source node as a synthetic pattern:
-// without a provider the evaluation fails with an explicit node-identifying
-// error. Throwing providers produce the same treatment; the evaluator
-// attaches the offending node.
+// A provider returns the frame interpreted into the document's declared
+// scene-linear working space per the request's encoding (issue #21 semantics)
+// and covering the request's raster — full-resolution region at the request's
+// sampling scale. A request whose policy resolved to `transparentBlack` is
+// served with a real transparent-black raster by the provider, and a request
+// whose policy resolved to `policyError` must never reach the provider. The
+// CPU reference NEVER evaluates a source node as a synthetic pattern: without a
+// provider the evaluation fails with an explicit node-identifying error.
+// Throwing providers produce the same treatment; the evaluator attaches the
+// offending node.
 class SourceProvider {
 public:
     virtual ~SourceProvider() = default;
 
-    [[nodiscard]] virtual CpuImage frame(const Document& document, const SourceReference& source,
-                                         std::int64_t mappedFrame, const EvaluationRequest& request) = 0;
+    [[nodiscard]] virtual CpuImage frame(const Document& document, const EffectiveSourceRequest& source,
+                                         const EvaluationRequest& request) = 0;
+
+    // OCIO content identity of the color configuration this provider resolves
+    // media color against; empty when it has none (the legacy fixed
+    // interpretation, which is a defined identity rather than a missing one).
+    // The evaluator mixes it into source-node result keys, so provider and
+    // configuration content can never be swapped under a cached result.
+    //
+    // Returned by value on purpose: a provider may replace its retained
+    // configuration (and its cached identity) at any time, so a borrowed view
+    // would invite a stale or dangling identity at a caller that keeps it.
+    [[nodiscard]] virtual std::string colorConfigIdentity() const { return {}; }
 };
 
 // Evaluates the document graph topologically to satisfy `request.output`.

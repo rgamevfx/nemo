@@ -629,9 +629,14 @@ TEST(Viewer, SourceTimeMappingAndBackwardsReEntry) {
     TaggedClip clip(AV_PIX_FMT_YUV444P, {60, 70, 80, 90, 100, 110, 120});
     SourceReference reference;
     reference.path = clip.path.string();
-    reference.frameOffset = 1;
-    reference.frameStep = 1;
     SourceComposition composition = makeSourceComposition("plate", reference, false);
+    // The Read owns its mapping (issue #75): the node authors the offset, and the
+    // shared reference carries the media identity only. The expected images come
+    // from the independent software decode, so a wrong mapped frame is visible
+    // per frame rather than averaged away.
+    const NodeId plateNode = rootGraph(composition.doc).nodeByName("plate")->id;
+    rootGraph(composition.doc).setParam(plateNode, "frameOffset", std::int64_t{1});
+    rootGraph(composition.doc).setParam(plateNode, "frameStep", std::int64_t{1});
     const auto decoded = media::decodeClipSoftware(clip.path.string());
     ASSERT_EQ(decoded.frames.size(), 7u);
 
@@ -644,6 +649,11 @@ TEST(Viewer, SourceTimeMappingAndBackwardsReEntry) {
         return readBackEvaluation(evaluation, evaluation.plan.request.output, *boot.device, *boot.allocator);
     };
 
+    // local frame + offset 1 selects the decoded frame; the neighbours differ, so
+    // a one-frame mapping error cannot pass.
+    ASSERT_NE(decoded.frames[1].pixel(0, 0), decoded.frames[0].pixel(0, 0));
+    ASSERT_NE(decoded.frames[2].pixel(0, 0), decoded.frames[1].pixel(0, 0));
+
     // Advance beyond retained decoder frames before re-entering the first
     // mapped time; the old frame must be reopened, not read at stream EOF.
     expectImagesClose(decoded.frames[1], renderAt(0), 1e-6F, "mapped frame 1 (forward decode)");
@@ -651,13 +661,16 @@ TEST(Viewer, SourceTimeMappingAndBackwardsReEntry) {
     expectImagesClose(decoded.frames[6], renderAt(5), 1e-6F, "mapped frame 6 (forward decode)");
     expectImagesClose(decoded.frames[1], renderAt(0), 1e-6F, "mapped frame 1 (backwards re-entry)");
 
-    // A mapped frame past the end of stream is an error naming the frame,
-    // never a silent clamp.
+    // A mapped frame past the end of stream fails, naming the source it could
+    // not read (key or path) - never a silent clamp.
     try {
         (void)renderAt(10);
         ADD_FAILURE() << "expected end-of-stream EvaluationException";
     } catch (const EvaluationException& error) {
-        EXPECT_NE(std::string(error.what()).find("past the end of source"), std::string::npos) << error.what();
+        const std::string message = error.what();
+        EXPECT_TRUE(message.find("'plate'") != std::string::npos ||
+                    message.find(clip.path.string()) != std::string::npos)
+            << message;
     }
 
     // Unknown source key: the offending relationship is named, with the
@@ -670,22 +683,23 @@ TEST(Viewer, SourceTimeMappingAndBackwardsReEntry) {
         ADD_FAILURE() << "expected unknown-key EvaluationException";
     } catch (const EvaluationException& error) {
         const std::string message = error.what();
-        EXPECT_NE(message.find("no source reference named 'missing'"), std::string::npos) << message;
+        EXPECT_NE(message.find("'missing'"), std::string::npos) << message;
         EXPECT_NE(message.find("plate"), std::string::npos) << message;
     }
 
-    // Negative mappings are errors (SourceReference::frameAt contract,
-    // surfaced node-identifying through the executor).
-    SourceReference negative;
-    negative.path = clip.path.string();
-    negative.frameOffset = -1;
-    SourceComposition bad = makeSourceComposition("plate", negative, false);
+    // A negative mapped frame is an error on the node-scoped mapping too: the
+    // Read authors it, and the failure names the source it could not read.
+    SourceComposition bad = makeSourceComposition("plate", reference, false);
+    rootGraph(bad.doc).setParam(rootGraph(bad.doc).nodeByName("plate")->id, "frameOffset", std::int64_t{-1});
     try {
         (void)evaluateGpu(bad.doc, requestFor(bad.doc, {0, 0, 64, 48}, 0), slang, *boot.device, *boot.allocator,
                           10'000'000'000ULL, nullptr, &sources);
         ADD_FAILURE() << "expected negative-frame EvaluationException";
     } catch (const EvaluationException& error) {
-        EXPECT_NE(std::string(error.what()).find("'plate'"), std::string::npos) << error.what();
+        const std::string message = error.what();
+        EXPECT_TRUE(message.find("'plate'") != std::string::npos ||
+                    message.find(clip.path.string()) != std::string::npos)
+            << message;
     }
     expectValidationClean(*boot.instance);
 }
@@ -1021,7 +1035,7 @@ TEST(Viewer, InterpretationMapIsParsedStrictly) {
                            *boot.allocator, 10'000'000'000ULL, nullptr, &sources);
     };
 
-    // Unknown field.
+    // Unknown field: the GPU executor attaches the source node to decode errors.
     SourceReference unknownField;
     unknownField.path = clip.path.string();
     unknownField.interpretation = {{"colorimetry", "bt709"}};
@@ -1029,10 +1043,11 @@ TEST(Viewer, InterpretationMapIsParsedStrictly) {
         (void)runOnce(unknownField);
         ADD_FAILURE() << "expected unknown-field EvaluationException";
     } catch (const EvaluationException& error) {
-        EXPECT_NE(std::string(error.what()).find("unknown field 'colorimetry'"), std::string::npos) << error.what();
+        EXPECT_EQ(error.nodeName, "plate");
+        EXPECT_NE(std::string(error.what()).find("colorimetry"), std::string::npos) << error.what();
     }
 
-    // Unknown value.
+    // Unknown value: the diagnostic retains the offending field and value.
     SourceReference unknownValue;
     unknownValue.path = clip.path.string();
     unknownValue.interpretation = {{"transfer", "weird"}};
@@ -1040,7 +1055,9 @@ TEST(Viewer, InterpretationMapIsParsedStrictly) {
         (void)runOnce(unknownValue);
         ADD_FAILURE() << "expected unknown-value EvaluationException";
     } catch (const EvaluationException& error) {
-        EXPECT_NE(std::string(error.what()).find("unsupported value 'weird'"), std::string::npos) << error.what();
+        EXPECT_EQ(error.nodeName, "plate");
+        EXPECT_NE(std::string(error.what()).find("transfer"), std::string::npos) << error.what();
+        EXPECT_NE(std::string(error.what()).find("weird"), std::string::npos) << error.what();
     }
 
     // The stream is authoritative: an override naming an already-tagged
@@ -1076,9 +1093,13 @@ TEST(Viewer, SourceRetentionUnderDelayedCompletion) {
                                                          slangSpvDir() / "mediaConvert.spv");
     std::weak_ptr<const void> sourceAllocation;
     {
-        // Decode before blocking execution: decode owns synchronous upload.
-        auto decoded = sources->acquire(composition.doc, composition.doc.rootNetworkId(),
-                                        *rootGraph(composition.doc).nodeByName("plate"), 0, 10'000'000'000ULL);
+        // Decode before blocking execution: decode owns synchronous upload. The
+        // session consumes the resolved effective source request (issue #75), and
+        // the evaluation request supplies the raster a transparent-black policy
+        // would produce.
+        const NodeInstance& plate = *rootGraph(composition.doc).nodeByName("plate");
+        const EffectiveSourceRequest source = resolveSourceRequest(composition.doc, plate, 0);
+        auto decoded = sources->acquire(composition.doc, source, request, 10'000'000'000ULL);
         sourceAllocation = decoded.image->retain();
     }
     struct Gate {
@@ -1322,10 +1343,11 @@ TEST(Viewer, StillSequenceOutOfRangeFrameFailsNamingPath) {
         EXPECT_NE(what.find(missingPath), std::string::npos) << what;
     }
 
-    // Negative mapped frame: frameOffset -2 at localTime 0.
-    SourceReference negative = reference;
-    negative.frameOffset = -2;
-    SourceComposition negativeComposition = makeSourceComposition("plate", negative, false);
+    // Negative mapped frame: the Read owns its mapping (issue #75), so the node
+    // authors the negative offset; the requested frame is reported by path.
+    SourceComposition negativeComposition = makeSourceComposition("plate", reference, false);
+    rootGraph(negativeComposition.doc)
+        .setParam(rootGraph(negativeComposition.doc).nodeByName("plate")->id, "frameOffset", std::int64_t{-2});
     const EvaluationRequest negativeRequest = stillRequest(negativeComposition.doc, {0, 0, 2, 2}, 2, 2, 0);
     try {
         (void)eval::evaluateGpu(negativeComposition.doc, negativeRequest, slang, *boot.device, *boot.allocator,
@@ -1333,39 +1355,50 @@ TEST(Viewer, StillSequenceOutOfRangeFrameFailsNamingPath) {
         ADD_FAILURE() << "expected a negative mapped frame to fail";
     } catch (const std::exception& error) {
         const std::string what = error.what();
-        EXPECT_NE(what.find("negative"), std::string::npos) << what;
-        EXPECT_NE(what.find(negative.path), std::string::npos) << what;
+        EXPECT_NE(what.find(media::resolveFramePath(pattern, -2)), std::string::npos) << what;
     }
 
-    // Overflowing mapping: frameStep at the 64-bit maximum.
-    SourceReference overflowing = reference;
-    overflowing.frameStep = std::numeric_limits<std::int64_t>::max();
-    SourceComposition overflowComposition = makeSourceComposition("plate", overflowing, false);
+    // Overflowing mapping: the node's step is at the 64-bit maximum, so the
+    // mapped frame cannot be represented. Overflow is refused before any policy
+    // or frame opening; the assertion is structural, not wording.
+    SourceComposition overflowComposition = makeSourceComposition("plate", reference, false);
+    rootGraph(overflowComposition.doc)
+        .setParam(rootGraph(overflowComposition.doc).nodeByName("plate")->id, "frameStep",
+                  std::numeric_limits<std::int64_t>::max());
     const EvaluationRequest overflowRequest = stillRequest(overflowComposition.doc, {0, 0, 2, 2}, 2, 2, 2);
     try {
         (void)eval::evaluateGpu(overflowComposition.doc, overflowRequest, slang, *boot.device, *boot.allocator,
                                 10'000'000'000ULL, nullptr, &sources);
         ADD_FAILURE() << "expected an overflowing mapped frame to fail";
-    } catch (const std::exception& error) {
-        const std::string what = error.what();
-        EXPECT_NE(what.find("overflow"), std::string::npos) << what;
-        EXPECT_NE(what.find(overflowing.path), std::string::npos) << what;
+    } catch (const EvaluationException& error) {
+        EXPECT_EQ(error.node, rootGraph(overflowComposition.doc).nodeByName("plate")->id);
+        EXPECT_EQ(error.nodeName, "plate");
     }
-    // An authored sequence range (issue #61) rejects a frame outside it with
-    // the range, before any frame path is opened, on the GPU path too.
+
+    // An authored sequence range still bounds the Read (the shared interval is
+    // Auto's fallback): a frame outside it fails before any frame path is
+    // opened, on the GPU path too. The policy outcome is the core-owned
+    // diagnostic, so the boundary relationship is asserted through it.
     SourceReference ranged = reference;
     ranged.firstFrame = 0;
     ranged.lastFrame = 1;
     SourceComposition rangedComposition = makeSourceComposition("plate", ranged, false);
     const EvaluationRequest rangedRequest = stillRequest(rangedComposition.doc, {0, 0, 2, 2}, 2, 2, 5);
+    const EffectiveSourceRequest rangedResolved =
+        resolveSourceRequest(rangedComposition.doc, *rootGraph(rangedComposition.doc).nodeByName("plate"), 5);
+    EXPECT_EQ(rangedResolved.status, SourceRequestStatus::AfterRange);
+    EXPECT_TRUE(rangedResolved.policyError);
+    EXPECT_EQ(rangedResolved.mapping.lastFrame, std::optional<std::int64_t>{1});
+    const std::string expectedPolicy = sourcePolicyProblem(rangedResolved);
+    EXPECT_FALSE(expectedPolicy.empty());
     try {
         (void)eval::evaluateGpu(rangedComposition.doc, rangedRequest, slang, *boot.device, *boot.allocator,
                                 10'000'000'000ULL, nullptr, &sources);
         ADD_FAILURE() << "expected a frame after the authored range to fail";
     } catch (const std::exception& error) {
-        const std::string what = error.what();
-        EXPECT_NE(what.find("after the authored last frame 1"), std::string::npos) << what;
-        EXPECT_NE(what.find(ranged.path), std::string::npos) << what;
+        // Same core-owned diagnostic on the native path as on the CPU path, so a
+        // missing member and a boundary failure stay distinguishable.
+        EXPECT_NE(std::string(error.what()).find(expectedPolicy), std::string::npos) << error.what();
     }
     expectValidationClean(*boot.instance);
 }
@@ -1482,6 +1515,57 @@ TEST(Viewer, SiblingRepresentationReuseAcrossViewerRenders) {
     expectValidationClean(*boot.instance);
 }
 
+// An UNTAGGED clip must be decodable through the resolved-request path: the
+// source-scoped fill-only hints carry the Y'CbCr decode fields (matrix, range,
+// chroma location) and the transfer, and the session has to resolve them from
+// the request rather than from the legacy ColorOverride parameter. Values are
+// checked against the repository's pinned gray oracle (Y=126, limited range,
+// BT.709 inverse OETF -> 0.261769) and against the encoded value the same
+// sample carries when the transfer hint says `linear` ((126-16)/219).
+TEST(Viewer, UntaggedClipIsDecodedFromTheRequestHints) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126}, 128, 128, AVCOL_TRC_BT709, /*tagged=*/false);
+    SourceReference reference{clip.path.string()};
+    // An untagged stream declares nothing, so the complete RGB and Y'CbCr
+    // interpretation is authored here: the decode necessities (matrix, range,
+    // chroma location) AND the RGB half (transfer, primaries). An incomplete
+    // hint stays an error — there is no production fallback.
+    reference.interpretation["matrix"] = "bt709";
+    reference.interpretation["range"] = "limited";
+    reference.interpretation["chromaLocation"] = "left";
+    reference.interpretation["transfer"] = "bt709";
+    reference.interpretation["primaries"] = "bt709";
+    auto composition = makeSourceComposition("plate", reference, false);
+    const auto request = requestFor(composition.doc, {0, 0, 64, 48}, 0);
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    const auto effects = eval::loadSlangEffectLibrary(slangSpvDir(), slangSpvDir());
+
+    auto frame = eval::evaluateGpu(composition.doc, request, effects, *boot.device, *boot.allocator, 10'000'000'000ULL,
+                                   nullptr, &sources);
+    const CpuImage image = readBackEvaluation(frame, request.output, *boot.device, *boot.allocator);
+    const auto center = image.pixel(32, 24);
+    for (int channel = 0; channel < 3; ++channel) {
+        EXPECT_NEAR(center[static_cast<std::size_t>(channel)], 0.261769, 0.003) << "channel " << channel;
+    }
+    EXPECT_EQ(center[3], 1.0F);
+
+    // The same encoded sample with the `linear` transfer hint: the request's
+    // hints are the authority for both halves of the interpretation.
+    CommandStack edits(composition.doc);
+    SourceReference linear = reference;
+    linear.interpretation["transfer"] = "linear";
+    edits.push(setSourceCommand("plate", linear));
+    auto linearFrame = eval::evaluateGpu(composition.doc, request, effects, *boot.device, *boot.allocator,
+                                         10'000'000'000ULL, nullptr, &sources);
+    const CpuImage linearImage = readBackEvaluation(linearFrame, request.output, *boot.device, *boot.allocator);
+    const auto linearCenter = linearImage.pixel(32, 24);
+    for (int channel = 0; channel < 3; ++channel) {
+        EXPECT_NEAR(linearCenter[static_cast<std::size_t>(channel)], (126.0 - 16.0) / 219.0, 0.004)
+            << "channel " << channel;
+    }
+}
+
 TEST(Viewer, SourceReplacementAndWorkingPolicyCannotReplayRetiredDecode) {
     const Bootstrap boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
@@ -1504,7 +1588,20 @@ TEST(Viewer, SourceReplacementAndWorkingPolicyCannotReplayRetiredDecode) {
     ColorPolicy unsupported;
     unsupported.workingSpace = "ACEScg";
     edits.push(setColorPolicyCommand(unsupported));
-    EXPECT_THROW((void)render(), media::MediaDecodeError);
+    // A working target with no meaning is diagnosed BEFORE any decode is opened
+    // (the session validates the target ahead of every cache lookup, so a warm
+    // decode can never hide it and a retired decode is never replayed). The
+    // session therefore reports its own contextual source error, naming the
+    // source rather than surfacing a bare media exception; the offending value
+    // and the supported target are both in the message.
+    try {
+        (void)render();
+        ADD_FAILURE() << "expected the unsupported working target to be reported";
+    } catch (const EvaluationException& error) {
+        const std::string what = error.what();
+        EXPECT_NE(what.find("ACEScg"), std::string::npos) << what;
+        EXPECT_NE(what.find("scene-linear Rec.709"), std::string::npos) << what;
+    }
     ASSERT_TRUE(edits.undo());
     ASSERT_TRUE(edits.undo());
     EXPECT_NEAR(render()[0], 0.261769F, 0.003F);

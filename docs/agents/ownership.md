@@ -34,7 +34,13 @@ is separate and remains valid. Functional ports
 Bin owners are recorded below; #47's two-viewer/media-role parity and the human
 API/schema/image review of #43 remain open gates, so read the live owning issue
 to distinguish implemented capabilities from planned ones before using an
-extension path.
+extension path. #75's coordinated slices extend those same owners instead of
+adding parallel ones — shared numeric/key/exposure editing (#76:
+`NumericField.qml`/`KeyIndicator.qml`/`ExposureLabel.qml`), Grade's linked-RGB
+editor (#77: `nemo.channels.rgb`), Merge's operation/mask/atomic Swap A/B (#78),
+and Read ownership/discovery/color/control (#79–#82). Their revised presentation,
+the schema-5 migration, and any public catalog/editor/schema/image change keep
+the normal owner review gates; landing a slice is not approval of them.
 
 ## Target graph and dependency direction
 
@@ -87,15 +93,16 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | Node schemas and discovery | `src/nemo/core/nodes/NodeCatalog.hpp`; immutable `NodeDescriptor` records and `NodeCatalog(std::vector<NodeDescriptor>)` | Built-ins are assembled in `NodeCatalog.cpp`; `Graph::catalog()` and evaluation query the catalog. There is no unregister operation |
 | Validated edits and history | `src/nemo/core/document/Document.hpp` command factories plus `src/nemo/core/commands/`; `Command`, `CommandStack`, and `ProjectSession` | `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()` maps JSON operations; `ProjectSession::submit()` is the commit seam |
 | Structural document storage | `src/nemo/core/SharedContainers.hpp` (`CowVector`, `CowMap`) and the document's controlled mutations; `ChangeRecorder` (`src/nemo/core/document/ChangeRecorder.hpp`) records the identities a transaction touched | Commands and sessions retain version handles, never deep copies; publication/undo/redo derive their notifications from the touched identities. See ADR-0007 "Structurally shared document versions (#72)"; do not reintroduce a whole-document copy, diff or serialization on the ordinary edit path |
-| CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned |
+| CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies`, and the external media seam `SourceProvider::frame`/`colorConfigIdentity` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned. The provider receives the resolved `EffectiveSourceRequest` and supplies the opaque color-config identity the source-node keys mix in; without a provider a source node is an explicit error, never a synthetic pattern |
 | GPU primitives and resource lifetime | `src/nemo/gpu/` (`Device`, `Allocator`, `Submit`, `ComputePass`) | `src/nemo/eval/GpuExecutor.cpp` records/submits work; follow [`rendering.md`](rendering.md) for retained ownership and synchronization rather than copying those rules here |
-| Native effect execution | `src/nemo/eval/GpuExecutor.hpp` (`EffectProgram`, `EffectLibrary`, `loadSlangEffectLibrary`, `glslEffectLibrary`, `submitGpu`, `evaluateGpu`) and the CPU reference [`NativeEffects.hpp`](../../src/nemo/core/evaluation/NativeEffects.hpp) (`evaluateNativeEffect`) | [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp) owns the typed effective parameters (`effectiveEffectMask`/`effectiveGrade`/`effectiveBlur`/`effectiveTransform`) both executors consume; `CpuReference.cpp` dispatches `grade`/`blur`/`transform` to `evaluateNativeEffect`. `ViewerSession` loads the Slang library. Numerical contract and spatial limits: [`rendering.md`](rendering.md) |
-| Optional input ports and absent slots | `src/nemo/core/nodes/NodeCatalog.hpp` (`PortSpec::optional`); `Plan.hpp` slot model with `CpuReference.cpp` expansion | An absent optional slot keeps its declared port position as `EvaluationNodeId{}` (node == `kInvalidNode`) in `ExpandedNode.inputs`/`PlanStep.inputs`; `Reuse.hpp` marks it in result identity with `kAbsentInputKeyHash`; `GpuExecutor` binds the main image as a valid dummy descriptor with `maskPresent=0`, never an allocated fallback. Grade/Blur/Transform's only optional input is port 1 `mask` |
-| Media and color adapters | `src/nemo/media/` public image/viewing contracts; external OIIO/OCIO/FFmpeg types stay behind `.cpp` adapters | CLI probe/render and `eval::SourceSession` consume the application media contract. `src/nemo/media/ImageSource.{hpp,cpp}` owns still/sequence `SourceReference` decode (pattern resolution, declared-color interpretation, scene-linear straight-alpha conversion, headless `ImageSourceProvider`) — reuse it rather than adding a second still reader |
-| Media import, probing and preview | `src/nemo/media/MediaImportService.hpp`; `MediaImportService`, `MediaImportRequest`/`MediaImportResult`, `inspectMediaSource` | One service worker decodes, probes and reduces a display-referred preview off the GUI thread; the queue is bounded and results carry request identity. `apps/nemo-ui/MediaLibraryModel.*` is the production consumer, requests previews within 160×90 bounds, and owns no decoder |
+| Native effect execution | `src/nemo/eval/GpuExecutor.hpp` (`EffectProgram`, `EffectLibrary`, `loadSlangEffectLibrary`, `glslEffectLibrary`, `submitGpu`, `evaluateGpu`) and the CPU reference [`NativeEffects.hpp`](../../src/nemo/core/evaluation/NativeEffects.hpp) (`evaluateNativeEffect`, `evaluateMerge`) | [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp) owns the typed effective parameters (`effectiveEffectMask`/`effectiveGrade`/`effectiveBlur`/`effectiveTransform`/`effectiveMergeOperation`) both executors consume; `CpuReference.cpp` dispatches `grade`/`blur`/`transform` to `evaluateNativeEffect` and `merge` to `evaluateMerge`. `ViewerSession` loads the Slang library (`merge.slang`; the retained GLSL `kGlslMerge` stays in `EffectShaders.hpp`). Numerical contract and spatial limits: [`rendering.md`](rendering.md) |
+| Optional input ports and absent slots | `src/nemo/core/nodes/NodeCatalog.hpp` (`PortSpec::optional`); `Plan.hpp` slot model with `CpuReference.cpp` expansion | An absent optional slot keeps its declared port position as `EvaluationNodeId{}` (node == `kInvalidNode`) in `ExpandedNode.inputs`/`PlanStep.inputs`; `Reuse.hpp` marks it in result identity with `kAbsentInputKeyHash`; `GpuExecutor` binds the main image as a valid dummy descriptor with `maskPresent=0`, never an allocated fallback. Grade/Blur/Transform's optional input is port 1 `mask`; Merge's is port 2 (its port 1 is the required foreground). Merge's `A`/`B` roles are production order — A background/base, B foreground/source — and are never silently reversed; `swapInputsCommand` (`Document.hpp`, exposed as `ViewerController::swapNodeInputs` and the `swap-inputs` CLI op) exchanges exactly the two *image* sources as one atomic undo step, retaining the mask, parameters, node identity and layout, and refuses an empty pair or two edges from one source before touching history |
+| Media and color adapters | `src/nemo/media/` public image/viewing contracts; external OIIO/OCIO/FFmpeg types stay behind `.cpp` adapters | CLI probe/render and `eval::SourceSession` consume the application media contract. `src/nemo/media/InputColor.{hpp,cpp}` is the ONE owner of an encoded source's RGB interpretation (`resolveInputColor`, retained per generation by `InputColorCache`); `ViewingTransform.hpp`'s `OcioConfigSnapshot` is the ONE retained config load (content identity, canonical space enumeration, file rules, processors). `src/nemo/media/ImageSource.{hpp,cpp}` owns still/sequence decode (`probeImageFrame`/`readImageFrame`, headless `ImageSourceProvider`); `VideoDecode.hpp` owns clip decode and takes the same input-color context. Reuse these rather than adding a second still reader or a second color resolver |
+| Effective source request (Read choices vs the shared reference) | `src/nemo/core/evaluation/SourceRequest.{hpp,cpp}`; `resolveSourceRequest`, `EffectiveSourceRequest`, `ReadNodeOverrides`, `readAuthoredOverrides`/`readOverrideParameters`/`readInitializationParameters`, `mapSourceFrame`/`startAtOffset` | One resolver combines a Read's node-scoped choices with the shared `SourceReference` and committed facts. The node-scoped entry point is used by Reads and by result keys; the source-scoped entry point (shared reference's own mapping, no node overrides) is used by `eval::SourceSession::probe`. The media import worker consumes a `SourceReference` snapshot and maps it with `SourceReference::frameAt` — a Read requester hands it the snapshot that already carries the Read's effective mapping. `CpuReference.cpp`, `Reuse.cpp`, `eval::SourceSession::acquire` and `ReadSourceController` consume the resolved request and never re-derive mapping or precedence; see ADR-0007 "Read source ownership, effective requests, and schema 5 (#79)" |
+| Media import, probing and preview | `src/nemo/media/MediaImportService.hpp`; `MediaImportService`, `MediaImportRequest`/`MediaImportResult`, `inspectMediaSource`, plus `SequenceDiscovery.hpp` (`discoverSequenceRange`) | One service worker decodes, probes, discovers numbered-sequence coverage and reduces a display-referred preview off the GUI thread; the queue is bounded, a cancelled scan stops early with no facts claimed, and results carry request identity. A request also carries the merged `InputColorChoice`, the frozen source-local frame, `ProbeAlignment` and `projectGeneration`, so the worker never reads `Document` state and a result from a superseded project, frame or node never publishes into the new one. `apps/nemo-ui/MediaLibraryModel.*` is the production consumer, requests previews within 160×90 bounds, and owns no decoder |
 | Media Bin catalog adapter | `apps/nemo-ui/MediaLibraryModel.*`; Qt/QML query/command surface over `Document`/`MediaCatalog` | Submits validated catalog commands through `ProjectSession`; owns transient probe results and the bounded display-referred `QImage` thumbnail cache/provider, not persistent catalog state. A runtime probe is a proposal until `applyProbe` commits it; `relink` copies the preserved `SourceReference` |
 | Media Bin panel presentation | `apps/nemo-ui/qml/MediaBinPanel.qml` | Reactive adapter records plus panel-state view/selection preferences; it submits catalog operations, emits ordered `requestTimelineInsert` intent for #54, reveals through `revealMediaPanel`, and opens explicitly only through `MediaLibraryModel::openMediaSource` |
-| Native file chooser | `apps/nemo-ui/NativeFileChooser.hpp`; `openFiles`/`saveFile` with a requester-owned `OutcomeHandler` | One platform implementation per build; each request belongs to its requester and no outcome is broadcast. `ProjectFileController` and `MediaLibraryModel` are separate requesters of the same chooser |
+| Native file chooser | `apps/nemo-ui/NativeFileChooser.hpp`; `openFiles`/`saveFile` with a requester-owned `OutcomeHandler` | One platform implementation per build; each request belongs to its requester and no outcome is broadcast. `ProjectFileController`, `MediaLibraryModel` and `ReadSourceController` are separate requesters of the same chooser, so a Read's browse result reaches only the Read that asked |
 | Workspace arrangement and panel state | `apps/nemo-ui/Workspace.hpp`/`Workspace.cpp`; Qt-free `Workspace`, `Panel`, and `Workspace::createPanel` | `WorkspaceController::registerPanelType`, `createPanel`, and `setPanelState` are the Qt/QML boundary; `main.cpp` registers production panels before QML loads |
 | Presentation and input | `apps/nemo-ui/WorkspaceController.*`, `ViewerController.*`, and `apps/nemo-ui/qml/` | Presentation reads state and submits commands; it does not own `Document`, evaluator, or GPU resource state |
 | Headless automation | `apps/nemo-cli/`; JSON-lines project-session protocol and `nemo-cli` commands | `ProjectSessionCommand.cpp::makeCommand()` is the current command dispatch seam; do not invent a second command registry |
@@ -119,6 +126,17 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 - Evaluation consumes an immutable document view. `ViewerScheduler` is the
   thread-safe queue/policy boundary and retains immutable snapshots; it rejects
   stale publication without waiting for in-flight GPU work.
+- Color-configuration freshness is an explicit boundary, never a watcher.
+  `OcioConfigSnapshot` (media) is one immutable load per generation, and the
+  retained processors plus the opaque content identity are replaced at project
+  replacement/reopen — `ViewerController::documentChanged` observes
+  `ProjectSession::projectGeneration()` and calls the worker-side
+  `ViewerRuntime::refreshColorConfig`; `SourceSession::refreshColorConfig`,
+  `ImageSourceProvider::refreshColorConfig` and the Read adapter's
+  project-generation observer are the same boundary for their owners. A decode
+  or read already in flight holds its own shared generation, so the refresh
+  never invalidates work underneath it. A source Reload is source-only and
+  deliberately does not reach this path.
 - GPU submission, compilation, allocation, and completion belong off the UI
   event thread. GPU work retains every referenced resource until completion;
   consult [`rendering.md`](rendering.md) for the complete execution contract.
@@ -163,16 +181,26 @@ node/effect is a coordinated change to the existing catalog and executor seams:
 Current examples/use sites: `constColorDescriptor()` plus the `constcolor`
 CPU/GPU paths; the #34 native effects — `gradeDescriptor()`/`blurDescriptor()`/
 `transformDescriptor()` with `evaluateNativeEffect`, `Params.hpp` metadata and
-the matching Slang kernels (contract in [`rendering.md`](rendering.md)); and
-catalog-backed graph creation submitting `addNodeCommand(...)`. Unknown declared
-types fail explicitly when an executor has no implementation; do not silently
-substitute another effect.
+the matching Slang kernels (contract in [`rendering.md`](rendering.md)); and the
+#75 Merge — `mergeDescriptor()` (ports `A`/`B` required plus optional `mask`) with
+`evaluateMerge`, `effectiveMergeOperation`, `src/nemo/gpu/shaders/merge.slang`
+and the retained GLSL `kGlslMerge`, plus `swapInputsCommand` for its A/B action;
+and catalog-backed graph creation submitting `addNodeCommand(...)`. Unknown
+declared types fail explicitly when an executor has no implementation; do not
+silently substitute another effect.
 
 #### Parameter and inspector boundary
 
 `ParameterSpec` in `NodeCatalog.hpp` owns name, type, typed default, optional
 numeric min/max, choice values, and optional presentation metadata (`label`,
-`section`, `step`, namespaced `editor`). `ParameterValue.hpp` defines Boolean,
+`section`, `step`, namespaced `editor`). #75 adds `softMinimum`/`softMaximum`
+(soft scrubbing/slider travel that is never a legal bound — a typed value is not
+clamped or quantized to it), `displayDecimals` (display rounding only),
+`row` (consecutive same-`row` parameters render side-by-side, Transform's
+`Translate` X/Y), `channels` (`ChannelHint`: `ChannelLink` Additive/
+Multiplicative plus `alphaSeparate`, the linked-RGB editing semantics) and
+`nonzero` (excludes zero in addition to any declared numeric bounds).
+`ParameterValue.hpp` defines Boolean,
 Integer, Float, Choice, Vector2, Vector3, Color and String values; serialization
 and shared parameter commands own conversion/validation, not QML. Use those
 definitions rather than maintaining a second parameter-type table.
@@ -192,6 +220,34 @@ ColorWarp's custom editor through that same host. Generic controls stay usable
 when a registered editor is unavailable, and a schema field or namespaced
 editor selector not present in the current catalog remains an owner-reviewed
 public catalog change, not an assumed capability.
+
+#75 keeps that host and adds one seam rather than a second inspector. Every
+ordinary parameter — numeric, vector, color, choice, Boolean — is a generic row
+rendered by `ParametersPanel.qml` from `ViewerController::parameterInspector`:
+one aligned value/key/exposure column per row (`NumericField.qml` owns
+click-to-type/drag-to-scrub with Shift fine / Control coarse and
+`dragDistance`; `ExposureLabel.qml` keeps the parameter-exposure drag;
+`KeyIndicator.qml` owns the static/animated/keyed-at-frame state and the
+Set/Update Key, Remove Key and Show in Animation menu). `NumericField.qml`
+also presents an UNAVAILABLE value: an address whose presentation has no
+representable value (a Read offset with no integral alignment) shows a
+placeholder and disables scrub/step, while typed entry stays the recovery and
+the host commits it through the same shared gesture. A registered editor
+(`apps/nemo-ui/ParameterEditorRegistry.hpp`) declares the keys it owns
+(`consumes`) and the layout it needs: `presentation: "row"` renders it beside
+the ordinary label/key cells, `presentation: "section"` renders it full width
+with no outer wrapper for an aggregate control. Consumed keys are omitted from
+the generic rows and a fully consumed section is dropped, so exactly one control
+renders each setting; an unavailable editor consumes nothing and the generic
+rows stay usable, with the refusal reason reported by `editor(id)`.
+`main.cpp` registers the three production editors: `nemo.read.source`
+(section — the Read control presents file/summary/timing/color itself),
+`nemo.channels.rgb` (`ChannelEditor.qml`, linked RGB with an expandable labelled
+R/G/B view and a separate Alpha — Grade's Primary/Range coefficients) and
+`nemo.merge.operation` (`MergeOperationEditor.qml`, the operation menu plus the
+Swap A/B action). Linking or collapsing is presentation state: it never
+equalizes stored values, Alpha is never edited by a linked RGB change, and
+changing editor presentation never changes the effect's execution parameters.
 
 Inspector arrangement lives in workspace `panel.state.inspectors`, not graph
 selection. `ParametersPanel.qml` saves arrangement edits there and rehydrates
@@ -240,6 +296,24 @@ Every committed key edit uses the existing animation commands and shared session
 undo/redo. A gesture captures revision and project generation, then commits once;
 collisions and stale revisions preserve document/history. The adapter does not
 own another animation model, evaluator, save format or undo stack.
+
+Value editing and keying are the same core gesture, not two modes the UI picks.
+`ProjectSession::beginValueParameterGesture` (issue #76) captures, at begin,
+whether each edited address already has an animation channel — that address then
+authors the current-frame key through the existing keyframe factory, preserving
+its interpolation, tangents and key identities — or has none, in which case it
+takes a static value and never creates a channel. Preview, update, commit and
+cancel share the existing lifecycle, the routing cannot change while the gesture
+lives, and commit is ONE command and one history entry applying both parts
+atomically; a batch may therefore mix an animated choice with its static
+companion. `ViewerController::beginNodeParameterEdits`/`updateNodeParameterEdits`
+and the Read editor's `commitValues` are the presentation shape of that one
+gesture (the single-key calls are its one-element case), so an inspector row
+never decides key-vs-static itself. Reset (`resetNodeParameterEdit`) authors the
+schema default at the same scope/frame and never removes a channel: Remove Key
+stays a separate action. The CLI exposes only the static batch
+(`begin`/`update`/`commit`/`cancel-parameter-gesture`); the keyed and mixed
+gestures are reached through the UI controller.
 [#50](https://github.com/rgamevfx/nemo/issues/50) retains the native comparison
 evidence and the outstanding owner image/internal-API review gate.
 
@@ -370,38 +444,103 @@ the adapter.
    [`MediaChooserSupport.hpp`](../../apps/nemo-ui/MediaChooserSupport.hpp) so the
    Media Bin and the Read node's control cannot drift apart.
 
-### Read node media control (issue #61)
+### Read node media control (issues #61/#75/#82)
 
 The Read node is the persistent `source` catalog type with display name "Read";
-its `source` parameter names a `Document` source key exactly as `evalSource` and
-`eval::SourceSession` already resolve it. Authored media is added through
-[`ReadSourceCommands.hpp`](../../src/nemo/core/commands/ReadSourceCommands.hpp):
+its `source` parameter names a `Document` source key that the CPU reference's
+source path, `eval::SourceSession` and the inspector all resolve through the core
+source-request resolver. Issue #75 divides what #61 kept together: the shared
+`SourceReference` owns media identity (path, content revision, committed facts
+and its own authored mapping/interpretation for non-Read consumers), while
+**the Read's own choices** are ordinary node parameters authored and animated
+like any other setting — `rangeMode`/`rangeFirst`/`rangeLast`,
+`frameOffset`/`frameStep`, `beforePolicy`/`afterPolicy`/`missingPolicy`,
+`inputTransform`/`inputColorSpace`/`alphaMode` and the fill-only `source*`
+encoding hints. Do not move those choices back onto the shared reference, and do
+not create a second per-Read record of shared facts.
 
-- `registerReadSourceCommand` resolves or creates the reference for a chosen
-  path (reusing an existing reference and Media Bin entry with the same
-  normalized path + interpretation) and points the node at it, in one undoable
-  command.
-- `relinkReadSourceCommand` updates the keyed reference's path in place,
-  preserving identity, timing and interpretation, so every node sharing it
-  recovers; `setReadSourceTimingCommand` edits the authored range/time mapping
-  with a stale-reference guard.
-- `SourceReference::firstFrame`/`lastFrame` are optional authored sequence
-  bounds, enforced only for `#`/`@` patterns in the shared image adapter so CPU
-  and GPU report an out-of-range frame instead of clamping it.
+[`ReadSourceCommands.hpp`](../../src/nemo/core/commands/ReadSourceCommands.hpp)
+owns binding and shared-scope repair:
+
+- `registerReadSourceCommand(target, time, path, initializeOverrides, kind, probe)`
+  resolves or creates the reference for a chosen path
+  (reusing an existing reference and Media Bin entry with the same normalized
+  path), commits the validated probe as the entry's facts, and binds it to the
+  Read's own `source` parameter as ONE command and one undo entry. It is the only
+  authoring path that initializes a Read's choices (fill-only through
+  `readInitializationParameters`: a key the scope already authors or already
+  animates is never overwritten, so a cleared or keyed Read keeps its trim), and
+  it authors the current-frame key when the addressed `source` parameter is
+  animated. Schema migration materializes the same translation without an
+  authoring command (see "Change project file persistence" below).
+- `relinkReadSourceCommand` and `reloadReadSourceCommand` are the explicit
+  SHARED repairs: they advance the reference's content revision once and replace
+  the committed facts for every catalog entry sharing the key, gate on an
+  expected reference (a stale/repointed repair is refused with
+  `GraphError::StaleMediaSource`), and never touch node choices, so a custom trim
+  survives both. Reload is explicit, not a directory watcher or global cache
+  clear.
+- Value edits — range, mapping, policies, Input Transform, alpha, hints,
+  including File Clear — are **not** owned by a Read-specific command: they go
+  through the shared panel value gesture (`ProjectSession::beginValueParameterGesture`
+  via `ViewerController`), whose per-address routing decides key-vs-static. One
+  gesture is one command and one undo entry.
+- `SourceReference::frameOffset`/`frameStep`/`firstFrame`/`lastFrame`/
+  `interpretation` remain the authored values of the *shared* reference, enforced
+  in the source-scoped image read path (`ImageSource.cpp` reports an
+  out-of-range `#`/`@` frame instead of clamping) for consumers that resolve a
+  reference directly. A Read does not consult them for its own evaluation:
+  resolution is exclusive, so a Read's node mapping replaces them and a migrated
+  legacy offset is applied exactly once.
+
+All three lifecycle commands take the probe's classified `MediaKind` explicitly,
+never inferring it from the path — `registerReadSourceCommand(target, time, path,
+initializeOverrides, kind, probe)`, `relinkReadSourceCommand(sourceKey, expected,
+path, kind, probe)` and `reloadReadSourceCommand(sourceKey, expected, kind,
+probe)` — and commit it with the probe onto the shared catalog entry. Reload
+preserves the existing kind when the supplied kind is `Unknown`; relink first
+invalidates the old path's kind and probe. A movie's classified kind (`video`)
+and validated interval survive normal register/relink/reload. The controller's
+explicit Sequence-vs-Single-Image choice maps a committed Single selection to
+`image`.
 
 `apps/nemo-ui/ReadSourceController` is the presentation adapter behind the
-registered editor id `nemo.read.source` (the Read node's parameter carries that
-`editor` id). It owns no decoder: it probes through the Media Bin adapter's one
-import worker with `MediaLibraryModel::requestReferenceProbe` (a
-requester-scoped probe of a reference that may not be in the catalog yet) and
-only then submits a ReadSource command. The hosted control is
-`apps/nemo-ui/qml/ReadSourceEditor.qml`, loaded by the existing
-`ParameterEditorRegistry` host. There is no effect-name switch and no second
-media model.
+registered editor id `nemo.read.source`. It owns no decoder, no value edit and
+no second media model: it probes through the Media Bin adapter's one import
+worker with `MediaLibraryModel::requestReferenceProbe` (a requester-scoped probe
+of a reference that may not be in the catalog yet) and only then submits a
+ReadSource command. Every request freezes the ADMITTED occurrence and frame — a
+probe/repair completion applies only while the node still resolves that frozen
+key and scope, an outstanding request is superseded by generation and dropped
+across a project-generation change. One error slot retains its exact address
+(network+node+key+occurrence), so it is not displayed on another occurrence;
+only success at that same address clears it. A newer rejection replaces the
+slot rather than accumulating an error per occurrence. A numbered
+selection that matches several files is held as a pending
+Sequence-vs-Single-Image choice and document changes only when one is committed;
+a cancelled browse publishes nothing. `ReadSourceEditor.qml` is the aggregate
+control (presentation `section`) that consumes the Read keys and presents file,
+summary, timing and color groups.
+
+The probe's merged `InputColorChoice` comes from core's
+`applyReadInterpretationHints` over an empty hint map for a Read that is not yet
+bound, and from `resolveSourceRequest` for a bound one — the same merge owner in
+both cases, so QML never re-derives hint precedence. Node-authored hints are the
+recovery path for rejected media without changing the shared reference's policy:
+an untagged stream is refused naming the missing relationship and authors
+nothing, the artist authors the missing decode fields through the shared value
+gesture, and the artist must EXPLICITLY retry the same selection (there is no
+automatic retry); the shared reference keeps the media path only. Start At is a
+checked, step-magnitude-aware alias of Offset: `startAtOffset` anchors the
+selected first frame for a forward step and the selected last for a reverse one
+and throws on overflow; the effective mapping reports a fractional or otherwise
+unrepresentable alignment as no value (`EffectiveSourceMapping::startAt()`,
+never zero), which the shared `NumericField` presents as unavailable.
 
 Issue #43 evidence: [`session.json`](../evidence/assets/issue43-media-import/session.json).
-The human image/API/schema review of this surface remains open; passing an agent
-or smoke check is not approval.
+Issue #75 inspector evidence: [`issue75-inspector.json`](../evidence/issue75-inspector.json).
+The evidence records the full-debug run and focused corrections separately
+from owner appearance/API approval; passing a smoke check is not that approval.
 
 ### Extend shared UI presentation
 
@@ -494,7 +633,24 @@ headless automation uses the CLI `file-state`/`open`/`save`/`save-as`/
   `KeepStored`, portable `RebaseRelative` (Save As) or `RebaseAbsolute`. A
   normal Save never packages media, and unknown opaque presentation paths are
   never resolved. Missing or unresolved references are reported with
-  identity+path for relink or media-owned sequence resolution.
+  identity+path for relink or media-owned sequence resolution. A registered
+  color-configuration reference (`nemo::kBuiltinColorConfigUri` in
+  `Document.hpp`, the pinned ACES Studio URI) is not a file: it ignores the
+  path policy, is stored and reopened verbatim, and is reported present by
+  construction; any other URI-looking string stays an ordinary path reported
+  honestly. A new project adopts media's `newProjectColorDefault()` through
+  `ProjectSession` (never by changing `ColorPolicy`'s literals), and an
+  explicit `$OCIO` override wins.
+- **Read ownership migration (schema 5).** Loading a schema-4 document
+  materializes the formerly shared Read timing/range and recognized
+  interpretation keys onto each Read scope (every network including nested
+  definitions, and each occurrence that repoints a Read at another source key)
+  through the deserialization path, so no controlled-edit transition is recorded
+  and the loader reports it as a warning. The migration and Read-node
+  construction share the one translation in `SourceRequest.hpp`; the shared
+  reference is left intact for other consumers and a migrated node hint is
+  fill-only, so reliably tagged media still wins. There is no legacy/new Read
+  mode and no second per-node interpretation record.
 - **Atomic write.** `ProjectFile::writeAtomic` writes a temp sibling, flushes
   and fsyncs, replaces, and keeps a previous-good backup; a failure never
   destroys the last valid target.

@@ -1,5 +1,7 @@
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
+#include "nemo/core/evaluation/SourceRequest.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -32,7 +34,10 @@ namespace {
     case ParameterType::Integer: {
         if (!std::holds_alternative<std::int64_t>(value))
             return "must be an integer";
-        const long double number = static_cast<long double>(std::get<std::int64_t>(value));
+        const auto integer = std::get<std::int64_t>(value);
+        if (parameter.nonzero && integer == 0)
+            return "must be nonzero";
+        const long double number = static_cast<long double>(integer);
         return withinRange(number) ? std::nullopt : std::optional<std::string>{"is outside the declared range"};
     }
     case ParameterType::Float: {
@@ -41,6 +46,8 @@ namespace {
         const double number = std::get<double>(value);
         if (!std::isfinite(number) || !std::isfinite(static_cast<float>(number)))
             return "must be finite and representable as a float";
+        if (parameter.nonzero && number == 0.0)
+            return "must be nonzero";
         return withinRange(static_cast<long double>(number))
                    ? std::nullopt
                    : std::optional<std::string>{"is outside the declared range"};
@@ -209,6 +216,38 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
         if (parameter.step && (!std::isfinite(*parameter.step) || *parameter.step <= 0.0))
             throw std::invalid_argument(context + ": parameter '" + parameter.name +
                                         "' has a step that is not finite and positive");
+        if ((parameter.softMinimum && !std::isfinite(*parameter.softMinimum)) ||
+            (parameter.softMaximum && !std::isfinite(*parameter.softMaximum)) ||
+            (parameter.softMinimum && parameter.softMaximum && *parameter.softMinimum > *parameter.softMaximum)) {
+            throw std::invalid_argument(context + ": parameter '" + parameter.name + "' has an invalid soft range");
+        }
+        if (!numeric && (parameter.softMinimum || parameter.softMaximum))
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' declares a soft range for a non-numeric type");
+        if (parameter.nonzero && !numeric)
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' declares nonzero for a non-numeric type");
+        if ((parameter.softMinimum && parameter.minimum && *parameter.softMinimum < *parameter.minimum) ||
+            (parameter.softMinimum && parameter.maximum && *parameter.softMinimum > *parameter.maximum) ||
+            (parameter.softMaximum && parameter.maximum && *parameter.softMaximum > *parameter.maximum) ||
+            (parameter.softMaximum && parameter.minimum && *parameter.softMaximum < *parameter.minimum)) {
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' has a soft range outside its declared range");
+        }
+        if (parameter.displayDecimals && (*parameter.displayDecimals < 0 || *parameter.displayDecimals > 9))
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' has display decimals outside the 0..9 range");
+        if (parameter.displayDecimals && !numeric)
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' declares display decimals for a non-numeric type");
+        if (!parameter.row.empty() && hasControlCharacters(parameter.row))
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' has a row containing control characters");
+        if (parameter.channels && parameter.type != ParameterType::Color && parameter.type != ParameterType::Vector2 &&
+            parameter.type != ParameterType::Vector3) {
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' declares channel semantics for a non-tuple type");
+        }
         if (!parameter.label.empty() && hasControlCharacters(parameter.label))
             throw std::invalid_argument(context + ": parameter '" + parameter.name +
                                         "' has a label containing control characters");
@@ -300,20 +339,42 @@ NodeDescriptor constColorDescriptor() {
 }
 
 NodeDescriptor mergeDescriptor() {
-    return NodeDescriptor{.type = "merge",
-                          .displayName = "Merge",
-                          .group = "Compositing",
-                          .implementationVersion = 1,
-                          .inputs = {{PortKind::Image, "A"}, {PortKind::Image, "B"}},
-                          .outputs = {{PortKind::Image, "out"}},
-                          .parameters = {{.name = "operation",
-                                          .type = ParameterType::Choice,
-                                          .defaultValue = ParameterValue{ChoiceValue{"over"}},
-                                          .choices = {"over"},
-                                          .label = "Operation",
-                                          .section = "Composite",
-                                          .editor = {}}},
-                          .capabilities = allBuiltinCapabilities()};
+    return NodeDescriptor{
+        .type = "merge",
+        .displayName = "Merge",
+        .group = "Compositing",
+        .implementationVersion = 2,
+        .inputs = {{PortKind::Image, "A", false}, {PortKind::Image, "B", false}, {PortKind::Mask, "mask", true}},
+        .outputs = {{PortKind::Image, "out"}},
+        .parameters = {{.name = "operation",
+                        .type = ParameterType::Choice,
+                        .defaultValue = ParameterValue{ChoiceValue{"over"}},
+                        .choices = {"over", "plus", "multiply", "screen", "difference"},
+                        .label = "Operation",
+                        .section = "Composite",
+                        .editor = "nemo.merge.operation"},
+                       {.name = "mix",
+                        .type = ParameterType::Float,
+                        .defaultValue = ParameterValue{1.0},
+                        .minimum = 0.0,
+                        .maximum = 1.0,
+                        .label = "Mix",
+                        .section = "Composite",
+                        .editor = {}},
+                       {.name = "maskChannel",
+                        .type = ParameterType::Choice,
+                        .defaultValue = ParameterValue{ChoiceValue{"A"}},
+                        .choices = {"none", "R", "G", "B", "A"},
+                        .label = "Mask Channel",
+                        .section = "Mask",
+                        .editor = {}},
+                       {.name = "invertMask",
+                        .type = ParameterType::Boolean,
+                        .defaultValue = ParameterValue{false},
+                        .label = "Invert Mask",
+                        .section = "Mask",
+                        .editor = {}}},
+        .capabilities = allBuiltinCapabilities()};
 }
 
 NodeDescriptor outputDescriptor() {
@@ -341,19 +402,71 @@ NodeDescriptor viewerDescriptor() {
 }
 
 NodeDescriptor sourceDescriptor() {
-    return NodeDescriptor{.type = "source",
-                          .displayName = "Read",
-                          .group = "I/O",
-                          .implementationVersion = 1,
-                          .inputs = {},
-                          .outputs = {{PortKind::Image, "color"}},
-                          .parameters = {{.name = "source",
-                                          .type = ParameterType::String,
-                                          .defaultValue = ParameterValue{std::string{}},
-                                          .label = "File",
-                                          .section = "Source",
-                                          .editor = "nemo.read.source"}},
-                          .capabilities = allBuiltinCapabilities(true)};
+    // Node-scoped Read settings. Names/defaults are the resolver's frozen
+    // semantic owner (evaluation/SourceRequest.hpp): the catalog declares the
+    // same keys so authoring/validation/presentation cannot drift from the one
+    // effective-request owner.
+    const auto choice = [](std::string_view name, std::string_view label, std::string_view section, std::string value,
+                           std::vector<std::string> choices) {
+        return ParameterSpec{.name = std::string{name},
+                             .type = ParameterType::Choice,
+                             .defaultValue = ParameterValue{ChoiceValue{std::string{value}}},
+                             .choices = std::move(choices),
+                             .label = std::string{label},
+                             .section = std::string{section},
+                             .editor = {}};
+    };
+    const auto integer = [](std::string_view name, std::string_view label, std::string_view section, std::int64_t value,
+                            bool nonzero = false) {
+        return ParameterSpec{.name = std::string{name},
+                             .type = ParameterType::Integer,
+                             .defaultValue = ParameterValue{value},
+                             .label = std::string{label},
+                             .section = std::string{section},
+                             .editor = {},
+                             .nonzero = nonzero};
+    };
+    return NodeDescriptor{
+        .type = "source",
+        .displayName = "Read",
+        .group = "I/O",
+        .implementationVersion = 2,
+        .inputs = {},
+        .outputs = {{PortKind::Image, "color"}},
+        .parameters =
+            {{.name = "source",
+              .type = ParameterType::String,
+              .defaultValue = ParameterValue{std::string{}},
+              .label = "File",
+              .section = "Source",
+              .editor = "nemo.read.source"},
+             choice(kReadParamRangeMode, "Range Mode", "Timing", "auto", {"auto", "custom"}),
+             integer(kReadParamRangeFirst, "First Frame", "Timing", 0),
+             integer(kReadParamRangeLast, "Last Frame", "Timing", 0),
+             integer(kReadParamFrameOffset, "Offset", "Timing", 0),
+             // Step is a nonzero signed integer; the catalog's
+             // nonzero constraint is the generic-edit validator, and
+             // no bounds are declared so a typed value is never
+             // clamped.
+             integer(kReadParamFrameStep, "Step", "Timing", 1, /*nonzero=*/true),
+             choice(kReadParamBeforePolicy, "Before", "Policies", "error", {"error", "hold", "black"}),
+             choice(kReadParamAfterPolicy, "After", "Policies", "error", {"error", "hold", "black"}),
+             choice(kReadParamMissingPolicy, "Missing Frames", "Policies", "error", {"error", "black"}),
+             choice(kReadParamInputTransform, "Input Transform", "Color", "auto", {"auto", "explicit", "raw"}),
+             {.name = std::string{kReadParamInputColorSpace},
+              .type = ParameterType::String,
+              .defaultValue = ParameterValue{std::string{}},
+              .label = "Input Color Space",
+              .section = "Color",
+              .editor = {}},
+             choice(kReadParamAlphaMode, "Alpha Mode", "Color", "auto", {"auto", "straight", "premultiplied"}),
+             choice(kReadParamSourceTransfer, "Transfer", "Encoding Hints", "auto",
+                    {"auto", "bt709", "srgb", "gamma22", "gamma28", "linear"}),
+             choice(kReadParamSourcePrimaries, "Primaries", "Encoding Hints", "auto", {"auto", "bt709"}),
+             choice(kReadParamSourceMatrix, "Matrix", "Encoding Hints", "auto", {"auto", "bt709", "bt601"}),
+             choice(kReadParamSourceRange, "Range", "Encoding Hints", "auto", {"auto", "limited", "full"}),
+             choice(kReadParamSourceChromaLocation, "Chroma Location", "Encoding Hints", "auto", {"auto", "left"})},
+        .capabilities = allBuiltinCapabilities(true)};
 }
 
 NodeDescriptor testPatternDescriptor() {
@@ -389,15 +502,22 @@ std::vector<ParameterSpec> maskParameterSpecs() {
          .label = "Invert Mask",
          .section = "Mask",
          .editor = {}},
-        {.name = "mix",
-         .type = ParameterType::Float,
-         .defaultValue = ParameterValue{1.0},
-         .minimum = 0.0,
-         .maximum = 1.0,
-         .label = "Mix",
-         .section = "Mask",
-         .editor = {}},
     };
+}
+
+// Mix is an ordinary effect control, not a mask control: it must stay reachable
+// and usable with no mask connected (stories 38 and 71). Each effect appends it
+// to its primary list and the shared mask specs stay the only "Mask" section
+// members.
+ParameterSpec mixParameterSpec(std::string section) {
+    return {.name = "mix",
+            .type = ParameterType::Float,
+            .defaultValue = ParameterValue{1.0},
+            .minimum = 0.0,
+            .maximum = 1.0,
+            .label = "Mix",
+            .section = std::move(section),
+            .editor = {}};
 }
 
 std::vector<ParameterSpec> withMaskParameters(std::vector<ParameterSpec> specific) {
@@ -417,6 +537,9 @@ NodeCapabilities wholeImageCapabilities() {
 }
 
 NodeDescriptor gradeDescriptor() {
+    const auto channelEditor = std::string{"nemo.channels.rgb"};
+    const ChannelHint additive{ChannelLink::Additive, true};
+    const ChannelHint multiplicative{ChannelLink::Multiplicative, true};
     return NodeDescriptor{.type = "grade",
                           .displayName = "Grade",
                           .group = "Color",
@@ -424,72 +547,94 @@ NodeDescriptor gradeDescriptor() {
                           .inputs = effectInputs(),
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = withMaskParameters({
-                              {.name = "blackpoint",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
-                               .label = "Blackpoint",
-                               .section = "Grade",
-                               .editor = {}},
-                              {.name = "whitepoint",
-                               .type = ParameterType::Color,
-                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
-                               .label = "Whitepoint",
-                               .section = "Grade",
-                               .editor = {}},
                               {.name = "lift",
                                .type = ParameterType::Color,
                                .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
                                .label = "Lift",
-                               .section = "Grade",
-                               .editor = {}},
+                               .section = "Primary",
+                               .editor = channelEditor,
+                               .softMinimum = -1.0,
+                               .softMaximum = 1.0,
+                               .channels = additive},
                               {.name = "gain",
                                .type = ParameterType::Color,
                                .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
                                .label = "Gain",
-                               .section = "Grade",
-                               .editor = {}},
+                               .section = "Primary",
+                               .editor = channelEditor,
+                               .softMinimum = 0.0,
+                               .softMaximum = 2.0,
+                               .channels = multiplicative},
                               {.name = "multiply",
                                .type = ParameterType::Color,
                                .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
                                .label = "Multiply",
-                               .section = "Grade",
-                               .editor = {}},
+                               .section = "Primary",
+                               .editor = channelEditor,
+                               .softMinimum = 0.0,
+                               .softMaximum = 2.0,
+                               .channels = multiplicative},
                               {.name = "offset",
                                .type = ParameterType::Color,
                                .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
                                .label = "Offset",
-                               .section = "Grade",
-                               .editor = {}},
+                               .section = "Primary",
+                               .editor = channelEditor,
+                               .softMinimum = -1.0,
+                               .softMaximum = 1.0,
+                               .channels = additive},
                               {.name = "gamma",
                                .type = ParameterType::Color,
                                .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
                                .label = "Gamma",
-                               .section = "Grade",
-                               .editor = {}},
+                               .section = "Primary",
+                               .editor = channelEditor,
+                               .softMinimum = 0.01,
+                               .softMaximum = 4.0,
+                               .channels = multiplicative},
+                              mixParameterSpec("Primary"),
+                              {.name = "blackpoint",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}}},
+                               .label = "Blackpoint",
+                               .section = "Range",
+                               .editor = channelEditor,
+                               .softMinimum = 0.0,
+                               .softMaximum = 1.0,
+                               .channels = additive},
+                              {.name = "whitepoint",
+                               .type = ParameterType::Color,
+                               .defaultValue = ParameterValue{ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}}},
+                               .label = "Whitepoint",
+                               .section = "Range",
+                               .editor = channelEditor,
+                               .softMinimum = 0.0,
+                               .softMaximum = 2.0,
+                               .channels = additive},
                               {.name = "channels",
                                .type = ParameterType::Choice,
                                .defaultValue = ParameterValue{ChoiceValue{"RGB"}},
                                .choices = {"RGB", "RGBA", "R", "G", "B", "Alpha", "None"},
                                .label = "Channels",
-                               .section = "Grade",
+                               .section = "Options",
                                .editor = {}},
                               {.name = "reverse",
                                .type = ParameterType::Boolean,
                                .defaultValue = ParameterValue{false},
                                .label = "Reverse",
-                               .section = "Grade",
+                               .section = "Options",
                                .editor = {}},
                               {.name = "clampBlack",
                                .type = ParameterType::Boolean,
                                .defaultValue = ParameterValue{true},
                                .label = "Clamp Black",
-                               .section = "Grade",
+                               .section = "Options",
                                .editor = {}},
                               {.name = "clampWhite",
                                .type = ParameterType::Boolean,
                                .defaultValue = ParameterValue{false},
                                .label = "Clamp White",
-                               .section = "Grade",
+                               .section = "Options",
                                .editor = {}},
                           }),
                           .capabilities = allBuiltinCapabilities()};
@@ -519,6 +664,7 @@ NodeDescriptor blurDescriptor() {
                                .label = "Channels",
                                .section = "Blur",
                                .editor = {}},
+                              mixParameterSpec("Blur"),
                           }),
                           .capabilities = wholeImageCapabilities()};
 }
@@ -534,39 +680,44 @@ NodeDescriptor transformDescriptor() {
                               {.name = "translateX",
                                .type = ParameterType::Float,
                                .defaultValue = ParameterValue{0.0},
-                               .minimum = -200.0,
-                               .maximum = 200.0,
                                .step = 1.0,
-                               .label = "Translate X",
+                               .label = "X",
                                .section = "Transform",
-                               .editor = {}},
+                               .editor = {},
+                               .softMinimum = -200.0,
+                               .softMaximum = 200.0,
+                               .row = "Translate"},
                               {.name = "translateY",
                                .type = ParameterType::Float,
                                .defaultValue = ParameterValue{0.0},
-                               .minimum = -200.0,
-                               .maximum = 200.0,
                                .step = 1.0,
-                               .label = "Translate Y",
+                               .label = "Y",
                                .section = "Transform",
-                               .editor = {}},
+                               .editor = {},
+                               .softMinimum = -200.0,
+                               .softMaximum = 200.0,
+                               .row = "Translate"},
                               {.name = "scale",
                                .type = ParameterType::Float,
                                .defaultValue = ParameterValue{1.0},
-                               .minimum = 0.1,
-                               .maximum = 3.0,
+                               .minimum = 0.0,
                                .step = 0.001,
                                .label = "Scale",
                                .section = "Transform",
-                               .editor = {}},
+                               .editor = {},
+                               .softMinimum = 0.1,
+                               .softMaximum = 3.0,
+                               .nonzero = true},
                               {.name = "rotate",
                                .type = ParameterType::Float,
                                .defaultValue = ParameterValue{0.0},
-                               .minimum = -180.0,
-                               .maximum = 180.0,
                                .step = 0.1,
                                .label = "Rotate",
                                .section = "Transform",
-                               .editor = {}},
+                               .editor = {},
+                               .softMinimum = -180.0,
+                               .softMaximum = 180.0},
+                              mixParameterSpec("Transform"),
                               {.name = "filter",
                                .type = ParameterType::Choice,
                                .defaultValue = ParameterValue{ChoiceValue{"Cubic"}},

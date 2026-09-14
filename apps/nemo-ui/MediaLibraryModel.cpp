@@ -425,6 +425,20 @@ QVariantMap runtimeFromResult(const nemo::media::MediaImportResult& result) {
     runtime.insert(QStringLiteral("streamIndex"), result.streamIndex);
     runtime.insert(QStringLiteral("profile"), QString::fromStdString(result.profile));
     runtime.insert(QStringLiteral("planeCount"), result.planeCount);
+    // Discovered coverage (issue #80): the sequence's real available range,
+    // file count and compact holes. Absent keys mean the fact is unknown.
+    runtime.insert(QStringLiteral("probedFrame"), static_cast<qlonglong>(result.probedFrame));
+    const nemo::media::SequenceDiscovery& discovery = result.discovery;
+    if (discovery.status == nemo::media::SequenceDiscoveryStatus::Sequence) {
+        runtime.insert(QStringLiteral("sequenceFirst"), static_cast<qlonglong>(discovery.first));
+        runtime.insert(QStringLiteral("sequenceLast"), static_cast<qlonglong>(discovery.last));
+        runtime.insert(QStringLiteral("availableFrameCount"), static_cast<qlonglong>(discovery.availableCount));
+        runtime.insert(QStringLiteral("missingFrameCount"), static_cast<qlonglong>(discovery.missingCount));
+        runtime.insert(QStringLiteral("coverageQuality"), QStringLiteral("validated"));
+    } else {
+        runtime.insert(QStringLiteral("coverageQuality"),
+                       QStringLiteral("unknown"));  // never guessed from a nominal rate or a directory count
+    }
     return runtime;
 }
 
@@ -439,6 +453,31 @@ QVariantMap probeRecord(const MediaProbeMetadata& probe) {
     map.insert(QStringLiteral("colorMatrix"), QString::fromStdString(probe.colorMatrix));
     map.insert(QStringLiteral("provenance"), QString::fromStdString(probe.provenance));
     map.insert(QStringLiteral("status"), probeStatusName(probe.status));
+    // Committed discovered coverage (issue #80); absent keys are unknown facts.
+    map.insert(QStringLiteral("coverageQuality"),
+               QString::fromLatin1(nemo::coverageQualityName(probe.coverageQuality)));
+    if (probe.firstFrame) {
+        map.insert(QStringLiteral("firstFrame"), static_cast<qlonglong>(*probe.firstFrame));
+    }
+    if (probe.lastFrame) {
+        map.insert(QStringLiteral("lastFrame"), static_cast<qlonglong>(*probe.lastFrame));
+    }
+    if (probe.availableFrameCount) {
+        map.insert(QStringLiteral("availableFrameCount"), static_cast<qlonglong>(*probe.availableFrameCount));
+    }
+    if (probe.missingFrameCount) {
+        map.insert(QStringLiteral("missingFrameCount"), static_cast<qlonglong>(*probe.missingFrameCount));
+    }
+    if (probe.pixelAspect) {
+        map.insert(QStringLiteral("pixelAspect"), *probe.pixelAspect);
+    }
+    if (probe.rateNumerator && probe.rateDenominator) {
+        map.insert(QStringLiteral("rate"), QString::number(*probe.rateNumerator) + QStringLiteral("/") +
+                                               QString::number(*probe.rateDenominator));
+    }
+    map.insert(QStringLiteral("precision"), QString::fromStdString(probe.precision));
+    map.insert(QStringLiteral("channels"), QString::fromStdString(probe.channels));
+    map.insert(QStringLiteral("declaredInputColorSpace"), QString::fromStdString(probe.declaredInputColorSpace));
     if (probe.extension.is_object() && probe.extension.contains("runtime")) {
         map.insert(QStringLiteral("runtime"), jsonToVariant(probe.extension.at("runtime")));
     }
@@ -2070,6 +2109,19 @@ bool MediaLibraryModel::enqueueRuntime(MediaSourceId entry) {
     request.thumbnailWidth = 160;
     request.thumbnailHeight = 90;
     request.frame = 0;
+    // The project identity travels with the request: the worker's retained
+    // input-color context is per project generation, so a replaced/reopened
+    // project never reuses the previous context (same config path or not).
+    request.projectGeneration = session_.projectGeneration();
+    // A fresh/visible media probe inspects a discovered available member when
+    // the reference's own mapping misses (a sequence starting above zero is not
+    // reported offline before its real coverage is known). The authored
+    // reference is unchanged: this is a probe, not an edit.
+    request.alignment = nemo::media::ProbeAlignment::DiscoverAvailable;
+    // Source-scoped probe: the shared reference's own interpretation is the
+    // fill-only hint set, with no node override (origin SourceInterpretation).
+    request.inputColor.mode = nemo::InputTransformMode::Auto;
+    request.inputColor.hints = source->second.interpretation;
     InFlightProbe inflight;
     inflight.requestId = request.requestId;
     inflight.entry = entry;
@@ -2111,8 +2163,9 @@ bool MediaLibraryModel::enqueueRuntime(MediaSourceId entry) {
     return true;
 }
 
-std::uint64_t MediaLibraryModel::requestReferenceProbe(nemo::SourceReference reference,
-                                                       ReferenceProbeOutcome onOutcome) {
+std::uint64_t MediaLibraryModel::requestReferenceProbe(nemo::SourceReference reference, ReferenceProbeOutcome onOutcome,
+                                                       const nemo::media::ProbeAlignment alignment,
+                                                       nemo::media::InputColorChoice inputColor) {
     if (!onOutcome || reference.path.empty())
         return 0;
     const std::uint64_t requestId = nextRequestId_++;
@@ -2128,6 +2181,13 @@ std::uint64_t MediaLibraryModel::requestReferenceProbe(nemo::SourceReference ref
     request.thumbnailWidth = 0;
     request.thumbnailHeight = 0;
     request.frame = 0;
+    // A fresh selection may be aligned to a discovered available member; a
+    // relink/reload probes the mapping's own frame.
+    request.alignment = alignment;
+    request.projectGeneration = session_.projectGeneration();
+    // The requester's authored color choices (already merged by core's resolver
+    // for a Read); a source-scoped probe leaves them at the media default.
+    request.inputColor = std::move(inputColor);
 
     if (queued_.size() >= kQueuedRequestLimit) {
         // The one shared queue is full; the requester gets an explicit refusal
@@ -2206,8 +2266,8 @@ bool MediaLibraryModel::ensureRuntime(MediaSourceId entry) {
         return true;  // a result for this identity already exists, even if it failed
     }
     const auto latest = latestRequest_.find(key);
-    if (latest != latestRequest_.end() && latest->second.colorPolicy == policy &&
-        latest->second.colorConfig == config &&
+    if (latest != latestRequest_.end() && latest->second.expected == source->second &&
+        latest->second.colorPolicy == policy && latest->second.colorConfig == config &&
         !thumbnails_->find(QString::number(latest->second.requestId)).isNull()) {
         return true;
     }
@@ -2438,6 +2498,7 @@ void MediaLibraryModel::handleRuntimeResult(nemo::media::MediaImportResult resul
         index.requestId = requestId;
         index.colorPolicy = result.request.colorPolicy;
         index.colorConfig = result.request.colorConfig;
+        index.expected = expected;
         latestRequest_[key] = index;
         pruneThumbnailIndex();
         hasThumbnail = true;
@@ -2515,9 +2576,12 @@ QString MediaLibraryModel::thumbnailUrl(const QString& id) const {
     if (latest == latestRequest_.end()) {
         return {};
     }
-    // A thumbnail produced under a replaced viewing transform is not shown; the
-    // color-change refresh (or the visible-request hook) produces a new one.
-    if (!(latest->second.colorPolicy == document.color) || latest->second.colorConfig != session_.colorConfigPath()) {
+    // A thumbnail produced for a different source revision (an explicit reload
+    // of overwritten media) or a replaced viewing transform is not shown; the
+    // visible-request hook produces a new one.
+    const auto source = document.sources.find(entry->sourceKey);
+    if (source == document.sources.end() || !(latest->second.expected == source->second) ||
+        !(latest->second.colorPolicy == document.color) || latest->second.colorConfig != session_.colorConfigPath()) {
         return {};
     }
     const QString key = QString::number(latest->second.requestId);

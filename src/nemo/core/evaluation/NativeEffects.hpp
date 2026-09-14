@@ -26,4 +26,21 @@ struct NodeInstance;
                                             ParameterValues& effectiveParams, const EvaluationRequest& request,
                                             const CpuImage& input, const CpuImage* mask);
 
+// CPU reference implementation of Merge (issue #75). Port roles follow the
+// declared schema: `background` is port A (base), `foreground` is port B
+// (source). `mask` is null when the optional mask port is absent. The
+// operation and the shared mask/mix controls are resolved and validated
+// through Params.hpp, so this agrees with the GPU executor by construction;
+// the pixel math below is an independent reference (ADR-0004).
+//
+// Straight-alpha contract, op-independent for alpha and Over-preserving for
+// RGB: Over keeps the exact opaque/translucent expression the reference has
+// always used, the four extended modes interpolate background -> blend target
+// by foreground alpha, and the final RGBA result blends the unmasked composite
+// over the background by the shared coverage*mix weight. Scene-linear RGB is
+// never clamped.
+[[nodiscard]] CpuImage evaluateMerge(const NodeCatalog& catalog, const NodeInstance& node,
+                                     ParameterValues& effectiveParams, const CpuImage& background,
+                                     const CpuImage& foreground, const CpuImage* mask);
+
 }  // namespace nemo

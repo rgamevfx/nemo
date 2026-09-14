@@ -1,0 +1,222 @@
+{
+  "issue": 75,
+  "baseline_commit": "47c6b73a8ce95883f2daa14d8352d915827b7ef7",
+  "scope": "Four coherent changes; the original issue remains the requirements source, not 77 separate test obligations.",
+  "changes": [
+    {
+      "change": "Shared inspector controls",
+      "owners": [
+        "apps/nemo-ui/qml/NumericField.qml",
+        "apps/nemo-ui/qml/KeyIndicator.qml",
+        "apps/nemo-ui/qml/ExposureLabel.qml",
+        "apps/nemo-ui/qml/ParametersPanel.qml",
+        "src/nemo/core/session/ProjectSession.cpp"
+      ],
+      "behavior": "Shared exact entry, scrub/cancel/undo, key/reset/exposure interactions, grouped Transform controls and stable inspector rows.",
+      "evidence": [
+        "run-19-wayland",
+        "AnimationSurface numeric/Transform/column tests in the full debug suite; native sanitizer assertions also passed."
+      ]
+    },
+    {
+      "change": "Grade and Merge",
+      "owners": [
+        "apps/nemo-ui/qml/ChannelEditor.qml",
+        "apps/nemo-ui/qml/MergeOperationEditor.qml",
+        "src/nemo/core/evaluation/NativeEffects.cpp",
+        "src/nemo/core/evaluation/CpuReference.cpp",
+        "src/nemo/gpu/shaders/merge.slang"
+      ],
+      "behavior": "Linked/expanded Grade channels preserve component differences and separate alpha. Merge adds operations, optional mask, Mix and atomic A/B swap.",
+      "evidence": [
+        "run-19-wayland",
+        "Full debug CPU/GPU operation, HDR, mask/invert/Mix and swap tests.",
+        "Public CLI evaluate/evaluate-gpu:12/12 independent RGB expectations and4/4 exact zero-mask/zero-Mix background results; saved swap/undo and rejected-operation atomicity."
+      ]
+    },
+    {
+      "change": "Read workflow",
+      "owners": [
+        "apps/nemo-ui/ReadSourceController.cpp",
+        "apps/nemo-ui/qml/ReadSourceEditor.qml",
+        "src/nemo/core/evaluation/SourceRequest.cpp",
+        "src/nemo/media/SequenceDiscovery.cpp",
+        "src/nemo/media/InputColor.cpp"
+      ],
+      "behavior": "Validated movie/sequence coverage, explicit Sequence/Single choice, node-local Auto/Custom timing and checked Start At, reload/replacement/recovery, searchable config-derived input color and alpha.",
+      "evidence": [
+        "read-run-10-wayland",
+        "recovery-run-02-wayland",
+        "21 ReadSourceUiTest and core source/session regressions; full debug media/color/source tests."
+      ]
+    },
+    {
+      "change": "Shared ownership and migration",
+      "owners": [
+        "src/nemo/core/document/Serialization.cpp",
+        "src/nemo/core/commands/ReadSourceCommands.cpp",
+        "src/nemo/eval/SourceSession.cpp",
+        "src/nemo/eval/Viewer.cpp",
+        "docs/decisions/0007-evaluator-reuse-invalidation.md"
+      ],
+      "behavior": "Effective Read requests centralize mapping/interpretation; command routing retains occurrence identity; legacy persistence migrates; explicit media-kind lifecycle and scoped invalidation reuse existing owners. Approved pinned ACES Studio default is for new projects.",
+      "evidence": [
+        "Full debug session/persistence/reuse/animation/color tests.",
+        "73 source/session/animation ASAN/UBSan tests.",
+        "Standards/Spec reviews incomplete; owner explicitly approved committing locally without the reports."
+      ]
+    }
+  ],
+  "verification": {
+    "full_debug": {
+      "command": "ctest --preset debug -j 2 --output-junit issue75-full-debug.xml",
+      "registered": 670,
+      "passed": 657,
+      "skipped": 11,
+      "failed": 2,
+      "seconds": 77.62,
+      "artifact": "artifact://2226",
+      "note": "Single full-suite run. Skips are opt-in native Viewer scenarios; relevant native paths were exercised separately."
+    },
+    "focused_corrections": {
+      "command": "build/debug/tests/nemo_viewer_tests --gtest_filter=Viewer.InterpretationMapIsParsedStrictly:Viewer.StillSequenceOutOfRangeFrameFailsNamingPath",
+      "passed": 2,
+      "seconds": 1.506,
+      "change": "GPU source acquisition errors regain node context; overflow regression checks structured node identity rather than incidental diagnostic formatting.",
+      "note": "Both full-suite failures resolved. No second full suite."
+    },
+    "release": "Final full release rebuild passed (65.40 s); only known third-party minizip-ng mktemp linker warnings.",
+    "sanitizers": {
+      "core_session_animation": "73 passed (artifact://2128)",
+      "read_controller": "21 passed (artifact://2133)",
+      "native_controls": "7 behavioral assertions passed; LeakSanitizer failed:116272 bytes/537 allocations (artifact://2225). Qt-only probing reproduces Wayland allocations; QML ownership unresolved. User directed no further Qt investigation; no suppression or product accessibility change."
+    },
+    "reviews": {
+      "standards": "Incomplete: no final report or reply to repeated requests to conclude. Owner explicitly approved local commit without the report.",
+      "spec": "Incomplete: no final report or reply to repeated requests to conclude. Owner explicitly approved local commit without the report."
+    },
+    "debug_build": "Final full debug rebuild passed (51.30 s); no second full test suite.",
+    "format": "clang-format-18 --dry-run --Werror passed for all changed C++ source/header files."
+  },
+  "native_runs": [
+    {
+      "id": "run-19-wayland",
+      "steps": 72,
+      "checks": 177,
+      "result": "pass",
+      "platform_qpa": "wayland",
+      "dpr": 1,
+      "window_final": {
+        "active": true,
+        "exposed": true,
+        "size": "1280x720"
+      },
+      "report_path": "build/issue75-evidence/run-19-wayland/report.json",
+      "report_sha256": "0e5ad4d9829f88812b2e5df88aa67d8b2257da2549230ca4d65b4fb98d5823e3"
+    },
+    {
+      "id": "read-run-10-wayland",
+      "steps": 54,
+      "checks": 173,
+      "result": "pass",
+      "platform_qpa": "wayland",
+      "dpr": 1,
+      "window_final": {
+        "active": true,
+        "exposed": true,
+        "size": "1280x720"
+      },
+      "report_path": "build/issue75-evidence/read-run-10-wayland/report.json",
+      "report_sha256": "f275ad6930925b080d336dd0ca2a8fb836e95ade234033f213f36202558ef0a1"
+    },
+    {
+      "id": "recovery-run-02-wayland",
+      "steps": 22,
+      "checks": 82,
+      "result": "pass",
+      "platform_qpa": "wayland",
+      "dpr": 1,
+      "window_final": {
+        "active": true,
+        "exposed": true,
+        "size": "1280x720"
+      },
+      "report_path": "build/issue75-evidence/recovery-run-02-wayland/report.json",
+      "report_sha256": "935ec41d87bbb60878f105f3ca09a46616b8bc3d3d00eb200669a067c8b85472"
+    }
+  ],
+  "captures": [
+    {
+      "file": "docs/evidence/assets/issue75-inspector/01-normal-parameters.png",
+      "source_path": "build/issue75-evidence/run-19-wayland/captures/01-normal-parameters.png",
+      "copy_sha256": "c933ce9425b3606cd92e897d926e8b8589fafeda5d6952326d0546831f6ecd25",
+      "run": "run-19-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/06-narrow-411-parameters.png",
+      "source_path": "build/issue75-evidence/run-19-wayland/captures/06-narrow-411-parameters.png",
+      "copy_sha256": "cf54fd9a0d9c2c1e3326cbc32fbb39791d11d8e5ef666922c98b74d211fcd2af",
+      "run": "run-19-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/11-grade-expanded-rgb.png",
+      "source_path": "build/issue75-evidence/run-19-wayland/captures/11-grade-expanded-rgb.png",
+      "copy_sha256": "21ee4a4ad63e7bf421be9f62d89d75a8fd849d5b0f19fcf7d0ea59f36fa5ab8f",
+      "run": "run-19-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/23-read-input-transform-committed.png",
+      "source_path": "build/issue75-evidence/run-19-wayland/captures/23-read-input-transform-committed.png",
+      "copy_sha256": "c44c5da6ba467c39076874abf29199c88db00c6b978c77bf1276e7d51a6b3e28",
+      "run": "run-19-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/read-08-input-transform-menu.png",
+      "source_path": "build/issue75-evidence/read-run-10-wayland/captures/read-08-input-transform-menu.png",
+      "copy_sha256": "f68ab6df4d3647a027626c41f26f972ba9762f2b376c384619e5279b2e2b8925",
+      "run": "read-run-10-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/read-10-custom-range.png",
+      "source_path": "build/issue75-evidence/read-run-10-wayland/captures/read-10-custom-range.png",
+      "copy_sha256": "605274fa385f13c6d59627a1fef2d742db69de13e88e0abecac9bb68221246af",
+      "run": "read-run-10-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/read-13-sequence-choice.png",
+      "source_path": "build/issue75-evidence/read-run-10-wayland/captures/read-13-sequence-choice.png",
+      "copy_sha256": "ca80ed95d4388635afcf7541ba4ae8a7aab1a641ef012288445f5c27a305535c",
+      "run": "read-run-10-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/recovery-02-rejected-card.png",
+      "source_path": "build/issue75-evidence/recovery-run-02-wayland/captures/recovery-02-rejected-card.png",
+      "copy_sha256": "a346a3065953d9d94eec4b168fb21d006653c031d1a12e9503117ba42d3e9a9d",
+      "run": "recovery-run-02-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/recovery-06-raw-alone-rejected.png",
+      "source_path": "build/issue75-evidence/recovery-run-02-wayland/captures/recovery-06-raw-alone-rejected.png",
+      "copy_sha256": "ab53fae81acbd7fe59c1f176795c0d1da9919edd5f08ca7046417b71ac81d122",
+      "run": "recovery-run-02-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/recovery-08-hints-authored.png",
+      "source_path": "build/issue75-evidence/recovery-run-02-wayland/captures/recovery-08-hints-authored.png",
+      "copy_sha256": "325efe5adcbb8b1dc4600ffd628ba5f5439ce0e993898a59134cb18664c1292c",
+      "run": "recovery-run-02-wayland"
+    },
+    {
+      "file": "docs/evidence/assets/issue75-inspector/recovery-09-bound-summary.png",
+      "source_path": "build/issue75-evidence/recovery-run-02-wayland/captures/recovery-09-bound-summary.png",
+      "copy_sha256": "bc26cdbf9b19cb8f532c9e29f39e5e105ac7100da9220b43e20fb97f7c5a1fbb",
+      "run": "recovery-run-02-wayland"
+    }
+  ],
+  "limitations": [
+    "Native snapshots are automated product-surface evidence, not owner appearance approval. Wayland realized1280x720; narrow Parameters width411logical pixels. Fonts/theme were not separately logged.",
+    "Raw reports and captures remain under build/issue75-evidence; task-owned throwaway source/scripts/binaries are removed at closeout.",
+    "No new node type or dependency was added. Public API and persistence changes require explicit owner visibility; this local commit does not close issues."
+  ],
+  "landing": "Local main commit only. No push, merge or issue closure."
+}

@@ -105,6 +105,14 @@ struct TransformParameters {
     int filter{0};
 };
 
+// Merge composite operations (issue #75). Over stays the default and keeps
+// its existing numerical output; the other four extend the foreground-coverage
+// convention to an explicit per-channel blend target. The typed interpretation
+// is shared by the CPU reference, the GPU executor, and both shader front ends,
+// so an unknown authored value fails explicitly in every executor instead of
+// silently selecting a fallback.
+enum class MergeOperation { Over, Plus, Multiply, Screen, Difference };
+
 [[nodiscard]] inline float effectiveNumber(const NodeCatalog& catalog, const NodeInstance& node,
                                            ParameterValues& effectiveParams, const char* key) {
     const auto& value = effectiveParameter(catalog, node, effectiveParams, key);
@@ -160,6 +168,32 @@ struct TransformParameters {
         failNode(node, "parameter 'mix' must be within [0, 1]");
     }
     return mask;
+}
+
+// Merge's typed operation (issue #75). Both executors resolve the authored
+// choice through this one function, so an unsupported value names the same
+// supported set in every execution path (the descriptor's choices reject it
+// earlier still, on author and on deserialize).
+[[nodiscard]] inline MergeOperation effectiveMergeOperation(const NodeCatalog& catalog, const NodeInstance& node,
+                                                            ParameterValues& effectiveParams) {
+    const std::string& operation = effectiveChoice(catalog, node, effectiveParams, "operation");
+    if (operation == "over") {
+        return MergeOperation::Over;
+    }
+    if (operation == "plus") {
+        return MergeOperation::Plus;
+    }
+    if (operation == "multiply") {
+        return MergeOperation::Multiply;
+    }
+    if (operation == "screen") {
+        return MergeOperation::Screen;
+    }
+    if (operation == "difference") {
+        return MergeOperation::Difference;
+    }
+    failNode(node,
+             "parameter 'operation' must be one of over, plus, multiply, screen, difference, got '" + operation + "'");
 }
 
 [[nodiscard]] inline GradeParameters effectiveGrade(const NodeCatalog& catalog, const NodeInstance& node,
@@ -267,8 +301,12 @@ struct TransformParameters {
     transform.translateX = effectiveNumber(catalog, node, effectiveParams, "translateX");
     transform.translateY = effectiveNumber(catalog, node, effectiveParams, "translateY");
     transform.scale = effectiveNumber(catalog, node, effectiveParams, "scale");
-    if (!(transform.scale >= 0.1F) || !(transform.scale <= 3.0F)) {
-        failNode(node, "parameter 'scale' must be within [0.1, 3]");
+    // Positive finite scale with a finite reciprocal: the archive's 0.1..3 was
+    // a useful slider range, not an equation limit, so typed scale 4 or 0.05
+    // stay usable while zero, negatives and reciprocals that overflow remain
+    // inadmissible.
+    if (!(transform.scale > 0.0F) || !std::isfinite(1.0F / transform.scale)) {
+        failNode(node, "parameter 'scale' must be positive and finite with a finite reciprocal");
     }
     transform.rotate = effectiveNumber(catalog, node, effectiveParams, "rotate");
     const std::string& filter = effectiveChoice(catalog, node, effectiveParams, "filter");
@@ -323,6 +361,37 @@ struct TransformParameters {
         effectiveNode = &*localNode;
     }
     return effectiveNode;
+}
+
+// Authoring-time admissibility (issue #75). Runs the same effective-parameter
+// owners the executors use, so a parameter gesture cannot publish a value the
+// executor would reject (a non-positive gamma on an enabled Grade channel, a
+// mask Mix outside [0, 1], a Transform scale outside its domain, ...). Only
+// the typed interpretation is checked: no graph is evaluated and no image is
+// produced. `effectiveParams` must already hold the resolved static and
+// animated values for `node`. Returns the failure message, or nullopt when the
+// resolved parameters are admissible.
+[[nodiscard]] inline std::optional<std::string>
+validateEffectParameters(const NodeCatalog& catalog, const NodeInstance& node, ParameterValues& effectiveParams) {
+    try {
+        if (node.type == "grade") {
+            static_cast<void>(effectiveGrade(catalog, node, effectiveParams));
+        } else if (node.type == "blur") {
+            static_cast<void>(effectiveBlur(catalog, node, effectiveParams));
+        } else if (node.type == "transform") {
+            static_cast<void>(effectiveTransform(catalog, node, effectiveParams));
+        } else if (node.type == "merge") {
+            static_cast<void>(effectiveMergeOperation(catalog, node, effectiveParams));
+        } else {
+            return std::nullopt;
+        }
+        // The shared optional-mask controls carry their own admissibility for
+        // every effect that declares them.
+        static_cast<void>(effectiveEffectMask(catalog, node, effectiveParams));
+    } catch (const std::exception& error) {
+        return std::string{error.what()};
+    }
+    return std::nullopt;
 }
 
 }  // namespace nemo

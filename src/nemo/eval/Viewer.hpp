@@ -59,6 +59,13 @@ public:
     // Configures persistent requested-only display cache storage. Setup is
     // worker-side and may allocate media resources; render remains live-first.
     void configureCache(const ViewerCacheOptions& options);
+    // Explicit color refresh boundary (project replacement or a deliberate
+    // configuration reload): retires the retained viewing programs/LUTs and the
+    // source session's retained OCIO processors, so the next render re-reads
+    // the configuration content. Nothing polls for file changes; the owner
+    // must invoke this boundary after replacing the configuration.
+    void refreshColorConfig();
+
     // Shutdown/headless drain only; throws when asynchronous encode/mux/cache
     // admission reported an error.
     void flushCache();

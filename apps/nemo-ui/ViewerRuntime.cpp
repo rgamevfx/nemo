@@ -227,6 +227,14 @@ void ViewerRuntime::finishRange(const Pending& pending, bool cacheAccepted) {
     (void)scheduler_.complete(pending, cacheAccepted);
 }
 
+void ViewerRuntime::refreshColorConfig() {
+    {
+        const std::lock_guard lock(mutex_);
+        colorRefresh_ = true;
+    }
+    ready_.notify_all();
+}
+
 void ViewerRuntime::run(const std::filesystem::path& shaders) {
     std::unique_ptr<eval::ViewerSession> session;
     // Authored color configuration the current worker session was built with;
@@ -236,17 +244,26 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
     for (;;) {
         Pending pending;
         bool hasPending = false;
+        bool colorRefresh = false;
         std::vector<eval::ViewerDestination> retired;
         {
             std::unique_lock lock(mutex_);
-            ready_.wait(lock, [this] { return stopping_ || scheduler_.hasWork() || !retireQueue_.empty(); });
+            ready_.wait(lock,
+                        [this] { return stopping_ || scheduler_.hasWork() || !retireQueue_.empty() || colorRefresh_; });
             if (stopping_)
                 break;
             retired.swap(retireQueue_);
+            colorRefresh = colorRefresh_;
+            colorRefresh_ = false;
             if (auto next = scheduler_.take()) {
                 pending = std::move(*next);
                 hasPending = true;
             }
+        }
+        if (session && colorRefresh) {
+            // Worker-owned: the retained programs/processors are retired here,
+            // never on the caller's thread.
+            session->refreshColorConfig();
         }
         // A retired destination's session freshness is erased before any
         // later work runs, so its in-flight request can never be published as

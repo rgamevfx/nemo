@@ -45,10 +45,19 @@ namespace {
 ViewerSession::ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
                              const std::filesystem::path& shaderDirectory, std::string ocioConfigPath)
     : instance_(instance), device_(device), allocator_(allocator), ocioConfigPath_(std::move(ocioConfigPath)),
-      replayShader_(shaderDirectory / "mediaConvert.spv"), sources_(instance, device, allocator, replayShader_),
+      replayShader_(shaderDirectory / "mediaConvert.spv"),
+      sources_(instance, device, allocator, replayShader_, ocioConfigPath_),
       effects_(loadSlangEffectLibrary(shaderDirectory, shaderDirectory)), reuse_(16) {}
 
 ViewerSession::~ViewerSession() = default;
+
+void ViewerSession::refreshColorConfig() {
+    // Retire the retained viewing programs/LUTs and the source session's color
+    // generation. Nothing polls: this is the sole boundary, called by the owner
+    // that replaced the project or deliberately reloaded the configuration.
+    viewing_.clear();
+    sources_.refreshColorConfig();
+}
 
 ViewerSession::SourceProbe ViewerSession::probeSource(const Document& document, const std::string& sourceKey) const {
     const SourceSession::Probe probe = sources_.probe(document, sourceKey);
@@ -161,7 +170,8 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     expected.color = ColorInterpretation::DisplayReferred;
     if (cache_) {
         cache_->supersede(revision, generation, destination);
-        const ResultKey key = queryViewerResultKey(document, request, effects_);
+        const std::string colorIdentity = sources_.colorConfigIdentity();
+        const ResultKey key = queryViewerResultKey(document, request, effects_, colorIdentity);
         identity = cacheIdentity(key, viewing.identity, cache_->optionsForIdentity());
         if (auto hit = cache_->lookup(*identity, expected, timeout_ns)) {
             ViewerFrame frame;
@@ -178,18 +188,21 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     // Shared dependency plan: scene-linear reuse under the evaluator's own
     // ticket; decoded frames flow through SourceSession. Compression is not
     // on this path, so the live frame is returned without waiting for it.
+    const std::string colorIdentity = sources_.colorConfigIdentity();
     const auto evaluation =
-        evaluateGpu(document, request, effects_, device_, allocator_, timeout_ns, &reuse_, &sources_);
+        evaluateGpu(document, request, effects_, device_, allocator_, timeout_ns, &reuse_, &sources_, colorIdentity);
 
     const GpuNodeImage& composition = *evaluation.images.at(request.output);
-    if (composition.layout.color != ColorInterpretation::SceneLinear) {
+    if (composition.layout.color == ColorInterpretation::DisplayReferred) {
+        // The viewing transform is applied exactly once. Scene-linear
+        // composition results and non-color Data both still need it: a Data
+        // source is viewable downstream, but a display-referred buffer already
+        // carries the transform and must never receive it twice.
         const NodeInstance* node = document.network(request.network).graph().node(request.output);
-        throw EvaluationException(
-            describeNode(*node) + ": produced a " +
-                std::string(composition.layout.color == ColorInterpretation::DisplayReferred ? "display-referred"
-                                                                                             : "uninterpreted") +
-                " result; the viewing transform is applied exactly once and a second application is refused",
-            request.output, node->name);
+        throw EvaluationException(describeNode(*node) +
+                                      ": produced a display-referred result; the viewing transform is applied "
+                                      "exactly once and a second application is refused",
+                                  request.output, node->name);
     }
 
     if (!viewing.transform)

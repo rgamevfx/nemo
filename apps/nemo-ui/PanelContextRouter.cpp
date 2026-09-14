@@ -391,6 +391,17 @@ bool PanelContextRouter::requestInspector(const QString& rawGroup, const QString
     return true;
 }
 
+bool PanelContextRouter::requestAnimationReveal(const QString& rawGroup, const QString& rawNetwork,
+                                                const QString& rawNodeId, const QString& rawParameter) {
+    const auto group = normalized(rawGroup);
+    const auto network = normalized(rawNetwork);
+    const auto node = normalized(rawNodeId);
+    if (group.isEmpty() || network.isEmpty() || node.isEmpty())
+        return false;
+    emit animationRevealRequested(group, network, node, rawParameter.trimmed());
+    return true;
+}
+
 nlohmann::json PanelContextRouter::contextPresentation() const {
     nlohmann::json groups = nlohmann::json::object();
     for (int index = 0; index < 5; ++index) {

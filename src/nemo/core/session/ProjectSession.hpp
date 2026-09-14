@@ -215,6 +215,17 @@ public:
     // commit/cancel lifecycle, and one history entry.
     [[nodiscard]] ParameterGestureResult beginKeyedParameterGesture(double time, std::vector<ParameterEdit> edits,
                                                                     EditOptions options);
+    // Mixed value gesture (issue #76): every edited address is routed by the
+    // state captured here, at begin. An address that already has an animation
+    // channel is keyed at `time` (the existing keyframe factory preserves its
+    // interpolation, tangents and key identities); every other address becomes a
+    // static value and never creates a channel. Preview, update, commit and
+    // cancel share the existing gesture lifecycle, the routing cannot change
+    // while the gesture lives, and commit is ONE command and one history entry
+    // applying both parts atomically. Resetting a parameter that has animation
+    // stays rejected exactly as the keyed-all API already rejects it.
+    [[nodiscard]] ParameterGestureResult beginValueParameterGesture(double time, std::vector<ParameterEdit> edits,
+                                                                    EditOptions options);
     [[nodiscard]] ParameterGestureResult updateKeyedParameterGesture(ParameterGestureToken token,
                                                                      std::vector<ParameterEdit> edits);
     [[nodiscard]] std::vector<AnimationChannelQueryResult>
@@ -365,12 +376,22 @@ private:
     [[nodiscard]] ParameterGestureResult beginParameterGestureInternal(std::vector<ParameterEdit> edits,
                                                                        EditOptions options,
                                                                        std::optional<double> keyedTime);
+    enum class GestureMode { Static, KeyedAll, Mixed };
+
     struct ParameterGestureState {
         ParameterGestureToken token{};
         std::uint64_t expectedRevision{};
         std::shared_ptr<const Document> snapshot;
         std::vector<ParameterEdit> edits;
-        bool keyed{false};
+        // One mode per gesture: the explicit static batch, the key-all batch,
+        // or the mixed value batch whose per-address routing is frozen at begin.
+        GestureMode mode{GestureMode::Static};
+        // Mixed mode only: the addresses admitted at begin. An address outside
+        // this set cannot join later, so routing cannot silently change under a
+        // live gesture.
+        std::vector<ParameterAddress> keyedAddresses;
+        // Effective values frozen at begin: only a net change publishes.
+        std::vector<ParameterEdit> frozenValues;
         double time{};
     };
     void unsubscribe(std::uint64_t id) noexcept;

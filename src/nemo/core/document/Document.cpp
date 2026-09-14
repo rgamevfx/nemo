@@ -6,6 +6,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <type_traits>
@@ -1183,6 +1184,10 @@ std::uint64_t Document::stateRevision() const {
     return hash;
 }
 
+bool isRegisteredColorConfigReference(std::string_view reference) noexcept {
+    return reference == kBuiltinColorConfigUri;
+}
+
 std::int64_t SourceReference::frameAt(std::int64_t localTime) const {
     if (frameStep == 0)
         throw std::runtime_error("source '" + path + "': frameStep must not be zero");
@@ -1651,6 +1656,75 @@ Command replaceInputCommand(NetworkId network, PortRef from, PortRef to, std::sh
                            *createdId = replacement;
                    }};
 }
+Command swapInputsCommand(NetworkId network, NodeId nodeId, std::uint32_t firstPort, std::uint32_t secondPort) {
+    return Command{
+        "swap inputs of node " + std::to_string(nodeId), [network, nodeId, firstPort, secondPort](Document& document) {
+            auto& graph = document.network(network).graph();
+            if (graph.node(nodeId) == nullptr) {
+                throw GraphException(GraphError::UnknownNode, "cannot swap inputs of unknown node " +
+                                                                  std::to_string(nodeId) + " in network " +
+                                                                  std::to_string(network));
+            }
+            if (firstPort == secondPort) {
+                throw GraphException(GraphError::InvalidNetwork, "cannot swap node " + std::to_string(nodeId) +
+                                                                     " port " + std::to_string(firstPort) +
+                                                                     " with itself");
+            }
+            const std::uint32_t ports[2] = {firstPort, secondPort};
+            const auto& declared = graph.inputPorts(nodeId);
+            for (const std::uint32_t port : ports) {
+                if (port >= declared.size()) {
+                    throw GraphException(GraphError::InvalidNetwork,
+                                         "node " + std::to_string(nodeId) + " has no declared input port " +
+                                             std::to_string(port) +
+                                             " (declared inputs: " + std::to_string(declared.size()) + ")");
+                }
+            }
+
+            // Snapshot the sources feeding both ports; the incoming
+            // adjacency is node-bounded, so the lookup does not scan
+            // the project's edge list.
+            EdgeId occupying[2]{kInvalidEdge, kInvalidEdge};
+            std::optional<PortRef> sources[2];
+            for (const Edge& edge : graph.edgesInto(nodeId)) {
+                for (int i = 0; i < 2; ++i) {
+                    if (edge.to.port == ports[i]) {
+                        occupying[i] = edge.id;
+                        sources[i] = edge.from;
+                    }
+                }
+            }
+            if (!sources[0] && !sources[1]) {
+                throw GraphException(GraphError::InvalidNetwork,
+                                     "cannot swap node " + std::to_string(nodeId) + " ports " +
+                                         std::to_string(firstPort) + " and " + std::to_string(secondPort) +
+                                         ": neither port is connected, so the swap would change nothing");
+            }
+            if (sources[0] && sources[1] && *sources[0] == *sources[1]) {
+                throw GraphException(GraphError::InvalidNetwork,
+                                     "cannot swap node " + std::to_string(nodeId) + " ports " +
+                                         std::to_string(firstPort) + " and " + std::to_string(secondPort) +
+                                         ": both ports read the same output, so the swap would change nothing");
+            }
+
+            // Exercise the complete swap on a trial copy and publish
+            // it whole: a rejected connection or cycle leaves the
+            // live graph (and both connections) untouched.
+            Graph candidate = graph;
+            for (const EdgeId id : occupying) {
+                if (id != kInvalidEdge)
+                    candidate.disconnect(id);
+            }
+            for (int i = 0; i < 2; ++i) {
+                // Port i receives the source the other port had; an
+                // unoccupied port stays unoccupied.
+                if (sources[1 - i])
+                    static_cast<void>(candidate.connect(*sources[1 - i], PortRef{nodeId, ports[i]}));
+            }
+            graph = std::move(candidate);
+        }};
+}
+
 Command rewireGraphEdgeCommand(NetworkId network, EdgeId edgeId, PortRef from, PortRef to) {
     return Command{"rewire edge " + std::to_string(edgeId), [network, edgeId, from, to](Document& document) {
                        auto& graph = document.network(network).graph();

@@ -170,6 +170,11 @@ struct Composition {
 //   constcolor: 0      — one constant broadcast, exact on both executors.
 //   merge:      2e-7   — same float32 expression; difference budget covers
 //                        potential FMA fusion in the GPU compiler.
+//   merge ops:  1e-6   — issue #75's extended operations chain more mixed
+//                        operations, so their FMA budget is wider than the
+//                        single Over expression (still far below the
+//                        wrong-binding differences the negative controls
+//                        must exceed).
 //   testpattern: 1e-6  — CPU computes gradients in double then rounds once;
 //                        the shaders compute in float (<= 1 ulp difference).
 // The composition comparisons below bound by the max of the ops involved
@@ -375,6 +380,209 @@ TEST(Effect, WrongBindingsAndAlphaFailComparison) {
         // bound — this is the contract-enforcement bar for this op.
         EXPECT_GT(maxChannelDiff(cpuImage, wrongImage), kMergeTolerance)
             << "wrong interpretation passed the declared tolerance";
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #75: Merge operations, the optional mask, mix and A/B roles on the
+// native GPU path. The oracle fixture uses distinct per-channel RGB AND
+// distinct background/foreground alpha, so a swapped binding changes every
+// operation.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct MergeOracle {
+    Document doc;
+    NodeId background{kInvalidNode};
+    NodeId foreground{kInvalidNode};
+    NodeId mask{kInvalidNode};
+    NodeId merge{kInvalidNode};
+    NodeId output{kInvalidNode};
+};
+
+[[nodiscard]] MergeOracle makeMergeOracle() {
+    MergeOracle oracle;
+    Document& doc = oracle.doc;
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+    doc.name = "merge-oracle";
+    oracle.background = rootGraph(doc).addNode("constcolor", "background");
+    rootGraph(doc).setParam(oracle.background, "color", ColorValue{{0.2F, 0.4F, 0.6F, 0.4F}});
+    oracle.foreground = rootGraph(doc).addNode("constcolor", "foreground");
+    rootGraph(doc).setParam(oracle.foreground, "color", ColorValue{{0.8F, 0.5F, 0.25F, 0.5F}});
+    oracle.mask = rootGraph(doc).addNode("constcolor", "mask");
+    rootGraph(doc).setParam(oracle.mask, "color", ColorValue{{0.1F, 0.2F, 0.3F, 0.3F}});
+    oracle.merge = rootGraph(doc).addNode("merge", "comp");
+    oracle.output = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({oracle.background, 0}, {oracle.merge, 0});
+    (void)rootGraph(doc).connect({oracle.foreground, 0}, {oracle.merge, 1});
+    (void)rootGraph(doc).connect({oracle.merge, 0}, {oracle.output, 0});
+    return oracle;
+}
+
+// Test-only merge implementation with the A/B roles exchanged. With the
+// oracle's distinct channels and alphas it must exceed the declared merge
+// tolerance for EVERY operation, so role preservation is enforced by
+// comparison rather than assumed.
+constexpr const char* kSwappedOperationsMerge = R"GLSL(
+layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_a;
+layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_b;
+layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+void main() {
+    uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    vec4 bg = imageLoad(in_b, ivec2(p));  // WRONG: A/B roles exchanged
+    vec4 fg = imageLoad(in_a, ivec2(p));
+    int operation = int(param0.x);
+    vec4 composite;
+    if (operation == 0) {
+        composite.xyz = fg.a * fg.xyz + (1.0 - fg.a) * bg.xyz;
+    } else {
+        vec3 target;
+        if (operation == 1) { target = bg.xyz + fg.xyz; }
+        else if (operation == 2) { target = bg.xyz * fg.xyz; }
+        else if (operation == 3) { target = vec3(1.0) - (vec3(1.0) - bg.xyz) * (vec3(1.0) - fg.xyz); }
+        else { target = abs(bg.xyz - fg.xyz); }
+        composite.xyz = bg.xyz + fg.a * (target - bg.xyz);
+    }
+    composite.w = fg.a + (1.0 - fg.a) * bg.a;
+    imageStore(out_color, ivec2(p), composite);
+}
+)GLSL";
+
+}  // namespace
+
+TEST(Effect, MergeOperationsMatchCpuReferenceOnBothFrontEnds) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    // The fixture values are the issue's independent oracle, so each front
+    // end is checked against the hand-computed pixel as well as the CPU.
+    struct Case {
+        const char* operation;
+        std::array<float, 4> expected;
+    };
+    const Case cases[] = {
+        {"over", {0.5F, 0.45F, 0.425F, 0.7F}},       {"plus", {0.6F, 0.65F, 0.725F, 0.7F}},
+        {"multiply", {0.18F, 0.3F, 0.375F, 0.7F}},   {"screen", {0.52F, 0.55F, 0.65F, 0.7F}},
+        {"difference", {0.4F, 0.25F, 0.475F, 0.7F}},
+    };
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    for (const Case& expected : cases) {
+        MergeOracle oracle = makeMergeOracle();
+        rootGraph(oracle.doc).setParam(oracle.merge, "operation", ParameterValue{ChoiceValue{expected.operation}});
+        const EvaluationRequest request = requestFor(oracle.doc, {0, 0, 8, 4}, 0);
+
+        // Over keeps the declared 2e-7 bar (it is the same expression as
+        // before); the extended operations use the wider FMA budget above.
+        const float tolerance = std::string(expected.operation) == "over" ? kMergeTolerance : kTolerance;
+        const CpuImage cpuImage = evaluateCpuImage(oracle.doc, request);
+        eval::GpuEvaluation slangEval = evaluateGpu(oracle.doc, request, slang, *boot.device, *boot.allocator);
+        const CpuImage slangImage = slangEval.readBack(request.output, *boot.device, *boot.allocator);
+        expectImagesClose(cpuImage, slangImage, tolerance, expected.operation);
+        eval::GpuEvaluation glslEval = evaluateGpu(oracle.doc, request, glsl, *boot.device, *boot.allocator);
+        const CpuImage glslImage = glslEval.readBack(request.output, *boot.device, *boot.allocator);
+        expectImagesClose(cpuImage, glslImage, tolerance, expected.operation);
+        expectImagesClose(slangImage, glslImage, tolerance, expected.operation);
+
+        const std::array<float, 4> pixel = slangImage.pixel(0, 0);
+        for (std::size_t channel = 0; channel < 4; ++channel) {
+            EXPECT_NEAR(pixel[channel], expected.expected[channel], tolerance)
+                << expected.operation << " channel " << channel;
+        }
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, MergeHdrAndNegativeValuesSurviveBothFrontEnds) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    MergeOracle oracle = makeMergeOracle();
+    rootGraph(oracle.doc).setParam(oracle.background, "color", ColorValue{{-0.5F, 2.0F, -2.0F, 0.5F}});
+    rootGraph(oracle.doc).setParam(oracle.foreground, "color", ColorValue{{2.5F, -1.0F, 0.5F, 0.25F}});
+    rootGraph(oracle.doc).setParam(oracle.merge, "operation", ParameterValue{ChoiceValue{"plus"}});
+    const EvaluationRequest request = requestFor(oracle.doc, {0, 0, 8, 4}, 0);
+
+    const CpuImage cpuImage = evaluateCpuImage(oracle.doc, request);
+    eval::GpuEvaluation slangEval = evaluateGpu(oracle.doc, request, slang, *boot.device, *boot.allocator);
+    const CpuImage slangImage = slangEval.readBack(request.output, *boot.device, *boot.allocator);
+    expectImagesClose(cpuImage, slangImage, kTolerance, "hdr plus slang vs cpu");
+    eval::GpuEvaluation glslEval = evaluateGpu(oracle.doc, request, glsl, *boot.device, *boot.allocator);
+    const CpuImage glslImage = glslEval.readBack(request.output, *boot.device, *boot.allocator);
+    expectImagesClose(cpuImage, glslImage, kTolerance, "hdr plus glsl vs cpu");
+
+    // Plus interpolates background -> bg+fg by foreground alpha: the HDR
+    // green (1.75) and the negative blue (-1.875) are stored, not clamped.
+    const std::array<float, 4> pixel = slangImage.pixel(0, 0);
+    EXPECT_NEAR(pixel[0], 0.125F, kTolerance);
+    EXPECT_GT(pixel[1], 1.0F) << "HDR scene-linear value was clamped";
+    EXPECT_LT(pixel[2], 0.0F) << "negative scene-linear value was clamped";
+    EXPECT_NEAR(pixel[3], 0.625F, kTolerance);
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, MergeMaskInvertAndMixMatchCpuReference) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    MergeOracle oracle = makeMergeOracle();
+    (void)rootGraph(oracle.doc).connect({oracle.mask, 0}, {oracle.merge, 2});
+    rootGraph(oracle.doc).setParam(oracle.merge, "mix", ParameterValue{0.5});
+    const EvaluationRequest request = requestFor(oracle.doc, {0, 0, 8, 4}, 0);
+
+    const auto expectParity = [&](const char* what) {
+        const CpuImage cpuImage = evaluateCpuImage(oracle.doc, request);
+        eval::GpuEvaluation slangEval = evaluateGpu(oracle.doc, request, slang, *boot.device, *boot.allocator);
+        const CpuImage slangImage = slangEval.readBack(request.output, *boot.device, *boot.allocator);
+        expectImagesClose(cpuImage, slangImage, kTolerance, what);
+        eval::GpuEvaluation glslEval = evaluateGpu(oracle.doc, request, glsl, *boot.device, *boot.allocator);
+        const CpuImage glslImage = glslEval.readBack(request.output, *boot.device, *boot.allocator);
+        expectImagesClose(cpuImage, glslImage, kTolerance, what);
+    };
+
+    // Fractional coverage: mask A = 0.3 with Mix 0.5, the hand-computed
+    // masked Over (0.245, 0.4075, 0.57375, 0.445).
+    expectParity("masked mix 0.5");
+    const std::array<float, 4> masked = evaluateCpuImage(oracle.doc, request).pixel(0, 0);
+    EXPECT_NEAR(masked[0], 0.245F, 1e-6F);
+    EXPECT_NEAR(masked[3], 0.445F, 1e-6F);
+
+    rootGraph(oracle.doc).setParam(oracle.merge, "invertMask", ParameterValue{true});
+    expectParity("inverted mask");
+    rootGraph(oracle.doc).setParam(oracle.merge, "invertMask", ParameterValue{false});
+    rootGraph(oracle.doc).setParam(oracle.merge, "maskChannel", ParameterValue{ChoiceValue{"none"}});
+    expectParity("mask channel none");
+
+    // Zero Mix returns the background exactly on both executors.
+    rootGraph(oracle.doc).setParam(oracle.merge, "mix", ParameterValue{0.0});
+    expectParity("mix zero");
+    const CpuImage zero = evaluateCpuImage(oracle.doc, request);
+    EXPECT_EQ(zero.pixel(0, 0), (std::array<float, 4>{0.2F, 0.4F, 0.6F, 0.4F}));
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, SwappedMergePortsFailEveryOperation) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+
+    const eval::EffectLibrary wrong = glslLibraryWithMerge(kSwappedOperationsMerge);
+    for (const char* operation : {"over", "plus", "multiply", "screen", "difference"}) {
+        MergeOracle oracle = makeMergeOracle();
+        rootGraph(oracle.doc).setParam(oracle.merge, "operation", ParameterValue{ChoiceValue{operation}});
+        const EvaluationRequest request = requestFor(oracle.doc, {0, 0, 8, 4}, 0);
+
+        const CpuImage cpuImage = evaluateCpuImage(oracle.doc, request);
+        eval::GpuEvaluation wrongEval = evaluateGpu(oracle.doc, request, wrong, *boot.device, *boot.allocator);
+        const CpuImage wrongImage = wrongEval.readBack(request.output, *boot.device, *boot.allocator);
+        EXPECT_GT(maxChannelDiff(cpuImage, wrongImage), kMergeTolerance)
+            << "swapped A/B binding passed for " << operation;
     }
     expectValidationClean(*boot.instance);
 }

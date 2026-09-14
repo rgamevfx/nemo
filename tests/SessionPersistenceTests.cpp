@@ -5,11 +5,14 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <unistd.h>
 
+#include "nemo/core/commands/ReadSourceCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Serialization.hpp"
+#include "nemo/core/evaluation/SourceRequest.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
@@ -36,6 +39,16 @@ Document makeParameterDocument() {
     auto& network = document.network(document.rootNetworkId());
     static_cast<void>(network.graph().addNode("constcolor", "tint"));
     return document;
+}
+
+// A Read's authored choices are ordinary node parameters on the node, so a value
+// edit is the shared parameter batch/gesture built from the one core-owned
+// translation.
+std::vector<ParameterEdit> readValueEdits(NetworkId network, NodeId node, const ReadNodeOverrides& overrides) {
+    std::vector<ParameterEdit> edits;
+    for (auto& [key, value] : readOverrideParameters(overrides))
+        edits.push_back(ParameterEdit{ParameterAddress{network, node, key}, std::move(value)});
+    return edits;
 }
 
 void writeText(const fs::path& path, const std::string& text) {
@@ -521,6 +534,166 @@ TEST_F(SessionPersistenceTest, RecoveryIsAnUnsavedCopyThatProtectsTheOriginalTar
 
     const ProjectWriteRequest copySave = reopened.prepareSave(copy);
     EXPECT_TRUE(ProjectFile::writeAtomic(copySave).ok);
+}
+
+TEST_F(SessionPersistenceTest, ReadSourceChoicesAreIndependentPerReadAndSurviveSessionRoundTrip) {
+    ProjectSession session(makeDocument("reads"));
+    const NetworkId network = session.document().rootNetworkId();
+    auto createdA = std::make_shared<NodeId>();
+    auto createdB = std::make_shared<NodeId>();
+    ASSERT_TRUE(
+        session.submit(addNodeCommand(network, "source", "ReadA", createdA), EditOptions{session.revision(), {}})
+            .committed);
+    ASSERT_TRUE(
+        session.submit(addNodeCommand(network, "source", "ReadB", createdB), EditOptions{session.revision(), {}})
+            .committed);
+    const NodeId readA = *createdA;
+    const NodeId readB = *createdB;
+    auto keyA = std::make_shared<std::string>();
+    auto keyB = std::make_shared<std::string>();
+    ReadNodeOverrides first;
+    first.frameOffset = 1001;
+    ReadNodeOverrides second;
+    second.frameOffset = 0;
+    second.inputTransform = "explicit";
+    second.inputColorSpace = "ACEScg";
+    ASSERT_TRUE(session
+                    .submit(registerReadSourceCommand(ParameterAddress{network, readA, "source"}, 0.0, "shot.####.exr",
+                                                      first, nemo::MediaKind::Unknown, {}, keyA),
+                            EditOptions{session.revision(), {}})
+                    .committed);
+    ASSERT_TRUE(session
+                    .submit(registerReadSourceCommand(ParameterAddress{network, readB, "source"}, 0.0, "shot.####.exr",
+                                                      second, nemo::MediaKind::Unknown, {}, keyB),
+                            EditOptions{session.revision(), {}})
+                    .committed);
+    ASSERT_EQ(*keyA, *keyB);  // one media identity, two independent Reads
+    const std::uint64_t revisionsAfterRegister = session.revision();
+
+    // One value gesture, one history entry: the commit and its undo each move
+    // one revision, and the other Read is untouched throughout.
+    const NodeInstance& a = *session.document().network(network).graph().node(readA);
+    ReadNodeOverrides edited = readAuthoredOverrides(session.document(), a);
+    edited.rangeMode = "custom";
+    edited.rangeFirst = 1001;
+    edited.rangeLast = 1100;
+    edited.afterPolicy = "hold";
+    const std::uint64_t gestureRevision = session.revision();
+    const ParameterGestureResult begin = session.beginValueParameterGesture(0.0, readValueEdits(network, readA, edited),
+                                                                            EditOptions{gestureRevision, {}});
+    ASSERT_NE(begin.token, 0u) << (begin.result.error ? begin.result.error->message : std::string{});
+    ASSERT_NE(begin.snapshot, nullptr);
+    EXPECT_EQ(session.revision(), gestureRevision);  // nothing published before commit
+    ASSERT_TRUE(session.commitParameterGesture(begin.token, EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.revision(), revisionsAfterRegister + 1);
+    const EffectiveSourceRequest bRequest =
+        resolveSourceRequest(session.document(), *session.document().network(network).graph().node(readB), 3);
+    EXPECT_EQ(bRequest.inputColorSpace, "ACEScg");
+    EXPECT_FALSE(bRequest.mapping.bounded());
+
+    ASSERT_TRUE(session.undo(EditOptions{session.revision(), {}}).committed);
+    const ReadNodeOverrides restored =
+        readAuthoredOverrides(session.document(), *session.document().network(network).graph().node(readA));
+    EXPECT_EQ(restored.rangeMode, "auto");
+    EXPECT_EQ(restored.afterPolicy, "error");
+    ASSERT_TRUE(session.redo(EditOptions{session.revision(), {}}).committed);
+
+    // Save, reopen and Save As keep every authored choice and the shared media
+    // path as an external reference.
+    const fs::path target = dir_ / "reads.nemo";
+    const ProjectWriteRequest job = session.prepareSave(target);
+    const ProjectWriteResult written = ProjectFile::writeAtomic(job);
+    ASSERT_TRUE(written.ok) << written.error.message;
+    ASSERT_TRUE(session.commitSave(job, written).committed);
+
+    ProjectSession reopened(makeDocument("unused"));
+    ProjectReadResult read = ProjectFile::read(target);
+    ASSERT_TRUE(read.ok) << read.error.message;
+    // The authored spelling stays in the file; the in-memory reference is the
+    // resolved media target (project-relative references resolve at read time).
+    std::string storedSourcePath;
+    for (const ExternalReference& reference : read.references)
+        if (reference.identity == "source:" + *keyA)
+            storedSourcePath = reference.storedPath;
+    ASSERT_TRUE(reopened.open(std::move(read)).replaced);
+    const auto reopenedA = reopened.document().network(network).graph().nodeByName("ReadA");
+    const auto reopenedB = reopened.document().network(network).graph().nodeByName("ReadB");
+    ASSERT_NE(reopenedA, nullptr);
+    ASSERT_NE(reopenedB, nullptr);
+    EXPECT_EQ(readAuthoredOverrides(reopened.document(), *reopenedA).rangeMode, "custom");
+    EXPECT_EQ(readAuthoredOverrides(reopened.document(), *reopenedA).afterPolicy, "hold");
+    EXPECT_EQ(readAuthoredOverrides(reopened.document(), *reopenedB).inputColorSpace, "ACEScg");
+    EXPECT_EQ(storedSourcePath, "shot.####.exr");
+    EXPECT_EQ(reopened.document().sources.at(*keyA).path, (dir_ / "shot.####.exr").lexically_normal().string());
+
+    const fs::path copy = dir_ / "copies" / "reads.nemo";
+    fs::create_directories(copy.parent_path());
+    const ProjectWriteRequest saveAs = reopened.prepareSave(copy, PathPolicy::RebaseRelative);
+    ASSERT_TRUE(ProjectFile::writeAtomic(saveAs).ok);
+    const ProjectReadResult copied = ProjectFile::read(copy);
+    ASSERT_TRUE(copied.ok) << copied.error.message;
+    EXPECT_EQ(copied.document.sources.at(*keyA).path, (dir_ / "shot.####.exr").lexically_normal().string());
+    EXPECT_EQ(readAuthoredOverrides(copied.document, *copied.document.network(network).graph().nodeByName("ReadA"))
+                  .rangeFirst,
+              1001);
+}
+
+TEST_F(SessionPersistenceTest, RegisteredBuiltinColorConfigReferenceIsPersistedVerbatim) {
+    ProjectSession session(makeDocument("color"));
+    ASSERT_TRUE(session.replaceDocument(session.snapshot(), {}, {}, std::string(kBuiltinColorConfigUri)).replaced);
+    ASSERT_TRUE(
+        session
+            .submit(renameNodeCommand(
+                        session.document().rootNetworkId(),
+                        session.document().network(session.document().rootNetworkId()).graph().nodeByName("plate")->id,
+                        "renamed"),
+                    EditOptions{session.revision(), {}})
+            .committed);
+
+    const fs::path target = dir_ / "builtin.nemo";
+    const ProjectWriteRequest job = session.prepareSave(target);
+    const ProjectWriteResult written = ProjectFile::writeAtomic(job);
+    ASSERT_TRUE(written.ok) << written.error.message;
+    ASSERT_TRUE(session.commitSave(job, written).committed);
+
+    const ProjectReadResult read = ProjectFile::read(target);
+    ASSERT_TRUE(read.ok) << read.error.message;
+    EXPECT_EQ(read.colorConfigPath, std::string(kBuiltinColorConfigUri));
+    bool registered = false;
+    for (const ExternalReference& reference : read.references) {
+        if (reference.identity != "colorConfig")
+            continue;
+        registered = true;
+        EXPECT_EQ(reference.storedPath, std::string(kBuiltinColorConfigUri));
+        EXPECT_EQ(reference.resolvedPath, std::string(kBuiltinColorConfigUri));
+        // A registered reference is present by construction and is never
+        // rebased relative to the project directory.
+        EXPECT_EQ(reference.state, ReferenceState::Present);
+        EXPECT_FALSE(reference.relativeCapable);
+    }
+    EXPECT_TRUE(registered);
+    EXPECT_TRUE(ProjectFile::missingDependencyWarnings(read.references).empty());
+    EXPECT_TRUE(ProjectFile::unresolvedDependencyWarnings(read.references).empty());
+
+    // Save As rebases media paths but keeps the registered reference exact.
+    const fs::path copy = dir_ / "sub" / "builtin.nemo";
+    fs::create_directories(copy.parent_path());
+    ProjectSession reopened(makeDocument("unused"));
+    ASSERT_TRUE(reopened.open(read).replaced);
+    const ProjectWriteRequest saveAs = reopened.prepareSave(copy, PathPolicy::RebaseRelative);
+    ASSERT_TRUE(ProjectFile::writeAtomic(saveAs).ok);
+    const ProjectReadResult copied = ProjectFile::read(copy);
+    ASSERT_TRUE(copied.ok) << copied.error.message;
+    EXPECT_EQ(copied.colorConfigPath, std::string(kBuiltinColorConfigUri));
+
+    // An unregistered URI is an ordinary path: missing, never assumed present,
+    // and never silently treated as the builtin config.
+    EXPECT_FALSE(isRegisteredColorConfigReference("ocio://not-a-builtin-config"));
+    const std::string unregistered = "ocio://not-a-builtin-config";
+    const std::string resolved = ProjectFile::resolveReferencePath(dir_, unregistered);
+    EXPECT_EQ(resolved, (dir_ / unregistered).lexically_normal().string());
+    EXPECT_EQ(ProjectFile::rebaseReferencePath(dir_, std::string(kBuiltinColorConfigUri), PathPolicy::RebaseRelative),
+              std::string(kBuiltinColorConfigUri));
 }
 
 TEST_F(SessionPersistenceTest, StaleSaveCompletionAfterReplacementDoesNotAdoptTheNewProject) {

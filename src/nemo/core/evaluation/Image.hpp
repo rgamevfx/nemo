@@ -22,7 +22,12 @@ enum class Precision { Float32 };
 
 // Composition results are scene-linear; viewing transforms are downstream
 // operations and must not contaminate reusable results (spec section 8).
-enum class ColorInterpretation { SceneLinear, DisplayReferred };
+//
+// `Data` (issue #75) marks a raster whose samples were deliberately left
+// uninterpreted (a Read Raw/Data input: masks, normals, displacement). It is
+// not a third color space and never a claim of scene-linearity: the Viewer may
+// still present it, but no display transform may be applied twice to it.
+enum class ColorInterpretation { SceneLinear, DisplayReferred, Data };
 
 struct ImageLayout {
     int width{0};

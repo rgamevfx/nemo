@@ -106,35 +106,6 @@ void evalConstcolor(const NodeCatalog& catalog, const NodeInstance& node, const 
     }
 }
 
-void evalMerge(const NodeCatalog& catalog, const NodeInstance& node, const EvaluationRequest&,
-               ParameterValues& effectiveParams, const std::vector<const CpuImage*>& inputs, CpuImage& out) {
-    const auto& operationValue = effectiveParameter(catalog, node, effectiveParams, "operation");
-    const auto* operationChoice = std::get_if<ChoiceValue>(&operationValue);
-    if (operationChoice == nullptr) {
-        failNode(node, "parameter 'operation' must be a choice, got '" + parameterValueText(operationValue) + "'");
-    }
-    const std::string& operation = operationChoice->value;
-    if (operation != "over") {
-        failNode(node, "unsupported merge operation '" + operation + "' (CPU reference implements 'over' only)");
-    }
-    const CpuImage& base = *inputs[0];    // port A: over base (background)
-    const CpuImage& source = *inputs[1];  // port B: over source (foreground)
-    for (int y = 0; y < out.height(); ++y) {
-        for (int x = 0; x < out.width(); ++x) {
-            const std::array<float, 4> bg = base.pixel(x, y);
-            const std::array<float, 4> fg = source.pixel(x, y);
-            // Straight-alpha "over": out = fg.a*fg + (1 - fg.a)*bg.
-            const float alpha = fg[3] + (1.0F - fg[3]) * bg[3];
-            std::array<float, 4> result{};
-            for (int c = 0; c < 3; ++c) {
-                result[c] = fg[3] * fg[c] + (1.0F - fg[3]) * bg[c];
-            }
-            result[3] = alpha;
-            out.setPixel(x, y, result);
-        }
-    }
-}
-
 void evalOutput(const NodeInstance&, const EvaluationRequest&, ParameterValues&,
                 const std::vector<const CpuImage*>& inputs, CpuImage& out) {
     for (int y = 0; y < out.height(); ++y) {
@@ -150,43 +121,36 @@ void evalOutput(const NodeInstance&, const EvaluationRequest&, ParameterValues&,
 // identifies the node.
 void evalSource(const Document& document, const NodeInstance& node, const EvaluationRequest& request,
                 ParameterValues& effectiveParams, CpuImage& out, SourceProvider* provider) {
-    const auto keyIt = node.params.find("source");
-    if (keyIt == node.params.end()) {
-        failNode(node, "source node has no 'source' parameter naming a document source");
-    }
-    const auto* keyValue = std::get_if<std::string>(&keyIt->second);
-    if (keyValue == nullptr || keyValue->empty()) {
-        failNode(node, "source node parameter 'source' must be a non-empty string");
-    }
-    const std::string& key = *keyValue;
-    const auto referenceIt = document.sources.find(key);
-    if (referenceIt == document.sources.end()) {
-        failNode(node, "unresolved source '" + key +
-                           "': no source reference with this key in the document (real media is never "
-                           "evaluated as synthetic content)");
-    }
-    const SourceReference& reference = referenceIt->second;
+    // One resolution owns mapping, coverage and policy (issue #75): the node's
+    // own mapping replaces the shared reference's, never composes with it, so
+    // offset/step apply exactly once.
+    const EffectiveSourceRequest source = resolveSourceRequest(document, node, request.localTime);
+    const std::string& key = source.sourceKey;
     effectiveParams["source"] = std::string(key);
-    effectiveParams["sourcePath"] = std::string(reference.path);
-    std::int64_t mappedFrame = 0;
-    try {
-        mappedFrame = reference.frameAt(request.localTime);
-    } catch (const std::exception& error) {
-        failNode(node, std::string("source time mapping failed: ") + error.what());
+    effectiveParams["sourcePath"] = source.path;
+    effectiveParams["frame"] = source.sourceFrame;
+    if (source.policyError) {
+        // The resolver never throws for a policy decision; the executor raises
+        // the node-identifying error here, before any frame is opened, using the
+        // one core-owned diagnostic so every executor reports the same source
+        // relationship (before/after range vs a missing member file).
+        failNode(node, sourcePolicyProblem(source));
     }
-    effectiveParams["frame"] = mappedFrame;
     if (provider == nullptr) {
-        failNode(node, "source '" + key + "' (" + reference.path +
+        failNode(node, "source '" + key + "' (" + source.path +
                            ") requires a decode provider; this "
                            "executor cannot evaluate real media and never substitutes synthetic content");
     }
     CpuImage decoded;
     try {
-        decoded = provider->frame(document, reference, mappedFrame, request);
+        // Transparent black stays the provider's job: it owns the raster layout,
+        // pixel aspect and any retained-resource path, and the request carries
+        // the decision rather than the pixels.
+        decoded = provider->frame(document, source, request);
     } catch (const EvaluationException&) {
         throw;
     } catch (const std::exception& error) {
-        failNode(node, "source provider failed for '" + key + "' at frame " + std::to_string(mappedFrame) + ": " +
+        failNode(node, "source provider failed for '" + key + "' at frame " + std::to_string(source.readFrame) + ": " +
                            error.what());
     }
     const int expectedWidth = scaledDimension(request.region.width, request.samplingScale);
@@ -660,8 +624,14 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         // Hash exactly the parameter map execution consumes. In particular,
         // animated values must affect this node's identity and all dependent
         // identities, while equal effective values remain reusable across
-        // unrelated history revisions.
-        const ResultKey key = nodeResultKey(document, *effectiveNode, inputKeyHashes, scopedRequest);
+        // unrelated history revisions. A source node's key additionally carries
+        // the content identity of the color configuration the provider resolves
+        // media color against, so a changed configuration can never serve a
+        // result produced under the previous one (issue #75).
+        KeyContext keyContext;
+        if (sources != nullptr && effectiveNode->type == "source")
+            keyContext.colorConfigIdentity = sources->colorConfigIdentity();
+        const ResultKey key = nodeResultKey(document, *effectiveNode, inputKeyHashes, scopedRequest, keyContext);
         keys.emplace(expandedNode.id, key);
 
         std::shared_ptr<const CpuImage> image;
@@ -695,6 +665,20 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                 fresh = std::make_shared<CpuImage>(
                     evaluateNativeEffect(document.network(scopedRequest.network).graph().catalog(), *effectiveNode,
                                          step.effectiveParams, scopedRequest, *inputs[0], maskImage));
+            } else if (effectiveNode->type == "merge") {
+                // Port roles are the declared schema, not a convention: A
+                // (index 0) is the background base and B (index 1) the
+                // foreground source. The optional mask is the third declared
+                // port (issue #75); an absent mask is a null raster, never a
+                // manufactured source, and the shared mask/mix blend owns the
+                // absent/None/invert/Mix cases.
+                if (inputs.size() < 2 || inputs[0] == nullptr || inputs[1] == nullptr) {
+                    failNode(*effectiveNode, "merge requires a connected A (background) and B (foreground) input");
+                }
+                const CpuImage* maskImage = inputs.size() > 2 ? inputs[2] : nullptr;
+                fresh = std::make_shared<CpuImage>(
+                    evaluateMerge(document.network(scopedRequest.network).graph().catalog(), *effectiveNode,
+                                  step.effectiveParams, *inputs[0], *inputs[1], maskImage));
             } else if (effectiveNode->type == "source") {
                 // The provider returns the decoded raster with its validated
                 // pixel aspect; adopt it directly instead of pre-allocating a
@@ -716,9 +700,6 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                 } else if (effectiveNode->type == "constcolor") {
                     evalConstcolor(document.network(scopedRequest.network).graph().catalog(), *effectiveNode,
                                    scopedRequest, step.effectiveParams, *fresh);
-                } else if (effectiveNode->type == "merge") {
-                    evalMerge(document.network(scopedRequest.network).graph().catalog(), *effectiveNode, scopedRequest,
-                              step.effectiveParams, inputs, *fresh);
                 } else if (effectiveNode->type == "output") {
                     evalOutput(*effectiveNode, scopedRequest, step.effectiveParams, inputs, *fresh);
                 } else if (document.network(scopedRequest.network).graph().descriptor(effectiveNode->type) != nullptr) {

@@ -20,8 +20,8 @@ void requireSource(const Document& document, const std::string& key) {
 }
 
 void requireProbe(const MediaProbeMetadata& probe) {
-    if (probe.width < 0 || probe.height < 0 || probe.duration < 0)
-        reject(GraphError::InvalidMediaQuery, "probe dimensions and duration must be nonnegative");
+    if (const auto problem = probeFactProblem(probe))
+        reject(GraphError::InvalidMediaQuery, *problem);
     if (probe.provenance.empty())
         reject(GraphError::InvalidMediaQuery, "committed probe metadata must identify its provenance");
 }

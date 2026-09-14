@@ -3,15 +3,21 @@
 #include "ViewerItem.hpp"
 #include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/commands/NetworkCommands.hpp"
+#include "nemo/core/document/Animation.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/Params.hpp"
+#include "nemo/core/evaluation/SourceRequest.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QJSValue>
 #include <QMetaType>
 #include <QQuickWindow>
+#include <QStyleHints>
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -572,6 +578,77 @@ const char* parameterKindName(nemo::ParameterType type) {
     return "string";
 }
 
+// The typed-parameter scope a key action applies to. The inspector publishes it
+// so a key menu states its scope without deriving it from the parameter kind.
+[[nodiscard]] QString parameterScopeLabel(nemo::ParameterType type) {
+    switch (type) {
+    case nemo::ParameterType::Color:
+        return QStringLiteral("RGBA");
+    case nemo::ParameterType::Vector3:
+        return QStringLiteral("XYZ");
+    case nemo::ParameterType::Vector2:
+        return QStringLiteral("XY");
+    case nemo::ParameterType::Boolean:
+        return QStringLiteral("Toggle");
+    case nemo::ParameterType::Choice:
+        return QStringLiteral("Choice");
+    case nemo::ParameterType::String:
+        return QStringLiteral("Text");
+    case nemo::ParameterType::Integer:
+    case nemo::ParameterType::Float:
+        break;
+    }
+    return QStringLiteral("Value");
+}
+
+// Multichannel presentation semantics consumed by the registered tuple editor.
+[[nodiscard]] QVariantMap channelHintVariant(const nemo::ChannelHint& hint) {
+    const char* linked = hint.linked == nemo::ChannelLink::Additive         ? "additive"
+                         : hint.linked == nemo::ChannelLink::Multiplicative ? "multiplicative"
+                                                                            : "none";
+    return QVariantMap{{QStringLiteral("linked"), QString::fromLatin1(linked)},
+                       {QStringLiteral("alphaSeparate"), hint.alphaSeparate}};
+}
+
+// Exact authored text for typed numeric entry and display. Integer values
+// round-trip through int64 and floats through their shortest float
+// representation, so an exact 64-bit value never passes through a JavaScript
+// double on its way to or from a field.
+[[nodiscard]] QString exactParameterText(const nemo::ParameterValue& value) {
+    if (const auto* integer = std::get_if<std::int64_t>(&value))
+        return QString::number(*integer);
+    if (const auto* number = std::get_if<double>(&value)) {
+        char buffer[64];
+        const auto result = std::to_chars(buffer, buffer + sizeof(buffer), static_cast<float>(*number));
+        if (result.ec == std::errc{})
+            return QString::fromLatin1(buffer, static_cast<int>(result.ptr - buffer));
+        return QString::number(*number);
+    }
+    return {};
+}
+
+// Presentation metadata shared by the inspector row and the catalog snapshot.
+// It adds interaction/display hints only: the authored value and its schema
+// validation remain owned by the catalog and command path.
+void insertPresentationMetadata(QVariantMap& row, const nemo::ParameterSpec& spec,
+                                const nemo::ParameterValue& effective, bool animated) {
+    row.insert(QStringLiteral("defaultValue"), parameterValueVariant(spec.defaultValue));
+    row.insert(QStringLiteral("modified"), animated || effective != spec.defaultValue);
+    row.insert(QStringLiteral("scope"), parameterScopeLabel(spec.type));
+    if (spec.type == nemo::ParameterType::Integer || spec.type == nemo::ParameterType::Float)
+        row.insert(QStringLiteral("valueText"), exactParameterText(effective));
+    if (spec.softMinimum)
+        row.insert(QStringLiteral("softMinimum"), *spec.softMinimum);
+    if (spec.softMaximum)
+        row.insert(QStringLiteral("softMaximum"), *spec.softMaximum);
+    if (spec.displayDecimals)
+        row.insert(QStringLiteral("displayDecimals"), *spec.displayDecimals);
+    if (!spec.row.empty())
+        row.insert(QStringLiteral("row"), QString::fromStdString(spec.row));
+    if (spec.channels)
+        row.insert(QStringLiteral("channels"), channelHintVariant(*spec.channels));
+}
+
 // Empty schema labels fall back to a readable form of the persisted key:
 // underscores/dots become word breaks and camelCase gains a space.
 [[nodiscard]] QString humanizedParameterLabel(std::string_view name) {
@@ -766,6 +843,48 @@ struct ParameterKeyState {
     }
     return state;
 }
+
+// Resolves a node's static and animated parameters from a document snapshot and
+// runs the executor's own admissibility check, so an authoring gesture cannot
+// publish a value the executor would reject (for example a non-positive gamma
+// on an enabled Grade channel). Presentation never evaluates the graph.
+[[nodiscard]] std::optional<QString> validateEffectEdit(const nemo::Document& document,
+                                                        const nemo::ParameterAddress& address, double frame) {
+    try {
+        const auto& definition = document.network(address.network);
+        const auto* authored = definition.graph().node(address.node);
+        if (!authored)
+            return QStringLiteral("node parameter edit target no longer exists");
+        nemo::NodeInstance local = *authored;
+        if (address.instance != nemo::kInvalidNetworkInstance) {
+            const auto* occurrence = document.instance(address.instance);
+            if (!occurrence)
+                return QStringLiteral("node parameter edit references an unknown network instance");
+            if (const auto overrides = occurrence->params.find(address.node); overrides != occurrence->params.end())
+                for (const auto& [key, value] : overrides->second)
+                    local.params[key] = value;
+        }
+        nemo::ParameterValues parameters = local.params;
+        nemo::applyAnimationParameters(document, address.network, address.node, address.instance, frame, parameters);
+        if (const auto problem = nemo::validateEffectParameters(definition.graph().catalog(), local, parameters))
+            return QString::fromStdString(*problem);
+        // A Read's cross-field constraints (a Custom range must be ordered, a
+        // non-default Step must be nonzero, choice/hint combinations) are owned
+        // by the shared Read vocabulary. The resolved scoped set is validated
+        // through that same owner, so a timing scalar edited through the shared
+        // gesture keeps the source-owned semantic validator instead of losing
+        // it when it no longer travels through the Read command.
+        if (authored->type == "source") {
+            nemo::NodeInstance effectiveRead = local;
+            effectiveRead.params = parameters;
+            if (const auto problem = nemo::readOverridesProblem(nemo::readAuthoredOverrides(document, effectiveRead)))
+                return QString::fromStdString(*problem);
+        }
+    } catch (const std::exception& error) {
+        return QString::fromUtf8(error.what());
+    }
+    return std::nullopt;
+}
 }  // namespace
 ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session)
     : runtime_(runtime), session_(session), schedulerPoll_(this), playback_(this) {
@@ -795,6 +914,10 @@ ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession&
     connect(&schedulerPoll_, &QTimer::timeout, this, &ViewerController::pollScheduler);
     schedulerPoll_.start();
     connect(&playback_, &QTimer::timeout, this, &ViewerController::playbackTick);
+    // subscribe() does not invoke the callback, so the baseline is seeded here:
+    // the first notification may itself be the reopen/replacement that must
+    // refresh the runtime's retained color configuration.
+    observedProjectGeneration_ = session_.projectGeneration();
     sessionSubscription_ = session_.subscribe(this, &ViewerController::sessionDocumentChanged);
 }
 
@@ -1278,6 +1401,16 @@ QVariantList ViewerController::nodeCatalog() const {
                 value.insert(QStringLiteral("maximum"), *parameter.maximum);
             if (parameter.step)
                 value.insert(QStringLiteral("step"), *parameter.step);
+            if (parameter.softMinimum)
+                value.insert(QStringLiteral("softMinimum"), *parameter.softMinimum);
+            if (parameter.softMaximum)
+                value.insert(QStringLiteral("softMaximum"), *parameter.softMaximum);
+            if (parameter.displayDecimals)
+                value.insert(QStringLiteral("displayDecimals"), *parameter.displayDecimals);
+            if (!parameter.row.empty())
+                value.insert(QStringLiteral("row"), QString::fromStdString(parameter.row));
+            if (parameter.channels)
+                value.insert(QStringLiteral("channels"), channelHintVariant(*parameter.channels));
             QVariantList choices;
             for (const auto& choice : parameter.choices)
                 choices.push_back(QString::fromStdString(choice));
@@ -1559,6 +1692,15 @@ void ViewerController::pollScheduler() {
 }
 
 void ViewerController::documentChanged() {
+    // A reopened or replaced project is the explicit config-freshness boundary:
+    // a same-path OCIO config edited outside the application is picked up here,
+    // never by polling. The runtime coalesces the request and applies it on its
+    // worker thread, so nothing is retired on this thread; a Read Reload is a
+    // source-only edit and deliberately never reaches this call.
+    const auto projectGeneration = session_.projectGeneration();
+    if (observedProjectGeneration_ != projectGeneration)
+        runtime_->refreshColorConfig();
+    observedProjectGeneration_ = projectGeneration;
     error_.clear();
     pending_ = false;
     outdated_ = static_cast<bool>(presentation_);
@@ -1594,6 +1736,11 @@ void ViewerController::invalidateRequest() {
 
 nemo::EditOptions ViewerController::editOptions() const {
     return nemo::EditOptions{.expectedRevision = session_.revision()};
+}
+
+int ViewerController::dragDistance() const {
+    const auto* hints = QGuiApplication::styleHints();
+    return hints ? hints->startDragDistance() : 4;
 }
 
 bool ViewerController::applyEdit(const nemo::EditResult& result) {
@@ -1641,6 +1788,15 @@ void ViewerController::buildGraph(const SourceReference& reference) {
                         setLayoutCommand(network, *output, LayoutPosition{150.0, 140.0}).apply(document);
                     addNodeCommand(network, "viewer", "Viewer1", viewer, LayoutPosition{150.0, 200.0}).apply(document);
                     setParamCommand(network, *source, "source", std::string{"src"}).apply(document);
+                    // A newly constructed Read records the shared reference's
+                    // mapping and recognized hints as node-scoped choices
+                    // through the one frozen reference->overrides translation
+                    // that schema migration also uses, so bootstrap and
+                    // migration cannot drift and later source-strip edits stay
+                    // intentional shared-source edits.
+                    for (auto& [overrideKey, overrideValue] :
+                         nemo::readOverrideParameters(nemo::readAuthoredOverrides(reference)))
+                        setParamCommand(network, *source, overrideKey, std::move(overrideValue)).apply(document);
                     setParamCommand(network, *background, "color", ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}})
                         .apply(document);
                     connectCommand(network, {*source, 0}, {*merge, 0}).apply(document);
@@ -1863,6 +2019,100 @@ bool ViewerController::rewireGraphEdge(const QString& networkValue, const QVaria
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
         return false;
+    }
+}
+
+bool ViewerController::swapNodeInputs(const QString& networkValue, const QVariant& nodeValue, int firstPort,
+                                      int secondPort) {
+    const auto network = networkIdentity(networkValue);
+    const auto node = graphIdentity(nodeValue);
+    if (!network || !node || firstPort < 0 || secondPort < 0) {
+        fail(QStringLiteral("input swap requires a valid node and non-negative ports"));
+        return false;
+    }
+    try {
+        const auto& graph = session_.document().network(*network).graph();
+        const auto* instance = graph.node(static_cast<NodeId>(*node));
+        const auto* descriptor = instance ? graph.descriptor(instance->type) : nullptr;
+        const auto portCount = descriptor ? descriptor->inputs.size() : std::size_t{0};
+        if (!instance || !descriptor || static_cast<std::size_t>(firstPort) >= portCount ||
+            static_cast<std::size_t>(secondPort) >= portCount || firstPort == secondPort) {
+            fail(QStringLiteral("input swap requires two distinct declared input ports"));
+            return false;
+        }
+        const auto occupant = [&graph, node](int port) -> const Edge* {
+            for (const auto& edge : graph.edges()) {
+                if (edge.to.node == static_cast<NodeId>(*node) && edge.to.port == static_cast<std::uint32_t>(port))
+                    return &edge;
+            }
+            return nullptr;
+        };
+        const auto* first = occupant(firstPort);
+        const auto* second = occupant(secondPort);
+        // A swap with nothing to move is meaningless; two edges from the same
+        // source exchange nothing. Both are refused before any history entry.
+        if (!first && !second) {
+            fail(QStringLiteral("input swap needs at least one connected input"));
+            return false;
+        }
+        if (first && second && first->from == second->from) {
+            fail(QStringLiteral("input swap needs distinct input sources"));
+            return false;
+        }
+        return applyEdit(session_.submit(nemo::swapInputsCommand(*network, static_cast<NodeId>(*node),
+                                                                 static_cast<std::uint32_t>(firstPort),
+                                                                 static_cast<std::uint32_t>(secondPort)),
+                                         editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+QVariantMap ViewerController::nodeInputOccupancy(const QString& networkValue, const QVariant& nodeValue) const {
+    const auto network = networkIdentity(networkValue);
+    const auto node = graphIdentity(nodeValue);
+    if (!network || !node)
+        return QVariantMap{{QStringLiteral("available"), false},
+                           {QStringLiteral("reason"), QStringLiteral("input occupancy requires a valid node")},
+                           {QStringLiteral("ports"), QVariantList{}}};
+    try {
+        const auto& graph = session_.document().network(*network).graph();
+        const auto* instance = graph.node(static_cast<NodeId>(*node));
+        const auto* descriptor = instance ? graph.descriptor(instance->type) : nullptr;
+        if (!instance || !descriptor)
+            return QVariantMap{{QStringLiteral("available"), false},
+                               {QStringLiteral("reason"), QStringLiteral("input occupancy target does not exist")},
+                               {QStringLiteral("ports"), QVariantList{}}};
+        std::vector<bool> connected(descriptor->inputs.size(), false);
+        std::vector<QString> sources(descriptor->inputs.size());
+        for (const auto& edge : graph.edges()) {
+            if (edge.to.node != static_cast<NodeId>(*node) || edge.to.port >= descriptor->inputs.size())
+                continue;
+            connected[edge.to.port] = true;
+            sources[edge.to.port] =
+                QString::number(edge.from.node) + QLatin1Char(':') + QString::number(edge.from.port);
+        }
+        QVariantList ports;
+        for (std::size_t index = 0; index < descriptor->inputs.size(); ++index) {
+            // vector<bool> yields a proxy reference, which cannot construct a
+            // QVariant; materialize the flag before the initializer.
+            const bool connectedPort = connected[index];
+            ports.push_back(
+                QVariantMap{{QStringLiteral("index"), static_cast<int>(index)},
+                            {QStringLiteral("name"), QString::fromStdString(descriptor->inputs[index].name)},
+                            {QStringLiteral("kind"), QString::fromLatin1(portKindName(descriptor->inputs[index].kind))},
+                            {QStringLiteral("optional"), descriptor->inputs[index].optional},
+                            {QStringLiteral("connected"), connectedPort},
+                            {QStringLiteral("source"), sources[index]}});
+        }
+        return QVariantMap{{QStringLiteral("available"), true},
+                           {QStringLiteral("reason"), QString{}},
+                           {QStringLiteral("ports"), ports}};
+    } catch (const std::exception& error) {
+        return QVariantMap{{QStringLiteral("available"), false},
+                           {QStringLiteral("reason"), QString::fromUtf8(error.what())},
+                           {QStringLiteral("ports"), QVariantList{}}};
     }
 }
 
@@ -2434,30 +2684,44 @@ void ViewerController::setNodeParameterText(const QVariant& nodeValue, const QSt
     }
 }
 
-void ViewerController::resetNodeParameter(const QVariant& nodeValue, const QString& keyValue) {
-    bool validId = false;
-    const auto nodeId = nodeValue.toString().toULongLong(&validId);
+bool ViewerController::resetNodeParameterEdit(const QString& networkValue, const QVariant& nodeValue,
+                                              const QString& keyValue) {
     const auto key = keyValue.trimmed();
-    if (!validId || nodeId == static_cast<qulonglong>(kInvalidNode) || key.isEmpty()) {
-        fail(QStringLiteral("node parameter reset requires a node ID and key"));
-        return;
+    if (key.isEmpty()) {
+        fail(QStringLiteral("node parameter reset requires a parameter key"));
+        return false;
     }
-    const auto network = session_.document().rootNetworkId();
+    QString error;
+    const auto target = resolveInspectorTarget(session_.document(), networkValue, nodeValue, key.toStdString(), error);
+    if (!target) {
+        fail(error);
+        return false;
+    }
+    if (!target->spec) {
+        fail(QStringLiteral("node parameter reset requires a parameter key"));
+        return false;
+    }
     try {
-        const auto& graph = session_.document().network(network).graph();
-        const auto* node = graph.node(static_cast<NodeId>(nodeId));
-        if (!node) {
-            fail(QStringLiteral("node parameter target does not exist"));
-            return;
-        }
-        if (!node->params.contains(key.toStdString())) {
+        const auto frame = static_cast<double>(frame_);
+        // Reset follows the same edit scope as any other value edit: the shared
+        // gesture owner decides per address whether this authors the
+        // current-frame key (an authored channel keeps its curve and its other
+        // keys) or writes the static value.
+        if (nemo::animatedParameterValue(session_.document(), target->address, frame) == target->spec->defaultValue) {
             clearError();
-            return;
+            return true;
         }
-        applyEdit(
-            session_.submit(resetParamCommand(network, static_cast<NodeId>(nodeId), key.toStdString()), editOptions()));
-    } catch (const std::exception& error) {
-        fail(QString::fromUtf8(error.what()));
+        const auto token = beginParameterGestureFor(networkValue, nodeValue, QStringList{key});
+        if (token.isEmpty())
+            return false;
+        if (!updateNodeParameterEdit(token, parameterValueVariant(target->spec->defaultValue))) {
+            static_cast<void>(cancelNodeParameterEdit(token));
+            return false;
+        }
+        return commitNodeParameterEdit(token);
+    } catch (const std::exception& failure) {
+        fail(QString::fromUtf8(failure.what()));
+        return false;
     }
 }
 
@@ -2543,16 +2807,27 @@ QVariantMap ViewerController::subnetInspector(nemo::NetworkId network, nemo::Nod
                 continue;
             const nemo::ParameterAddress address{occurrence->definition, exposed.node, exposed.key, occurrence->id};
             const auto keyState = parameterKeyState(document, address, frame);
+            const auto effective = nemo::animatedParameterValue(document, address, frame);
             QVariantMap row{{QStringLiteral("key"), exposedParameterToken(exposed.id)},
                             {QStringLiteral("label"), QString::fromStdString(exposed.name)},
                             {QStringLiteral("source"), QString::fromStdString(child->name + "." + exposed.key)},
+                            // Resolved target identity of THIS row's exposure:
+                            // the node parameter the control really edits lives
+                            // in the definition network on the named child, and
+                            // the gesture key is this row's own `key`. A
+                            // registered editor therefore queries and edits the
+                            // right child without a fallback and without
+                            // colliding two children that expose one key.
+                            {QStringLiteral("targetNetwork"), QString::number(occurrence->definition)},
+                            {QStringLiteral("targetNode"), QString::number(exposed.node)},
+                            {QStringLiteral("targetKey"), QString::fromStdString(exposed.key)},
                             {QStringLiteral("type"), QString::fromLatin1(parameterTypeName(spec->type))},
                             {QStringLiteral("kind"), QString::fromLatin1(parameterKindName(spec->type))},
-                            {QStringLiteral("value"),
-                             parameterValueVariant(nemo::animatedParameterValue(document, address, frame))},
+                            {QStringLiteral("value"), parameterValueVariant(effective)},
                             {QStringLiteral("animated"), keyState.animated},
                             {QStringLiteral("keyed"), keyState.keyed},
                             {QStringLiteral("editor"), QString::fromStdString(spec->editor)}};
+            insertPresentationMetadata(row, *spec, effective, keyState.animated);
             if (spec->minimum)
                 row.insert(QStringLiteral("minimum"), *spec->minimum);
             if (spec->maximum)
@@ -2629,24 +2904,30 @@ QVariantMap ViewerController::parameterInspector(const QString& networkValue, co
             }
             const nemo::ParameterAddress address{target->network, target->node, spec.name, target->instance->instance};
             const auto keyState = parameterKeyState(session_.document(), address, frame);
-            QVariant value;
+            nemo::ParameterValue effective;
             if (keyState.animated) {
-                value = parameterValueVariant(nemo::animatedParameterValue(session_.document(), address, frame));
+                effective = nemo::animatedParameterValue(session_.document(), address, frame);
             } else {
                 const auto authored = std::find_if(allValues.begin(), allValues.end(),
                                                    [&spec](const auto& entry) { return entry.key == spec.name; });
-                value = authored != allValues.end() ? parameterValueVariant(authored->value)
-                                                    : parameterValueVariant(spec.defaultValue);
+                effective = authored != allValues.end() ? authored->value : spec.defaultValue;
             }
             QVariantMap row{{QStringLiteral("key"), QString::fromStdString(spec.name)},
                             {QStringLiteral("label"), spec.label.empty() ? humanizedParameterLabel(spec.name)
                                                                          : QString::fromStdString(spec.label)},
+                            // The same resolved-target block as an occurrence
+                            // row: here the target is the inspected node itself,
+                            // so a registered editor has one contract.
+                            {QStringLiteral("targetNetwork"), QString::number(target->network)},
+                            {QStringLiteral("targetNode"), QString::number(target->node)},
+                            {QStringLiteral("targetKey"), QString::fromStdString(spec.name)},
                             {QStringLiteral("type"), QString::fromLatin1(parameterTypeName(spec.type))},
                             {QStringLiteral("kind"), QString::fromLatin1(parameterKindName(spec.type))},
-                            {QStringLiteral("value"), value},
+                            {QStringLiteral("value"), parameterValueVariant(effective)},
                             {QStringLiteral("animated"), keyState.animated},
                             {QStringLiteral("keyed"), keyState.keyed},
                             {QStringLiteral("editor"), QString::fromStdString(spec.editor)}};
+            insertPresentationMetadata(row, spec, effective, keyState.animated);
             if (spec.minimum)
                 row.insert(QStringLiteral("minimum"), *spec.minimum);
             if (spec.maximum)
@@ -2776,35 +3057,77 @@ bool ViewerController::removeNodeParameterKey(const QString& networkValue, const
 
 QString ViewerController::beginNodeParameterEdit(const QString& networkValue, const QVariant& nodeValue,
                                                  const QString& keyValue) {
+    return beginParameterGestureFor(networkValue, nodeValue, QStringList{keyValue});
+}
+
+QString ViewerController::beginNodeParameterEdits(const QString& networkValue, const QVariant& nodeValue,
+                                                  const QStringList& keys) {
+    return beginParameterGestureFor(networkValue, nodeValue, keys);
+}
+
+// The single owner of gesture begin: it resolves every requested key to one
+// address each (occurrence/exposed aware), captures the value evaluated at the
+// current frame, and hands the whole set to the core owner, which decides per
+// address whether that address authors a key or takes the static value. No
+// private keyed/static branch lives here.
+QString ViewerController::beginParameterGestureFor(const QString& networkValue, const QVariant& nodeValue,
+                                                   const QStringList& keys) {
     if (parameterGestureToken_ != 0) {
         fail(QStringLiteral("a node parameter edit is already in progress"));
         return {};
     }
-    QString error;
-    const auto target =
-        resolveInspectorTarget(session_.document(), networkValue, nodeValue, keyValue.trimmed().toStdString(), error);
-    if (!target) {
-        fail(error);
-        return {};
-    }
-    if (!target->spec) {
-        fail(QStringLiteral("node parameter edit requires a parameter key"));
+    if (keys.isEmpty()) {
+        fail(QStringLiteral("node parameter edit requires at least one parameter key"));
         return {};
     }
     try {
         const auto frame = static_cast<double>(frame_);
-        const auto state = parameterKeyState(session_.document(), target->address, frame);
-        const nemo::ParameterEdit edit{target->address,
-                                       nemo::animatedParameterValue(session_.document(), target->address, frame)};
-        const auto gesture = state.keyed ? session_.beginKeyedParameterGesture(frame, {edit}, editOptions())
-                                         : session_.beginParameterGesture({edit}, editOptions());
+        std::vector<nemo::ParameterEdit> edits;
+        edits.reserve(static_cast<std::size_t>(keys.size()));
+        std::optional<nemo::ParameterAddress> address;
+        for (const auto& keyValue : keys) {
+            const auto key = keyValue.trimmed();
+            if (key.isEmpty()) {
+                fail(QStringLiteral("node parameter edit requires a parameter key"));
+                return {};
+            }
+            QString error;
+            const auto target =
+                resolveInspectorTarget(session_.document(), networkValue, nodeValue, key.toStdString(), error);
+            if (!target) {
+                fail(error);
+                return {};
+            }
+            if (!target->spec) {
+                fail(QStringLiteral("node parameter edit requires a parameter key"));
+                return {};
+            }
+            // A batch edits one target: every resolved address must agree, so a
+            // mixed identity can never half-apply to another node or scope.
+            if (address && (address->network != target->address.network || address->node != target->address.node ||
+                            address->instance != target->address.instance)) {
+                fail(QStringLiteral("a node parameter batch must address one node and one occurrence"));
+                return {};
+            }
+            address = target->address;
+            edits.push_back(nemo::ParameterEdit{
+                target->address, nemo::animatedParameterValue(session_.document(), target->address, frame)});
+        }
+        const auto gesture = session_.beginValueParameterGesture(frame, edits, editOptions());
         if (gesture.token == 0) {
             applyEdit(gesture.result);
             return {};
         }
-        parameterGestureAddress_ = target->address;
+        if (gesture.snapshot) {
+            if (const auto problem = validateEffectEdit(*gesture.snapshot, *address, frame)) {
+                static_cast<void>(session_.cancelParameterGesture(gesture.token));
+                fail(*problem);
+                return {};
+            }
+        }
+        parameterGestureAddress_ = address;
         parameterGestureToken_ = gesture.token;
-        parameterGestureKeyed_ = state.keyed;
+        parameterGestureInvalid_ = false;
         clearError();
         return QString::number(gesture.token);
     } catch (const std::exception& failure) {
@@ -2814,10 +3137,28 @@ QString ViewerController::beginNodeParameterEdit(const QString& networkValue, co
 }
 
 bool ViewerController::updateNodeParameterEdit(const QString& tokenValue, const QVariant& value) {
+    // Convenience shape: one key, one value, through the same owner.
+    if (!parameterGestureAddress_) {
+        fail(QStringLiteral("node parameter edit update requires the active gesture token"));
+        return false;
+    }
+    return updateParameterGestureValues(tokenValue,
+                                        QVariantMap{{QString::fromStdString(parameterGestureAddress_->key), value}});
+}
+
+bool ViewerController::updateNodeParameterEdits(const QString& tokenValue, const QVariantMap& values) {
+    return updateParameterGestureValues(tokenValue, values);
+}
+
+bool ViewerController::updateParameterGestureValues(const QString& tokenValue, const QVariantMap& values) {
     bool valid = false;
     const auto token = tokenValue.trimmed().toULongLong(&valid);
     if (!valid || token == 0 || !parameterGestureAddress_ || token != parameterGestureToken_) {
         fail(QStringLiteral("node parameter edit update requires the active gesture token"));
+        return false;
+    }
+    if (values.isEmpty()) {
+        fail(QStringLiteral("node parameter edit update requires at least one value"));
         return false;
     }
     try {
@@ -2827,24 +3168,63 @@ bool ViewerController::updateNodeParameterEdit(const QString& tokenValue, const 
             fail(QStringLiteral("node parameter edit target no longer exists"));
             return false;
         }
-        QString conversionError;
-        const auto converted = parameterValueFromVariant(graph.catalog(), graph.descriptor(node->type),
-                                                         parameterGestureAddress_->key, value, conversionError);
-        if (!converted) {
-            fail(conversionError);
-            return false;
+        // Every candidate is converted before any of them is previewed, and a
+        // single failure marks the gesture invalid so commit can never publish
+        // the previous preview for an edit that was refused.
+        std::vector<nemo::ParameterEdit> edits;
+        edits.reserve(static_cast<std::size_t>(values.size()));
+        for (auto entry = values.constBegin(); entry != values.constEnd(); ++entry) {
+            const auto key = entry.key().trimmed();
+            if (key.isEmpty()) {
+                parameterGestureInvalid_ = true;
+                fail(QStringLiteral("node parameter edit update requires parameter keys"));
+                return false;
+            }
+            nemo::ParameterAddress address = *parameterGestureAddress_;
+            address.key = key.toStdString();
+            if (!graph.catalog().parameterSpec(node->type, address.key)) {
+                parameterGestureInvalid_ = true;
+                fail(QStringLiteral("node parameter '%1' does not exist").arg(key));
+                return false;
+            }
+            QString conversionError;
+            std::optional<nemo::ParameterValue> converted;
+            if (entry.value().metaType().id() == QMetaType::QString) {
+                // Typed text parses through the catalog, so an exact 64-bit
+                // integer never round-trips through a JavaScript double.
+                converted =
+                    graph.catalog().parseParameterText(node->type, address.key, entry.value().toString().toStdString());
+            } else {
+                converted = parameterValueFromVariant(graph.catalog(), graph.descriptor(node->type), address.key,
+                                                      entry.value(), conversionError);
+            }
+            if (!converted) {
+                parameterGestureInvalid_ = true;
+                fail(conversionError.isEmpty() ? QStringLiteral("parameter '%1' rejects that value").arg(key)
+                                               : conversionError);
+                return false;
+            }
+            edits.push_back(nemo::ParameterEdit{address, *converted});
         }
-        const std::vector<nemo::ParameterEdit> edits{{*parameterGestureAddress_, *converted}};
-        const auto gesture = parameterGestureKeyed_
-                                 ? session_.updateKeyedParameterGesture(parameterGestureToken_, edits)
-                                 : session_.updateParameterGesture(parameterGestureToken_, edits);
+        const auto gesture = session_.updateParameterGesture(parameterGestureToken_, edits);
         if (gesture.token == 0) {
+            parameterGestureInvalid_ = true;
             applyEdit(gesture.result);
             return false;
         }
+        if (gesture.snapshot) {
+            if (const auto problem =
+                    validateEffectEdit(*gesture.snapshot, *parameterGestureAddress_, static_cast<double>(frame_))) {
+                parameterGestureInvalid_ = true;
+                fail(*problem);
+                return false;
+            }
+        }
+        parameterGestureInvalid_ = false;
         clearError();
         return true;
     } catch (const std::exception& failure) {
+        parameterGestureInvalid_ = true;
         fail(QString::fromUtf8(failure.what()));
         return false;
     }
@@ -2857,6 +3237,15 @@ bool ViewerController::commitNodeParameterEdit(const QString& tokenValue) {
         fail(QStringLiteral("node parameter edit commit requires the active gesture token"));
         return false;
     }
+    if (parameterGestureInvalid_) {
+        const auto problem = error_.isEmpty() ? QStringLiteral("node parameter edit was rejected") : error_;
+        static_cast<void>(session_.cancelParameterGesture(parameterGestureToken_));
+        parameterGestureAddress_.reset();
+        parameterGestureToken_ = 0;
+        parameterGestureInvalid_ = false;
+        fail(problem);
+        return false;
+    }
     const auto result = session_.commitParameterGesture(parameterGestureToken_, editOptions());
     if (!result.committed && result.error)
         // A conflict leaves the session gesture registered; release it so the
@@ -2864,7 +3253,14 @@ bool ViewerController::commitNodeParameterEdit(const QString& tokenValue) {
         static_cast<void>(session_.cancelParameterGesture(parameterGestureToken_));
     parameterGestureAddress_.reset();
     parameterGestureToken_ = 0;
-    parameterGestureKeyed_ = false;
+    parameterGestureInvalid_ = false;
+    if (!result.committed && !result.error) {
+        // The committed batch was entirely unchanged: the owner publishes
+        // nothing and reports a non-committed, error-free result. That is a
+        // completed no-op, not a rejection: no error, no history entry.
+        clearError();
+        return true;
+    }
     return applyEdit(result);
 }
 
@@ -2875,12 +3271,18 @@ bool ViewerController::cancelNodeParameterEdit(const QString& tokenValue) {
         fail(QStringLiteral("node parameter edit cancel requires the active gesture token"));
         return false;
     }
+    const auto rejected = parameterGestureInvalid_;
     const auto result = session_.cancelParameterGesture(parameterGestureToken_);
     parameterGestureAddress_.reset();
     parameterGestureToken_ = 0;
-    parameterGestureKeyed_ = false;
+    parameterGestureInvalid_ = false;
     if (result.error) {
         fail(QString::fromStdString(result.error->message));
+        return false;
+    }
+    if (rejected) {
+        // A rejection reason is preserved: cancel must not hide why the edit
+        // was refused.
         return false;
     }
     clearError();
@@ -3184,6 +3586,17 @@ void ViewerController::refreshRequest() {
             const auto created = std::make_shared<NodeId>();
             addNodeCommand(document.rootNetworkId(), "source", "source", created, {}).apply(document);
             setParamCommand(document.rootNetworkId(), *created, "source", contextSourceKey_).apply(document);
+            // A media-key-routed viewer has no authored node, so the temporary
+            // request-only Read reproduces the shared reference's scoped
+            // mapping through the same translation: the source-scoped overload
+            // this viewer evaluated before Read mapping became node-scoped is
+            // preserved, with nothing persisted.
+            const auto reference = document.sources.find(contextSourceKey_);
+            if (reference != document.sources.end())
+                for (auto& [overrideKey, overrideValue] :
+                     nemo::readOverrideParameters(nemo::readAuthoredOverrides(reference->second)))
+                    setParamCommand(document.rootNetworkId(), *created, overrideKey, std::move(overrideValue))
+                        .apply(document);
             target = *created;
         }
         // No render target means an explicit empty viewer, never an Output

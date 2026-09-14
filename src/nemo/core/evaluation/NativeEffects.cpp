@@ -403,6 +403,29 @@ struct BlurKernel {
     return output;
 }
 
+// --- Merge ---------------------------------------------------------------
+
+// Per-channel blend target for the extended Merge modes (issue #75): the
+// value the foreground coverage interpolates toward from the background.
+// Over is handled inline by evaluateMerge to preserve its existing exact
+// expression; plus/product/complement-product/difference are the documented
+// targets and are never clamped (scene-linear float stays outside [0, 1]).
+[[nodiscard]] float mergeBlendTarget(MergeOperation operation, float background, float foreground) {
+    switch (operation) {
+    case MergeOperation::Plus:
+        return background + foreground;
+    case MergeOperation::Multiply:
+        return background * foreground;
+    case MergeOperation::Screen:
+        return 1.0F - (1.0F - background) * (1.0F - foreground);
+    case MergeOperation::Difference:
+        return std::fabs(background - foreground);
+    case MergeOperation::Over:
+        break;
+    }
+    return foreground;
+}
+
 // --- Common mask/mix -----------------------------------------------------
 
 // One final blend at output coordinates: original*(1-weight) + processed*weight
@@ -487,6 +510,54 @@ CpuImage evaluateNativeEffect(const NodeCatalog& catalog, const NodeInstance& no
 
     return blendEffectOutput(node, effectiveEffectMask(catalog, node, effectiveParams), input, std::move(processed),
                              mask);
+}
+
+CpuImage evaluateMerge(const NodeCatalog& catalog, const NodeInstance& node, ParameterValues& effectiveParams,
+                       const CpuImage& background, const CpuImage& foreground, const CpuImage* mask) {
+    if (background.width() <= 0 || background.height() <= 0 || foreground.width() != background.width() ||
+        foreground.height() != background.height()) {
+        failNode(node, "merge requires background (A) and foreground (B) rasters of the same non-empty size");
+    }
+    const MergeOperation operation = effectiveMergeOperation(catalog, node, effectiveParams);
+    // The output raster keeps the spatial metadata the CPU dispatch path has
+    // always produced for Merge: the background's extent and pixel aspect
+    // with the storage defaults (RGBA float, scene-linear).
+    ImageLayout layout;
+    layout.width = background.width();
+    layout.height = background.height();
+    layout.pixelAspect = background.layout().pixelAspect;
+    CpuImage composite(layout);
+    for (int y = 0; y < background.height(); ++y) {
+        for (int x = 0; x < background.width(); ++x) {
+            const std::array<float, kImageChannels> bg = background.pixel(x, y);
+            const std::array<float, kImageChannels> fg = foreground.pixel(x, y);
+            std::array<float, kImageChannels> result{};
+            if (operation == MergeOperation::Over) {
+                // The reference's existing Over expression, unchanged: the
+                // target is the foreground and the same operand order is
+                // kept, so full coverage/mix stays bit-identical to prior
+                // documents.
+                for (std::size_t channel = 0; channel < 3; ++channel) {
+                    result[channel] = fg[3] * fg[channel] + (1.0F - fg[3]) * bg[channel];
+                }
+            } else {
+                for (std::size_t channel = 0; channel < 3; ++channel) {
+                    const float target = mergeBlendTarget(operation, bg[channel], fg[channel]);
+                    result[channel] = bg[channel] + fg[3] * (target - bg[channel]);
+                }
+            }
+            // Unmasked alpha is operation-independent (foreground coverage
+            // over the background), exactly as current Over.
+            result[3] = fg[3] + (1.0F - fg[3]) * bg[3];
+            composite.setPixel(x, y, result);
+        }
+    }
+    // Shared mask/mix interpolation (absent mask or channel none = full
+    // coverage): background + coverage*mix*(composite - background), so Mix 0
+    // or zero coverage returns the background exactly. The composite is
+    // consumed in place; no second full raster is retained.
+    return blendEffectOutput(node, effectiveEffectMask(catalog, node, effectiveParams), background,
+                             std::move(composite), mask);
 }
 
 }  // namespace nemo

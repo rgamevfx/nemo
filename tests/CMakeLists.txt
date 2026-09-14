@@ -102,16 +102,13 @@ gtest_discover_tests(nemo_workspace_tests)
 
 if(NEMO_BUILD_UI)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2 Test)
-    if(UNIX AND NOT APPLE)
-        # ProjectFileController's native xdg-desktop-portal chooser client.
-        find_package(Qt6 6.4 REQUIRED COMPONENTS DBus)
-    endif()
+    # The controllers/runtime/items come from the same shared target the
+    # application links (issue #68); this executable only owns its test sources
+    # and the test-specific source-tree QML location.
     add_executable(nemo_workspace_ui_tests
         ChooserOwnershipTests.cpp
         AnimationUiTests.cpp
         ReadSourceUiTests.cpp
-        ../apps/nemo-ui/AnimationViewModel.cpp
-        ../apps/nemo-ui/AnimationViewModel.hpp
         WorkspaceDragTests.cpp
         InteractiveUiTests.cpp
         Issue47ViewerDestinationUiTests.cpp
@@ -119,47 +116,12 @@ if(NEMO_BUILD_UI)
         PanelContextRouterTests.cpp
         PanelContextUiTests.cpp
         MediaLibraryModelTests.cpp
-        ../apps/nemo-ui/MediaLibraryModel.cpp
-        ../apps/nemo-ui/MediaLibraryModel.hpp
-        ../apps/nemo-ui/NativeFileChooser.cpp
-        ../apps/nemo-ui/NativeFileChooser.hpp
-        ../apps/nemo-ui/PanelContextRouter.cpp
-        ../apps/nemo-ui/PanelContextRouter.hpp
-        ../apps/nemo-ui/ParameterEditorRegistry.cpp
-        ../apps/nemo-ui/ParameterEditorRegistry.hpp
-        ../apps/nemo-ui/ProjectFileController.cpp
-        ../apps/nemo-ui/ProjectFileController.hpp
-        ../apps/nemo-ui/ReadSourceController.cpp
-        ../apps/nemo-ui/ReadSourceController.hpp
-        ../apps/nemo-ui/WorkspaceController.cpp
-        ../apps/nemo-ui/WorkspaceController.hpp
-        ../apps/nemo-ui/ViewerController.cpp
-        ../apps/nemo-ui/ViewerController.hpp
-        ../apps/nemo-ui/ViewerControllerRegistry.cpp
-        ../apps/nemo-ui/ViewerControllerRegistry.hpp
-        ../apps/nemo-ui/ViewerRuntime.cpp
-        ../apps/nemo-ui/ViewerRuntime.hpp
-        ../apps/nemo-ui/ViewerItem.cpp
-        ../apps/nemo-ui/ViewerItem.hpp
-        ../apps/nemo-ui/GraphItem.cpp
-        ../apps/nemo-ui/GraphItem.hpp
-        ../apps/nemo-ui/TimelineItem.cpp
-        ../apps/nemo-ui/TimelineItem.hpp
     )
-    set_target_properties(nemo_workspace_ui_tests PROPERTIES AUTOMOC ON)
     target_compile_definitions(nemo_workspace_ui_tests PRIVATE
         NEMO_UI_QML_DIR="${PROJECT_SOURCE_DIR}/apps/nemo-ui/qml"
     )
-    if(DEFINED NEMO_SLANG_SPV_DIR)
-        target_compile_definitions(nemo_workspace_ui_tests PRIVATE NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
-    endif()
     target_link_libraries(nemo_workspace_ui_tests PRIVATE
-        nemo::workspace nemo::eval GTest::gtest Qt6::Quick Qt6::QuickControls2 Qt6::Test
+        nemo_ui_shared GTest::gtest Qt6::Test
     )
-    if(UNIX AND NOT APPLE)
-        target_link_libraries(nemo_workspace_ui_tests PRIVATE Qt6::DBus)
-    elseif(WIN32)
-        target_link_libraries(nemo_workspace_ui_tests PRIVATE ole32 shell32 uuid)
-    endif()
     gtest_discover_tests(nemo_workspace_ui_tests)
 endif()

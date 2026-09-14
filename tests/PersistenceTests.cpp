@@ -7,6 +7,7 @@
 
 #include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Serialization.hpp"
+#include "nemo/core/evaluation/CpuReference.hpp"
 
 using namespace nemo;
 
@@ -120,6 +121,76 @@ TEST(PersistenceTest, TypedInstanceOverridesRoundTrip) {
     ASSERT_NE(restored, nullptr);
     ASSERT_TRUE(std::holds_alternative<ColorValue>(restored->params.at(target).at("color")));
     EXPECT_EQ(std::get<ColorValue>(restored->params.at(target).at("color")), color);
+}
+
+// Issue #75: Merge's operation/mask controls round-trip, and a pre-#75
+// document (no authored operation/mix/mask controls and two-port wiring)
+// reopens on the new schema and still evaluates the historical Over output
+// with the current descriptor defaults (Mix 1, mask channel A, mask absent).
+TEST(PersistenceTest, MergeControlsRoundTripAndLegacyTwoPortDocumentsKeepOverOutput) {
+    const auto buildMerge = [](bool controls) {
+        Document document;
+        auto& network = root(document);
+        const NodeId background = network.graph().addNode("constcolor", "background");
+        network.graph().setParam(background, "color", ColorValue{{0.2F, 0.4F, 0.6F, 0.4F}});
+        const NodeId foreground = network.graph().addNode("constcolor", "foreground");
+        network.graph().setParam(foreground, "color", ColorValue{{0.8F, 0.5F, 0.25F, 0.5F}});
+        const NodeId mask = network.graph().addNode("constcolor", "mask");
+        network.graph().setParam(mask, "color", ColorValue{{0.1F, 0.0F, 0.0F, 0.0F}});
+        const NodeId merge = network.graph().addNode("merge", "comp");
+        if (controls) {
+            network.graph().setParam(merge, "operation", ParameterValue{ChoiceValue{"multiply"}});
+            network.graph().setParam(merge, "maskChannel", ParameterValue{ChoiceValue{"R"}});
+            network.graph().setParam(merge, "invertMask", ParameterValue{true});
+            network.graph().setParam(merge, "mix", ParameterValue{0.25});
+        }
+        network.graph().connect({background, 0}, {merge, 0});
+        network.graph().connect({foreground, 0}, {merge, 1});
+        if (controls)
+            network.graph().connect({mask, 0}, {merge, 2});
+        const NodeId output = network.graph().nodeByName("Output")->id;
+        network.graph().connect({merge, 0}, {output, 0});
+        network.setDefaultOutput(output);
+        return document;
+    };
+    EvaluationRequest request;
+    request.region = {0, 0, 4, 2};
+    request.fullWidth = 4;
+    request.fullHeight = 2;
+
+    // Authored controls and the connected mask survive save/reopen, and the
+    // reopened document evaluates to exactly the saved pixels.
+    const Document original = buildMerge(true);
+    request.network = original.rootNetworkId();
+    request.output = root(original).graph().nodeByName("Output")->id;
+    const std::array<float, 4> before = evaluateCpu(original, request).image.pixel(0, 0);
+    const LoadResult loaded = loadDocument(saveDocument(original));
+    ASSERT_TRUE(loaded.warnings.empty());
+    const NodeInstance* restored = root(loaded.document).graph().nodeByName("comp");
+    ASSERT_NE(restored, nullptr);
+    EXPECT_EQ(restored->params.at("operation"), (ParameterValue{ChoiceValue{"multiply"}}));
+    EXPECT_EQ(restored->params.at("maskChannel"), (ParameterValue{ChoiceValue{"R"}}));
+    EXPECT_EQ(restored->params.at("invertMask"), (ParameterValue{true}));
+    EXPECT_EQ(restored->params.at("mix"), (ParameterValue{0.25}));
+    ASSERT_EQ(root(loaded.document).graph().edgesInto(restored->id).size(), 3u);
+    EXPECT_EQ(evaluateCpu(loaded.document, request).image.pixel(0, 0), before);
+
+    // Legacy shape: nothing authored, only the two image ports wired.
+    const Document legacy = buildMerge(false);
+    request.network = legacy.rootNetworkId();
+    request.output = root(legacy).graph().nodeByName("Output")->id;
+    const std::array<float, 4> legacyBefore = evaluateCpu(legacy, request).image.pixel(0, 0);
+    const LoadResult legacyLoaded = loadDocument(saveDocument(legacy));
+    ASSERT_TRUE(legacyLoaded.warnings.empty());
+    const NodeInstance* legacyMerge = root(legacyLoaded.document).graph().nodeByName("comp");
+    ASSERT_NE(legacyMerge, nullptr);
+    EXPECT_TRUE(legacyMerge->params.empty());
+    const CpuEvaluation legacyAfter = evaluateCpu(legacyLoaded.document, request);
+    EXPECT_EQ(legacyAfter.image.pixel(0, 0), legacyBefore);
+    // 0.5*fg + 0.5*bg with alpha 0.5 + 0.5*0.4, the pre-#75 Over output, and
+    // the reopened node still authors nothing of its own.
+    EXPECT_NEAR(legacyAfter.image.pixel(0, 0)[0], 0.5F, 1e-6F);
+    EXPECT_NEAR(legacyAfter.image.pixel(0, 0)[3], 0.7F, 1e-6F);
 }
 
 TEST(PersistenceTest, LegacyKnownParameterTextMigratesThroughCatalog) {
@@ -475,6 +546,91 @@ TEST(PersistenceTest, MediaLibraryBinsEntriesAndWatermarksRoundTrip) {
     EXPECT_EQ(loaded.document.nextMediaSourceId(), original.nextMediaSourceId());
     EXPECT_EQ(loaded.document.nextMediaBinId(), original.nextMediaBinId());
     EXPECT_EQ(saveDocument(loaded.document), encoded);
+}
+
+TEST(PersistenceTest, DiscoveredSourceFactsRoundTripAndStayAbsentWhenUnknown) {
+    Document original;
+    auto& catalog = original.mediaCatalog();
+    MediaMetadata metadata;
+    metadata.userName = "Sequence";
+    metadata.kind = MediaKind::Sequence;
+    MediaProbeMetadata probe;
+    probe.width = 2048;
+    probe.height = 1152;
+    probe.provenance = "sequence-probe";
+    probe.status = MediaProbeStatus::Ready;
+    probe.firstFrame = 1001;
+    probe.lastFrame = 1120;
+    probe.coverageQuality = CoverageQuality::Validated;
+    probe.availableFrameCount = 115;
+    probe.missingFrameCount = 5;
+    probe.missingRanges = {MediaFrameRange{1050, 1054}};
+    probe.pixelAspect = 2.0;
+    probe.rateNumerator = 24000;
+    probe.rateDenominator = 1001;
+    probe.precision = "16f";
+    probe.channels = "RGBA";
+    probe.declaredInputColorSpace = "srgb_rec709_scene";
+    metadata.committedProbe = probe;
+    const MediaSourceId entry = catalog.addEntry("shot.####.exr", kInvalidMediaBin, metadata);
+
+    // A source whose facts were never established keeps them absent: absence is
+    // the reported fact, not a zero sentinel.
+    MediaMetadata unknown;
+    unknown.userName = "Still";
+    MediaProbeMetadata unknownProbe;
+    unknownProbe.width = 512;
+    unknownProbe.height = 512;
+    unknownProbe.provenance = "image-probe";
+    unknownProbe.status = MediaProbeStatus::Ready;
+    unknown.committedProbe = unknownProbe;
+    const MediaSourceId unknownEntry = catalog.addEntry("still.exr", kInvalidMediaBin, unknown);
+
+    const auto encoded = saveDocument(original);
+    const auto loaded = loadDocument(encoded);
+    ASSERT_TRUE(loaded.warnings.empty());
+    ASSERT_EQ(loaded.document.mediaCatalog().entries(), original.mediaCatalog().entries());
+    const MediaProbeMetadata& restored = *loaded.document.mediaCatalog().entry(entry)->metadata.committedProbe;
+    EXPECT_EQ(restored.firstFrame, std::optional<std::int64_t>{1001});
+    EXPECT_EQ(restored.lastFrame, std::optional<std::int64_t>{1120});
+    EXPECT_EQ(restored.coverageQuality, CoverageQuality::Validated);
+    EXPECT_EQ(restored.availableFrameCount, std::optional<std::int64_t>{115});
+    EXPECT_EQ(restored.missingFrameCount, std::optional<std::int64_t>{5});
+    EXPECT_EQ(restored.missingRanges, (std::vector<MediaFrameRange>{MediaFrameRange{1050, 1054}}));
+    EXPECT_EQ(restored.pixelAspect, std::optional<double>{2.0});
+    EXPECT_EQ(restored.rateNumerator, std::optional<std::uint32_t>{24000});
+    EXPECT_EQ(restored.rateDenominator, std::optional<std::uint32_t>{1001});
+    EXPECT_EQ(restored.precision, "16f");
+    EXPECT_EQ(restored.channels, "RGBA");
+    EXPECT_EQ(restored.declaredInputColorSpace, "srgb_rec709_scene");
+    const nlohmann::json& unknownEntryJson = [&encoded, unknownEntry]() -> const nlohmann::json& {
+        for (const auto& candidate : encoded.at("mediaCatalog").at("entries"))
+            if (candidate.at("id").get<MediaSourceId>() == unknownEntry)
+                return candidate.at("metadata").at("committedProbe");
+        static const nlohmann::json missing = nlohmann::json::object();
+        return missing;
+    }();
+    EXPECT_FALSE(unknownEntryJson.contains("firstFrame"));
+    EXPECT_FALSE(unknownEntryJson.contains("missingRanges"));
+    EXPECT_FALSE(unknownEntryJson.contains("coverageQuality"));
+    EXPECT_EQ(saveDocument(loaded.document), encoded);
+
+    // Malformed facts are structural errors, never silently repaired.
+    nlohmann::json inverted = encoded;
+    inverted["mediaCatalog"]["entries"][0]["metadata"]["committedProbe"]["firstFrame"] = 1200;
+    EXPECT_THROW(static_cast<void>(loadDocument(inverted)), DeserializeError);
+    nlohmann::json unorderedHoles = encoded;
+    unorderedHoles["mediaCatalog"]["entries"][0]["metadata"]["committedProbe"]["missingRanges"] = {
+        {{"first", 1060}, {"last", 1062}},
+        {{"first", 1055}, {"last", 1056}}};
+    EXPECT_THROW(static_cast<void>(loadDocument(unorderedHoles)), DeserializeError);
+    nlohmann::json outsideHole = encoded;
+    outsideHole["mediaCatalog"]["entries"][0]["metadata"]["committedProbe"]["missingRanges"] = {
+        {{"first", 900}, {"last", 905}}};
+    EXPECT_THROW(static_cast<void>(loadDocument(outsideHole)), DeserializeError);
+    nlohmann::json zeroDenominator = encoded;
+    zeroDenominator["mediaCatalog"]["entries"][0]["metadata"]["committedProbe"]["rateDenominator"] = 0;
+    EXPECT_THROW(static_cast<void>(loadDocument(zeroDenominator)), DeserializeError);
 }
 
 TEST(PersistenceTest, UnknownExtensionDataSurvivesRoundTripWithoutResurrection) {

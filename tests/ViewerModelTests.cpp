@@ -73,19 +73,19 @@ Document patternGraph() {
 // actually served. Also records what it was asked for.
 class FakeSourceProvider final : public SourceProvider {
 public:
-    [[nodiscard]] CpuImage frame(const Document& /*document*/, const SourceReference& source, std::int64_t mappedFrame,
+    [[nodiscard]] CpuImage frame(const Document& /*document*/, const EffectiveSourceRequest& source,
                                  const EvaluationRequest& request) override {
         ++calls;
         lastPath = source.path;
-        lastFrame = mappedFrame;
+        lastFrame = source.readFrame;
         lastScale = request.samplingScale;
         CpuImage image(scaledDimension(request.region.width, request.samplingScale),
                        scaledDimension(request.region.height, request.samplingScale));
         for (int y = 0; y < image.height(); ++y) {
             for (int x = 0; x < image.width(); ++x) {
                 // Scene-linear stand-in encoding of (path frame, full-res x/y).
-                const double r = (static_cast<double>(mappedFrame) * 7.0 + static_cast<double>(x)) / 1024.0;
-                const double g = (static_cast<double>(mappedFrame) * 11.0 + static_cast<double>(y)) / 1024.0;
+                const double r = (static_cast<double>(lastFrame) * 7.0 + static_cast<double>(x)) / 1024.0;
+                const double g = (static_cast<double>(lastFrame) * 11.0 + static_cast<double>(y)) / 1024.0;
                 image.setPixel(x, y, {static_cast<float>(r), static_cast<float>(g), 0.0F, 1.0F});
             }
         }
@@ -325,10 +325,12 @@ TEST(SourceEvaluation, WithoutProviderRealSourceIsRejectedExplicitly) {
 
 TEST(SourceEvaluation, ProviderServesMappedFramesAndPlanRecordsEffectiveState) {
     Document document = overGraph();
-    SourceReference reference = plateSource();
-    reference.frameOffset = 100;
-    reference.frameStep = 2;
-    document.sources["plate"] = reference;
+    document.sources["plate"] = plateSource();
+    // Mapping is node-scoped (issue #75): one Read owns its offset/step, and the
+    // shared reference keeps the value that non-Read consumers still read.
+    const NodeId sourceNode = rootGraph(document).nodeByName("plateNode")->id;
+    rootGraph(document).setParam(sourceNode, "frameOffset", std::int64_t{100});
+    rootGraph(document).setParam(sourceNode, "frameStep", std::int64_t{2});
 
     FakeSourceProvider provider;
     const CpuEvaluation evaluation = evaluateCpu(
@@ -359,12 +361,121 @@ TEST(SourceEvaluation, ProviderServesMappedFramesAndPlanRecordsEffectiveState) {
     EXPECT_FLOAT_EQ(decoded[3], 1.0F);
 }
 
+// A Read's own mapping replaces the shared reference's mapping and is never
+// added to it (issue #75). The source's kind comes from the media catalog entry,
+// so an interval is meaningful for a sequence (a still's availability is
+// unbounded).
+TEST(SourceEvaluation, ReadMappingReplacesTheSharedReferenceMapping) {
+    Document document = overGraph();
+    document.sources["plate"] = plateSource();  // offset 1000, step 4: no authored interval
+    SourceReference& shared = document.sources.at("plate");
+    shared.frameStep = 4;
+    MediaMetadata metadata;
+    metadata.userName = "Plate";
+    metadata.kind = MediaKind::Sequence;
+    static_cast<void>(document.mediaCatalog().addEntry("plate", kInvalidMediaBin, metadata));
+    const NodeId sourceNode = rootGraph(document).nodeByName("plateNode")->id;
+    rootGraph(document).setParam(sourceNode, "frameOffset", std::int64_t{10});
+    rootGraph(document).setParam(sourceNode, "frameStep", std::int64_t{1});
+
+    FakeSourceProvider provider;
+    static_cast<void>(evaluateCpu(document, fullRequest(document, resolveOutput(document, document.rootNetworkId()), 2),
+                                  nullptr, &provider));
+    EXPECT_EQ(provider.lastFrame, 12);  // 10 + 2*1, never 10 + 2 + 1008
+
+    const EffectiveSourceRequest read = resolveSourceRequest(document, *rootGraph(document).nodeByName("plateNode"), 2);
+    EXPECT_EQ(read.sourceFrame, 12);
+    EXPECT_EQ(read.kind, MediaKind::Sequence);
+    EXPECT_EQ(read.status, SourceRequestStatus::Ok);
+    EXPECT_FALSE(read.policyError);
+    // With no discovered facts, no authored node range and no authored shared
+    // interval, the mapping is intentionally unbounded and never enforces a
+    // boundary - a still-like availability, never a guessed one.
+    EXPECT_EQ(read.mapping.origin, SourceBoundsOrigin::Unbounded);
+    EXPECT_FALSE(read.mapping.boundsEnforced);
+    EXPECT_FALSE(read.mapping.bounded());
+
+    // The source-scoped request non-Read consumers use keeps the shared mapping.
+    const EffectiveSourceRequest scoped = resolveSourceRequest("plate", document.sources.at("plate"), nullptr, 2);
+    EXPECT_EQ(scoped.sourceFrame, 1008);
+    EXPECT_EQ(scoped.mapping.origin, SourceBoundsOrigin::Unbounded);
+    EXPECT_FALSE(scoped.mapping.boundsEnforced);
+    EXPECT_EQ(scoped.status, SourceRequestStatus::Ok);
+}
+
+// An interval the shared reference authored remains Auto's last fallback and
+// bounds the Read request; an authored node range replaces that interval
+// entirely. The boundary outcome is read from the structured request, never from
+// error wording.
+TEST(SourceEvaluation, SharedAuthoredIntervalBoundsAndNodeRangeReplacesIt) {
+    Document document = overGraph();
+    SourceReference shared;
+    shared.path = "media/plate.####.exr";
+    shared.frameOffset = 1000;
+    shared.frameStep = 4;
+    shared.firstFrame = 900;
+    shared.lastFrame = 1200;
+    document.sources["plate"] = shared;
+    MediaMetadata metadata;
+    metadata.userName = "Plate";
+    metadata.kind = MediaKind::Sequence;
+    static_cast<void>(document.mediaCatalog().addEntry("plate", kInvalidMediaBin, metadata));
+    const NodeId sourceNode = rootGraph(document).nodeByName("plateNode")->id;
+    rootGraph(document).setParam(sourceNode, "frameOffset", std::int64_t{10});
+    rootGraph(document).setParam(sourceNode, "frameStep", std::int64_t{1});
+
+    // The source-scoped request this shared policy addresses is inside the
+    // authored interval (1000 + 2*4).
+    const EffectiveSourceRequest scoped = resolveSourceRequest("plate", document.sources.at("plate"), nullptr, 2);
+    EXPECT_EQ(scoped.sourceFrame, 1008);
+    EXPECT_EQ(scoped.status, SourceRequestStatus::Ok);
+
+    // The Read's own offset/step replaced the shared mapping, so its mapped
+    // frame (12) falls outside the shared authored interval and the default
+    // Error policy applies before any frame is opened.
+    const EffectiveSourceRequest read = resolveSourceRequest(document, *rootGraph(document).nodeByName("plateNode"), 2);
+    EXPECT_EQ(read.sourceFrame, 12);
+    EXPECT_EQ(read.mapping.origin, SourceBoundsOrigin::SharedReference);
+    EXPECT_TRUE(read.mapping.boundsEnforced);
+    EXPECT_EQ(read.mapping.firstFrame, std::optional<std::int64_t>{900});
+    EXPECT_EQ(read.mapping.lastFrame, std::optional<std::int64_t>{1200});
+    EXPECT_EQ(read.status, SourceRequestStatus::BeforeRange);
+    EXPECT_TRUE(read.policyError);
+
+    FakeSourceProvider provider;
+    try {
+        evaluateCpu(document, fullRequest(document, resolveOutput(document, document.rootNetworkId()), 2), nullptr,
+                    &provider);
+        FAIL() << "expected the out-of-range request to be rejected before decoding";
+    } catch (const EvaluationException& error) {
+        EXPECT_EQ(error.node, sourceNode);
+        EXPECT_EQ(provider.calls, 0);  // the out-of-range request never opened a frame
+    }
+
+    // An authored node range replaces the shared interval entirely - the same
+    // local frame is now inside it and reaches the provider.
+    rootGraph(document).setParam(sourceNode, "rangeMode", ParameterValue{ChoiceValue{std::string{"custom"}}});
+    rootGraph(document).setParam(sourceNode, "rangeFirst", std::int64_t{0});
+    rootGraph(document).setParam(sourceNode, "rangeLast", std::int64_t{100});
+    const EffectiveSourceRequest custom =
+        resolveSourceRequest(document, *rootGraph(document).nodeByName("plateNode"), 2);
+    EXPECT_EQ(custom.mapping.origin, SourceBoundsOrigin::NodeCustom);
+    EXPECT_EQ(custom.mapping.firstFrame, std::optional<std::int64_t>{0});
+    EXPECT_EQ(custom.mapping.lastFrame, std::optional<std::int64_t>{100});
+    EXPECT_EQ(custom.sourceFrame, 12);
+    EXPECT_EQ(custom.status, SourceRequestStatus::Ok);
+    static_cast<void>(evaluateCpu(document, fullRequest(document, resolveOutput(document, document.rootNetworkId()), 2),
+                                  nullptr, &provider));
+    EXPECT_EQ(provider.lastFrame, 12);
+    EXPECT_EQ(provider.calls, 1);
+}
+
 TEST(SourceEvaluation, ProviderRasterMustCoverTheRequestedRaster) {
     Document document = overGraph();
     document.sources["plate"] = plateSource();
 
     class WrongSizeProvider final : public SourceProvider {
-        [[nodiscard]] CpuImage frame(const Document&, const SourceReference&, std::int64_t,
+        [[nodiscard]] CpuImage frame(const Document&, const EffectiveSourceRequest&,
                                      const EvaluationRequest&) override {
             return CpuImage(4, 4);  // anything but the requested raster
         }
@@ -382,11 +493,18 @@ TEST(SourceEvaluation, ProviderRasterMustCoverTheRequestedRaster) {
 TEST(SourceEvaluation, ProviderFailureIdentifiesNodeAndReason) {
     Document document = overGraph();
     document.sources["plate"] = plateSource();
+    // The Read owns its mapping: author the offset on the node so the request
+    // this executor asks for is the frame under test.
+    const NodeId sourceNode = rootGraph(document).nodeByName("plateNode")->id;
+    rootGraph(document).setParam(sourceNode, "frameOffset", std::int64_t{1000});
 
     class FailingProvider final : public SourceProvider {
-        [[nodiscard]] CpuImage frame(const Document&, const SourceReference&, std::int64_t mappedFrame,
+    public:
+        [[nodiscard]] CpuImage frame(const Document&, const EffectiveSourceRequest& source,
                                      const EvaluationRequest&) override {
-            throw std::runtime_error("frame " + std::to_string(mappedFrame) + " beyond media range");
+            // The provider reports why it refused, naming the frame it was
+            // asked for; the executor must not replace that reason.
+            throw std::runtime_error("frame " + std::to_string(source.readFrame) + " beyond media range");
         }
     };
     FailingProvider provider;
@@ -396,8 +514,12 @@ TEST(SourceEvaluation, ProviderFailureIdentifiesNodeAndReason) {
         FAIL() << "expected the failing decode to be rejected";
     } catch (const EvaluationException& error) {
         const std::string message = error.what();
-        EXPECT_NE(message.find("plateNode"), std::string::npos);
-        EXPECT_NE(message.find("frame 1002 beyond media range"), std::string::npos);
+        // The offending node, the source it addresses and the provider's own
+        // reason are all identifiable from the failure.
+        EXPECT_NE(message.find("plateNode"), std::string::npos) << message;
+        EXPECT_EQ(error.node, sourceNode);
+        EXPECT_NE(message.find("source provider failed for 'plate'"), std::string::npos) << message;
+        EXPECT_NE(message.find("frame 1002 beyond media range"), std::string::npos) << message;
     }
 }
 

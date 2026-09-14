@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <set>
@@ -45,23 +46,76 @@ struct ImportFailure {
     return resolved == reference.path ? reference.path : reference.path + " (frame path " + resolved + ")";
 }
 
-[[nodiscard]] std::string imageTransferName(const ImageTransfer transfer) {
-    switch (transfer) {
-    case ImageTransfer::Linear:
-        return "linear";
-    case ImageTransfer::Srgb:
-        return "srgb";
-    case ImageTransfer::Gamma22:
-        return "gamma22";
-    case ImageTransfer::Gamma28:
-        return "gamma28";
-    case ImageTransfer::Bt709:
-        return "bt709";
-    }
-    return {};
+// The explicit sequence-pattern form ('#'/'@'), which names image data by
+// construction (ImageSource's own rule, without opening a file).
+[[nodiscard]] bool hasImagePattern(const std::string& path) {
+    return path.find('#') != std::string::npos || path.find('@') != std::string::npos;
 }
 
-inline constexpr const char* kImagePrimariesName = "bt709";  // ImagePrimaries::Rec709
+// Discovered coverage of one bounded scan (issue #80). A failed or
+// irrelevant discovery adds nothing: absence is a reported fact, never a
+// guessed bound.
+void applyDiscoveryFacts(MediaProbeMetadata& probe, const SequenceDiscovery& discovery) {
+    if (discovery.status != SequenceDiscoveryStatus::Sequence) {
+        return;
+    }
+    probe.firstFrame = discovery.first;
+    probe.lastFrame = discovery.last;
+    probe.coverageQuality = CoverageQuality::Validated;
+    probe.availableFrameCount = discovery.availableCount;
+    probe.missingFrameCount = discovery.missingCount;
+    probe.missingRanges.clear();
+    probe.missingRanges.reserve(discovery.holes.size());
+    for (const SequenceFrameRange& hole : discovery.holes) {
+        probe.missingRanges.push_back(MediaFrameRange{hole.first, hole.last});
+    }
+}
+
+// A still is one image with time-independent availability: it carries no
+// interval at all, because a one-frame interval would turn every other local
+// time into a boundary failure.
+void applyStillFacts(MediaProbeMetadata& probe) {
+    probe.duration = 1;
+    probe.coverageQuality = CoverageQuality::Validated;
+    probe.availableFrameCount = 1;
+    probe.missingFrameCount = 0;
+    probe.missingRanges.clear();
+}
+
+// Channel layout of a still's storage order (e.g. "RGBA"), the reader's own
+// declaration. Empty when the reader reported none.
+[[nodiscard]] std::string joinChannels(const std::vector<std::string>& names) {
+    std::string out;
+    for (const std::string& name : names) {
+        if (!out.empty()) {
+            out += " ";
+        }
+        out += name;
+    }
+    return out;
+}
+
+// A rational rate is reported only when the media's own rate really is that
+// fraction; a floating average is never promoted to an authoritative
+// numerator/denominator.
+void applyRate(MediaProbeMetadata& probe, const double rate) {
+    if (!(rate > 0.0)) {
+        return;
+    }
+    static constexpr std::uint32_t kDenominators[] = {1, 1000, 1001, 24, 25, 30, 48, 50, 60, 120};
+    for (const std::uint32_t denominator : kDenominators) {
+        const double numerator = rate * static_cast<double>(denominator);
+        if (numerator > static_cast<double>(std::numeric_limits<std::uint32_t>::max())) {
+            continue;
+        }
+        const long long rounded = std::llround(numerator);
+        if (rounded > 0 && std::abs(numerator - static_cast<double>(rounded)) < 1e-9) {
+            probe.rateNumerator = static_cast<std::uint32_t>(rounded);
+            probe.rateDenominator = denominator;
+            return;
+        }
+    }
+}
 
 // Native OpenImageIO precision name (ImageIO's typeName vocabulary) to the
 // contract's per-channel bit depth.
@@ -177,25 +231,42 @@ void validateRequest(const MediaImportRequest& request, bool& wantsThumbnail) {
     }
 }
 
-void importStill(const MediaImportRequest& request, const std::int64_t sourceFrame, const bool wantsThumbnail,
-                 MediaImportResult& result) {
+void importStill(const MediaImportRequest& request, const std::string& framePath, const std::int64_t probeFrame,
+                 const bool wantsThumbnail, const SequenceDiscovery& discovery,
+                 const std::shared_ptr<const InputColorCache>& colors, MediaImportResult& result) {
     const std::string context = "source '" + request.sourceKey + "'";
-    // Header facts for the requested source-local time and the strict
-    // interpretation rules come from the image adapter; this service does not
-    // re-validate color metadata.
-    const ImageFrameInfo info = probeImageFrame(request.reference, context, request.frame);
+    // Header facts and the resolved input interpretation come from the image
+    // adapter, which owns those rules; this service does not re-validate or
+    // re-derive color metadata. The frame path is already resolved by the
+    // caller, so the mapping is applied exactly once.
+    const ImageFrameInfo info = probeImageFrame(*colors, request.inputColor, framePath, context);
+    const bool sequence = discovery.status == SequenceDiscoveryStatus::Sequence ||
+                          hasImagePattern(request.reference.path) || info.sequence;
 
     MediaProbeMetadata probe;
     probe.width = info.width;
     probe.height = info.height;
-    probe.duration = info.sequence ? 0 : 1;
+    probe.duration = sequence ? 0 : 1;
     probe.codec = info.formatName;
-    probe.colorPrimaries = kImagePrimariesName;
+    probe.colorPrimaries = imagePrimariesName(info.primaries);
     probe.colorTransfer = imageTransferName(info.transfer);
     probe.provenance = "oiio";
     probe.status = MediaProbeStatus::Ready;
+    probe.pixelAspect = info.pixelAspect;
+    probe.precision = info.nativePrecision;
+    probe.channels = joinChannels(info.channelNames);
+    probe.declaredInputColorSpace = info.declaredColorSpace;
+    result.inputColor = info.inputColor;
+    if (sequence) {
+        applyDiscoveryFacts(probe, discovery);
+        // A scan that could not complete reports the file's own facts and no
+        // coverage: an unknown interval is never invented from the probed
+        // frame.
+    } else {
+        applyStillFacts(probe);
+    }
 
-    result.kind = info.sequence ? MediaKind::Sequence : MediaKind::Image;
+    result.kind = sequence ? MediaKind::Sequence : MediaKind::Image;
     result.pixelAspect = info.pixelAspect;
     result.pixelFormat = info.nativePrecision;
     result.bitDepth = bitDepthFromPrecision(info.nativePrecision);
@@ -212,10 +283,11 @@ void importStill(const MediaImportRequest& request, const std::int64_t sourceFra
     // readImageFrame returns scene-linear straight-alpha pixels; the preview
     // is reduced first and then taken to display through the viewing
     // transform, exactly like the clip path.
-    const ImageFrame decoded = readImageFrame(request.reference, sourceFrame, context);
+    const ImageFrame decoded = readImageFrame(*colors, request.inputColor, framePath, probeFrame, context);
     // The decoded read is authoritative for the frame actually produced.
     result.probe.width = decoded.info.width;
     result.probe.height = decoded.info.height;
+    result.probe.pixelAspect = decoded.info.pixelAspect;
     result.pixelFormat = decoded.info.nativePrecision;
     result.bitDepth = bitDepthFromPrecision(decoded.info.nativePrecision);
     const PreviewSize preview = previewSize(decoded.image.width(), decoded.image.height(), decoded.info.pixelAspect,
@@ -263,7 +335,8 @@ void importStill(const MediaImportRequest& request, const std::int64_t sourceFra
 }
 
 void importClip(const MediaImportRequest& request, const std::int64_t sourceFrame, const std::string& resolved,
-                const bool wantsThumbnail, MediaImportResult& result) {
+                const bool wantsThumbnail, const std::shared_ptr<const InputColorCache>& colors,
+                MediaImportResult& result) {
     const std::string context = "source '" + request.sourceKey + "'";
     const ColorOverride overrides = colorOverrideFromInterpretation(request.reference.interpretation, context);
     // One frame, bounded by the requested preview MAXIMA: the decoder's
@@ -275,8 +348,11 @@ void importClip(const MediaImportRequest& request, const std::int64_t sourceFram
     // they decode.
     const int maxWidth = wantsThumbnail ? request.thumbnailWidth : 0;
     const int maxHeight = wantsThumbnail ? request.thumbnailHeight : 0;
-    SoftwareClip clip = decodeClipFrameSoftware(request.reference.path, sourceFrame, maxWidth, maxHeight,
-                                                request.colorPolicy, overrides);
+    // The decoder shares ownership of the retained context, so a later refresh
+    // replaces the context for new work without invalidating this decode.
+    SoftwareClip clip =
+        decodeClipFrameSoftware(request.reference.path, sourceFrame, maxWidth, maxHeight, request.colorPolicy,
+                                overrides, ClipColorInput{request.inputColor, colors});
     if (clip.frames.empty()) {
         failImport("media import: " + sourceDiagnostic(request.reference, resolved) + ": no frame at source frame " +
                    std::to_string(sourceFrame) + " (source time " + std::to_string(request.frame) + ")");
@@ -287,11 +363,31 @@ void importClip(const MediaImportRequest& request, const std::int64_t sourceFram
     probe.height = clip.info.height;
     probe.duration = clip.info.frameCount > 0 ? clip.info.frameCount : 0;
     probe.codec = clip.info.codecName;
-    probe.colorPrimaries = kImagePrimariesName;  // the supported primaries are Rec.709
+    probe.colorPrimaries = imagePrimariesName(ImagePrimaries::Rec709);
     probe.colorTransfer = mediaTransferName(clip.metadata.transfer);
     probe.colorMatrix = mediaMatrixName(clip.metadata.matrix);
     probe.provenance = "ffmpeg-software";
     probe.status = MediaProbeStatus::Ready;
+    probe.pixelAspect = clip.info.pixelAspect;
+    probe.precision = clip.pixelFormat;
+    result.inputColor = clip.inputColor;
+    applyRate(probe, clip.info.frameRate);
+    // Coverage quality traces to the reader's own provenance, never to "count
+    // > 0": a container-DECLARED frame count (VideoDecode's
+    // FrameCountQuality::Reliable) may bound the range, while an estimated or
+    // absent count is reported without bounds so Auto never fabricates one.
+    if (clip.info.frameCountQuality == FrameCountQuality::Reliable && clip.info.frameCount > 0) {
+        probe.firstFrame = 0;
+        probe.lastFrame = clip.info.frameCount - 1;
+        probe.coverageQuality = CoverageQuality::Validated;
+        probe.availableFrameCount = clip.info.frameCount;
+        probe.missingFrameCount = 0;
+    } else if (clip.info.frameCountQuality == FrameCountQuality::Estimated && clip.info.frameCount > 0) {
+        probe.coverageQuality = CoverageQuality::Estimated;
+        probe.availableFrameCount = clip.info.frameCount;
+    } else {
+        probe.coverageQuality = CoverageQuality::Unknown;
+    }
 
     result.kind = MediaKind::Video;
     result.frameRate = clip.info.frameRate;
@@ -321,11 +417,20 @@ void importClip(const MediaImportRequest& request, const std::int64_t sourceFram
 
 }  // namespace
 
-MediaImportResult inspectMediaSource(const MediaImportRequest& request) {
+MediaImportResult inspectMediaSource(const MediaImportRequest& request,
+                                     const std::shared_ptr<const InputColorCache>& sourceColor) {
     MediaImportResult result;
     result.request = request;
     result.probe.status = MediaProbeStatus::Failed;
+    std::shared_ptr<const InputColorCache> colors = sourceColor;
     try {
+        if (!colors) {
+            // No retained context was supplied: build one for this request's
+            // policy, owned by this call. A policy failure (a missing config) is
+            // the probe's diagnostic and names the offending relationship.
+            colors = std::make_shared<InputColorCache>(
+                SourceColorPolicy{request.colorConfig, request.colorPolicy.workingSpace});
+        }
         bool wantsThumbnail = false;
         validateRequest(request, wantsThumbnail);
 
@@ -334,23 +439,61 @@ MediaImportResult inspectMediaSource(const MediaImportRequest& request) {
         // existence, classification, decode, and diagnostics. A sequence
         // reference with frameOffset 1001 therefore resolves local time 0 to
         // source frame 1001, not to a literal file "0000".
-        std::int64_t sourceFrame = 0;
+        std::int64_t mappedFrame = 0;
         try {
-            sourceFrame = request.reference.frameAt(request.frame);
+            mappedFrame = request.reference.frameAt(request.frame);
         } catch (const std::exception& error) {
             failImport("media import: source time " + std::to_string(request.frame) + " failed: " + error.what());
         }
-        const std::string resolved = resolveFramePath(request.reference.path, sourceFrame);
+        std::int64_t sourceFrame = mappedFrame;
+        std::string resolved = resolveFramePath(request.reference.path, sourceFrame);
+
+        // Discovery runs before any presumed frame is probed (issue #80): a
+        // sequence must be inspected through a member that exists. It is
+        // bounded, cancellable, and advisory — a failed scan never changes the
+        // mapped-frame diagnostics.
+        SequenceDiscovery discovery;
+        discovery.pattern = request.reference.path;
+        const bool mappedExists = std::filesystem::exists(resolved);
+        const bool selectionExists = mappedExists || std::filesystem::exists(request.reference.path);
+        const bool candidate =
+            hasImagePattern(request.reference.path) || (mappedExists ? isImagePath(resolved) : selectionExists);
+        if (candidate) {
+            discovery = discoverSequenceRange(request.reference.path, request.cancel.get());
+        }
+        // The probe reads one explicit source frame; a fresh selection is
+        // normalized to the canonical pattern and aligned to the discovered
+        // first member, so the frame is opened exactly once, the reported
+        // probed frame is the file actually inspected, and an unmapped
+        // candidate's bounds never reject it.
+        SourceReference reading = request.reference;
+        if (request.alignment == ProbeAlignment::DiscoverAvailable &&
+            discovery.status == SequenceDiscoveryStatus::Sequence) {
+            sourceFrame = discovery.first;
+            resolved = resolveFramePath(discovery.pattern, sourceFrame);
+            reading.path = discovery.pattern;
+            reading.frameOffset = sourceFrame;
+            reading.frameStep = 1;
+            reading.firstFrame.reset();
+            reading.lastFrame.reset();
+        } else if (sourceFrame != mappedFrame) {
+            reading.frameOffset = sourceFrame;
+            reading.frameStep = 1;
+            reading.firstFrame.reset();
+            reading.lastFrame.reset();
+        }
+
+        result.discovery = discovery;
+        result.probedFrame = sourceFrame;
         if (!std::filesystem::exists(resolved)) {
             result.offline = true;
             failImport("media import: source path does not exist: " + sourceDiagnostic(request.reference, resolved));
         }
-
         if (isImagePath(resolved)) {
-            importStill(request, sourceFrame, wantsThumbnail, result);
+            importStill(request, resolved, sourceFrame, wantsThumbnail, discovery, colors, result);
         } else {
 #if defined(NEMO_MEDIA_FFMPEG)
-            importClip(request, sourceFrame, resolved, wantsThumbnail, result);
+            importClip(request, sourceFrame, resolved, wantsThumbnail, colors, result);
 #else
             failImport("media import: " + resolved +
                        " is a video clip; clip import requires the FFmpeg/GPU build (NEMO_BUILD_GPU=ON)");
@@ -369,6 +512,10 @@ MediaImportResult inspectMediaSource(const MediaImportRequest& request) {
         result.probe.status = MediaProbeStatus::Failed;
     }
     return result;
+}
+
+MediaImportResult inspectMediaSource(const MediaImportRequest& request) {
+    return inspectMediaSource(request, {});
 }
 
 struct MediaImportService::Impl {
@@ -412,6 +559,14 @@ struct MediaImportService::Impl {
         }
         const std::uint64_t generation = ++generationCounter;
         latestGeneration[key] = generation;
+        // The superseded generation's bounded scan stops early instead of
+        // finishing work whose result can no longer be published.
+        if (const auto previous = cancelFlags.find(key); previous != cancelFlags.end()) {
+            previous->second->store(true);
+        }
+        auto flag = std::make_shared<std::atomic<bool>>(false);
+        request.cancel = flag;
+        cancelFlags[key] = std::move(flag);
         pending.push_back(Entry{std::move(request), generation});
         wake.notify_one();
         return true;
@@ -430,9 +585,14 @@ struct MediaImportService::Impl {
 
     void cancel(const std::string& sourceKey) {
         const std::lock_guard lock(mutex);
-        // Forget the key's current generation: a job already decoding drops
-        // its result when it finishes, and queued/unconsumed work is gone.
+        // Forget the key's current generation: a job already decoding or
+        // scanning stops early and drops its result when it finishes, and
+        // queued/unconsumed work is gone.
         latestGeneration.erase(sourceKey);
+        if (const auto flag = cancelFlags.find(sourceKey); flag != cancelFlags.end()) {
+            flag->second->store(true);
+            cancelFlags.erase(flag);
+        }
         std::erase_if(pending, [&sourceKey](const Entry& entry) { return entry.request.sourceKey == sourceKey; });
         std::erase_if(results,
                       [&sourceKey](const MediaImportResult& result) { return result.request.sourceKey == sourceKey; });
@@ -453,7 +613,7 @@ struct MediaImportService::Impl {
             }
             // All filesystem/decode work is off the service lock and off the
             // caller's thread.
-            MediaImportResult result = inspectMediaSource(entry.request);
+            MediaImportResult result = inspectMediaSource(entry.request, colorsFor(entry.request));
             {
                 const std::lock_guard lock(mutex);
                 const auto latest = latestGeneration.find(entry.request.sourceKey);
@@ -468,8 +628,34 @@ struct MediaImportService::Impl {
                 } else if (!hasPendingLocked(entry.request.sourceKey)) {
                     outstandingKeys.erase(entry.request.sourceKey);  // superseded or cancelled
                 }
+                if (const auto flag = cancelFlags.find(entry.request.sourceKey);
+                    flag != cancelFlags.end() && flag->second == entry.request.cancel) {
+                    cancelFlags.erase(flag);  // the scan is over; the flag has no more readers
+                }
             }
         }
+    }
+
+    // The worker's retained input-color context: one shared owner rebuilt only
+    // when the requested policy (config reference + working space) changes, so
+    // consecutive probes of one project never re-open the configuration. A
+    // construction failure leaves the context null and the probe's own
+    // try/catch reports the offending config through its diagnostic.
+    [[nodiscard]] const std::shared_ptr<const InputColorCache>& colorsFor(const MediaImportRequest& request) {
+        const SourceColorPolicy policy{request.colorConfig, request.colorPolicy.workingSpace};
+        // The generation is part of the key: a same-path project reopen resets
+        // the projectGeneration even when the config reference and working space
+        // are unchanged, so the previous project's context is never reused.
+        if (!colors || !(policy == colorsPolicy) || request.projectGeneration != colorsGeneration) {
+            colorsPolicy = policy;
+            colorsGeneration = request.projectGeneration;
+            try {
+                colors = std::make_shared<InputColorCache>(policy);
+            } catch (...) {
+                colors.reset();
+            }
+        }
+        return colors;
     }
 
     [[nodiscard]] bool hasPendingLocked(const std::string& key) const {
@@ -485,6 +671,13 @@ struct MediaImportService::Impl {
     std::deque<MediaImportResult> results;
     std::set<std::string> outstandingKeys;
     std::map<std::string, std::uint64_t> latestGeneration;
+    // Cancellation flags for in-flight work, so a superseded or cancelled
+    // request's bounded directory scan stops early.
+    std::map<std::string, std::shared_ptr<std::atomic<bool>>> cancelFlags;
+    // Worker-owned retained input-color context (see colorsFor).
+    std::shared_ptr<const InputColorCache> colors;
+    SourceColorPolicy colorsPolicy;
+    std::uint64_t colorsGeneration{0};
     std::uint64_t generationCounter{0};
     bool stopping{false};
 };

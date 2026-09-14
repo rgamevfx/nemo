@@ -107,6 +107,13 @@ std::string resolveFramePath(const std::string& pattern, std::int64_t frame) {
     return result;
 }
 
+AlphaAssociation declaredAlphaAssociation(const std::string_view formatName, const bool hasAlpha) {
+    if (!hasAlpha) {
+        return AlphaAssociation::None;
+    }
+    return formatName == "openexr" ? AlphaAssociation::Premultiplied : AlphaAssociation::Straight;
+}
+
 ImageReadResult readImage(const std::string& path) {
     auto input = OIIO::ImageInput::open(path);
     if (!input) {
@@ -166,12 +173,9 @@ ImageReadResult readImage(const std::string& path) {
             std::array<float, kImageChannels> rgba{src[r], src[g], src[b], 1.0F};
             if (a >= 0) {
                 rgba[3] = src[a];
-                // Declared association, not converted (issue #6 owns
-                // association/color application). EXR's convention is
-                // premultiplied when an alpha channel is present; other
-                // formats keep straight alpha.
-                result.alpha =
-                    result.formatName == "openexr" ? AlphaAssociation::Premultiplied : AlphaAssociation::Straight;
+                // Declared association, not converted (issue #81 owns the
+                // association application on the source path).
+                result.alpha = declaredAlphaAssociation(result.formatName, true);
             }
             result.image.setPixel(x, y, rgba);
         }

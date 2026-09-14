@@ -8,6 +8,7 @@
 
 #include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Document.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
 using namespace nemo;
@@ -948,6 +949,171 @@ TEST(CommandStackTest, OccupiedInputReplacementPreservesMergeFanOutAndUndo) {
     EXPECT_TRUE(std::find_if(rootGraph(document).edges().begin(), rootGraph(document).edges().end(),
                              [old](const Edge& edge) { return edge.id == old && edge.route.size() == 1; }) !=
                 rootGraph(document).edges().end());
+}
+
+// ---------------------------------------------------------------------------
+// Issue #75: atomic Merge Swap A/B. A swap exchanges the sources feeding two
+// declared input ports as ONE undo step, retains the mask connection,
+// parameters and layout, and rejects meaningless or invalid requests before
+// any connection changes.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+[[nodiscard]] NodeId feederOf(const Graph& graph, NodeId node, std::uint32_t port) {
+    for (const Edge& edge : graph.edgesInto(node)) {
+        if (edge.to.port == port) {
+            return edge.from.node;
+        }
+    }
+    return kInvalidNode;
+}
+
+[[nodiscard]] bool hasEdge(const Graph& graph, EdgeId id) {
+    return std::any_of(graph.edges().begin(), graph.edges().end(), [id](const Edge& edge) { return edge.id == id; });
+}
+
+}  // namespace
+
+TEST(CommandStackTest, SwapInputsExchangesOccupiedPortsAsOneUndoStep) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    const NodeId background = rootGraph(document).addNode("testpattern", "background");
+    const NodeId foreground = rootGraph(document).addNode("constcolor", "foreground");
+    const NodeId mask = rootGraph(document).addNode("constcolor", "mask");
+    const NodeId merge = rootGraph(document).addNode("merge", "comp");
+    const EdgeId backgroundEdge = rootGraph(document).connect({background, 0}, {merge, 0});
+    const EdgeId foregroundEdge = rootGraph(document).connect({foreground, 0}, {merge, 1});
+    const EdgeId maskEdge = rootGraph(document).connect({mask, 0}, {merge, 2});
+    rootGraph(document).setParam(merge, "operation", ParameterValue{ChoiceValue{"multiply"}});
+    rootGraph(document).setParam(merge, "mix", ParameterValue{0.25});
+    rootGraph(document).setLayout(merge, {40.0, 50.0});
+    // A command transition replaces the document's storage, so every read
+    // after a push/undo/redo re-obtains the graph instead of holding a
+    // reference across the transition.
+    const auto feeder = [&document, merge](std::uint32_t port) { return feederOf(rootGraph(document), merge, port); };
+    const auto edgePresent = [&document](EdgeId id) { return hasEdge(rootGraph(document), id); };
+    CommandStack history(document);
+
+    history.push(swapInputsCommand(network, merge, 0, 1));
+    ASSERT_EQ(history.depth(), 1u);
+    EXPECT_EQ(feeder(0), foreground);
+    EXPECT_EQ(feeder(1), background);
+    // The mask edge, the parameters and the layout are untouched; the two
+    // moved edges are re-created (their authored routes are dropped).
+    EXPECT_EQ(feeder(2), mask);
+    EXPECT_TRUE(edgePresent(maskEdge));
+    EXPECT_FALSE(edgePresent(backgroundEdge));
+    EXPECT_FALSE(edgePresent(foregroundEdge));
+    EXPECT_EQ(rootGraph(document).node(merge)->params.at("operation"), (ParameterValue{ChoiceValue{"multiply"}}));
+    EXPECT_EQ(rootGraph(document).node(merge)->params.at("mix"), (ParameterValue{0.25}));
+    EXPECT_EQ(rootGraph(document).node(merge)->layout, (LayoutPosition{40.0, 50.0}));
+
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(feeder(0), background);
+    EXPECT_EQ(feeder(1), foreground);
+    EXPECT_EQ(feeder(2), mask);
+    ASSERT_TRUE(history.redo());
+    EXPECT_EQ(feeder(0), foreground);
+    EXPECT_EQ(feeder(1), background);
+}
+
+TEST(CommandStackTest, SwapInputsMovesTheSingleOccupiedPort) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    const NodeId foreground = rootGraph(document).addNode("constcolor", "foreground");
+    const NodeId merge = rootGraph(document).addNode("merge", "comp");
+    rootGraph(document).connect({foreground, 0}, {merge, 1});
+    const auto feeder = [&document, merge](std::uint32_t port) { return feederOf(rootGraph(document), merge, port); };
+    CommandStack history(document);
+
+    // One occupied port: the swap moves that source to the other port.
+    history.push(swapInputsCommand(network, merge, 0, 1));
+    ASSERT_EQ(history.depth(), 1u);
+    EXPECT_EQ(feeder(0), foreground);
+    EXPECT_EQ(feeder(1), kInvalidNode);
+
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(feeder(0), kInvalidNode);
+    EXPECT_EQ(feeder(1), foreground);
+    ASSERT_TRUE(history.redo());
+    EXPECT_EQ(feeder(0), foreground);
+}
+
+TEST(CommandStackTest, SwapInputsRejectsMeaninglessAndInvalidRequestsWithoutHistory) {
+    Document document = emptyDocument();
+    const NetworkId network = document.rootNetworkId();
+    auto& graph = rootGraph(document);
+    const NodeId source = graph.addNode("testpattern", "source");
+    const NodeId merge = graph.addNode("merge", "comp");
+    const NodeId empty = graph.addNode("merge", "empty");
+    // Both ports fed by the same output: exchanging them changes nothing.
+    graph.connect({source, 0}, {merge, 0});
+    graph.connect({source, 0}, {merge, 1});
+    const auto revisionBefore = document.stateRevision();
+    const std::size_t edgesBefore = graph.edges().size();
+    CommandStack history(document);
+
+    EXPECT_THROW(history.push(swapInputsCommand(network, empty, 0, 1)), GraphException);  // neither occupied
+    EXPECT_THROW(history.push(swapInputsCommand(network, merge, 1, 1)), GraphException);  // same port twice
+    EXPECT_THROW(history.push(swapInputsCommand(network, merge, 0, 9)), GraphException);  // undeclared port
+    EXPECT_THROW(history.push(swapInputsCommand(network, 999, 0, 1)), GraphException);    // unknown node
+    try {
+        history.push(swapInputsCommand(network, merge, 0, 1));  // same source on both ports
+        FAIL() << "expected the identical-source swap to be rejected";
+    } catch (const GraphException& error) {
+        EXPECT_NE(std::string(error.what()).find(std::to_string(merge)), std::string::npos);
+    }
+
+    EXPECT_EQ(history.depth(), 0u);
+    EXPECT_EQ(document.stateRevision(), revisionBefore);
+    EXPECT_EQ(graph.edges().size(), edgesBefore);
+    EXPECT_EQ(feederOf(graph, merge, 0), source);
+    EXPECT_EQ(feederOf(graph, merge, 1), source);
+}
+
+TEST(CommandStackTest, SwapInputsConnectionRejectionLeavesBothConnectionsUntouched) {
+    // A Mask-kind output cannot feed an Image input, so the complete swap is
+    // rejected by the trial graph: neither connection may move.
+    NodeDescriptor maskSource;
+    maskSource.type = "fixture.masksource";
+    maskSource.displayName = "Mask Source";
+    maskSource.outputs = {{PortKind::Mask, "mask"}};
+    maskSource.capabilities =
+        NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Full}, .channels = {"RGBA"}};
+    Document document(std::make_shared<const NodeCatalog>(std::vector<NodeDescriptor>{maskSource}));
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
+    const NetworkId network = document.rootNetworkId();
+    auto& graph = rootGraph(document);
+    const NodeId plate = graph.addNode("testpattern", "plate");
+    const NodeId mask = graph.addNode("fixture.masksource", "mask");
+    const NodeId merge = graph.addNode("merge", "comp");
+    const EdgeId plateEdge = graph.connect({plate, 0}, {merge, 0});
+    const EdgeId maskEdge = graph.connect({mask, 0}, {merge, 2});
+    const auto revisionBefore = document.stateRevision();
+    CommandStack history(document);
+
+    // Both ports occupied, but the mask output cannot land on Image port A.
+    try {
+        history.push(swapInputsCommand(network, merge, 0, 2));
+        FAIL() << "expected the port-kind rejection to surface";
+    } catch (const GraphException& error) {
+        EXPECT_EQ(error.errorCode(), GraphError::PortType);
+    }
+    EXPECT_EQ(history.depth(), 0u);
+    EXPECT_EQ(document.stateRevision(), revisionBefore);
+    EXPECT_EQ(feederOf(graph, merge, 0), plate);
+    EXPECT_EQ(feederOf(graph, merge, 2), mask);
+    EXPECT_TRUE(hasEdge(graph, plateEdge));
+    EXPECT_TRUE(hasEdge(graph, maskEdge));
+
+    // Moving the single occupied mask port onto Image port B is rejected the
+    // same way, with the mask still connected where it was.
+    EXPECT_THROW(history.push(swapInputsCommand(network, merge, 1, 2)), GraphException);
+    EXPECT_EQ(history.depth(), 0u);
+    EXPECT_EQ(document.stateRevision(), revisionBefore);
+    EXPECT_EQ(feederOf(graph, merge, 2), mask);
+    EXPECT_TRUE(hasEdge(graph, maskEdge));
 }
 
 TEST(CommandStackTest, InsertNodeOnEdgePreservesDestinationAndOutputFanOut) {

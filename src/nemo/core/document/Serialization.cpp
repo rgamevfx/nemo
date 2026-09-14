@@ -1,6 +1,7 @@
 #include "nemo/core/document/Serialization.hpp"
 
 #include "nemo/core/document/ParameterValueJson.hpp"
+#include "nemo/core/evaluation/SourceRequest.hpp"
 
 #include <array>
 #include <cmath>
@@ -8,6 +9,7 @@
 #include <set>
 #include <stdexcept>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 namespace nemo {
@@ -437,9 +439,50 @@ nlohmann::json probeJson(const MediaProbeMetadata& probe) {
                          {"colorTransfer", probe.colorTransfer},
                          {"colorMatrix", probe.colorMatrix},
                          {"provenance", probe.provenance},
-                         {"status", probeStatusName(probe.status)}};
+                         {"status", probeStatusName(probe.status)},
+                         {"precision", probe.precision},
+                         {"channels", probe.channels},
+                         {"declaredInputColorSpace", probe.declaredInputColorSpace}};
+    // Discovered facts (issue #75) are additive optional fields: each is omitted
+    // when it was not established, so an unauthored document keeps its exact
+    // byte shape and absence keeps meaning "unknown" rather than a sentinel.
+    if (probe.firstFrame)
+        value["firstFrame"] = *probe.firstFrame;
+    if (probe.lastFrame)
+        value["lastFrame"] = *probe.lastFrame;
+    if (probe.coverageQuality != CoverageQuality::Unknown)
+        value["coverageQuality"] = coverageQualityName(probe.coverageQuality);
+    if (probe.availableFrameCount)
+        value["availableFrameCount"] = *probe.availableFrameCount;
+    if (probe.missingFrameCount)
+        value["missingFrameCount"] = *probe.missingFrameCount;
+    if (!probe.missingRanges.empty()) {
+        nlohmann::json holes = nlohmann::json::array();
+        for (const MediaFrameRange& hole : probe.missingRanges)
+            holes.push_back({{"first", hole.first}, {"last", hole.last}});
+        value["missingRanges"] = std::move(holes);
+    }
+    if (probe.pixelAspect)
+        value["pixelAspect"] = *probe.pixelAspect;
+    if (probe.rateNumerator)
+        value["rateNumerator"] = *probe.rateNumerator;
+    if (probe.rateDenominator)
+        value["rateDenominator"] = *probe.rateDenominator;
     applyUnknownFields(value, probe.extension);
     return value;
+}
+
+CoverageQuality parseCoverageQuality(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_string())
+        throw DeserializeError(context + ": coverageQuality must be a string");
+    const auto quality = value.get<std::string>();
+    if (quality == "unknown")
+        return CoverageQuality::Unknown;
+    if (quality == "estimated")
+        return CoverageQuality::Estimated;
+    if (quality == "validated")
+        return CoverageQuality::Validated;
+    throw DeserializeError(context + ": unknown coverage quality '" + quality + "'");
 }
 
 MediaProbeMetadata parseProbe(const nlohmann::json& value, const std::string& context) {
@@ -457,10 +500,65 @@ MediaProbeMetadata parseProbe(const nlohmann::json& value, const std::string& co
     probe.colorTransfer = stringField(value, "colorTransfer", context);
     probe.colorMatrix = stringField(value, "colorMatrix", context);
     probe.provenance = stringField(value, "provenance", context);
+    probe.precision = stringField(value, "precision", context);
+    probe.channels = stringField(value, "channels", context);
+    probe.declaredInputColorSpace = stringField(value, "declaredInputColorSpace", context);
     if (value.contains("status"))
         probe.status = parseProbeStatus(value.at("status"), context + " status");
-    probe.extension = collectUnknownFields(value, {"width", "height", "duration", "codec", "colorPrimaries",
-                                                   "colorTransfer", "colorMatrix", "provenance", "status"});
+    if (value.contains("firstFrame"))
+        probe.firstFrame = signedValue(value.at("firstFrame"), context + " firstFrame");
+    if (value.contains("lastFrame"))
+        probe.lastFrame = signedValue(value.at("lastFrame"), context + " lastFrame");
+    if (value.contains("coverageQuality"))
+        probe.coverageQuality = parseCoverageQuality(value.at("coverageQuality"), context + " coverageQuality");
+    if (value.contains("availableFrameCount"))
+        probe.availableFrameCount = signedValue(value.at("availableFrameCount"), context + " availableFrameCount");
+    if (value.contains("missingFrameCount"))
+        probe.missingFrameCount = signedValue(value.at("missingFrameCount"), context + " missingFrameCount");
+    if (value.contains("missingRanges")) {
+        if (!value.at("missingRanges").is_array())
+            throw DeserializeError(context + ": missingRanges must be an array");
+        for (const auto& hole : value.at("missingRanges")) {
+            if (!hole.is_object())
+                throw DeserializeError(context + ": each missing range must be an object");
+            probe.missingRanges.push_back(MediaFrameRange{signedValue(hole.at("first"), context + " missing first"),
+                                                          signedValue(hole.at("last"), context + " missing last")});
+        }
+    }
+    if (value.contains("pixelAspect")) {
+        if (!value.at("pixelAspect").is_number())
+            throw DeserializeError(context + ": pixelAspect must be numeric");
+        probe.pixelAspect = value.at("pixelAspect").get<double>();
+    }
+    if (value.contains("rateNumerator"))
+        probe.rateNumerator =
+            static_cast<std::uint32_t>(unsignedValue(value.at("rateNumerator"), context + " rateNumerator"));
+    if (value.contains("rateDenominator"))
+        probe.rateDenominator =
+            static_cast<std::uint32_t>(unsignedValue(value.at("rateDenominator"), context + " rateDenominator"));
+    probe.extension = collectUnknownFields(value, {"width",
+                                                   "height",
+                                                   "duration",
+                                                   "codec",
+                                                   "colorPrimaries",
+                                                   "colorTransfer",
+                                                   "colorMatrix",
+                                                   "provenance",
+                                                   "status",
+                                                   "firstFrame",
+                                                   "lastFrame",
+                                                   "coverageQuality",
+                                                   "availableFrameCount",
+                                                   "missingFrameCount",
+                                                   "missingRanges",
+                                                   "pixelAspect",
+                                                   "rateNumerator",
+                                                   "rateDenominator",
+                                                   "precision",
+                                                   "channels",
+                                                   "declaredInputColorSpace"});
+    if (const auto problem = probeFactProblem(probe))
+        throw DeserializeError(context + ": " + *problem);
     return probe;
 }
 
@@ -1131,6 +1229,140 @@ nlohmann::json mergedParameterJson(const ParameterValues& params, const nlohmann
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// Schema 4 -> 5: Read timing/interpretation ownership (issues #61/#75).
+//
+// Before schema 5 a Read's range, offset/step and interpretation lived in the
+// *shared* SourceReference, so one media reference carried every Read's timing.
+// Migration materializes those values into each Read node's own parameters
+// (root networks, nested network definitions, and the per-occurrence instance
+// overrides that exposed parameters are edited through), and leaves the shared
+// reference untouched for the non-Read consumers that still address it (Viewer
+// timeline strips, Media Bin, CLI source queries).
+//
+// Exactly-once is guaranteed by resolution, not by bookkeeping: the effective
+// source request takes the node mapping *instead of* the shared mapping, so a
+// migrated value is never applied twice and legacy pixels and times are
+// preserved byte for byte. The recognized interpretation keys move to the
+// node's `source*` hints as fill-only hints — a reliably tagged file still wins
+// — while an unrecognized key stays on the shared reference and keeps reporting
+// exactly as before.
+//
+// Only the keys that carry information are written, so a document that never
+// authored timing keeps its exact parameter shape and the frozen defaults apply.
+void migrateReadSourceOwnership(Document& document, int schema, LoadResult& result) {
+    if (schema >= 5)
+        return;
+
+    const auto has = [](const ParameterValues& params, std::string_view key) {
+        return params.find(std::string(key)) != params.end();
+    };
+    // The parameter records one scope must author so that it owns the
+    // reference's timing/interpretation. The translation is the core-owned
+    // inverse of resolution, so migration and Read-node construction cannot
+    // drift; a key the scope already authored wins (a schema-4 file written by a
+    // newer build keeps its own values), and only informative values appear at
+    // all, so a document that never authored timing keeps its exact shape.
+    const auto materialize = [&has](const ParameterValues& scope,
+                                    const SourceReference& reference) -> std::optional<ParameterValues> {
+        const bool rangeAuthored =
+            has(scope, kReadParamRangeMode) || has(scope, kReadParamRangeFirst) || has(scope, kReadParamRangeLast);
+        const auto rangeKey = [](std::string_view key) {
+            return key == kReadParamRangeMode || key == kReadParamRangeFirst || key == kReadParamRangeLast;
+        };
+        ParameterValues authored;
+        for (const auto& [key, value] : readOverrideParameters(readAuthoredOverrides(reference))) {
+            if (has(scope, key))
+                continue;
+            // A partially authored range is inconsistent; leave the whole range
+            // to the scope rather than completing it from the reference.
+            if (rangeAuthored && rangeKey(key))
+                continue;
+            authored.emplace(key, value);
+        }
+        if (authored.empty())
+            return std::nullopt;
+        return authored;
+    };
+    const auto referenceKeyOf = [](const ParameterValues& params) -> const std::string* {
+        const auto found = params.find("source");
+        if (found == params.end())
+            return nullptr;
+        return std::get_if<std::string>(&found->second);
+    };
+    const auto referenced = [&document, &referenceKeyOf](const ParameterValues& params) -> const SourceReference* {
+        const std::string* key = referenceKeyOf(params);
+        if (key == nullptr || key->empty())
+            return nullptr;
+        const auto reference = document.sources.find(*key);
+        return reference == document.sources.end() ? nullptr : &reference->second;
+    };
+
+    std::size_t migratedScopes = 0;
+    // Every Read in every network, including nested definitions. Mutations are
+    // collected first: a controlled write copies the structurally shared
+    // containers, so applying while iterating them would dangle the iteration.
+    std::vector<std::tuple<NetworkId, NodeId, ParameterValues>> networkWrites;
+    for (const auto& network : document.networks()) {
+        for (const auto& node : network.graph().nodes()) {
+            if (node.type != "source")
+                continue;
+            const SourceReference* reference = referenced(node.params);
+            if (reference == nullptr)
+                continue;
+            auto authored = materialize(node.params, *reference);
+            if (!authored)
+                continue;
+            ++migratedScopes;
+            networkWrites.emplace_back(network.id(), node.id, std::move(*authored));
+        }
+    }
+    for (auto& [networkId, nodeId, authored] : networkWrites) {
+        // Writes through the deserialization path, so a load records no
+        // controlled-edit transition and node/instance identity is untouched.
+        for (auto& [key, value] : authored)
+            document.network(networkId).graph().setParam(nodeId, key, std::move(value));
+    }
+
+    // Per-occurrence overrides: an instance that repoints a Read at another
+    // source key (how an exposed parameter is edited per occurrence) must own
+    // that other reference's timing at the same scope, otherwise the occurrence
+    // would inherit the definition's migrated values. The complete informative
+    // set is written, so nothing from the definition's reference leaks in.
+    std::vector<std::tuple<NetworkInstanceId, NodeId, ParameterValues>> instanceWrites;
+    for (const auto& instance : document.instances()) {
+        const Network* definition = nullptr;
+        try {
+            definition = &document.network(instance.definition);
+        } catch (const std::exception&) {
+            continue;
+        }
+        for (const auto& [targetNode, params] : instance.params) {
+            const NodeInstance* definitionNode = definition->graph().node(targetNode);
+            if (definitionNode == nullptr || definitionNode->type != "source")
+                continue;
+            const SourceReference* reference = referenced(params);
+            if (reference == nullptr)
+                continue;
+            auto authored = materialize(params, *reference);
+            if (!authored)
+                continue;
+            ++migratedScopes;
+            instanceWrites.emplace_back(instance.id, targetNode, std::move(*authored));
+        }
+    }
+    for (auto& [instanceId, targetNode, authored] : instanceWrites) {
+        for (const auto& [key, value] : authored)
+            document.setInstanceParam(instanceId, targetNode, key, value);
+    }
+
+    if (migratedScopes != 0) {
+        result.warnings.push_back("schema 4 -> 5: " + std::to_string(migratedScopes) +
+                                  " Read scope(s) now own their source timing and interpretation; the shared "
+                                  "references are unchanged for other source consumers");
+    }
+}
+
 }  // namespace
 
 nlohmann::json saveDocument(const Document& document) {
@@ -1556,6 +1788,7 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
         }
     }
     loadAnimation(json, result, schema);
+    migrateReadSourceOwnership(result.document, schema, result);
     result.document.synchronizeReferences();
     result.document.restoreIdentityHighWatermarks(
         watermark(json, "nextNetworkId", "document").value_or(result.document.nextNetworkId()),

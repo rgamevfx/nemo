@@ -23,6 +23,20 @@ namespace nemo {
 
 // Persistent color policy names only; runtime OCIO objects belong to
 // evaluation/presentation modules.
+//
+// Registered (built-in) color-configuration reference (issue #75).
+//
+// A color-configuration reference is either a filesystem path or one registered
+// URI naming a configuration compiled into the build. The pinned owner-approved
+// default is the OCIO-embedded ACES Studio config below; the media module owns
+// what that reference resolves to and which working space/view it is authored
+// against. Only registered references receive this treatment: any other
+// URI-looking string is an ordinary path, so the file layer never declares an
+// unsupported reference present and never bypasses path handling for one.
+inline constexpr std::string_view kBuiltinColorConfigUri = "ocio://studio-config-v4.0.0_aces-v2.0_ocio-v2.5";
+
+[[nodiscard]] bool isRegisteredColorConfigReference(std::string_view reference) noexcept;
+
 struct ColorPolicy {
     std::string workingSpace{"linear"};
     std::string viewerTransform{"sRGB/rec709"};
@@ -83,7 +97,7 @@ private:
 // handles, so history entries, gesture previews and render snapshots retain
 // the same records until a controlled mutation replaces the ones it touched.
 struct Document {
-    static inline constexpr int kSchemaVersion = 4;
+    static inline constexpr int kSchemaVersion = 5;
     using NetworkStorage = CowVector<Network>;
     using InstanceStorage = CowVector<NetworkInstance>;
     using AnimationStorage = CowVector<AnimationChannel>;
@@ -325,6 +339,18 @@ Command removeNodeCommand(NetworkId network, NodeId nodeId);
 Command connectCommand(NetworkId network, PortRef from, PortRef to, std::shared_ptr<EdgeId> createdId = {});
 Command disconnectCommand(NetworkId network, EdgeId edgeId);
 Command replaceInputCommand(NetworkId network, PortRef from, PortRef to, std::shared_ptr<EdgeId> createdId = {});
+// Swaps the sources feeding two declared input ports of one node (issue #75,
+// the Merge "Swap A/B" action) as ONE atomic command. Both ports occupied
+// exchanges their sources; exactly one occupied moves that source to the
+// other port; neither occupied, identical ports, an undeclared port, or two
+// ports fed by the same output are rejected with a GraphException before any
+// connection changes, so a meaningless or invalid request writes no history
+// entry. The node, its parameters (operation/mask/mix), its layout, and every
+// other edge - including the optional mask port - are retained; the two
+// affected edges are re-created, so their authored routes are dropped. The
+// complete swap is validated on a trial graph and published whole, and the
+// command is a single undo/redo step.
+Command swapInputsCommand(NetworkId network, NodeId nodeId, std::uint32_t firstPort, std::uint32_t secondPort);
 Command rewireGraphEdgeCommand(NetworkId network, EdgeId edgeId, PortRef from, PortRef to);
 Command insertNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, std::string type, std::string name,
                                 LayoutPosition position = {}, std::shared_ptr<NodeId> createdNode = {},

@@ -87,6 +87,42 @@ std::filesystem::path writePng(const std::filesystem::path& directory, const std
     return path;
 }
 
+// The encoded sample of the config-freshness plate. Chromatic, so an
+// expectation cannot be satisfied by neutral interface chrome.
+inline constexpr float kConfigSampleR = 0.75F;
+inline constexpr float kConfigSampleG = 0.25F;
+inline constexpr float kConfigSampleB = 0.5F;
+
+// A temp config whose only nonlinear op is the input space exponent, and whose
+// display equation is a known matrix (R,G,B x 1,1,0.5). Rewriting the exponent
+// at the same path is therefore a pure, independently computable change.
+void writeGammaConfig(const std::filesystem::path& config, const std::string& gamma) {
+    std::string text;
+    text += "ocio_profile_version: 2\n";
+    text += "search_path: \"\"\n";
+    text += "roles:\n  default: linear\n  scene_linear: working_rec709\n";
+    text += "colorspaces:\n";
+    text += "  - !<ColorSpace>\n    name: linear\n    allocation: linear\n";
+    text += "  - !<ColorSpace>\n    name: working_rec709\n    allocation: linear\n";
+    text += "  - !<ColorSpace>\n    name: rec709_texture\n";
+    text += "    to_reference: !<ExponentTransform> {value: [" + gamma + ", " + gamma + ", " + gamma + ", 1.0]}\n";
+    text += "  - !<ColorSpace>\n    name: display_view\n";
+    text += "    from_reference: !<MatrixTransform> {matrix: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, "
+            "0.5, 0.0, 0.0, 0.0, 0.0, 1.0]}\n";
+    text += "displays:\n  sRGB:\n    - !<View> {name: rec709, colorspace: display_view}\n";
+    std::ofstream out(config, std::ios::trunc);
+    out << text;
+}
+
+// Expected 8-bit display color derived only from the encoded sample bytes and
+// the config above: input --pow(sample, gamma)--> working --matrix--> display.
+// No production read/resolve/transform code participates.
+[[nodiscard]] std::array<int, 3> expectedGammaDisplay(double gamma) {
+    return {static_cast<int>(std::lround(std::pow(kConfigSampleR, gamma) * 255.0)),
+            static_cast<int>(std::lround(std::pow(kConfigSampleG, gamma) * 255.0)),
+            static_cast<int>(std::lround(std::pow(kConfigSampleB, gamma) * 0.5 * 255.0))};
+}
+
 QQuickItem* visualByName(QQuickItem* root, const QString& name) {
     if (!root)
         return nullptr;
@@ -118,6 +154,17 @@ protected:
     std::unique_ptr<nemo::ui::ViewerController> facade_;
     std::unique_ptr<nemo::ui::ViewerControllerRegistry> registry_;
     std::unique_ptr<nemo::workspace::WorkspaceController> workspace_;
+    // Runs first, after the session exists and before the runtime, import
+    // worker, media model or read source resolve any OCIO configuration, so a
+    // scenario can install its own config before those owners capture one.
+    std::function<void()> prepareConfig;
+    // Runs after the session/media/read-source owners exist and before any
+    // observing ViewerController is constructed. Empty for every existing test.
+    std::function<void()> prepareSession;
+    // Session revision captured at that same boundary (after the preparation
+    // hook, before any observing controller). A scenario that needs the first
+    // session notification to be its own replacement compares against this.
+    std::uint64_t constructionBoundaryRevision{0};
     std::unique_ptr<nemo::ui::ProjectFileController> projectFile_;
     std::unique_ptr<nemo::ui::ParameterEditorRegistry> editors_;
     std::unique_ptr<QQmlApplicationEngine> engine_;
@@ -141,6 +188,14 @@ protected:
         qputenv("OCIO", config.string().c_str());
         evidenceDirectory_ = qEnvironmentVariable("NEMO74_EVIDENCE_DIR");
 
+        // The session owns the document/color reference and has no config,
+        // media or GPU dependency, so it exists before every config-dependent
+        // owner: a scenario can install its configuration before the runtime,
+        // the import worker or the read source ever resolve one.
+        session_ = std::make_unique<ProjectSession>();
+        if (prepareConfig)
+            prepareConfig();
+
         runtime_ = std::make_unique<nemo::ui::ViewerRuntime>();
         nemo::eval::ViewerCacheOptions cacheOptions;
         cacheOptions.directory = directory_.filePath(QStringLiteral("cache")).toStdString();
@@ -159,12 +214,23 @@ protected:
             throw;
         }
 
-        session_ = std::make_unique<ProjectSession>();
         importer_ = std::make_unique<nemo::media::MediaImportService>();
         media_ = std::make_unique<nemo::ui::MediaLibraryModel>(*session_, *importer_);
         chooser_ = std::make_unique<nemo::ui::NativeFileChooser>();
         readSource_ = std::make_unique<nemo::ui::ReadSourceController>(*session_, *media_, *chooser_);
         router_ = std::make_unique<nemo::ui::PanelContextRouter>(*session_);
+        // A scenario that must make the session replacement the FIRST
+        // notification prepares its document and configuration here, before any
+        // observing ViewerController exists (facade_ below, and the panel
+        // controllers created when Main.qml loads). Other tests leave this
+        // unset and keep the default lifecycle.
+        if (prepareSession)
+            prepareSession();
+        // The exact construction boundary: recorded after the prepared project
+        // exists and before ANY observing ViewerController is constructed, so a
+        // scenario can prove that nothing mutated the document across window
+        // creation, event pumping and the baseline render.
+        constructionBoundaryRevision = session_->revision();
         facade_ = std::make_unique<ViewerController>(runtime_.get(), *session_);
         registry_ = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime_.get(), *session_);
 
@@ -485,7 +551,14 @@ TEST_F(ReadViewerSurface, ClearingTheReadShowsTheExplicitEmptyState) {
     ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), read, QString::fromStdString(plate.string())));
     ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; }));
 
-    ASSERT_TRUE(readSource_->clearSource(rootNetwork(), read));
+    // Clearing is an ordinary value edit of the File control through the shared
+    // parameter gesture (the Read adapter no longer owns a static mutation API).
+    const QString sourceKey = QStringLiteral("source");
+    const QString clearToken = controller_->beginNodeParameterEdits(rootNetwork(), read, QStringList{sourceKey});
+    ASSERT_FALSE(clearToken.isEmpty()) << controller_->error().toStdString();
+    ASSERT_TRUE(controller_->updateNodeParameterEdits(clearToken, QVariantMap{{sourceKey, QString()}}))
+        << controller_->error().toStdString();
+    ASSERT_TRUE(controller_->commitNodeParameterEdit(clearToken)) << controller_->error().toStdString();
     ASSERT_TRUE(waitFor([&] { return controller_->renderState() == QStringLiteral("empty"); }))
         << controller_->renderState().toStdString();
     EXPECT_FALSE(controller_->hasPresentation());
@@ -689,6 +762,149 @@ TEST_F(ReadViewerSurface, UserDocumentDisplaysItsAttachedRead) {
         << "viewer media surface is flat; status=" << controller->status().toStdString();
     const auto name = qEnvironmentVariable("NEMO74_EVIDENCE_NAME", QStringLiteral("user-media"));
     capture(name, panelId);
+}
+
+// Issue #75 config freshness. The document and its temp config are prepared
+// BEFORE any observing ViewerController exists, so the first session
+// notification the tested controllers receive is the replacement itself — the
+// exact sequence that a stale "first notification seeds the baseline" sentinel
+// would skip.
+class PreparedConfigSurface : public ReadViewerSurface {
+protected:
+    std::filesystem::path config_;
+    QString network_;
+    QString read_;
+
+    void SetUp() override {
+        // The configuration is installed before any config-dependent owner is
+        // constructed; only the document is authored afterwards, still before
+        // any observing controller exists.
+        prepareConfig = [this] {
+            config_ = std::filesystem::path(directory_.path().toStdString()) / "ocio" / "color.ocio";
+            std::filesystem::create_directories(config_.parent_path());
+            writeGammaConfig(config_, "2.2");
+            EXPECT_TRUE(std::filesystem::exists(config_));
+            qputenv("OCIO", config_.string().c_str());
+            session_->setColorConfigPath(config_.string());
+        };
+        prepareSession = [this] { prepareLoadedProject(); };
+        ReadViewerSurface::SetUp();
+    }
+
+    void prepareLoadedProject() {
+        const auto png = writePng(directory_.path().toStdString(), "gamma-plate", 96, 64,
+                                  {kConfigSampleR, kConfigSampleG, kConfigSampleB, 1.0F});
+        network_ = QString::number(session_->document().rootNetworkId());
+        const auto readId = std::make_shared<nemo::NodeId>();
+        const auto viewerId = std::make_shared<nemo::NodeId>();
+        EXPECT_TRUE(session_
+                        ->submit(nemo::addNodeCommand(network_.toULongLong(), "source", "Read1", readId),
+                                 {.expectedRevision = session_->revision()})
+                        .committed);
+        EXPECT_TRUE(session_
+                        ->submit(nemo::addNodeCommand(network_.toULongLong(), "viewer", "Viewer1", viewerId),
+                                 {.expectedRevision = session_->revision()})
+                        .committed);
+        read_ = QString::number(*readId);
+        EXPECT_TRUE(readSource_->setSourcePath(network_, read_, QString::fromStdString(png.string())))
+            << readSource_->error().toStdString();
+        EXPECT_TRUE(waitFor([&] {
+            return readSource_->info(network_, read_).value(QStringLiteral("state")).toString() ==
+                   QStringLiteral("ready");
+        })) << readSource_->info(network_, read_).value(QStringLiteral("error")).toString().toStdString();
+        // An explicit named input override, so neither PNG metadata nor a file
+        // rule decides the interpretation: the named space's gamma rewrite is
+        // what must move the pixels.
+        const nemo::ParameterAddress transformAddress{network_.toULongLong(), *readId, "inputTransform",
+                                                      nemo::kInvalidNetworkInstance};
+        const nemo::ParameterAddress spaceAddress{network_.toULongLong(), *readId, "inputColorSpace",
+                                                  nemo::kInvalidNetworkInstance};
+        EXPECT_TRUE(session_
+                        ->submit(nemo::setParametersCommand(
+                                     {{transformAddress, nemo::ParameterValue{nemo::ChoiceValue{"explicit"}}},
+                                      {spaceAddress, nemo::ParameterValue{std::string{"rec709_texture"}}}}),
+                                 {.expectedRevision = session_->revision()})
+                        .committed);
+        EXPECT_TRUE(session_
+                        ->submit(nemo::connectCommand(network_.toULongLong(), {*readId, 0}, {*viewerId, 0}),
+                                 {.expectedRevision = session_->revision()})
+                        .committed);
+        // The authored policy names the same working space the temp config
+        // exposes, so the display expectation below is the document's own.
+        nemo::ColorPolicy policy;
+        policy.workingSpace = "working_rec709";
+        policy.viewerTransform = "sRGB/rec709";
+        policy.deliveryTransform = "sRGB/rec709";
+        EXPECT_TRUE(session_->submit(nemo::setColorPolicyCommand(policy), {.expectedRevision = session_->revision()})
+                        .committed);
+    }
+};
+
+TEST_F(PreparedConfigSurface, SamePathConfigRewriteRefreshesOnFirstReplacement) {
+    // The revision was captured inside SetUp at the real construction boundary
+    // (after the preparation hook, before any observing ViewerController). The
+    // test asserts it never moves before the replacement, so the replacement
+    // really is the first session notification: a delayed media probe
+    // completion, a stray authoring edit, or anything during window creation
+    // and event pumping would move it and mask the regression this test exists
+    // to catch.
+    const auto boundaryRevision = constructionBoundaryRevision;
+
+    // The prepared, untouched project renders at its initial gamma. Render
+    // requests are not document mutations.
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; }))
+        << controller_->error().toStdString() << " status=" << controller_->status().toStdString();
+    const auto beforeExpected = expectedGammaDisplay(2.2);
+    auto image = grabPanel();
+    ASSERT_FALSE(image.isNull());
+    EXPECT_GT(countPixelsNear(image, beforeExpected, 12), 300)
+        << "the plate must render its computed display color; expected " << beforeExpected[0] << ','
+        << beforeExpected[1] << ',' << beforeExpected[2] << " status=" << controller_->status().toStdString();
+    capture(QStringLiteral("config-before-rewrite"));
+    EXPECT_EQ(session_->revision(), boundaryRevision)
+        << "the baseline render must not mutate the document, or the replacement below is not the first "
+           "session notification";
+
+    // The external edit: the SAME path, different content. Rewriting the
+    // config file is not a document mutation.
+    writeGammaConfig(config_, "2.8");
+    EXPECT_EQ(session_->revision(), boundaryRevision) << "only the config file changed before the replacement boundary";
+    const auto afterExpected = expectedGammaDisplay(2.8);
+    ASSERT_NE(beforeExpected, afterExpected) << "the gamma rewrite must move the expected display color";
+    // The changed red channel alone exceeds the matching tolerance, so a stale
+    // render can never be counted as the refreshed one.
+    ASSERT_GT(std::abs(beforeExpected[0] - afterExpected[0]), 12);
+
+    // The FIRST session notification these controllers receive: the replacement
+    // advances the project generation and must refresh the runtime's retained
+    // OCIO processors on its worker.
+    const auto revision = session_->revision();
+    ASSERT_TRUE(session_->replaceDocument(session_->snapshot(), {}, {}, config_.string()).replaced);
+    EXPECT_GT(session_->revision(), revision);
+
+    ASSERT_TRUE(waitFor([&] {
+        const auto current = grabPanel();
+        return !current.isNull() && countPixelsNear(current, afterExpected, 12) > 300 &&
+               countPixelsNear(current, beforeExpected, 12) == 0;
+    })) << "the first replacement after a same-path config edit did not refresh the retained OCIO processors; "
+           "expected "
+        << afterExpected[0] << ',' << afterExpected[1] << ',' << afterExpected[2]
+        << " status=" << controller_->status().toStdString() << " error=" << controller_->error().toStdString();
+    image = grabPanel();
+    EXPECT_GT(countPixelsNear(image, afterExpected, 12), 300);
+    EXPECT_EQ(countPixelsNear(image, beforeExpected, 12), 0);
+    capture(QStringLiteral("config-after-rewrite"));
+
+    // Unrelated authored state survives the replacement: the Read still names
+    // its own media and the project still carries the same config reference.
+    const auto values = session_->queryValues(network_.toULongLong(), read_.toULongLong(), "source");
+    ASSERT_FALSE(values.empty());
+    EXPECT_FALSE(std::get<std::string>(values.front().value).empty());
+    const auto transform = session_->queryValues(network_.toULongLong(), read_.toULongLong(), "inputColorSpace");
+    ASSERT_FALSE(transform.empty());
+    EXPECT_EQ(std::get<std::string>(transform.front().value), "rec709_texture");
+    EXPECT_EQ(session_->colorConfigPath(), config_.string());
+    EXPECT_EQ(warnings_->count(), 0);
 }
 
 }  // namespace

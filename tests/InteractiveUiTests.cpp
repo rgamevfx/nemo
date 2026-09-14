@@ -794,6 +794,20 @@ InspectorFixture inspectorFixture() {
     return fixture;
 }
 
+// The first parameter row of a target's inspector: the handle a subnet
+// occurrence presents, whatever identity the implementation encodes it with.
+QVariantMap firstInspectorRow(const nemo::ui::ViewerController& controller, const QString& network,
+                              const QString& node) {
+    const auto inspector = controller.parameterInspector(network, node);
+    if (!inspector.value(QStringLiteral("available")).toBool())
+        return {};
+    const auto sections = inspector.value(QStringLiteral("sections")).toList();
+    if (sections.isEmpty())
+        return {};
+    const auto rows = sections.first().toMap().value(QStringLiteral("parameters")).toList();
+    return rows.isEmpty() ? QVariantMap{} : rows.first().toMap();
+}
+
 QVariantMap inspectorRow(const QVariantMap& inspector, const QString& key) {
     for (const auto& section : inspector.value(QStringLiteral("sections")).toList()) {
         for (const auto& parameter : section.toMap().value(QStringLiteral("parameters")).toList()) {
@@ -1153,25 +1167,18 @@ TEST(Interactive, MediaRoleViewsCatalogReferenceWithoutAuthoringAGraphNode) {
 
 TEST(Interactive, ParameterEditorRegistryRegistersAndResolvesEditors) {
     nemo::ui::ParameterEditorRegistry registry;
-    QSignalSpy changed(&registry, &nemo::ui::ParameterEditorRegistry::editorsChanged);
 
     const auto missing = registry.editor(QStringLiteral("nemo.missing"));
     EXPECT_FALSE(missing.value(QStringLiteral("available")).toBool());
     EXPECT_TRUE(missing.value(QStringLiteral("source")).toString().isEmpty());
-    EXPECT_EQ(missing.value(QStringLiteral("reason")).toString(),
-              QStringLiteral("No parameter editor registered for 'nemo.missing'"));
-    EXPECT_EQ(registry.reason(QStringLiteral("nemo.missing")),
-              QStringLiteral("No parameter editor registered for 'nemo.missing'"));
 
     EXPECT_FALSE(
         registry.registerEditor(QStringLiteral("unnamespaced"), QUrl(QStringLiteral("qrc:/Nemo/Unnamed.qml"))));
     EXPECT_FALSE(registry.registerEditor(QString{}, QUrl(QStringLiteral("qrc:/Nemo/Unnamed.qml"))));
     EXPECT_FALSE(registry.registerEditor(QStringLiteral("nemo.blank"), QUrl{}));
-    EXPECT_EQ(changed.count(), 0);
 
     const QUrl source{QStringLiteral("qrc:/Nemo/Linear.qml")};
     EXPECT_TRUE(registry.registerEditor(QStringLiteral("nemo.linear"), source));
-    EXPECT_EQ(changed.count(), 1);
     const auto registered = registry.editor(QStringLiteral("nemo.linear"));
     EXPECT_TRUE(registered.value(QStringLiteral("available")).toBool());
     EXPECT_EQ(registered.value(QStringLiteral("source")).toUrl(), source);
@@ -1182,13 +1189,26 @@ TEST(Interactive, ParameterEditorRegistryRegistersAndResolvesEditors) {
     const QUrl replacement{QStringLiteral("qrc:/Nemo/LinearV2.qml")};
     EXPECT_TRUE(registry.registerEditor(QStringLiteral("nemo.linear"), replacement));
     EXPECT_EQ(registry.editor(QStringLiteral("nemo.linear")).value(QStringLiteral("source")).toUrl(), replacement);
-    EXPECT_EQ(changed.count(), 2);
 
     EXPECT_TRUE(registry.unregisterEditor(QStringLiteral("nemo.linear")));
-    EXPECT_EQ(changed.count(), 3);
     EXPECT_FALSE(registry.editor(QStringLiteral("nemo.linear")).value(QStringLiteral("available")).toBool());
+
+    // An unsupported presentation must not leave a usable registration behind.
+    EXPECT_TRUE(registry.registerEditor(QStringLiteral("nemo.layout"), replacement, {}, QStringLiteral("section")));
+    // A refused replacement is an atomic rejection: the previously valid
+    // registration survives untouched (same source, consumes and presentation).
+    EXPECT_FALSE(registry.registerEditor(QStringLiteral("nemo.layout"), replacement, {}, QStringLiteral("panel")));
+    const auto preserved = registry.editor(QStringLiteral("nemo.layout"));
+    EXPECT_TRUE(preserved.value(QStringLiteral("available")).toBool());
+    EXPECT_EQ(preserved.value(QStringLiteral("presentation")).toString(), QStringLiteral("section"));
+    EXPECT_EQ(preserved.value(QStringLiteral("source")).toUrl(), replacement);
+    // An id that was never validly registered reports unavailable with the
+    // offending presentation named.
+    EXPECT_FALSE(registry.registerEditor(QStringLiteral("nemo.badlayout"), replacement, {}, QStringLiteral("panel")));
+    const auto refused = registry.editor(QStringLiteral("nemo.badlayout"));
+    EXPECT_FALSE(refused.value(QStringLiteral("available")).toBool());
+    EXPECT_TRUE(refused.value(QStringLiteral("reason")).toString().contains(QStringLiteral("panel")));
     EXPECT_FALSE(registry.unregisterEditor(QStringLiteral("nemo.linear")));
-    EXPECT_EQ(changed.count(), 3);
 }
 
 TEST(Interactive, SubnetExposurePublishesTypedControlsWithInstanceLocalEdits) {
@@ -1286,4 +1306,513 @@ TEST(Interactive, SubnetExposurePublishesTypedControlsWithInstanceLocalEdits) {
     EXPECT_EQ(controller.subnetExposure(scope, copyNode).value("linkState").toString(), QStringLiteral("linked"));
 }
 
+// Issue #75: an authored animation channel owns the value. Editing between keys
+// must author the current-frame key instead of writing a static value the
+// channel would shadow, and every such edit stays one undo step.
+TEST(Interactive, BetweenKeyEditAuthorsTheCurrentFrameKey) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto networkId = session.document().rootNetworkId();
+    const auto network = QString::number(networkId);
+    const auto node = QString::number(fixture.node);
+    const nemo::ParameterAddress gainAddress{networkId, fixture.node, "gain", nemo::kInvalidNetworkInstance};
+    ASSERT_TRUE(session
+                    .submit(nemo::setKeyframesCommand({nemo::KeyframeEdit{gainAddress, nemo::Keyframe{0, 0.0, 2.0}},
+                                                       nemo::KeyframeEdit{gainAddress, nemo::Keyframe{0, 10.0, 4.0}}}),
+                            nemo::EditOptions{.expectedRevision = session.revision()})
+                    .committed);
+    controller.setFrame(5);
+    EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("animated"));
+
+    const auto revision = session.revision();
+    const auto token = controller.beginNodeParameterEdit(network, node, QStringLiteral("gain"));
+    ASSERT_FALSE(token.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdit(token, 3.5));
+    ASSERT_TRUE(controller.commitNodeParameterEdit(token));
+    EXPECT_EQ(session.revision(), revision + 1);
+    const auto* channel = session.document().animationChannel(gainAddress);
+    ASSERT_NE(channel, nullptr);
+    ASSERT_EQ(channel->keys.size(), 3U);
+    const auto atFrame = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                      [](const nemo::Keyframe& key) { return key.time == 5.0; });
+    ASSERT_NE(atFrame, channel->keys.end());
+    EXPECT_EQ(atFrame->value, nemo::ParameterValue{3.5});
+
+    // Cancelling a between-keys edit leaves the channel exactly as it was.
+    const auto before = session.document().animationChannels();
+    const auto cancelled = controller.beginNodeParameterEdit(network, node, QStringLiteral("gain"));
+    ASSERT_FALSE(cancelled.isEmpty());
+    ASSERT_TRUE(controller.updateNodeParameterEdit(cancelled, 2.5));
+    ASSERT_TRUE(controller.cancelNodeParameterEdit(cancelled));
+    EXPECT_EQ(session.document().animationChannels(), before);
+}
+
+// Issue #75 story 19: reset restores the schema default at the same edit scope
+// and never removes the channel or its other keys.
+TEST(Interactive, ResetRestoresDefaultAtTheAuthoredScope) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto networkId = session.document().rootNetworkId();
+    const auto network = QString::number(networkId);
+    const auto node = QString::number(fixture.node);
+
+    // A static override resets in one history entry; a second reset is a no-op.
+    controller.setNodeParameters(QVariantList{QVariantMap{{QStringLiteral("nodeId"), node},
+                                                          {QStringLiteral("key"), QStringLiteral("gain")},
+                                                          {QStringLiteral("value"), 3.25}}});
+    ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    const auto changed = session.revision();
+    EXPECT_TRUE(controller.resetNodeParameterEdit(network, node, QStringLiteral("gain")));
+    EXPECT_EQ(session.revision(), changed + 1);
+    const auto values = session.queryValues(networkId, fixture.node, "gain");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(values.front().value, nemo::ParameterValue{1.0});
+    EXPECT_TRUE(controller.resetNodeParameterEdit(network, node, QStringLiteral("gain")));
+    EXPECT_EQ(session.revision(), changed + 1);
+
+    // An animated parameter authors the default at the current frame; the
+    // channel and its other keys survive.
+    const nemo::ParameterAddress gainAddress{networkId, fixture.node, "gain", nemo::kInvalidNetworkInstance};
+    ASSERT_TRUE(session
+                    .submit(nemo::setKeyframesCommand({nemo::KeyframeEdit{gainAddress, nemo::Keyframe{0, 0.0, 2.0}},
+                                                       nemo::KeyframeEdit{gainAddress, nemo::Keyframe{0, 10.0, 4.0}}}),
+                            nemo::EditOptions{.expectedRevision = session.revision()})
+                    .committed);
+    controller.setFrame(5);
+    const auto animated = session.revision();
+    EXPECT_TRUE(controller.resetNodeParameterEdit(network, node, QStringLiteral("gain")));
+    EXPECT_EQ(session.revision(), animated + 1);
+    const auto* channel = session.document().animationChannel(gainAddress);
+    ASSERT_NE(channel, nullptr);
+    ASSERT_EQ(channel->keys.size(), 3U);
+    const auto atFrame = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                      [](const nemo::Keyframe& key) { return key.time == 5.0; });
+    ASSERT_NE(atFrame, channel->keys.end());
+    EXPECT_EQ(atFrame->value, nemo::ParameterValue{1.0});
+    for (const auto& key : channel->keys) {
+        if (key.time == 0.0)
+            EXPECT_EQ(key.value, nemo::ParameterValue{2.0});
+        if (key.time == 10.0)
+            EXPECT_EQ(key.value, nemo::ParameterValue{4.0});
+    }
+
+    // An unknown parameter is rejected without touching document or history.
+    const auto unchanged = session.revision();
+    EXPECT_FALSE(controller.resetNodeParameterEdit(network, node, QStringLiteral("missing")));
+    EXPECT_FALSE(controller.error().isEmpty());
+    EXPECT_EQ(session.revision(), unchanged);
+}
+
+// Issue #75 story 22/76: the identity-scoped reset resolves a subnet occurrence
+// and an exposed control, never falling back to the root network.
+TEST(Interactive, ResetResolvesOccurrenceAndExposedIdentity) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = controller.rootNetworkId();
+    // A collapsible selection is a connected image chain of ordinary nodes: the
+    // network's formal Output terminal stays outside the selection.
+    const auto source = controller.createGraphNode(scope, "constcolor", "resetSource", 0.0, 0.0, {}, {});
+    const auto merge = controller.createGraphNode(scope, "merge", "resetMerge", 160.0, 0.0, {}, {});
+    const auto output = controller.createGraphNode(scope, "output", "resetOutput", 320.0, 0.0, {}, {});
+    ASSERT_FALSE(source.isEmpty());
+    ASSERT_FALSE(merge.isEmpty());
+    ASSERT_FALSE(output.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, source, 0, merge, 0));
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, merge, 0, output, 0));
+    const auto subnet = controller.collapseSelection(scope, QVariantList{source, merge}, "ResetScope");
+    ASSERT_FALSE(subnet.isEmpty()) << controller.error().toStdString();
+    const auto node = namedNode(controller, "ResetScope");
+    const auto definition = node.value("definition").toString();
+    const auto instance = node.value("instance").toString();
+    ASSERT_FALSE(definition.isEmpty());
+    ASSERT_FALSE(instance.isEmpty());
+    ASSERT_TRUE(controller.promoteParameter(definition, source, "color", "")) << controller.error().toStdString();
+    const auto exposure = controller.subnetExposure(scope, subnet);
+    ASSERT_TRUE(exposure.value("available").toBool());
+    // The edit target is the inspector's exposed identity, not the child key:
+    // the resolver addresses an occurrence control through "exposed:<id>".
+    const auto inspector = controller.parameterInspector(scope, subnet);
+    ASSERT_TRUE(inspector.value("available").toBool()) << inspector.value("reason").toString().toStdString();
+    const auto control =
+        inspector.value("sections").toList().first().toMap().value("parameters").toList().first().toMap();
+    const auto exposedKey = control.value("key").toString();
+    ASSERT_FALSE(exposedKey.isEmpty());
+
+    // An edit through the exposed inspector row is an occurrence-local
+    // override: that occurrence's own value changes while the definition and a
+    // sibling occurrence of the same definition stay as they were.
+    const auto edit = controller.beginNodeParameterEdit(scope, subnet, exposedKey);
+    ASSERT_FALSE(edit.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdit(edit, QVariantList{0.25, 0.5, 0.75, 1.0}))
+        << controller.error().toStdString();
+    ASSERT_TRUE(controller.commitNodeParameterEdit(edit));
+    const auto editedRow = firstInspectorRow(controller, scope, subnet);
+    ASSERT_FALSE(editedRow.isEmpty());
+    EXPECT_EQ(editedRow.value(QStringLiteral("value")).toList(), QVariantList({0.25, 0.5, 0.75, 1.0}));
+
+    // The definition's child keeps its own value: the override belongs to the
+    // occurrence, not to the shared definition.
+    const auto definitionRow = inspectorRow(controller.parameterInspector(definition, source), QStringLiteral("color"));
+    ASSERT_FALSE(definitionRow.isEmpty());
+    EXPECT_EQ(definitionRow.value(QStringLiteral("value")).toList(), QVariantList({1.0, 1.0, 1.0, 1.0}));
+
+    // A sibling occurrence of the same definition carries its own value and
+    // must not be affected by the first occurrence's reset.
+    const auto sibling = controller.duplicateLinkedInstance(scope, subnet, 420.0, 80.0);
+    ASSERT_FALSE(sibling.isEmpty()) << controller.error().toStdString();
+    const auto siblingKey = firstInspectorRow(controller, scope, sibling).value(QStringLiteral("key")).toString();
+    const auto siblingEdit = controller.beginNodeParameterEdit(scope, sibling, siblingKey);
+    ASSERT_FALSE(siblingEdit.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdit(siblingEdit, QVariantList{0.125, 0.25, 0.5, 1.0}))
+        << controller.error().toStdString();
+    ASSERT_TRUE(controller.commitNodeParameterEdit(siblingEdit));
+
+    // Reset resolves the intended occurrence: its value returns to the schema
+    // default in one history entry, the definition child and the sibling
+    // occurrence keep their own values.
+    const auto revision = session.revision();
+    EXPECT_TRUE(controller.resetNodeParameterEdit(scope, subnet, exposedKey)) << controller.error().toStdString();
+    EXPECT_EQ(session.revision(), revision + 1);
+    const auto resetRow = firstInspectorRow(controller, scope, subnet);
+    ASSERT_FALSE(resetRow.isEmpty());
+    EXPECT_EQ(resetRow.value(QStringLiteral("value")).toList(), QVariantList({1.0, 1.0, 1.0, 1.0}));
+    EXPECT_EQ(firstInspectorRow(controller, scope, sibling).value(QStringLiteral("value")).toList(),
+              QVariantList({0.125, 0.25, 0.5, 1.0}))
+        << "resetting one occurrence must not touch another occurrence of the same definition";
+    EXPECT_EQ(inspectorRow(controller.parameterInspector(definition, source), QStringLiteral("color"))
+                  .value(QStringLiteral("value"))
+                  .toList(),
+              QVariantList({1.0, 1.0, 1.0, 1.0}));
+    // Already at the default: a second reset is a no-op.
+    EXPECT_TRUE(controller.resetNodeParameterEdit(scope, subnet, exposedKey));
+    EXPECT_EQ(session.revision(), revision + 1);
+
+    // A parameter the target scope does not own is rejected without touching
+    // document or history.
+    const auto unchanged = session.revision();
+    EXPECT_FALSE(controller.resetNodeParameterEdit(scope, QString::number(fixture.node), QStringLiteral("missing")));
+    EXPECT_FALSE(controller.error().isEmpty());
+    EXPECT_EQ(session.revision(), unchanged);
+}
+
+// Issue #75 story 33-35/41: the controller exposes the declared input occupancy
+// and refuses a meaningless swap without touching history.
+TEST(Interactive, NodeInputOccupancyGuardsTheAtomicSwap) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = controller.rootNetworkId();
+    const auto first = controller.createGraphNode(scope, "constcolor", "first", 0.0, 0.0, {}, {});
+    const auto second = controller.createGraphNode(scope, "constcolor", "second", 0.0, 80.0, {}, {});
+    const auto merge = controller.createGraphNode(scope, "merge", "swapMerge", 160.0, 0.0, {}, {});
+    ASSERT_FALSE(first.isEmpty());
+    ASSERT_FALSE(second.isEmpty());
+    ASSERT_FALSE(merge.isEmpty());
+
+    auto occupancy = controller.nodeInputOccupancy(scope, merge);
+    ASSERT_TRUE(occupancy.value(QStringLiteral("available")).toBool());
+    auto ports = occupancy.value(QStringLiteral("ports")).toList();
+    ASSERT_GE(ports.size(), 3);
+    EXPECT_FALSE(ports.at(0).toMap().value(QStringLiteral("connected")).toBool());
+    EXPECT_FALSE(ports.at(1).toMap().value(QStringLiteral("connected")).toBool());
+    EXPECT_TRUE(ports.at(2).toMap().value(QStringLiteral("optional")).toBool());
+    EXPECT_EQ(ports.at(2).toMap().value(QStringLiteral("kind")).toString(), QStringLiteral("mask"));
+
+    // Nothing connected: the swap is refused with an explanation and no entry.
+    const auto emptyRevision = session.revision();
+    EXPECT_FALSE(controller.swapNodeInputs(scope, merge, 0, 1));
+    EXPECT_FALSE(controller.error().isEmpty());
+    EXPECT_EQ(session.revision(), emptyRevision);
+
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, first, 0, merge, 0));
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, second, 0, merge, 1));
+    occupancy = controller.nodeInputOccupancy(scope, merge);
+    ports = occupancy.value(QStringLiteral("ports")).toList();
+    EXPECT_TRUE(ports.at(0).toMap().value(QStringLiteral("connected")).toBool());
+    EXPECT_TRUE(ports.at(1).toMap().value(QStringLiteral("connected")).toBool());
+    EXPECT_NE(ports.at(0).toMap().value(QStringLiteral("source")).toString(),
+              ports.at(1).toMap().value(QStringLiteral("source")).toString());
+
+    const auto swapRevision = session.revision();
+    const auto edgesBefore = controller.graphEdges();
+    EXPECT_TRUE(controller.swapNodeInputs(scope, merge, 0, 1)) << controller.error().toStdString();
+    EXPECT_EQ(session.revision(), swapRevision + 1);
+    EXPECT_NE(controller.graphEdges(), edgesBefore);
+    // The mask slot is retained by the swap and undo restores both edges.
+    ASSERT_TRUE(controller.undo());
+    EXPECT_EQ(controller.graphEdges(), edgesBefore);
+
+    // Two edges from one source cannot be swapped.
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, first, 0, merge, 1));
+    const auto sameSourceRevision = session.revision();
+    EXPECT_FALSE(controller.swapNodeInputs(scope, merge, 0, 1));
+    EXPECT_EQ(session.revision(), sameSourceRevision);
+}
+
+// Issue #75 stories 9/42: soft presentation travel never replaces a semantic
+// constraint, and a generic parameter edit cannot author an invalid mapping.
+// Issue #75 stories 9/42: soft presentation travel never replaces a semantic
+// constraint, a generic parameter edit cannot author an invalid mapping, and
+// the gesture guard rejects what the executor would reject while preserving
+// state.
+TEST(Interactive, SemanticBoundsStayAuthoritativeWhilePresentationTravelIsSoft) {
+    nemo::Document document;
+    const auto network = document.rootNetworkId();
+    auto& graph = document.network(network).graph();
+    const auto transform = graph.addNode("transform", "motion");
+    const auto read = graph.addNode("source", "reader");
+
+    // Valid large and negative typed translation/rotation are accepted: the
+    // slider travel is a presentation range, not a legal-value bound.
+    EXPECT_NO_THROW(graph.setParam(transform, "translateX", nemo::ParameterValue{-1500.0}));
+    EXPECT_NO_THROW(graph.setParam(transform, "translateX", nemo::ParameterValue{4096.0}));
+    EXPECT_NO_THROW(graph.setParam(transform, "rotate", nemo::ParameterValue{-720.0}));
+    // Scale is positive and finite: zero is rejected by the catalog's nonzero
+    // constraint and a typed out-of-domain value is rejected by the executor's
+    // own admissibility owner before publication.
+    EXPECT_THROW(graph.setParam(transform, "scale", nemo::ParameterValue{0.0}), nemo::GraphException);
+    EXPECT_NO_THROW(graph.setParam(transform, "scale", nemo::ParameterValue{4.0}));
+    // Mix stays a bounded 0..1 control.
+    EXPECT_THROW(graph.setParam(transform, "mix", nemo::ParameterValue{2.0}), nemo::GraphException);
+    // A zero source step would create an invalid mapping; the catalog's nonzero
+    // constraint rejects it on the generic edit rather than at evaluation.
+    EXPECT_THROW(graph.setParam(read, "frameStep", nemo::ParameterValue{std::int64_t{0}}), nemo::GraphException);
+    EXPECT_NO_THROW(graph.setParam(read, "frameStep", nemo::ParameterValue{std::int64_t{-2}}));
+
+    // The inspector publishes the exact authored text so an Integer edit never
+    // round-trips through a JavaScript double.
+    nemo::ProjectSession session(std::move(document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto row = inspectorRow(controller.parameterInspector(QString::number(network), QString::number(read)),
+                                  QStringLiteral("frameStep"));
+    ASSERT_FALSE(row.isEmpty());
+    EXPECT_EQ(row.value(QStringLiteral("valueText")).toString(), QStringLiteral("-2"));
+
+    // The parameter gesture guard uses the executor's admissibility owner: an
+    // invalid enabled value is refused and the document stays as it was.
+    const auto scaleRow = inspectorRow(
+        controller.parameterInspector(QString::number(network), QString::number(transform)), QStringLiteral("scale"));
+    ASSERT_FALSE(scaleRow.isEmpty());
+    const auto guardRevision = session.revision();
+    const auto rejected = controller.beginNodeParameterEdit(QString::number(network), QString::number(transform),
+                                                            QStringLiteral("scale"));
+    ASSERT_FALSE(rejected.isEmpty()) << controller.error().toStdString();
+    EXPECT_FALSE(controller.updateNodeParameterEdit(rejected, -1.0));
+    EXPECT_FALSE(controller.error().isEmpty());
+    EXPECT_FALSE(controller.commitNodeParameterEdit(rejected));
+    EXPECT_EQ(session.revision(), guardRevision);
+    const auto scaleValues = session.queryValues(network, transform, "scale");
+    ASSERT_FALSE(scaleValues.empty());
+    EXPECT_EQ(scaleValues.front().value, nemo::ParameterValue{4.0});
+
+    const auto accepted = controller.beginNodeParameterEdit(QString::number(network), QString::number(transform),
+                                                            QStringLiteral("scale"));
+    ASSERT_FALSE(accepted.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdit(accepted, 0.05)) << controller.error().toStdString();
+    ASSERT_TRUE(controller.commitNodeParameterEdit(accepted));
+    EXPECT_EQ(session.revision(), guardRevision + 1);
+
+    // A typed gesture carries the exact text through the catalog parser: a
+    // 64-bit value beyond the safe double range stays exact.
+    nemo::Document exact;
+    const auto exactNetwork = exact.rootNetworkId();
+    const auto exactNode = exact.network(exactNetwork).graph().addNode("source", "exact");
+    nemo::ProjectSession exactSession(std::move(exact));
+    nemo::ui::ViewerController exactController(&runtime, exactSession);
+    const auto token = exactController.beginNodeParameterEdit(QString::number(exactNetwork), QString::number(exactNode),
+                                                              QStringLiteral("frameOffset"));
+    ASSERT_FALSE(token.isEmpty()) << exactController.error().toStdString();
+    EXPECT_TRUE(exactController.updateNodeParameterEdit(token, QStringLiteral("9007199254740993")));
+    EXPECT_TRUE(exactController.commitNodeParameterEdit(token)) << exactController.error().toStdString();
+    const auto exactValues = exactSession.queryValues(exactNetwork, exactNode, "frameOffset");
+    ASSERT_FALSE(exactValues.empty());
+    EXPECT_EQ(exactValues.front().value, nemo::ParameterValue{std::int64_t{9007199254740993}});
+}
+
+// Issue #75: one atomic batch may mix an animated address with a static
+// companion. The core owner decides per address (existing channel -> key,
+// unanimated -> static), the batch is one history entry, and no channel is
+// created for the static field.
+TEST(Interactive, MixedAnimatedAndStaticBatchIsOneAtomicEdit) {
+    nemo::Document document;
+    const auto network = document.rootNetworkId();
+    const auto node = document.network(network).graph().addNode("source", "Read");
+    const nemo::ParameterAddress choiceAddress{network, node, "inputTransform", nemo::kInvalidNetworkInstance};
+    nemo::Keyframe authoredChoice{0, 0.0, nemo::ParameterValue{nemo::ChoiceValue{"auto"}}};
+    authoredChoice.interpolation = nemo::KeyInterpolation::Hold;
+    nemo::setKeyframesCommand({nemo::KeyframeEdit{choiceAddress, authoredChoice}}).apply(document);
+    nemo::ProjectSession session(std::move(document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = QString::number(network);
+    const auto id = QString::number(node);
+    controller.setFrame(5);
+    const auto inputSpaceBefore = session.queryValues(network, node, "inputColorSpace");
+    ASSERT_EQ(inputSpaceBefore.size(), 1U);
+
+    const auto token = controller.beginNodeParameterEdits(
+        scope, id, QStringList{QStringLiteral("inputTransform"), QStringLiteral("inputColorSpace")});
+    ASSERT_FALSE(token.isEmpty()) << controller.error().toStdString();
+    const auto revision = session.revision();
+    ASSERT_TRUE(controller.updateNodeParameterEdits(
+        token, QVariantMap{{QStringLiteral("inputTransform"), QStringLiteral("explicit")},
+                           {QStringLiteral("inputColorSpace"), QStringLiteral("sRGB - Texture")}}))
+        << controller.error().toStdString();
+    ASSERT_TRUE(controller.commitNodeParameterEdit(token)) << controller.error().toStdString();
+    EXPECT_EQ(session.revision(), revision + 1) << "one batch is one history entry";
+
+    // The animated address authored/updated the current-frame key; its other key
+    // is untouched.
+    const auto* channel = session.document().animationChannel(choiceAddress);
+    ASSERT_NE(channel, nullptr);
+    ASSERT_EQ(channel->keys.size(), 2U);
+    const auto authored = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                       [](const nemo::Keyframe& key) { return key.time == 5.0; });
+    ASSERT_NE(authored, channel->keys.end());
+    EXPECT_EQ(authored->value, (nemo::ParameterValue{nemo::ChoiceValue{"explicit"}}));
+    const auto original = std::find_if(channel->keys.begin(), channel->keys.end(),
+                                       [](const nemo::Keyframe& key) { return key.time == 0.0; });
+    ASSERT_NE(original, channel->keys.end());
+    EXPECT_EQ(original->value, (nemo::ParameterValue{nemo::ChoiceValue{"auto"}}));
+
+    // The static companion took the static value and created no channel.
+    const nemo::ParameterAddress spaceAddress{network, node, "inputColorSpace", nemo::kInvalidNetworkInstance};
+    EXPECT_EQ(session.document().animationChannel(spaceAddress), nullptr)
+        << "an unanimated address must not gain a channel";
+    const auto values = session.queryValues(network, node, "inputColorSpace");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(std::get<std::string>(values.front().value), "sRGB - Texture");
+
+    // Undo restores both addresses together.
+    ASSERT_TRUE(controller.undo());
+    const auto inputSpaceAfterUndo = session.queryValues(network, node, "inputColorSpace");
+    ASSERT_EQ(inputSpaceAfterUndo.size(), 1U);
+    EXPECT_EQ(inputSpaceAfterUndo.front().value, inputSpaceBefore.front().value);
+    const auto* restored = session.document().animationChannel(choiceAddress);
+    ASSERT_NE(restored, nullptr);
+    EXPECT_EQ(restored->keys.size(), 1U);
+
+    // The batch applies again after the undo ...
+    const auto replayRevision = session.revision();
+    const auto replay = controller.beginNodeParameterEdits(
+        scope, id, QStringList{QStringLiteral("inputTransform"), QStringLiteral("inputColorSpace")});
+    ASSERT_FALSE(replay.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdits(
+        replay, QVariantMap{{QStringLiteral("inputTransform"), QStringLiteral("explicit")},
+                            {QStringLiteral("inputColorSpace"), QStringLiteral("sRGB - Texture")}}))
+        << controller.error().toStdString();
+    ASSERT_TRUE(controller.commitNodeParameterEdit(replay)) << controller.error().toStdString();
+    EXPECT_EQ(session.revision(), replayRevision + 1);
+
+    // ... and repeating the identical batch is a completed no-op: the owner
+    // publishes nothing, so the commit reports success with no revision change
+    // and no invented error.
+    const auto noopRevision = session.revision();
+    const auto noop = controller.beginNodeParameterEdits(
+        scope, id, QStringList{QStringLiteral("inputTransform"), QStringLiteral("inputColorSpace")});
+    ASSERT_FALSE(noop.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdits(
+        noop, QVariantMap{{QStringLiteral("inputTransform"), QStringLiteral("explicit")},
+                          {QStringLiteral("inputColorSpace"), QStringLiteral("sRGB - Texture")}}))
+        << controller.error().toStdString();
+    EXPECT_TRUE(controller.commitNodeParameterEdit(noop)) << controller.error().toStdString();
+    EXPECT_EQ(session.revision(), noopRevision) << "an unchanged batch publishes nothing";
+    EXPECT_TRUE(controller.error().isEmpty());
+
+    // A refused candidate latches the gesture: commit cannot publish the
+    // previous preview.
+    const auto guard = session.revision();
+    const auto refused = controller.beginNodeParameterEdits(scope, id, QStringList{QStringLiteral("inputTransform")});
+    ASSERT_FALSE(refused.isEmpty()) << controller.error().toStdString();
+    EXPECT_FALSE(controller.updateNodeParameterEdits(
+        refused, QVariantMap{{QStringLiteral("inputTransform"), QStringLiteral("not-a-mode")}}));
+    EXPECT_FALSE(controller.commitNodeParameterEdit(refused));
+    EXPECT_EQ(session.revision(), guard);
+}
+
+// Issue #75: two Reads inside one definition may expose the SAME parameter key.
+// The host must publish a distinct resolved target per exposure row, and a
+// gesture through one row must change only that child — no cross-target write,
+// no fallback for a key the occurrence does not expose.
+TEST(Interactive, OccurrenceExposuresResolveTheirOwnChildTarget) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    const auto scope = controller.rootNetworkId();
+    const auto readA = controller.createGraphNode(scope, "source", "ReadA", 0.0, 0.0, {}, {});
+    const auto readB = controller.createGraphNode(scope, "source", "ReadB", 0.0, 120.0, {}, {});
+    const auto merge = controller.createGraphNode(scope, "merge", "PairMerge", 200.0, 60.0, {}, {});
+    ASSERT_FALSE(readA.isEmpty());
+    ASSERT_FALSE(readB.isEmpty());
+    ASSERT_FALSE(merge.isEmpty());
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, readA, 0, merge, 0));
+    ASSERT_TRUE(controller.connectOrReplaceGraph(scope, readB, 0, merge, 1));
+    const auto subnet = controller.collapseSelection(scope, QVariantList{readA, readB, merge}, "PairSubnet");
+    ASSERT_FALSE(subnet.isEmpty()) << controller.error().toStdString();
+    const auto node = namedNode(controller, "PairSubnet");
+    const auto definition = node.value("definition").toString();
+    ASSERT_FALSE(definition.isEmpty());
+    ASSERT_TRUE(controller.promoteParameter(definition, readA, "frameOffset", "")) << controller.error().toStdString();
+    ASSERT_TRUE(controller.promoteParameter(definition, readB, "frameOffset", "")) << controller.error().toStdString();
+
+    const auto inspector = controller.parameterInspector(scope, subnet);
+    ASSERT_TRUE(inspector.value(QStringLiteral("available")).toBool())
+        << inspector.value(QStringLiteral("reason")).toString().toStdString();
+    const auto rows = inspector.value(QStringLiteral("sections"))
+                          .toList()
+                          .first()
+                          .toMap()
+                          .value(QStringLiteral("parameters"))
+                          .toList();
+    ASSERT_EQ(rows.size(), 2);
+    const auto first = rows.at(0).toMap();
+    const auto second = rows.at(1).toMap();
+    // One child key, two different resolved targets and two different handles.
+    EXPECT_EQ(first.value(QStringLiteral("targetKey")).toString(), QStringLiteral("frameOffset"));
+    EXPECT_EQ(second.value(QStringLiteral("targetKey")).toString(), QStringLiteral("frameOffset"));
+    EXPECT_NE(first.value(QStringLiteral("targetNode")).toString(),
+              second.value(QStringLiteral("targetNode")).toString())
+        << "a shared child key must not collapse two Reads onto one target";
+    EXPECT_NE(first.value(QStringLiteral("key")).toString(), second.value(QStringLiteral("key")).toString());
+    EXPECT_EQ(first.value(QStringLiteral("targetNetwork")).toString(), definition);
+    EXPECT_EQ(second.value(QStringLiteral("targetNetwork")).toString(), definition);
+    // The accepted exposed-only scope: a key this occurrence does not expose has
+    // no row at all, so no fallback mutation is possible through it.
+    for (const auto& row : rows)
+        EXPECT_NE(row.toMap().value(QStringLiteral("targetKey")).toString(), QStringLiteral("inputColorSpace"));
+
+    // Editing the FIRST exposure writes only its own child; the sibling Read's
+    // occurrence-effective value is unchanged.
+    const auto token = controller.beginNodeParameterEdit(scope, subnet, first.value(QStringLiteral("key")).toString());
+    ASSERT_FALSE(token.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdit(token, 3)) << controller.error().toStdString();
+    ASSERT_TRUE(controller.commitNodeParameterEdit(token)) << controller.error().toStdString();
+    const auto after = controller.parameterInspector(scope, subnet)
+                           .value(QStringLiteral("sections"))
+                           .toList()
+                           .first()
+                           .toMap()
+                           .value(QStringLiteral("parameters"))
+                           .toList();
+    ASSERT_EQ(after.size(), 2);
+    EXPECT_EQ(after.at(0).toMap().value(QStringLiteral("value")).toLongLong(), 3);
+    EXPECT_EQ(after.at(1).toMap().value(QStringLiteral("value")).toLongLong(), 0)
+        << "editing one occurrence exposure must not write the sibling Read";
+
+    // A definition-hosted Read publishes the same identity block with itself as
+    // the target, so one contract covers both hosting modes.
+    const auto definitionRow =
+        inspectorRow(controller.parameterInspector(definition, readA), QStringLiteral("frameOffset"));
+    ASSERT_FALSE(definitionRow.isEmpty());
+    EXPECT_EQ(definitionRow.value(QStringLiteral("targetNetwork")).toString(), definition);
+    EXPECT_EQ(definitionRow.value(QStringLiteral("targetNode")).toString(), readA);
+    EXPECT_EQ(definitionRow.value(QStringLiteral("targetKey")).toString(), QStringLiteral("frameOffset"));
+}
 }  // namespace

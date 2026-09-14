@@ -350,3 +350,277 @@ TEST(AnimationTest, NodeDeletionPrunesAnimationQueriesAndUndoRestoresIdentity) {
     EXPECT_EQ(restored.front().id, channelId);
     EXPECT_EQ(session.queryAnimationKeys(channelId).front().key.id, keyId);
 }
+
+// ---------------------------------------------------------------------------
+// Mixed value gesture (issue #76): the per-address routing is captured at
+// begin - an animated parameter is keyed at the gesture frame, an unanimated
+// parameter becomes a static value and never creates a channel.
+// ---------------------------------------------------------------------------
+
+namespace {
+// A document whose node has two parameters: `color` (animated by the test) and
+// `mix`-like float `roughness` (stays static).
+// A node with a real animated color parameter (`lift`) and a real static float
+// companion (`mix`); both come from the production catalog, so the fixture never
+// relies on a parameter the descriptor does not declare.
+Document gradeDocument(NodeId* node) {
+    Document document;
+    auto& graph = document.network(document.rootNetworkId()).graph();
+    *node = graph.addNode("grade", "graded");
+    return document;
+}
+
+ParameterAddress liftAddress(const Document& document, NodeId node) {
+    return ParameterAddress{document.rootNetworkId(), node, "lift"};
+}
+
+ParameterAddress mixAddress(const Document& document, NodeId node) {
+    return ParameterAddress{document.rootNetworkId(), node, "mix"};
+}
+
+void animate(Document& document, const ParameterAddress& address) {
+    setKeyframesCommand(
+        {{address, Keyframe{0, 4.0, color(0.1F, 0.2F, 0.3F)}}, {address, Keyframe{0, 20.0, color(0.4F, 0.5F, 0.6F)}}})
+        .apply(document);
+}
+}  // namespace
+
+TEST(AnimationTest, MixedValueGesturePreviewsBothKindsWithoutPublishing) {
+    NodeId node{};
+    ProjectSession session(gradeDocument(&node));
+    const auto animated = liftAddress(session.document(), node);
+    const auto plain = mixAddress(session.document(), node);
+    ASSERT_TRUE(session
+                    .submit(setKeyframesCommand({{animated, Keyframe{0, 12.0, color(0.1F, 0.2F, 0.3F)}},
+                                                 {animated, Keyframe{0, 24.0, color(0.4F, 0.5F, 0.6F)}}}),
+                            {session.revision(), {}})
+                    .committed);
+    const auto originalChannel = *session.document().animationChannel(animated);
+    const ParameterValue originalEffective = animatedParameterValue(session.document(), animated, 12.0);
+    const ParameterValue originalStatic = animatedParameterValue(session.document(), plain, 12.0);
+    const auto revision = session.revision();
+
+    const auto begin =
+        session.beginValueParameterGesture(12.0, {{animated, color(1.0F, 0.0F, 0.0F)}, {plain, 0.75}}, {revision, {}});
+    ASSERT_NE(begin.snapshot, nullptr) << (begin.result.error ? begin.result.error->message : "");
+
+    // Both halves are visible in the preview...
+    EXPECT_EQ(animatedParameterValue(*begin.snapshot, animated, 12.0), ParameterValue{color(1.0F, 0.0F, 0.0F)});
+    EXPECT_EQ(animatedParameterValue(*begin.snapshot, plain, 12.0), ParameterValue{0.75});
+    EXPECT_EQ(begin.snapshot->animationChannel(plain), nullptr);  // no channel invented for the static target
+
+    // ...and nothing is published before commit.
+    EXPECT_EQ(*session.document().animationChannel(animated), originalChannel);
+    EXPECT_EQ(session.document().animationChannel(plain), nullptr);
+    EXPECT_EQ(session.revision(), revision);
+
+    // Update keeps the frozen routing: the static target stays static, and only
+    // the preview changes.
+    const auto update = session.updateParameterGesture(begin.token, {{plain, 0.25}});
+    ASSERT_NE(update.snapshot, nullptr);
+    EXPECT_EQ(animatedParameterValue(*update.snapshot, animated, 12.0), ParameterValue{color(1.0F, 0.0F, 0.0F)});
+    EXPECT_EQ(animatedParameterValue(*update.snapshot, plain, 12.0), ParameterValue{0.25});
+    EXPECT_EQ(update.snapshot->animationChannel(plain), nullptr);
+    EXPECT_EQ(session.document().animationChannel(plain), nullptr);
+
+    // One commit, one history entry, both halves applied atomically.
+    const auto committed = session.commitParameterGesture(begin.token, {revision, {}});
+    ASSERT_TRUE(committed.committed) << (committed.error ? committed.error->message : "");
+    EXPECT_EQ(session.revision(), revision + 1);
+    const auto mixed = *session.document().animationChannel(animated);
+    ASSERT_EQ(mixed.keys.size(), 2U);
+    EXPECT_EQ(mixed.keys.front().id, originalChannel.keys.front().id);  // identity preserved
+    EXPECT_EQ(mixed.keys.front().interpolation, originalChannel.keys.front().interpolation);
+    EXPECT_EQ(session.document().animationChannel(plain), nullptr);  // still no channel
+    EXPECT_EQ(animatedParameterValue(session.document(), plain, 12.0), ParameterValue{0.25});
+
+    // One undo restores both halves together.
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
+    EXPECT_EQ(*session.document().animationChannel(animated), originalChannel);
+    EXPECT_EQ(animatedParameterValue(session.document(), animated, 12.0), originalEffective);
+    EXPECT_EQ(animatedParameterValue(session.document(), plain, 12.0), originalStatic);
+}
+
+// A gesture whose targets still hold their begin values publishes nothing: no
+// current-frame key appears on an unchanged animated partner merely because a
+// static partner moved, and an all-unchanged batch creates no history entry.
+TEST(AnimationTest, MixedValueGesturePublishesOnlyNetChangedTargets) {
+    NodeId node{};
+    ProjectSession session(gradeDocument(&node));
+    const auto animated = liftAddress(session.document(), node);
+    const auto plain = mixAddress(session.document(), node);
+    ASSERT_TRUE(session
+                    .submit(setKeyframesCommand({{animated, Keyframe{0, 12.0, color(0.1F, 0.2F, 0.3F)}}}),
+                            {session.revision(), {}})
+                    .committed);
+    const auto channel = *session.document().animationChannel(animated);
+    const auto revision = session.revision();
+    const ParameterValue animatedValue = animatedParameterValue(session.document(), animated, 12.0);
+
+    // The static partner moves; the animated partner is included but unchanged,
+    // so it gains no key.
+    const ParameterValue plainBefore = animatedParameterValue(session.document(), plain, 12.0);
+    const auto begin =
+        session.beginValueParameterGesture(12.0, {{plain, 0.5}, {animated, animatedValue}}, {revision, {}});
+    ASSERT_NE(begin.snapshot, nullptr);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);
+    ASSERT_TRUE(session.commitParameterGesture(begin.token, {revision, {}}).committed);
+    EXPECT_EQ(session.revision(), revision + 1);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);  // unchanged partner untouched
+
+    // Re-submitting the values the targets already hold is not a change: the
+    // gesture commits as a no-op with no history entry and no revision movement.
+    const auto afterMove = session.revision();
+    const auto again =
+        session.beginValueParameterGesture(12.0, {{plain, 0.5}, {animated, animatedValue}}, {afterMove, {}});
+    ASSERT_NE(again.snapshot, nullptr);
+    const auto noop = session.commitParameterGesture(again.token, {afterMove, {}});
+    EXPECT_FALSE(noop.committed);
+    EXPECT_FALSE(noop.error.has_value());
+    EXPECT_EQ(noop.revision, afterMove);
+    EXPECT_EQ(session.revision(), afterMove);
+    // The no-op added no history entry: ONE undo returns the static partner to
+    // the value it held before the single real edit.
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
+    EXPECT_EQ(animatedParameterValue(session.document(), plain, 12.0), plainBefore);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);
+}
+
+TEST(AnimationTest, MixedValueGestureCancelStaleAndInvalidLeaveBothUnchanged) {
+    NodeId node{};
+    ProjectSession session(gradeDocument(&node));
+    const auto animated = liftAddress(session.document(), node);
+    const auto plain = mixAddress(session.document(), node);
+    ASSERT_TRUE(session
+                    .submit(setKeyframesCommand({{animated, Keyframe{0, 12.0, color(0.1F, 0.2F, 0.3F)}}}),
+                            {session.revision(), {}})
+                    .committed);
+    const auto channel = *session.document().animationChannel(animated);
+    const auto revisionAfterChannel = session.revision();
+
+    // Cancelled gesture publishes neither half.
+    const auto cancelled = session.beginValueParameterGesture(12.0, {{animated, color(1.0F, 0.0F, 0.0F)}, {plain, 0.5}},
+                                                              {session.revision(), {}});
+    ASSERT_NE(cancelled.snapshot, nullptr);
+    EXPECT_FALSE(session.cancelParameterGesture(cancelled.token).committed);
+    EXPECT_EQ(session.revision(), revisionAfterChannel);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);
+    EXPECT_EQ(session.document().animationChannel(plain), nullptr);
+
+    // Resetting an animated parameter is rejected by the keyed contract, and the
+    // batch publishes nothing.
+    const auto invalid =
+        session.beginValueParameterGesture(12.0, {{animated, std::nullopt}, {plain, 0.5}}, {session.revision(), {}});
+    EXPECT_FALSE(invalid.result.committed);
+    EXPECT_EQ(invalid.snapshot, nullptr);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);
+    EXPECT_EQ(session.document().animationChannel(plain), nullptr);
+
+    // A gesture whose revision moved on is stale: commit is refused and both
+    // halves stay unchanged.
+    const auto begin = session.beginValueParameterGesture(12.0, {{animated, color(0.0F, 1.0F, 0.0F)}, {plain, 0.125}},
+                                                          {session.revision(), {}});
+    ASSERT_NE(begin.snapshot, nullptr);
+    ASSERT_TRUE(session
+                    .submit(renameNodeCommand(session.document().rootNetworkId(), node, "renamed-color"),
+                            {session.revision(), {}})
+                    .committed);
+    const auto stale = session.commitParameterGesture(begin.token, {begin.expectedRevision, {}});
+    EXPECT_FALSE(stale.committed);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);
+    EXPECT_EQ(session.document().animationChannel(plain), nullptr);
+}
+
+// Routing is frozen at begin: an address that was not part of the value gesture
+// cannot join later, so an animated newcomer can never be shadowed by a static
+// write, and the live gesture keeps its outcome.
+TEST(AnimationTest, MixedValueGestureRejectsTargetsNotAdmittedAtBegin) {
+    NodeId node{};
+    ProjectSession session(gradeDocument(&node));
+    const auto animated = liftAddress(session.document(), node);
+    const auto plain = mixAddress(session.document(), node);
+    ASSERT_TRUE(session
+                    .submit(setKeyframesCommand({{animated, Keyframe{0, 12.0, color(0.1F, 0.2F, 0.3F)}}}),
+                            {session.revision(), {}})
+                    .committed);
+    const auto channel = *session.document().animationChannel(animated);
+    const auto revision = session.revision();
+
+    // Only the static partner joins the gesture.
+    const auto begin = session.beginValueParameterGesture(12.0, {{plain, 0.5}}, {revision, {}});
+    ASSERT_NE(begin.snapshot, nullptr);
+
+    // An animated address that was not admitted is refused rather than silently
+    // statically written over its channel.
+    const auto rejected = session.updateParameterGesture(begin.token, {{animated, color(1.0F, 0.0F, 0.0F)}});
+    EXPECT_FALSE(rejected.result.committed);
+    EXPECT_TRUE(rejected.result.error.has_value());
+    EXPECT_EQ(rejected.snapshot, nullptr);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);
+    EXPECT_EQ(session.revision(), revision);
+
+    // The gesture is still usable for its admitted target, and commits only that.
+    ASSERT_TRUE(session.commitParameterGesture(begin.token, {revision, {}}).committed);
+    EXPECT_EQ(session.revision(), revision + 1);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);
+}
+
+// A value batch is validated at begin even when every value is unchanged, so an
+// inadmissible batch cannot slip through the no-op path.
+TEST(AnimationTest, MixedValueGestureValidatesUnchangedBatches) {
+    NodeId node{};
+    ProjectSession session(gradeDocument(&node));
+    const auto animated = liftAddress(session.document(), node);
+    const auto plain = mixAddress(session.document(), node);
+    ASSERT_TRUE(session
+                    .submit(setKeyframesCommand({{animated, Keyframe{0, 12.0, color(0.1F, 0.2F, 0.3F)}}}),
+                            {session.revision(), {}})
+                    .committed);
+    const ParameterValue current = animatedParameterValue(session.document(), animated, 12.0);
+    const auto channel = *session.document().animationChannel(animated);
+    const auto revision = session.revision();
+
+    // Duplicate address: refused before any gesture exists.
+    const auto duplicate = session.beginValueParameterGesture(12.0, {{plain, 0.5}, {plain, 0.5}}, {revision, {}});
+    EXPECT_FALSE(duplicate.result.committed);
+    EXPECT_TRUE(duplicate.result.error.has_value());
+    EXPECT_EQ(duplicate.snapshot, nullptr);
+
+    // Unknown parameter on a real node: refused even though the animated value
+    // is unchanged.
+    const ParameterAddress unknown{session.document().rootNetworkId(), node, "not-a-parameter"};
+    const auto invalid = session.beginValueParameterGesture(12.0, {{unknown, 1.0}}, {revision, {}});
+    EXPECT_FALSE(invalid.result.committed);
+    EXPECT_TRUE(invalid.result.error.has_value());
+
+    // Unknown node: refused.
+    const ParameterAddress ghost{session.document().rootNetworkId(), 4242, "lift"};
+    const auto missing = session.beginValueParameterGesture(12.0, {{ghost, 1.0}}, {revision, {}});
+    EXPECT_FALSE(missing.result.committed);
+    EXPECT_TRUE(missing.result.error.has_value());
+
+    // Unknown network: refused through the result API, not by escaping it.
+    const ParameterAddress orphan{9999, node, "lift"};
+    const auto network = session.beginValueParameterGesture(12.0, {{orphan, 1.0}}, {revision, {}});
+    EXPECT_FALSE(network.result.committed);
+    EXPECT_TRUE(network.result.error.has_value());
+
+    // An occurrence that does not match the addressed network's node is not an
+    // admissible target either.
+    const ParameterAddress mismatched{session.document().rootNetworkId(), node, "lift", 7777};
+    const auto occurrence = session.beginValueParameterGesture(12.0, {{mismatched, 1.0}}, {revision, {}});
+    EXPECT_FALSE(occurrence.result.committed);
+    EXPECT_TRUE(occurrence.result.error.has_value());
+
+    // Nothing was published, and an unchanged admissible batch still commits as
+    // a no-op.
+    EXPECT_EQ(session.revision(), revision);
+    EXPECT_EQ(*session.document().animationChannel(animated), channel);
+    EXPECT_EQ(session.document().animationChannel(plain), nullptr);
+    const auto unchanged = session.beginValueParameterGesture(12.0, {{animated, current}}, {revision, {}});
+    ASSERT_NE(unchanged.snapshot, nullptr);
+    const auto noop = session.commitParameterGesture(unchanged.token, {revision, {}});
+    EXPECT_FALSE(noop.committed);
+    EXPECT_FALSE(noop.error.has_value());
+    EXPECT_EQ(session.revision(), revision);
+}

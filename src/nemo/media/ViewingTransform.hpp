@@ -63,17 +63,14 @@ struct OcioGpuProgram {
     std::vector<std::byte> uniformBytes;
     struct Texture {
         std::vector<float> values;
-        // 1D LUTs are 2D textures (width x 1); 3D LUTs are width x width x
-        // width. One channel-swept RGBA layout as OCIO packs it.
+        // 1D LUTs have height 1; 3D LUTs use width for all three axes.
         unsigned width{};
         unsigned height{};
         // 1 for a 1D LUT, 2 for a 2D-packed 1D LUT, 3 for a 3D LUT.
         unsigned dimensions{};
-        // Channels in the value stream: 1 (red-channel 1D LUT) or 4
-        // (RGBA). 1D LUTs carry OCIO's padded channel layout as-is; 3D LUTs
-        // are OCIO RGB triplets expanded to RGBA (alpha 0) because
-        // 3-component float images are not sampleable on common desktop
-        // drivers.
+        // Channels in the GPU value stream: 1 (red) or 4 (RGBA).
+        // OCIO's RGB LUTs of every dimension are expanded to RGBA
+        // (alpha 0): RGB32F images are not sampleable on common drivers.
         unsigned channels{};
         // Descriptor binding index OCIO declared this texture at.
         unsigned binding{};

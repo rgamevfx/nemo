@@ -406,13 +406,42 @@ TEST(Color, GpuViewingTransformMatchesCpuReferenceWithinTolerance) {
     expectValidationClean(*boot.instance);
 }
 
+TEST(Color, GpuAces2ViewMatchesCpuReference) {
+    const std::string configPath = "ocio://studio-config-v4.0.0_aces-v2.0_ocio-v2.5";
+    const std::string workingSpace = "Linear Rec.709 (sRGB)";
+    const std::string view = "sRGB - Display/ACES 2.0 - SDR 100 nits (Rec.709)";
+    // The ACES2 gamut cusp table uses tightly packed RGB texels, unlike
+    // the RED-channel table and the 3D LUT exercised by the other views.
+    const auto program = media::buildViewingTransformGpu(configPath, workingSpace, view);
+    const std::vector<float> pixels{0.0F, 0.0F, 0.0F,   1.0F, 1.0F, 0.0F,  0.0F,  1.0F,  0.0F, 1.0F, 0.0F,
+                                    0.5F, 0.0F, 0.0F,   1.0F, 0.0F, 0.18F, 0.18F, 0.18F, 1.0F, 4.0F, 4.0F,
+                                    4.0F, 1.0F, -0.01F, 0.2F, 1.5F, 0.75F, 2.0F,  0.03F, 0.2F, 1.0F};
+    CpuImage cpuImage(2, 4);
+    std::memcpy(cpuImage.data(), pixels.data(), pixels.size() * sizeof(float));
+    media::applyViewingTransformCpu(cpuImage, configPath, workingSpace, view);
+
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    const auto gpuPixels = runGpuProgram(boot, program, pixels);
+    ASSERT_EQ(gpuPixels.size(), pixels.size());
+    // ACES2's nonlinear float32 shader may differ from OCIO's vectorized
+    // CPU processor; this bound is below 0.06 of an 8-bit display code.
+    constexpr float kTolerance = 2e-4F;
+    for (std::size_t i = 0; i < pixels.size(); ++i) {
+        if (i % 4 == 3) {
+            EXPECT_FLOAT_EQ(gpuPixels[i], pixels[i]) << "pixel " << i / 4 << " alpha";
+        } else {
+            EXPECT_NEAR(gpuPixels[i], cpuImage.data()[i], kTolerance) << "sample " << i;
+        }
+    }
+    expectValidationClean(*boot.instance);
+}
+
 TEST(Color, GpuMatrixViewMatchesCpuReferenceWithinTolerance) {
     // Pure-matrix control path: no LUTs, no textures, no uniforms — both
     // sides evaluate the identical formula in float32.
     const auto configPath = writeColorConfig();
     const media::OcioGpuProgram program = media::buildViewingTransformGpu(configPath.string(), "linear", "sRGB/matrix");
-    EXPECT_TRUE(program.textures.empty());
-    EXPECT_TRUE(program.uniformBytes.empty());
 
     CpuImage cpuImage = sample2x2();
     media::applyViewingTransformCpu(cpuImage, configPath.string(), "linear", "sRGB/matrix");

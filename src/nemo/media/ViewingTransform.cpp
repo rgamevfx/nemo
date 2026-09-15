@@ -217,6 +217,20 @@ void fillUniformBuffer(OCIO::GpuShaderDesc& desc, std::vector<std::byte>& buffer
     return glsl;
 }
 
+[[nodiscard]] std::vector<float> expandRgbLut(const float* values, std::size_t texels) {
+    // OCIO stores RGB triplets, but RGB32F images are not sampleable on
+    // common desktop drivers. The generated shader reads only .rgb.
+    std::vector<float> rgba;
+    rgba.reserve(texels * 4);
+    for (std::size_t t = 0; t < texels; ++t) {
+        rgba.push_back(values[t * 3 + 0]);
+        rgba.push_back(values[t * 3 + 1]);
+        rgba.push_back(values[t * 3 + 2]);
+        rgba.push_back(0.0F);
+    }
+    return rgba;
+}
+
 [[nodiscard]] OcioGpuProgram buildProgram(const std::string& configPath, const OCIO::ConstProcessorRcPtr& processor,
                                           const std::string& description, const std::string& functionName) {
     const OCIO::ConstGPUProcessorRcPtr gpu = processor->getOptimizedGPUProcessor(OCIO::OPTIMIZATION_DEFAULT);
@@ -258,7 +272,12 @@ void fillUniformBuffer(OCIO::GpuShaderDesc& desc, std::vector<std::byte>& buffer
         texture.dimensions = dimensions == OCIO::GpuShaderDesc::TEXTURE_1D ? 1 : 2;
         texture.channels = channel == OCIO::GpuShaderCreator::TEXTURE_RED_CHANNEL ? 1u : 4u;
         texture.binding = desc->getTextureShaderBindingIndex(i);
-        texture.values.assign(values, values + static_cast<std::size_t>(width) * height * texture.channels);
+        const std::size_t texels = static_cast<std::size_t>(width) * height;
+        if (texture.channels == 1) {
+            texture.values.assign(values, values + texels);
+        } else {
+            texture.values = expandRgbLut(values, texels);
+        }
         program.textures.push_back(std::move(texture));
     }
     for (unsigned i = 0; i < desc->getNum3DTextures(); ++i) {
@@ -274,20 +293,8 @@ void fillUniformBuffer(OCIO::GpuShaderDesc& desc, std::vector<std::byte>& buffer
         texture.height = edge;
         texture.dimensions = 3;
         texture.binding = desc->get3DTextureShaderBindingIndex(i);
-        // OCIO's 3D LUT arrays are RGB triplets (TEXTURE_RGB_CHANNEL, 3
-        // components — see GenericGpuShaderDesc::add3DTexture). Expand them
-        // to RGBA: 3-component float images are not sampleable on common
-        // desktop drivers (NVIDIA exposes only HOST_IMAGE_TRANSFER for
-        // VK_FORMAT_R32G32B32_SFLOAT); the shader code only ever reads .rgb.
         texture.channels = 4;
-        const std::size_t texels = static_cast<std::size_t>(edge) * edge * edge;
-        texture.values.resize(texels * 4);
-        for (std::size_t t = 0; t < texels; ++t) {
-            texture.values[t * 4 + 0] = values[t * 3 + 0];
-            texture.values[t * 4 + 1] = values[t * 3 + 1];
-            texture.values[t * 4 + 2] = values[t * 3 + 2];
-            texture.values[t * 4 + 3] = 0.0F;
-        }
+        texture.values = expandRgbLut(values, static_cast<std::size_t>(edge) * edge * edge);
         program.textures.push_back(std::move(texture));
     }
 

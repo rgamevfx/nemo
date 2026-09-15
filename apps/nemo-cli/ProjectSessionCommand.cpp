@@ -98,9 +98,9 @@ template <typename T>
     return static_cast<int>(value);
 }
 
-// The image-format value a request authors. This only types the JSON: the
-// dimension, aspect and range rules and their diagnostics stay in the shared
-// command-path validator, so there is exactly one description of a valid format.
+// Wire typing and representable numeric ranges belong to this adapter. Positive
+// dimensions and finite positive aspect are enforced by the shared command-path
+// validator, independently of the persistence codec's spelling and extensions.
 [[nodiscard]] nemo::ImageFormat imageFormatAt(const Json& command) {
     const auto& format = command.at("format");
     if (!format.is_object())

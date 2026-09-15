@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 
+#include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/Image.hpp"
 #include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/evaluation/Params.hpp"
@@ -23,16 +24,20 @@
 namespace nemo {
 
 // Raster an effect produces for `request`: the requested region at the request's
-// sampling scale, carrying the main input's pixel aspect so raster metadata
-// propagates through pass-through effects. A generator supplies the pixel
-// aspect of its owning network's authored canvas.
-[[nodiscard]] inline ImageLayout effectRasterLayout(const EvaluationRequest& request,
-                                                    const CpuImage* mainInput = nullptr, float pixelAspect = 1.0F) {
+// sampling scale. Callers supply the resolved aspect; there is no implicit
+// square-pixel fallback.
+[[nodiscard]] inline ImageLayout effectRasterLayout(const EvaluationRequest& request, float pixelAspect) {
     ImageLayout layout;
     layout.width = scaledDimension(request.region.width, request.samplingScale);
     layout.height = scaledDimension(request.region.height, request.samplingScale);
-    layout.pixelAspect = mainInput != nullptr ? mainInput->layout().pixelAspect : pixelAspect;
+    layout.pixelAspect = pixelAspect;
     return layout;
+}
+
+// Generator adapters share the authored-canvas policy here rather than each
+// discovering persistent format ownership themselves.
+[[nodiscard]] inline ImageLayout generatorRasterLayout(const CpuNodeContext& context) {
+    return effectRasterLayout(context.request, context.document.network(context.request.network).format().pixelAspect);
 }
 
 // Declared-port input access. An absent optional slot is null, never a

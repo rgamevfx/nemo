@@ -1586,6 +1586,13 @@ void ViewerController::refreshContextTarget() {
     }
 }
 
+NetworkId ViewerController::renderTargetNetwork(const Document& document) const {
+    // Routed media lives in the root scope; graph viewers retain their own
+    // attachment scope. Requests and pre-presentation canvas geometry agree.
+    return contextRole_ != ContextRole::Media && activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_
+                                                                                         : document.rootNetworkId();
+}
+
 NodeId ViewerController::renderTargetNode() const {
     switch (contextRole_) {
     case ContextRole::Media:
@@ -3508,10 +3515,7 @@ void ViewerController::refreshRequest() {
         // own result look stale.
         const auto revision = document.stateRevision();
         const bool mediaContext = contextRole_ == ContextRole::Media;
-        // The media role addresses a source node in the root network; the graph
-        // role follows the active Viewer attachment's network.
-        const NetworkId targetNetwork =
-            !mediaContext && activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : document.rootNetworkId();
+        const NetworkId targetNetwork = renderTargetNetwork(document);
         // Media reference this request renders. The media role resolves the
         // routed catalog target; the graph role consumes the attached target's
         // own reference, so a Read node drives the viewer with the dimensions,
@@ -3722,9 +3726,8 @@ QSizeF ViewerController::compositionSize() const {
     if (hasSource())
         return sourceSize_;
     if (viewerTargetNode_ != kInvalidNode) {
-        const auto network =
-            activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : session_.document().rootNetworkId();
-        const auto& format = session_.document().network(network).format();
+        const auto& document = session_.document();
+        const auto& format = document.network(renderTargetNetwork(document)).format();
         return QSizeF(format.width, format.height);
     }
     return {};

@@ -131,7 +131,7 @@ NodeDescriptor transformDescriptor() {
     const int outputWidth = scaledDimension(request.region.width, scale);
     const int outputHeight = scaledDimension(request.region.height, scale);
 
-    CpuImage output(effectRasterLayout(request, &input));
+    CpuImage output(effectRasterLayout(request, input.layout().pixelAspect));
     for (int y = 0; y < outputHeight; ++y) {
         const float outputY = originY + (static_cast<float>(y) + 0.5F) * sampling;
         for (int x = 0; x < outputWidth; ++x) {

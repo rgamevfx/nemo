@@ -96,7 +96,7 @@ CpuImage executeMerge(const CpuNodeContext& context) {
     // always produced for Merge: the requested region at the request's sampling
     // scale, with the background's pixel aspect and the storage defaults (RGBA
     // float, scene-linear).
-    CpuImage composite(effectRasterLayout(context.request, &background));
+    CpuImage composite(effectRasterLayout(context.request, background.layout().pixelAspect));
     for (int y = 0; y < composite.height(); ++y) {
         for (int x = 0; x < composite.width(); ++x) {
             const std::array<float, kImageChannels> bg =

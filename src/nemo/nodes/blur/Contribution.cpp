@@ -114,7 +114,7 @@ struct BlurKernel {
         if (anchor.offsetX == 0 && anchor.offsetY == 0 && width == outputWidth && height == outputHeight) {
             return input;
         }
-        return windowOf(input, anchor, effectRasterLayout(request, &input));
+        return windowOf(input, anchor, effectRasterLayout(request, input.layout().pixelAspect));
     }
     const BlurKernel kernel = makeBlurKernel(scale, params.size);
 
@@ -167,7 +167,7 @@ struct BlurKernel {
         }
     };
 
-    CpuImage output(effectRasterLayout(request, &input));
+    CpuImage output(effectRasterLayout(request, input.layout().pixelAspect));
     if (width > 1 && height > 1) {
         // The intermediate carries the horizontally filtered rows of the whole
         // input raster, not only this node's rows: the vertical pass reads the

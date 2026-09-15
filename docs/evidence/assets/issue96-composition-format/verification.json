@@ -1,7 +1,7 @@
 {
   "issue": 96,
   "scope": "Approved saved-format prerequisite under #87; not eight-node or mixed-format completion",
-  "public_change": "ImageFormat, Network/Document format authoring and named-format command/query/change APIs; schema 6; shared validateRequestDomain",
+  "public_change": "ImageFormat, Network/Document format authoring and named-format command/query/change APIs; schema 6; shared validateRequestDomain; CPU raster helpers now require an explicit resolved aspect, with shared generatorRasterLayout and all callers migrated",
   "default": {
     "width": 1920,
     "height": 1080,
@@ -14,8 +14,8 @@
   },
   "reference": "Nuke 17.0 documentation only; no installed Nuke runtime or runtime-parity claim",
   "builds": {
-    "debug": "passed, including the real UI/CLI",
-    "release": "passed, including the real UI/CLI",
+    "debug": "passed, including every target after review corrections (299.16 s)",
+    "release": "passed, including every target after review corrections (348.37 s)",
     "warnings": "Existing minizip-ng mktemp linker warning; sanitizer reconfigure also reports existing Qt QML output-directory tooling warning"
   },
   "focused_checks": [
@@ -34,6 +34,18 @@
     {
       "command": "LSAN_OPTIONS=suppressions=tests/lsan_suppressions.txt build/asan/tests/nemo_core_tests --gtest_filter=SessionPersistenceTest.*:NetworkCommandsTest.*:PersistenceTest.*:CowMapTest.*:ReuseTest.PixelAspectEditsNeverReturnStaleGeneratorMetadata",
       "result": "85/85 passed under ASan/UBSan"
+    },
+    {
+      "command": "build/debug/tests/nemo_core_tests --gtest_filter=NetworkCommandsTest.*:ReuseTest.*:*Region*:*PixelAspect*:SessionPersistenceTest.*",
+      "result": "78/78 passed after review corrections, including copied/collapsed/made-independent format behavior"
+    },
+    {
+      "command": "QT_QPA_PLATFORM=offscreen build/debug/tests/nemo_workspace_ui_tests --gtest_filter=Interactive.RoutedMediaCanvasDoesNotReuseGraphScopeFormat:Interactive.ViewerAssignmentAttachesTargetAndIsOneUndoableCommand:Interactive.ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget",
+      "result": "3/3 passed; the new routed-canvas regression failed before the fix (2048x858 instead of root 1280x720) and passed after it"
+    },
+    {
+      "command": "LSAN_OPTIONS=suppressions=tests/lsan_suppressions.txt build/asan/tests/nemo_core_tests --gtest_filter=SessionPersistenceTest.*:NetworkCommandsTest.*:PersistenceTest.*:CowMapTest.*:ReuseTest.PixelAspectEditsNeverReturnStaleGeneratorMetadata",
+      "result": "86/86 passed after review corrections under ASan/UBSan"
     }
   ],
   "cli_session": [
@@ -43,7 +55,8 @@
     "Save/undo/redo and saved dirty-baseline transitions",
     "Schema-5 missing-format migration to HD, alongside the original schema-1 fixture",
     "Unknown fields inside network and preset formats survive save/reopen",
-    "INT_MAX authored width survives persistence independently of renderer limits"
+    "INT_MAX authored width survives persistence independently of renderer limits",
+    "Post-review missing-network edit returns missing_object without changing the revision or query result"
   ],
   "malformed_format_cases": [
     {
@@ -107,7 +120,8 @@
       "pixelAspect": 1.5
     },
     "diagnostic_rgb_byte_difference_max": 0,
-    "readback": "One declared diagnostic output readback; no new executor readback"
+    "readback": "One declared diagnostic output readback; no new executor readback",
+    "post_review": "Rebuilt binaries reproduced 641x359 / 1.5 in CPU and Slang with exactly identical diagnostic RGB bytes, plus 53x31 / 1.0 for the portable Read fixture"
   },
   "native_surface": {
     "canvas": "Wayland/Vulkan image framing reflects the authored non-square pixel aspect",
@@ -115,13 +129,16 @@
     "source": "Wayland Read displays a 53x31 square-pixel PNG independently of the 641x359 / 1.5 composition; real Slang evaluation reports 53x31 / 1.0",
     "input_permission": "OS remote keyboard/pointer prompts were explicitly approved interactively; the persistent input connection was closed after verification",
     "tool_limitation": "Aggregate accessibility inspection disconnected the application; individual AT-SPI reads and the approved X11 input fallback were used instead",
-    "image_scope": "Viewer panel only; unrelated desktop content excluded"
+    "image_scope": "Viewer panel only; unrelated desktop content excluded",
+    "oversized_canvas": "The retained INT_MAX-width fixture stays open and displays the existing 8192-pixel reference-limit failure; refreshRequest catches the exception. No additional catch was added.",
+    "post_review": "Rebuilt Wayland/Vulkan application visually checked with both retained generator and portable Read fixtures; no new input permission grant or format-choice UI"
   },
   "fixtures": [
     "legacy.nemo",
     "authored.nemo",
     "read-source.nemo",
-    "source.png"
+    "source.png",
+    "oversized.nemo"
   ],
   "captures": [
     "wayland-canvas.png",
@@ -129,13 +146,17 @@
     "quarter-preview.png",
     "full-preview.png",
     "zoom-fifty.png",
-    "wayland-source.png"
+    "wayland-source.png",
+    "oversized-canvas.png",
+    "review-canvas.png",
+    "review-source.png"
   ],
   "reproduction_environment": {
     "OCIO": "docs/evidence/issue12-view.ocio",
-    "native": "Use isolated XDG_CONFIG_HOME/XDG_CACHE_HOME and --viewer-cache-dir; QT_QPA_PLATFORM=wayland for framing or xcb for the recorded input checks"
+    "native": "Use isolated XDG_CONFIG_HOME/XDG_CACHE_HOME and --viewer-cache-dir; QT_QPA_PLATFORM=wayland for framing or xcb for the recorded input checks",
+    "fixture_cwd": "docs/evidence/assets/issue96-composition-format (read-source.nemo deliberately uses portable source.png)"
   },
-  "remaining": "Two-axis review pending. The full suite retains the known colorimetry failure; no claim of a green full-suite gate. Network Settings UI is deferred, #88 owns per-node mixed-format description/planning, and #92 the Reformat consumer.",
+  "remaining": "Implementation and two-axis review follow-through complete, held locally without push/merge. The full suite retains the known colorimetry failure; no green full-suite claim. Network Settings UI is deferred, #88 owns per-node mixed-format description/planning, and #92 the Reformat consumer. #87 is not complete.",
   "full_debug_suite": {
     "command": "ctest --preset debug --output-on-failure",
     "total": 722,
@@ -144,6 +165,53 @@
     "failed": 1,
     "seconds": 174.69,
     "failure": "Viewer.InterpretationMapIsParsedStrictly: source interpretation has unknown field colorimetry",
-    "disposition": "Known baseline failure already recorded before this slice (#86); unchanged and not rerun independently. Native-surface evidence above was exercised separately from the 18 skipped suite cases."
+    "disposition": "Known baseline failure already recorded before this slice (#86); unchanged and not rerun independently. Native-surface evidence above was exercised separately from the 18 skipped suite cases.",
+    "scope": "Single full-suite run at the implementation stage, before the two added review regressions. Review corrections were verified with the focused runs above, not a second full suite."
+  },
+  "review": {
+    "base": "5511b57c6fd44de283fe6e4c453eefab836c47cb",
+    "reviewed_head": "5b56631260a0f4e9ec489c28d91369cf4b90e56a",
+    "method": "Independent parallel Standards and Spec reviews; implementation follow-through verified by the focused/native checks in this record.",
+    "standards": [
+      {
+        "finding": "Stale planner and region-context aspect contracts",
+        "disposition": "Corrected CpuReference.hpp and NodeContributions.hpp to describe the owning-canvas and main-input rules."
+      },
+      {
+        "finding": "Media-role request and pre-presentation canvas choose different networks",
+        "disposition": "Shared renderTargetNetwork between refreshRequest and compositionSize; retained red/green public-controller regression."
+      },
+      {
+        "finding": "Separate CLI and persistence format codecs duplicate primitive decoding",
+        "disposition": "Intentionally separate boundary contracts: snake_case typed edits versus camelCase persistence with unknown-field retention. Both use semantic validateImageFormat; comments and ADR clarify the difference."
+      },
+      {
+        "finding": "Generator canvas plumbing is repeated in adapters and GPU planning",
+        "disposition": "Shared generatorRasterLayout for CPU adapters; removed redundant GPU generator overrides. Planner, execution and cache identity retain their distinct responsibilities."
+      },
+      {
+        "finding": "Implicit square-pixel raster-helper fallback",
+        "disposition": "Removed the default; effectRasterLayout requires an explicit aspect. Migrated every consumer, including the independent Affine contribution."
+      },
+      {
+        "finding": "Named-preset versus network-format revision asymmetry is undocumented",
+        "disposition": "ADR now states presets are pixel-neutral until applied but remain part of content/history/dirty state."
+      },
+      {
+        "finding": "Command network lookup scans before looking up again",
+        "disposition": "One keyed lookup, translating its missing-network error. Unrelated legacy command error behavior is intentionally unchanged."
+      }
+    ],
+    "spec": [
+      {
+        "finding": "Missing copy/collapse/make-independent format evidence",
+        "disposition": "Retained consumer-visible rendered-aspect, independent edits, unknown-field save/reopen and undo/redo coverage; debug and ASan/UBSan pass."
+      }
+    ],
+    "retracted_spec_findings": [
+      "Uncaught oversized-canvas exception: retracted after identifying the pre-existing enclosing try/catch and exercising the real native error surface.",
+      "Nuke 17 ledger amendment as scope creep: withdrawn because the user explicitly requested that reference authority."
+    ],
+    "additional_cleanup": "Removed stale executable-reference and unapproved-default wording from task gate projections; live child task bodies already honor the approved Nuke 17 documentation and format decisions."
   }
 }

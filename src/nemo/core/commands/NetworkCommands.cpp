@@ -82,9 +82,11 @@ void copyNodeExact(Graph& graph, const NodeInstance& node) {
 // does not hold reports the documented unknown-network error, so a caller
 // observes a missing object rather than the storage layer's own diagnostic.
 [[nodiscard]] Network& requireNetwork(Document& document, NetworkId id) {
-    if (document.networks().find([id](const Network& value) { return value.id() == id; }) == nullptr)
+    try {
+        return document.network(id);
+    } catch (const std::out_of_range&) {
         throw GraphException(GraphError::UnknownNetwork, "unknown network " + std::to_string(id));
-    return document.network(id);
+    }
 }
 
 [[nodiscard]] NetworkId addNetworkLike(Document& document, const Network& source, std::string name) {

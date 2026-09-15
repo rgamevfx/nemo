@@ -1286,7 +1286,7 @@ CpuImage executeWholeFrameFixture(const CpuNodeContext& context) {
         for (int x = 0; x < input.width(); ++x)
             total += static_cast<double>(input.pixel(x, y)[0]);
     const float mean = static_cast<float>(total / (static_cast<double>(input.width()) * input.height()));
-    CpuImage output(effectRasterLayout(request, &input));
+    CpuImage output(effectRasterLayout(request, input.layout().pixelAspect));
     for (int y = 0; y < output.height(); ++y) {
         for (int x = 0; x < output.width(); ++x) {
             const std::array<float, kImageChannels> pixel = input.pixel(x, y);

@@ -67,9 +67,9 @@ struct CpuNodeContext {
 
 // One node's region context (issue #85): the resolved state the node's
 // dependency rules project input coverage from, without executing anything.
-// `request` is the coverage the node has been asked to produce, `pixelAspect`
-// is the resolved pixel aspect of the node's main input (1 for a generator, 0
-// when a source's aspect is not known yet), and `effectiveParams` is the same
+// `request` is the coverage the node has been asked to produce. `pixelAspect`
+// follows the connected main input, or the owning network's canvas for a
+// generator; an unknown source aspect is 0. `effectiveParams` is the same
 // request-local resolved parameter state execution will consume.
 struct NodeRegionContext {
     const NodeCatalog& catalog;

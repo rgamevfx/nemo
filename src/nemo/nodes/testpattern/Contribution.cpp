@@ -27,8 +27,7 @@ NodeDescriptor testPatternDescriptor() {
 // and reduced sampling never re-normalize the generator.
 CpuImage executeTestPattern(const CpuNodeContext& context) {
     const EvaluationRequest& request = context.request;
-    CpuImage output(
-        effectRasterLayout(request, nullptr, context.document.network(request.network).format().pixelAspect));
+    CpuImage output(generatorRasterLayout(context));
     const int scale = request.samplingScale;
     const int width = output.width();
     const int height = output.height();

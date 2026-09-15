@@ -374,18 +374,12 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             resolveEffectiveNode(document, expandedNode, resolvedNode, static_cast<double>(normalized.localTime));
         if (effectiveNode->definition != kInvalidNetwork)
             continue;
-        const auto& catalog = document.network(expandedNode.id.network).graph().catalog();
         const NodeContribution* registration = registrations->find(effectiveNode->type);
         if (registration == nullptr)
             continue;  // the execution loop reports an unregistered node honestly
-        const auto& declaredInputs = catalog.inputPorts(effectiveNode->type);
-        if (registration->role != NodeRole::Source) {
-            // Generators use the owning network's canvas; downstream nodes
-            // inherit their main image's aspect through the shared planner.
-            if (declaredInputs.empty())
-                pixelAspects.emplace(expandedNode.id, document.network(expandedNode.id.network).format().pixelAspect);
+        // The shared region planner owns the generator-canvas fallback.
+        if (registration->role != NodeRole::Source)
             continue;
-        }
         if (sources == nullptr || !effectiveNode->params.contains("source")) {
             pixelAspects.emplace(expandedNode.id, 0.0F);  // unknown, never assumed square
             continue;

@@ -4,7 +4,7 @@
   "url": "https://github.com/rgamevfx/nemo/issues/87",
   "captured": "2026-09-15",
   "source_issue_body_sha256": "e5155708654c007afa64b46c84d37a4be1365fc205fda357569fbab4947bc302",
-  "status": "Nuke 17 documentation and saved-format policy approved; #96 implemented and exercised, review pending with known baseline suite failure",
+  "status": "Nuke 17 documentation and saved-format policy approved; #96 implemented, reviewed and held locally with known baseline suite failure",
   "baseline": {
     "branch": "issue/85-region-evaluation",
     "commit": "dfbd6ea1cd97137aba1c9c02262006d3eb9ccf16",
@@ -787,7 +787,7 @@
       ],
       "approval_gates": [
         "Owner alpha compatibility/migration decision is REQUIRED before affected numerical code.",
-        "Selected Nuke build and retained zero/near-zero/hidden-RGB/partial-selection captures are missing; online prose is not an oracle."
+        "Use Nuke 17 documentation for zero/near-zero/hidden-RGB/partial-selection behavior; explicitly approve any numerical policy the documentation leaves unspecified. No reference executable or captured binary oracle is required."
       ],
       "blocked_by": [
         88,
@@ -827,7 +827,7 @@
         "src/nemo/nodes/BuiltinNodes.inc"
       ],
       "approval_gates": [
-        "Freeze Nuke build and modern Shuffle generation, mapping defaults and disconnected/unmapped behavior.",
+        "Use the Nuke 17 modern socket-based Shuffle documentation to freeze mapping defaults and disconnected/unmapped behavior.",
         "Approve the new mapping editor\u2019s exact observable layout/gestures; existing shared chrome is not redesign scope."
       ],
       "blocked_by": [
@@ -901,7 +901,7 @@
         "apps/nemo-ui/qml/ViewerPanel.qml"
       ],
       "approval_gates": [
-        "Owner must choose format fallback/default and old-document migration; no implicit 1920x1080 or selected-Read policy.",
+        "Consume the owner-approved saved-format and legacy-migration policy implemented in #96; do not infer another canvas from a viewer or Read.",
         "Freeze Crop/Reformat coordinates, softness, filter/clamp/defaults and odd/fractional rounding against a Nuke 17 documentation contract.",
         "Approve new native handle/format-control behavior where #25 contains no reference."
       ],
@@ -948,7 +948,7 @@
         "apps/nemo-ui/AnimationViewModel.hpp"
       ],
       "approval_gates": [
-        "Freeze Nuke Roto (not RotoPaint) build, tools/feather/blend/subframe/motion-blur evidence and any unsupported adjacent capability decisions.",
+        "Freeze Nuke 17 Roto (not RotoPaint) documented tools/feather/blend/subframe/motion-blur behavior and any unsupported adjacent capability decisions.",
         "Approve new shape-tool/hierarchy/handle interactions within existing Nemo chrome before implementing unreferenced UI."
       ],
       "blocked_by": [
@@ -1028,7 +1028,7 @@
         "docs/agents/rendering.md"
       ],
       "approval_gates": [
-        "All constituent runtime/reference requirements must actually be exercised; child closure alone does not prove parity.",
+        "Exercise all constituent Nemo runtime paths against the approved documentation contracts; child closure alone is not proof, and no Nuke-runtime parity is claimed.",
         "Existing #83\u201386 public-interface/image/landing holds and Linux-only execution remain."
       ],
       "blocked_by": [
@@ -1068,7 +1068,8 @@
       "approval_gates": [
         "Canvas default, migration and UI deferral approved by owner. Per-node mixed-format description/planning remains #88; Reformat remains #92."
       ],
-      "blocked_by": []
+      "blocked_by": [],
+      "implementation_status": "Implemented and reviewed locally; no push/merge. #88 mixed-format integration and #92 Reformat remain separate."
     }
   ],
   "existing_owners": [
@@ -1183,7 +1184,7 @@
     },
     {
       "id": "composition-format",
-      "status": "approved-implementation-in-progress",
+      "status": "implemented-reviewed-held-locally",
       "affected_issues": [
         88,
         92,
@@ -2813,7 +2814,7 @@
         ],
         "unresolved_cases": [
           "Owner exact initial formats/codecs/precision/compression/metadata/default inventory and new job presentation.",
-          "Selected build: mutable documentation disagrees on missing-frame options and describes output-transform naming changes.",
+          "Pin missing-frame handling and output-transform naming to the cited Nuke 17 documentation; record any undocumented choice as a Nemo policy decision.",
           "Read-file/reload/proxy/views/callback coverage disposition; retain side-effect-free evaluation and explicit quality on accepted jobs.",
           "Output color/alpha treatment and any per-node override of project delivery policy.",
           "Explicit preflight path/directory/collision/overwrite flow and successful-versus-partial finalization behavior.",
@@ -2948,10 +2949,9 @@
     "coordination": "Check unique exact stories 1\u201396 against fetched issue; all eight nodes and control rows mapped; existing paths; native/body child/dependency consistency; acyclic graph; separate Standards/Spec review.",
     "implementation": "Use the approved ProjectSession \u2192 commands/history \u2192 save/reopen \u2192 CPU/native workflow; actual native application for presentation; the shared public delivery-job seam plus independent media readback for exports. Run focused tests/throwaway public-path experiments while iterating; `cmake --build --preset debug` for compile/type validation, `cmake --build --preset release` for landing, and `ctest --preset debug` ONCE at completion. Identify exact matching focused test names from the current suite before running; zero matches are not evidence. Relevant sanitizer/native GPU checks are required for ownership/concurrency changes. No hosted CI, repeated full suites, GPU-off parity claims or speculative benchmarks. Preserve and report the known unrelated colorimetry failure without re-running merely to confirm it. Source/reference documentation work uses coverage/link/contract checks instead of runtime tests. Exercise real `nemo-cli evaluate` and `evaluate-gpu` (never the synthetic `render` pattern as composition evidence). Keep CPU numerical code, Slang production kernels, and GLSL reference kernels independently derived.",
     "not_run": [
-      "Two-axis review (pending)",
       "Nuke runtime (not required by the owner-selected documentation-only reference)"
     ],
-    "reason": "Initial coordination_result is historical evidence for 5511b57. #96 has real CLI/native, debug/release and 85 passing ASan/UBSan checks; the single full debug suite has 703 passed, 18 skipped and the known colorimetry failure. Final review remains; no eight-node completion claim.",
+    "reason": "Initial coordination_result is historical evidence for 5511b57. #96 has real CLI/native and complete debug/release builds; post-review checks pass 78 core, 3 viewer and 86 ASan/UBSan cases. The single full debug suite had 703 passed, 18 skipped and the known colorimetry failure. Both independent review axes and their dispositions are recorded in the linked evidence; no eight-node completion claim.",
     "current_runtime_evidence": [
       {
         "issue": 96,
@@ -2960,7 +2960,7 @@
       }
     ]
   },
-  "next_action": "Finish and verify #96 saved formats on the current branch; consume that capability in #88 and later node children. Keep #87 open; do not equate the format foundation or green checks with all 96 stories.",
+  "next_action": "Review the locally held #96 contracts/evidence; #88 consumes saved formats for per-node mixed-format description/planning, followed by the node children. Keep #87 open. Alpha compatibility, delivery capability inventory and unreferenced native tools still need their narrow owner decisions.",
   "source_issue_body_sha256_scope": {
     "encoding": "UTF-8, exact bytes; no newline normalization",
     "original_body_bytes": 48962,

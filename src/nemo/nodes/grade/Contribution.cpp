@@ -169,7 +169,7 @@ struct GradeCoefficients {
 [[nodiscard]] CpuImage applyGrade(const GradeParameters& params, const EvaluationRequest& request,
                                   const CpuImage& input, const InputAnchor& anchor) {
     const GradeCoefficients coefficients = resolveGradeCoefficients(params);
-    CpuImage output(effectRasterLayout(request, &input));
+    CpuImage output(effectRasterLayout(request, input.layout().pixelAspect));
     const int width = output.width();
     const int inputWidth = input.width();
     for (int y = 0; y < output.height(); ++y) {

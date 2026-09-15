@@ -351,6 +351,7 @@ private:
     // Re-resolves contextRole_/contextTarget_ against the live document and
     // records the reason a routed target has no render target.
     void refreshContextTarget();
+    [[nodiscard]] NetworkId renderTargetNetwork(const Document& document) const;
     [[nodiscard]] NodeId renderTargetNode() const;
     [[nodiscard]] QString unavailableStatus() const;
     // Inspector view of a subnet occurrence: its definition's exposed controls,

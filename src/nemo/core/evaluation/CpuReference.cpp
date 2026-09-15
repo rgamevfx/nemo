@@ -710,7 +710,7 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                 if (inputs.empty() || inputs[0] == nullptr)
                     failNode(*effectiveNode, "output requires a connected color input");
                 const CpuImage& source = *inputs[0];
-                const ImageLayout layout = effectRasterLayout(nodeRequest, &source);
+                const ImageLayout layout = effectRasterLayout(nodeRequest, source.layout().pixelAspect);
                 const InputAnchor anchor = anchorInput(context, 0, source);
                 const EvaluationRequest& sourceRequest = inputRequests[0];
                 if (sourceRequest.region == nodeRequest.region &&
@@ -762,7 +762,7 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         // The delivered raster is exactly the normalized request, even when the
         // executor computed (or reused) more for the sake of reuse.
         evaluation.image = windowOf(*images.at(outputKey), requiredAnchor(*images.at(outputKey), delivered, normalized),
-                                    effectRasterLayout(normalized, images.at(outputKey).get()));
+                                    effectRasterLayout(normalized, images.at(outputKey)->layout().pixelAspect));
         evaluation.plan.result = identityOf(evaluation.image, Residency::HostCpuReference);
     }
     return evaluation;

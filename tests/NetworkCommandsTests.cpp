@@ -109,6 +109,51 @@ TEST(NetworkCommandsTest, InvalidCollapseIsAtomic) {
     EXPECT_EQ(history.depth(), 0u);
 }
 
+TEST(NetworkCommandsTest, CollapsedAndCopiedFormatsRemainIndependentAfterEdits) {
+    Document document;
+    const auto rootId = document.rootNetworkId();
+    const auto color = root(document).graph().addNode("constcolor", "Color");
+    const auto originalOutput = root(document).defaultOutput();
+    const auto copiedOutput = root(document).graph().addNode("output", "Copied output");
+    root(document).graph().connect({color, 0}, {originalOutput, 0});
+    const ImageFormat canvas{2048, 858, 1.5F, {{"vendor", "retained"}}};
+    CommandStack history(document);
+    history.push(setNetworkFormatCommand(rootId, canvas));
+    auto collapsed = std::make_shared<NetworkInstanceId>();
+    history.push(collapseSelectionCommand(rootId, {color}, "Anamorphic", collapsed));
+    const auto occurrence = *document.instance(*collapsed);
+    history.push(setNetworkFormatCommand(rootId, {1280, 720, 1.0F}));
+    auto copies = std::make_shared<std::vector<NodeId>>();
+    history.push(copySelectionCommand(rootId, {occurrence.node}, rootId, {300, 0}, copies));
+    ASSERT_EQ(copies->size(), 1u);
+    const auto copiedDefinition = root(document).graph().node(copies->front())->definition;
+    root(document).graph().connect({copies->front(), 0}, {copiedOutput, 0});
+    const auto aspect = [&](NodeId output) {
+        return evaluateCpu(document, {.network = rootId, .output = output, .region = {0, 0, 1, 1}})
+            .image.layout()
+            .pixelAspect;
+    };
+    // Both generators keep their authored aspect despite the parent's later
+    // change; editing one owned definition must not resize its independent copy.
+    EXPECT_EQ(aspect(originalOutput), 1.5F);
+    EXPECT_EQ(aspect(copiedOutput), 1.5F);
+    history.push(setNetworkFormatCommand(occurrence.definition, {1600, 900, 2.0F}));
+    EXPECT_EQ(aspect(originalOutput), 2.0F);
+    EXPECT_EQ(aspect(copiedOutput), 1.5F);
+    auto reopened = loadDocument(saveDocument(document));
+    EXPECT_EQ(reopened.document.network(copiedDefinition).format(), canvas);
+    EXPECT_EQ(evaluateCpu(reopened.document, {.network = rootId, .output = copiedOutput, .region = {0, 0, 1, 1}})
+                  .image.layout()
+                  .pixelAspect,
+              1.5F);
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(aspect(originalOutput), 1.5F);
+    EXPECT_EQ(aspect(copiedOutput), 1.5F);
+    ASSERT_TRUE(history.redo());
+    EXPECT_EQ(aspect(originalOutput), 2.0F);
+    EXPECT_EQ(aspect(copiedOutput), 1.5F);
+}
+
 TEST(NetworkCommandsTest, PromotionIsMetadataOnlyAndIndependentCloneDetachesOneOccurrence) {
     Document document;
     const auto rootId = document.rootNetworkId();
@@ -121,6 +166,7 @@ TEST(NetworkCommandsTest, PromotionIsMetadataOnlyAndIndependentCloneDetachesOneO
     definition.graph().setParam(color, "color", authored);
     auto exposed = std::make_shared<InterfacePortId>();
     CommandStack history(document);
+    history.push(setNetworkFormatCommand(definitionId, {2048, 858, 1.5F}));
     history.push(promoteParameterCommand(definitionId, color, "color", "Tint", exposed));
     const auto first = document.addInstance(rootId, definitionId, "first");
     const auto second = document.addInstance(rootId, definitionId, "second");
@@ -130,6 +176,11 @@ TEST(NetworkCommandsTest, PromotionIsMetadataOnlyAndIndependentCloneDetachesOneO
     root(document).graph().connect({document.instance(second)->node, 0}, {secondOutput, 0});
     const auto pixel = [&](NodeId target) {
         return evaluateCpu(document, {.network = rootId, .output = target, .region = {0, 0, 1, 1}}).image.pixel(0, 0);
+    };
+    const auto aspect = [&](NodeId target) {
+        return evaluateCpu(document, {.network = rootId, .output = target, .region = {0, 0, 1, 1}})
+            .image.layout()
+            .pixelAspect;
     };
     EXPECT_EQ(pixel(firstOutput), authored.value);
     EXPECT_EQ(pixel(secondOutput), authored.value);
@@ -144,6 +195,8 @@ TEST(NetworkCommandsTest, PromotionIsMetadataOnlyAndIndependentCloneDetachesOneO
     history.push(makeIndependentCommand(first, independent));
     EXPECT_EQ(pixel(firstOutput), localValue.value);
     EXPECT_EQ(pixel(secondOutput), authored.value);
+    EXPECT_EQ(aspect(firstOutput), 1.5F);
+    EXPECT_EQ(aspect(secondOutput), 1.5F);
     const ParameterAddress detached{*independent, color, "color", first};
     ASSERT_NE(document.animationChannel(detached), nullptr);
     EXPECT_EQ(document.animationChannel(detached)->id, channelId);
@@ -155,6 +208,12 @@ TEST(NetworkCommandsTest, PromotionIsMetadataOnlyAndIndependentCloneDetachesOneO
     history.push(removeExposedParameterCommand(*independent, *exposed));
     EXPECT_EQ(pixel(firstOutput), localValue.value);
     EXPECT_EQ(document.animationChannel(detached)->keys.front().id, keyId);
+    history.push(setNetworkFormatCommand(definitionId, {1600, 900, 2.0F}));
+    EXPECT_EQ(aspect(firstOutput), 1.5F);
+    EXPECT_EQ(aspect(secondOutput), 2.0F);
+    ASSERT_TRUE(history.undo());
+    EXPECT_EQ(aspect(firstOutput), 1.5F);
+    EXPECT_EQ(aspect(secondOutput), 1.5F);
 }
 
 TEST(NetworkCommandsTest, ViewerOnlyCollapseRoutesExternalInputThroughSubnetOutput) {

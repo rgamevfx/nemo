@@ -619,6 +619,9 @@ Document-owned named formats are value presets, not live references. Applying
 one copies its value into a network; changing or removing the preset leaves
 previously authored networks unchanged. `NetworkCommands` and `ProjectSession`
 own edits, validation, touched identities, atomic publication and history.
+Network format edits affect evaluation freshness. Named presets affect document
+content, history and dirty state but are pixel-neutral until applied, so editing
+a preset alone does not invalidate evaluated images.
 
 Schema 6 stores network `imageFormat` and document `namedFormats`; format
 members are `width`, `height`, and `pixelAspect`. Older files without a format
@@ -626,6 +629,10 @@ receive the approved default, never an inferred Read/viewer size. Schema-6
 networks require the field. Malformed values fail explicitly, while unknown
 members inside network formats and named presets survive save/reopen.
 Persistence validity is independent of the executor's current size limit.
+The two JSON boundaries deliberately remain separate: persistence uses
+`pixelAspect` and retains unknown authored fields, while the session wire API
+uses `pixel_aspect` and submits typed edits. Both share semantic validation;
+each boundary owns primitive decoding and its own error context.
 
 ### Consumers and consequences
 

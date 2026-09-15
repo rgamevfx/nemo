@@ -295,6 +295,28 @@ TEST(Interactive, ViewerAssignmentAttachesTargetAndIsOneUndoableCommand) {
     EXPECT_EQ(controller.viewerTargetId(), mergeId);
 }
 
+TEST(Interactive, RoutedMediaCanvasDoesNotReuseGraphScopeFormat) {
+    auto document = emptyDocument();
+    document.network(document.rootNetworkId()).setFormat({1280, 720, 1.0F});
+    const auto child = document.addNetwork("Anamorphic");
+    document.network(child).setFormat({2048, 858, 1.5F});
+    const auto color = document.network(child).graph().addNode("constcolor", "Color");
+    nemo::assignViewerCommand(child, 0, color).apply(document);
+    document.sources["plate"].path = "not-probed.exr";
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{std::move(document)};
+    nemo::ui::ViewerController controller(&runtime, session);
+
+    controller.setActiveViewer(QString::number(child), 0);
+    EXPECT_EQ(controller.compositionSize(), QSizeF(2048, 858));
+    // Before a source probe completes, the media role's fallback must address
+    // the same root-network canvas as its request, not a remembered graph scope.
+    controller.setViewerContext(QStringLiteral("media"), QStringLiteral("plate"), 0);
+    EXPECT_EQ(controller.compositionSize(), QSizeF(1280, 720));
+    controller.setViewerContext(QStringLiteral("graph"), {}, 0);
+    EXPECT_EQ(controller.compositionSize(), QSizeF(2048, 858));
+}
+
 TEST(Interactive, ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};

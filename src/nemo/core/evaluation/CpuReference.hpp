@@ -106,10 +106,11 @@ struct RegionPlan {
 //
 // `pixelAspects` supplies the resolved pixel aspect of an input the planner
 // cannot know yet (decoded external media, keyed by the producing node). A
-// supplied value overrides everything else; generators have the square-pixel
-// aspect 1, a source whose aspect is unknown reports 0 (unknown, never assumed
-// square), and every other node propagates its main input's aspect. A node that
-// needs a tight bound but sees an unknown aspect requests the whole input.
+// supplied value overrides everything else. Generators and nodes without a
+// connected main input use their owning network's canvas aspect; a source whose
+// aspect is unknown reports 0 (unknown, never assumed square). A connected main
+// input propagates its aspect. A node needing a tight bound but seeing an
+// unknown aspect requests the whole input.
 [[nodiscard]] RegionPlan planDependencyRegions(const Document& document, const EvaluationRequest& request,
                                                const NodeContributions& contributions,
                                                const std::map<EvaluationNodeId, float>& pixelAspects = {});

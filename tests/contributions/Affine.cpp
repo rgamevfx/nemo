@@ -57,7 +57,7 @@ ParameterSpec offsetSpec() {
     }
     const CpuImage& input = *context.inputs[0];
     const InputAnchor anchor = anchorInput(context, 0, input);
-    CpuImage output(effectRasterLayout(context.request, &input));
+    CpuImage output(effectRasterLayout(context.request, input.layout().pixelAspect));
     for (int y = 0; y < output.height(); ++y) {
         for (int x = 0; x < output.width(); ++x) {
             const std::array<float, 4> in = input.pixel(anchor.offsetX + x, anchor.offsetY + y);

@@ -418,7 +418,15 @@ The current panel registry is `WorkspaceController::registerPanelType` in
 `QQmlApplicationEngine::load`, and create it through
 `WorkspaceController::createPanel` (which validates the registered type before
 calling the Qt-free `Workspace::createPanel`). Panel-local persisted state goes
-through `panelState`/`setPanelState`; it is not `Document` state. Do not add
+through `panelState`/`setPanelState`; it is not `Document` state. A panel reads
+its own record with `workspace.panelState(panelId)` and re-reads it on
+`WorkspaceController::panelStateChanged(panelId)`, the owner-only notification a
+state write emits: a state write no longer re-delivers the workspace root, so
+one panel's view or preference write does not rebuild another panel's display
+model. `rootChanged` remains the arrangement notification (layout, scope, a
+project open) that every panel does react to. Panels and the context router,
+which derives inspector membership from Parameters panel state, observe that
+boundary; do not reintroduce a whole-root read on the per-event path. Do not add
 panel switches to the shared shell or make workspace a core/evaluation
 dependency.
 

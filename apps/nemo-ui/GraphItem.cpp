@@ -830,9 +830,11 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
                 appendColoredLine(frame.edgeHighlights, fixed, other, 2.2 * inverseScale,
                                   alphaColor(accentColor_, 230));
         }
-        const int rasterScale = std::max(
-            1,
-            static_cast<int>(std::ceil(viewScaleProperty_ * (window() ? window()->effectiveDevicePixelRatio() : 1.0))));
+        // The atlas identity is the label set and the device pixel ratio, never
+        // the view scale: the item transform scales the atlas, so a zoom step
+        // must not re-rasterise text and re-upload a texture.
+        const int rasterScale =
+            std::max(1, static_cast<int>(std::ceil(window() ? window()->effectiveDevicePixelRatio() : 1.0)));
         const auto appendLabel = [&frame, &clip, this, rasterScale](QString key, QString text, QPointF position,
                                                                     const QColor& color, bool hasChildScope) {
             if (frame.labels.size() < kMaxVisibleLabels &&

@@ -222,7 +222,11 @@ void WorkspaceController::setPanelState(const QString& panelId, const QVariantMa
     try {
         workspace_.setPanelState(panelId.toStdString(), variantMapToJson(state));
         setError({});
-        notifyRootChanged();
+        // Panel state is presentation state, never arrangement: the owning
+        // panel re-reads its own record and persistence observes the write,
+        // while the layout is left alone. See panelStateChanged.
+        emit panelStateChanged(panelId);
+        emit presentationChanged();
     } catch (const std::exception& exception) {
         setError(QString::fromUtf8(exception.what()));
     }

@@ -49,6 +49,16 @@ FocusScope {
     property real zoom: 1
     property real panX: 0
     property real panY: 0
+    // A wheel burst accumulates a target zoom and the pointer it is anchored
+    // at, and one application per event-loop turn moves the view. The settled
+    // view is persisted once the burst stops; nothing here writes the
+    // workspace mid-gesture.
+    property real zoomTarget: 1
+    property real zoomAnchorX: 0
+    property real zoomAnchorY: 0
+    property bool zoomQueued: false
+    property bool zoomApplied: false
+    property bool framePending: false
     property bool lastClickValid: false
     property real lastClickX: 0
     property real lastClickY: 0
@@ -666,15 +676,19 @@ FocusScope {
             scopePath = valid;
         scopeBreadcrumbs = scope.breadcrumbs || [];
     }
-    function restoreScopeState() {
+    // `autoFrameScope` is true only when a network scope is entered: a restored
+    // view record is used as stored, and only a scope that has none is framed.
+    // A panel-state write must never re-frame a view the artist is using.
+    function restoreScopeState(autoFrameScope) {
         var state = panelState || ({}), views = state.graphViews || ({}), selections = state.graphSelections || ({});
         var view = views[scopeKey(graphNetworkId)];
         if (!view && graphNetworkId === String(controller.rootNetworkId) && state.zoom !== undefined)
             view = state;
         if (view && isFinite(Number(view.zoom)) && isFinite(Number(view.panX)) && isFinite(Number(view.panY))) {
-            zoom = clampZoom(Number(view.zoom));
-            panX = Number(view.panX);
-            panY = Number(view.panY);
+            // A write this panel just made reads back as the view it already
+            // has; adopting it must not disturb a gesture that started since.
+            if (Number(view.zoom) !== zoom || Number(view.panX) !== panX || Number(view.panY) !== panY)
+                setView(Number(view.zoom), Number(view.panX), Number(view.panY));
             lastClickValid = view.lastClickValid === true;
             lastClickX = Number(view.lastClickX) || 0;
             lastClickY = Number(view.lastClickY) || 0;
@@ -682,10 +696,13 @@ FocusScope {
             lastClickValid = false;
             lastClickX = 0;
             lastClickY = 0;
-            Qt.callLater(function () {
-                    if (graphAvailable)
-                        graphPanel.frameAll(false);
-                });
+            if (autoFrameScope) {
+                // Framing is deferred until the surface has its size. A view
+                // adopted in the meantime (a restored record, a gesture) wins:
+                // it is the view the artist is looking at.
+                framePending = true;
+                Qt.callLater(graphPanel.frameIfStillUnframed);
+            }
         }
         selectedNodeIds = [];
         var saved = selections[scopeKey(graphNetworkId)] || [];
@@ -731,7 +748,7 @@ FocusScope {
         }
         stateReady = false;
         reconcileScopePath();
-        restoreScopeState();
+        restoreScopeState(true);
         refreshSnapshots();
         stateReady = true;
     }
@@ -1073,6 +1090,58 @@ FocusScope {
         positionEpoch++;
         refreshDisplayNodes();
     }
+    // One zoom application per event-loop turn, from the deltas accumulated
+    // since the last turn, anchored at the pixel the pointer was last over.
+    // Proportionality, the clamp and cursor anchoring are the accepted
+    // behaviour; only when they are applied changed.
+    function queueZoom(factor, px, py) {
+        if (!zoomQueued) {
+            zoomTarget = zoom;
+            zoomQueued = true;
+            zoomFrame.start();
+        }
+        zoomTarget = clampZoom(zoomTarget * factor);
+        zoomAnchorX = px;
+        zoomAnchorY = py;
+        zoomSettle.restart();
+    }
+    function applyZoomTarget() {
+        zoomQueued = false;
+        var next = clampZoom(zoomTarget);
+        if (next === zoom)
+            return;
+        var point = scenePoint(zoomAnchorX, zoomAnchorY);
+        zoom = next;
+        panX = zoomAnchorX - point.x * zoom;
+        panY = zoomAnchorY - point.y * zoom;
+        zoomApplied = true;
+    }
+    // The burst has stopped: its final view is the view the artist ends the
+    // gesture with, so this is the one write it produces.
+    function settleView() {
+        if (!zoomApplied)
+            return;
+        zoomApplied = false;
+        savePanelState();
+    }
+    // A view the panel sets itself (a restored record, frame all) cancels any
+    // queued burst so a stale target can never move it afterwards.
+    function setView(next, x, y) {
+        zoomFrame.stop();
+        zoomQueued = false;
+        framePending = false;
+        zoom = clampZoom(next);
+        panX = x;
+        panY = y;
+        zoomTarget = zoom;
+    }
+    function frameIfStillUnframed() {
+        if (!framePending)
+            return;
+        framePending = false;
+        if (graphAvailable)
+            frameAll(false);
+    }
     function frameAll(persistView) {
         var nodes = activeNodes();
         if (!nodes.length || graphSurface.width < 3 || graphSurface.height < 3)
@@ -1094,12 +1163,11 @@ FocusScope {
                 maxY = Math.max(maxY, Number(route[r].y) || 0);
             }
         }
-        zoom = clampZoom(Math.min((graphSurface.width - 42) / Math.max(nodeWidth, maxX - minX), (graphSurface.height - 42) / Math.max(nodeHeight, maxY - minY)));
-        panX = (graphSurface.width - (maxX - minX) * zoom) / 2 - minX * zoom;
-        panY = (graphSurface.height - (maxY - minY) * zoom) / 2 - minY * zoom;
+        var nextZoom = clampZoom(Math.min((graphSurface.width - 42) / Math.max(nodeWidth, maxX - minX), (graphSurface.height - 42) / Math.max(nodeHeight, maxY - minY)));
+        setView(nextZoom, (graphSurface.width - (maxX - minX) * nextZoom) / 2 - minX * nextZoom,
+                (graphSurface.height - (maxY - minY) * nextZoom) / 2 - minY * nextZoom);
         if (persistView !== false)
             savePanelState();
-        grid.requestPaint();
     }
 
     Connections {
@@ -1112,17 +1180,41 @@ FocusScope {
         }
     }
 
+    // A panel-state write is a view/preference record, never a graph change:
+    // the panel picks up what it displays (view, selection) and rebuilds
+    // nothing. Another panel's write — a viewer pan, an inspector arrangement —
+    // must not cost this panel its node, edge and category model.
     onPanelStateChanged: {
-        if (!graphPanel.gesture) {
-            if (!graphPanel.stateReady)
-                graphPanel.restoreScopePath();
-            graphPanel.restoreScopeState();
-            graphPanel.refreshSnapshots();
-        }
+        if (graphPanel.stateReady && !graphPanel.gesture)
+            graphPanel.restoreScopeState(false);
     }
     Component.onCompleted: {
         restoreScopePath();
         switchNetwork();
+    }
+
+    // A view still in motion when the application closes is still the view the
+    // project should record: the close is a boundary, not a teardown of a
+    // record that no longer belongs to this panel.
+    Connections {
+        target: graphPanel.Window.window
+        function onClosing() { graphPanel.savePanelState(); }
+    }
+
+    // Zero-interval, non-repeating: one application per event-loop turn, the
+    // prototype's coalescing model. The settle timer is restarted by every
+    // wheel event of a burst and writes the view once the burst has stopped.
+    Timer {
+        id: zoomFrame
+        interval: 0
+        repeat: false
+        onTriggered: graphPanel.applyZoomTarget()
+    }
+    Timer {
+        id: zoomSettle
+        interval: 200
+        repeat: false
+        onTriggered: graphPanel.settleView()
     }
 
     Rectangle {
@@ -1219,23 +1311,35 @@ FocusScope {
             anchors.left: parent.left
             anchors.right: parent.right
             clip: true
+            // The periodic grid is painted off-period once and then translated
+            // by the view, so a pan or zoom step moves this item instead of
+            // re-rasterising the whole panel area. It is repainted only when
+            // its size or the theme colour changes.
             Canvas {
                 id: grid
-                anchors.fill: parent
+                objectName: "graphGrid"
                 renderTarget: Canvas.FramebufferObject
+                readonly property int period: 24
+                x: Math.round(((graphPanel.panX % period) + period) % period) - period
+                y: Math.round(((graphPanel.panY % period) + period) % period) - period
+                width: graphSurface.width + period
+                height: graphSurface.height + period
+                property color lineColor: Qt.rgba(graphPanel.theme.border.r, graphPanel.theme.border.g, graphPanel.theme.border.b, 0.24)
+                onLineColorChanged: requestPaint()
+                onWidthChanged: requestPaint()
+                onHeightChanged: requestPaint()
                 onPaint: {
                     var ctx = getContext("2d");
                     ctx.clearRect(0, 0, width, height);
-                    ctx.strokeStyle = Qt.rgba(graphPanel.theme.border.r, graphPanel.theme.border.g, graphPanel.theme.border.b, 0.24);
+                    ctx.strokeStyle = lineColor;
                     ctx.lineWidth = 1;
-                    var step = 24, sx = ((graphPanel.panX % step) + step) % step, sy = ((graphPanel.panY % step) + step) % step;
                     ctx.beginPath();
-                    for (var x = sx; x < width; x += step) {
+                    for (var x = 0; x < width; x += period) {
                         ctx.moveTo(Math.round(x) + 0.5, 0);
                         ctx.lineTo(Math.round(x) + 0.5, height);
                     }
                     ;
-                    for (var y = sy; y < height; y += step) {
+                    for (var y = 0; y < height; y += period) {
                         ctx.moveTo(0, Math.round(y) + 0.5);
                         ctx.lineTo(width, Math.round(y) + 0.5);
                     }
@@ -1473,7 +1577,6 @@ FocusScope {
                     } else if (gesture === "pan") {
                         panX = panOriginX + mouse.x - gesturePressX;
                         panY = panOriginY + mouse.y - gesturePressY;
-                        grid.requestPaint();
                     }
                 }
                 onReleased: function (mouse) {
@@ -1557,6 +1660,9 @@ FocusScope {
                         contextRouter.requestInspector(panelGroup, graphNetworkId, String(id));
                 }
                 onWheel: function (wheel) {
+                    // A wheel event only accumulates; the turn's application and
+                    // the settled write happen outside the event path. The
+                    // accepted prototype guard is the wire drag alone.
                     if (gesture === "wire") {
                         wheel.accepted = true;
                         return;
@@ -1564,12 +1670,7 @@ FocusScope {
                     var delta = wheel.pixelDelta && wheel.pixelDelta.y ? wheel.pixelDelta.y : (wheel.angleDelta.y / 120) * 53;
                     if (!delta)
                         return;
-                    var next = clampZoom(zoom * Math.exp(delta * 0.002)), point = scenePoint(wheel.x, wheel.y);
-                    zoom = next;
-                    panX = wheel.x - point.x * zoom;
-                    panY = wheel.y - point.y * zoom;
-                    savePanelState();
-                    grid.requestPaint();
+                    queueZoom(Math.exp(delta * 0.002), wheel.x, wheel.y);
                     wheel.accepted = true;
                 }
             }

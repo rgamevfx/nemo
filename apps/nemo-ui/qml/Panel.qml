@@ -22,7 +22,21 @@ Rectangle {
     // The Workspace group is the persisted A-E owner and the panel's sole
     // context key.
     readonly property string panelGroup: panel && panel.group ? panel.group : "A"
-    readonly property var panelState: panel && panel.state ? panel.state : ({})
+    // Panel state is read through the workspace record rather than through the
+    // workspace root snapshot: a state write notifies only the panel that owns
+    // it, so a write by any panel no longer re-delivers the layout and rebuilds
+    // every other panel's display model.
+    property int stateRevision: 0
+    readonly property var panelState: {
+        stateRevision
+        // Both sources are read on every evaluation: a binding only depends on
+        // what it actually touches, so short-circuiting here would drop the
+        // workspace-root dependency and the panel would never see a state
+        // restored by a project open.
+        var fromNode = panel && panel.state ? panel.state : ({})
+        var stored = panelId.length > 0 && workspace && workspace.panelState ? workspace.panelState(panelId) : ({})
+        return stored && Object.keys(stored).length > 0 ? stored : fromNode
+    }
     readonly property var descriptor: workspace && panelType.length > 0
                                       ? workspace.panelDescriptor(panelType) : ({})
     readonly property bool available: Boolean(descriptor && descriptor.source
@@ -111,6 +125,14 @@ Rectangle {
         Qt.callLater(syncRouter)
         if (contextRouter && panelId.length > 0 && visible)
             contextRouter.setActivePanel(panelId)
+    }
+
+    Connections {
+        target: panelRoot.workspace ? panelRoot.workspace : null
+        function onPanelStateChanged(changedPanelId) {
+            if (changedPanelId === panelRoot.panelId)
+                panelRoot.stateRevision++
+        }
     }
 
     Connections {

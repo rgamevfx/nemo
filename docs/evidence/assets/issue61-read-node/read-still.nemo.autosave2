@@ -1,0 +1,428 @@
+{
+  "animationChannels": [],
+  "color": {
+    "deliveryTransform": "sRGB/rec709",
+    "viewerTransform": "sRGB/rec709",
+    "workingSpace": "linear"
+  },
+  "format": "nemo",
+  "instances": [],
+  "mediaCatalog": {
+    "bins": [],
+    "entries": [
+      {
+        "id": 1,
+        "marks": [],
+        "metadata": {
+          "committedProbe": {
+            "codec": "png",
+            "colorMatrix": "",
+            "colorPrimaries": "bt709",
+            "colorTransfer": "srgb",
+            "duration": 1,
+            "height": 1440,
+            "provenance": "oiio",
+            "status": "ready",
+            "width": 1920
+          },
+          "description": "",
+          "kind": "image",
+          "label": "",
+          "offline": false,
+          "tags": [],
+          "userName": "figure_006"
+        },
+        "sourceKey": "figure_006"
+      },
+      {
+        "id": 2,
+        "marks": [],
+        "metadata": {
+          "committedProbe": {
+            "codec": "png",
+            "colorMatrix": "",
+            "colorPrimaries": "bt709",
+            "colorTransfer": "srgb",
+            "duration": 1,
+            "height": 1080,
+            "provenance": "oiio",
+            "status": "ready",
+            "width": 1920
+          },
+          "description": "",
+          "kind": "image",
+          "label": "",
+          "offline": false,
+          "tags": [],
+          "userName": "Screenshot_2026-09-13_15-38-58"
+        },
+        "sourceKey": "Screenshot_2026-09-13_15-38-58"
+      },
+      {
+        "id": 3,
+        "marks": [],
+        "metadata": {
+          "committedProbe": {
+            "codec": "png",
+            "colorMatrix": "",
+            "colorPrimaries": "bt709",
+            "colorTransfer": "srgb",
+            "duration": 1,
+            "height": 1080,
+            "provenance": "oiio",
+            "status": "ready",
+            "width": 1920
+          },
+          "description": "",
+          "kind": "image",
+          "label": "",
+          "offline": false,
+          "tags": [],
+          "userName": "Screenshot_2026-09-13_15-17-20"
+        },
+        "sourceKey": "Screenshot_2026-09-13_15-17-20"
+      },
+      {
+        "id": 4,
+        "marks": [],
+        "metadata": {
+          "committedProbe": {
+            "codec": "h264",
+            "colorMatrix": "bt709",
+            "colorPrimaries": "bt709",
+            "colorTransfer": "bt709",
+            "duration": 650,
+            "height": 1080,
+            "provenance": "ffmpeg-software",
+            "status": "ready",
+            "width": 1920
+          },
+          "description": "",
+          "kind": "image",
+          "label": "",
+          "offline": false,
+          "tags": [],
+          "userName": "ltxsamplevideo"
+        },
+        "sourceKey": "ltxsamplevideo"
+      }
+    ],
+    "nextBinId": 1,
+    "nextEntryId": 5
+  },
+  "name": "",
+  "networks": [
+    {
+      "defaultOutput": 3,
+      "edges": [
+        {
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "id": 14,
+          "to": {
+            "node": 2,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "id": 15,
+          "to": {
+            "node": 3,
+            "port": 0
+          }
+        }
+      ],
+      "exposedParameters": [],
+      "id": 1,
+      "inputConnections": [],
+      "inputs": [],
+      "name": "Root",
+      "nextEdgeId": 16,
+      "nextInterfacePortId": 1,
+      "nextNodeId": 6,
+      "nodes": [
+        {
+          "id": 1,
+          "layout": {
+            "x": 38.74851443031094,
+            "y": -14.595977520708118
+          },
+          "name": "Read1",
+          "params": {
+            "source": {
+              "type": "string",
+              "value": "ltxsamplevideo"
+            }
+          },
+          "type": "source"
+        },
+        {
+          "id": 2,
+          "layout": {
+            "x": 38.74851443031094,
+            "y": 375.9442423217496
+          },
+          "name": "Viewer1",
+          "params": {},
+          "type": "viewer"
+        },
+        {
+          "id": 3,
+          "layout": {
+            "x": 196.41243026877382,
+            "y": 375.9442423217496
+          },
+          "name": "out",
+          "params": {},
+          "type": "output"
+        }
+      ],
+      "outputConnections": [],
+      "outputInputBindings": [],
+      "outputs": []
+    }
+  ],
+  "nextAnimationChannelId": 1,
+  "nextInstanceId": 1,
+  "nextKeyframeId": 1,
+  "nextNetworkId": 2,
+  "presentation": {
+    "data": {
+      "context": {
+        "groups": {}
+      },
+      "workspace": {
+        "activeWorkspaceId": "workspace-1",
+        "appearance": {
+          "accentOverride": "",
+          "categoryColors": {
+            "Color": "#71608c",
+            "Distort": "#54816b",
+            "Filter": "#a96832",
+            "IO": "#386b91",
+            "Merge": "#60656b",
+            "Utility": "#59646f"
+          },
+          "preset": "Graphite"
+        },
+        "version": 2,
+        "workspaces": [
+          {
+            "id": "workspace-1",
+            "layout": {
+              "root": {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "active": "panel-1",
+                        "id": "leaf-1",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "B",
+                            "id": "panel-1",
+                            "state": {
+                              "viewerRole": "graph",
+                              "zoom": 0.104996391496777,
+                              "zoomMode": "Custom"
+                            },
+                            "type": "viewer"
+                          }
+                        ]
+                      },
+                      {
+                        "active": "panel-15",
+                        "id": "leaf-16",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "A",
+                            "id": "panel-15",
+                            "state": {
+                              "animationGroups": {
+                                "A": {
+                                  "channels": [],
+                                  "collapsed": {},
+                                  "end": 1095.08,
+                                  "hidden": {},
+                                  "keys": [],
+                                  "max": 13.387,
+                                  "min": -2.237,
+                                  "mode": "curves",
+                                  "network": "1",
+                                  "pins": [],
+                                  "scroll": 0,
+                                  "start": 990.92,
+                                  "target": "",
+                                  "tree": 154
+                                }
+                              }
+                            },
+                            "type": "animation"
+                          }
+                        ]
+                      }
+                    ],
+                    "id": "split-17",
+                    "kind": "split",
+                    "orientation": "vertical",
+                    "ratio": 0.8358386252228164
+                  },
+                  {
+                    "children": [
+                      {
+                        "active": "panel-2",
+                        "id": "leaf-2",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "B",
+                            "id": "panel-2",
+                            "state": {
+                              "columns": true,
+                              "graphSelections": {
+                                "1": [],
+                                "2": [
+                                  "6"
+                                ]
+                              },
+                              "graphViews": {
+                                "1": {
+                                  "lastClickValid": true,
+                                  "lastClickX": 58.99443281087826,
+                                  "lastClickY": 95.88706762815306,
+                                  "panX": 161.95613110038698,
+                                  "panY": 317.7558040077329,
+                                  "zoom": 0.7406790248053716
+                                },
+                                "2": {
+                                  "lastClickValid": true,
+                                  "lastClickX": -0.5119860506324196,
+                                  "lastClickY": -409.3106489020244,
+                                  "panX": 135.64026325854184,
+                                  "panY": 724.9483820244714,
+                                  "zoom": 0.9987713686929425
+                                }
+                              },
+                              "inspectors": [],
+                              "limit": 3,
+                              "scopePath": [],
+                              "scopeRootNetworkId": "1",
+                              "viewerRole": "timeline"
+                            },
+                            "type": "nodegraph"
+                          }
+                        ]
+                      },
+                      {
+                        "active": "panel-12",
+                        "id": "leaf-13",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "B",
+                            "id": "panel-12",
+                            "state": {
+                              "columns": false,
+                              "inspectors": [
+                                {
+                                  "collapsed": false,
+                                  "network": "1",
+                                  "node": "1",
+                                  "pinned": false
+                                },
+                                {
+                                  "collapsed": false,
+                                  "network": "1",
+                                  "node": "2",
+                                  "pinned": false
+                                }
+                              ],
+                              "limit": 3
+                            },
+                            "type": "parameters"
+                          }
+                        ]
+                      }
+                    ],
+                    "id": "split-14",
+                    "kind": "split",
+                    "orientation": "horizontal",
+                    "ratio": 0.6289943975851172
+                  }
+                ],
+                "id": "split-1",
+                "kind": "split",
+                "orientation": "horizontal",
+                "ratio": 0.4485905155254777
+              },
+              "version": 1
+            },
+            "name": "Default"
+          }
+        ]
+      }
+    },
+    "version": 1
+  },
+  "requiredFeatures": [
+    {
+      "id": "networks",
+      "version": 1
+    },
+    {
+      "id": "mediaLibrary",
+      "version": 1
+    }
+  ],
+  "rootNetworkId": 1,
+  "schema": 4,
+  "sources": {
+    "Screenshot_2026-09-13_15-17-20": {
+      "frameOffset": 0,
+      "frameStep": 1,
+      "interpretation": {},
+      "path": "/home/rgame/Pictures/Screenshot_2026-09-13_15-17-20.png",
+      "revision": 1
+    },
+    "Screenshot_2026-09-13_15-38-58": {
+      "frameOffset": 0,
+      "frameStep": 1,
+      "interpretation": {},
+      "path": "/home/rgame/Pictures/Screenshot_2026-09-13_15-38-58.png",
+      "revision": 1
+    },
+    "figure_006": {
+      "firstFrame": 1,
+      "frameOffset": 0,
+      "frameStep": 1,
+      "interpretation": {},
+      "lastFrame": 1,
+      "path": "/home/rgame/Pictures/figure_006.png",
+      "revision": 4
+    },
+    "ltxsamplevideo": {
+      "firstFrame": 1,
+      "frameOffset": 0,
+      "frameStep": 1,
+      "interpretation": {},
+      "lastFrame": 100,
+      "path": "/home/rgame/Videos/ltxsamplevideo.mp4",
+      "revision": 5
+    },
+    "plate": {
+      "frameOffset": 0,
+      "frameStep": 1,
+      "interpretation": {},
+      "path": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue61-read-node/plate.exr",
+      "revision": 1
+    }
+  }
+}

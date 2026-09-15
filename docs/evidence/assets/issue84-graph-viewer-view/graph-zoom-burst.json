@@ -1,0 +1,32 @@
+{
+    "accent_override": "",
+    "anchor_scene_x": 276,
+    "anchor_scene_y": 148,
+    "anchored_scene_x": 276,
+    "anchored_scene_y": 148,
+    "appearance_preset": "Graphite",
+    "applied_zoom_per_turn": [
+        0.5559109382532654,
+        0.6180739425392517,
+        0.6871881306137806
+    ],
+    "burst_notches_in_one_turn": 5,
+    "device_pixel_ratio": 1,
+    "frame_all_zoom": 1.2835820895522387,
+    "graph_network": "1",
+    "graph_pan_x": 213.94776119402985,
+    "graph_pan_y": 21,
+    "graph_panel": "panel-3",
+    "graph_selection": [
+    ],
+    "graph_zoom": 1.2835820895522387,
+    "graphics_api": "opengl",
+    "native_ui": true,
+    "persisted_writes": 4,
+    "platform": "wayland",
+    "qt": "6.4.2",
+    "record": "zoom-burst",
+    "sampled_notches": 3,
+    "window_height": 687,
+    "window_width": 1274
+}

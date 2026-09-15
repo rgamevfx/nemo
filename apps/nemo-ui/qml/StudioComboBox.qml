@@ -5,18 +5,86 @@ ComboBox {
     id: control
 
     required property var theme
+    // A typeable combo states a live value beside its presets: `readout` is
+    // shown while the artist is not editing, and the text they type or pick is
+    // reported through textAccepted. A plain combo is selection-only.
+    property bool typeable: false
+    property string readout: ""
+    property bool typing: false
+    signal textAccepted(string text)
 
+    editable: typeable
     implicitWidth: 78
     implicitHeight: 25
     font.pixelSize: theme.fontSize
     leftPadding: 8
     rightPadding: 22
-    contentItem: Text {
-        text: control.displayText
-        font: control.font
-        color: control.enabled ? control.theme.text : control.theme.disabled
-        verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
+
+    // The live value is the field's text whenever the artist is not editing it,
+    // so a gesture-driven change (a wheel, a preset) is stated immediately. The
+    // field is the control's stated value: a stated scale that matches no preset
+    // has no preset index to report.
+    onReadoutChanged: {
+        if (typing)
+            return;
+        editText = readout;
+        // The preset the control reports is the preset it is actually at; a
+        // stated scale that matches none leaves no preset selected.
+        var preset = model && model.indexOf ? model.indexOf(readout) : -1;
+        if (currentIndex !== preset)
+            currentIndex = preset;
+    }
+    onTypingChanged: {
+        if (!typing)
+            editText = readout;
+    }
+
+    // Commits the text the artist stated, before the control returns to its
+    // live value (or the commit would carry the value it replaces).
+    function commitTyped() {
+        if (!typing)
+            return;
+        var stated = editText;
+        typing = false;
+        textAccepted(stated);
+    }
+
+    contentItem: Loader {
+        sourceComponent: control.typeable ? typedField : readoutText
+    }
+    Component {
+        id: readoutText
+        Text {
+            text: control.displayText
+            font: control.font
+            color: control.enabled ? control.theme.text : control.theme.disabled
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+    }
+    Component {
+        id: typedField
+        TextField {
+            objectName: control.objectName + "Field"
+            text: control.editText
+            font: control.font
+            color: control.enabled ? control.theme.text : control.theme.disabled
+            verticalAlignment: Text.AlignVCenter
+            selectByMouse: true
+            background: null
+            leftPadding: 0
+            rightPadding: 0
+            onTextEdited: {
+                control.typing = true;
+                control.editText = text;
+            }
+            // Return fires both accepted and editingFinished; the first one
+            // commits and the control leaves the editing state, so a typed
+            // value is committed exactly once.
+            onAccepted: control.commitTyped()
+            onEditingFinished: control.commitTyped()
+            Component.onCompleted: control.editText = control.readout
+        }
     }
     background: Rectangle {
         color: control.down ? control.theme.hover
@@ -24,26 +92,38 @@ ComboBox {
         border.color: control.activeFocus ? control.theme.accent : control.theme.border
         radius: control.theme.smallRadius
     }
-    indicator: Canvas {
-        id: chevron
-        x: control.width - width - 9
+    // The arrow is the preset menu's target on a typeable control (Qt's
+    // editable-combo convention: the body belongs to the field), so its click
+    // area is a comfortable button rather than the glyph alone. A plain combo
+    // keeps the accepted arrow geometry: the glyph sits 9 px from the edge.
+    indicator: Item {
+        id: arrow
+        x: control.width - width - 2
         y: (control.height - height) / 2
-        width: 7
-        height: 4
-        onPaint: {
-            var ctx = getContext("2d");
-            ctx.reset();
-            ctx.strokeStyle = control.theme.muted;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(.5, .5);
-            ctx.lineTo(3.5, 3.5);
-            ctx.lineTo(6.5, .5);
-            ctx.stroke();
-        }
-        Connections {
-            target: control.theme
-            function onMutedChanged() { chevron.requestPaint() }
+        implicitWidth: 7
+        implicitHeight: 4
+        width: control.typeable ? 20 : 7
+        height: control.typeable ? control.height : 4
+        Canvas {
+            id: chevron
+            anchors.centerIn: parent
+            width: 7
+            height: 4
+            onPaint: {
+                var ctx = getContext("2d");
+                ctx.reset();
+                ctx.strokeStyle = control.theme.muted;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(.5, .5);
+                ctx.lineTo(3.5, 3.5);
+                ctx.lineTo(6.5, .5);
+                ctx.stroke();
+            }
+            Connections {
+                target: control.theme
+                function onMutedChanged() { chevron.requestPaint() }
+            }
         }
     }
     delegate: Component {

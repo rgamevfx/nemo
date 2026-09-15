@@ -1,0 +1,4130 @@
+{
+  "animationChannels": [
+    {
+      "address": {
+        "key": "translateX",
+        "network": 1,
+        "node": 2
+      },
+      "id": 1,
+      "keys": [
+        {
+          "id": 1,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": -25.0
+          }
+        },
+        {
+          "id": 2,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": -18.0
+          }
+        },
+        {
+          "id": 3,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": -11.0
+          }
+        },
+        {
+          "id": 4,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": -4.0
+          }
+        },
+        {
+          "id": 5,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 3.0
+          }
+        },
+        {
+          "id": 6,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 20.03423986486487
+          }
+        },
+        {
+          "id": 7,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 17.0
+          }
+        },
+        {
+          "id": 8,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 24.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "translateY",
+        "network": 1,
+        "node": 2
+      },
+      "id": 2,
+      "keys": [
+        {
+          "id": 9,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": -25.0
+          }
+        },
+        {
+          "id": 10,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": -18.0
+          }
+        },
+        {
+          "id": 11,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": -11.0
+          }
+        },
+        {
+          "id": 12,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": -4.0
+          }
+        },
+        {
+          "id": 13,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 3.0
+          }
+        },
+        {
+          "id": 14,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 20.03423986486487
+          }
+        },
+        {
+          "id": 15,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 17.0
+          }
+        },
+        {
+          "id": 16,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 24.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "rotate",
+        "network": 1,
+        "node": 2
+      },
+      "id": 3,
+      "keys": [
+        {
+          "id": 17,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": -25.0
+          }
+        },
+        {
+          "id": 18,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": -18.0
+          }
+        },
+        {
+          "id": 19,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": -11.0
+          }
+        },
+        {
+          "id": 20,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": -4.0
+          }
+        },
+        {
+          "id": 21,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 3.0
+          }
+        },
+        {
+          "id": 22,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 20.03423986486487
+          }
+        },
+        {
+          "id": 23,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 17.0
+          }
+        },
+        {
+          "id": 24,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 24.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "scale",
+        "network": 1,
+        "node": 2
+      },
+      "id": 4,
+      "keys": [
+        {
+          "id": 25,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 0.5
+          }
+        },
+        {
+          "id": 26,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 1.0
+          }
+        },
+        {
+          "id": 27,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 1.5
+          }
+        },
+        {
+          "id": 28,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 0.5
+          }
+        },
+        {
+          "id": 29,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 1.0
+          }
+        },
+        {
+          "id": 30,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 1.5
+          }
+        },
+        {
+          "id": 31,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 0.5
+          }
+        },
+        {
+          "id": 32,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "translateX",
+        "network": 1,
+        "node": 3
+      },
+      "id": 5,
+      "keys": [
+        {
+          "id": 33,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": -22.0
+          }
+        },
+        {
+          "id": 34,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": -15.0
+          }
+        },
+        {
+          "id": 35,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": -8.0
+          }
+        },
+        {
+          "id": 36,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": -1.0
+          }
+        },
+        {
+          "id": 37,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 6.0
+          }
+        },
+        {
+          "id": 38,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 23.03423986486487
+          }
+        },
+        {
+          "id": 39,
+          "inSlope": [
+            0.5122336394146276,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.5122336394146276,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 26.86827702702703
+          }
+        },
+        {
+          "id": 40,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": -23.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "rotate",
+        "network": 1,
+        "node": 3
+      },
+      "id": 6,
+      "keys": [
+        {
+          "id": 41,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": -22.0
+          }
+        },
+        {
+          "id": 42,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": -15.0
+          }
+        },
+        {
+          "id": 43,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": -8.0
+          }
+        },
+        {
+          "id": 44,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": -1.0
+          }
+        },
+        {
+          "id": 45,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 6.0
+          }
+        },
+        {
+          "id": 46,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 23.03423986486487
+          }
+        },
+        {
+          "id": 47,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 21.185506756756755
+          }
+        },
+        {
+          "id": 48,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": -23.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "size",
+        "network": 1,
+        "node": 4
+      },
+      "id": 7,
+      "keys": [
+        {
+          "id": 49,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 50,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 51,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 52,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        },
+        {
+          "id": 53,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 54,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 55,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 56,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "mix",
+        "network": 1,
+        "node": 4
+      },
+      "id": 8,
+      "keys": [
+        {
+          "id": 57,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 58,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 59,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 60,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        },
+        {
+          "id": 61,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 62,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 63,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 64,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "size",
+        "network": 1,
+        "node": 5
+      },
+      "id": 9,
+      "keys": [
+        {
+          "id": 65,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 66,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 67,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 68,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        },
+        {
+          "id": 69,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 70,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 71,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 72,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "mix",
+        "network": 1,
+        "node": 5
+      },
+      "id": 10,
+      "keys": [
+        {
+          "id": 73,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 74,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 75,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 76,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        },
+        {
+          "id": 77,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 78,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 79,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 80,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "size",
+        "network": 1,
+        "node": 6
+      },
+      "id": 11,
+      "keys": [
+        {
+          "id": 81,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 82,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 83,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 84,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        },
+        {
+          "id": 85,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 86,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 87,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 88,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "mix",
+        "network": 1,
+        "node": 6
+      },
+      "id": 12,
+      "keys": [
+        {
+          "id": 89,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 90,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 91,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 92,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        },
+        {
+          "id": 93,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 94,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 95,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 96,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "size",
+        "network": 1,
+        "node": 7
+      },
+      "id": 13,
+      "keys": [
+        {
+          "id": 97,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 98,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 99,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 100,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        },
+        {
+          "id": 101,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 102,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 103,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 104,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "mix",
+        "network": 1,
+        "node": 7
+      },
+      "id": 14,
+      "keys": [
+        {
+          "id": 105,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 106,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 107,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 108,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        },
+        {
+          "id": 109,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 110,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 111,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 112,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "size",
+        "network": 1,
+        "node": 8
+      },
+      "id": 15,
+      "keys": [
+        {
+          "id": 113,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 114,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 115,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 116,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        },
+        {
+          "id": 117,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 118,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 119,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 120,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "mix",
+        "network": 1,
+        "node": 8
+      },
+      "id": 16,
+      "keys": [
+        {
+          "id": 121,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 122,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 123,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 124,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        },
+        {
+          "id": 125,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 126,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 127,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 128,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "size",
+        "network": 1,
+        "node": 9
+      },
+      "id": 17,
+      "keys": [
+        {
+          "id": 129,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 130,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 131,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 132,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        },
+        {
+          "id": 133,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 134,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 135,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 136,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "mix",
+        "network": 1,
+        "node": 9
+      },
+      "id": 18,
+      "keys": [
+        {
+          "id": 137,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 138,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 139,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 140,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        },
+        {
+          "id": 141,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 142,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 143,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 144,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "size",
+        "network": 1,
+        "node": 10
+      },
+      "id": 19,
+      "keys": [
+        {
+          "id": 145,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 146,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 147,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 148,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        },
+        {
+          "id": 149,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 2.0
+          }
+        },
+        {
+          "id": 150,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 5.0
+          }
+        },
+        {
+          "id": 151,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 8.0
+          }
+        },
+        {
+          "id": 152,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 11.0
+          }
+        }
+      ]
+    },
+    {
+      "address": {
+        "key": "mix",
+        "network": 1,
+        "node": 10
+      },
+      "id": 20,
+      "keys": [
+        {
+          "id": 153,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1001.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 154,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1013.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 155,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1025.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 156,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1037.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        },
+        {
+          "id": 157,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1049.0,
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        },
+        {
+          "id": 158,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1061.0,
+          "value": {
+            "type": "float",
+            "value": 0.35
+          }
+        },
+        {
+          "id": 159,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "bezier",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1073.0,
+          "value": {
+            "type": "float",
+            "value": 0.55
+          }
+        },
+        {
+          "id": 160,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1085.0,
+          "value": {
+            "type": "float",
+            "value": 0.7500000000000001
+          }
+        }
+      ]
+    }
+  ],
+  "color": {
+    "deliveryTransform": "sRGB/rec709",
+    "viewerTransform": "sRGB/rec709",
+    "workingSpace": "linear"
+  },
+  "format": "nemo",
+  "instances": [],
+  "mediaCatalog": {
+    "bins": [],
+    "entries": [],
+    "nextBinId": 1,
+    "nextEntryId": 1
+  },
+  "name": "",
+  "networks": [
+    {
+      "defaultOutput": 1,
+      "edges": [
+        {
+          "from": {
+            "node": 11,
+            "port": 0
+          },
+          "id": 2,
+          "to": {
+            "node": 13,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 8,
+            "port": 0
+          },
+          "id": 5,
+          "to": {
+            "node": 12,
+            "port": 0
+          }
+        }
+      ],
+      "exposedParameters": [],
+      "id": 1,
+      "inputConnections": [],
+      "inputs": [],
+      "name": "Root",
+      "nextEdgeId": 6,
+      "nextInterfacePortId": 1,
+      "nextNodeId": 14,
+      "nodes": [
+        {
+          "id": 1,
+          "layout": {
+            "x": 113.4945779698623,
+            "y": 413.11817838416056
+          },
+          "name": "Output",
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 2,
+          "layout": {
+            "x": 17.259865134530145,
+            "y": -102.52239271970649
+          },
+          "name": "Animated 1",
+          "params": {},
+          "type": "transform"
+        },
+        {
+          "id": 3,
+          "layout": {
+            "x": 150.0,
+            "y": 0.0
+          },
+          "name": "Animated 2",
+          "params": {},
+          "type": "transform"
+        },
+        {
+          "id": 4,
+          "layout": {
+            "x": 300.0,
+            "y": 0.0
+          },
+          "name": "Animated 3",
+          "params": {},
+          "type": "blur"
+        },
+        {
+          "id": 5,
+          "layout": {
+            "x": -92.12369965757178,
+            "y": 0.0
+          },
+          "name": "Animated 4",
+          "params": {},
+          "type": "blur"
+        },
+        {
+          "id": 6,
+          "layout": {
+            "x": 150.0,
+            "y": 90.0
+          },
+          "name": "Animated 5",
+          "params": {},
+          "type": "blur"
+        },
+        {
+          "id": 7,
+          "layout": {
+            "x": 300.0,
+            "y": 90.0
+          },
+          "name": "Animated 6",
+          "params": {},
+          "type": "blur"
+        },
+        {
+          "id": 8,
+          "layout": {
+            "x": -7.588107380345342,
+            "y": 180.0
+          },
+          "name": "Animated 7",
+          "params": {},
+          "type": "blur"
+        },
+        {
+          "id": 9,
+          "layout": {
+            "x": 150.0,
+            "y": 180.0
+          },
+          "name": "Animated 8",
+          "params": {},
+          "type": "blur"
+        },
+        {
+          "id": 10,
+          "layout": {
+            "x": 300.0,
+            "y": 180.0
+          },
+          "name": "Animated 9",
+          "params": {},
+          "type": "blur"
+        },
+        {
+          "id": 11,
+          "layout": {
+            "x": 17.259865134530145,
+            "y": -781.5891005705116
+          },
+          "name": "ConstantColor1",
+          "params": {},
+          "type": "constcolor"
+        },
+        {
+          "id": 12,
+          "layout": {
+            "x": 17.259865134530145,
+            "y": -471.9654661143909
+          },
+          "name": "Viewer1",
+          "params": {},
+          "type": "viewer"
+        },
+        {
+          "id": 13,
+          "layout": {
+            "x": 17.259865134530145,
+            "y": -670.5487046082318
+          },
+          "name": "Grade1",
+          "params": {
+            "offset": {
+              "type": "color",
+              "value": [
+                5.0,
+                0.004999999888241291,
+                5.0,
+                0.0
+              ]
+            }
+          },
+          "type": "grade"
+        }
+      ],
+      "outputConnections": [],
+      "outputInputBindings": [],
+      "outputs": []
+    }
+  ],
+  "nextAnimationChannelId": 21,
+  "nextInstanceId": 1,
+  "nextKeyframeId": 161,
+  "nextNetworkId": 2,
+  "presentation": {
+    "data": {
+      "context": {
+        "groups": {}
+      },
+      "workspace": {
+        "activeWorkspaceId": "workspace-1",
+        "appearance": {
+          "accentOverride": "",
+          "categoryColors": {
+            "Color": "#71608c",
+            "Distort": "#54816b",
+            "Filter": "#a96832",
+            "IO": "#386b91",
+            "Merge": "#60656b",
+            "Utility": "#59646f"
+          },
+          "preset": "Graphite"
+        },
+        "version": 2,
+        "workspaces": [
+          {
+            "id": "workspace-1",
+            "layout": {
+              "root": {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "active": "panel-1",
+                        "id": "leaf-1",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "B",
+                            "id": "panel-1",
+                            "state": {
+                              "viewerRole": "graph",
+                              "zoom": 0.18388423657016525,
+                              "zoomMode": "Custom"
+                            },
+                            "type": "viewer"
+                          }
+                        ]
+                      },
+                      {
+                        "active": "panel-15",
+                        "id": "leaf-16",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "A",
+                            "id": "panel-15",
+                            "state": {
+                              "animationGroups": {
+                                "A": {
+                                  "channels": [
+                                    "14:0"
+                                  ],
+                                  "collapsed": {
+                                    "2": true,
+                                    "3": true,
+                                    "4": true,
+                                    "5": true,
+                                    "6": true
+                                  },
+                                  "end": 1095.08,
+                                  "hidden": {},
+                                  "keys": [],
+                                  "max": 13.387,
+                                  "min": -2.237,
+                                  "mode": "curves",
+                                  "network": "1",
+                                  "scroll": 0,
+                                  "start": 990.92,
+                                  "target": "",
+                                  "tree": 154
+                                }
+                              }
+                            },
+                            "type": "animation"
+                          }
+                        ]
+                      }
+                    ],
+                    "id": "split-17",
+                    "kind": "split",
+                    "orientation": "vertical",
+                    "ratio": 0.6808830492424243
+                  },
+                  {
+                    "children": [
+                      {
+                        "active": "panel-2",
+                        "id": "leaf-2",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "B",
+                            "id": "panel-2",
+                            "state": {
+                              "columns": true,
+                              "graphSelections": {
+                                "1": [],
+                                "2": [
+                                  "6"
+                                ]
+                              },
+                              "graphViews": {
+                                "1": {
+                                  "lastClickValid": true,
+                                  "lastClickX": -6.382044347451096,
+                                  "lastClickY": 376.66978024947014,
+                                  "panX": 91.37291033413783,
+                                  "panY": 398.99287713733133,
+                                  "zoom": 0.8241720809327001
+                                },
+                                "2": {
+                                  "lastClickValid": true,
+                                  "lastClickX": -0.5119860506324196,
+                                  "lastClickY": -409.3106489020244,
+                                  "panX": 135.64026325854184,
+                                  "panY": 724.9483820244714,
+                                  "zoom": 0.9987713686929425
+                                }
+                              },
+                              "inspectors": [],
+                              "limit": 3,
+                              "scopePath": [],
+                              "scopeRootNetworkId": "1",
+                              "viewerRole": "timeline"
+                            },
+                            "type": "nodegraph"
+                          }
+                        ]
+                      },
+                      {
+                        "active": "panel-12",
+                        "id": "leaf-13",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "B",
+                            "id": "panel-12",
+                            "state": {
+                              "columns": false,
+                              "inspectors": [
+                                {
+                                  "collapsed": false,
+                                  "network": "1",
+                                  "node": "2",
+                                  "pinned": false
+                                },
+                                {
+                                  "collapsed": false,
+                                  "network": "1",
+                                  "node": "8",
+                                  "pinned": false
+                                },
+                                {
+                                  "collapsed": false,
+                                  "network": "1",
+                                  "node": "13",
+                                  "pinned": false
+                                }
+                              ],
+                              "limit": 3
+                            },
+                            "type": "parameters"
+                          }
+                        ]
+                      }
+                    ],
+                    "id": "split-14",
+                    "kind": "split",
+                    "orientation": "horizontal",
+                    "ratio": 0.5
+                  }
+                ],
+                "id": "split-1",
+                "kind": "split",
+                "orientation": "horizontal",
+                "ratio": 0.4485905155254777
+              },
+              "version": 1
+            },
+            "name": "Default"
+          }
+        ]
+      }
+    },
+    "version": 1
+  },
+  "requiredFeatures": [
+    {
+      "id": "networks",
+      "version": 1
+    },
+    {
+      "id": "animation",
+      "version": 1
+    }
+  ],
+  "rootNetworkId": 1,
+  "schema": 4,
+  "sources": {}
+}

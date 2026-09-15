@@ -8,11 +8,13 @@
 #include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
+#include <QDir>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDropEvent>
 #include <QFile>
 #include <QGuiApplication>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMimeData>
@@ -21,9 +23,13 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QWheelEvent>
+#include <cmath>
+#include <functional>
 #include <gtest/gtest.h>
 #include <memory>
 #include <stdexcept>
@@ -164,6 +170,113 @@ protected:
     void drag(QPoint from, QPoint to) {
         hoverDrag(from, to);
         release(to);
+    }
+
+    // Qt 6.4's QtTest has no wheel helper, so the harness constructs the wheel
+    // event and delivers it to the window — the real input path, with no
+    // test-only handler in production code.
+    void wheel(const QPoint& position, int angleDelta, const QPoint& pixelDelta = QPoint()) {
+        QWheelEvent event(QPointF(position), QPointF(window->mapToGlobal(position)), pixelDelta, QPoint(0, angleDelta),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QGuiApplication::sendEvent(window, &event);
+    }
+
+    // The graph panel's own screen-to-scene mapping, so a test can name the
+    // image point a gesture is anchored at without reimplementing it.
+    QPointF scenePointAt(QQuickItem* panel, const QPointF& surfacePoint) {
+        QVariant result;
+        EXPECT_TRUE(QMetaObject::invokeMethod(panel, "scenePoint", Q_RETURN_ARG(QVariant, result),
+                                              Q_ARG(QVariant, surfacePoint.x()), Q_ARG(QVariant, surfacePoint.y())));
+        const auto point = result.toMap();
+        return QPointF(point.value(QStringLiteral("x")).toDouble(), point.value(QStringLiteral("y")).toDouble());
+    }
+
+    // Any panel other than `panelId`, read from the real layout.
+    QString otherPanelId(const QString& panelId) {
+        const Json root = snapshot();
+        std::function<QString(const Json&)> first = [&](const Json& node) -> QString {
+            if (node.at("kind") == "tabs") {
+                for (const auto& panel : node.at("panels")) {
+                    const auto id = QString::fromStdString(panel.at("id").get<std::string>());
+                    if (id != panelId)
+                        return id;
+                }
+                return {};
+            }
+            for (const auto& child : node.at("children")) {
+                if (const auto found = first(child); !found.isEmpty())
+                    return found;
+            }
+            return {};
+        };
+        return first(root);
+    }
+
+    // The rendering path the capture was taken on: the offscreen harness asks
+    // for Null, the opt-in native configuration for a real API.
+    [[nodiscard]] QString graphicsApiName() const {
+        const auto* interface = window ? window->rendererInterface() : nullptr;
+        switch (interface ? interface->graphicsApi() : QSGRendererInterface::Unknown) {
+        case QSGRendererInterface::OpenGL:
+            return QStringLiteral("opengl");
+        case QSGRendererInterface::Vulkan:
+            return QStringLiteral("vulkan");
+        case QSGRendererInterface::Null:
+            return QStringLiteral("null");
+        case QSGRendererInterface::Software:
+            return QStringLiteral("software");
+        default:
+            return QStringLiteral("unknown");
+        }
+    }
+
+    // Graph evidence record for the recorded evidence directory, when one is
+    // set: the view the gesture reached, the sequence of applied states, and
+    // (in the opt-in native configuration) the capture of the real surface. On
+    // the offscreen/Null harness a window grab carries no scene-graph content,
+    // which the record states rather than implying pixels it does not have.
+    void recordEvidence(const QString& name, const QJsonObject& extra = {}) {
+        const auto directory = qEnvironmentVariable("NEMO84_EVIDENCE_DIR");
+        if (directory.isEmpty())
+            return;
+        QDir().mkpath(directory);
+        auto* panel = item("graphPanel");
+        QJsonObject environment{{QStringLiteral("platform"), QGuiApplication::platformName()},
+                                {QStringLiteral("graphics_api"), graphicsApiName()},
+                                {QStringLiteral("native_ui"), qEnvironmentVariableIntValue("NEMO_TEST_NATIVE_UI") == 1},
+                                {QStringLiteral("qt"), QString::fromLatin1(qVersion())},
+                                {QStringLiteral("device_pixel_ratio"), window->devicePixelRatio()},
+                                {QStringLiteral("window_width"), window->width()},
+                                {QStringLiteral("window_height"), window->height()},
+                                {QStringLiteral("appearance_preset"), controller.appearancePreset()},
+                                {QStringLiteral("accent_override"), controller.accentOverride()},
+                                {QStringLiteral("record"), name},
+                                {QStringLiteral("graph_panel"), panel->property("panelId").toString()},
+                                {QStringLiteral("graph_zoom"), panel->property("zoom").toDouble()},
+                                {QStringLiteral("graph_pan_x"), panel->property("panX").toDouble()},
+                                {QStringLiteral("graph_pan_y"), panel->property("panY").toDouble()},
+                                {QStringLiteral("graph_network"), panel->property("graphNetworkId").toString()},
+                                {QStringLiteral("graph_selection"), panel->property("selectedNodeIds").toJsonArray()}};
+        for (auto it = extra.begin(); it != extra.end(); ++it)
+            environment.insert(it.key(), it.value());
+        QFile environmentFile(directory + QStringLiteral("/graph-") + name + QStringLiteral(".json"));
+        EXPECT_TRUE(environmentFile.open(QIODevice::WriteOnly));
+        environmentFile.write(QJsonDocument(environment).toJson(QJsonDocument::Indented));
+        // The window grab carries the graph only when the scene graph actually
+        // renders (the opt-in native configuration); on the offscreen/Null
+        // harness it is written anyway, so the gap is visible rather than
+        // implied.
+        if (qEnvironmentVariableIntValue("NEMO84_GRAPH_CAPTURE") == 1) {
+            QTest::mouseMove(window, QPoint(4, 4));
+            QTest::qWait(60);
+            EXPECT_TRUE(
+                window->grabWindow().save(directory + QStringLiteral("/graph-") + name + QStringLiteral(".png")));
+        }
+    }
+
+    // One persisted graph view record for a network, as the project stores it.
+    QVariantMap storedView(const QString& panelId, const QString& network) {
+        return controller.panelState(panelId).value(QStringLiteral("graphViews")).toMap().value(network).toMap();
     }
 };
 
@@ -370,6 +483,366 @@ TEST_F(WorkspaceDragTest, LowZoomConnectedNodeBodiesRemainSelectable) {
     EXPECT_EQ(graph->selectedNodeIds(), (QStringList{source, target}));
     EXPECT_EQ(projectSession.revision(), revision);
     EXPECT_EQ(viewerController.graphEdges(), edges);
+}
+
+// Issue #84 slice 1. A wheel burst is one gesture: the accumulated deltas are
+// applied once per event-loop turn, the view stays anchored under the pointer,
+// and the final view is written once when the burst settles — never per input
+// event. Navigation changes no document state and creates no history entry.
+TEST_F(WorkspaceDragTest, GraphWheelBurstAppliesPerTurnAndPersistsOnceWhenItSettles) {
+    const auto network = viewerController.rootNetworkId();
+    const auto source = viewerController.createGraphNode(network, "constcolor", "Source", 40, 40, {}, {});
+    const auto target = viewerController.createGraphNode(network, "merge", "Target", 40, 240, {}, {});
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, source, 0, target, 0));
+    auto* panel = item("graphPanel");
+    const auto panelId = panel->property("panelId").toString();
+
+    // A known starting view, so the expected post-burst zoom is arithmetic the
+    // test owns rather than a function of the panel's size.
+    auto state = controller.panelState(panelId);
+    auto views = state.value(QStringLiteral("graphViews")).toMap();
+    views[network] =
+        QVariantMap{{QStringLiteral("zoom"), 0.5}, {QStringLiteral("panX"), 80.0}, {QStringLiteral("panY"), 80.0}};
+    state[QStringLiteral("graphViews")] = views;
+    controller.setPanelState(panelId, state);
+    QTest::qWait(40);
+    ASSERT_DOUBLE_EQ(panel->property("zoom").toDouble(), 0.5);
+
+    int writes = 0;
+    // A local context object: the connection must not outlive this body, or a
+    // state write from panel teardown would call into dead locals.
+    QObject writesScope;
+    QObject::connect(&controller, &nemo::workspace::WorkspaceController::panelStateChanged, &writesScope,
+                     [&](const QString& changed) {
+                         if (changed == panelId)
+                             ++writes;
+                     });
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      graph->mapToScene(graph->nodeRect(source).center()).toPoint());
+    const auto selected = graph->selectedNodeIds();
+    ASSERT_EQ(selected.size(), 1);
+    // Selecting is itself a gesture, so it writes its view once; the burst that
+    // follows is measured against this baseline.
+    QTest::qWait(20);
+    const int baseline = writes;
+
+    auto* surface = item("graphSurface");
+    const QPoint anchorScene = surface->mapToScene(QPointF(surface->width() * 0.35, surface->height() * 0.4)).toPoint();
+    // The event lands on integer window coordinates, so the anchor the panel
+    // sees is that point mapped back into the surface.
+    const QPointF anchor = surface->mapFromScene(QPointF(anchorScene));
+    QTest::mouseMove(window, anchorScene);
+    QTest::qWait(20);
+    const auto anchoredBefore = scenePointAt(panel, anchor);
+    const auto revision = projectSession.revision();
+
+    // The gesture reaches the view once per event-loop turn, so a slow wheel
+    // steps the view once for each notch, and a burst that lands in one turn
+    // lands exactly where the accumulated deltas indicate.
+    QJsonArray applied;
+    for (int notch = 0; notch < 3; ++notch) {
+        wheel(anchorScene, 120);
+        QTest::qWait(20);
+        applied.append(panel->property("zoom").toDouble());
+    }
+    ASSERT_EQ(applied.size(), 3);
+    EXPECT_LT(applied.at(0).toDouble(), applied.at(1).toDouble());
+    EXPECT_LT(applied.at(1).toDouble(), applied.at(2).toDouble());
+    EXPECT_NEAR(applied.at(2).toDouble(), 0.5 * std::exp(53.0 * 0.002 * 3.0), 1e-9);
+    EXPECT_EQ(writes, baseline) << "a wheel burst must not write the workspace mid-gesture";
+    for (int notch = 0; notch < 5; ++notch)
+        wheel(anchorScene, 120);
+    QTest::qWait(20);
+    const double expected = 0.5 * std::exp(53.0 * 0.002 * 8.0);
+    EXPECT_NEAR(panel->property("zoom").toDouble(), expected, 1e-9);
+    // The pixel under the pointer is the pixel that stays under the pointer.
+    const auto anchoredAfter = scenePointAt(panel, anchor);
+    EXPECT_NEAR(anchoredAfter.x(), anchoredBefore.x(), 1e-6);
+    EXPECT_NEAR(anchoredAfter.y(), anchoredBefore.y(), 1e-6);
+    // Navigation is not an edit: no history, no document revision, no selection
+    // change, no wiring change.
+    EXPECT_EQ(projectSession.revision(), revision);
+    EXPECT_EQ(graph->selectedNodeIds(), selected);
+
+    // The burst settles: exactly one write, carrying the view the gesture ended
+    // with.
+    QTest::qWait(320);
+    EXPECT_EQ(writes, baseline + 1);
+    const auto stored = storedView(panelId, network);
+    EXPECT_NEAR(stored.value(QStringLiteral("zoom")).toDouble(), panel->property("zoom").toDouble(), 1e-9);
+    EXPECT_NEAR(stored.value(QStringLiteral("panX")).toDouble(), panel->property("panX").toDouble(), 1e-9);
+    EXPECT_NEAR(stored.value(QStringLiteral("panY")).toDouble(), panel->property("panY").toDouble(), 1e-9);
+
+    // A trackpad pixel delta and an equivalent angle delta are the same gesture,
+    // and an opposite burst returns to where the artist started.
+    const double zoomed = panel->property("zoom").toDouble();
+    wheel(anchorScene, 0, QPoint(0, 265));
+    QTest::qWait(20);
+    EXPECT_NEAR(panel->property("zoom").toDouble(), zoomed * std::exp(53.0 * 0.002 * 5.0), 1e-9);
+    QTest::qWait(320);
+    EXPECT_EQ(writes, baseline + 2);
+    wheel(anchorScene, -600);
+    QTest::qWait(20);
+    EXPECT_NEAR(panel->property("zoom").toDouble(), zoomed, 1e-9);
+    QTest::qWait(320);
+    EXPECT_EQ(writes, baseline + 3);
+
+    // Frame all still works after the whole gesture sequence, and is itself a
+    // settled gesture that writes once.
+    const int settled = writes;
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(60);
+    const double framedZoom = panel->property("zoom").toDouble();
+    EXPECT_GT(framedZoom, 0.0);
+    EXPECT_EQ(writes, settled + 1);
+    EXPECT_NEAR(storedView(panelId, network).value(QStringLiteral("zoom")).toDouble(), framedZoom, 1e-9);
+
+    recordEvidence(QStringLiteral("zoom-burst"), QJsonObject{{QStringLiteral("sampled_notches"), 3},
+                                                             {QStringLiteral("burst_notches_in_one_turn"), 5},
+                                                             {QStringLiteral("applied_zoom_per_turn"), applied},
+                                                             {QStringLiteral("persisted_writes"), writes - baseline},
+                                                             {QStringLiteral("anchor_scene_x"), anchoredBefore.x()},
+                                                             {QStringLiteral("anchor_scene_y"), anchoredBefore.y()},
+                                                             {QStringLiteral("anchored_scene_x"), anchoredAfter.x()},
+                                                             {QStringLiteral("anchored_scene_y"), anchoredAfter.y()},
+                                                             {QStringLiteral("frame_all_zoom"), framedZoom}});
+}
+
+// A settled view is what a scope switch, a gesture release and a panel-state
+// write all leave behind; a write by one panel must not touch another panel's
+// view or its display model.
+TEST_F(WorkspaceDragTest, GraphViewGestureWritesOnceAndOtherPanelsDoNotRewriteIt) {
+    const auto network = viewerController.rootNetworkId();
+    viewerController.createGraphNode(network, "constcolor", "Source", 40, 40, {}, {});
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* panel = item("graphPanel");
+    const auto panelId = panel->property("panelId").toString();
+
+    int graphWrites = 0;
+    int viewerWrites = 0;
+    QObject writesScope;
+    QObject::connect(&controller, &nemo::workspace::WorkspaceController::panelStateChanged, &writesScope,
+                     [&](const QString& changed) {
+                         if (changed == panelId)
+                             ++graphWrites;
+                         else
+                             ++viewerWrites;
+                     });
+    // A middle-drag pan is one gesture: it applies every move and writes once,
+    // when the button is released.
+    auto* surface = item("graphSurface");
+    const QPoint from = surface->mapToScene(QPointF(80, 80)).toPoint();
+    QTest::mousePress(window, Qt::MiddleButton, Qt::NoModifier, from);
+    for (int step = 1; step <= 8; ++step)
+        QTest::mouseMove(window, from + QPoint(3 * step, 2 * step), 2);
+    EXPECT_EQ(graphWrites, 0) << "a pan drag must not write the workspace mid-gesture";
+    QTest::mouseRelease(window, Qt::MiddleButton, Qt::NoModifier, from + QPoint(24, 16));
+    QTest::qWait(60);
+    EXPECT_EQ(graphWrites, 1);
+    const auto panned = storedView(panelId, network);
+    EXPECT_NEAR(panned.value(QStringLiteral("panX")).toDouble(), panel->property("panX").toDouble(), 1e-9);
+    EXPECT_NEAR(panned.value(QStringLiteral("zoom")).toDouble(), panel->property("zoom").toDouble(), 1e-9);
+
+    // Another panel writes its own state, as a viewer pan or an inspector
+    // arrangement does. It must not reach this panel's view or state record.
+    const auto zoomBefore = panel->property("zoom").toDouble();
+    const auto panBefore = panel->property("panX").toDouble();
+    const auto foreignPanel = otherPanelId(panelId);
+    ASSERT_FALSE(foreignPanel.isEmpty());
+    controller.setPanelState(foreignPanel, QVariantMap{{QStringLiteral("panX"), 120.0}});
+    QTest::qWait(60);
+    EXPECT_EQ(graphWrites, 1);
+    EXPECT_EQ(viewerWrites, 1);
+    EXPECT_DOUBLE_EQ(panel->property("zoom").toDouble(), zoomBefore);
+    EXPECT_DOUBLE_EQ(panel->property("panX").toDouble(), panBefore);
+    EXPECT_NEAR(storedView(panelId, network).value(QStringLiteral("panX")).toDouble(), panBefore, 1e-9);
+    recordEvidence(QStringLiteral("independent-from-viewer-write"),
+                   QJsonObject{{QStringLiteral("graph_writes"), graphWrites},
+                               {QStringLiteral("viewer_writes"), viewerWrites},
+                               {QStringLiteral("zoom_before_foreign_write"), zoomBefore},
+                               {QStringLiteral("pan_before_foreign_write"), panBefore}});
+}
+
+// Slice 1 conforms to the prototype's zoom-independent navigation coverage at
+// more than one zoom level: screen-space port acquisition and protection, drag
+// mapping from screen to scene distance, a wire dropped glyph to glyph, and
+// last-click placement in scene coordinates.
+// The gesture boundaries write the view: a burst that has been applied but has
+// not settled yet is still what the project records when the application closes.
+TEST_F(WorkspaceDragTest, GraphViewInMotionIsPersistedWhenTheWindowCloses) {
+    const auto network = viewerController.rootNetworkId();
+    viewerController.createGraphNode(network, "constcolor", "Source", 40, 40, {}, {});
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* panel = item("graphPanel");
+    const auto panelId = panel->property("panelId").toString();
+    auto* surface = item("graphSurface");
+    const QPoint anchorScene = surface->mapToScene(QPointF(surface->width() / 2, surface->height() / 2)).toPoint();
+    QTest::mouseMove(window, anchorScene);
+    QTest::qWait(20);
+
+    for (int notch = 0; notch < 4; ++notch)
+        wheel(anchorScene, 120);
+    QTest::qWait(20);
+    const double applied = panel->property("zoom").toDouble();
+    EXPECT_NE(applied, 1.0) << "the burst must have been applied before the close";
+
+    // No settle wait: the window closes with the burst still in flight.
+    window->close();
+    QTest::qWait(40);
+    EXPECT_NEAR(storedView(panelId, network).value(QStringLiteral("zoom")).toDouble(), applied, 1e-9);
+}
+
+TEST_F(WorkspaceDragTest, GraphScreenSpaceHitTestingSurvivesEveryZoomLevel) {
+    const auto network = viewerController.rootNetworkId();
+    const auto a = viewerController.createGraphNode(network, "constcolor", "A", 40, 40, {}, {});
+    const auto b = viewerController.createGraphNode(network, "merge", "B", 40, 200, {}, {});
+    ASSERT_TRUE(viewerController.connectOrReplaceGraph(network, a, 0, b, 0));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* panel = item("graphPanel");
+    auto* surface = item("graphSurface");
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    ASSERT_FALSE(graph->nodeRect(a).isEmpty()) << "the fixture must address the node the panel displays";
+
+    // Zoom anchored on A, so A stays under the pointer while the level changes.
+    const auto zoomUntil = [&](bool in) {
+        for (int step = 0; step < 40; ++step) {
+            const double zoom = panel->property("zoom").toDouble();
+            if (in ? zoom > 2.0 : zoom < 0.6)
+                return zoom;
+            const QPoint anchor = graph->mapToScene(graph->nodeRect(a).center()).toPoint();
+            QTest::mouseMove(window, anchor);
+            QTest::qWait(10);
+            wheel(anchor, in ? 120 : -120);
+            QTest::qWait(20);
+        }
+        return panel->property("zoom").toDouble();
+    };
+    // Hover needs a delivered move before it reports anything; the first move
+    // after a click only establishes the pointer.
+    const auto hover = [&](const QPoint& point, int radius) {
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            QTest::mouseMove(window, point + QPoint(radius, 0));
+            QTest::mouseMove(window, point);
+            QTest::qWait(20);
+        }
+        return graph->property("hoveredEndpoint").toMap();
+    };
+
+    for (const bool zoomedIn : {true, false}) {
+        SCOPED_TRACE(zoomedIn ? "zoomed in" : "zoomed out");
+        const double zoom = zoomUntil(zoomedIn);
+        EXPECT_GT(zoom, zoomedIn ? 2.0 : 0.0);
+        EXPECT_LT(zoom, zoomedIn ? 2.6 : 0.6);
+        graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+        ASSERT_NE(graph, nullptr);
+
+        // Acquisition: the glyph itself is acquired at every zoom, because the
+        // radius is the screen-space one. Protection: 20 px away, nothing is.
+        const QPoint output = graph->mapToScene(graph->portPosition(a, 0, true)).toPoint();
+        const auto acquired = hover(output, 6);
+        EXPECT_EQ(acquired.value(QStringLiteral("node")).toString(), a);
+        EXPECT_EQ(acquired.value(QStringLiteral("port")).toInt(), 0);
+        EXPECT_EQ(acquired.value(QStringLiteral("direction")).toString(), QStringLiteral("output"));
+        EXPECT_TRUE(hover(output - QPoint(20, 0), 6).isEmpty())
+            << "port protection must stay screen-space at this zoom";
+
+        // A screen-space drag maps to scene distance through the current zoom.
+        const auto nodeBefore = prefixedNodeRecord(viewerController.graphNodes(), a);
+        const QPoint center = graph->mapToScene(graph->nodeRect(a).center()).toPoint();
+        const QPoint delta(60, 40);
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, center);
+        QTest::mouseMove(window, center + delta, 20);
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, center + delta);
+        QTest::qWait(40);
+        const auto nodeAfter = prefixedNodeRecord(viewerController.graphNodes(), a);
+        EXPECT_NEAR(nodeAfter.value(QStringLiteral("x")).toDouble() - nodeBefore.value(QStringLiteral("x")).toDouble(),
+                    delta.x() / zoom, 1.0)
+            << "screen motion must map to scene distance through the current zoom";
+        EXPECT_NEAR(nodeAfter.value(QStringLiteral("y")).toDouble() - nodeBefore.value(QStringLiteral("y")).toDouble(),
+                    delta.y() / zoom, 1.0);
+
+        // Reroute dots stay hittable at this zoom: an Alt-click on the pipe
+        // body inserts one, and the pointer then acquires that dot.
+        const auto edge = viewerController.graphEdges().first().toMap();
+        const auto edgeId = edge.value(QStringLiteral("id")).toString();
+        const QPointF pipeStart = graph->portPosition(a, 0, true);
+        const QPointF pipeEnd = graph->portPosition(b, 0, false);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::AltModifier,
+                          graph->mapToScene((pipeStart + pipeEnd) / 2).toPoint());
+        QTest::qWait(40);
+        const auto routed = viewerController.graphEdges().first().toMap().value(QStringLiteral("route")).toList();
+        ASSERT_EQ(routed.size(), 1);
+        const auto dot = routed.first().toMap();
+        const QPoint dotScene = graph
+                                    ->mapToScene(QPointF(dot.value(QStringLiteral("x")).toDouble(),
+                                                         dot.value(QStringLiteral("y")).toDouble()))
+                                    .toPoint();
+        QTest::mouseMove(window, dotScene + QPoint(4, 0));
+        QTest::qWait(20);
+        QTest::mouseMove(window, dotScene);
+        QTest::qWait(20);
+        const auto hoveredDot = graph->property("hoveredReroute").toMap();
+        EXPECT_EQ(hoveredDot.value(QStringLiteral("edge")).toString(), edgeId);
+        EXPECT_EQ(hoveredDot.value(QStringLiteral("index")).toInt(), 0);
+        ASSERT_TRUE(viewerController.undo());
+        QTest::qWait(20);
+        ASSERT_EQ(viewerController.graphEdges().first().toMap().value(QStringLiteral("route")).toList().size(), 0);
+
+        recordEvidence(
+            zoomedIn ? QStringLiteral("zoomed-in-hit-testing") : QStringLiteral("zoomed-out-hit-testing"),
+            QJsonObject{{QStringLiteral("acquired_port_node"), acquired.value(QStringLiteral("node")).toString()},
+                        {QStringLiteral("acquired_port_index"), acquired.value(QStringLiteral("port")).toInt()},
+                        {QStringLiteral("drag_screen_delta_x"), delta.x()},
+                        {QStringLiteral("drag_screen_delta_y"), delta.y()},
+                        {QStringLiteral("drag_scene_delta_x"), nodeAfter.value(QStringLiteral("x")).toDouble() -
+                                                                   nodeBefore.value(QStringLiteral("x")).toDouble()},
+                        {QStringLiteral("drag_scene_delta_y"), nodeAfter.value(QStringLiteral("y")).toDouble() -
+                                                                   nodeBefore.value(QStringLiteral("y")).toDouble()},
+                        {QStringLiteral("reroute_dot_hit_index"), hoveredDot.value(QStringLiteral("index")).toInt()}});
+        if (zoomedIn)
+            continue;
+
+        // A wire dropped glyph to glyph still connects while zoomed out, where
+        // the glyphs themselves are a couple of pixels wide.
+        const QPoint source = graph->mapToScene(graph->portPosition(a, 0, true)).toPoint();
+        const QPoint destination = graph->mapToScene(graph->portPosition(b, 1, false)).toPoint();
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, source);
+        QTest::mouseMove(window, destination, 20);
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, destination);
+        QTest::qWait(40);
+        ASSERT_EQ(viewerController.graphEdges().size(), 2);
+        EXPECT_EQ(viewerController.graphEdges().last().toMap().value("toNode").toString(), b);
+        ASSERT_TRUE(viewerController.undo());
+        QTest::qWait(20);
+        ASSERT_EQ(viewerController.graphEdges().size(), 1);
+
+        // Last-click placement is recorded in scene coordinates, so a creation
+        // lands where the artist clicked, not where they happen to be zoomed.
+        const QPoint empty = surface->mapToScene(QPointF(surface->width() * 0.2, surface->height() * 0.85)).toPoint();
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, empty);
+        QTest::qWait(20);
+        ASSERT_TRUE(panel->property("lastClickValid").toBool());
+        const auto lastClickX = panel->property("lastClickX").toDouble();
+        const auto lastClickY = panel->property("lastClickY").toDouble();
+        const auto count = viewerController.graphNodes().size();
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTest::qWait(30);
+        item("graphSearchField")->setProperty("text", "Constant Color");
+        QTest::keyClick(window, Qt::Key_Return);
+        QTest::qWait(40);
+        ASSERT_EQ(viewerController.graphNodes().size(), count + 1);
+        const auto placed = viewerController.graphNodes().last().toMap();
+        EXPECT_NEAR(placed.value(QStringLiteral("x")).toDouble(), lastClickX - 56.0, 1.0);
+        EXPECT_NEAR(placed.value(QStringLiteral("y")).toDouble(), lastClickY - 14.0, 1.0);
+        ASSERT_TRUE(viewerController.undo());
+        QTest::qWait(20);
+    }
 }
 
 TEST_F(WorkspaceDragTest, EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry) {
@@ -1134,7 +1607,7 @@ TEST(WorkspaceControllerTest, UnreadableWorkspaceIsPreservedUntilExplicitReset) 
     EXPECT_NE(preserved.readAll(), invalid);
 }
 
-TEST(WorkspaceControllerTest, NestedPanelStatePublicationIsCoalescedWithoutDroppingState) {
+TEST(WorkspaceControllerTest, PanelStateWriteNotifiesItsOwnerWithoutRebuildingTheLayout) {
     QTemporaryDir directory;
     nemo::workspace::WorkspaceController controller(directory.filePath("workspace.json"));
     const QString panelId = [](const nemo::workspace::WorkspaceController& value) {
@@ -1144,26 +1617,58 @@ TEST(WorkspaceControllerTest, NestedPanelStatePublicationIsCoalescedWithoutDropp
     ASSERT_FALSE(panelId.isEmpty());
     const auto limitOf = [&] { return controller.panelState(panelId).value(QStringLiteral("limit")).toInt(); };
 
+    QStringList notified;
+    int roots = 0;
+    int presentations = 0;
+    QObject::connect(&controller, &nemo::workspace::WorkspaceController::panelStateChanged, &controller,
+                     [&](const QString& changed) { notified.append(changed); });
+    QObject::connect(&controller, &nemo::workspace::WorkspaceController::rootChanged, &controller, [&] { ++roots; });
+    QObject::connect(&controller, &nemo::workspace::WorkspaceController::presentationChanged, &controller,
+                     [&] { ++presentations; });
+
+    controller.setPanelState(panelId, QVariantMap{{QStringLiteral("limit"), 3}});
+
+    // The owner is told; the layout is not re-delivered, because re-delivering
+    // it makes every panel rebuild its display model per state write.
+    EXPECT_EQ(notified, QStringList{panelId});
+    EXPECT_EQ(roots, 0);
+    // Persistence still observes the write, and the record still travels in the
+    // layout payload the project stores.
+    EXPECT_EQ(presentations, 1);
+    EXPECT_EQ(limitOf(), 3);
+    const Json root = Json::parse(QJsonDocument::fromVariant(controller.root()).toJson().toStdString());
+    EXPECT_EQ(root["children"][0]["children"][0]["panels"][0]["state"]["limit"].get<int>(), 3);
+}
+
+TEST(WorkspaceControllerTest, NestedRootDeliveryIsCoalescedWithoutDroppingTheNestedChange) {
+    QTemporaryDir directory;
+    nemo::workspace::WorkspaceController controller(directory.filePath("workspace.json"));
+    const auto groupOf = [&] {
+        const Json root = Json::parse(QJsonDocument::fromVariant(controller.root()).toJson().toStdString());
+        return QString::fromStdString(root["children"][0]["children"][0]["panels"][0]["group"]);
+    };
+    const QString panelId = [&] {
+        const Json root = Json::parse(QJsonDocument::fromVariant(controller.root()).toJson().toStdString());
+        return QString::fromStdString(root["children"][0]["children"][0]["panels"][0]["id"]);
+    }();
+    ASSERT_FALSE(panelId.isEmpty());
+
     bool delivering = false;
     bool reentered = false;
-    QVariantList observed;
+    QStringList observed;
     QObject::connect(&controller, &nemo::workspace::WorkspaceController::rootChanged, &controller, [&] {
         reentered = reentered || delivering;
         delivering = true;
-        const int limit = limitOf();
-        observed.append(limit);
-        // Persists a panel edit while the root notification is still being
-        // delivered, as a panel does synchronously on identity change and
-        // teardown. It writes only while the stored state differs, matching the
-        // panel's own equality guard, so the publication settles once the edit
-        // lands.
-        if (limit != 7) {
-            controller.setPanelState(panelId, QVariantMap{{QStringLiteral("limit"), 7}});
-        }
+        observed.append(groupOf());
+        // An arrangement edit requested while the root notification is still
+        // being delivered — a panel persisting during identity change or
+        // teardown does exactly this.
+        if (observed.last() != QStringLiteral("C"))
+            controller.setGroup(panelId, QStringLiteral("C"));
         delivering = false;
     });
 
-    controller.setPanelState(panelId, QVariantMap{{QStringLiteral("limit"), 3}});
+    controller.setGroup(panelId, QStringLiteral("B"));
 
     // Everything above runs without spinning an event loop: the coalesced
     // delivery is synchronous, before this call returns.
@@ -1171,9 +1676,9 @@ TEST(WorkspaceControllerTest, NestedPanelStatePublicationIsCoalescedWithoutDropp
     // binding that is still updating and Qt reports it as a binding loop.
     EXPECT_FALSE(reentered);
     // The nested edit is not dropped: the delivery that follows the outer one
-    // carries the latest snapshot, and the final state keeps the edit.
-    EXPECT_EQ(observed.last().toInt(), 7);
-    EXPECT_EQ(limitOf(), 7);
+    // carries the latest snapshot, and the final arrangement keeps the edit.
+    EXPECT_EQ(observed, (QStringList{QStringLiteral("B"), QStringLiteral("C")}));
+    EXPECT_EQ(groupOf(), QStringLiteral("C"));
 }
 }  // namespace
 

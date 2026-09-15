@@ -60,8 +60,27 @@ void PanelContextRouter::setWorkspaceController(nemo::workspace::WorkspaceContro
     if (workspace_) {
         connect(workspace_, &nemo::workspace::WorkspaceController::rootChanged, this,
                 &PanelContextRouter::synchronizeWorkspace);
+        // Inspector membership is derived from Parameters panel state, and a
+        // state write no longer re-delivers the workspace root. Only a
+        // Parameters panel's own write can change the union, so every other
+        // panel's view gesture stays invisible here.
+        connect(workspace_, &nemo::workspace::WorkspaceController::panelStateChanged, this,
+                [this](const QString& panelId) {
+                    if (isParametersPanel(panelId))
+                        synchronizeWorkspace();
+                });
     }
     synchronizeWorkspace();
+}
+
+bool PanelContextRouter::isParametersPanel(const QString& panelId) const {
+    if (!workspace_ || panelId.isEmpty())
+        return false;
+    std::map<QString, QVariantMap> current;
+    collectPanels(workspace_->root(), &current);
+    const auto found = current.find(panelId);
+    return found != current.end() &&
+           found->second.value(QStringLiteral("type")).toString() == QStringLiteral("parameters");
 }
 
 QString PanelContextRouter::normalized(const QString& value) {

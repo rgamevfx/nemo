@@ -1,0 +1,23 @@
+{
+    "accent_override": "",
+    "appearance_preset": "Graphite",
+    "device_pixel_ratio": 1,
+    "graph_network": "1",
+    "graph_pan_x": 24,
+    "graph_pan_y": 16,
+    "graph_panel": "panel-3",
+    "graph_selection": [
+    ],
+    "graph_writes": 1,
+    "graph_zoom": 1,
+    "graphics_api": "opengl",
+    "native_ui": true,
+    "pan_before_foreign_write": 24,
+    "platform": "wayland",
+    "qt": "6.4.2",
+    "record": "independent-from-viewer-write",
+    "viewer_writes": 1,
+    "window_height": 687,
+    "window_width": 1274,
+    "zoom_before_foreign_write": 1
+}

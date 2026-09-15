@@ -25,6 +25,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QWheelEvent>
 
 #include <gtest/gtest.h>
 
@@ -412,6 +413,60 @@ protected:
             recordsFile.write(QJsonDocument(entry).toJson(QJsonDocument::Compact) + '\n');
     }
 };
+
+// Issue #84: two independent surfaces. Manipulating one viewer's view must not
+// move, rescale or rewrite the other's presentation or its panel record.
+TEST_F(ViewerDestinationSurface, ViewerViewsStayIndependentPerPanel) {
+    ASSERT_TRUE(waitFor(*controllerA_, 0)) << controllerA_->error().toStdString();
+    ASSERT_TRUE(waitFor(*controllerB_, 0)) << controllerB_->error().toStdString();
+
+    const auto view = [this](const QString& panelId) {
+        auto* item = visualByName(window_->contentItem(), QStringLiteral("viewerItem_") + panelId);
+        const QRectF rect = item ? item->property("displayRect").toRectF() : QRectF();
+        auto* controller = panelId == panelA_ ? controllerA_ : controllerB_;
+        const auto presentation = controller ? controller->presentation() : nullptr;
+        const auto region = presentation ? presentation->request.region : nemo::Region{};
+        return std::pair<QRectF, nemo::Region>{rect, region};
+    };
+    const auto [rectABefore, regionABefore] = view(panelA_);
+    const auto [rectBBefore, regionBBefore] = view(panelB_);
+    ASSERT_GT(rectABefore.width(), 0.0);
+    ASSERT_GT(rectBBefore.width(), 0.0);
+
+    // Zoom panel A with the wheel over its own image area.
+    auto* itemA = visualByName(window_->contentItem(), QStringLiteral("viewerItem_") + panelA_);
+    ASSERT_NE(itemA, nullptr);
+    const QPoint anchorA = itemA->mapToScene(QPointF(itemA->width() / 2, itemA->height() / 2)).toPoint();
+    QTest::mouseMove(window_, anchorA);
+    QTest::qWait(30);
+    for (int notch = 0; notch < 6; ++notch) {
+        QWheelEvent event(QPointF(anchorA), QPointF(window_->mapToGlobal(anchorA)), QPoint(), QPoint(0, 120),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QGuiApplication::sendEvent(window_, &event);
+    }
+    QTest::qWait(400);
+
+    const auto [rectAAfter, regionAAfter] = view(panelA_);
+    const auto [rectBAfter, regionBAfter] = view(panelB_);
+    // A's request region shrank (its own view zoomed in) ...
+    EXPECT_LT(regionAAfter.width, regionABefore.width);
+    EXPECT_GT(rectAAfter.width(), rectABefore.width());
+    // ... and B is exactly where it was, in the controller's request and in the
+    // panel's own display transform.
+    EXPECT_EQ(regionBAfter.width, regionBBefore.width);
+    EXPECT_EQ(regionBAfter.x, regionBBefore.x);
+    EXPECT_NEAR(rectBAfter.width(), rectBBefore.width(), 0.5);
+    EXPECT_NEAR(rectBAfter.x(), rectBBefore.x(), 0.5);
+    EXPECT_NEAR(rectBAfter.y(), rectBBefore.y(), 0.5);
+
+    // Each panel's view is its own record: only the manipulated panel wrote one.
+    const auto stateA = workspace_->panelState(panelA_);
+    const auto stateB = workspace_->panelState(panelB_);
+    EXPECT_EQ(stateA.value(QStringLiteral("zoomMode")).toString(), QStringLiteral("Scale"));
+    EXPECT_FALSE(stateB.contains(QStringLiteral("zoom")));
+    EXPECT_FALSE(stateB.contains(QStringLiteral("zoomMode")));
+    record(QStringLiteral("views-independent"));
+}
 
 TEST_F(ViewerDestinationSurface, TwoViewerPanelsRenderIndependentDestinations) {
     ASSERT_TRUE(waitFor(*controllerA_, 0)) << controllerA_->error().toStdString();

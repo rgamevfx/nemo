@@ -44,6 +44,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QWheelEvent>
 
 #include <array>
 #include <cmath>
@@ -418,12 +419,160 @@ protected:
         return std::sqrt(std::max(0.0, sumSquares / count - mean * mean));
     }
 
-    // Native capture for the recorded evidence directory, when one is set.
+    // Native capture for the recorded evidence directory, when one is set,
+    // beside the environment and the view it was taken in.
     void capture(const QString& name, const QString& panelId = {}) {
         if (evidenceDirectory_.isEmpty())
             return;
         QDir().mkpath(evidenceDirectory_);
+        const QString id = panelId.isEmpty() ? panel_ : panelId;
+        auto* controller = panelController(id);
+        auto* item = viewerItem(id);
+        const QJsonObject environment{{QStringLiteral("platform"), QGuiApplication::platformName()},
+                                      {QStringLiteral("qt"), QString::fromLatin1(qVersion())},
+                                      {QStringLiteral("device_pixel_ratio"), window_->devicePixelRatio()},
+                                      {QStringLiteral("window_width"), window_->width()},
+                                      {QStringLiteral("window_height"), window_->height()},
+                                      {QStringLiteral("appearance_preset"), workspace_->appearancePreset()},
+                                      {QStringLiteral("panel"), id},
+                                      {QStringLiteral("capture"), name},
+                                      {QStringLiteral("media_surface_width"), item ? item->width() : 0.0},
+                                      {QStringLiteral("media_surface_height"), item ? item->height() : 0.0},
+                                      {QStringLiteral("displayed_scale"), sampleView(id).scale()},
+                                      {QStringLiteral("controller_zoom"), controller ? controller->zoom() : 0.0},
+                                      {QStringLiteral("pan_x"), controller ? controller->pan().x() : 0.0},
+                                      {QStringLiteral("pan_y"), controller ? controller->pan().y() : 0.0},
+                                      {QStringLiteral("sampling_scale"), presentedRequest(id).samplingScale},
+                                      {QStringLiteral("region_x"), presentedRequest(id).region.x},
+                                      {QStringLiteral("region_y"), presentedRequest(id).region.y},
+                                      {QStringLiteral("region_width"), presentedRequest(id).region.width},
+                                      {QStringLiteral("region_height"), presentedRequest(id).region.height},
+                                      {QStringLiteral("stated_zoom"), statedZoom(id)}};
+        QFile environmentFile(evidenceDirectory_ + QStringLiteral("/environment-") + name + QStringLiteral(".json"));
+        EXPECT_TRUE(environmentFile.open(QIODevice::WriteOnly));
+        environmentFile.write(QJsonDocument(environment).toJson(QJsonDocument::Indented));
         EXPECT_TRUE(grabPanel(panelId).save(evidenceDirectory_ + '/' + name + ".png"));
+    }
+
+    // Qt 6.4's QtTest has no wheel helper, so the harness constructs the wheel
+    // event and delivers it to the window — the real input path, with no
+    // test-only handler in production code.
+    void wheel(const QPoint& position, int angleDelta, const QPoint& pixelDelta = QPoint()) {
+        QWheelEvent event(QPointF(position), QPointF(window_->mapToGlobal(position)), pixelDelta, QPoint(0, angleDelta),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QGuiApplication::sendEvent(window_, &event);
+    }
+
+    void drag(const QPoint& from, const QPoint& to, Qt::MouseButton button = Qt::LeftButton, int steps = 8) {
+        QTest::mousePress(window_, button, Qt::NoModifier, from);
+        for (int step = 1; step <= steps; ++step)
+            QTest::mouseMove(window_, from + (to - from) * step / steps, 2);
+        QTest::mouseRelease(window_, button, Qt::NoModifier, to);
+        QTest::qWait(30);
+    }
+
+    [[nodiscard]] QQuickItem* viewerItem(const QString& panelId = {}) {
+        return visualByName(window_->contentItem(),
+                            QStringLiteral("viewerItem_") + (panelId.isEmpty() ? panel_ : panelId));
+    }
+
+    // The panel's display transform for the presented frame, in panel pixels:
+    // the surface the artist sees the media mapped onto.
+    [[nodiscard]] QRectF displayedRect(const QString& panelId = {}) {
+        auto* item = viewerItem(panelId);
+        return item ? item->property("displayRect").toRectF() : QRectF();
+    }
+
+    [[nodiscard]] QQuickItem* zoomControl(const QString& panelId = {}) {
+        return visualByName(window_->contentItem(),
+                            QStringLiteral("viewerZoomMenu_") + (panelId.isEmpty() ? panel_ : panelId));
+    }
+
+    [[nodiscard]] ViewerController* panelController(const QString& panelId = {}) {
+        return panelId.isEmpty() ? controller_ : controllerFor(panelId);
+    }
+
+    // The request the controller submitted for the currently presented frame.
+    [[nodiscard]] nemo::EvaluationRequest presentedRequest(const QString& panelId = {}) {
+        auto* controller = panelController(panelId);
+        const auto presentation = controller ? controller->presentation() : nullptr;
+        return presentation ? presentation->request : nemo::EvaluationRequest{};
+    }
+
+    // Waits for the presented frame to carry a request the current view
+    // produces, so region and sampling can be observed without pixel inspection.
+    bool waitForRequest(const std::function<bool(const nemo::EvaluationRequest&)>& predicate,
+                        const QString& panelId = {}, int timeoutMs = 60000) {
+        return waitFor(
+            [&] {
+                auto* controller = panelController(panelId);
+                const auto presentation = controller ? controller->presentation() : nullptr;
+                return presentation && predicate(presentation->request);
+            },
+            timeoutMs);
+    }
+
+    // Picks a preset from the shared combo's own popup, by the real input path:
+    // click the control to open its menu, then click the entry it shows.
+    void pickZoomPreset(QQuickItem* control, int index) {
+        // The arrow beside the value is the preset menu's target on a typeable
+        // control; the body of the control belongs to the field.
+        const QPoint arrow = control->mapToScene(QPointF(control->width() - 12, control->height() / 2)).toPoint();
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, arrow);
+        QTest::qWait(80);
+        auto* popup = control->property("popup").value<QObject*>();
+        ASSERT_NE(popup, nullptr);
+        auto* list = popup->property("contentItem").value<QQuickItem*>();
+        ASSERT_NE(list, nullptr) << "the zoom control's preset menu must show its entries";
+        QQuickItem* entry = nullptr;
+        ASSERT_TRUE(
+            QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem*, entry), Q_ARG(int, index)));
+        ASSERT_NE(entry, nullptr) << "the preset menu shows entry " << index;
+        const QPointF entryCenter(entry->width() / 2, entry->height() / 2);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, entry->mapToScene(entryCenter).toPoint());
+        QTest::qWait(80);
+    }
+
+    // One observation of the view: the region the presented frame carries, and
+    // the panel rect the display transform draws it into. Scale and image-point
+    // mapping are derived from those two alone, so no assertion repeats the
+    // panel's own view arithmetic.
+    struct ViewSample {
+        nemo::Region region;
+        QRectF rect;
+        [[nodiscard]] double scale() const {
+            return region.width > 0 ? rect.width() / static_cast<double>(region.width) : 0.0;
+        }
+        [[nodiscard]] QPointF panelPoint(double imageX, double imageY) const {
+            const double sx = scale();
+            const double sy = region.height > 0 ? rect.height() / static_cast<double>(region.height) : 0.0;
+            return QPointF(rect.x() + (imageX - region.x) * sx, rect.y() + (imageY - region.y) * sy);
+        }
+    };
+
+    [[nodiscard]] ViewSample sampleView(const QString& panelId = {}) {
+        auto* controller = panelController(panelId);
+        const auto presentation = controller ? controller->presentation() : nullptr;
+        if (!presentation)
+            return {};
+        return ViewSample{presentation->request.region, displayedRect(panelId)};
+    }
+
+    // The scale the zoom control states: the value it edits, which is also what
+    // it renders while the artist is not typing.
+    [[nodiscard]] QString statedZoom(const QString& panelId = {}) {
+        auto* control = zoomControl(panelId);
+        return control ? control->property("editText").toString() : QString();
+    }
+
+    // The percentage text the control states for a scale, computed the way the
+    // panel states it.
+    [[nodiscard]] static QString percentText(double scale) {
+        const double percent = std::round(scale * 1000.0) / 10.0;
+        const bool integral = percent == std::round(percent);
+        return (integral ? QString::number(static_cast<long long>(std::llround(percent)))
+                         : QString::number(percent, 'f', 1)) +
+               QStringLiteral("%");
     }
 };
 
@@ -681,13 +830,15 @@ TEST_F(ReadViewerSurface, SeveralMediaSourcesKeepTheDefaultCompositionCanvas) {
     EXPECT_EQ(controller_->presentation()->request.fullHeight, 1080);
 }
 
-// A project that persisted the retired continuous wheel zoom (a mode the
-// selector cannot represent) must not reopen as a shrunken, effectively blank
-// image labelled "Fit": zoom is mode-driven, so an unknown mode recovers at
-// Fit and the control tells the truth.
-TEST_F(ReadViewerSurface, RetiredContinuousZoomStateStillFitsTheImage) {
+// The retired continuous wheel zoom stored a scale relative to the fitted
+// image under a mode the retired selector could not state. That scale is
+// representable now, so the project reopens at the scale the artist was looking
+// at WITH the control stating it; a record that is genuinely unreadable still
+// recovers to a fitted view rather than a blank or shrunken image the control
+// calls "Fit".
+TEST_F(ReadViewerSurface, RetiredContinuousZoomReopensAtItsScaleAndUnreadableStateFits) {
     workspace_->setPanelState(
-        panel_, QVariantMap{{QStringLiteral("zoomMode"), QStringLiteral("Custom")}, {QStringLiteral("zoom"), 0.05}});
+        panel_, QVariantMap{{QStringLiteral("zoomMode"), QStringLiteral("Custom")}, {QStringLiteral("zoom"), 0.8}});
     QTest::qWait(50);
 
     const auto plate = writePng(directory_.path().toStdString(), "plate", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
@@ -699,19 +850,33 @@ TEST_F(ReadViewerSurface, RetiredContinuousZoomStateStillFitsTheImage) {
     ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), read, QString::fromStdString(plate.string())));
     ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; })) << controller_->error().toStdString();
 
+    auto* item = viewerItem();
+    ASSERT_NE(item, nullptr);
+    const double imageWidth = controller_->sourceSize().width();
+    const double imageHeight = controller_->sourceSize().height();
+    const double fitted =
+        std::min(std::max(1.0, item->width() - 12.0) / imageWidth, std::max(1.0, item->height() - 12.0) / imageHeight);
+    // The retired scale was a multiple of the fitted display scale, so 0.8
+    // reopens at four fifths of the fitted size — and the control says so.
+    EXPECT_NEAR(sampleView().scale(), 0.8 * fitted, 0.01);
+    EXPECT_EQ(statedZoom(), percentText(0.8 * fitted));
+    capture(QStringLiteral("retired-custom-zoom-stated"));
+
+    // A record nothing can read resolves to the fitted view, and the media
+    // covers a real share of the surface rather than a thumbnail.
+    workspace_->setPanelState(panel_, QVariantMap{{QStringLiteral("zoomMode"), QStringLiteral("AnotherMode")},
+                                                  {QStringLiteral("zoom"), 0.05}});
+    QTest::qWait(80);
+    EXPECT_EQ(statedZoom(), QStringLiteral("Fit"));
+    EXPECT_NEAR(sampleView().scale(), fitted, 0.01);
     const auto expected = expectedDisplayRgb(plate);
-    // A retired continuous zoom drew the image at 18% of fit — a ~40 px thumb
-    // in a ~500 px area — so this asserts the image covers a real share of the
-    // media surface, not merely that its pixels exist somewhere.
-    const auto area = grabImageArea(panel_);
+    const auto area = grabImageArea();
     ASSERT_FALSE(area.isNull());
     const double coverage = static_cast<double>(countPixelsNear(area, expected, 12)) / (area.width() * area.height());
-    EXPECT_GT(coverage, 0.15) << "a retired custom zoom reopened as a shrunken image; status="
+    EXPECT_GT(coverage, 0.15) << "an unreadable view record must not present a shrunken image; status="
                               << controller_->status().toStdString() << " coverage=" << coverage;
     capture(QStringLiteral("retired-custom-zoom-recovered"));
-    auto* selector = visualByName(window_->contentItem(), "viewerZoomMenu_" + panel_);
-    ASSERT_NE(selector, nullptr);
-    EXPECT_EQ(selector->property("currentText").toString(), QStringLiteral("Fit"));
+    EXPECT_EQ(warnings_->count(), 0);
 }
 
 // Local confirmation against the owner's supplied project/media (issue #74
@@ -769,6 +934,317 @@ TEST_F(ReadViewerSurface, UserDocumentDisplaysItsAttachedRead) {
 // notification the tested controllers receive is the replacement itself — the
 // exact sequence that a stale "first notification seeds the baseline" sentinel
 // would skip.
+// Issue #84 slice 2. A viewer wheel gesture is a continuous, cursor-anchored
+// scale: it is monotonic, reversible, never resets the pan, states the scale it
+// produced, and it writes the project once when it settles.
+TEST_F(ReadViewerSurface, ViewerWheelZoomIsContinuousAnchoredAndReversible) {
+    const auto plate = writePng(directory_.path().toStdString(), "plate", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
+    const auto read = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"), QStringLiteral("Read1"),
+                                                   0.0, 0.0, {}, {});
+    const auto viewer = controller_->createGraphNode(rootNetwork(), QStringLiteral("viewer"), QStringLiteral("Viewer1"),
+                                                     40.0, 120.0, {}, {});
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), read, 0, viewer, 0));
+    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), read, QString::fromStdString(plate.string())));
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; })) << controller_->error().toStdString();
+
+    auto* item = viewerItem();
+    ASSERT_NE(item, nullptr);
+    ASSERT_NE(zoomControl(), nullptr);
+    // An untouched viewer opens fitted, and the control says so.
+    EXPECT_EQ(statedZoom(), QStringLiteral("Fit"));
+
+    const auto fitted = sampleView();
+    ASSERT_GT(fitted.scale(), 0.0);
+    // Anchor near (not at) the centre so the view clamp cannot move the anchor.
+    const QPointF anchorLocal(item->width() / 2 + 10, item->height() / 2 + 6);
+    const QPoint anchorScene = item->mapToScene(anchorLocal).toPoint();
+    QTest::mouseMove(window_, anchorScene);
+    QTest::qWait(20);
+    // The image point under the pointer, before the gesture.
+    const double imageX = fitted.region.x + (anchorLocal.x() - fitted.rect.x()) / fitted.scale();
+    const double imageY = fitted.region.y + (anchorLocal.y() - fitted.rect.y()) / fitted.scale();
+
+    const double factor = std::exp(53.0 * 0.002);
+    wheel(anchorScene, 120);
+    QTest::qWait(60);
+    const auto zoomedIn = sampleView();
+    // One notch is one proportional step in the indicated direction, not a jump
+    // between two modes.
+    EXPECT_NEAR(zoomedIn.scale(), fitted.scale() * factor, fitted.scale() * 0.01);
+    // The pixel under the pointer stays under the pointer.
+    const auto anchored = zoomedIn.panelPoint(imageX, imageY);
+    EXPECT_NEAR(anchored.x(), anchorLocal.x(), 2.0);
+    EXPECT_NEAR(anchored.y(), anchorLocal.y(), 2.0);
+    // The control states the scale the transform is drawing.
+    EXPECT_EQ(statedZoom(), percentText(zoomedIn.scale()));
+    const auto image = grabImageArea();
+    ASSERT_FALSE(image.isNull());
+    const auto expected = expectedDisplayRgb(plate);
+    EXPECT_GT(countPixelsNear(image, expected, 12), 300)
+        << "the zoomed view must still show the retained media; status=" << controller_->status().toStdString();
+    capture(QStringLiteral("viewer-zoom-one-notch"));
+
+    // Opposite deltas return to the same view, so the gesture is reversible and
+    // zoom is not a one-way mode change.
+    const auto fittedCentre =
+        fitted.panelPoint(fitted.region.x + fitted.region.width / 2.0, fitted.region.y + fitted.region.height / 2.0);
+    wheel(anchorScene, -120);
+    QTest::qWait(60);
+    const auto restored = sampleView();
+    EXPECT_NEAR(restored.scale(), fitted.scale(), fitted.scale() * 0.01);
+    const auto restoredCentre =
+        restored.panelPoint(fitted.region.x + fitted.region.width / 2.0, fitted.region.y + fitted.region.height / 2.0);
+    EXPECT_NEAR(restoredCentre.x(), fittedCentre.x(), 2.0);
+    EXPECT_NEAR(restoredCentre.y(), fittedCentre.y(), 2.0);
+
+    // A burst settles on the scale the artist indicated, however many notches it
+    // carried, and writes the project once.
+    int writes = 0;
+    // A local context object: the connection must not outlive this body, or a
+    // state write from panel teardown would call into dead locals.
+    QObject writesScope;
+    QObject::connect(workspace_.get(), &nemo::workspace::WorkspaceController::panelStateChanged, &writesScope,
+                     [&](const QString& changed) {
+                         if (changed == panel_)
+                             ++writes;
+                     });
+    for (int notch = 0; notch < 6; ++notch)
+        wheel(anchorScene, 120);
+    QTest::qWait(400);
+    EXPECT_EQ(writes, 1) << "a wheel burst must write the project once, not per input event";
+    const auto settled = sampleView();
+    EXPECT_NEAR(settled.scale(), fitted.scale() * std::exp(53.0 * 0.002 * 6.0), fitted.scale() * 0.02);
+    EXPECT_EQ(statedZoom(), percentText(settled.scale()));
+    const auto state = workspace_->panelState(panel_);
+    EXPECT_EQ(state.value(QStringLiteral("zoomMode")).toString(), QStringLiteral("Scale"));
+    EXPECT_NEAR(state.value(QStringLiteral("zoom")).toDouble(), settled.scale(), 0.05)
+        << "the settled view is what the project records";
+    capture(QStringLiteral("viewer-zoom-burst-settled"));
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// The viewer's view drives the evaluation request: fitting keeps the whole image
+// at full sampling, zooming in requests the visible region at full sampling, and
+// zooming far out lets the existing policy reduce sampling for a small display
+// area. An explicit resolution mode keeps overriding all of it.
+TEST_F(ReadViewerSurface, ViewerViewDrivesTheRequestRegionAndSampling) {
+    const auto plate = writePng(directory_.path().toStdString(), "plate", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
+    const auto read = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"), QStringLiteral("Read1"),
+                                                   0.0, 0.0, {}, {});
+    const auto viewer = controller_->createGraphNode(rootNetwork(), QStringLiteral("viewer"), QStringLiteral("Viewer1"),
+                                                     40.0, 120.0, {}, {});
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), read, 0, viewer, 0));
+    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), read, QString::fromStdString(plate.string())));
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.region.width == 96 && request.region.height == 64 && request.samplingScale == 1;
+    })) << controller_->error().toStdString();
+
+    auto* item = viewerItem();
+    ASSERT_NE(item, nullptr);
+    const QPoint anchorScene = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+    QTest::mouseMove(window_, anchorScene);
+    QTest::qWait(20);
+
+    // Zoomed in: the request carries the visible sub-region at full sampling,
+    // inside the unchanged full image domain.
+    for (int notch = 0; notch < 8; ++notch)
+        wheel(anchorScene, 120);
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.region.width < 96 && request.samplingScale == 1;
+    })) << controller_->error().toStdString()
+        << " status=" << controller_->status().toStdString();
+    const auto zoomedIn = presentedRequest();
+    EXPECT_EQ(zoomedIn.fullWidth, 96);
+    EXPECT_EQ(zoomedIn.fullHeight, 64);
+    EXPECT_LT(zoomedIn.region.width, 96);
+    EXPECT_GE(zoomedIn.region.x, 0);
+    EXPECT_LE(zoomedIn.region.x + zoomedIn.region.width, 96);
+    EXPECT_GT(zoomedIn.region.height, 0);
+    capture(QStringLiteral("viewer-zoom-region"));
+
+    // A pan moves the requested region and the displayed image without changing
+    // the scale.
+    const auto beforePan = sampleView();
+    const auto anchorImage = beforePan.panelPoint(beforePan.region.x + beforePan.region.width / 2.0,
+                                                  beforePan.region.y + beforePan.region.height / 2.0);
+    const auto beforeScale = beforePan.scale();
+    const int regionBefore = presentedRequest().region.x;
+    drag(item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint(),
+         item->mapToScene(QPointF(item->width() / 2 + 24, item->height() / 2)).toPoint());
+    ASSERT_TRUE(waitForRequest([&](const nemo::EvaluationRequest& request) {
+        return request.region.x != regionBefore && request.samplingScale == 1;
+    })) << controller_->error().toStdString();
+    const auto afterPan = sampleView();
+    EXPECT_NEAR(afterPan.scale(), beforeScale, beforeScale * 0.01) << "a pan must not change the zoom";
+    const auto movedPoint = afterPan.panelPoint(beforePan.region.x + beforePan.region.width / 2.0,
+                                                beforePan.region.y + beforePan.region.height / 2.0);
+    EXPECT_NEAR(movedPoint.x() - anchorImage.x(), 24.0, 2.0) << "the image follows the drag one to one";
+    capture(QStringLiteral("viewer-pan-region"));
+
+    // Zoomed far enough out, the existing policy reduces sampling for the small
+    // display area while the region is the whole image again.
+    for (int notch = 0; notch < 60 && sampleView().scale() * 96 > 24; ++notch) {
+        wheel(anchorScene, -120);
+        QTest::qWait(5);
+    }
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.samplingScale > 1 && request.region.width == 96;
+    })) << "status="
+        << controller_->status().toStdString();
+    capture(QStringLiteral("viewer-zoom-out-sampling"));
+
+    // An explicit resolution mode still overrides the policy at the same view.
+    controller_->setResolutionMode(QStringLiteral("full"));
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) { return request.samplingScale == 1; }))
+        << controller_->error().toStdString();
+    EXPECT_EQ(presentedRequest().region.width, 96);
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// Panning the image is an explicit drag at any scale, on the left button as
+// before and on the middle button as the graph already allows; it keeps the
+// zoom, leaves the document alone, and writes the view once per gesture.
+TEST_F(ReadViewerSurface, ViewerDragPanKeepsTheZoomAndTheDocument) {
+    const auto plate = writePng(directory_.path().toStdString(), "plate", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
+    const auto read = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"), QStringLiteral("Read1"),
+                                                   0.0, 0.0, {}, {});
+    const auto viewer = controller_->createGraphNode(rootNetwork(), QStringLiteral("viewer"), QStringLiteral("Viewer1"),
+                                                     40.0, 120.0, {}, {});
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), read, 0, viewer, 0));
+    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), read, QString::fromStdString(plate.string())));
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; })) << controller_->error().toStdString();
+
+    auto* item = viewerItem();
+    ASSERT_NE(item, nullptr);
+    const QPoint center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+    QTest::mouseMove(window_, center);
+    for (int notch = 0; notch < 8; ++notch)
+        wheel(center, 120);
+    // Let the burst settle before counting, so the gesture's own write is not
+    // charged to the pan below.
+    QTest::qWait(300);
+    const auto zoomed = sampleView();
+    ASSERT_GT(zoomed.scale(), 0.0);
+
+    int writes = 0;
+    // A local context object: the connection must not outlive this body, or a
+    // state write from panel teardown would call into dead locals.
+    QObject writesScope;
+    QObject::connect(workspace_.get(), &nemo::workspace::WorkspaceController::panelStateChanged, &writesScope,
+                     [&](const QString& changed) {
+                         if (changed == panel_)
+                             ++writes;
+                     });
+    const auto revision = session_->revision();
+    const QPointF localCenter(item->width() / 2, item->height() / 2);
+
+    // A fixed image point: its panel position is what a drag translates, and it
+    // does not depend on which region the presented frame happens to carry.
+    const double imageX = zoomed.region.x + zoomed.region.width / 2.0;
+    const double imageY = zoomed.region.y + zoomed.region.height / 2.0;
+    drag(item->mapToScene(localCenter).toPoint(), item->mapToScene(localCenter + QPointF(30, 0)).toPoint(),
+         Qt::LeftButton);
+    const auto afterLeft = sampleView();
+    EXPECT_NEAR(afterLeft.scale(), zoomed.scale(), zoomed.scale() * 0.01) << "panning must not discard the zoom";
+    EXPECT_NEAR(afterLeft.panelPoint(imageX, imageY).x() - zoomed.panelPoint(imageX, imageY).x(), 30.0, 2.0);
+    EXPECT_EQ(writes, 1) << "one released pan is one persisted view";
+
+    drag(item->mapToScene(localCenter).toPoint(), item->mapToScene(localCenter + QPointF(0, 20)).toPoint(),
+         Qt::MiddleButton);
+    const auto afterMiddle = sampleView();
+    EXPECT_NEAR(afterMiddle.scale(), zoomed.scale(), zoomed.scale() * 0.01);
+    EXPECT_NEAR(afterMiddle.panelPoint(imageX, imageY).y() - afterLeft.panelPoint(imageX, imageY).y(), 20.0, 2.0);
+    EXPECT_EQ(writes, 2);
+    EXPECT_EQ(session_->revision(), revision) << "view gestures are not document edits";
+    const auto state = workspace_->panelState(panel_);
+    EXPECT_NEAR(state.value(QStringLiteral("panX")).toDouble(), controller_->pan().x(), 0.6);
+    capture(QStringLiteral("viewer-panned"));
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// The zoom control states the scale the panel is drawing, accepts a stated
+// percentage and keeps the presets; a project's saved scale reopens with the
+// control stating it, and a record that cannot be represented resolves to a
+// fitted view rather than an image the artist cannot see.
+TEST_F(ReadViewerSurface, ViewerZoomControlStatesAndAcceptsAnyScale) {
+    const auto plate = writePng(directory_.path().toStdString(), "plate", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
+    // A record that states an absolute scale, as this control's own writes do.
+    workspace_->setPanelState(
+        panel_, QVariantMap{{QStringLiteral("zoomMode"), QStringLiteral("Scale")}, {QStringLiteral("zoom"), 2.5}});
+    QTest::qWait(40);
+    const auto read = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"), QStringLiteral("Read1"),
+                                                   0.0, 0.0, {}, {});
+    const auto viewer = controller_->createGraphNode(rootNetwork(), QStringLiteral("viewer"), QStringLiteral("Viewer1"),
+                                                     40.0, 120.0, {}, {});
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), read, 0, viewer, 0));
+    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), read, QString::fromStdString(plate.string())));
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; })) << controller_->error().toStdString();
+
+    auto* item = viewerItem();
+    ASSERT_NE(item, nullptr);
+    auto* control = zoomControl();
+    ASSERT_NE(control, nullptr);
+    const double imageWidth = controller_->sourceSize().width();
+    const double imageHeight = controller_->sourceSize().height();
+    const double fittedScale =
+        std::min(std::max(1.0, item->width() - 12.0) / imageWidth, std::max(1.0, item->height() - 12.0) / imageHeight);
+    // Reopened at the saved scale, and the control states it.
+    EXPECT_NEAR(sampleView().scale(), 2.5, 0.01);
+    EXPECT_EQ(statedZoom(), QStringLiteral("250%"));
+    capture(QStringLiteral("viewer-saved-scale"));
+
+    // A directly stated percentage is applied as stated.
+    auto* field = visualByName(window_->contentItem(), control->objectName() + QStringLiteral("Field"));
+    ASSERT_NE(field, nullptr);
+    field->forceActiveFocus();
+    QTest::qWait(20);
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    for (const auto digit : {Qt::Key_1, Qt::Key_5, Qt::Key_0})
+        QTest::keyClick(window_, digit);
+    QTest::keyClick(window_, Qt::Key_Return);
+    QTest::qWait(80);
+    EXPECT_NEAR(sampleView().scale(), 1.5, 0.01) << "a stated percentage is applied as stated";
+    EXPECT_EQ(statedZoom(), QStringLiteral("150%"));
+
+    // A stated scale outside what the request can carry is clamped to the
+    // nearest representable scale, and the control states the clamped value:
+    // the readout never disagrees with the image.
+    field->forceActiveFocus();
+    QTest::qWait(20);
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    for (const auto digit : {Qt::Key_1, Qt::Key_0})
+        QTest::keyClick(window_, digit);
+    QTest::keyClick(window_, Qt::Key_Return);
+    QTest::qWait(80);
+    // The representable range is the controller's own, expressed through the
+    // documented conversion: 0.05x..32x of the image fitted into the panel's
+    // whole area (the panel's own fitted display keeps its 6 px margin).
+    const double controllerFit =
+        std::min(item->width() / (imageWidth * controller_->pixelAspect()), item->height() / imageHeight);
+    EXPECT_NEAR(sampleView().scale(), 0.05 * controllerFit, 0.01);
+    EXPECT_EQ(statedZoom(), percentText(0.05 * controllerFit));
+
+    // A preset from the control's own menu re-fits the image, and the fitted
+    // view is the accepted one: the media keeps its 6 px margin, the whole image
+    // is requested, and the sampling stays full.
+    pickZoomPreset(control, 0);
+    QTest::qWait(80);
+    EXPECT_EQ(statedZoom(), QStringLiteral("Fit"));
+    EXPECT_NEAR(sampleView().scale(), fittedScale, 0.01);
+    EXPECT_EQ(presentedRequest().samplingScale, 1);
+    EXPECT_EQ(presentedRequest().region.width, 96);
+    capture(QStringLiteral("viewer-preset-fit"));
+
+    // The stated scale survives further gestures: zooming with the wheel from a
+    // stated percentage keeps the control honest.
+    const QPoint center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+    QTest::mouseMove(window_, center);
+    wheel(center, 120);
+    QTest::qWait(80);
+    EXPECT_EQ(statedZoom(), percentText(sampleView().scale()));
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
 class PreparedConfigSurface : public ReadViewerSurface {
 protected:
     std::filesystem::path config_;

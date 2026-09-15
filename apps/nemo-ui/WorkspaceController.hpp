@@ -78,6 +78,13 @@ public:
 
 signals:
     void rootChanged();
+    // A panel-state write. Panel state is presentation state that the writing
+    // panel already holds, so the record change is delivered only to its owner
+    // (and to persistence consumers through presentationChanged). Rebuilding
+    // the workspace root here would re-deliver every panel's state and make
+    // every panel rebuild its display model once per input event — the cost a
+    // view gesture must not pay.
+    void panelStateChanged(const QString& panelId);
     // Persistence-only notification: the arrangement/panel payload changed but
     // the QML tree must not be rebuilt. Splitter ratio drags emit this and
     // deliberately skip rootChanged, so project dirty/autosave consumers must

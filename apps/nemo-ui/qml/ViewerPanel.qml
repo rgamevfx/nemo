@@ -39,6 +39,40 @@ FocusScope {
         if (panelId.length > 0 && typeof viewerControllers !== "undefined" && viewerControllers)
             viewerControllers.release(panelId)
     }
+    // A panel-state write is the panel's own record of its view or preferences:
+    // adopting it changes the display transform only, and never rebuilds a
+    // model or reaches another panel.
+    onPanelStateChanged: {
+        if (viewInitialised && !panning && !zoomQueued)
+            restoreView();
+    }
+    onHasImageChanged: refreshView()
+    // A view still in motion when the application closes is still the view the
+    // project should record.
+    Connections {
+        target: viewerPanel.Window.window
+        function onClosing() { viewerPanel.saveView(); }
+    }
+    // The image domain can change without hasImage changing (a media probe
+    // resolving, a retargeted viewer), and a record the fitted view cannot
+    // represent is converted against that domain.
+    onSourceWidthChanged: refreshView()
+    onSourceHeightChanged: refreshView()
+
+    // The coalescing and settling discipline of the wheel burst: one zoom
+    // application per event-loop turn, one persisted view once it settles.
+    Timer {
+        id: zoomFrame
+        interval: 0
+        repeat: false
+        onTriggered: viewerPanel.applyZoomTarget()
+    }
+    Timer {
+        id: zoomSettle
+        interval: 200
+        repeat: false
+        onTriggered: viewerPanel.settleView()
+    }
     // Panel-local viewer selector. Index addresses the network's Viewer
     // nodes in ascending NodeId order; this panel's controller renders one.
     readonly property int viewerIndex: panelState && panelState.viewerIndex !== undefined
@@ -58,18 +92,38 @@ FocusScope {
     readonly property bool hasImage: compositionWidth > 0 && compositionHeight > 0
     readonly property real sourceWidth: hasImage ? compositionWidth : 0
     readonly property real sourceHeight: hasImage ? compositionHeight : 0
-    // Display settings are panel-local. They deliberately do not use the
-    // controller's render state, so two panels may pan/zoom separately. Zoom is
-    // mode-driven exactly as in the prototype: Fit recomputes against the panel,
-    // and 100%/50% are absolute. A retired continuous wheel zoom is not a
-    // control mode, so a project that persisted it recovers at Fit instead of a
-    // silently shrunken image the selector reports as "Fit".
-    readonly property point displayPan: Qt.point(panelState && panelState.panX !== undefined ? Number(panelState.panX) : 0,
-                                                panelState && panelState.panY !== undefined ? Number(panelState.panY) : 0)
-    readonly property string zoomMode: {
-        var stored = panelState && panelState.zoomMode ? String(panelState.zoomMode) : "Fit"
-        return stored === "100%" || stored === "50%" ? stored : "Fit"
-    }
+    // Display settings are panel-local: they deliberately do not use the
+    // controller's render state, so two panels may pan and zoom separately.
+    //
+    // The view is one continuous, cursor-anchored scale plus an image-space pan.
+    // `viewZoom` is the artist-facing ABSOLUTE scale (1.0 is 1:1), the number
+    // the control states; `viewFitted` means the panel recomputes the scale
+    // from its own geometry, which is what an untouched viewer opens with.
+    //
+    // ONE conversion between that scale and the request: the controller's zoom
+    // is relative to the fitted image in the panel's full area
+    // (`controllerFitScale()`), so `controllerZoom()` is the scale the request
+    // carries and the display transform draws. Because both ends use one
+    // mapping, the readout can never state a scale the request disagrees with.
+    // The representable range is the controller's own bound (0.05x..32x of the
+    // fitted image) expressed through the same conversion.
+    property real viewZoom: 1
+    property bool viewFitted: true
+    property real viewPanX: 0
+    property real viewPanY: 0
+    // Accumulated wheel target and anchor for the burst in flight. A gesture
+    // applies once per event-loop turn and persists once it settles.
+    property real zoomTarget: 1
+    property real zoomAnchorX: 0
+    property real zoomAnchorY: 0
+    property bool zoomQueued: false
+    property bool zoomApplied: false
+    property bool panning: false
+    property real panLastX: 0
+    property real panLastY: 0
+    property bool viewReady: false
+    property bool viewInitialised: false
+    property bool viewRestorePending: false
     readonly property string viewerRole: panelContext && panelContext.viewerRole
                                         ? panelContext.viewerRole : "graph"
     readonly property string resolvedGroup: panelGroup
@@ -180,8 +234,18 @@ FocusScope {
                 width: 78
                 height: 24
                 model: ["Fit", "100%", "50%"]
-                currentIndex: Math.max(0, model.indexOf(viewerPanel.zoomMode))
-                onActivated: viewerPanel.setZoom(currentText)
+                // The control states the scale the panel is drawing: "Fit" while
+                // the view is fitted, the exact percentage otherwise. Presets
+                // stay direct choices, and a percentage can be typed (with or
+                // without the % sign) so a known inspection scale is reachable.
+                typeable: true
+                readout: viewerPanel.zoomReadout()
+                onActivated: viewerPanel.setZoomPreset(currentText)
+                onTextAccepted: function (text) {
+                    viewerPanel.setZoomPreset(text);
+                }
+                ToolTip.visible: hovered
+                ToolTip.text: "Zoom. Pick Fit, 100% or 50%, or type a percentage."
                 Accessible.name: "Viewer zoom"
             }
 
@@ -448,10 +512,73 @@ FocusScope {
                         Math.max(1, viewer.height - 12) / sourceHeight)
     }
 
+    // The controller fits the image into the panel's whole area; the panel's own
+    // fitted display keeps the accepted 6 px margin. Both are the same scale
+    // factor, so the conversion below is exact rather than approximate.
+    function controllerFitScale() {
+        if (sourceWidth <= 0 || sourceHeight <= 0 || viewer.width <= 0 || viewer.height <= 0)
+            return 0
+        return Math.min(viewer.width / (sourceWidth * controller.pixelAspect), viewer.height / sourceHeight)
+    }
+
+    function clampViewZoom(value) {
+        var fit = controllerFitScale()
+        if (!isFinite(value))
+            return fit > 0 ? fit : 1
+        if (fit <= 0)
+            return Math.max(0.01, Math.min(64, value))
+        return Math.max(0.05 * fit, Math.min(32 * fit, value))
+    }
+
+    // The scale the display transform draws at, and therefore the scale the
+    // request must carry.
     function imageScale() {
-        if (zoomMode === "100%") return 1
-        if (zoomMode === "50%") return 0.5
-        return displayScale()
+        return viewFitted ? displayScale() : clampViewZoom(viewZoom)
+    }
+
+    function controllerZoom() {
+        var fit = controllerFitScale()
+        return fit > 0 ? imageScale() / fit : 1
+    }
+
+    function viewVisibleWidth(scale) {
+        return Math.min(sourceWidth, Math.max(1, viewer.width) / (scale * controller.pixelAspect))
+    }
+
+    function viewVisibleHeight(scale) {
+        return Math.min(sourceHeight, Math.max(1, viewer.height) / scale)
+    }
+
+    function viewCenterX(scale) {
+        var visible = viewVisibleWidth(scale)
+        return Math.max(visible / 2, Math.min(sourceWidth - visible / 2, sourceWidth / 2 + viewPanX))
+    }
+
+    function viewCenterY(scale) {
+        var visible = viewVisibleHeight(scale)
+        return Math.max(visible / 2, Math.min(sourceHeight - visible / 2, sourceHeight / 2 + viewPanY))
+    }
+
+    // Push the panel's view into the viewer controller so the request region and
+    // sampling follow what the artist is looking at.
+    function syncView() {
+        var fit = controllerFitScale()
+        if (fit <= 0 || !controller)
+            return
+        viewReady = true
+        controller.setZoom(controllerZoom())
+        controller.setPan(Qt.point(viewPanX, viewPanY))
+    }
+
+    // The zoom the control states: the fitted state, or the exact absolute
+    // scale the gesture produced.
+    function zoomPercentText(scale) {
+        var percent = Math.round(scale * 1000) / 10
+        return (percent === Math.round(percent) ? String(Math.round(percent)) : String(percent)) + "%"
+    }
+
+    function zoomReadout() {
+        return viewFitted ? "Fit" : zoomPercentText(imageScale())
     }
 
     function computeDisplayRect() {
@@ -459,23 +586,150 @@ FocusScope {
             return Qt.rect(0, 0, 0, 0)
         var scale = imageScale()
         var sx = scale * controller.pixelAspect
-        var visibleW = Math.min(sourceWidth, viewer.width / sx)
-        var visibleH = Math.min(sourceHeight, viewer.height / scale)
-        var cx = Math.max(visibleW / 2, Math.min(sourceWidth - visibleW / 2,
-                                                 sourceWidth / 2 + displayPan.x))
-        var cy = Math.max(visibleH / 2, Math.min(sourceHeight - visibleH / 2,
-                                                 sourceHeight / 2 + displayPan.y))
+        var cx = viewCenterX(scale)
+        var cy = viewCenterY(scale)
         var region = controller.presentedRegion
         return Qt.rect(viewer.width / 2 + (region.x - cx) * sx,
                        viewer.height / 2 + (region.y - cy) * scale,
                        region.width * sx, region.height * scale)
     }
 
-    // Prototype zoom is absolute and mode-driven; the panel recomputes Fit on
-    // resize instead of persisting a fit-relative scale that drifts.
-    function setZoom(mode) {
-        var nextZoom = mode === "50%" ? 0.5 : 1
-        saveState({zoom: nextZoom, panX: 0, panY: 0, zoomMode: mode})
+    // Keep the image point under (px, py) where the artist put it while the
+    // scale changes.
+    function setViewScale(next, px, py) {
+        var current = imageScale()
+        if (next === current && !viewFitted)
+            return
+        var scale = clampViewZoom(next)
+        if (px !== undefined && current > 0 && viewer.width > 0 && viewer.height > 0) {
+            var offsetX = px - viewer.width / 2
+            var offsetY = py - viewer.height / 2
+            var imageX = viewCenterX(current) + offsetX / (current * controller.pixelAspect)
+            var imageY = viewCenterY(current) + offsetY / current
+            viewPanX = imageX - offsetX / (scale * controller.pixelAspect) - sourceWidth / 2
+            viewPanY = imageY - offsetY / scale - sourceHeight / 2
+        }
+        viewFitted = false
+        viewZoom = scale
+        syncView()
+    }
+
+    // A wheel burst: accumulate the target and apply it once per event-loop
+    // turn, then persist the settled view once.
+    function queueZoom(factor, px, py) {
+        if (!zoomQueued) {
+            zoomTarget = imageScale()
+            zoomQueued = true
+            zoomFrame.start()
+        }
+        zoomTarget = clampViewZoom(zoomTarget * factor)
+        zoomAnchorX = px
+        zoomAnchorY = py
+        zoomSettle.restart()
+    }
+
+    function applyZoomTarget() {
+        zoomQueued = false
+        var next = clampViewZoom(zoomTarget)
+        if (next === imageScale() && !viewFitted)
+            return
+        setViewScale(next, zoomAnchorX, zoomAnchorY)
+        zoomApplied = true
+    }
+
+    function settleView() {
+        if (!zoomApplied)
+            return
+        zoomApplied = false
+        saveView()
+    }
+
+    function saveView() {
+        if (!viewReady)
+            return
+        saveState({
+                      "zoomMode": viewFitted ? "Fit" : "Scale",
+                      "zoom": Number(imageScale()),
+                      "panX": Number(viewPanX),
+                      "panY": Number(viewPanY)
+                  })
+    }
+
+    function setZoomPreset(text) {
+        var value = String(text).trim().toLowerCase()
+        if (value === "fit") {
+            viewFitted = true
+            viewPanX = 0
+            viewPanY = 0
+            syncView()
+            saveView()
+            return
+        }
+        var percent = parseFloat(value)
+        if (!isFinite(percent))
+            return
+        setViewScale(clampViewZoom(percent / 100), viewer.width / 2, viewer.height / 2)
+        saveView()
+    }
+
+    // The view becomes live once the image domain and the panel geometry are
+    // both known; afterwards a resize re-fits or re-derives the request region
+    // without touching the artist's scale.
+    function refreshView() {
+        if (!viewInitialised) {
+            if (!hasImage || viewer.width <= 0 || viewer.height <= 0)
+                return
+            viewInitialised = true
+            restoreView()
+            return
+        }
+        if (viewFitted)
+            viewZoom = displayScale()
+        if (viewRestorePending && !panning && !zoomQueued)
+            restoreView()
+        else
+            syncView()
+    }
+
+    // Restore the persisted view. The saved scale is absolute, so the control
+    // states the scale the project was saved at; an unreadable record resolves
+    // to a fitted view rather than an image the artist cannot see. The retired
+    // continuous mode stored a fit-relative scale under an unknown mode, and
+    // that scale is representable now, so it is converted rather than dropped.
+    function restoreView() {
+        // A stored scale relative to the fitted image can only be converted once
+        // the image domain is known, so the restore waits for it and is retried
+        // when it arrives.
+        if (sourceWidth <= 0 || sourceHeight <= 0 || viewer.width <= 0 || viewer.height <= 0) {
+            viewRestorePending = true
+            return
+        }
+        viewRestorePending = false
+        var mode = panelState && panelState.zoomMode ? String(panelState.zoomMode) : "Fit"
+        var stored = panelState && panelState.zoom !== undefined ? Number(panelState.zoom) : NaN
+        viewPanX = panelState && panelState.panX !== undefined ? Number(panelState.panX) || 0 : 0
+        viewPanY = panelState && panelState.panY !== undefined ? Number(panelState.panY) || 0 : 0
+        if (mode === "Scale" && isFinite(stored))
+            viewFitted = false
+        else if (mode === "100%")
+            viewFitted = false
+        else if (mode === "50%")
+            viewFitted = false
+        else if (mode === "Custom" && isFinite(stored)) {
+            // The retired continuous mode stored a multiple of the panel's own
+            // fitted display scale, so that is the scale it was drawing.
+            viewFitted = false
+            viewZoom = clampViewZoom(stored * displayScale())
+            syncView()
+            return
+        } else {
+            viewFitted = true
+            viewZoom = displayScale()
+            syncView()
+            return
+        }
+        viewZoom = clampViewZoom(mode === "100%" ? 1 : mode === "50%" ? 0.5 : stored)
+        syncView()
     }
 
 
@@ -567,6 +821,10 @@ FocusScope {
                 controller: viewerPanel.controller
                 displayRect: viewerPanel.computeDisplayRect()
                 visible: viewerPanel.targetAvailable
+                // A resize re-fits a fitted view and re-derives the request
+                // region for a stated one; it never changes the artist's scale.
+                onWidthChanged: viewerPanel.refreshView()
+                onHeightChanged: viewerPanel.refreshView()
             }
 
             // Centered placeholder for "no frame": an unavailable target, an
@@ -607,29 +865,47 @@ FocusScope {
                 anchors.fill: parent
                 cursorShape: viewerPanel.imageScale() > viewerPanel.displayScale() ? Qt.OpenHandCursor : Qt.ArrowCursor
                 enabled: viewerPanel.targetAvailable
-                property real lastX: 0
-                property real lastY: 0
+                acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                 onWheel: function(wheel) {
-                    viewer.makePrimary()
-                    // Prototype wheel zoom selects a control mode, never a
-                    // private scale the selector cannot show.
-                    viewerPanel.setZoom(wheel.angleDelta.y > 0 ? "100%" : "50%")
-                    wheel.accepted = true
+                    viewer.makePrimary();
+                    // A wheel event only accumulates: one application per
+                    // event-loop turn, anchored at the pointer, and no pan
+                    // reset. Direction is monotonic and the deltas are
+                    // symmetric, so the gesture is reversible.
+                    var delta = wheel.pixelDelta && wheel.pixelDelta.y ? wheel.pixelDelta.y : (wheel.angleDelta.y / 120) * 53;
+                    if (!delta)
+                        return;
+                    viewerPanel.queueZoom(Math.exp(delta * 0.002), wheel.x, wheel.y);
+                    wheel.accepted = true;
                 }
                 onPressed: function(mouse) {
-                    lastX = mouse.x
-                    lastY = mouse.y
-                    forceActiveFocus()
+                    viewerPanel.panning = true;
+                    viewerPanel.panLastX = mouse.x;
+                    viewerPanel.panLastY = mouse.y;
+                    forceActiveFocus();
                 }
                 onPositionChanged: function(mouse) {
-                    if (!pressed || viewerPanel.imageScale() <= viewerPanel.displayScale())
-                        return
-                    var scale = viewerPanel.imageScale()
-                    var dx = (mouse.x - lastX) / scale
-                    var dy = (mouse.y - lastY) / scale
-                    lastX = mouse.x
-                    lastY = mouse.y
-                    viewerPanel.saveState({panX: viewerPanel.displayPan.x - dx, panY: viewerPanel.displayPan.y - dy})
+                    if (!viewerPanel.panning)
+                        return;
+                    // Panning is an image drag at any scale; it moves the view,
+                    // never the zoom, and it never becomes document state.
+                    var scale = viewerPanel.imageScale();
+                    if (scale <= 0)
+                        return;
+                    viewerPanel.viewPanX -= (mouse.x - viewerPanel.panLastX) / (scale * controller.pixelAspect);
+                    viewerPanel.viewPanY -= (mouse.y - viewerPanel.panLastY) / scale;
+                    viewerPanel.panLastX = mouse.x;
+                    viewerPanel.panLastY = mouse.y;
+                    viewerPanel.syncView();
+                }
+                onReleased: {
+                    if (!viewerPanel.panning)
+                        return;
+                    viewerPanel.panning = false;
+                    viewerPanel.saveView();
+                }
+                onCanceled: {
+                    viewerPanel.panning = false;
                 }
                 onClicked: viewer.makePrimary()
             }

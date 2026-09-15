@@ -1,0 +1,932 @@
+{
+  "animationChannels": [],
+  "color": {
+    "deliveryTransform": "sRGB/rec709",
+    "viewerTransform": "sRGB/rec709",
+    "workingSpace": "linear"
+  },
+  "colorConfig": "/home/rgame/dev/Nemo_Dev2/docs/evidence/issue12-view.ocio",
+  "format": "nemo",
+  "instances": [
+    {
+      "definition": 2,
+      "id": 1,
+      "inputBindings": [],
+      "name": "ReviewSubnet",
+      "node": 14,
+      "ownsDefinition": true,
+      "params": {},
+      "parentNetwork": 1
+    },
+    {
+      "definition": 3,
+      "id": 2,
+      "inputBindings": [
+        {
+          "node": {
+            "node": 1,
+            "port": 0
+          },
+          "terminal": 1
+        }
+      ],
+      "name": "Subnet",
+      "node": 16,
+      "ownsDefinition": true,
+      "params": {
+        "3": {
+          "size": {
+            "type": "float",
+            "value": 0.0
+          }
+        },
+        "4": {
+          "rotate": {
+            "type": "float",
+            "value": -145.0
+          },
+          "scale": {
+            "type": "float",
+            "value": 0.513
+          }
+        }
+      },
+      "parentNetwork": 1
+    }
+  ],
+  "mediaCatalog": {
+    "bins": [],
+    "entries": [],
+    "nextBinId": 1,
+    "nextEntryId": 1
+  },
+  "name": "Issue 34 real native effects",
+  "networks": [
+    {
+      "defaultOutput": 8,
+      "edges": [
+        {
+          "from": {
+            "node": 6,
+            "port": 0
+          },
+          "id": 5,
+          "to": {
+            "node": 7,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "port": 0
+          },
+          "id": 6,
+          "to": {
+            "node": 8,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "port": 0
+          },
+          "id": 12,
+          "to": {
+            "node": 7,
+            "port": 1
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "port": 0
+          },
+          "id": 15,
+          "to": {
+            "node": 13,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "port": 0
+          },
+          "id": 17,
+          "to": {
+            "node": 15,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "port": 0
+          },
+          "id": 20,
+          "to": {
+            "node": 9,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 16,
+            "port": 0
+          },
+          "id": 21,
+          "to": {
+            "node": 10,
+            "port": 0
+          }
+        }
+      ],
+      "exposedParameters": [],
+      "id": 1,
+      "inputConnections": [],
+      "inputs": [],
+      "name": "Root",
+      "nextEdgeId": 22,
+      "nextInterfacePortId": 1,
+      "nextNodeId": 17,
+      "nodes": [
+        {
+          "id": 1,
+          "layout": {
+            "x": 100.0,
+            "y": 50.0
+          },
+          "name": "plate",
+          "params": {
+            "source": {
+              "type": "string",
+              "value": "src"
+            }
+          },
+          "type": "source"
+        },
+        {
+          "id": 6,
+          "layout": {
+            "x": 400.0,
+            "y": 330.0
+          },
+          "name": "background",
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.02500000037252903,
+                0.03999999910593033,
+                0.07500000298023224,
+                1.0
+              ]
+            }
+          },
+          "type": "constcolor"
+        },
+        {
+          "id": 7,
+          "layout": {
+            "x": 100.0,
+            "y": 395.0
+          },
+          "name": "composite",
+          "params": {},
+          "type": "merge"
+        },
+        {
+          "id": 8,
+          "layout": {
+            "x": 259.29246588808405,
+            "y": 505.799089315303
+          },
+          "name": "out",
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 9,
+          "layout": {
+            "x": 100.0,
+            "y": 535.0
+          },
+          "name": "Viewer1",
+          "params": {},
+          "type": "viewer"
+        },
+        {
+          "id": 10,
+          "layout": {
+            "x": 100.0,
+            "y": 355.0
+          },
+          "name": "Blur2",
+          "params": {},
+          "type": "blur"
+        },
+        {
+          "id": 13,
+          "layout": {
+            "x": -217.72040625000002,
+            "y": 434.14746875000003
+          },
+          "name": "ReviewViewer",
+          "params": {},
+          "type": "viewer"
+        },
+        {
+          "definition": 2,
+          "id": 14,
+          "inputPorts": [
+            {
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "instance": 1,
+          "layout": {
+            "x": -188.022515625,
+            "y": 273.402125
+          },
+          "name": "ReviewSubnet",
+          "outputPorts": [
+            {
+              "kind": "image",
+              "name": "Output 1"
+            }
+          ],
+          "params": {},
+          "type": "network.instance"
+        },
+        {
+          "id": 15,
+          "layout": {
+            "x": -64.404875,
+            "y": 370.772578125
+          },
+          "name": "Transform2",
+          "params": {},
+          "type": "transform"
+        },
+        {
+          "definition": 3,
+          "id": 16,
+          "inputPorts": [
+            {
+              "kind": "image",
+              "name": "Input 1"
+            },
+            {
+              "kind": "mask",
+              "name": "Mask"
+            }
+          ],
+          "instance": 2,
+          "layout": {
+            "x": 100.0,
+            "y": 209.74297689833662
+          },
+          "name": "Subnet",
+          "outputPorts": [
+            {
+              "kind": "image",
+              "name": "Output 1"
+            }
+          ],
+          "params": {},
+          "type": "network.instance"
+        }
+      ],
+      "outputConnections": [],
+      "outputInputBindings": [],
+      "outputs": []
+    },
+    {
+      "defaultOutput": 0,
+      "edges": [
+        {
+          "from": {
+            "node": 11,
+            "port": 0
+          },
+          "id": 13,
+          "to": {
+            "node": 12,
+            "port": 0
+          }
+        }
+      ],
+      "exposedParameters": [],
+      "id": 2,
+      "inputConnections": [],
+      "inputs": [
+        {
+          "allowFanOut": true,
+          "id": 1,
+          "kind": "mask",
+          "layout": {
+            "x": 0.0,
+            "y": -110.0
+          },
+          "name": "Mask"
+        }
+      ],
+      "name": "ReviewSubnet",
+      "nextEdgeId": 14,
+      "nextInterfacePortId": 3,
+      "nextNodeId": 13,
+      "nodes": [
+        {
+          "id": 11,
+          "inputPorts": [],
+          "layout": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "name": "ReviewColor",
+          "outputPorts": [
+            {
+              "kind": "image",
+              "name": "color"
+            }
+          ],
+          "params": {},
+          "type": "constcolor"
+        },
+        {
+          "id": 12,
+          "inputPorts": [
+            {
+              "kind": "image",
+              "name": "image"
+            },
+            {
+              "kind": "mask",
+              "name": "mask",
+              "optional": true
+            }
+          ],
+          "layout": {
+            "x": 0.0,
+            "y": 130.0
+          },
+          "name": "ReviewTransform",
+          "outputPorts": [
+            {
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "translateX": {
+              "type": "float",
+              "value": 200.0
+            }
+          },
+          "type": "transform"
+        }
+      ],
+      "outputConnections": [
+        {
+          "node": {
+            "node": 12,
+            "port": 0
+          },
+          "terminal": 2
+        }
+      ],
+      "outputInputBindings": [],
+      "outputs": [
+        {
+          "allowFanOut": true,
+          "id": 2,
+          "kind": "image",
+          "layout": {
+            "x": 0.0,
+            "y": 280.0
+          },
+          "name": "Output 1"
+        }
+      ]
+    },
+    {
+      "defaultOutput": 0,
+      "edges": [
+        {
+          "from": {
+            "node": 2,
+            "port": 0
+          },
+          "id": 2,
+          "to": {
+            "node": 3,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "port": 0
+          },
+          "id": 3,
+          "to": {
+            "node": 4,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "port": 0
+          },
+          "id": 8,
+          "to": {
+            "node": 2,
+            "port": 1
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "port": 0
+          },
+          "id": 9,
+          "to": {
+            "node": 3,
+            "port": 1
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "port": 0
+          },
+          "id": 10,
+          "to": {
+            "node": 4,
+            "port": 1
+          }
+        }
+      ],
+      "exposedParameters": [
+        {
+          "id": 4,
+          "key": "multiply",
+          "name": "Multiply",
+          "node": 2,
+          "type": 6
+        },
+        {
+          "id": 5,
+          "key": "scale",
+          "name": "Scale",
+          "node": 4,
+          "type": 2
+        },
+        {
+          "id": 6,
+          "key": "rotate",
+          "name": "Rotate",
+          "node": 4,
+          "type": 2
+        },
+        {
+          "id": 7,
+          "key": "size",
+          "name": "Size",
+          "node": 3,
+          "type": 2
+        }
+      ],
+      "id": 3,
+      "inputConnections": [
+        {
+          "node": {
+            "node": 2,
+            "port": 0
+          },
+          "terminal": 1
+        }
+      ],
+      "inputs": [
+        {
+          "allowFanOut": true,
+          "id": 1,
+          "kind": "image",
+          "layout": {
+            "x": 100.0,
+            "y": 10.0
+          },
+          "name": "Input 1"
+        },
+        {
+          "allowFanOut": true,
+          "id": 2,
+          "kind": "mask",
+          "layout": {
+            "x": 408.0,
+            "y": 10.0
+          },
+          "name": "Mask"
+        }
+      ],
+      "name": "Subnet",
+      "nextEdgeId": 11,
+      "nextInterfacePortId": 8,
+      "nextNodeId": 6,
+      "nodes": [
+        {
+          "id": 4,
+          "inputPorts": [
+            {
+              "kind": "image",
+              "name": "image"
+            },
+            {
+              "kind": "mask",
+              "name": "mask",
+              "optional": true
+            }
+          ],
+          "layout": {
+            "x": 100.0,
+            "y": 260.0
+          },
+          "name": "Transform1",
+          "outputPorts": [
+            {
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "maskChannel": {
+              "type": "choice",
+              "value": "R"
+            },
+            "rotate": {
+              "type": "float",
+              "value": 7.0
+            },
+            "scale": {
+              "type": "float",
+              "value": 0.8
+            },
+            "translateX": {
+              "type": "float",
+              "value": 24.0
+            },
+            "translateY": {
+              "type": "float",
+              "value": -12.0
+            }
+          },
+          "type": "transform"
+        },
+        {
+          "id": 2,
+          "inputPorts": [
+            {
+              "kind": "image",
+              "name": "image"
+            },
+            {
+              "kind": "mask",
+              "name": "mask",
+              "optional": true
+            }
+          ],
+          "layout": {
+            "x": 100.0,
+            "y": 120.0
+          },
+          "name": "Grade1",
+          "outputPorts": [
+            {
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "clampBlack": {
+              "type": "boolean",
+              "value": false
+            },
+            "gamma": {
+              "type": "color",
+              "value": [
+                1.100000023841858,
+                1.0499999523162842,
+                0.949999988079071,
+                1.0
+              ]
+            },
+            "invertMask": {
+              "type": "boolean",
+              "value": true
+            },
+            "maskChannel": {
+              "type": "choice",
+              "value": "B"
+            },
+            "multiply": {
+              "type": "color",
+              "value": [
+                1.2000000476837158,
+                0.8999999761581421,
+                1.100000023841858,
+                1.0
+              ]
+            },
+            "offset": {
+              "type": "color",
+              "value": [
+                0.05000000074505806,
+                -0.019999999552965164,
+                0.009999999776482582,
+                0.0
+              ]
+            },
+            "reverse": {
+              "type": "boolean",
+              "value": false
+            }
+          },
+          "type": "grade"
+        },
+        {
+          "id": 3,
+          "inputPorts": [
+            {
+              "kind": "image",
+              "name": "image"
+            },
+            {
+              "kind": "mask",
+              "name": "mask",
+              "optional": true
+            }
+          ],
+          "layout": {
+            "x": 100.0,
+            "y": 190.0
+          },
+          "name": "Blur1",
+          "outputPorts": [
+            {
+              "kind": "image",
+              "name": "out"
+            }
+          ],
+          "params": {
+            "maskChannel": {
+              "type": "choice",
+              "value": "R"
+            },
+            "size": {
+              "type": "float",
+              "value": 9.0
+            }
+          },
+          "type": "blur"
+        },
+        {
+          "id": 5,
+          "inputPorts": [],
+          "layout": {
+            "x": 400.0,
+            "y": 120.0
+          },
+          "name": "mask",
+          "outputPorts": [
+            {
+              "kind": "image",
+              "name": "color"
+            }
+          ],
+          "params": {
+            "color": {
+              "type": "color",
+              "value": [
+                0.25,
+                0.75,
+                0.5,
+                1.0
+              ]
+            }
+          },
+          "type": "constcolor"
+        }
+      ],
+      "outputConnections": [
+        {
+          "node": {
+            "node": 4,
+            "port": 0
+          },
+          "terminal": 3
+        }
+      ],
+      "outputInputBindings": [],
+      "outputs": [
+        {
+          "allowFanOut": true,
+          "id": 3,
+          "kind": "image",
+          "layout": {
+            "x": 100.0,
+            "y": 410.0
+          },
+          "name": "Output 1"
+        }
+      ]
+    }
+  ],
+  "nextAnimationChannelId": 1,
+  "nextInstanceId": 3,
+  "nextKeyframeId": 1,
+  "nextNetworkId": 4,
+  "presentation": {
+    "data": {
+      "context": {
+        "groups": {
+          "A": {
+            "sourceClock": 0.0,
+            "sourceTarget": "src",
+            "timelineClock": 0.0,
+            "timelineTarget": "source:src"
+          }
+        }
+      },
+      "workspace": {
+        "activeWorkspaceId": "workspace-1",
+        "appearance": {
+          "accentOverride": "",
+          "categoryColors": {
+            "Color": "#71608c",
+            "Distort": "#54816b",
+            "Filter": "#a96832",
+            "IO": "#386b91",
+            "Merge": "#60656b",
+            "Utility": "#59646f"
+          },
+          "preset": "Graphite"
+        },
+        "version": 2,
+        "workspaces": [
+          {
+            "id": "workspace-1",
+            "layout": {
+              "root": {
+                "children": [
+                  {
+                    "active": "panel-1",
+                    "id": "leaf-2",
+                    "kind": "tabs",
+                    "panels": [
+                      {
+                        "group": "A",
+                        "id": "panel-1",
+                        "state": {
+                          "zoom": 0.803353549292527,
+                          "zoomMode": "Custom"
+                        },
+                        "type": "viewer"
+                      }
+                    ]
+                  },
+                  {
+                    "children": [
+                      {
+                        "active": "panel-3",
+                        "id": "leaf-4",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "A",
+                            "id": "panel-3",
+                            "state": {
+                              "graphSelections": {
+                                "1": [],
+                                "2": [
+                                  "12"
+                                ],
+                                "3": [
+                                  "3"
+                                ]
+                              },
+                              "graphViews": {
+                                "1": {
+                                  "lastClickValid": true,
+                                  "lastClickX": -36.12671030279169,
+                                  "lastClickY": -138.42094862072008,
+                                  "panX": 148.10195887097683,
+                                  "panY": 302.5698249881922,
+                                  "zoom": 0.5837852365801234
+                                },
+                                "2": {
+                                  "lastClickValid": true,
+                                  "lastClickX": 43.308452988399196,
+                                  "lastClickY": 147.7905514869236,
+                                  "panX": 279.2560617734,
+                                  "panY": 86.0641609948632,
+                                  "zoom": 0.6030910001240712
+                                },
+                                "3": {
+                                  "lastClickValid": true,
+                                  "lastClickX": 130.54539161392407,
+                                  "lastClickY": 214.00741693037975,
+                                  "panX": -91.85714285714286,
+                                  "panY": 228.70000000000002,
+                                  "zoom": 1.1285714285714286
+                                }
+                              },
+                              "scopePath": [],
+                              "scopeRootNetworkId": "1"
+                            },
+                            "type": "nodegraph"
+                          }
+                        ]
+                      },
+                      {
+                        "active": "panel-8",
+                        "id": "leaf-12",
+                        "kind": "tabs",
+                        "panels": [
+                          {
+                            "group": "A",
+                            "id": "panel-8",
+                            "state": {
+                              "columns": true,
+                              "inspectors": [
+                                {
+                                  "collapsed": false,
+                                  "network": "1",
+                                  "node": "16",
+                                  "pinned": false
+                                },
+                                {
+                                  "collapsed": false,
+                                  "network": "3",
+                                  "node": "3",
+                                  "pinned": false
+                                },
+                                {
+                                  "collapsed": false,
+                                  "network": "3",
+                                  "node": "4",
+                                  "pinned": false
+                                }
+                              ],
+                              "limit": 3
+                            },
+                            "type": "parameters"
+                          }
+                        ]
+                      }
+                    ],
+                    "id": "split-13",
+                    "kind": "split",
+                    "orientation": "horizontal",
+                    "ratio": 0.5
+                  }
+                ],
+                "id": "split-5",
+                "kind": "split",
+                "orientation": "horizontal",
+                "ratio": 0.449037447257384
+              },
+              "version": 1
+            },
+            "name": "Default"
+          }
+        ]
+      }
+    },
+    "version": 1
+  },
+  "requiredFeatures": [
+    {
+      "id": "networks",
+      "version": 1
+    },
+    {
+      "id": "instances",
+      "version": 1
+    }
+  ],
+  "rootNetworkId": 1,
+  "schema": 4,
+  "sources": {
+    "src": {
+      "frameOffset": 0,
+      "frameStep": 1,
+      "interpretation": {},
+      "path": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue34-native-effects/plate.exr",
+      "revision": 1
+    }
+  }
+}

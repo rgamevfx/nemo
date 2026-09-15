@@ -100,6 +100,10 @@ private:
     [[nodiscard]] bool panelExists(const QString& panelId) const;
     void persist(const QString& panelId, const PanelBinding& binding);
     void synchronizeWorkspace();
+    // True when the panel is a Parameters panel, whose state carries the open
+    // inspector cards the group router unions. Only such a state write can
+    // change inspector membership.
+    [[nodiscard]] bool isParametersPanel(const QString& panelId) const;
     void documentChanged() noexcept;
     static void sessionChanged(void* context) noexcept;
 

@@ -166,37 +166,48 @@ struct GradeCoefficients {
     return coefficients;
 }
 
-[[nodiscard]] CpuImage applyGrade(const GradeParameters& params, const CpuImage& input) {
+[[nodiscard]] CpuImage applyGrade(const GradeParameters& params, const EvaluationRequest& request,
+                                  const CpuImage& input, const InputAnchor& anchor) {
     const GradeCoefficients coefficients = resolveGradeCoefficients(params);
-    CpuImage output(input.layout());
-    const std::size_t pixels = static_cast<std::size_t>(input.width()) * static_cast<std::size_t>(input.height());
-    const float* source = input.data();
-    float* destination = output.data();
-    for (std::size_t index = 0; index < pixels; ++index) {
-        for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
-            const float value = source[channel];
-            if (!coefficients.enabled[channel]) {
-                destination[channel] = value;
-                continue;
+    CpuImage output(effectRasterLayout(request, &input));
+    const int width = output.width();
+    const int inputWidth = input.width();
+    for (int y = 0; y < output.height(); ++y) {
+        // Grade is pointwise, so each output sample reads the input sample at
+        // the same absolute coordinates (issue #85): the input raster may start
+        // elsewhere and be larger (a halo, a whole-domain escalation, a resident
+        // rectangle), which the anchor places.
+        const std::size_t row = static_cast<std::size_t>(anchor.offsetY + y) * static_cast<std::size_t>(inputWidth) +
+                                static_cast<std::size_t>(anchor.offsetX);
+        const float* source = input.data() + row * kImageChannels;
+        float* destination =
+            output.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(width) * kImageChannels;
+        for (int x = 0; x < width; ++x) {
+            for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
+                const float value = source[channel];
+                if (!coefficients.enabled[channel]) {
+                    destination[channel] = value;
+                    continue;
+                }
+                float result;
+                if (params.reverse) {
+                    result = (signedPow(value, coefficients.exponent[channel]) - coefficients.intercept[channel]) /
+                             coefficients.slope[channel];
+                } else {
+                    result = signedPow(coefficients.slope[channel] * value + coefficients.intercept[channel],
+                                       coefficients.exponent[channel]);
+                }
+                if (params.clampBlack && result < 0.0F) {
+                    result = 0.0F;
+                }
+                if (params.clampWhite && result > 1.0F) {
+                    result = 1.0F;
+                }
+                destination[channel] = result;
             }
-            float result;
-            if (params.reverse) {
-                result = (signedPow(value, coefficients.exponent[channel]) - coefficients.intercept[channel]) /
-                         coefficients.slope[channel];
-            } else {
-                result = signedPow(coefficients.slope[channel] * value + coefficients.intercept[channel],
-                                   coefficients.exponent[channel]);
-            }
-            if (params.clampBlack && result < 0.0F) {
-                result = 0.0F;
-            }
-            if (params.clampWhite && result > 1.0F) {
-                result = 1.0F;
-            }
-            destination[channel] = result;
+            source += kImageChannels;
+            destination += kImageChannels;
         }
-        source += kImageChannels;
-        destination += kImageChannels;
     }
     return output;
 }
@@ -206,9 +217,11 @@ CpuImage executeGrade(const CpuNodeContext& context) {
     if (input.width() <= 0 || input.height() <= 0) {
         failNode(context.node, "native effect requires a non-empty input raster");
     }
-    CpuImage processed = applyGrade(effectiveGrade(context.catalog, context.node, context.effectiveParams), input);
-    return blendEffectOutput(context.node, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
-                             input, std::move(processed), optionalImageInput(context, 1));
+    const InputAnchor anchor = anchorInput(context, 0, input);
+    CpuImage processed = applyGrade(effectiveGrade(context.catalog, context.node, context.effectiveParams),
+                                    context.request, input, anchor);
+    return blendEffectOutput(context, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
+                             input, std::move(processed));
 }
 
 std::optional<std::string> validateGradeParameters(const NodeCatalog& catalog, const NodeInstance& node,

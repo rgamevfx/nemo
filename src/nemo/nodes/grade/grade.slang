@@ -13,14 +13,17 @@
 //     channel; channels: [RGB, RGBA, R, G, B, Alpha, None]; reverse;
 //     clampBlack (default true); clampWhite (default false); plus the common
 //     maskChannel/invertMask/mix controls.
-// bindings (native binding contract v2, see testpattern.slang):
+// bindings (native binding contract v3, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.grade.payload.v1")
+//   set 0, binding 2 : per-input spatial geometry (main, mask)
 //   set 1, binding 0 = main, binding 1 = mask
 //   set 2, binding 0 : output image2D
 // dependencies:
-//   region: output pixel (x, y) depends only on inputs (x, y); no
-//     neighborhood reads, so no support-region expansion.
+//   region: output pixel (x, y) depends only on the input pixel holding the
+//     same full-resolution sample; each input's raster origin is bound with
+//     it (region evaluation, wider cache-backed inputs), so no
+//     support-region expansion is needed.
 //   channels: RGBA uniform; per-channel enables are exact pass-through when
 //     disabled (no clamp, no operation).
 //   temporal: none.
@@ -38,6 +41,8 @@
 // negative/HDR extension, not a claim of bitwise Nuke parity. Clamps apply
 // after the operation, before mask/mix. Invalid coefficients are rejected by
 // the shared metadata validation, never silently substituted.
+
+#include "../GpuGeometry.slang"
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
@@ -109,13 +114,18 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    float4 orig = in_main.Load(int2(p));
+    // Same-lattice inputs: the pixel holding the same full-resolution sample,
+    // located through each input's own raster origin.
+    int2 mainOffset = inputGeometry[0].regionAndOffset.zw;
+    int2 maskOffset = inputGeometry[1].regionAndOffset.zw;
+
+    float4 orig = in_main.Load(int2(p) + mainOffset);
     float4 processed = gradePixel(orig);
 
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(in_mask.Load(int2(p))[channel], 0.0, 1.0);
+        float selected = clamp(in_mask.Load(int2(p) + maskOffset)[channel], 0.0, 1.0);
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully

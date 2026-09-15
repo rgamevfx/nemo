@@ -43,7 +43,7 @@ void main() {
     return EffectPassDefinition{
         .id = "testpattern",
         .shader = "testpattern/testpattern",
-        .glsl = nemo::nodes::gpuGlsl({}, kTestpatternGlsl),
+        .glsl = nemo::nodes::gpuGlsl({}, kTestpatternGlsl, false),
         .inputs = {},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

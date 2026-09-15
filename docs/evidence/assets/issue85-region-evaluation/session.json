@@ -1,0 +1,166 @@
+{
+  "issue": 85,
+  "branch": "issue/85-region-evaluation",
+  "base": "3443d9db1e1cadc9b5baff2bc0b866a39d80fec4",
+  "status": "Implemented and verified locally; owner review and landing remain. No push, merge or issue closure.",
+  "classification": {
+    "evaluation": "system extension",
+    "viewer_control": "owner-requested new design using accepted compact chrome"
+  },
+  "contracts": [
+    "Image-anchored sampling lattice; odd-origin Half/Quarter requests expand outward and report normalized coverage.",
+    "Per-input reverse dependency regions with Blur halos, Transform inverse/filter/original-mix coverage and output-space masks.",
+    "Whole-frame-only contributions expand internally; regional consumers still receive normalized coverage.",
+    "Content-derived keys propagate independently of backing coverage; smallest covering resident rectangle is reused.",
+    "Per-pass input/scratch geometry in native binding v3; batched device-resident execution and final GPU crop.",
+    "Full-frame switch changes coverage only, keeps density/zoom/pan, and persists independently in each viewer panel."
+  ],
+  "public_api_changes": [
+    "canonicalizeRequest and image-space region helpers",
+    "NodeContribution.inputRegions / NodeRegionContext",
+    "CpuNodeContext.inputRequests / planDependencyRegions",
+    "PlanStep.region and JSON plan coverage",
+    "nodeContentKey / regionResultKey / ResultCache.findRegion / publishRegion",
+    "GpuNodeContext.inputRequests / GpuPreparation per-scratch coverage / native binding v3",
+    "ViewerController.forceFullFrame property"
+  ],
+  "unchanged": [
+    "No new dependency or shipped node type",
+    "No Document serialization change",
+    "Accepted full-frame effect image contracts",
+    "Existing scheduler, cache budgets, retirement and stale-publication ownership"
+  ],
+  "verification": {
+    "debug_build": {
+      "command": "cmake --build --preset debug",
+      "result": "passed after review corrections"
+    },
+    "release_build": {
+      "command": "cmake --build --preset release -j1",
+      "result": "passed after review corrections"
+    },
+    "sanitizer_build": {
+      "command": "cmake --build --preset asan -j1 --target nemo_core_tests nemo_effect_tests nemo_contribution_tests nemo_viewer_tests",
+      "result": "passed after review corrections"
+    },
+    "full_debug_suite": {
+      "command": "ctest --preset debug",
+      "total": 707,
+      "passed": 688,
+      "skipped": 18,
+      "failed": 1,
+      "failure": "Viewer.InterpretationMapIsParsedStrictly: unknown source interpretation field colorimetry; previously reported, unrelated and unchanged",
+      "scope": "Run once before final reviewed bookkeeping consolidation; final affected paths rechecked below."
+    },
+    "reviewed_focused_debug": {
+      "command": "ctest --preset debug -R '^(RegionalEvaluationTest|ReuseTest|RequestValidation|ContributionTest)\\.|^EvaluationTest\\.Nested|^Effect\\..*(Region|Reuse|DroppedAsync)|^Viewer\\.(CroppedSourceReductionPreservesFullImageCoordinates|SharedImageChargeSurvivesDroppedHandlesUntilConsumerCompletion|SourceRetentionUnderDelayedCompletion|StillImageHandoffSurvivesDroppedEvaluation|SiblingRepresentationReuseAcrossViewerRenders)$'",
+      "passed": 51,
+      "failed": 0,
+      "skipped": 0
+    },
+    "reviewed_focused_sanitizers": {
+      "command": "ctest --preset asan -R '^(RegionalEvaluationTest|ReuseTest|RequestValidation|ContributionTest)\\.|^EvaluationTest\\.Nested|^Effect\\..*(Region|Reuse|DroppedAsync)|^Viewer\\.(CroppedSourceReductionPreservesFullImageCoordinates|SharedImageChargeSurvivesDroppedHandlesUntilConsumerCompletion|SourceRetentionUnderDelayedCompletion|StillImageHandoffSurvivesDroppedEvaluation|SiblingRepresentationReuseAcrossViewerRenders)$'",
+      "passed": 51,
+      "failed": 0,
+      "skipped": 0,
+      "environment": {
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-evidence/mesa-egl-fixed/mesa.json",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+        "ASAN_OPTIONS": "abort_on_error=1",
+        "LSAN_OPTIONS": "preset-provided tests/lsan_suppressions.txt"
+      },
+      "note": "Uses existing issue70 process-local Mesa repair and existing narrow third-party suppressions; no new suppressions or sanitizer disabling."
+    },
+    "original_reproduction": {
+      "before_error_substring": "does not support region-of-interest requests",
+      "after": "Rendered 16x16",
+      "graph": "TestPattern -> Blur size3",
+      "region": [
+        8,
+        8,
+        16,
+        16
+      ],
+      "domain": [
+        32,
+        32
+      ]
+    },
+    "non_square_source_experiment": {
+      "source": "768x512 float EXR, pixel aspect2, signed/HDR ramps and partially transparent stripes",
+      "graph": "Source (registered EXR) -> Blur size5 -> Transform rotate27 scale0.8 translate(-41,19) mix0.4, Source as G mask -> Output",
+      "sampling_scales": [
+        1,
+        2,
+        4
+      ],
+      "regions": [
+        [
+          257,
+          129,
+          157,
+          101
+        ],
+        [
+          0,
+          0,
+          70,
+          40
+        ],
+        [
+          719,
+          481,
+          49,
+          31
+        ]
+      ],
+      "channel_comparisons": 106516,
+      "maximum_roi_full_frame_error": 0,
+      "maximum_cpu_slang_error": 1.0252e-05,
+      "maximum_glsl_slang_error": 2.38419e-07,
+      "validation_clean": true
+    },
+    "native_control": {
+      "command": "NEMO_TEST_NATIVE_UI=1 NEMO_TEST_VIEWER_WINDOW=1 NEMO74_EVIDENCE_DIR=/tmp/nemo85-native-evidence build/debug/tests/nemo_workspace_ui_tests --gtest_filter=*ForceFullFrame*",
+      "passed": 2,
+      "cases": [
+        "ReadViewerSurface.ForceFullFrameCoversTheWholeDomainAndKeepsTheView",
+        "ForceFullFrameSplitSurface.ForceFullFrameStaysInsideItsPanel"
+      ],
+      "observed": [
+        "Zoomed Blur view: region -> full domain -> region without density/view changes",
+        "Half density remains independently selectable",
+        "Panel state restoration and sibling independence",
+        "Normal header icon, tooltip, checked state, and narrow bottom-row control visually inspected"
+      ],
+      "capture_method": "Actual native Qt Quick window through existing QtTest input and QQuickWindow::grabWindow; desktop computer capture unavailable and windows call timed out; orca-ide executable absent.",
+      "captures": [
+        "viewer-full-frame-regional.png",
+        "viewer-full-frame-hover.png",
+        "viewer-full-frame-checked.png",
+        "viewer-full-frame-narrow-checked.png"
+      ]
+    },
+    "gpu_experiment": "gpu-experiment.json"
+  },
+  "review": {
+    "standards": "No blocking findings after consolidation of GPU per-node bookkeeping, removal of the CPU coverage-map copy and clarification of output-step coverage. Per-pass buffers remain intentionally unpooled; independent shader declarations fail loudly on mismatch.",
+    "spec": "Zero defects requiring change. Conservative unknown-PAR CPU coverage and uniform-black source mapping accepted; narrow-control concern retracted after checking its second loader and native evidence."
+  },
+  "limitations": [
+    "Padded rectangular coverage reuse, not tiled stitching; requests outside every resident rectangle recompute.",
+    "CPU SourceProvider exposes rasters, not a metadata-only probe: unknown source PAR conservatively requests the whole input for Transform.",
+    "Per-pass buffer allocation remains; no many-node profiling or issue16 milestone claim.",
+    "Linux/Wayland only. No Windows or hosted CI evidence.",
+    "Qt diagnostic capture is separate from screenshot-free Vulkan lifetime validation.",
+    "Third-party minizip linker mktemp warning remains."
+  ],
+  "environment": {
+    "gpu": "NVIDIA GeForce GTX 1070",
+    "driver": "580.173.02",
+    "qt": "6.4.2",
+    "platform": "wayland",
+    "slang": "2026.17"
+  },
+  "protected_user_files": "Existing issue34 workflow, autosave and backup edits were excluded from this task."
+}

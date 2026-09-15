@@ -29,13 +29,13 @@
 
 #include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/evaluation/Image.hpp"
+#include "nemo/core/evaluation/Request.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
 namespace nemo {
 
 class Document;
 struct NodeInstance;
-struct EvaluationRequest;
 class SourceProvider;
 
 // What a node is in the network. Ordinary effects produce one image from their
@@ -49,7 +49,11 @@ enum class NodeRole { Image, Source, Output, Viewer };
 // holds null for an absent optional slot; the adapter never allocates a
 // placeholder for one. `effectiveParams` is the resolved static/animated
 // parameter state the executor will record in the plan, and an adapter adds the
-// values it actually consumed to it.
+// values it actually consumed to it. `inputRequests` is the coverage each image
+// in `inputs` was actually produced with (issue #85), in the same declared-port
+// order, so a spatial effect reads an input through its real origin instead of
+// assuming the input raster starts where its own request does. The slot of an
+// absent optional input holds a default request and is never read.
 struct CpuNodeContext {
     const Document& document;
     const NodeCatalog& catalog;
@@ -58,6 +62,21 @@ struct CpuNodeContext {
     ParameterValues& effectiveParams;
     std::span<const CpuImage* const> inputs;
     SourceProvider* sources;
+    std::span<const EvaluationRequest> inputRequests;
+};
+
+// One node's region context (issue #85): the resolved state the node's
+// dependency rules project input coverage from, without executing anything.
+// `request` is the coverage the node has been asked to produce, `pixelAspect`
+// is the resolved pixel aspect of the node's main input (1 for a generator, 0
+// when a source's aspect is not known yet), and `effectiveParams` is the same
+// request-local resolved parameter state execution will consume.
+struct NodeRegionContext {
+    const NodeCatalog& catalog;
+    const NodeInstance& node;
+    const EvaluationRequest& request;
+    ParameterValues& effectiveParams;
+    float pixelAspect{1.0F};
 };
 
 // A node's CPU reference pixel implementation. `version` is the implementation
@@ -89,7 +108,7 @@ struct NodeEditorContribution {
 using NodeParameterValidation =
     std::function<std::optional<std::string>(const NodeCatalog&, const NodeInstance&, ParameterValues&)>;
 
-// One registered built-in node. `editors` is the last field by contract.
+// One registered built-in node. `inputRegions` is the last field by contract.
 struct NodeContribution {
     NodeDescriptor descriptor;
     NodeRole role{NodeRole::Image};
@@ -101,6 +120,17 @@ struct NodeContribution {
     // carry no interpretation of their own.
     NodeParameterValidation validateParameters;
     std::vector<NodeEditorContribution> editors;
+    // Spatial dependency rule (issue #85): the input coverage this node's
+    // pixel implementation reads for a regional request. The result is indexed
+    // by declared input port; a port the result does not cover (and an absent
+    // optional slot) falls back to the node's own request, so an empty result
+    // means "every real port needs exactly this node's region". Rules are the
+    // node's own math (Blur's halo, Transform's inverse map and filter
+    // footprint), never a node-type branch in the executor: the planner merely
+    // clips and lattice-aligns what a contribution returns, and escalates the
+    // whole image domain for a node whose capabilities declare
+    // supportsRegion=false.
+    std::function<std::vector<Region>(const NodeRegionContext&)> inputRegions;
 };
 
 // An immutable, exactly assembled registration snapshot. The constructor

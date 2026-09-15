@@ -5,8 +5,8 @@
 // These are schema facts only: no callback, Qt object or GPU handle lives here.
 // A node module keeps its own descriptor, pixel implementation and editor
 // declarations; the conventions several built-ins genuinely share (the
-// optional-mask effect contract, whole-image capabilities, the Mix control)
-// are stated once here so the built-ins cannot drift from each other.
+// optional-mask effect contract, the Mix control) are stated once here so the
+// built-ins cannot drift from each other.
 
 #include <exception>
 #include <optional>
@@ -19,21 +19,15 @@
 namespace nemo::nodes {
 
 // Every built-in declares the full-quality RGBA contract at the three sampling
-// scales; a Read additionally participates in time.
+// scales; a Read additionally participates in time. Region support is declared
+// alongside it: every built-in that produces pixels states its spatial
+// dependency rule (NodeContribution::inputRegions) instead of refusing regions.
 [[nodiscard]] inline NodeCapabilities builtinCapabilities(bool temporal = false) {
     return NodeCapabilities{.samplingScales = {1, 2, 4},
                             .qualityModes = {Quality::Full},
                             .channels = {"RGBA"},
                             .supportsRegion = true,
                             .temporal = temporal};
-}
-
-// Whole-image effects reject region requests through the existing capability
-// validation; their spatial parameters stay full-resolution.
-[[nodiscard]] inline NodeCapabilities wholeImageCapabilities() {
-    NodeCapabilities capabilities = builtinCapabilities();
-    capabilities.supportsRegion = false;
-    return capabilities;
 }
 
 // Every native effect shares the same optional-mask contract: a required image

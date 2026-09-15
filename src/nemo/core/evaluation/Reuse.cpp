@@ -119,6 +119,31 @@ ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
     return key;
 }
 
+ResultKey nodeContentKey(const Document& document, const NodeInstance& node,
+                         const std::vector<std::uint64_t>& inputContentHashes, const EvaluationRequest& request,
+                         const KeyContext& context) {
+    EvaluationRequest full = request;
+    full.fullWidth = request.imageWidth();
+    full.fullHeight = request.imageHeight();
+    full.region = {0, 0, full.fullWidth, full.fullHeight};
+    return nodeResultKey(document, node, inputContentHashes, full, context);
+}
+
+ResultKey regionResultKey(const ResultKey& contentKey, const EvaluationRequest& request) {
+    ResultKey key;
+    key.canonical.reserve(contentKey.canonical.size() + 96);
+    appendCanonicalField(key.canonical, "spatial-v1", contentKey.canonical);
+    appendCanonicalField(key.canonical, "coverage",
+                         std::to_string(request.region.x) + ',' + std::to_string(request.region.y) + ',' +
+                             std::to_string(request.region.width) + ',' + std::to_string(request.region.height));
+    appendCanonicalField(key.canonical, "scale", std::to_string(request.samplingScale));
+    appendCanonicalField(key.canonical, "domain",
+                         std::to_string(request.imageWidth()) + ',' + std::to_string(request.imageHeight()));
+    key.hash = kFnv1a64Basis;
+    hashMixText(key.hash, key.canonical);
+    return key;
+}
+
 ResultKey viewerResultKey(const ResultKey& sceneLinearKey, const ColorPolicy& policy) {
     // Viewer representations bake the viewing transform (and delivery
     // interpretation for delivery outputs); upstream scene-linear results

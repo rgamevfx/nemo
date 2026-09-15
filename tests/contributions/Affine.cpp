@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/EffectCpu.hpp"
 #include "nemo/core/evaluation/Params.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
@@ -43,7 +44,10 @@ ParameterSpec offsetSpec() {
 }
 
 // Independent CPU algorithm. Alpha is copied through untouched; RGB carry
-// signed, out-of-range scene-linear values without clamping.
+// signed, out-of-range scene-linear values without clamping. The node's raster
+// is its own requested coverage (issue #85) and each sample reads the input at
+// the same absolute coordinate through the input's own anchor, so the input may
+// cover more without changing a pixel.
 [[nodiscard]] CpuImage executeAffine(const CpuNodeContext& context) {
     const std::array<float, 4> scale = effectiveColor4(context.catalog, context.node, context.effectiveParams, "scale");
     const std::array<float, 4> offset =
@@ -52,10 +56,11 @@ ParameterSpec offsetSpec() {
         failNode(context.node, "affine requires a connected input image");
     }
     const CpuImage& input = *context.inputs[0];
-    CpuImage output(input.layout());
-    for (int y = 0; y < input.height(); ++y) {
-        for (int x = 0; x < input.width(); ++x) {
-            const std::array<float, 4> in = input.pixel(x, y);
+    const InputAnchor anchor = anchorInput(context, 0, input);
+    CpuImage output(effectRasterLayout(context.request, &input));
+    for (int y = 0; y < output.height(); ++y) {
+        for (int x = 0; x < output.width(); ++x) {
+            const std::array<float, 4> in = input.pixel(anchor.offsetX + x, anchor.offsetY + y);
             output.setPixel(
                 x, y,
                 {scale[0] * in[0] + offset[0], scale[1] * in[1] + offset[1], scale[2] * in[2] + offset[2], in[3]});
@@ -106,6 +111,17 @@ NodeDescriptor affineDescriptor() {
     };
 }
 
+// Identical pixel declaration, whole-frame-only capability: a region request
+// over this type must escalate the node (and its inputs) to the whole image
+// domain, and the consumer still receives its own rectangle.
+NodeDescriptor affineWholeFrameDescriptor() {
+    NodeDescriptor descriptor = affineDescriptor();
+    descriptor.type = std::string(kWholeFrameNodeType);
+    descriptor.displayName = "Affine whole-frame (test)";
+    descriptor.capabilities.supportsRegion = false;
+    return descriptor;
+}
+
 NodeContribution affineContribution() {
     return NodeContribution{
         .descriptor = affineDescriptor(),
@@ -113,6 +129,12 @@ NodeContribution affineContribution() {
         .cpu = CpuImplementation{.version = kImplementationVersion, .execute = &executeAffine},
         .nativeGpu = true,
     };
+}
+
+NodeContribution affineWholeFrameContribution() {
+    NodeContribution contribution = affineContribution();
+    contribution.descriptor = affineWholeFrameDescriptor();
+    return contribution;
 }
 
 eval::GpuNodeContribution affineGpuContribution() {
@@ -125,6 +147,12 @@ eval::GpuNodeContribution affineGpuContribution() {
         .passes = {affinePass()},
         .prepare = &prepareAffine,
     };
+    return contribution;
+}
+
+eval::GpuNodeContribution affineWholeFrameGpuContribution() {
+    eval::GpuNodeContribution contribution = affineGpuContribution();
+    contribution.node = affineWholeFrameContribution();
     return contribution;
 }
 

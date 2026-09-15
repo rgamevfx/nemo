@@ -70,7 +70,7 @@ void main() {
     return EffectPassDefinition{
         .id = "source",
         .shader = "source/source",
-        .glsl = nemo::nodes::gpuGlsl(kSourceGlslPayload, kSourceGlslBody),
+        .glsl = nemo::nodes::gpuGlsl(kSourceGlslPayload, kSourceGlslBody, false),
         // The decoded frame is supplied by the shared source session, not by a
         // graph edge: external reference 0.
         .inputs = {EffectImageRef{EffectImageKind::External, 0}},

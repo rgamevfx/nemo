@@ -21,6 +21,10 @@ nemo_add_slang_shaders(nemo_shaders ALL
         ../../nodes/blur/blur.slang
         ../../nodes/blur/blurHorizontal.slang
         ../../nodes/transform/transform.slang
+    # Every node effect includes the shared per-input geometry block (issue
+    # #85); the compiled SPIR-V must be rebuilt when that contract changes.
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../nodes/GpuGeometry.slang"
 )
 
 if(DEFINED NEMO_SLANG_SPV_DIR)

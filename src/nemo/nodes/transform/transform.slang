@@ -12,14 +12,17 @@
 //   - translateX/translateY (pixels), scale, rotate (degrees, positive
 //     clockwise in the stored raster), filter [Cubic, Linear, Nearest], plus
 //     the common maskChannel/invertMask/mix controls.
-// bindings (native binding contract v2, see testpattern.slang):
+// bindings (native binding contract v3, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.transform.payload.v1")
+//   set 0, binding 2 : per-input spatial geometry (main, mask)
 //   set 1, binding 0 = main, binding 1 = mask
 //   set 2, binding 0 : output image2D
 // dependencies:
-//   region: output pixel (x, y) samples the inverse-mapped input; no
-//     support-region expansion (whole-image only, supportsRegion=false).
+//   region: output pixel (x, y) samples the inverse-mapped input; the input is
+//     located through its own full-resolution region origin and raster extent
+//     (region evaluation, wider cache-backed inputs), so the resample stays
+//     exact on any sub-rectangle of the lattice.
 //   channels: RGBA uniform; interpolation is alpha-aware.
 //   temporal: none.
 // quality_modes: 1
@@ -36,6 +39,8 @@
 // input (Nearest = floor(fullRes/scale); Linear bilinear; Cubic separable
 // Catmull-Rom a=-0.5). Full-resolution spatial parameters therefore preserve
 // coordinates at every reduced sampling scale.
+
+#include "../GpuGeometry.slang"
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
@@ -79,7 +84,15 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    float4 orig = in_main.Load(int2(p));
+    // The resampled input may cover a different rectangle of the same lattice
+    // (region evaluation, wider cache-backed inputs): its full-resolution
+    // region origin and raster extent come from the bound geometry.
+    int2 inputOrigin = inputGeometry[0].regionAndOffset.xy;
+    int2 dims = int2(inputGeometry[0].extent.xy);
+    int2 mainOffset = inputGeometry[0].regionAndOffset.zw;
+    int2 maskOffset = inputGeometry[1].regionAndOffset.zw;
+
+    float4 orig = in_main.Load(int2(p) + mainOffset);
 
     int scale = int(meta2.z);
     float fullWidth = float(meta.x);
@@ -87,7 +100,6 @@ void main(uint3 tid : SV_DispatchThreadID)
     float regionX = float(meta.z);
     float regionY = float(meta.w);
     float aspect = transformFlags.y;
-    int2 dims = int2(meta2.xy);
 
     // Output pixel center in full resolution, then the declared inverse:
     // subtract translation, undo rotation (physical coords), undo scale.
@@ -104,7 +116,8 @@ void main(uint3 tid : SV_DispatchThreadID)
 
     float4 processed = float4(0.0, 0.0, 0.0, 0.0);  // outside the sampled support: transparent black
     int filterMode = int(transformFlags.x);
-    float2 raster = float2((fullIn.x - regionX) / float(scale), (fullIn.y - regionY) / float(scale));
+    float2 raster = float2((fullIn.x - float(inputOrigin.x)) / float(scale),
+                           (fullIn.y - float(inputOrigin.y)) / float(scale));
     if (filterMode == 2) {  // Nearest: bound the raster index; outside is transparent black
         if (raster.x >= 0.0 && raster.x < float(dims.x) && raster.y >= 0.0 && raster.y < float(dims.y)) {
             processed = in_main.Load(int2(floor(raster)));
@@ -152,7 +165,7 @@ void main(uint3 tid : SV_DispatchThreadID)
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(in_mask.Load(int2(p))[channel], 0.0, 1.0);
+        float selected = clamp(in_mask.Load(int2(p) + maskOffset)[channel], 0.0, 1.0);
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully

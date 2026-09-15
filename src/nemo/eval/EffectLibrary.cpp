@@ -179,7 +179,7 @@ EffectLibrary::EffectLibrary(std::vector<GpuNodeContribution> contributions, Eff
     // Stable, order-independent registration identity. Paths, labels and
     // callback addresses are diagnostics/implementation details, not semantics.
     auto& hash = data->fingerprint;
-    hashMixText(hash, "nemo.native.bindings.v2");
+    hashMixText(hash, "nemo.native.bindings.v3");
     hashMixWord(hash, data->contributions->fingerprint());
     for (const auto& [type, effect] : data->effects) {
         hashMixText(hash, type);

@@ -19,7 +19,7 @@ document revision, result cache, or publication guard existed.
    (`ResultKey`, `src/nemo/core/evaluation/Reuse.hpp/.cpp`) covers the
    implementation version, node type, the node's authored parameter state,
    the keys of its effective inputs in declared port order, the mapped
-   local time, region, full image domain, sampling scale, channels, quality,
+   local time, full image domain, sampling scale, channels, quality,
    working space, source reference content (including media revision), and
    (for the GPU path) a fingerprint of the supplied effect library. Keys are computed
    before execution, so authored state is what is hashed:
@@ -67,6 +67,27 @@ document revision, result cache, or publication guard existed.
 
 6. **Plan evidence.** `PlanStep::cacheReused` and the reuse/miss/stale
    counters make avoided work observable without exposing storage layout.
+
+7. **Content identity and spatial residency are separate (#85).**
+   `nodeContentKey` propagates input content hashes independently of their
+   backing rectangles. `regionResultKey` identifies a concrete covered
+   representation. `ResultCache::findRegion` selects the smallest resident
+   rectangle covering the demand on the same image-anchored sampling lattice.
+   A downstream consumer reads that backing in place; changing coverage alone
+   does not invalidate scene-linear content.
+
+   The shared dependency planner rounds coverage outward to 64-raster-sample
+   blocks, clipped to the domain. This amortizes small overlapping pans without
+   fragmenting every node into many GPU dispatches. It is rectangular coverage
+   reuse, not a tiled cache: a request extending beyond every resident rectangle
+   is recomputed, even if some pixels overlap. No per-tile scheduler or stitching
+   is introduced. Final delivery is exactly the normalized requested rectangle;
+   GPU cropping stays in the evaluation's single submission. Freshness and the
+   existing entry/allocation budgets remain unchanged.
+
+   Plan steps report actual coverage; the GPU output step reports the cropped
+   delivered raster when a final device copy is required. CPU plan result and
+   normalized request identify delivery separately from backing steps.
 
 ## Alternatives considered
 

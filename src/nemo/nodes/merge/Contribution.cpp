@@ -78,27 +78,31 @@ NodeDescriptor mergeDescriptor() {
 // background base and B (index 1) the foreground source. The optional mask is
 // the third declared port (issue #75); an absent mask is a null raster, never a
 // manufactured source, and the shared mask/mix blend owns the absent/None/
-// invert/Mix cases.
+// invert/Mix cases. Each input is read at the output coordinates through the
+// coverage it was actually produced with (issue #85): A, B and the mask may
+// cover more than this node's raster — a halo, a whole-domain escalation, a
+// resident cache rectangle — so Merge reads exactly the requested window of
+// each instead of demanding identically shaped rasters.
 CpuImage executeMerge(const CpuNodeContext& context) {
     const CpuImage& background = requiredImageInput(context, 0, "merge requires a connected A (background) input");
     const CpuImage& foreground = requiredImageInput(context, 1, "merge requires a connected B (foreground) input");
-    if (background.width() <= 0 || background.height() <= 0 || foreground.width() != background.width() ||
-        foreground.height() != background.height()) {
-        failNode(context.node, "merge requires background (A) and foreground (B) rasters of the same non-empty size");
+    if (background.width() <= 0 || background.height() <= 0 || foreground.width() <= 0 || foreground.height() <= 0) {
+        failNode(context.node, "merge requires non-empty background (A) and foreground (B) rasters");
     }
+    const InputAnchor backgroundAnchor = anchorInput(context, 0, background);
+    const InputAnchor foregroundAnchor = anchorInput(context, 1, foreground);
     const MergeOperation operation = effectiveMergeOperation(context.catalog, context.node, context.effectiveParams);
     // The output raster keeps the spatial metadata the CPU dispatch path has
-    // always produced for Merge: the background's extent and pixel aspect with
-    // the storage defaults (RGBA float, scene-linear).
-    ImageLayout layout;
-    layout.width = background.width();
-    layout.height = background.height();
-    layout.pixelAspect = background.layout().pixelAspect;
-    CpuImage composite(layout);
-    for (int y = 0; y < background.height(); ++y) {
-        for (int x = 0; x < background.width(); ++x) {
-            const std::array<float, kImageChannels> bg = background.pixel(x, y);
-            const std::array<float, kImageChannels> fg = foreground.pixel(x, y);
+    // always produced for Merge: the requested region at the request's sampling
+    // scale, with the background's pixel aspect and the storage defaults (RGBA
+    // float, scene-linear).
+    CpuImage composite(effectRasterLayout(context.request, &background));
+    for (int y = 0; y < composite.height(); ++y) {
+        for (int x = 0; x < composite.width(); ++x) {
+            const std::array<float, kImageChannels> bg =
+                background.pixel(backgroundAnchor.offsetX + x, backgroundAnchor.offsetY + y);
+            const std::array<float, kImageChannels> fg =
+                foreground.pixel(foregroundAnchor.offsetX + x, foregroundAnchor.offsetY + y);
             std::array<float, kImageChannels> result{};
             if (operation == MergeOperation::Over) {
                 // The reference's existing Over expression, unchanged: the
@@ -122,9 +126,10 @@ CpuImage executeMerge(const CpuNodeContext& context) {
     // Shared mask/mix interpolation (absent mask or channel none = full
     // coverage): background + coverage*mix*(composite - background), so Mix 0 or
     // zero coverage returns the background exactly. The composite is consumed in
-    // place; no second full raster is retained.
-    return blendEffectOutput(context.node, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
-                             background, std::move(composite), optionalImageInput(context, 2));
+    // place; no second full raster is retained. The optional mask is the third
+    // declared port, and it too is read through its own coverage.
+    return blendEffectOutput(context, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
+                             background, std::move(composite), 2);
 }
 
 std::optional<std::string> validateMergeParameters(const NodeCatalog& catalog, const NodeInstance& node,

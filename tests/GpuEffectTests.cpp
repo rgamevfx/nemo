@@ -28,15 +28,19 @@
 #include <string>
 #include <vector>
 
+#include "contributions/Affine.hpp"
 #include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
+#include "nemo/eval/SourceSession.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/gpu/Submit.hpp"
+#include "nemo/media/ImageIO.hpp"
+#include "nemo/media/ImageSource.hpp"
 
 using namespace nemo;
 
@@ -962,5 +966,455 @@ TEST(Effect, NativeGradeBlurTransformMatchCpuReference) {
         expectImagesClose(cpuImage, glslEval.readBack(request.output, *boot.device, *boot.allocator),
                           testCase.tolerance, testCase.label);
     }
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #85: region evaluation. A region-limited request must produce exactly
+// the full-frame result's rectangle, from both front ends, while the executor
+// reports the coverage it really rendered (planned demand, halo-expanded
+// inputs, resident backing rectangles) in plan.steps and returns the consumer's
+// normalized rectangle.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Region request over an explicit full-image domain, so an ROI and the whole
+// frame describe the same image.
+[[nodiscard]] EvaluationRequest roiRequestFor(const Document& document, Region region, int fullWidth, int fullHeight,
+                                              std::int64_t frame) {
+    EvaluationRequest request = requestFor(document, region, frame);
+    request.fullWidth = fullWidth;
+    request.fullHeight = fullHeight;
+    return request;
+}
+
+void expectRegionContains(Region outer, Region inner, const char* what) {
+    EXPECT_LE(outer.x, inner.x) << what;
+    EXPECT_LE(outer.y, inner.y) << what;
+    EXPECT_GE(outer.x + outer.width, inner.x + inner.width) << what;
+    EXPECT_GE(outer.y + outer.height, inner.y + inner.height) << what;
+}
+
+// Locates the step of one node type in a plan.
+[[nodiscard]] const PlanStep* stepOfType(const EvaluationPlan& plan, std::string_view type) {
+    for (const PlanStep& step : plan.steps)
+        if (step.type == type)
+            return &step;
+    return nullptr;
+}
+
+// Every returned pixel, including the ROI boundary, must match the whole-frame
+// render. Filter support is the planner's responsibility, not a tolerated seam.
+void expectRegionMatchesFullFrame(const CpuImage& regionImage, const CpuImage& fullImage, Region region,
+                                  float tolerance, const char* what) {
+    ASSERT_EQ(regionImage.width(), region.width) << what;
+    ASSERT_EQ(regionImage.height(), region.height) << what;
+    for (int y = 0; y < region.height; ++y) {
+        for (int x = 0; x < region.width; ++x) {
+            const auto expected = fullImage.pixel(region.x + x, region.y + y);
+            const auto actual = regionImage.pixel(x, y);
+            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+                EXPECT_NEAR(actual[channel], expected[channel], tolerance)
+                    << what << ": region pixel (" << x << "," << y << ") channel " << channel;
+            }
+        }
+    }
+}
+
+// plate -> effect -> output, the one-effect fixture the ROI cases share.
+[[nodiscard]] Document makeEffectDocument(const char* type, ParameterValues params, bool withMask) {
+    Document doc;
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+    doc.name = std::string{"region-"} + type;
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
+    const NodeId effect = rootGraph(doc).addNode(type, "effect");
+    const NodeId output = rootGraph(doc).addNode("output", "result");
+    for (const auto& [key, value] : params)
+        rootGraph(doc).setParam(effect, key, value);
+    (void)rootGraph(doc).connect({plate, 0}, {effect, 0});
+    if (withMask) {
+        const NodeId mask = rootGraph(doc).addNode("constcolor", "mask");
+        rootGraph(doc).setParam(mask, "color", ColorValue{{0.25F, 0.5F, 0.75F, 0.6F}});
+        (void)rootGraph(doc).connect({mask, 0}, {effect, 1});
+    }
+    (void)rootGraph(doc).connect({effect, 0}, {output, 0});
+    return doc;
+}
+
+}  // namespace
+
+TEST(Effect, RegionRequestReturnsNormalizedRectangleAndMatchesFullFrame) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const Composition composition = makeComposition();
+    const Region domain{0, 0, 256, 192};
+    const Region region{80, 64, 48, 32};
+    const EvaluationRequest fullRequest = requestFor(composition.doc, domain, 2);
+    const EvaluationRequest regionRequest = roiRequestFor(composition.doc, region, domain.width, domain.height, 2);
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    const CpuImage fullImage = evaluateGpu(composition.doc, fullRequest, slang, *boot.device, *boot.allocator)
+                                   .readBack(fullRequest.output, *boot.device, *boot.allocator);
+    eval::GpuEvaluation regionEval = evaluateGpu(composition.doc, regionRequest, slang, *boot.device, *boot.allocator);
+    const CpuImage regionImage = regionEval.readBack(regionRequest.output, *boot.device, *boot.allocator);
+    const CpuImage glslImage = evaluateGpu(composition.doc, regionRequest, glsl, *boot.device, *boot.allocator)
+                                   .readBack(regionRequest.output, *boot.device, *boot.allocator);
+
+    // The caller receives the normalized request's rectangle, not the padded
+    // backing rectangle the executor actually rendered.
+    ASSERT_EQ(regionImage.width(), region.width);
+    ASSERT_EQ(regionImage.height(), region.height);
+    EXPECT_TRUE(regionEval.plan.request.region == region);
+    expectRegionMatchesFullFrame(regionImage, fullImage, region, kTolerance, "slang region vs full frame");
+    expectImagesClose(regionImage, glslImage, kTolerance, "region glsl vs slang");
+    expectImagesClose(evaluateCpuImage(composition.doc, regionRequest), regionImage, kTolerance, "region slang vs cpu");
+
+    // Every step reports coverage that contains the consumer's demand, and the
+    // output step reports the normalized rectangle it delivered.
+    for (const PlanStep& step : regionEval.plan.steps)
+        expectRegionContains(step.region, region, "step coverage contains the consumer demand");
+    const PlanStep* outputStep = stepOfType(regionEval.plan, "output");
+    ASSERT_NE(outputStep, nullptr);
+    EXPECT_TRUE(outputStep->region == region);
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, BlurRegionRequestCarriesItsHaloAndMatchesFullFrame) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    Document doc = makeEffectDocument("blur", ParameterValues{{"size", 4.0}, {"channels", ChoiceValue{"RGBA"}}}, false);
+    const Region domain{0, 0, 256, 192};
+    const Region region{80, 64, 48, 32};
+    const EvaluationRequest fullRequest = requestFor(doc, domain, 1);
+    const EvaluationRequest regionRequest = roiRequestFor(doc, region, domain.width, domain.height, 1);
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    const CpuImage fullImage = evaluateGpu(doc, fullRequest, slang, *boot.device, *boot.allocator)
+                                   .readBack(fullRequest.output, *boot.device, *boot.allocator);
+    eval::GpuEvaluation regionEval = evaluateGpu(doc, regionRequest, slang, *boot.device, *boot.allocator);
+    const CpuImage regionImage = regionEval.readBack(regionRequest.output, *boot.device, *boot.allocator);
+    const CpuImage glslImage = evaluateGpu(doc, regionRequest, glsl, *boot.device, *boot.allocator)
+                                   .readBack(regionRequest.output, *boot.device, *boot.allocator);
+
+    // Clamp-to-edge filtering is exact: the region render reproduces the whole
+    // frame's pixels including the border, because the taps a region pixel
+    // needs were requested with it.
+    expectRegionMatchesFullFrame(regionImage, fullImage, region, kBlurTolerance34, "blur region vs full frame");
+    expectImagesClose(regionImage, glslImage, kBlurTolerance34, "blur region glsl vs slang");
+    expectImagesClose(evaluateCpuImage(doc, regionRequest), regionImage, kBlurTolerance34, "blur region vs cpu");
+
+    // The halo is real: the blur node's input coverage reaches ceil(size/scale)
+    // pixels beyond the demand on every side, and it is anchored before the
+    // node's own (block-padded) raster — the displacement the bound per-input
+    // geometry exists for, in both blur passes.
+    const PlanStep* plateStep = stepOfType(regionEval.plan, "testpattern");
+    const PlanStep* blurStep = stepOfType(regionEval.plan, "blur");
+    ASSERT_NE(plateStep, nullptr);
+    ASSERT_NE(blurStep, nullptr);
+    expectRegionContains(plateStep->region, Region{region.x - 4, region.y - 4, region.width + 8, region.height + 8},
+                         "blur input carries the filter halo");
+    EXPECT_LT(plateStep->region.x, blurStep->region.x)
+        << "blur input is anchored before the blur raster (halo demanded beyond the node coverage)";
+    EXPECT_LT(plateStep->region.y, blurStep->region.y) << "blur input is anchored above the blur raster";
+    EXPECT_GT(plateStep->region.width, blurStep->region.width);
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, TransformRegionRequestMatchesFullFrameAndCpu) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    Document doc = makeEffectDocument("transform",
+                                      ParameterValues{{"translateX", 1.5F},
+                                                      {"translateY", -0.75F},
+                                                      {"rotate", 12.0F},
+                                                      {"scale", 1.25F},
+                                                      {"filter", ChoiceValue{"Cubic"}},
+                                                      {"maskChannel", ChoiceValue{"G"}},
+                                                      {"mix", 0.5}},
+                                      true);
+    const Region domain{0, 0, 256, 192};
+    const Region region{80, 64, 48, 32};
+    const EvaluationRequest fullRequest = requestFor(doc, domain, 0);
+    const EvaluationRequest regionRequest = roiRequestFor(doc, region, domain.width, domain.height, 0);
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    const CpuImage fullImage = evaluateGpu(doc, fullRequest, slang, *boot.device, *boot.allocator)
+                                   .readBack(fullRequest.output, *boot.device, *boot.allocator);
+    eval::GpuEvaluation regionEval = evaluateGpu(doc, regionRequest, slang, *boot.device, *boot.allocator);
+    const CpuImage regionImage = regionEval.readBack(regionRequest.output, *boot.device, *boot.allocator);
+    const CpuImage glslImage = evaluateGpu(doc, regionRequest, glsl, *boot.device, *boot.allocator)
+                                   .readBack(regionRequest.output, *boot.device, *boot.allocator);
+
+    expectRegionMatchesFullFrame(regionImage, fullImage, region, kTransformTolerance34,
+                                 "transform region vs full frame");
+    expectImagesClose(regionImage, glslImage, kTransformTolerance34, "transform region glsl vs slang");
+    expectImagesClose(evaluateCpuImage(doc, regionRequest), regionImage, kTransformTolerance34,
+                      "transform region vs cpu");
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, ReducedScaleBlurTransformRegionsPreserveSamplingAndBorders) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    Document doc = makeEffectDocument("blur", ParameterValues{{"size", 5.0}, {"mix", 0.7}}, true);
+    auto& graph = rootGraph(doc);
+    const NodeId blur = graph.nodeByName("effect")->id;
+    const NodeId output = graph.nodeByName("result")->id;
+    graph.disconnect(graph.edgesInto(output).front().id);
+    const NodeId transform = graph.addNode("transform", "move");
+    graph.setParam(transform, "rotate", 17.0);
+    graph.setParam(transform, "translateX", 3.5);
+    graph.setParam(transform, "translateY", -2.25);
+    graph.setParam(transform, "mix", 0.6);
+    graph.setParam(transform, "maskChannel", ChoiceValue{"G"});
+    (void)graph.connect({blur, 0}, {transform, 0});
+    (void)graph.connect({graph.nodeByName("mask")->id, 0}, {transform, 1});
+    (void)graph.connect({transform, 0}, {output, 0});
+    const auto slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const auto glsl = eval::glslEffectLibrary();
+    for (const int scale : {2, 4}) {
+        SCOPED_TRACE(scale);
+        auto full = requestFor(doc, {0, 0, 1024, 640}, 0);
+        full.samplingScale = scale;
+        auto region = roiRequestFor(doc, {385, 257, 113, 73}, 1024, 640, 0);
+        region.samplingScale = scale;
+        const auto normalized = canonicalizeRequest(region);
+        const CpuImage fullPixels = evaluateGpu(doc, full, slang, *boot.device, *boot.allocator)
+                                        .readBack(output, *boot.device, *boot.allocator);
+        const CpuImage regionPixels = evaluateGpu(doc, region, slang, *boot.device, *boot.allocator)
+                                          .readBack(output, *boot.device, *boot.allocator);
+        const Region raster{normalized.region.x / scale, normalized.region.y / scale,
+                            scaledDimension(normalized.region.width, scale),
+                            scaledDimension(normalized.region.height, scale)};
+        expectRegionMatchesFullFrame(regionPixels, fullPixels, raster, kTransformTolerance34,
+                                     "reduced-scale chain vs full frame");
+        const CpuImage glslPixels = evaluateGpu(doc, region, glsl, *boot.device, *boot.allocator)
+                                        .readBack(output, *boot.device, *boot.allocator);
+        expectImagesClose(regionPixels, glslPixels, kTransformTolerance34, "reduced-scale chain frontends");
+        expectImagesClose(evaluateCpuImage(doc, region), regionPixels, kTransformTolerance34,
+                          "reduced-scale chain vs CPU");
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, WholeFrameOnlyContributionEscalatesRegionRequest) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    auto contributions = eval::builtinGpuContributions();
+    contributions.push_back(test::affine::affineGpuContribution());
+    contributions.push_back(test::affine::affineWholeFrameGpuContribution());
+    std::vector<NodeContribution> declarations;
+    declarations.reserve(contributions.size());
+    for (auto& declaration : contributions)
+        declarations.push_back(declaration.node);
+    auto registry = std::make_shared<const NodeContributions>(declarations);
+
+    const eval::EffectLibrary slang(std::move(contributions), eval::EffectBackend::Slang, slangSpvDir(), slangSrcDir());
+
+    Document doc(registry->catalog());
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+    doc.name = "whole-frame-region";
+    const NodeId plate = rootGraph(doc).addNode("constcolor", "plate");
+    rootGraph(doc).setParam(plate, "color", ColorValue{{-1.5F, 4.0F, 0.5F, 1.0F}});
+    const NodeId affine = rootGraph(doc).addNode(std::string(test::affine::kWholeFrameNodeType), "affine");
+    rootGraph(doc).setParam(affine, "scale", ColorValue{{2.0F, -1.0F, 0.5F, 1.0F}});
+    rootGraph(doc).setParam(affine, "offset", ColorValue{{0.25F, 0.5F, -0.5F, 0.0F}});
+    const NodeId output = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({plate, 0}, {affine, 0});
+    (void)rootGraph(doc).connect({affine, 0}, {output, 0});
+
+    const Region domain{0, 0, 256, 192};
+    const Region region{80, 64, 48, 32};
+    const EvaluationRequest fullRequest = requestFor(doc, domain, 0);
+    const EvaluationRequest regionRequest = roiRequestFor(doc, region, domain.width, domain.height, 0);
+
+    eval::GpuEvaluation regionEval =
+        evaluateGpu(doc, regionRequest, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr, nullptr);
+    const CpuImage regionImage = regionEval.readBack(regionRequest.output, *boot.device, *boot.allocator);
+    const CpuImage fullImage = evaluateGpu(doc, fullRequest, slang, *boot.device, *boot.allocator)
+                                   .readBack(fullRequest.output, *boot.device, *boot.allocator);
+
+    // The whole-frame-only node is escalated to the whole image domain — a
+    // declared capability, not a node-name branch — and the consumer still
+    // receives its own rectangle, cropped from that whole-domain result.
+    const PlanStep* affineStep = stepOfType(regionEval.plan, "nemo.test.affineWholeFrame");
+    ASSERT_NE(affineStep, nullptr);
+    EXPECT_TRUE(affineStep->region == domain);
+    ASSERT_EQ(regionImage.width(), region.width);
+    ASSERT_EQ(regionImage.height(), region.height);
+    expectRegionMatchesFullFrame(regionImage, fullImage, region, 1e-6F, "whole-frame region vs full frame");
+    expectImagesClose(evaluateCpu(doc, regionRequest, nullptr, nullptr, registry).image, regionImage, 1e-6F,
+                      "whole-frame region vs cpu");
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, OverlappingRegionRequestsReuseTheResidentBackingAndKeepTheirKeys) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const Composition composition = makeComposition();
+    const Region domain{0, 0, 128, 96};
+    const Region first{0, 0, 16, 16};
+    const Region second{16, 0, 16, 16};
+    const EvaluationRequest firstRequest = roiRequestFor(composition.doc, first, domain.width, domain.height, 0);
+    const EvaluationRequest secondRequest = roiRequestFor(composition.doc, second, domain.width, domain.height, 0);
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+
+    // Cold: the second rectangle computed on its own, with no resident backing.
+    ResultCache<eval::GpuNodeImage> cold;
+    eval::GpuEvaluation coldEval =
+        evaluateGpu(composition.doc, secondRequest, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &cold);
+    const CpuImage coldImage = coldEval.readBack(secondRequest.output, *boot.device, *boot.allocator);
+    const std::string coldKey = coldEval.keys.at(secondRequest.output).canonical;
+
+    // Warm: a padded backing rendered for the first rectangle covers the
+    // second, so it is served in place — the dispatches are avoided.
+    ResultCache<eval::GpuNodeImage> warm;
+    eval::GpuEvaluation firstEval =
+        evaluateGpu(composition.doc, firstRequest, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &warm);
+    const CacheCounts afterFirst = warm.counts();
+    eval::GpuEvaluation secondEval =
+        evaluateGpu(composition.doc, secondRequest, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &warm);
+    const CacheCounts afterSecond = warm.counts();
+    const CpuImage secondImage = secondEval.readBack(secondRequest.output, *boot.device, *boot.allocator);
+
+    EXPECT_GT(afterSecond.hits, afterFirst.hits);
+    EXPECT_EQ(afterSecond.misses, afterFirst.misses);  // no recomputation
+    for (const PlanStep& step : secondEval.plan.steps)
+        EXPECT_TRUE(step.cacheReused) << "step " << step.name;
+    // The served result is the same image, and its caller key addresses the
+    // normalized request rather than the wider rectangle that backed it.
+    expectImagesClose(coldImage, secondImage, kTolerance, "overlapping region reuse");
+    EXPECT_EQ(secondEval.keys.at(secondRequest.output).canonical, coldKey);
+    static_cast<void>(firstEval);
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, ViewerResultKeyAgreesWithExecutedKeysForRegionAndFullRequests) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const Composition composition = makeComposition();
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    for (const Region region : {Region{0, 0, 32, 24}, Region{8, 4, 16, 12}}) {
+        const EvaluationRequest request = roiRequestFor(composition.doc, region, 40, 28, 3);
+        ResultCache<eval::GpuNodeImage> cache;
+        eval::GpuEvaluation gpu =
+            evaluateGpu(composition.doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &cache);
+        const ResultKey sceneLinear = gpu.keys.at(request.output);
+        const ResultKey viewer = viewerResultKey(sceneLinear, composition.doc.color);
+        const ResultKey queried = eval::queryViewerResultKey(composition.doc, request, slang);
+        EXPECT_EQ(queried.canonical, viewer.canonical) << "region " << region.x << "," << region.y;
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #85: a real decoded source under a region request. The source fill
+// keeps FULL-resolution coordinate semantics, so the region render must equal
+// the still's own pixels at the region's coordinates — an independent oracle,
+// not a comparison with the other executor.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Temp directory for the still fixture, removed on scope exit.
+struct StillScratchDir {
+    std::filesystem::path path;
+    StillScratchDir()
+        : path(std::filesystem::temp_directory_path() /
+               ("nemo-region-still-" + std::to_string(::getpid()) + "-" +
+                ::testing::UnitTest::GetInstance()->current_test_info()->name())) {
+        std::filesystem::remove_all(path);
+        std::filesystem::create_directories(path);
+    }
+    ~StillScratchDir() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
+    }
+    [[nodiscard]] std::string file(const std::string& name) const { return (path / name).string(); }
+};
+
+// R separates x, G separates y, B separates the diagonal; every coefficient is
+// a power of two, so the values are exact in float32 and equality is meaningful.
+[[nodiscard]] std::array<float, 4> stillPatternPixel(int x, int y) {
+    constexpr float kUnit = 0.0625F;
+    return {(static_cast<float>(x) + 1.0F) * kUnit, (static_cast<float>(y) + 1.0F) * 2.0F * kUnit,
+            (static_cast<float>(x + y) + 1.0F) * 0.5F * kUnit, 1.0F};
+}
+
+[[nodiscard]] CpuImage stillPatternFrame(int width, int height) {
+    CpuImage image(width, height);
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+            image.setPixel(x, y, stillPatternPixel(x, y));
+    return image;
+}
+
+}  // namespace
+
+TEST(Effect, SourceRegionRequestFillsFullResolutionCoordinates) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const StillScratchDir scratch;
+    const std::string path = scratch.file("still.exr");
+    constexpr int kWidth = 32;
+    constexpr int kHeight = 24;
+    media::writeImage(path, stillPatternFrame(kWidth, kHeight), media::OutputPrecision::Float32);
+
+    Document doc;
+    doc.name = "region-source";
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+    CommandStack stack(doc);
+    stack.push(setSourceCommand("plate", SourceReference{path}));
+    const NodeId plate = rootGraph(doc).addNode("source", "plate");
+    rootGraph(doc).setParam(plate, "source", std::string("plate"));
+    const NodeId output = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({plate, 0}, {output, 0});
+
+    const Region region{12, 8, 16, 12};
+    const EvaluationRequest regionRequest = roiRequestFor(doc, region, kWidth, kHeight, 0);
+    const EvaluationRequest fullRequest = requestFor(doc, Region{0, 0, kWidth, kHeight}, 0);
+
+    // The still's written pattern is the oracle: at scale 1 over a same-size
+    // frame the source fill is the identity map, so region pixel (x, y) is the
+    // full-resolution sample (region.x + x, region.y + y).
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::GpuEvaluation regionEval =
+        evaluateGpu(doc, regionRequest, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr, &sources);
+    const CpuImage regionImage = regionEval.readBack(regionRequest.output, *boot.device, *boot.allocator);
+    const CpuImage fullImage =
+        evaluateGpu(doc, fullRequest, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr, &sources)
+            .readBack(fullRequest.output, *boot.device, *boot.allocator);
+
+    ASSERT_EQ(regionImage.width(), region.width);
+    ASSERT_EQ(regionImage.height(), region.height);
+    for (int y = 0; y < region.height; ++y) {
+        for (int x = 0; x < region.width; ++x) {
+            const std::array<float, 4> expected = stillPatternPixel(region.x + x, region.y + y);
+            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+                EXPECT_FLOAT_EQ(regionImage.pixel(x, y)[channel], expected[channel])
+                    << "region pixel (" << x << "," << y << ") channel " << channel;
+            }
+        }
+    }
+    expectRegionMatchesFullFrame(regionImage, fullImage, region, 1e-6F, "source region vs full frame");
+
+    // The CPU reference resolves the same source request through its own
+    // provider, so both executors agree on the region raster.
+    media::ImageSourceProvider provider;
+    const CpuEvaluation cpu = evaluateCpu(doc, regionRequest, nullptr, &provider);
+    ASSERT_EQ(cpu.image.width(), region.width);
+    expectImagesClose(cpu.image, regionImage, 1e-6F, "source region cpu vs slang");
     expectValidationClean(*boot.instance);
 }

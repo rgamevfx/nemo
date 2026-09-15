@@ -2,7 +2,7 @@
 
 Date: 2026-09-14
 Status: Proposed — implemented on issue/83-node-contributions; owner review pending
-References: issue #83; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
+References: issues #83, #85; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
 
 ## Decision
 
@@ -32,13 +32,22 @@ new shared capabilities still require a change in their existing owning module.
   shared evaluator. Read delegates to the existing source request/media owners;
   media error types remain intact. Output and Viewer retain their distinct roles.
   Formal inputs and network instances remain structural Evaluation behavior.
-- Native binding contract v2 separates a 48-byte coordinate/time request at
-  set 0/binding 0 from an optional node-local, 16-byte-aligned payload at binding
-  1. Pass inputs use set 1 in declared order; output uses set 2/binding 0 and
-  optional float weights set 3/binding 0. Blur selects its own horizontal and
-  vertical passes, scratch image and weights. The shared executor still owns
-  allocations, barriers, recording, submission and retirement. There is no
-  per-node wait or routine intermediate CPU readback.
+- Dependency regions belong to Evaluation. Contributions declare per-port
+  `inputRegions`; pointwise inputs default to output coverage. Blur expands
+  filter halos; Transform requests inverse/filter bounds plus original mix
+  coverage, with masks in output space. `supportsRegion=false` escalates the
+  node and its inputs to the whole domain instead of rejecting a regional
+  consumer. Executors pass actual input coverage to each implementation.
+- Native binding contract v3 separates a 48-byte **pass-raster** coordinate/time
+  request at set 0/binding 0 from the optional node-local aligned payload at
+  binding 1. Image-sampling passes receive 32-byte per-input geometry records
+  at binding 2: origin, raster offset, extent and sampling scale. Pass inputs
+  use set 1 in declared order; output uses set 2/binding 0 and optional float
+  weights set 3/binding 0. Full-resolution external source frames retain their
+  source-coordinate contract. Blur declares its horizontal scratch coverage
+  separately from its output. The executor owns allocations, barriers,
+  submission and retirement, including a device-side final crop when needed.
+  No per-node waits or routine intermediate CPU readback are introduced.
 - CPU and GPU preparation callbacks may execute concurrently. Captures must be
   immutable or internally synchronized; context references/spans are valid only
   during invocation. A CPU request retains its registration until return. A GPU

@@ -99,6 +99,16 @@ struct PlanStep {
     // True when this step's result was reused from the evaluator result
     // cache instead of recomputed (issue #9 plan evidence).
     bool cacheReused{false};
+    // Actual full-resolution coverage of this step's raster (issue #85). It is
+    // the region the executor really produced: the planned demand, escalated to
+    // the whole image domain for a whole-frame-only contribution, or a larger
+    // resident rectangle served from the cache. A consumer reads this step's
+    // image through this coverage, never by assuming the raster starts at the
+    // consumer's own origin.
+    // GPU output steps include the final device crop when needed. CPU backing
+    // steps remain unchanged by delivery; plan.result and plan.request describe
+    // its final consumer raster.
+    Region region;
 };
 
 // The executable plan: what the evaluator scheduled, in execution order
@@ -141,6 +151,10 @@ struct EvaluationPlan {
         json["inputImages"] = std::move(inputImages);
         json["produced"] = imageIdentityToJson(step.produced);
         json["reused"] = step.cacheReused;
+        json["region"] = {{"x", step.region.x},
+                          {"y", step.region.y},
+                          {"width", step.region.width},
+                          {"height", step.region.height}};
         steps.push_back(std::move(json));
     }
     nlohmann::json json;

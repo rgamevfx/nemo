@@ -3675,20 +3675,38 @@ void ViewerController::refreshRequest() {
         request.localTime = frame_;
         request.samplingScale =
             policy_.resolve(mode, width, height, pixelAspect_, viewport_.width(), viewport_.height(), zoom_);
-        const auto fit = aspectFit(width, height, pixelAspect_, viewport_.width(), viewport_.height());
-        const double sx = fit.width / width * zoom_;
-        const double sy = fit.height / height * zoom_;
-        const double visibleWidth = std::min<double>(width, viewport_.width() / sx);
-        const double visibleHeight = std::min<double>(height, viewport_.height() / sy);
-        const double centerX = std::clamp(width / 2.0 + pan_.x(), visibleWidth / 2.0, width - visibleWidth / 2.0);
-        const double centerY = std::clamp(height / 2.0 + pan_.y(), visibleHeight / 2.0, height - visibleHeight / 2.0);
-        const int x = std::max(0, static_cast<int>(std::floor(centerX - visibleWidth / 2)));
-        const int y = std::max(0, static_cast<int>(std::floor(centerY - visibleHeight / 2)));
-        const int right = std::min(width, static_cast<int>(std::ceil(centerX + visibleWidth / 2)));
-        const int bottom = std::min(height, static_cast<int>(std::ceil(centerY + visibleHeight / 2)));
-        request.region = {x, y, right - x, bottom - y};
+        // Coverage of the request. Whole-frame mode deliberately ignores the
+        // visible region: the request then names the same domain at every pan
+        // and zoom, which is what a caller that wants one coverage-independent
+        // result asks for. The sampling mode and the view the request was
+        // computed from are retained either way.
+        Region coverage;
+        if (forceFullFrame_) {
+            coverage = {0, 0, width, height};
+        } else {
+            const auto fit = aspectFit(width, height, pixelAspect_, viewport_.width(), viewport_.height());
+            const double sx = fit.width / width * zoom_;
+            const double sy = fit.height / height * zoom_;
+            const double visibleWidth = std::min<double>(width, viewport_.width() / sx);
+            const double visibleHeight = std::min<double>(height, viewport_.height() / sy);
+            const double centerX = std::clamp(width / 2.0 + pan_.x(), visibleWidth / 2.0, width - visibleWidth / 2.0);
+            const double centerY =
+                std::clamp(height / 2.0 + pan_.y(), visibleHeight / 2.0, height - visibleHeight / 2.0);
+            const int x = std::max(0, static_cast<int>(std::floor(centerX - visibleWidth / 2)));
+            const int y = std::max(0, static_cast<int>(std::floor(centerY - visibleHeight / 2)));
+            const int right = std::min(width, static_cast<int>(std::ceil(centerX + visibleWidth / 2)));
+            const int bottom = std::min(height, static_cast<int>(std::ceil(centerY + visibleHeight / 2)));
+            coverage = {x, y, right - x, bottom - y};
+        }
         request.fullWidth = width;
         request.fullHeight = height;
+        request.region = coverage;
+        // One canonical coverage reaches the executor, the cache and the panel:
+        // the region is rounded out to the image-space sampling lattice and
+        // never shrinks, so a region a cached frame carries always contains the
+        // raster this request asks for. Full-domain coverage is already on the
+        // lattice, so the sampling mode keeps naming exactly what it named.
+        request = nemo::canonicalizeRequest(request);
         if (lastRequest_ && *lastRequest_ == request && lastRevision_ == revision)
             return;
         lastRequest_ = request;
@@ -3740,6 +3758,13 @@ void ViewerController::setResolutionMode(const QString& mode) {
         return;
     mode_ = mode;
     emit resolutionChanged();
+    refreshRequest();
+}
+void ViewerController::setForceFullFrame(bool force) {
+    if (forceFullFrame_ == force)
+        return;
+    forceFullFrame_ = force;
+    emit forceFullFrameChanged();
     refreshRequest();
 }
 void ViewerController::setZoom(double value) {

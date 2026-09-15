@@ -37,6 +37,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "nemo/core/document/Document.hpp"
@@ -85,6 +86,14 @@ inline constexpr std::uint64_t kAbsentInputKeyHash = 0x1F3D5B79AB0C2E4DULL;
                                       const std::vector<std::uint64_t>& inputKeyHashes,
                                       const EvaluationRequest& request, const KeyContext& context = {});
 
+// Image meaning is independent of which rectangle currently backs it. Inputs
+// contribute content keys, never allocation/coverage keys; otherwise a pan
+// would invalidate downstream pixels whose dependencies have not changed.
+[[nodiscard]] ResultKey nodeContentKey(const Document& document, const NodeInstance& node,
+                                       const std::vector<std::uint64_t>& inputContentHashes,
+                                       const EvaluationRequest& request, const KeyContext& context = {});
+[[nodiscard]] ResultKey regionResultKey(const ResultKey& contentKey, const EvaluationRequest& request);
+
 // Bakes the document's viewing state into a scene-linear key: the identity
 // of a viewer representation, not a composition result. A viewer-transform
 // edit changes this key while the scene-linear key — and therefore upstream
@@ -122,6 +131,8 @@ public:
         ResultKey key;
         std::shared_ptr<const ImageT> image;
         ImageIdentity identity;
+        std::optional<ResultKey> contentKey;
+        EvaluationRequest request;
     };
 
     explicit ResultCache(std::size_t maxEntries = 512) : maxEntries_(maxEntries) {}
@@ -138,24 +149,17 @@ public:
     // discarded, never published).
     bool publish(const Document& document, const EvaluationTicket& ticket, ResultKey key,
                  std::shared_ptr<const ImageT> image, ImageIdentity identity) {
-        if (ticket.generation != generation_ || ticket.documentRevision != document.stateRevision()) {
-            ++counts_.staleRejected;
-            return false;
-        }
-        std::erase_if(entries_, [&key, this](const Entry& entry) {
-            if (entry.key == key) {
-                ++counts_.evicted;
-                return true;
-            }
-            return false;
-        });
-        while (entries_.size() >= maxEntries_) {
-            entries_.pop_front();
-            ++counts_.evicted;
-        }
-        entries_.push_back(Entry{std::move(key), std::move(image), identity});
-        ++counts_.published;
-        return true;
+        return publishEntry(document, ticket, Entry{std::move(key), std::move(image), std::move(identity), {}, {}});
+    }
+
+    // Geometry travels with storage, so a covering hit can be consumed in
+    // place without copying a cropped input into a second allocation.
+    bool publishRegion(const Document& document, const EvaluationTicket& ticket, ResultKey contentKey,
+                       const EvaluationRequest& request, std::shared_ptr<const ImageT> image, ImageIdentity identity) {
+        auto key = regionResultKey(contentKey, request);
+        return publishEntry(
+            document, ticket,
+            Entry{std::move(key), std::move(image), std::move(identity), std::move(contentKey), request});
     }
 
     // Exact-key lookup. Counts one hit or miss per call; executors look up
@@ -166,6 +170,25 @@ public:
                 ++counts_.hits;
                 return entry;
             }
+        }
+        ++counts_.misses;
+        return std::nullopt;
+    }
+
+    // Prefer the smallest resident rectangle that covers this demand. An
+    // overlapping but incomplete rectangle is NOT a hit: missing samples must
+    // never be mistaken for an image border.
+    [[nodiscard]] std::optional<Entry> findRegion(const ResultKey& contentKey, const EvaluationRequest& needed) const {
+        const Entry* best = nullptr;
+        for (const Entry& entry : entries_) {
+            if (!entry.contentKey || *entry.contentKey != contentKey || !covers(entry.request, needed))
+                continue;
+            if (best == nullptr || area(entry.request.region) < area(best->request.region))
+                best = &entry;
+        }
+        if (best != nullptr) {
+            ++counts_.hits;
+            return *best;
         }
         ++counts_.misses;
         return std::nullopt;
@@ -183,6 +206,43 @@ public:
     [[nodiscard]] CacheCounts counts() const { return counts_; }
 
 private:
+    [[nodiscard]] static std::int64_t area(const Region& region) {
+        return static_cast<std::int64_t>(region.width) * region.height;
+    }
+
+    [[nodiscard]] static bool covers(const EvaluationRequest& stored, const EvaluationRequest& needed) {
+        if (stored.samplingScale <= 0 || stored.samplingScale != needed.samplingScale ||
+            stored.imageWidth() != needed.imageWidth() || stored.imageHeight() != needed.imageHeight())
+            return false;
+        const auto dx = static_cast<std::int64_t>(needed.region.x) - stored.region.x;
+        const auto dy = static_cast<std::int64_t>(needed.region.y) - stored.region.y;
+        return needed.region.width > 0 && needed.region.height > 0 && dx >= 0 && dy >= 0 &&
+               dx % stored.samplingScale == 0 && dy % stored.samplingScale == 0 &&
+               dx + needed.region.width <= stored.region.width && dy + needed.region.height <= stored.region.height;
+    }
+
+    bool publishEntry(const Document& document, const EvaluationTicket& ticket, Entry entry) {
+        if (ticket.generation != generation_ || ticket.documentRevision != document.stateRevision()) {
+            ++counts_.staleRejected;
+            return false;
+        }
+        if (maxEntries_ == 0)
+            return false;
+        std::erase_if(entries_, [&entry, this](const Entry& existing) {
+            if (existing.key == entry.key) {
+                ++counts_.evicted;
+                return true;
+            }
+            return false;
+        });
+        while (entries_.size() >= maxEntries_) {
+            entries_.pop_front();
+            ++counts_.evicted;
+        }
+        entries_.push_back(std::move(entry));
+        ++counts_.published;
+        return true;
+    }
     std::size_t maxEntries_;
     std::uint64_t generation_{0};
     mutable CacheCounts counts_;

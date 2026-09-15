@@ -45,6 +45,7 @@ FocusScope {
     onPanelStateChanged: {
         if (viewInitialised && !panning && !zoomQueued)
             restoreView();
+        restoreForceFullFrame();
     }
     onHasImageChanged: refreshView()
     // A view still in motion when the application closes is still the view the
@@ -264,6 +265,59 @@ FocusScope {
                 ToolTip.text: "Sampling resolution."
                 Accessible.name: "Proxy resolution"
             }
+
+            // Whole-frame coverage switch (issue #85). It sits beside the
+            // resolution control because it answers the same question — how much
+            // of the image the request covers — and it is icon-only so the
+            // compact row keeps the resolution choice as its last stated value;
+            // the tooltip and the accessible name carry its meaning. The
+            // controller is the live owner of the switch, so `checked` stays a
+            // binding and a click only submits the next value: a checkable
+            // Button would write `checked` itself, destroy the binding, and
+            // leave the control disagreeing with the request after a panel-state
+            // restore.
+            Button {
+                id: fullFrameButton
+                objectName: "viewerFullFrame_" + viewerPanel.panelId
+                width: 24
+                height: 24
+                padding: 0
+                flat: true
+                checked: viewerPanel.controller.forceFullFrame === true
+                Accessible.name: "Force full-frame rendering"
+                Accessible.checkable: true
+                Accessible.checked: fullFrameButton.checked
+                ToolTip.visible: hovered
+                ToolTip.text: "Force full-frame rendering"
+                onClicked: viewerPanel.setForceFullFrame(!viewerPanel.controller.forceFullFrame)
+                background: Rectangle {
+                    radius: viewerPanel.theme ? viewerPanel.theme.smallRadius : 4
+                    color: fullFrameButton.down ? viewerPanel.themeColor("raised", "#282c31")
+                          : fullFrameButton.hovered ? viewerPanel.themeColor("hover", "#343940") : "transparent"
+                    border.width: fullFrameButton.checked || fullFrameButton.activeFocus ? 1 : 0
+                    border.color: viewerPanel.themeColor("accent", "#3485f6")
+                }
+                contentItem: Canvas {
+                    id: fullFrameGlyph
+                    anchors.fill: parent
+                    // The Canvas repaints from its own state property, so the
+                    // repaint trigger can never resolve to a neighbouring
+                    // object's signal.
+                    readonly property bool active: fullFrameButton.checked
+                    onActiveChanged: requestPaint()
+                    onPaint: viewerPanel.drawFullFrameGlyph(getContext("2d"), width, height, active)
+                    Component.onCompleted: requestPaint()
+                    Connections {
+                        target: viewerPanel
+                        function onThemeChanged() { fullFrameGlyph.requestPaint() }
+                    }
+                    Connections {
+                        target: viewerPanel.theme
+                        function onPresetChanged() { fullFrameGlyph.requestPaint() }
+                        function onAccentOverrideChanged() { fullFrameGlyph.requestPaint() }
+                    }
+                }
+            }
         }
     }
 
@@ -401,6 +455,24 @@ FocusScope {
         for (var changed in changes)
             next[changed] = changes[changed]
         workspace.setPanelState(panelId, next)
+    }
+
+    // The coverage switch is panel-local and is recorded in this panel's own
+    // state record; the workspace stays the one owner of persisted panel state
+    // and nothing here touches the document, its history, or a view transform.
+    function setForceFullFrame(value) {
+        var next = value === true
+        controller.setForceFullFrame(next)
+        saveState({forceFullFrame: next})
+    }
+
+    // Adopt the recorded switch into this panel's controller. Coverage is a
+    // request property, so restoring it re-derives the request without
+    // recentering or refitting the view.
+    function restoreForceFullFrame() {
+        if (!controller)
+            return
+        controller.setForceFullFrame(panelState && panelState.forceFullFrame === true)
     }
 
     function setRole(role) {
@@ -792,6 +864,33 @@ FocusScope {
         } else if (glyph === "markOut") {
             ctx.beginPath(); ctx.moveTo(w * 0.7, h * 0.2); ctx.lineTo(w * 0.7, h * 0.8); ctx.lineTo(w * 0.3, h * 0.8); ctx.stroke()
             ctx.beginPath(); ctx.moveTo(w * 0.56, h * 0.32); ctx.lineTo(w * 0.3, h * 0.32); ctx.stroke()
+        }
+    }
+
+    // The whole-frame switch's icon: the frame is the image domain and the
+    // inner box is the region a request covers. While the request follows the
+    // visible region the inner box is an outline; once the whole frame is
+    // requested it is filled, and the frame itself takes the accent. Drawn in
+    // the same stroke vocabulary as the transport glyphs.
+    function drawFullFrameGlyph(ctx, width, height, active) {
+        ctx.reset()
+        var colour = viewerPanel.themeColor(active ? "accent" : "text", "#dce0e6")
+        ctx.strokeStyle = colour
+        ctx.fillStyle = colour
+        ctx.lineWidth = 1.5
+        ctx.lineCap = "round"
+        ctx.lineJoin = "round"
+        var left = Math.round(width * 0.17) + 0.5
+        var top = Math.round(height * 0.24) + 0.5
+        var right = Math.round(width * 0.83) - 0.5
+        var bottom = Math.round(height * 0.76) - 0.5
+        ctx.strokeRect(left, top, right - left, bottom - top)
+        var insetX = Math.max(3, (right - left) * 0.24)
+        var insetY = Math.max(1, (bottom - top) * 0.24)
+        if (active) {
+            ctx.fillRect(left + insetX, top + insetY, right - left - 2 * insetX, bottom - top - 2 * insetY)
+        } else {
+            ctx.strokeRect(left + insetX, top + insetY, right - left - 2 * insetX, bottom - top - 2 * insetY)
         }
     }
 
@@ -1300,6 +1399,7 @@ FocusScope {
     Component.onCompleted: Qt.callLater(function() {
         activateViewer()
         forwardContext()
+        restoreForceFullFrame()
     })
     onViewerIndexChanged: activateViewer()
     onGraphRoleChanged: if (graphRole) activateViewer()

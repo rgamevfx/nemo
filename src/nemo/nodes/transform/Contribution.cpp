@@ -1,11 +1,14 @@
 #include "nemo/nodes/Builtins.hpp"
 #include "nemo/nodes/transform/Parameters.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "nemo/core/evaluation/EffectCpu.hpp"
 #include "nemo/core/evaluation/Params.hpp"
@@ -71,7 +74,7 @@ NodeDescriptor transformDescriptor() {
                                .section = "Sampling",
                                .editor = {}},
                           }),
-                          .capabilities = wholeImageCapabilities()};
+                          .capabilities = builtinCapabilities()};
 }
 
 [[nodiscard]] bool isFinite(float value) {
@@ -83,7 +86,8 @@ NodeDescriptor transformDescriptor() {
 // physical coordinates (x*pixelAspect, y) so non-square pixels stay rigid.
 // The mapped full-resolution coordinate then selects an input raster sample.
 [[nodiscard]] CpuImage applyTransform(const NodeInstance& node, const EvaluationRequest& request,
-                                      const TransformParameters& params, const CpuImage& input) {
+                                      const TransformParameters& params, const CpuImage& input,
+                                      const InputAnchor& anchor) {
     if (!isFinite(params.translateX) || !isFinite(params.translateY) || !isFinite(params.rotate) ||
         !isFinite(params.scale) || !(params.scale > 0.0F)) {
         failNode(node, "Transform parameters must be finite with a positive 'scale'");
@@ -96,8 +100,6 @@ NodeDescriptor transformDescriptor() {
                            " is not a declared reduction (supported scales: 1, 2, 4)");
     }
 
-    const int width = input.width();
-    const int height = input.height();
     const int scale = request.samplingScale;
     const float sampling = static_cast<float>(scale);
     const float fullWidth = static_cast<float>(request.imageWidth());
@@ -121,11 +123,18 @@ NodeDescriptor transformDescriptor() {
     const float sine = static_cast<float>(std::sin(radians));
     const float originX = static_cast<float>(request.region.x);
     const float originY = static_cast<float>(request.region.y);
+    // The input raster's own absolute origin in raster samples (issue #85): the
+    // mapped coordinate is an absolute image-space sample, so an input coverage
+    // that does not start where this node's region starts shifts every read.
+    const float sourceOriginX = originX / sampling - static_cast<float>(anchor.offsetX);
+    const float sourceOriginY = originY / sampling - static_cast<float>(anchor.offsetY);
+    const int outputWidth = scaledDimension(request.region.width, scale);
+    const int outputHeight = scaledDimension(request.region.height, scale);
 
-    CpuImage output(input.layout());
-    for (int y = 0; y < height; ++y) {
+    CpuImage output(effectRasterLayout(request, &input));
+    for (int y = 0; y < outputHeight; ++y) {
         const float outputY = originY + (static_cast<float>(y) + 0.5F) * sampling;
-        for (int x = 0; x < width; ++x) {
+        for (int x = 0; x < outputWidth; ++x) {
             const float outputX = originX + (static_cast<float>(x) + 0.5F) * sampling;
             const float offsetX = outputX - centerX - params.translateX;
             const float offsetY = outputY - centerY - params.translateY;
@@ -140,12 +149,14 @@ NodeDescriptor transformDescriptor() {
                 output.setPixel(x, y, {0.0F, 0.0F, 0.0F, 0.0F});
                 continue;
             }
+            const float sampleX = mappedX / sampling - sourceOriginX;
+            const float sampleY = mappedY / sampling - sourceOriginY;
 
             if (params.filter == 2) {
-                const float nearestX = std::floor(mappedX / sampling);
-                const float nearestY = std::floor(mappedY / sampling);
-                if (nearestX < 0.0F || nearestY < 0.0F || nearestX > static_cast<float>(width - 1) ||
-                    nearestY > static_cast<float>(height - 1)) {
+                const float nearestX = std::floor(sampleX);
+                const float nearestY = std::floor(sampleY);
+                if (nearestX < 0.0F || nearestY < 0.0F || nearestX > static_cast<float>(input.width() - 1) ||
+                    nearestY > static_cast<float>(input.height() - 1)) {
                     output.setPixel(x, y, {0.0F, 0.0F, 0.0F, 0.0F});
                 } else {
                     output.setPixel(x, y, input.pixel(static_cast<int>(nearestX), static_cast<int>(nearestY)));
@@ -153,13 +164,15 @@ NodeDescriptor transformDescriptor() {
                 continue;
             }
 
-            const float rasterX = mappedX / sampling - 0.5F;
-            const float rasterY = mappedY / sampling - 0.5F;
-            const float lastX = static_cast<float>(width - 1);
-            const float lastY = static_cast<float>(height - 1);
+            const float rasterX = sampleX - 0.5F;
+            const float rasterY = sampleY - 0.5F;
+            const float lastX = static_cast<float>(input.width() - 1);
+            const float lastY = static_cast<float>(input.height() - 1);
             // The whole support window outside the raster is transparent black
-            // either way; bounding it here keeps the floor-to-index conversion
-            // inside the int range for wildly translated coordinates.
+            // either way — outside the raster is outside the image domain, since
+            // the halo the planner requests reaches exactly to the domain edge —
+            // and bounding it here keeps the floor-to-index conversion inside the
+            // int range for wildly translated coordinates.
             if (params.filter == 1) {
                 if (rasterX <= -2.0F || rasterX >= lastX + 1.0F || rasterY <= -2.0F || rasterY >= lastY + 1.0F) {
                     output.setPixel(x, y, {0.0F, 0.0F, 0.0F, 0.0F});
@@ -232,11 +245,94 @@ CpuImage executeTransform(const CpuNodeContext& context) {
     if (input.width() <= 0 || input.height() <= 0) {
         failNode(context.node, "native effect requires a non-empty input raster");
     }
+    const InputAnchor anchor = anchorInput(context, 0, input);
     CpuImage processed =
         applyTransform(context.node, context.request,
-                       effectiveTransform(context.catalog, context.node, context.effectiveParams), input);
-    return blendEffectOutput(context.node, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
-                             input, std::move(processed), optionalImageInput(context, 1));
+                       effectiveTransform(context.catalog, context.node, context.effectiveParams), input, anchor);
+    return blendEffectOutput(context, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
+                             input, std::move(processed));
+}
+
+// Transform reads the inverse image of the region it must produce, expanded by
+// the sampling filter's footprint, UNION the region itself (issue #85): the
+// pass-through, mix and mask paths read the original input at the output
+// coordinates, so that coverage is a dependency too. The mask is read at the
+// output coordinates only. A boundary that maps outside the image domain needs
+// no pixels: Transform samples there as transparent black, exactly as the
+// whole-image reference does. An unknown input pixel aspect makes any tight
+// inverse bound meaningless, so the whole input domain is requested rather than
+// assuming square pixels.
+std::vector<Region> transformInputRegions(const NodeRegionContext& context) {
+    const TransformParameters params = effectiveTransform(context.catalog, context.node, context.effectiveParams);
+    const EvaluationRequest& request = context.request;
+    const int scale = isSamplingScale(request.samplingScale) ? request.samplingScale : 1;
+    std::vector<Region> regions{request.region, request.region};
+    const Region whole = domainRegion(request.imageWidth(), request.imageHeight());
+    const float aspect = context.pixelAspect;
+    if (!isFinite(aspect) || !(aspect > 0.0F)) {
+        regions[0] = whole;
+        return regions;
+    }
+    constexpr double kDegreesToRadians = 3.14159265358979323846 / 180.0;
+    const double radians = static_cast<double>(params.rotate) * kDegreesToRadians;
+    const double centerX = static_cast<double>(request.imageWidth()) * 0.5;
+    const double centerY = static_cast<double>(request.imageHeight()) * 0.5;
+    const double cosine = static_cast<double>(static_cast<float>(std::cos(radians)));
+    const double sine = static_cast<double>(static_cast<float>(std::sin(radians)));
+    const auto mapped = [&](double outputX, double outputY) {
+        const double offsetX = outputX - centerX - static_cast<double>(params.translateX);
+        const double offsetY = outputY - centerY - static_cast<double>(params.translateY);
+        const double physicalX = offsetX * static_cast<double>(aspect);
+        const double physicalY = offsetY;
+        const double rotatedX = cosine * physicalX + sine * physicalY;
+        const double rotatedY = -sine * physicalX + cosine * physicalY;
+        return std::array<double, 2>{centerX +
+                                         (rotatedX / static_cast<double>(aspect)) / static_cast<double>(params.scale),
+                                     centerY + rotatedY / static_cast<double>(params.scale)};
+    };
+    // The sample centers the region covers: the first and last of each axis.
+    const int samplesX = scaledDimension(request.region.width, scale);
+    const int samplesY = scaledDimension(request.region.height, scale);
+    double minX = std::numeric_limits<double>::max();
+    double minY = std::numeric_limits<double>::max();
+    double maxX = std::numeric_limits<double>::lowest();
+    double maxY = std::numeric_limits<double>::lowest();
+    for (const int x : {0, samplesX - 1}) {
+        for (const int y : {0, samplesY - 1}) {
+            const double outputX =
+                static_cast<double>(request.region.x) + (static_cast<double>(x) + 0.5) * static_cast<double>(scale);
+            const double outputY =
+                static_cast<double>(request.region.y) + (static_cast<double>(y) + 0.5) * static_cast<double>(scale);
+            const std::array<double, 2> point = mapped(outputX, outputY);
+            if (!std::isfinite(point[0]) || !std::isfinite(point[1])) {
+                regions[0] = whole;
+                return regions;
+            }
+            minX = std::min(minX, point[0]);
+            minY = std::min(minY, point[1]);
+            maxX = std::max(maxX, point[0]);
+            maxY = std::max(maxY, point[1]);
+        }
+    }
+    // Filter footprint in full-resolution pixels: cubic reads two samples on
+    // each side of the mapped coordinate, linear and nearest one. One extra
+    // sample absorbs the difference between the corner bound above and the
+    // sampled centers.
+    const int footprint = params.filter == 0 ? 2 : 1;
+    const int margin = (footprint + 1) * scale;
+    // Valid typed transforms can map far beyond integer coordinates. Clip in
+    // floating point before conversion; pixels outside the domain are black.
+    const int left =
+        static_cast<int>(std::clamp(std::floor(minX) - margin, 0.0, static_cast<double>(request.imageWidth())));
+    const int top =
+        static_cast<int>(std::clamp(std::floor(minY) - margin, 0.0, static_cast<double>(request.imageHeight())));
+    const int right =
+        static_cast<int>(std::clamp(std::ceil(maxX) + margin, 0.0, static_cast<double>(request.imageWidth())));
+    const int bottom =
+        static_cast<int>(std::clamp(std::ceil(maxY) + margin, 0.0, static_cast<double>(request.imageHeight())));
+    const Region read{left, top, right - left, bottom - top};
+    regions[0] = regionUnion(read, request.region);
+    return regions;
 }
 
 std::optional<std::string> validateTransformParameters(const NodeCatalog& catalog, const NodeInstance& node,
@@ -255,6 +351,7 @@ NodeContribution transformContribution() {
     contribution.role = NodeRole::Image;
     contribution.cpu = CpuImplementation{contribution.descriptor.implementationVersion, &executeTransform};
     contribution.validateParameters = &validateTransformParameters;
+    contribution.inputRegions = &transformInputRegions;
     return contribution;
 }
 

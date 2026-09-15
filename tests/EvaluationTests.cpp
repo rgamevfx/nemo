@@ -4,6 +4,7 @@
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/EffectCpu.hpp"
 #include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
@@ -622,15 +623,10 @@ TEST(RequestValidation, EnforcesEachDependencyCapabilityWithNodeContext) {
     quality.region = {0, 0, 2, 2};
     check(NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Draft}, .channels = {"RGBA"}}, quality,
           "quality");
-    EvaluationRequest cropped;
-    cropped.region = {1, 0, 2, 2};
-    cropped.fullWidth = 4;
-    cropped.fullHeight = 2;
-    check(NodeCapabilities{.samplingScales = {1},
-                           .qualityModes = {Quality::Full},
-                           .channels = {"RGBA"},
-                           .supportsRegion = false},
-          cropped, "region-of-interest");
+    // A declared lack of region support is deliberately NOT one of these
+    // rejections (issue #85): such a contribution is processed over the whole
+    // image domain internally, and its consumers still receive their region.
+    // That behavior is verified by rendering, not by a message.
 }
 
 TEST(EvaluationTest, NestedSharedInstancesKeepScopedOverridesAndLazyInputs) {
@@ -1192,4 +1188,320 @@ TEST(NativeEffectTest, TransformSelectsFiltersAndMapsCoordinates) {
         EXPECT_NEAR(masked.pixel(x, 0)[0], 0.5F * input.pixel(x, 0)[0] + 0.5F * processed, 1e-6F)
             << "masked transform x=" << x;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Dependency-region evaluation (issue #85). A region-limited request renders the
+// same samples as the matching window of the whole-image request, through the
+// chains that need real dependency coverage: pointwise effects, Blur halos,
+// Transform inverse bounds and filter footprint, masks and Mix, and a
+// contribution that declares it can only process whole images.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+[[nodiscard]] EvaluationRequest windowRequest(const Document& document, const std::string& outputName, Region region,
+                                              int samplingScale, int domainWidth, int domainHeight) {
+    EvaluationRequest request;
+    request.network = document.rootNetworkId();
+    request.output = rootGraph(document).nodeByName(outputName)->id;
+    request.region = region;
+    request.samplingScale = samplingScale;
+    request.fullWidth = domainWidth;
+    request.fullHeight = domainHeight;
+    return request;
+}
+
+// The region-limited raster must equal the matching window of the whole-image
+// raster: same samples, same sampling lattice, same origin semantics.
+void expectWindowMatchesWholeFrame(const CpuImage& window, const CpuImage& whole, Region normalized, int scale) {
+    ASSERT_EQ(window.width(), scaledDimension(normalized.width, scale));
+    ASSERT_EQ(window.height(), scaledDimension(normalized.height, scale));
+    const int offsetX = normalized.x / scale;
+    const int offsetY = normalized.y / scale;
+    for (int y = 0; y < window.height(); ++y) {
+        for (int x = 0; x < window.width(); ++x) {
+            for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
+                EXPECT_FLOAT_EQ(window.pixel(x, y)[channel], whole.pixel(offsetX + x, offsetY + y)[channel])
+                    << "sample (" << x << "," << y << ") channel " << channel;
+            }
+        }
+    }
+}
+
+// Coverage may only grow: every planned region contains what the consumer asked
+// for, stays inside the image domain, and keeps its origin on the lattice.
+void expectCoverageInvariants(const EvaluationPlan& plan, Region requested, int scale, int domainWidth,
+                              int domainHeight) {
+    EXPECT_EQ(plan.request.region, regionOnLattice(requested, scale, domainWidth, domainHeight));
+    for (const PlanStep& step : plan.steps) {
+        EXPECT_TRUE(regionContains(step.region, requested)) << "step " << step.name;
+        EXPECT_GE(step.region.x, 0) << "step " << step.name;
+        EXPECT_GE(step.region.y, 0) << "step " << step.name;
+        EXPECT_LE(step.region.x + step.region.width, domainWidth) << "step " << step.name;
+        EXPECT_LE(step.region.y + step.region.height, domainHeight) << "step " << step.name;
+        EXPECT_EQ(step.region.x % scale, 0) << "step " << step.name;
+        EXPECT_EQ(step.region.y % scale, 0) << "step " << step.name;
+    }
+}
+
+// The TestPattern's declared math, derived here independently of any evaluator:
+// R is a horizontal gradient over the full-resolution domain, G a vertical one,
+// B a time-positioned bar, A opaque.
+[[nodiscard]] std::array<float, 4> testPatternPixel(int fullX, int fullY, int fullWidth, int fullHeight) {
+    const double u = fullWidth > 1 ? static_cast<double>(fullX) / (fullWidth - 1) : 0.0;
+    const double v = fullHeight > 1 ? static_cast<double>(fullY) / (fullHeight - 1) : 0.0;
+    const int barWidth = std::max(2, fullWidth / 16);
+    const bool inBar = fullX >= 0 && fullX < barWidth;  // frame 0 puts the bar at x 0
+    return {static_cast<float>(u), static_cast<float>(v), inBar ? 1.0F : 0.0F, 1.0F};
+}
+
+// A whole-frame-only contribution (supportsRegion=false) with a real CPU
+// implementation: it can only produce the whole image, and its pixels depend on
+// the whole frame's statistics, so a region-local evaluation could not
+// reproduce them. Registering it proves the planner escalates such a node and
+// its inputs instead of feeding it a partial region.
+NodeDescriptor wholeFrameFixtureDescriptor() {
+    return NodeDescriptor{.type = "fixture.wholeframe",
+                          .displayName = "Whole Frame Fixture",
+                          .group = "Tests",
+                          .implementationVersion = 1,
+                          .inputs = {{PortKind::Image, "image", false}},
+                          .outputs = {{PortKind::Image, "out"}},
+                          .capabilities = NodeCapabilities{.samplingScales = {1},
+                                                           .qualityModes = {Quality::Full},
+                                                           .channels = {"RGBA"},
+                                                           .supportsRegion = false}};
+}
+
+CpuImage executeWholeFrameFixture(const CpuNodeContext& context) {
+    const EvaluationRequest& request = context.request;
+    if (request.region.x != 0 || request.region.y != 0 || request.region.width != request.imageWidth() ||
+        request.region.height != request.imageHeight()) {
+        failNode(context.node, "whole-frame implementation received a partial region");
+    }
+    const CpuImage& input = requiredImageInput(context, 0, "whole-frame fixture requires a connected input");
+    double total = 0.0;
+    for (int y = 0; y < input.height(); ++y)
+        for (int x = 0; x < input.width(); ++x)
+            total += static_cast<double>(input.pixel(x, y)[0]);
+    const float mean = static_cast<float>(total / (static_cast<double>(input.width()) * input.height()));
+    CpuImage output(effectRasterLayout(request, &input));
+    for (int y = 0; y < output.height(); ++y) {
+        for (int x = 0; x < output.width(); ++x) {
+            const std::array<float, kImageChannels> pixel = input.pixel(x, y);
+            output.setPixel(x, y, {pixel[0] - mean + 0.5F, pixel[1], pixel[2], pixel[3]});
+        }
+    }
+    return output;
+}
+
+}  // namespace
+
+TEST(RegionalEvaluationTest, PointwiseChainRegionMatchesWholeFrameWindow) {
+    Document document = makeDocument({{"testpattern", "plate"}, {"grade", "grade"}, {"output", "out"}});
+    Graph& graph = rootGraph(document);
+    graph.setParam(graph.nodeByName("grade")->id, "gain", ColorValue{{1.5F, 1.5F, 1.5F, 2.0F}});
+    connect(graph, "plate", "grade");
+    connect(graph, "grade", "out");
+
+    const Region region{80, 40, 40, 30};
+    const auto wholeFrame = evaluateCpu(document, windowRequest(document, "out", {0, 0, 320, 160}, 1, 320, 160));
+    const auto cropped = evaluateCpu(document, windowRequest(document, "out", region, 1, 320, 160));
+
+    expectCoverageInvariants(cropped.plan, region, 1, 320, 160);
+    expectWindowMatchesWholeFrame(cropped.image, wholeFrame.image, region, 1);
+    // The pointwise dependency needs exactly the demanded coverage: no rule can
+    // widen it, so the plate is planned at the padded block, not the whole frame.
+    const PlanStep* plate = stepFor(cropped.plan, "plate");
+    ASSERT_NE(plate, nullptr);
+    EXPECT_NE(plate->region, (Region{0, 0, 320, 160}));
+}
+
+TEST(RegionalEvaluationTest, OddOriginRegionsMatchWholeFrameAtReducedScales) {
+    Document document = makeDocument({{"testpattern", "plate"}, {"output", "out"}});
+    connect(rootGraph(document), "plate", "out");
+
+    for (const int scale : {2, 4}) {
+        // An origin that is not a multiple of the sampling scale is rounded
+        // outward to the enclosing lattice cell, never inward.
+        const Region requested{77, 41, 50, 26};
+        const Region normalized = regionOnLattice(requested, scale, 320, 160);
+        const auto wholeFrame =
+            evaluateCpu(document, windowRequest(document, "out", {0, 0, 320, 160}, scale, 320, 160));
+        const auto cropped = evaluateCpu(document, windowRequest(document, "out", requested, scale, 320, 160));
+
+        EXPECT_EQ(cropped.plan.request.samplingScale, scale);
+        expectCoverageInvariants(cropped.plan, requested, scale, 320, 160);
+        expectWindowMatchesWholeFrame(cropped.image, wholeFrame.image, normalized, scale);
+    }
+}
+
+TEST(RegionalEvaluationTest, ChainedBlurAndTransformWithMaskAndMixMatchWholeFrame) {
+    Document document = makeDocument({{"testpattern", "plate"},
+                                      {"testpattern", "mask"},
+                                      {"blur", "soften"},
+                                      {"transform", "move"},
+                                      {"output", "out"}});
+    Graph& graph = rootGraph(document);
+    graph.setParam(graph.nodeByName("soften")->id, "size", 5.0);
+    graph.setParam(graph.nodeByName("move")->id, "translateX", 3.5);
+    graph.setParam(graph.nodeByName("move")->id, "translateY", -2.25);
+    graph.setParam(graph.nodeByName("move")->id, "rotate", 7.0);
+    graph.setParam(graph.nodeByName("move")->id, "filter", ChoiceValue{"Cubic"});
+    graph.setParam(graph.nodeByName("move")->id, "maskChannel", ChoiceValue{"G"});
+    graph.setParam(graph.nodeByName("move")->id, "mix", 0.6);
+    connect(graph, "plate", "soften", 0, 0);
+    connect(graph, "soften", "move", 0, 0);
+    connect(graph, "mask", "move", 0, 1);
+    connect(graph, "move", "out");
+
+    const Region region{101, 47, 60, 40};
+    const auto wholeFrame = evaluateCpu(document, windowRequest(document, "out", {0, 0, 320, 160}, 1, 320, 160));
+    const auto cropped = evaluateCpu(document, windowRequest(document, "out", region, 1, 320, 160));
+
+    expectCoverageInvariants(cropped.plan, region, 1, 320, 160);
+    expectWindowMatchesWholeFrame(cropped.image, wholeFrame.image, region, 1);
+
+    // The rules are visible in the plan: the plate must cover the blur halo and
+    // the transform's inverse-mapped footprint, so its coverage reaches strictly
+    // beyond the requested window on every side.
+    const PlanStep* plate = stepFor(cropped.plan, "plate");
+    const PlanStep* soften = stepFor(cropped.plan, "soften");
+    ASSERT_NE(plate, nullptr);
+    ASSERT_NE(soften, nullptr);
+    EXPECT_TRUE(regionContains(plate->region, soften->region));
+    EXPECT_LT(plate->region.x, region.x);
+    EXPECT_LT(plate->region.y, region.y);
+    EXPECT_GT(plate->region.x + plate->region.width, region.x + region.width);
+    EXPECT_GT(plate->region.y + plate->region.height, region.y + region.height);
+    // The mask is read at the output coordinates: it needs nothing beyond the
+    // transform's own region.
+    const PlanStep* mask = stepFor(cropped.plan, "mask");
+    ASSERT_NE(mask, nullptr);
+    EXPECT_TRUE(regionContains(mask->region, region));
+}
+
+TEST(RegionalEvaluationTest, ExtremeFiniteTransformBoundsRemainOutsideTheImage) {
+    Document document = makeDocument({{"testpattern", "plate"}, {"transform", "move"}, {"output", "out"}});
+    Graph& graph = rootGraph(document);
+    graph.setParam(graph.nodeByName("move")->id, "scale", 1e-20);
+    graph.setParam(graph.nodeByName("move")->id, "translateX", 1e30);
+    connect(graph, "plate", "move");
+    connect(graph, "move", "out");
+    const auto result = evaluateCpu(document, windowRequest(document, "out", {80, 40, 40, 30}, 1, 320, 160));
+    for (int y = 0; y < result.image.height(); ++y)
+        for (int x = 0; x < result.image.width(); ++x)
+            EXPECT_EQ(result.image.pixel(x, y), (std::array<float, 4>{0.0F, 0.0F, 0.0F, 0.0F}));
+}
+
+TEST(RegionalEvaluationTest, BlurRegionMatchesDeclaredGaussianIncludingImageBorders) {
+    Document document = makeDocument({{"testpattern", "plate"}, {"blur", "soften"}, {"output", "out"}});
+    Graph& graph = rootGraph(document);
+    graph.setParam(graph.nodeByName("soften")->id, "size", 3.0);
+    connect(graph, "plate", "soften");
+    connect(graph, "soften", "out");
+
+    constexpr int kDomainWidth = 256;
+    constexpr int kDomainHeight = 192;
+    const std::vector<float> weights = gaussianWeights(3.0F);  // sigma 1, support 3
+    ASSERT_EQ(weights.size(), 7u);
+    const auto blurredChannel = [&weights](int fullX, int fullY, int channel) {
+        float total = 0.0F;
+        for (int tap = -3; tap <= 3; ++tap) {
+            const std::array<float, 4> pixel =
+                testPatternPixel(std::clamp(fullX + tap, 0, kDomainWidth - 1),
+                                 std::clamp(fullY + tap, 0, kDomainHeight - 1), kDomainWidth, kDomainHeight);
+            total += weights[static_cast<std::size_t>(tap + 3)] * pixel[static_cast<std::size_t>(channel)];
+        }
+        return total;
+    };
+
+    // A region flush against the top-left image border: its halo is clipped by
+    // the domain, so the taps fold onto the real border pixels — the clamp the
+    // whole-image reference has always applied, not a clamp against the region.
+    const Region edge{1, 0, 20, 8};
+    const auto edgeEvaluation =
+        evaluateCpu(document, windowRequest(document, "out", edge, 1, kDomainWidth, kDomainHeight));
+    expectCoverageInvariants(edgeEvaluation.plan, edge, 1, kDomainWidth, kDomainHeight);
+    for (int y = 0; y < edgeEvaluation.image.height(); ++y) {
+        for (int x = 0; x < edgeEvaluation.image.width(); ++x) {
+            for (const int channel : {0, 1}) {
+                EXPECT_NEAR(edgeEvaluation.image.pixel(x, y)[static_cast<std::size_t>(channel)],
+                            blurredChannel(edge.x + x, edge.y + y, channel), 1e-6F)
+                    << "border sample (" << x << "," << y << ") channel " << channel;
+            }
+            EXPECT_FLOAT_EQ(edgeEvaluation.image.pixel(x, y)[3], 1.0F);
+        }
+    }
+
+    // An interior region: every tap comes from a real neighbor, so the halo is
+    // what makes the result identical to the whole-image blur.
+    const Region interior{101, 64, 20, 10};
+    const auto interiorEvaluation =
+        evaluateCpu(document, windowRequest(document, "out", interior, 1, kDomainWidth, kDomainHeight));
+    const auto wholeFrame = evaluateCpu(
+        document, windowRequest(document, "out", {0, 0, kDomainWidth, kDomainHeight}, 1, kDomainWidth, kDomainHeight));
+    for (int y = 0; y < interiorEvaluation.image.height(); ++y) {
+        for (int x = 0; x < interiorEvaluation.image.width(); ++x) {
+            for (const int channel : {0, 1, 2}) {
+                EXPECT_NEAR(interiorEvaluation.image.pixel(x, y)[static_cast<std::size_t>(channel)],
+                            blurredChannel(interior.x + x, interior.y + y, channel), 1e-6F)
+                    << "interior sample (" << x << "," << y << ") channel " << channel;
+            }
+        }
+    }
+    expectWindowMatchesWholeFrame(interiorEvaluation.image, wholeFrame.image, interior, 1);
+}
+
+TEST(RegionalEvaluationTest, WholeFrameOnlyContributionEscalatesAndStillServesRegions) {
+    auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema({wholeFrameFixtureDescriptor()}));
+    Document document(catalog);
+    Graph& graph = document.network(document.rootNetworkId()).graph();
+    graph.removeNode(graph.nodeByName("Output")->id);
+    const NodeId plate = graph.addNode("testpattern", "plate");
+    const NodeId whole = graph.addNode("fixture.wholeframe", "whole");
+    const NodeId out = graph.addNode("output", "out");
+    static_cast<void>(graph.connect(PortRef{plate, 0}, PortRef{whole, 0}));
+    static_cast<void>(graph.connect(PortRef{whole, 0}, PortRef{out, 0}));
+
+    std::vector<NodeContribution> registrations = builtinContributions();
+    registrations.push_back(NodeContribution{.descriptor = wholeFrameFixtureDescriptor(),
+                                             .role = NodeRole::Image,
+                                             .cpu = CpuImplementation{1, &executeWholeFrameFixture}});
+    const auto contributions = std::make_shared<NodeContributions>(std::move(registrations));
+
+    const Region region{80, 40, 40, 30};
+    const auto wholeFrame = evaluateCpu(document, windowRequest(document, "out", {0, 0, 320, 160}, 1, 320, 160),
+                                        nullptr, nullptr, contributions);
+    const auto cropped =
+        evaluateCpu(document, windowRequest(document, "out", region, 1, 320, 160), nullptr, nullptr, contributions);
+
+    expectCoverageInvariants(cropped.plan, region, 1, 320, 160);
+    const PlanStep* wholeStep = stepFor(cropped.plan, "whole");
+    ASSERT_NE(wholeStep, nullptr);
+    // The whole-frame-only node really processed the whole domain (its own
+    // implementation would have failed otherwise, and its pixels carry the
+    // whole-frame mean), and its consumer still received exactly its window.
+    EXPECT_EQ(wholeStep->region, (Region{0, 0, 320, 160}));
+    EXPECT_EQ(wholeStep->produced.layout.width, 320);
+    EXPECT_EQ(cropped.image.width(), region.width);
+    EXPECT_EQ(cropped.image.height(), region.height);
+    expectWindowMatchesWholeFrame(cropped.image, wholeFrame.image, region, 1);
+
+    ResultCache<CpuImage> cache;
+    const auto cached =
+        evaluateCpu(document, windowRequest(document, "out", region, 1, 320, 160), &cache, nullptr, contributions);
+    const auto cachedAgain =
+        evaluateCpu(document, windowRequest(document, "out", region, 1, 320, 160), &cache, nullptr, contributions);
+    EXPECT_EQ(cache.counts().misses, 3u);  // plate + whole + out computed once
+    EXPECT_EQ(cache.counts().hits, 3u);    // every step reused on the second pass
+    ASSERT_EQ(cached.image.width(), cachedAgain.image.width());
+    ASSERT_EQ(cached.image.height(), cachedAgain.image.height());
+    for (int y = 0; y < cached.image.height(); ++y)
+        for (int x = 0; x < cached.image.width(); ++x)
+            EXPECT_EQ(cached.image.pixel(x, y), cachedAgain.image.pixel(x, y));
+    EXPECT_EQ(cachedAgain.plan.result.contentHash, cached.plan.result.contentHash);
+    for (const PlanStep& step : cachedAgain.plan.steps)
+        EXPECT_TRUE(step.cacheReused) << "step " << step.name;
 }

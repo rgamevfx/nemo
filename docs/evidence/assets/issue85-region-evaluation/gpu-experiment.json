@@ -1,0 +1,99 @@
+{
+  "device": "NVIDIA GeForce GTX 1070",
+  "full_frame_charged_bytes_after_dropping_result": 802161604,
+  "full_frame_charged_bytes_after_retirement": 0,
+  "full_frame_submission_charged_bytes": 802161604,
+  "measurement": "synchronous evaluator completion, not visible presentation; debug build; procedural source excludes decode",
+  "regional_charged_bytes_after_dropping_result": 61866948,
+  "regional_charged_bytes_after_retirement": 0,
+  "regional_submission_charged_bytes": 61866948,
+  "runs": [
+    {
+      "cache_hits": 0,
+      "cache_misses": 0,
+      "computed_nodes": 5,
+      "computed_output_pixels": 41472000,
+      "dispatches": 6,
+      "label": "full-frame",
+      "live_charged_bytes_after_completion": 668467200,
+      "ms": 140.921943,
+      "shader_invocations": 49766400,
+      "submissions": 1
+    },
+    {
+      "cache_hits": 0,
+      "cache_misses": 5,
+      "computed_nodes": 5,
+      "computed_output_pixels": 2593792,
+      "dispatches": 6,
+      "label": "cold-roi",
+      "live_charged_bytes_after_completion": 50855936,
+      "ms": 13.480965,
+      "shader_invocations": 3334144,
+      "submissions": 1
+    },
+    {
+      "cache_hits": 5,
+      "cache_misses": 0,
+      "computed_nodes": 0,
+      "computed_output_pixels": 0,
+      "dispatches": 0,
+      "label": "overlapping-pan",
+      "live_charged_bytes_after_completion": 50855936,
+      "ms": 2.551106,
+      "shader_invocations": 0,
+      "submissions": 1
+    },
+    {
+      "cache_hits": 5,
+      "cache_misses": 0,
+      "computed_nodes": 0,
+      "computed_output_pixels": 0,
+      "dispatches": 0,
+      "label": "warm-revisit",
+      "live_charged_bytes_after_completion": 50855936,
+      "ms": 2.074491,
+      "shader_invocations": 0,
+      "submissions": 1
+    }
+  ],
+  "validation_clean": true,
+  "fixture": {
+    "graph": "TestPattern -> Grade -> Blur -> Transform -> Output",
+    "domain": [
+      3840,
+      2160
+    ],
+    "sampling_scale": 1,
+    "blur_size": 20,
+    "transform_rotate": 7,
+    "transform_translate_x": 13.25,
+    "roi": [
+      1057,
+      609,
+      480,
+      480
+    ],
+    "pan": [
+      1061,
+      613,
+      480,
+      480
+    ],
+    "cache_entry_cap": 16,
+    "allocator_byte_limit": 1073741824
+  },
+  "instrumentation": {
+    "dispatches": "vkCmdDispatch link wrapper",
+    "submissions": "vkQueueSubmit link wrapper",
+    "shader_invocations": "dispatch workgroup product times 8x8; includes rounded dispatch edges and Blur scratch",
+    "computed_output_pixels": "sum of missed node result layout areas; not dispatch or scratch coverage",
+    "retained_bytes": "allocator charged-byte deltas after submit, after dropping result, after waiting for retirement"
+  },
+  "limitations": [
+    "One bounded debug-process experiment, not a benchmark distribution or issue16 gate.",
+    "Procedural source excludes media decode, display transforms, encoding and presentation latency.",
+    "Background builds/tests may affect sampled wall times; dispatch, reuse and allocator counts are the structural evidence.",
+    "Overlapping coverage must fit a resident padded rectangle; this is not tiled partial-overlap stitching."
+  ]
+}

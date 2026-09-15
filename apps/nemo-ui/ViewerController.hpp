@@ -42,6 +42,11 @@ class ViewerController final : public QObject {
     // request may still have an image to show, while an unbound Read has none.
     Q_PROPERTY(bool hasPresentation READ hasPresentation NOTIFY frameArrived)
     Q_PROPERTY(QString resolutionMode READ resolutionMode WRITE setResolutionMode NOTIFY resolutionChanged)
+    // Coverage switch, panel-local like every other view property: when it is
+    // on, the request covers the whole image domain instead of the region the
+    // panel is looking at, at the unchanged sampling mode. It changes what is
+    // rendered, never the display scale, the pan or the sampling density.
+    Q_PROPERTY(bool forceFullFrame READ forceFullFrame WRITE setForceFullFrame NOTIFY forceFullFrameChanged)
     Q_PROPERTY(double zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
     Q_PROPERTY(QPointF pan READ pan WRITE setPan NOTIFY panChanged)
     Q_PROPERTY(int frame READ frame WRITE setFrame NOTIFY frameChanged)
@@ -95,6 +100,10 @@ public:
     [[nodiscard]] std::optional<eval::ViewerDestination> destination() const { return destination_; }
     Q_INVOKABLE void openSource(const QString& path);
     Q_INVOKABLE void setResolutionMode(const QString& mode);
+    // Forces whole-domain coverage for this panel's requests. The sampling mode
+    // and the panel's display transform are deliberately retained: this is a
+    // coverage statement, not a view or a quality statement.
+    Q_INVOKABLE void setForceFullFrame(bool force);
     Q_INVOKABLE void setZoom(double zoom);
     Q_INVOKABLE void zoomBy(double factor);
     Q_INVOKABLE void setPan(QPointF pan);
@@ -264,6 +273,7 @@ public:
     [[nodiscard]] bool outdated() const { return outdated_; }
     [[nodiscard]] bool hasPresentation() const { return static_cast<bool>(presentation_); }
     [[nodiscard]] QString resolutionMode() const { return mode_; }
+    [[nodiscard]] bool forceFullFrame() const { return forceFullFrame_; }
     [[nodiscard]] double zoom() const { return zoom_; }
     [[nodiscard]] QPointF pan() const { return pan_; }
     [[nodiscard]] int frame() const { return frame_; }
@@ -311,6 +321,7 @@ signals:
     void sourceChanged();
     void statusChanged();
     void resolutionChanged();
+    void forceFullFrameChanged();
     void zoomChanged();
     void panChanged();
     void frameChanged();
@@ -423,6 +434,9 @@ private:
     NodeId viewerTargetNode_{kInvalidNode};
     QString viewerTargetName_;
     QString mode_{QStringLiteral("auto")};
+    // Whole-domain coverage switch (see the property). Retained by the panel's
+    // state record; never document state.
+    bool forceFullFrame_{false};
     QString status_;
     QString error_;
     QString sourceDescription_;

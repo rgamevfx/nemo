@@ -175,14 +175,12 @@ Independent analytic fixtures, not agreement between implementations, remain
 the correctness oracle (ADR-0004, Fidelity below). Change the independent
 implementations together when a numerical contract changes.
 
-The internal native binding contract is version 2: set 0/binding 0 contains only
-the 48-byte common coordinate/time request; set 0/binding 1 is the node-local
-16-byte-aligned payload, if any. Pass inputs bind at set 1 in declaration order,
-output at set 2/binding 0, and optional float weights at set 3/binding 0.
-`GpuPreparation` selects local passes and supplies owned payload/weight values.
-Scratch images have the request raster/layout and remain retained GPU resources.
-This is not another scheduler: allocation, barriers, submission and retirement
-stay in `GpuExecutor` and the existing GPU owners. See
+The internal native binding contract is version 3
+([ADR-0008](../decisions/0008-built-in-node-contributions.md#boundaries)).
+`GpuPreparation` supplies owned payload/weight values, local passes and
+per-scratch coverage. Image-sampling kernels address inputs through their actual
+geometry, not the output raster's dimensions. Allocation, barriers, submission
+and retirement stay in `GpuExecutor` and the existing GPU owners. See
 [ADR-0008](../decisions/0008-built-in-node-contributions.md) and
 [`ownership.md`](ownership.md#add-a-node-or-effect).
 
@@ -313,18 +311,24 @@ rejected swap changes neither connection.
 
 ### Spatial limits and capabilities
 
-Grade and Merge are neighborhood-free and keep `supportsRegion=true` (Merge's
-mask is read at output coordinates). Blur and Transform resample or read
-neighborhoods, so both declare `supportsRegion=false` and are whole-image only:
-region requests are rejected by the existing capability validation. All four are
-RGBA at sampling scales 1/2/4, and the spatial parameters of Grade/Blur/Transform
-stay full-resolution, so coordinates are preserved at reduced scales.
+Grade, Merge, Blur and Transform support regional requests at sampling scales
+1/2/4. Their spatial parameters remain full-resolution. The shared dependency
+planner anchors coverage to the image-wide sampling lattice and combines
+per-port requirements across consumers. Blur supplies its halo; Transform
+supplies inverse/filter bounds plus original mix coverage. Unknown source pixel
+aspect requires conservative whole-input coverage, not an assumed square pixel.
+Masks are read in output coordinates. A contribution declaring
+`supportsRegion=false` processes the whole domain internally and still serves
+regional consumers. See ADR-0007 for coverage reuse and its rectangular limit.
 
 The owner accepted the issue34 native-effects controls, API/node behavior and
 images in chat; the #16 reference benchmark remains an open gate. Passing
 checks are not a performance result or a bitwise-Nuke agreement. Session
 evidence:
 [`session.json`](../evidence/assets/issue34-native-effects/session.json).
+The issue34 session is historical evidence of the original whole-image-only
+implementation; issue #85 supersedes that spatial limitation without changing
+its accepted full-frame image contracts.
 
 ## Fidelity
 

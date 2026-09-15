@@ -21,7 +21,11 @@ layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_col
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    imageStore(out_color, ivec2(p), imageLoad(in_color, ivec2(p)));
+    // The upstream result may cover a wider rectangle of the same lattice
+    // (region evaluation or a cache hit), so the pass locates it instead of
+    // assuming its own origin.
+    imageStore(out_color, ivec2(p),
+               imageLoad(in_color, ivec2(p) + inputGeometry[0].regionAndOffset.zw));
 }
 )GLSL";
 
@@ -29,7 +33,7 @@ void main() {
     return EffectPassDefinition{
         .id = "output",
         .shader = "output/output",
-        .glsl = nemo::nodes::gpuGlsl({}, kOutputGlsl),
+        .glsl = nemo::nodes::gpuGlsl({}, kOutputGlsl, true),
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

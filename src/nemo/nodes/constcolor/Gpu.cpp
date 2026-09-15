@@ -41,7 +41,7 @@ void main() {
     return EffectPassDefinition{
         .id = "constcolor",
         .shader = "constcolor/constcolor",
-        .glsl = nemo::nodes::gpuGlsl(kConstcolorGlslPayload, kConstcolorGlslBody),
+        .glsl = nemo::nodes::gpuGlsl(kConstcolorGlslPayload, kConstcolorGlslBody, false),
         .inputs = {},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

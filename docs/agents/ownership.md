@@ -169,6 +169,10 @@ Desktop and CLI use these builders, not private inventories. See
    runtime objects out of the descriptor. Add effect-local typed interpretation
    in `Parameters.hpp` when both CPU and GPU need it; reuse generic typed reads,
    mask/channel rules and effective animation from `core/evaluation/Params.hpp`.
+   Neighborhood/geometric effects also declare per-port `inputRegions`; read
+   inputs through the supplied coverage geometry. Pointwise inputs default to
+   output coverage. A whole-frame-only declaration escalates inside Evaluation,
+   rather than breaking a regional viewer request.
 2. Add `Gpu.cpp` with versioned `GpuImplementation`, independent GLSL pixels,
    node-local payload preparation and local pass definitions; keep independent
    Slang kernels beside it. `eval/GpuContribution.hpp` defines the supported

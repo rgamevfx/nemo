@@ -93,12 +93,16 @@ vec4 gradePixel(vec4 x) {
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    vec4 orig = imageLoad(in_main, ivec2(p));
+    // Same-lattice inputs: the pixel with the same full-resolution sample,
+    // located through each input's own raster origin.
+    ivec2 mainOffset = inputGeometry[0].regionAndOffset.zw;
+    ivec2 maskOffset = inputGeometry[1].regionAndOffset.zw;
+    vec4 orig = imageLoad(in_main, ivec2(p) + mainOffset);
     vec4 processed = gradePixel(orig);
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(imageLoad(in_mask, ivec2(p))[channel], 0.0, 1.0);
+        float selected = clamp(imageLoad(in_mask, ivec2(p) + maskOffset)[channel], 0.0, 1.0);
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
@@ -113,7 +117,7 @@ void main() {
     return EffectPassDefinition{
         .id = "grade",
         .shader = "grade/grade",
-        .glsl = nemo::nodes::gpuGlsl(kGradeGlslPayload, kGradeGlslBody),
+        .glsl = nemo::nodes::gpuGlsl(kGradeGlslPayload, kGradeGlslBody, true),
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}, EffectImageRef{EffectImageKind::Input, 1}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

@@ -8,7 +8,7 @@
 // parameters:
 //   - color = the authored scene-linear RGBA color (straight alpha; may lie
 //     outside [0, 1] — stored values are never clamped)
-// bindings (native binding contract v2, see testpattern.slang):
+// bindings (native binding contract v3, see testpattern.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.constcolor.payload.v1")
 //   set 2, binding 0 : output image2D

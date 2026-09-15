@@ -17,15 +17,18 @@
 //     op.x: 0 Over, 1 Plus, 2 Multiply, 3 Screen, 4 Difference.
 //   - mask = (maskChannel, invertMask, mix, maskPresent), the shared effect
 //     mask word.
-// bindings (native binding contract v2, see testpattern.slang):
+// bindings (native binding contract v3, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.merge.payload.v1")
+//   set 0, binding 2 : per-input spatial geometry (A, B, mask)
 //   set 1, binding 0 = A, binding 1 = B, binding 2 = mask — swapping A/B is a
 //     different result and fails declared image comparison
 //   set 2, binding 0 : output image2D
 // dependencies:
-//   region: output pixel (x, y) depends only on inputs (x, y); no
-//     neighborhood reads, so no support-region expansion.
+//   region: output pixel (x, y) depends only on the input pixels holding the
+//     same full-resolution sample; each input's raster origin is bound with it
+//     (region evaluation, wider cache-backed inputs), so no neighborhood
+//     reads and no support-region expansion.
 //   channels: RGBA uniform.
 //   temporal: none.
 // quality_modes: 1
@@ -39,6 +42,8 @@
 //   final result is bg + coverage*mix*(composite - bg) with coverage 1 when
 //   the mask is absent or None. Premultiplied interpretation is a declared
 //   comparison failure, not an alternate path.
+
+#include "../GpuGeometry.slang"
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
@@ -77,8 +82,14 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    float4 bg = in_a.Load(p);   // port A: background (base)
-    float4 fg = in_b.Load(p);   // port B: foreground (source)
+    // Same-lattice inputs: the pixels holding the same full-resolution sample
+    // as this pass output pixel, located through each input's own origin.
+    int2 aOffset = inputGeometry[0].regionAndOffset.zw;
+    int2 bOffset = inputGeometry[1].regionAndOffset.zw;
+    int2 maskOffset = inputGeometry[2].regionAndOffset.zw;
+
+    float4 bg = in_a.Load(int2(p) + aOffset);   // port A: background (base)
+    float4 fg = in_b.Load(int2(p) + bOffset);   // port B: foreground (source)
 
     int operation = int(op.x);
     float4 composite;
@@ -102,7 +113,7 @@ void main(uint3 tid : SV_DispatchThreadID)
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(in_mask.Load(int2(p))[channel], 0.0, 1.0);
+        float selected = clamp(in_mask.Load(int2(p) + maskOffset)[channel], 0.0, 1.0);
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the background, weight 1 the

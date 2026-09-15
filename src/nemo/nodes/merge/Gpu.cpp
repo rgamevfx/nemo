@@ -40,7 +40,9 @@ constexpr const char* kMergeGlslBody = R"GLSL(
 // optional mask at binding 2. The operation code travels in op.x
 // (0 Over, 1 Plus, 2 Multiply, 3 Screen, 4 Difference) and the shared mask
 // word drives the final coverage*mix interpolation. An absent mask is bound
-// to a valid dummy descriptor with maskPresent = 0.
+// to a valid dummy descriptor with maskPresent = 0. Every input is read at
+// the pixel holding the same full-resolution sample, located through its own
+// raster origin (region evaluation, wider cache-backed inputs).
 layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_a;     // port A: background
 layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_b;     // port B: foreground
 layout(rgba32f, set = 1, binding = 2) restrict readonly uniform image2D in_mask;  // optional port 2
@@ -49,8 +51,8 @@ layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_col
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    vec4 bg = imageLoad(in_a, ivec2(p));
-    vec4 fg = imageLoad(in_b, ivec2(p));
+    vec4 bg = imageLoad(in_a, ivec2(p) + inputGeometry[0].regionAndOffset.zw);
+    vec4 fg = imageLoad(in_b, ivec2(p) + inputGeometry[1].regionAndOffset.zw);
 
     int operation = int(op.x);
     vec4 composite;
@@ -73,7 +75,8 @@ void main() {
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(imageLoad(in_mask, ivec2(p))[channel], 0.0, 1.0);
+        float selected =
+            clamp(imageLoad(in_mask, ivec2(p) + inputGeometry[2].regionAndOffset.zw)[channel], 0.0, 1.0);
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the background, weight 1 the
@@ -87,7 +90,7 @@ void main() {
     return EffectPassDefinition{
         .id = "merge",
         .shader = "merge/merge",
-        .glsl = nemo::nodes::gpuGlsl(kMergeGlslPayload, kMergeGlslBody),
+        .glsl = nemo::nodes::gpuGlsl(kMergeGlslPayload, kMergeGlslBody, true),
         // Declared port order: A, B, optional mask.
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}, EffectImageRef{EffectImageKind::Input, 1},
                    EffectImageRef{EffectImageKind::Input, 2}},

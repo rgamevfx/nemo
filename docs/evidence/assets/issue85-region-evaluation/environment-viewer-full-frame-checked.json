@@ -1,0 +1,22 @@
+{
+    "appearance_preset": "Graphite",
+    "capture": "viewer-full-frame-checked",
+    "controller_zoom": 2.2820050003472603,
+    "device_pixel_ratio": 1,
+    "displayed_scale": 18.862197580995325,
+    "media_surface_height": 529,
+    "media_surface_width": 1256,
+    "pan_x": 0,
+    "pan_y": 0.03538750531758694,
+    "panel": "panel-a",
+    "platform": "wayland",
+    "qt": "6.4.2",
+    "region_height": 64,
+    "region_width": 96,
+    "region_x": 0,
+    "region_y": 0,
+    "sampling_scale": 1,
+    "stated_zoom": "1886.2%",
+    "window_height": 687,
+    "window_width": 1274
+}

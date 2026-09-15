@@ -69,6 +69,51 @@ struct ExpandedNode {
     std::optional<EvaluationNodeId> alias;
 };
 
+// Coverage padding for regional planning (issue #85): an interactive consumer
+// asks for the visible region, which moves by a few pixels per pan. Planned
+// coverage is therefore rounded outward to whole blocks of this many raster
+// samples (clipped to the image domain) before per-node coverage is derived, so
+// a small pan lands inside coverage that is already resident instead of
+// recomputing the same pixels at a shifted origin. Padding only ever grows
+// coverage; the delivered raster is cropped back to the consumer's normalized
+// request. Set to 0 to plan exactly the demanded regions.
+inline constexpr int kCoveragePaddingRasterPixels = 64;
+
+// The regional schedule of one request (issue #85): the dependency-first node
+// order plus the coverage each node must actually produce. A consumer reads an
+// input through the coverage recorded for its producer, so differently sized
+// and differently anchored rasters are ordinary, not an error.
+struct RegionPlan {
+    std::vector<ExpandedNode> order;
+    std::map<EvaluationNodeId, EvaluationRequest> requests;
+};
+
+// Projects one request onto per-node coverage (issue #85). Coverage is demanded
+// from the output backwards: each node's request is the union of what its
+// consumers need, and each node's own registered dependency rule (`inputRegions`
+// in its NodeContribution) states what it reads from its inputs. Extras:
+//
+//  * A node whose declared capabilities say supportsRegion=false cannot honour
+//    a sub-region internally, so its own coverage AND every input's coverage
+//    escalate to the whole image domain; downstream consumers keep their own
+//    (smaller) requests and read the escalated raster through its origin.
+//  * Absent optional slots stay absent and demand nothing.
+//  * Nested network instances are routing aliases: they forward their coverage
+//    to the selected internal producer unchanged.
+//  * Every returned region is clipped to the image domain and anchored to the
+//    request's sampling lattice; an empty result (a demand entirely outside the
+//    domain) conservatively escalates rather than producing an empty raster.
+//
+// `pixelAspects` supplies the resolved pixel aspect of an input the planner
+// cannot know yet (decoded external media, keyed by the producing node). A
+// supplied value overrides everything else; generators have the square-pixel
+// aspect 1, a source whose aspect is unknown reports 0 (unknown, never assumed
+// square), and every other node propagates its main input's aspect. A node that
+// needs a tight bound but sees an unknown aspect requests the whole input.
+[[nodiscard]] RegionPlan planDependencyRegions(const Document& document, const EvaluationRequest& request,
+                                               const NodeContributions& contributions,
+                                               const std::map<EvaluationNodeId, float>& pixelAspects = {});
+
 // Expands a scoped request into one dependency-first plan. Network instances
 // are represented by alias steps whose source is the selected formal output;
 // formal inputs resolve to the instance's parent bindings. No persistent graph

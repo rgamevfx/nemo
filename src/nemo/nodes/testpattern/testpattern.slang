@@ -7,15 +7,21 @@
 //   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
 // parameters:
 //   - none (the pattern is procedural)
-// bindings (native binding contract v2, shared by every Nemo effect):
-//   set 0, binding 0 : common request uniforms (meta/meta2/misc)
+// bindings (native binding contract v3, shared by every Nemo effect):
+//   set 0, binding 0 : common request uniforms (meta/meta2/misc) describing
+//     the raster THIS pass produces
+//   set 0, binding 1 : node-local payload (when the node declares one)
+//   set 0, binding 2 : per-input spatial geometry, one entry per set-1
+//     binding (see GpuGeometry.slang) — declared by every pass that binds an
+//     Input or Scratch image
 //   set 1, binding n : input image2D (rgba32f storage image, straight alpha)
 //   set 2, binding 0 : output image2D (rgba32f storage image)
 //   This node declares no payload of its own, so set 0 binding 1 is unused.
 // dependencies:
 //   region: output pixel (x, y) depends only on the full-image coordinate
 //     (region.x + x*scale, region.y + y*scale) — full-resolution
-//     coordinate semantics under every declared samplingScale (issue #11).
+//     coordinate semantics under every declared samplingScale (issue #11) and
+//     under region-limited requests (issue #85).
 //   channels: RGBA, all channels processed uniformly.
 //   temporal: blue bar position depends on misc.x (local time).
 // quality_modes: 1 (single full-quality path)

@@ -141,12 +141,13 @@ ViewerSession::ViewingState& ViewerSession::viewingStateFor(const ColorPolicy& p
     return viewing_.emplace(key, ViewingState{std::move(program), std::move(identity), {}}).first->second;
 }
 
-ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequest& request, std::uint64_t timeout_ns,
-                                  std::uint64_t generation, ViewerDestination destination,
+ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequest& inputRequest,
+                                  std::uint64_t timeout_ns, std::uint64_t generation, ViewerDestination destination,
                                   CachePublicationGuard publicationGuard) {
     // Worker-only contract; validate here so a malformed request fails on
     // the caller's thread with a precise reason before any GPU work.
-    validateRequest(document, request);
+    validateRequest(document, inputRequest);
+    const EvaluationRequest request = canonicalizeRequest(inputRequest);
     const auto requestId = nextRequestId_++;
     const auto revision = document.stateRevision();
     {

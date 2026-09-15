@@ -78,6 +78,7 @@ if(NEMO_BUILD_GPU)
     # violations must fail. Slang SPIR-V comes from the nemo_shaders target.
     add_executable(nemo_effect_tests
         GpuEffectTests.cpp
+        contributions/Affine.cpp
     )
     target_link_libraries(nemo_effect_tests PRIVATE nemo::eval nemo::gpu GTest::gtest_main)
     if(DEFINED NEMO_SLANG_SPV_DIR)
@@ -94,11 +95,17 @@ if(NEMO_BUILD_GPU)
     if(DEFINED NEMO_SLANG_SPV_DIR)
         nemo_add_slang_shaders(nemo_contribution_shaders
             OUTPUT_DIRECTORY "${NEMO_SLANG_SPV_DIR}"
-            SHADERS contributions/Affine.slang)
+            SHADERS contributions/Affine.slang
+            DEPENDS "${CMAKE_SOURCE_DIR}/src/nemo/nodes/GpuGeometry.slang")
         target_compile_definitions(nemo_contribution_tests PRIVATE
             NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}"
             NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/nodes")
         add_dependencies(nemo_contribution_tests nemo_contribution_shaders nemo_shaders)
+        # The effect suite renders the same test contribution (whole-frame-only
+        # capability coverage, issue #85), so its kernel must be compiled too.
+        if(TARGET nemo_contribution_shaders)
+            add_dependencies(nemo_effect_tests nemo_contribution_shaders)
+        endif()
     endif()
     gtest_discover_tests(nemo_contribution_tests)
 

@@ -10,7 +10,8 @@
 // `vertical` and `identity` are the same kernel: its blur.x <= 0 branch is an
 // exact identity that never reads the scratch slot, so a size of 0 costs one
 // pass and no scratch raster. The shared executor still owns allocation,
-// barriers, recording and retirement; preparation only computes values.
+// barriers, recording and retirement; preparation only computes values,
+// including the intermediate scratch's own coverage (see prepareBlur).
 
 #include <algorithm>
 #include <array>
@@ -66,21 +67,27 @@ void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
     int mode = int(blur.y);
+    // The main input covers a wider rectangle of the same lattice than this
+    // scratch pass (the horizontal support on both sides): its raster origin
+    // and extent locate the taps, and clamping to that extent is the image's
+    // clamp-to-edge border.
+    ivec2 mainOffset = inputGeometry[0].regionAndOffset.zw;
+    ivec2 mainExtent = ivec2(inputGeometry[0].extent.xy);
     if (blur.x <= 0.0) {  // exact identity
-        vec4 identity = imageLoad(in_main, ivec2(p));
+        vec4 identity = imageLoad(in_main, ivec2(p) + mainOffset);
         imageStore(out_color, ivec2(p), identity);
         return;
     }
-    int width = int(meta2.x);
     int support = int(blur.z);
     vec4 acc = vec4(0.0);
     for (int i = -support; i <= support; ++i) {
         float w = weights[i + support];
-        vec4 s = imageLoad(in_main, ivec2(clamp(int(p.x) + i, 0, width - 1), int(p.y)));
+        vec4 s = imageLoad(in_main, ivec2(clamp(int(p.x) + i + mainOffset.x, 0, mainExtent.x - 1),
+                                          int(p.y) + mainOffset.y));
         if ((mode & 8) != 0) { s.rgb *= s.a; }  // RGBA: premultiply before filtering
         acc += w * s;
     }
-    vec4 center = imageLoad(in_main, ivec2(p));
+    vec4 center = imageLoad(in_main, ivec2(p) + mainOffset);
     if (mode == 7) {        // RGB: filter RGB, preserve original alpha
         acc.a = center.a;
     } else if (mode == 8) { // Alpha: filter alpha, preserve original RGB
@@ -106,17 +113,25 @@ void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
     int mode = int(blur.y);
-    vec4 orig = imageLoad(in_main, ivec2(p));
+    // The scratch intermediate and the original main image each cover their
+    // own rectangle of the lattice; the scratch's Y extent is the row range
+    // the image's clamp-to-edge border lives on.
+    ivec2 scratchOffset = inputGeometry[0].regionAndOffset.zw;
+    ivec2 scratchExtent = ivec2(inputGeometry[0].extent.xy);
+    ivec2 mainOffset = inputGeometry[1].regionAndOffset.zw;
+    ivec2 maskOffset = inputGeometry[2].regionAndOffset.zw;
+    vec4 orig = imageLoad(in_main, ivec2(p) + mainOffset);
     vec4 processed;
     if (blur.x <= 0.0) {  // exact identity (both passes are identity)
         processed = orig;
     } else {
-        int height = int(meta2.y);
         int support = int(blur.z);
         vec4 acc = vec4(0.0);
         for (int i = -support; i <= support; ++i) {
             float w = weights[i + support];
-            acc += w * imageLoad(in_scratch, ivec2(int(p.x), clamp(int(p.y) + i, 0, height - 1)));
+            acc += w * imageLoad(in_scratch, ivec2(int(p.x) + scratchOffset.x,
+                                                  clamp(int(p.y) + i + scratchOffset.y, 0,
+                                                        scratchExtent.y - 1)));
         }
         if (mode == 15) {       // RGBA: unpremultiply once at the final output
             processed.a = acc.a;
@@ -132,7 +147,7 @@ void main() {
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(imageLoad(in_mask, ivec2(p))[channel], 0.0, 1.0);
+        float selected = clamp(imageLoad(in_mask, ivec2(p) + maskOffset)[channel], 0.0, 1.0);
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
@@ -147,7 +162,7 @@ void main() {
     return EffectPassDefinition{
         .id = "horizontal",
         .shader = "blur/blurHorizontal",
-        .glsl = nemo::nodes::gpuGlsl(kBlurGlslPayload, kBlurHorizontalGlslBody),
+        .glsl = nemo::nodes::gpuGlsl(kBlurGlslPayload, kBlurHorizontalGlslBody, true),
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}},
         .output = EffectImageRef{EffectImageKind::Scratch, 0},
         .weights = true,
@@ -158,7 +173,7 @@ void main() {
     return EffectPassDefinition{
         .id = "vertical",
         .shader = "blur/blur",
-        .glsl = nemo::nodes::gpuGlsl(kBlurGlslPayload, kBlurGlslBody),
+        .glsl = nemo::nodes::gpuGlsl(kBlurGlslPayload, kBlurGlslBody, true),
         .inputs = {EffectImageRef{EffectImageKind::Scratch, 0}, EffectImageRef{EffectImageKind::Input, 0},
                    EffectImageRef{EffectImageKind::Input, 1}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
@@ -172,7 +187,7 @@ void main() {
     return EffectPassDefinition{
         .id = "identity",
         .shader = "blur/blur",
-        .glsl = nemo::nodes::gpuGlsl(kBlurGlslPayload, kBlurGlslBody),
+        .glsl = nemo::nodes::gpuGlsl(kBlurGlslPayload, kBlurGlslBody, true),
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}, EffectImageRef{EffectImageKind::Input, 0},
                    EffectImageRef{EffectImageKind::Input, 1}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
@@ -197,13 +212,26 @@ void main() {
     return weights;
 }
 
-// Worker-side value preparation: payload, selected local passes and the
-// normalized weights. Device-independent by construction.
+// Worker-side value preparation: payload, selected local passes, the
+// normalized weights, and the intermediate's coverage.
+//
+// The horizontal pass writes the node's own X range (only the columns the
+// vertical pass will read) but must cover the main input's whole Y range,
+// because every output row's taps reach ceil(size/scale) rows beyond it in
+// both directions. The planner already requested exactly that expanded,
+// clipped input region, so the scratch takes its Y range from the actual
+// bound input: clip-to-edge at the scratch border is then the image's own
+// border, and no node-name branch in the executor needs to know this.
 [[nodiscard]] GpuPreparation prepareBlur(const GpuNodeContext& context) {
     const BlurParameters blur = effectiveBlur(context.catalog, context.node, context.effectiveParams);
     const std::array<float, 4> mask =
         nemo::nodes::gpuMaskWord(context.catalog, context.node, context.effectiveParams, context.maskPresent);
     const int scale = context.request.samplingScale;
+
+    if (context.inputRequests.empty() || context.inputRequests[0].region.width <= 0 ||
+        context.inputRequests[0].region.height <= 0) {
+        throw std::runtime_error("native effect requires a connected main image input");
+    }
 
     BlurPayload payload;
     std::copy(mask.begin(), mask.end(), payload.mask);
@@ -224,6 +252,9 @@ void main() {
         const int support = static_cast<int>(payload.blur[2]);
         preparation.weights = blurWeights(static_cast<double>(blur.size), scale, support);
         preparation.passes = {0u, 1u};
+        const Region& request = context.request.region;
+        const Region& main = context.inputRequests[0].region;
+        preparation.scratch = {EffectScratchRegion{0u, Region{request.x, main.y, request.width, main.height}}};
     }
     return preparation;
 }

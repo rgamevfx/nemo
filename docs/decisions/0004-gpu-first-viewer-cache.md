@@ -95,6 +95,17 @@ and source sampling use the full domain even for cropped requests.
 Unsupported node reductions and out-of-domain requests are errors.
 The current reference domain limit is 8192 pixels on each axis.
 
+Issue #85 anchors requests to the image-wide sampling lattice: odd-origin
+Half/Quarter regions expand outward to enclosing samples, clipped to the image
+domain. Dependency planning requests each input's necessary coverage; whole-frame
+implementations expand internally. Regional consumers still receive their
+normalized rectangle. See ADR-0007 for spatial reuse and ADR-0008 for contribution
+and pass geometry.
+
+The viewer's icon-only **Force full-frame rendering** switch overrides coverage,
+not Auto/Full/Half/Quarter density, zoom or pan. Its state belongs to each viewer
+panel's workspace record, not the Document or scene-linear content identity.
+
 Run `nemo-ui --source /path/to/tagged-media.mkv` with `OCIO` set to the
 project configuration. The viewer exposes frame, Auto/Full/Half/Quarter,
 wheel zoom, drag pan, and Fit controls. `nemo-cli validate-gpu` accepts

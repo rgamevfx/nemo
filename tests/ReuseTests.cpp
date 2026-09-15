@@ -315,22 +315,64 @@ TEST(ReuseTest, AnimatedEffectiveValuesReuseAcrossHistoryRevisions) {
     EXPECT_EQ(afterRestore.misses, beforeRestore.misses);
 }
 
-// Acceptance example 3 (representation part): region variants are distinct
-// requests and coexist; revisiting either reuses its own representation.
-TEST(ReuseTest, RegionVariantsCoexist) {
+// A whole image and a crop have distinct presentation identities, but the
+// crop must consume already resident scene-linear pixels without reevaluation.
+TEST(ReuseTest, FullCoverageServesRegionalConsumersWithoutRecomputation) {
     Document doc = makeDocument({{"testpattern", "plate"}, {"output", "out"}});
     connect(rootGraph(doc), "plate", "out");
     ResultCache<CpuImage> cache;
-    static_cast<void>(evaluateCpu(doc, requestFor(doc, "out", 0, {0, 0, 8, 4}), &cache));
-    static_cast<void>(evaluateCpu(doc, requestFor(doc, "out", 0, {2, 1, 4, 2}), &cache));
-    const CacheCounts afterBoth = cache.counts();
-    EXPECT_EQ(afterBoth.misses, 4u);
+    const auto full = evaluateCpu(doc, requestFor(doc, "out", 0, {0, 0, 8, 4}), &cache);
+    const auto before = cache.counts();
+    const auto crop = evaluateCpu(doc, requestFor(doc, "out", 0, {2, 1, 4, 2}), &cache);
+    EXPECT_EQ(cache.counts().misses, before.misses);
+    ASSERT_EQ(crop.image.width(), 4);
+    ASSERT_EQ(crop.image.height(), 2);
+    for (int y = 0; y < crop.image.height(); ++y)
+        for (int x = 0; x < crop.image.width(); ++x)
+            EXPECT_EQ(crop.image.pixel(x, y), full.image.pixel(x + 2, y + 1));
 
-    static_cast<void>(evaluateCpu(doc, requestFor(doc, "out", 0, {0, 0, 8, 4}), &cache));
-    static_cast<void>(evaluateCpu(doc, requestFor(doc, "out", 0, {2, 1, 4, 2}), &cache));
-    const CacheCounts afterRevisit = cache.counts();
-    EXPECT_EQ(afterRevisit.hits - afterBoth.hits, 4u);
-    EXPECT_EQ(afterRevisit.misses, afterBoth.misses);
+    const auto revisit = evaluateCpu(doc, requestFor(doc, "out", 0, {0, 0, 8, 4}), &cache);
+    EXPECT_EQ(cache.counts().misses, before.misses);
+    EXPECT_TRUE(samePixels(revisit.image, full.image));
+}
+
+TEST(ReuseTest, OverlappingPansReuseSpatialCoverageWithoutRecomputingEffects) {
+    Document doc =
+        makeDocument({{"testpattern", "plate"}, {"blur", "soften"}, {"transform", "move"}, {"output", "out"}});
+    connect(rootGraph(doc), "plate", "soften");
+    connect(rootGraph(doc), "soften", "move");
+    connect(rootGraph(doc), "move", "out");
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("soften")->id, "size", 3.0);
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("move")->id, "translateX", 2.25);
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("move")->id, "rotate", 10.0);
+    rootGraph(doc).setParam(rootGraph(doc).nodeByName("move")->id, "mix", 0.7);
+    auto request = requestFor(doc, "out", 0, {81, 81, 80, 80});
+    request.fullWidth = 512;
+    request.fullHeight = 384;
+    ResultCache<CpuImage> cache;
+    static_cast<void>(evaluateCpu(doc, request, &cache));
+    const auto beforePan = cache.counts();
+    request.region = {85, 84, 80, 80};
+    const auto panned = evaluateCpu(doc, request, &cache);
+    EXPECT_EQ(cache.counts().misses, beforePan.misses);
+
+    auto fullRequest = request;
+    fullRequest.region = {0, 0, request.fullWidth, request.fullHeight};
+    const auto reference = evaluateCpu(doc, fullRequest);
+    ASSERT_EQ(panned.image.width(), 80);
+    ASSERT_EQ(panned.image.height(), 80);
+    for (int y = 0; y < panned.image.height(); ++y)
+        for (int x = 0; x < panned.image.width(); ++x)
+            for (std::size_t channel = 0; channel < kImageChannels; ++channel)
+                EXPECT_NEAR(panned.image.pixel(x, y)[channel], reference.image.pixel(x + 85, y + 84)[channel], 1e-5F);
+
+    // Coverage reuse cannot mask an actual edit to the filtered pixels.
+    CommandStack commands(doc);
+    commands.push(setParamCommand(doc.rootNetworkId(), rootGraph(doc).nodeByName("soften")->id, "size", 9.0));
+    const auto edited = evaluateCpu(doc, request, &cache);
+    EXPECT_GT(cache.counts().misses, beforePan.misses);
+    const auto uncached = evaluateCpu(doc, request);
+    EXPECT_TRUE(samePixels(edited.image, uncached.image));
 }
 
 // Acceptance example 3 (viewer part): a viewer-transform edit invalidates
@@ -487,9 +529,21 @@ TEST(ReuseTest, EvictedIdentityIsRecomputedOnDemand) {
     ResultCache<CpuImage> cache;
     const CpuEvaluation first = evaluateCpu(doc, request, &cache);
     const std::uint64_t identity = first.plan.result.contentHash;
-    const ResultKey tintKey = nodeResultKey(doc, *rootGraph(doc).nodeByName("tint"), {}, request);
-    cache.evict(tintKey);
-    cache.evict(nodeResultKey(doc, *rootGraph(doc).nodeByName("out"), {tintKey.hash}, request));
+    // A resident representation is addressed by its content identity plus the
+    // coverage it was produced for (issue #85): the content key says what the
+    // image means, the region says which rectangle backs it.
+    const PlanStep* tintStep = stepFor(first.plan, "tint");
+    const PlanStep* outStep = stepFor(first.plan, "out");
+    ASSERT_NE(tintStep, nullptr);
+    ASSERT_NE(outStep, nullptr);
+    const ResultKey tintKey = nodeContentKey(doc, *rootGraph(doc).nodeByName("tint"), {}, request);
+    EvaluationRequest tintCoverage = request;
+    tintCoverage.region = tintStep->region;
+    EvaluationRequest outCoverage = request;
+    outCoverage.region = outStep->region;
+    cache.evict(regionResultKey(tintKey, tintCoverage));
+    cache.evict(
+        regionResultKey(nodeContentKey(doc, *rootGraph(doc).nodeByName("out"), {tintKey.hash}, request), outCoverage));
 
     const CpuEvaluation recomputed = evaluateCpu(doc, request, &cache);
     EXPECT_EQ(cache.counts().hits, 0u);  // both representations were evicted

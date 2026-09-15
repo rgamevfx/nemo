@@ -63,7 +63,14 @@ void catmullRomWeights(float t, out float w[4]) {
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    vec4 orig = imageLoad(in_main, ivec2(p));
+    // The resampled input may cover a different rectangle of the same lattice
+    // (region evaluation, wider cache-backed inputs): its full-resolution
+    // region origin and raster extent come from the bound geometry, never
+    // from this pass's own request.
+    ivec2 inputOrigin = inputGeometry[0].regionAndOffset.xy;
+    ivec2 dims = ivec2(inputGeometry[0].extent.xy);
+    ivec2 maskOffset = inputGeometry[1].regionAndOffset.zw;
+    vec4 orig = imageLoad(in_main, ivec2(p) + inputGeometry[0].regionAndOffset.zw);
 
     int scale = int(meta2.z);
     float fullWidth = float(meta.x);
@@ -71,7 +78,6 @@ void main() {
     float regionX = float(meta.z);
     float regionY = float(meta.w);
     float aspect = transformFlags.y;
-    ivec2 dims = ivec2(meta2.xy);
 
     // Output pixel center in full resolution, then the declared inverse:
     // subtract translation, undo rotation (physical coords), undo scale.
@@ -88,7 +94,8 @@ void main() {
 
     vec4 processed = vec4(0.0);  // outside the sampled support: transparent black
     int filterMode = int(transformFlags.x);
-    vec2 raster = vec2((fullIn.x - regionX) / float(scale), (fullIn.y - regionY) / float(scale));
+    vec2 raster = vec2((fullIn.x - float(inputOrigin.x)) / float(scale),
+                       (fullIn.y - float(inputOrigin.y)) / float(scale));
     if (filterMode == 2) {  // Nearest: bound the raster index; outside is transparent black
         if (raster.x >= 0.0 && raster.x < float(dims.x) && raster.y >= 0.0 && raster.y < float(dims.y)) {
             processed = imageLoad(in_main, ivec2(floor(raster)));
@@ -129,7 +136,7 @@ void main() {
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(imageLoad(in_mask, ivec2(p))[channel], 0.0, 1.0);
+        float selected = clamp(imageLoad(in_mask, ivec2(p) + maskOffset)[channel], 0.0, 1.0);
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
@@ -144,7 +151,7 @@ void main() {
     return EffectPassDefinition{
         .id = "transform",
         .shader = "transform/transform",
-        .glsl = nemo::nodes::gpuGlsl(kTransformGlslPayload, kTransformGlslBody),
+        .glsl = nemo::nodes::gpuGlsl(kTransformGlslPayload, kTransformGlslBody, true),
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}, EffectImageRef{EffectImageKind::Input, 1}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

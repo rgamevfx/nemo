@@ -162,6 +162,12 @@ protected:
     // Runs after the session/media/read-source owners exist and before any
     // observing ViewerController is constructed. Empty for every existing test.
     std::function<void()> prepareSession;
+    // Runs before the workspace file is written, so a scenario can install a
+    // layout and persisted panel state of its own. It returns the workspace
+    // document to write; empty keeps the single-panel default below. The
+    // confirmed-application path (NEMO74_USER_WORKSPACE) ignores it: copying the
+    // owner's real workspace is a distinct scenario.
+    std::function<QJsonObject()> prepareWorkspaceDocument;
     // Session revision captured at that same boundary (after the preparation
     // hook, before any observing controller). A scenario that needs the first
     // session notification to be its own replacement compares against this.
@@ -258,9 +264,10 @@ protected:
                                         QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("workspace-1")},
                                                                {QStringLiteral("name"), QStringLiteral("Read viewer")},
                                                                {QStringLiteral("layout"), layout}}}}};
+            const QJsonObject workspace = prepareWorkspaceDocument ? prepareWorkspaceDocument() : document;
             QFile workspaceFile(workspacePath);
             ASSERT_TRUE(workspaceFile.open(QIODevice::WriteOnly));
-            workspaceFile.write(QJsonDocument(document).toJson());
+            workspaceFile.write(QJsonDocument(workspace).toJson());
             workspaceFile.close();
         }
         workspace_ = std::make_unique<nemo::workspace::WorkspaceController>(workspacePath);
@@ -372,13 +379,17 @@ protected:
     }
 
     // Crops the panel body out of the real window grab. A blank viewer is the
-    // panel background; a displayed image introduces non-background pixels.
-    [[nodiscard]] QImage grabPanel(const QString& panelId = {}) {
+    // panel background; a displayed image introduces non-background pixels. The
+    // pointer is parked in a corner before grabbing unless the observation IS
+    // the hover state, so routine evidence never shows interaction chrome.
+    [[nodiscard]] QImage grabPanel(const QString& panelId = {}, bool preservePointer = false) {
         auto* panel = panelRootFor(window_->contentItem(), panelId.isEmpty() ? panel_ : panelId);
         if (!panel)
             return {};
-        QTest::mouseMove(window_, QPoint(4, 4));
-        QTest::qWait(50);
+        if (!preservePointer) {
+            QTest::mouseMove(window_, QPoint(4, 4));
+            QTest::qWait(50);
+        }
         const QRect crop =
             QRectF(panel->mapToScene(QPointF{}), QSizeF(panel->width(), panel->height())).toAlignedRect();
         return window_->grabWindow().copy(crop).convertToFormat(QImage::Format_RGB32);
@@ -420,8 +431,11 @@ protected:
     }
 
     // Native capture for the recorded evidence directory, when one is set,
-    // beside the environment and the view it was taken in.
-    void capture(const QString& name, const QString& panelId = {}) {
+    // beside the environment and the view it was taken in. `preservePointer`
+    // keeps the pointer where the scenario put it, which is the only way the
+    // hover state of a control can appear in a capture.
+    void capture(const QString& name, const QString& panelId = {}, bool preservePointer = false,
+                 bool includeWindowChrome = false) {
         if (evidenceDirectory_.isEmpty())
             return;
         QDir().mkpath(evidenceDirectory_);
@@ -451,7 +465,8 @@ protected:
         QFile environmentFile(evidenceDirectory_ + QStringLiteral("/environment-") + name + QStringLiteral(".json"));
         EXPECT_TRUE(environmentFile.open(QIODevice::WriteOnly));
         environmentFile.write(QJsonDocument(environment).toJson(QJsonDocument::Indented));
-        EXPECT_TRUE(grabPanel(panelId).save(evidenceDirectory_ + '/' + name + ".png"));
+        const QImage image = includeWindowChrome ? window_->grabWindow() : grabPanel(panelId, preservePointer);
+        EXPECT_TRUE(image.save(evidenceDirectory_ + '/' + name + ".png"));
     }
 
     // Qt 6.4's QtTest has no wheel helper, so the harness constructs the wheel
@@ -1242,6 +1257,261 @@ TEST_F(ReadViewerSurface, ViewerZoomControlStatesAndAcceptsAnyScale) {
     wheel(center, 120);
     QTest::qWait(80);
     EXPECT_EQ(statedZoom(), percentText(sampleView().scale()));
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// Issue #85's coverage switch, driven through the real control. Zoomed in, the
+// request follows the visible region; the switch makes it cover the whole image
+// domain at the same sampling scale and the same view, and switching back
+// restores exactly the regional coverage the view asks for. The choice is a
+// panel-state record like the view itself: never a document edit and never a
+// reason to recenter or refit.
+TEST_F(ReadViewerSurface, ForceFullFrameCoversTheWholeDomainAndKeepsTheView) {
+    const auto plate = writePng(directory_.path().toStdString(), "plate", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
+    const auto read = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"), QStringLiteral("Read1"),
+                                                   0.0, 0.0, {}, {});
+    const auto blur =
+        controller_->createGraphNode(rootNetwork(), QStringLiteral("blur"), QStringLiteral("Blur1"), 40.0, 0.0, {}, {});
+    const auto viewer = controller_->createGraphNode(rootNetwork(), QStringLiteral("viewer"), QStringLiteral("Viewer1"),
+                                                     40.0, 120.0, {}, {});
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), read, 0, blur, 0));
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), blur, 0, viewer, 0));
+    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), read, QString::fromStdString(plate.string())));
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.region.width == 96 && request.region.height == 64 && request.samplingScale == 1;
+    })) << controller_->error().toStdString();
+
+    auto* item = viewerItem();
+    ASSERT_NE(item, nullptr);
+    auto* toggle = visualByName(window_->contentItem(), QStringLiteral("viewerFullFrame_") + panel_);
+    ASSERT_NE(toggle, nullptr) << "the coverage switch is a control of the real panel";
+    ASSERT_TRUE(toggle->isVisible());
+    // Off by default, and the request follows the visible region.
+    EXPECT_FALSE(controller_->forceFullFrame());
+    EXPECT_FALSE(toggle->property("checked").toBool());
+
+    const QPoint anchor = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+    QTest::mouseMove(window_, anchor);
+    QTest::qWait(20);
+    for (int notch = 0; notch < 8; ++notch)
+        wheel(anchor, 120);
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.region.width > 0 && request.region.width < 96 && request.samplingScale == 1;
+    })) << controller_->error().toStdString()
+        << " status=" << controller_->status().toStdString();
+    const auto regional = presentedRequest();
+    const auto regionalView = sampleView();
+    const double regionalZoom = controller_->zoom();
+    const QPointF regionalPan = controller_->pan();
+    capture(QStringLiteral("viewer-full-frame-regional"), {}, false, true);
+
+    // The real control: hovered, then clicked.
+    const QPoint toggleCenter = toggle->mapToScene(QPointF(toggle->width() / 2, toggle->height() / 2)).toPoint();
+    QTest::mouseMove(window_, toggleCenter);
+    QTest::qWait(80);
+    EXPECT_TRUE(toggle->property("hovered").toBool());
+    capture(QStringLiteral("viewer-full-frame-hover"), {}, true, true);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, toggleCenter);
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.region.x == 0 && request.region.y == 0 && request.region.width == 96 &&
+               request.region.height == 64;
+    })) << controller_->error().toStdString()
+        << " status=" << controller_->status().toStdString();
+
+    // Whole-domain coverage at the SAME sampling density and the SAME view: the
+    // switch states coverage, not quality and not a display transform.
+    const auto whole = presentedRequest();
+    EXPECT_EQ(whole.samplingScale, regional.samplingScale);
+    EXPECT_EQ(whole.fullWidth, 96);
+    EXPECT_EQ(whole.fullHeight, 64);
+    EXPECT_TRUE(controller_->forceFullFrame());
+    EXPECT_TRUE(toggle->property("checked").toBool());
+    EXPECT_EQ(controller_->zoom(), regionalZoom);
+    EXPECT_EQ(controller_->pan(), regionalPan);
+    EXPECT_NEAR(sampleView().scale(), regionalView.scale(), regionalView.scale() * 0.01);
+    EXPECT_EQ(statedZoom(), percentText(regionalView.scale()));
+    capture(QStringLiteral("viewer-full-frame-checked"), {}, false, true);
+
+    // The chosen sampling mode is untouched by the switch: the same whole-domain
+    // coverage is requested through an explicit proxy mode.
+    controller_->setResolutionMode(QStringLiteral("half"));
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) { return request.samplingScale == 2; }))
+        << controller_->error().toStdString();
+    EXPECT_EQ(presentedRequest().region.x, 0);
+    EXPECT_EQ(presentedRequest().region.y, 0);
+    EXPECT_EQ(presentedRequest().region.width, 96);
+    EXPECT_EQ(presentedRequest().region.height, 64);
+    controller_->setResolutionMode(QStringLiteral("auto"));
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) { return request.samplingScale == 1; }))
+        << controller_->error().toStdString();
+
+    // Switched off through the same control, the view asks for exactly the
+    // regional coverage it asked for before. The wait is on the new frame, so a
+    // click that changed nothing cannot pass on the frame already displayed.
+    const auto beforeOffClick = controller_->presentation();
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, toggleCenter);
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != beforeOffClick; }))
+        << controller_->error().toStdString();
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) { return request.region.width < 96; }))
+        << controller_->error().toStdString();
+    EXPECT_FALSE(controller_->forceFullFrame());
+    EXPECT_FALSE(toggle->property("checked").toBool());
+    EXPECT_TRUE(presentedRequest() == regional) << "the view's own coverage is restored unchanged";
+    EXPECT_NEAR(sampleView().scale(), regionalView.scale(), regionalView.scale() * 0.01);
+    EXPECT_EQ(workspace_->panelState(panel_).value(QStringLiteral("forceFullFrame")).toBool(), false);
+
+    // The panel-state record is what a reopened panel restores from, and
+    // adopting it re-derives the request without touching the view.
+    QVariantMap recorded = workspace_->panelState(panel_);
+    ASSERT_TRUE(recorded.contains(QStringLiteral("zoomMode"))) << "the record carries the view too";
+    recorded.insert(QStringLiteral("forceFullFrame"), true);
+    const auto viewBeforeRecord = sampleView();
+    // A fixed image point: where the panel draws it is what "not recentered"
+    // means, and it does not depend on which region the frame carries.
+    const double imageX = viewBeforeRecord.region.x + viewBeforeRecord.region.width / 2.0;
+    const double imageY = viewBeforeRecord.region.y + viewBeforeRecord.region.height / 2.0;
+    const QPointF pointBeforeRecord = viewBeforeRecord.panelPoint(imageX, imageY);
+    workspace_->setPanelState(panel_, recorded);
+    ASSERT_TRUE(waitFor([&] { return controller_->forceFullFrame(); }));
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.region.x == 0 && request.region.y == 0 && request.region.width == 96 &&
+               request.region.height == 64;
+    })) << controller_->error().toStdString();
+    EXPECT_TRUE(toggle->property("checked").toBool()) << "the control follows the restored record";
+    const auto viewAfterRecord = sampleView();
+    EXPECT_NEAR(viewAfterRecord.scale(), viewBeforeRecord.scale(), viewBeforeRecord.scale() * 0.01);
+    const QPointF pointAfterRecord = viewAfterRecord.panelPoint(imageX, imageY);
+    EXPECT_NEAR(pointAfterRecord.x(), pointBeforeRecord.x(), 1.0) << "the restore never recenters the view";
+    EXPECT_NEAR(pointAfterRecord.y(), pointBeforeRecord.y(), 1.0);
+    EXPECT_EQ(controller_->zoom(), regionalZoom);
+    EXPECT_NEAR(controller_->pan().x(), regionalPan.x(), 0.5);
+    EXPECT_NEAR(controller_->pan().y(), regionalPan.y(), 0.5);
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// Issue #85: the coverage switch belongs to one panel. Two viewers of the same
+// graph keep independent coverage, and turning the switch on in one of them
+// leaves its sibling's request, view and control exactly as they were.
+class ForceFullFrameSplitSurface : public ReadViewerSurface {
+protected:
+    ForceFullFrameSplitSurface() : ReadViewerSurface() {
+        prepareWorkspaceDocument = [] {
+            const auto viewerPanel = [](const QString& id, const QString& group, int viewerIndex) {
+                return QJsonObject{
+                    {QStringLiteral("id"), id},
+                    {QStringLiteral("type"), QStringLiteral("viewer")},
+                    {QStringLiteral("group"), group},
+                    {QStringLiteral("state"), QJsonObject{{QStringLiteral("viewerIndex"), viewerIndex}}}};
+            };
+            const auto leaf = [](const QString& id, const QString& active, const QJsonObject& onlyPanel) {
+                return QJsonObject{{QStringLiteral("id"), id},
+                                   {QStringLiteral("kind"), QStringLiteral("tabs")},
+                                   {QStringLiteral("active"), active},
+                                   {QStringLiteral("panels"), QJsonArray{onlyPanel}}};
+            };
+            const QJsonObject layout{
+                {QStringLiteral("version"), 1},
+                {QStringLiteral("root"),
+                 QJsonObject{{QStringLiteral("id"), QStringLiteral("split-root")},
+                             {QStringLiteral("kind"), QStringLiteral("split")},
+                             {QStringLiteral("orientation"), QStringLiteral("horizontal")},
+                             {QStringLiteral("ratio"), 0.3},
+                             {QStringLiteral("children"),
+                              QJsonArray{leaf(QStringLiteral("leaf-a"), QStringLiteral("panel-a"),
+                                              viewerPanel(QStringLiteral("panel-a"), QStringLiteral("A"), 0)),
+                                         leaf(QStringLiteral("leaf-b"), QStringLiteral("panel-b"),
+                                              viewerPanel(QStringLiteral("panel-b"), QStringLiteral("B"), 1))}}}}};
+            return QJsonObject{{QStringLiteral("version"), 2},
+                               {QStringLiteral("activeWorkspaceId"), QStringLiteral("workspace-1")},
+                               {QStringLiteral("workspaces"),
+                                QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("workspace-1")},
+                                                       {QStringLiteral("name"), QStringLiteral("Coverage split")},
+                                                       {QStringLiteral("layout"), layout}}}}};
+        };
+    }
+};
+
+TEST_F(ForceFullFrameSplitSurface, ForceFullFrameStaysInsideItsPanel) {
+    auto* sibling = controllerFor(QStringLiteral("panel-b"));
+    ASSERT_NE(sibling, nullptr) << "the second panel owns its own controller";
+    ASSERT_NE(sibling, controller_);
+
+    const auto plate = writePng(directory_.path().toStdString(), "plate", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
+    const auto scope = rootNetwork();
+    const auto read =
+        controller_->createGraphNode(scope, QStringLiteral("source"), QStringLiteral("Read1"), 0.0, 0.0, {}, {});
+    const auto blur =
+        controller_->createGraphNode(scope, QStringLiteral("blur"), QStringLiteral("Blur1"), 40.0, 0.0, {}, {});
+    const auto viewerA =
+        controller_->createGraphNode(scope, QStringLiteral("viewer"), QStringLiteral("ViewerA"), 40.0, 120.0, {}, {});
+    const auto viewerB =
+        controller_->createGraphNode(scope, QStringLiteral("viewer"), QStringLiteral("ViewerB"), 120.0, 120.0, {}, {});
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(scope, read, 0, blur, 0));
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(scope, blur, 0, viewerA, 0));
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(scope, blur, 0, viewerB, 0));
+    ASSERT_TRUE(readSource_->setSourcePath(scope, read, QString::fromStdString(plate.string())));
+    // Both viewers address the same blur output through their own Viewer node:
+    // panel A selects viewer index 0, panel B index 1.
+    ASSERT_TRUE(waitFor([&] {
+        const auto presented = sibling->presentation();
+        return presented && presented->request.region.width == 96 && presented->request.region.height == 64;
+    })) << sibling->error().toStdString();
+
+    // Zoom both panels in, so each asks for a region of the image rather than
+    // the whole of it.
+    for (const auto& panelId : {QStringLiteral("panel-a"), QStringLiteral("panel-b")}) {
+        auto* item = viewerItem(panelId);
+        ASSERT_NE(item, nullptr);
+        const QPoint anchor = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+        QTest::mouseMove(window_, anchor);
+        QTest::qWait(20);
+        for (int notch = 0; notch < 8; ++notch)
+            wheel(anchor, 120);
+        ASSERT_TRUE(waitForRequest(
+            [](const nemo::EvaluationRequest& request) {
+                return request.region.width > 0 && request.region.width < 96 && request.samplingScale == 1;
+            },
+            panelId))
+            << panelId.toStdString()
+            << " status=" << (panelId == panel_ ? controller_->status() : sibling->status()).toStdString();
+    }
+    const auto regionalSibling = presentedRequest(QStringLiteral("panel-b"));
+    const auto siblingView = sampleView(QStringLiteral("panel-b"));
+
+    auto* toggle = visualByName(window_->contentItem(), QStringLiteral("viewerFullFrame_panel-a"));
+    ASSERT_NE(toggle, nullptr);
+    ASSERT_TRUE(toggle->isVisible());
+    auto* siblingToggle = visualByName(window_->contentItem(), QStringLiteral("viewerFullFrame_panel-b"));
+    ASSERT_NE(siblingToggle, nullptr);
+    // The split makes panel A narrower than the compact threshold and panel B
+    // wider, so the switch is exercised in both layouts: it moves below the
+    // image in the narrow panel and stays in the wide panel's header, as one
+    // and the same display-control row.
+    auto* narrowPanel = panelRootFor(window_->contentItem(), QStringLiteral("panel-a"));
+    auto* widePanel = panelRootFor(window_->contentItem(), QStringLiteral("panel-b"));
+    ASSERT_NE(narrowPanel, nullptr);
+    ASSERT_NE(widePanel, nullptr);
+    EXPECT_LT(narrowPanel->width(), 560.0) << "the narrow panel carries its display controls below the image";
+    EXPECT_GE(widePanel->width(), 560.0) << "the wide panel keeps them in its header";
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier,
+                      toggle->mapToScene(QPointF(toggle->width() / 2, toggle->height() / 2)).toPoint());
+    ASSERT_TRUE(waitForRequest(
+        [](const nemo::EvaluationRequest& request) {
+            return request.region.x == 0 && request.region.y == 0 && request.region.width == 96 &&
+                   request.region.height == 64;
+        },
+        panel_))
+        << controller_->error().toStdString();
+
+    EXPECT_TRUE(controller_->forceFullFrame());
+    EXPECT_FALSE(sibling->forceFullFrame()) << "the switch is panel-local";
+    EXPECT_FALSE(siblingToggle->property("checked").toBool());
+    capture(QStringLiteral("viewer-full-frame-narrow-checked"), QStringLiteral("panel-a"));
+    EXPECT_TRUE(presentedRequest(QStringLiteral("panel-b")) == regionalSibling) << "the sibling's request is untouched";
+    EXPECT_NEAR(sampleView(QStringLiteral("panel-b")).scale(), siblingView.scale(), siblingView.scale() * 0.01);
+    EXPECT_EQ(workspace_->panelState(panel_).value(QStringLiteral("forceFullFrame")).toBool(), true);
+    EXPECT_FALSE(workspace_->panelState(QStringLiteral("panel-b")).value(QStringLiteral("forceFullFrame")).toBool())
+        << "the sibling records nothing";
     EXPECT_EQ(warnings_->count(), 0);
 }
 

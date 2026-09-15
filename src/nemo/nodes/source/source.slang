@@ -9,7 +9,7 @@
 //   - the node's `source` parameter names a Document source reference
 //     (setSourceCommand); the shared runtime resolves the decoded frame and
 //     only its full-resolution dimensions reach this node's preparation.
-// bindings (native binding contract v2, see testpattern.slang):
+// bindings (native binding contract v3, see testpattern.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.source.payload.v1")
 //   set 1, binding 0 : the decoded full-resolution source frame

@@ -914,7 +914,10 @@ ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession&
     schedulerPoll_.setInterval(200);
     connect(&schedulerPoll_, &QTimer::timeout, this, &ViewerController::pollScheduler);
     schedulerPoll_.start();
-    connect(&playback_, &QTimer::timeout, this, &ViewerController::playbackTick);
+    // Single-shot pacing: a completed frame re-arms it, so it can never command
+    // a new frame while one is still being computed.
+    playback_.setSingleShot(true);
+    connect(&playback_, &QTimer::timeout, this, &ViewerController::pumpPlayback);
     // subscribe() does not invoke the callback, so the baseline is seeded here:
     // the first notification may itself be the reopen/replacement that must
     // refresh the runtime's retained color configuration.
@@ -1685,6 +1688,13 @@ void ViewerController::pollScheduler() {
     // than another destination's activity.
     if (!destination_)
         return;
+    // Safety net, before the counter comparison below: playback must never stall
+    // on a frame that was never submitted (an empty viewport that has since
+    // appeared, a rejected admission, a replaced target). advancePlayback()
+    // restores the transport when nothing renders, so this cannot walk the
+    // playhead forward over frames that were not produced.
+    if (playing_ && outstandingRequest_ == 0 && !playback_.isActive())
+        pumpPlayback();
     auto counts = runtime_->counts(*destination_);
     if (counts == schedulerCounts_)
         return;
@@ -1721,6 +1731,7 @@ void ViewerController::documentChanged() {
 void ViewerController::invalidateRequest() {
     lastRequest_.reset();
     pending_ = false;
+    outstandingRequest_ = 0;
     outdated_ = static_cast<bool>(presentation_);
     generation_ = ++nextRequestId_;
     rangeGeneration_ = 0;
@@ -3450,24 +3461,21 @@ void ViewerController::receive() {
         const auto reference = session_.document().sources.find(probeSourceKey_);
         if (reference == session_.document().sources.end()) {
             pending_ = false;
+            outstandingRequest_ = 0;
             forgetProbedMedia();
             refreshRequest();
             return;
         }
         probedSource_ = reference->second;
         pending_ = false;
+        outstandingRequest_ = 0;
         sourceSize_ = QSizeF(info.width, info.height);
         pixelAspect_ = info.pixelAspect;
         applyFrameCount(static_cast<int>(std::min<std::int64_t>(info.frameCount, std::numeric_limits<int>::max())));
-        // Playback cadence follows the probed media rate; an unknown rate keeps
-        // the 24 fps default rather than inventing a timebase.
-        const double rate = info.frameRate > 0.0 ? info.frameRate : 24.0;
-        if (rate != frameRate_) {
-            frameRate_ = rate;
-            if (playing_)
-                playback_.setInterval(playbackInterval());
-            emit frameRateChanged();
-        }
+        // The probed media rate deliberately does NOT pace playback: transport
+        // runs at the composition rate (setFrameRate), so a 25 fps clip inside a
+        // 24 fps composition plays at 24 and retargeting a Read cannot change
+        // playback cadence. Rate conversion belongs to the source mapping.
         sourceDescription_ =
             QStringLiteral("%1x%2 %3; decode selection: %4")
                 .arg(info.width)
@@ -3485,6 +3493,7 @@ void ViewerController::receive() {
         // issued before the authored document changed.
         if (frame->requestId != generation_ || frame->revision != submittedRevision_)
             return;
+        outstandingRequest_ = 0;
         presentation_ = std::move(frame);
         pending_ = false;
         outdated_ = false;
@@ -3500,6 +3509,9 @@ void ViewerController::receive() {
         emit effectiveScaleChanged();
         emit frameArrived();
         emit statusChanged();
+        // Playback advances on the displayed frame, never on a timer tick: the
+        // frame just published is the predecessor of the next one.
+        pumpPlayback();
     }
 }
 
@@ -3566,6 +3578,7 @@ void ViewerController::refreshRequest() {
             presentation_.reset();
             lastRequest_.reset();
             pending_ = false;
+            outstandingRequest_ = 0;
             outdated_ = false;
             status_ = QStringLiteral("Read '%1' names no media; choose a file in its parameters")
                           .arg(viewerTargetName_.isEmpty() ? QStringLiteral("source") : viewerTargetName_);
@@ -3608,6 +3621,7 @@ void ViewerController::refreshRequest() {
             presentation_.reset();
             lastRequest_.reset();
             pending_ = false;
+            outstandingRequest_ = 0;
             outdated_ = false;
             status_ = unavailableStatus();
             emit statusChanged();
@@ -3638,7 +3652,11 @@ void ViewerController::refreshRequest() {
                 emit statusChanged();
                 generation_ = ++nextRequestId_;
                 probeSourceKey_ = sourceKey;
-                if (!runtime_->probe(document, sourceKey, generation_, *destination_, session_.colorConfigPath()))
+                outstandingRequest_ =
+                    runtime_->probe(document, sourceKey, generation_, *destination_, session_.colorConfigPath())
+                        ? generation_
+                        : 0;
+                if (outstandingRequest_ == 0)
                     fail(QStringLiteral("Source probe admission rejected"));
                 return;
             }
@@ -3679,7 +3697,12 @@ void ViewerController::refreshRequest() {
         // A published result carries the revision of the snapshot it was
         // rendered from, so remember exactly what was submitted.
         submittedRevision_ = document.stateRevision();
-        if (!runtime_->submit(document, request, id, *destination_, viewerChannel_, session_.colorConfigPath()))
+        // A rejected admission leaves nothing outstanding, so playback stays
+        // free to try again instead of waiting for a result that was never
+        // queued; pollScheduler() retries the rejected request.
+        outstandingRequest_ =
+            runtime_->submit(document, request, id, *destination_, viewerChannel_, session_.colorConfigPath()) ? id : 0;
+        if (outstandingRequest_ == 0)
             pending_ = true;
         outdated_ = static_cast<bool>(presentation_);
         error_.clear();
@@ -3758,21 +3781,24 @@ void ViewerController::setFrame(int value) {
 }
 void ViewerController::play() {
     // Starting outside the marked range enters at the in mark, as the prototype
-    // does; every tick then advances exactly one frame.
+    // does; playback then advances one frame per displayed frame.
     if (frame_ < inFrame_ || frame_ > outFrame_)
         setFrame(inFrame_);
     if (playing_)
         return;
     playing_ = true;
-    playback_.setInterval(playbackInterval());
-    playback_.start();
+    playbackDue_ = std::chrono::steady_clock::now();
     emit playbackChanged();
+    pumpPlayback();
 }
 void ViewerController::pause() {
     if (!playing_)
         return;
     playing_ = false;
     playback_.stop();
+    // A frame already in flight is deliberately NOT cancelled: the composition
+    // computed it, so it is published and displayed. Pausing only stops the
+    // loop advancing.
     emit playbackChanged();
 }
 void ViewerController::togglePlay() {
@@ -3901,13 +3927,64 @@ int ViewerController::playbackInterval() const {
     const double rate = frameRate_ > 0.0 ? frameRate_ : 24.0;
     return std::max(1, static_cast<int>(std::lround(1000.0 / rate)));
 }
-void ViewerController::playbackTick() {
-    // One frame per tick, one request per displayed frame: playback never
-    // queues work ahead of the panel.
-    if (frame_ >= outFrame_)
-        setFrame(inFrame_);
-    else
-        setFrame(frame_ + 1);
+void ViewerController::setFrameRate(double rate) {
+    if (!(rate > 0.0) || rate == frameRate_)
+        return;
+    frameRate_ = rate;
+    emit frameRateChanged();
+    // Re-pace immediately: a rate change must not wait for the frame in flight.
+    if (playing_)
+        pumpPlayback();
+}
+void ViewerController::pumpPlayback() {
+    if (!playing_)
+        return;
+    playback_.stop();
+    // The displayed-frame contract: a frame still being computed is never
+    // superseded, so playback waits for it instead of commanding another.
+    if (outstandingRequest_ != 0)
+        return;
+    const auto now = std::chrono::steady_clock::now();
+    if (playbackDue_ > now) {
+        // Frames are arriving ahead of the composition rate (cached replay):
+        // hold the rate rather than playing as fast as the cache allows.
+        playback_.start(std::chrono::duration_cast<std::chrono::milliseconds>(playbackDue_ - now));
+        return;
+    }
+    if (!advancePlayback())
+        playbackDue_ = now + std::chrono::milliseconds(playbackInterval());
+}
+bool ViewerController::advancePlayback() {
+    const int previous = frame_;
+    const int next = frame_ >= outFrame_ ? inFrame_ : frame_ + 1;
+    if (next == frame_) {
+        // A one-frame loop re-requests the frame already displayed. The
+        // identical-request guard would skip that submission and stall the
+        // loop, so it is cleared for this advance only.
+        lastRequest_.reset();
+    }
+    setFrame(next);
+    if (outstandingRequest_ == 0) {
+        // Nothing was rendered: no viewport, no destination, or an empty or
+        // replaced target. Leave the transport where it was rather than walking
+        // it forward over frames that were never produced.
+        if (frame_ != previous) {
+            frame_ = previous;
+            emit frameChanged();
+            emit timelineChanged();
+        }
+        return false;
+    }
+    // Pace the following frame from this one's due time. A frame that overran
+    // its budget leaves the due time in the past, so the pace resumes from now
+    // instead of replaying the backlog as a burst; frames are still produced in
+    // order and none are skipped.
+    const auto interval = std::chrono::milliseconds(playbackInterval());
+    const auto now = std::chrono::steady_clock::now();
+    playbackDue_ += interval;
+    if (playbackDue_ <= now)
+        playbackDue_ = now + interval;
+    return true;
 }
 void ViewerController::viewportChanged(QSizeF pixels) {
     if (viewport_ == pixels)
@@ -3949,8 +4026,13 @@ void ViewerController::setPrimaryViewerItem(ViewerItem* item) {
 void ViewerController::fail(QString message) {
     error_ = std::move(message);
     pending_ = false;
+    outstandingRequest_ = 0;
     outdated_ = static_cast<bool>(presentation_);
     status_ = presentation_ ? QStringLiteral("Failed; displayed frame is outdated") : QStringLiteral("Failed");
     emit statusChanged();
+    // A frame that cannot be produced must not spin the transport against the
+    // same failure, dragging the playhead over frames that never rendered.
+    if (playing_)
+        pause();
 }
 }  // namespace nemo::ui

@@ -13,6 +13,7 @@
 #include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
+#include <chrono>
 
 namespace nemo::ui {
 class ViewerItem;
@@ -207,15 +208,27 @@ public:
     Q_INVOKABLE bool redo();
     Q_INVOKABLE void cancelRender();
     Q_INVOKABLE void requestRange(int first, int last);
-    // Panel transport. Playback is a QTimer at 1000/frameRate that advances one
-    // frame per tick through the existing setFrame path: one request per
-    // displayed frame, never render-ahead, looping inclusively within
+    // Panel transport. Playback produces one request per DISPLAYED frame: the
+    // next frame is submitted only after the outstanding one has been consumed,
+    // so a frame the composition is already computing is never superseded by
+    // its own successor and always reaches the viewer. A single-shot pacing
+    // timer only decides WHEN the next frame is due, so playback holds the
+    // composition rate while frames arrive early (cached replay) and runs as
+    // fast as the renderer allows when they do not; frames are always produced
+    // in order and none are skipped. Loops inclusively within
     // [inFrame_, outFrame_].
     Q_INVOKABLE void play();
     Q_INVOKABLE void pause();
     Q_INVOKABLE void togglePlay();
     // Pauses and seeks to inFrame_.
     Q_INVOKABLE void stop();
+    // Playback rate in frames per second, pacing the transport. This is the
+    // COMPOSITION rate and is deliberately never taken from the probed media: a
+    // 25 fps clip inside a 24 fps composition plays at the composition rate, and
+    // retargeting a Read cannot change playback cadence. The rate is not yet a
+    // persistent per-project timebase in the Document model (#83), so it is a
+    // session property with the 24 fps default until that lands.
+    Q_INVOKABLE void setFrameRate(double rate);
     Q_INVOKABLE void stepBy(int delta);
     Q_INVOKABLE void seekToIn();
     Q_INVOKABLE void seekToOut();
@@ -360,7 +373,15 @@ private:
     // the current frame.
     void applyFrameCount(int frameCount);
     [[nodiscard]] int playbackInterval() const;
-    void playbackTick();
+    // The single place that decides whether playback may submit its next frame:
+    // waits for the frame in flight, holds the composition rate while frames are
+    // ready ahead of it, and resumes the pace rather than bursting after a frame
+    // that overran its budget.
+    void pumpPlayback();
+    // Submits the next frame of the loop and advances the pacing due time.
+    // Returns false when nothing was submitted, so the caller does not walk the
+    // transport forward over frames that were never rendered.
+    [[nodiscard]] bool advancePlayback();
     ViewerRuntime* runtime_;
     nemo::ProjectSession& session_;
     // The scheduler destination this panel owns. Unset, the controller is a
@@ -406,6 +427,14 @@ private:
     QString error_;
     QString sourceDescription_;
     bool pending_{false};
+    // Request this panel has submitted and not yet consumed (0 = nothing
+    // outstanding). Playback never submits a frame while this is set, which is
+    // what makes an in-flight frame un-supersedable by its own successor.
+    std::uint64_t outstandingRequest_{0};
+    // Wall-clock time the next playback frame is due, advanced by one frame
+    // interval per submission: playback keeps the composition rate when frames
+    // arrive early and falls behind honestly when they do not.
+    std::chrono::steady_clock::time_point playbackDue_{};
     bool outdated_{false};
     std::uint64_t generation_{};
     std::uint64_t nextRequestId_{};

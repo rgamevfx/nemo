@@ -409,6 +409,104 @@ TEST(Interactive, MediaFreeViewerRendersAttachedComposite) {
 #endif
 }
 
+// Playback produces one request per DISPLAYED frame. Nothing consumes the
+// submitted request here (the runtime is not bootstrapped, so no worker runs),
+// which is exactly the condition the free-running tick mishandled: it submitted
+// a fresh frame every interval, superseding the frame still being computed, so
+// completed frames were discarded instead of shown. The transport must instead
+// leave one frame outstanding and wait for it.
+TEST(Interactive, PlaybackWaitsForTheFrameItSubmitted) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    controller.setDestination(nemo::eval::ViewerDestination::Interactive);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto color = controller.createGraphNode(scope, "constcolor", "playbackColor", 0.0, 0.0, {}, {});
+    ASSERT_FALSE(color.isEmpty());
+    ASSERT_TRUE(controller.assignViewer(scope, 0, color));
+    controller.viewportChanged(QSizeF(320.0, 240.0));
+
+    controller.setFrameRate(25.0);
+    const int start = controller.frame();
+    controller.play();
+    // Five playback intervals at 25 fps: a clock-driven transport would have
+    // issued five requests and discarded four of them inside this window.
+    QTest::qWait(200);
+
+    const auto counts = runtime.counts(nemo::eval::ViewerDestination::Interactive);
+    // The frame being computed was never superseded by its own successor...
+    EXPECT_EQ(counts.dropped, 0u) << "playback discarded a frame it had submitted";
+    // ...so the transport waited for it instead of running ahead: five playback
+    // intervals of wall clock produced no further submission, and the panel
+    // stayed on the frame it is waiting to display.
+    EXPECT_EQ(counts.queued, 1u) << "a second frame was submitted while one was outstanding";
+    EXPECT_EQ(controller.frame(), start) << "the transport ran ahead of the frame being displayed";
+    controller.pause();
+}
+
+// The other half of the same contract, on a real device: frames that finish do
+// reach the viewer, and the transport advances one frame per DISPLAYED frame
+// rather than one per timer tick. Skips without a usable Vulkan device.
+TEST(Interactive, PlaybackPublishesEveryFrameItRenders) {
+#ifndef NEMO_SLANG_SPV_DIR
+    GTEST_SKIP() << "Native viewer evidence requires compiled Slang shaders";
+#else
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const auto config = std::filesystem::path(NEMO_UI_QML_DIR).parent_path().parent_path().parent_path() /
+                        "docs/evidence/issue12-view.ocio";
+    const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
+    nemo::eval::ViewerCacheOptions options;
+    options.directory = directory.path().toStdString();
+    options.encoding.codec = "libx264-cpu";
+    options.chunkFrames = 4;
+    nemo::ui::ViewerRuntime runtime;
+    try {
+        runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
+    } catch (const nemo::gpu::GpuException& error) {
+        if (error.errorCode() == nemo::gpu::GpuError::NoDevice)
+            GTEST_SKIP() << error.what();
+        throw;
+    }
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    controller.setDestination(nemo::eval::ViewerDestination::Interactive);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto color = controller.createGraphNode(scope, "constcolor", "playbackColor", 0.0, 0.0, {}, {});
+    ASSERT_FALSE(color.isEmpty());
+    ASSERT_TRUE(controller.assignViewer(scope, 0, color));
+    // A small raster so an uncached frame can fit inside a playback interval.
+    controller.setResolutionMode("quarter");
+    controller.viewportChanged(QSizeF(320.0, 240.0));
+
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!controller.presentation() && controller.error().isEmpty() && deadline.elapsed() < 60000)
+        QTest::qWait(10);
+    ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.presentation());
+
+    QSignalSpy arrived(&controller, &nemo::ui::ViewerController::frameArrived);
+    ASSERT_TRUE(arrived.isValid());
+    controller.setFrameRate(24.0);
+    const int start = controller.frame();
+    controller.play();
+    while (arrived.count() < 5 && deadline.restart() < 60000 && controller.error().isEmpty())
+        QTest::qWait(10);
+    controller.pause();
+
+    const auto counts = runtime.counts(nemo::eval::ViewerDestination::Interactive);
+    EXPECT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    // Five frames were computed, published and displayed across five intervals.
+    EXPECT_GE(arrived.count(), 5);
+    // None was thrown away because its own successor reached the scheduler.
+    EXPECT_EQ(counts.staleRejected, 0u);
+    EXPECT_EQ(counts.dropped, 0u);
+    // The transport advanced once per displayed frame, not once per tick.
+    EXPECT_EQ(controller.frame(), start + arrived.count());
+#endif
+}
+
 // Issue #47's focused multi-destination scenario: two viewer panels submit
 // different targets through one runtime, a result for destination A cannot
 // replace B's display, rapid supersession keeps only the newest request per

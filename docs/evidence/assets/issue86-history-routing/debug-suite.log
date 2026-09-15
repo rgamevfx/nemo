@@ -1,0 +1,1487 @@
+Test project /home/rgame/dev/Nemo_Dev2/build/debug
+        Start   1: TimingTest.AcceptanceScenario1_LocalOffsetsFromParentPlacement
+  1/719 Test   #1: TimingTest.AcceptanceScenario1_LocalOffsetsFromParentPlacement ......................................   Passed    0.13 sec
+        Start   2: TimingTest.MoveChangesPlacementOnly
+  2/719 Test   #2: TimingTest.MoveChangesPlacementOnly .................................................................   Passed    0.01 sec
+        Start   3: TimingTest.TrimAndSlipDoNotShiftLocalTime
+  3/719 Test   #3: TimingTest.TrimAndSlipDoNotShiftLocalTime ...........................................................   Passed    0.01 sec
+        Start   4: TimingTest.RetimeChangesSamplingRate
+  4/719 Test   #4: TimingTest.RetimeChangesSamplingRate ................................................................   Passed    0.01 sec
+        Start   5: TimingTest.InternalSourceRetimeAppliesBeforeDownstream
+  5/719 Test   #5: TimingTest.InternalSourceRetimeAppliesBeforeDownstream ..............................................   Passed    0.01 sec
+        Start   6: TimingTest.RoundTripIsStableForIntegerRates
+  6/719 Test   #6: TimingTest.RoundTripIsStableForIntegerRates .........................................................   Passed    0.01 sec
+        Start   7: CowVectorTest.CopiesShareStorageUntilOneVersionMutates
+  7/719 Test   #7: CowVectorTest.CopiesShareStorageUntilOneVersionMutates ..............................................   Passed    0.01 sec
+        Start   8: CowVectorTest.IteratorEqualityAndTraversalSurviveTemporaryViews
+  8/719 Test   #8: CowVectorTest.IteratorEqualityAndTraversalSurviveTemporaryViews .....................................   Passed    0.01 sec
+        Start   9: CowVectorTest.InsertAndEraseKeepOrderAcrossChunkBoundaries
+  9/719 Test   #9: CowVectorTest.InsertAndEraseKeepOrderAcrossChunkBoundaries ..........................................   Passed    0.01 sec
+        Start  10: CowVectorTest.ErasingEveryRecordOneByOneKeepsTheSequenceAddressable
+ 10/719 Test  #10: CowVectorTest.ErasingEveryRecordOneByOneKeepsTheSequenceAddressable .................................   Passed    0.00 sec
+        Start  11: CowVectorTest.EraseIfRemovesOnlyAcceptedRecordsAndPreservesOrder
+ 11/719 Test  #11: CowVectorTest.EraseIfRemovesOnlyAcceptedRecordsAndPreservesOrder ....................................   Passed    0.00 sec
+        Start  12: CowVectorTest.AssignReplacesContentsAndClearEmptiesThem
+ 12/719 Test  #12: CowVectorTest.AssignReplacesContentsAndClearEmptiesThem .............................................   Passed    0.00 sec
+        Start  13: CowVectorTest.MutatingThroughAStoredPointerLeavesOtherVersionsUntouched
+ 13/719 Test  #13: CowVectorTest.MutatingThroughAStoredPointerLeavesOtherVersionsUntouched .............................   Passed    0.00 sec
+        Start  14: CowVectorTest.FindAndIndexOfLocateRecordsByValue
+ 14/719 Test  #14: CowVectorTest.FindAndIndexOfLocateRecordsByValue ....................................................   Passed    0.00 sec
+        Start  15: CowMapTest.CopiesShareStorageUntilOneVersionMutates
+ 15/719 Test  #15: CowMapTest.CopiesShareStorageUntilOneVersionMutates .................................................   Passed    0.00 sec
+        Start  16: CowMapTest.OrderedIterationAndBoundsMatchTheOrderedMapContract
+ 16/719 Test  #16: CowMapTest.OrderedIterationAndBoundsMatchTheOrderedMapContract ......................................   Passed    0.00 sec
+        Start  17: EvaluationTest.LinearChainRendersPatternThroughOutput
+ 17/719 Test  #17: EvaluationTest.LinearChainRendersPatternThroughOutput ...............................................   Passed    0.11 sec
+        Start  18: EvaluationTest.MergeCompositesPatternOverConstColor
+ 18/719 Test  #18: EvaluationTest.MergeCompositesPatternOverConstColor .................................................   Passed    0.01 sec
+        Start  19: EvaluationTest.MergeOperationsMatchTheIndependentOracle
+ 19/719 Test  #19: EvaluationTest.MergeOperationsMatchTheIndependentOracle .............................................   Passed    0.02 sec
+        Start  20: EvaluationTest.MergePreservesHdrAndNegativeRgbWithoutClamping
+ 20/719 Test  #20: EvaluationTest.MergePreservesHdrAndNegativeRgbWithoutClamping .......................................   Passed    0.01 sec
+        Start  21: EvaluationTest.MergeMaskChannelInvertAndMixFollowTheSharedContract
+ 21/719 Test  #21: EvaluationTest.MergeMaskChannelInvertAndMixFollowTheSharedContract ..................................   Passed    0.01 sec
+        Start  22: EvaluationTest.MergeKeepsPortRolesInBothDirections
+ 22/719 Test  #22: EvaluationTest.MergeKeepsPortRolesInBothDirections ..................................................   Passed    0.01 sec
+        Start  23: EvaluationTest.SwapInputsCommandExchangesTheRenderedSources
+ 23/719 Test  #23: EvaluationTest.SwapInputsCommandExchangesTheRenderedSources .........................................   Passed    0.01 sec
+        Start  24: EvaluationTest.MergeUnknownOperationFailsExplicitlyInsteadOfFallingBack
+ 24/719 Test  #24: EvaluationTest.MergeUnknownOperationFailsExplicitlyInsteadOfFallingBack .............................   Passed    0.03 sec
+        Start  25: EvaluationTest.NonOutputProcessingNodeIsAValidEvaluationTarget
+ 25/719 Test  #25: EvaluationTest.NonOutputProcessingNodeIsAValidEvaluationTarget ......................................   Passed    0.01 sec
+        Start  26: EvaluationTest.MissingOutputNodeFailsWithClearError
+ 26/719 Test  #26: EvaluationTest.MissingOutputNodeFailsWithClearError .................................................   Passed    0.01 sec
+        Start  27: EvaluationTest.ExplicitOutputSelectionUsesNetworkScope
+ 27/719 Test  #27: EvaluationTest.ExplicitOutputSelectionUsesNetworkScope ..............................................   Passed    0.01 sec
+        Start  28: EvaluationTest.InvalidTypeConnectionRejectedByGraph
+ 28/719 Test  #28: EvaluationTest.InvalidTypeConnectionRejectedByGraph .................................................   Passed    0.01 sec
+        Start  29: EvaluationTest.RepeatedRequestsAreDeterministicAndFrameSensitive
+ 29/719 Test  #29: EvaluationTest.RepeatedRequestsAreDeterministicAndFrameSensitive ....................................   Passed    0.01 sec
+        Start  30: EvaluationTest.AnimatedParametersReachCpuPlanAndPixelsWithoutMutatingDocument
+ 30/719 Test  #30: EvaluationTest.AnimatedParametersReachCpuPlanAndPixelsWithoutMutatingDocument .......................   Passed    0.02 sec
+        Start  31: EvaluationTest.NestedAnimationUsesDefinitionThenInstancePrecedence
+ 31/719 Test  #31: EvaluationTest.NestedAnimationUsesDefinitionThenInstancePrecedence ..................................   Passed    0.01 sec
+        Start  32: EvaluationTest.UnconnectedRequiredInputIdentifiesTheNode
+ 32/719 Test  #32: EvaluationTest.UnconnectedRequiredInputIdentifiesTheNode ............................................   Passed    0.01 sec
+        Start  33: EvaluationTest.UnknownTypeHasNoFabricatedContractAndFailsExplicitly
+ 33/719 Test  #33: EvaluationTest.UnknownTypeHasNoFabricatedContractAndFailsExplicitly .................................   Passed    0.01 sec
+        Start  34: EvaluationTest.RequestValidationRejectsUnsupportedChannelsAndQuality
+ 34/719 Test  #34: EvaluationTest.RequestValidationRejectsUnsupportedChannelsAndQuality ................................   Passed    0.01 sec
+        Start  35: EvaluationTest.NestedSharedInstancesKeepScopedOverridesAndLazyInputs
+ 35/719 Test  #35: EvaluationTest.NestedSharedInstancesKeepScopedOverridesAndLazyInputs ................................   Passed    0.01 sec
+        Start  36: RequestValidation.EnforcesEachDependencyCapabilityWithNodeContext
+ 36/719 Test  #36: RequestValidation.EnforcesEachDependencyCapabilityWithNodeContext ...................................   Passed    0.01 sec
+        Start  37: RequestValidation.RejectsUndeclaredSamplingScales
+ 37/719 Test  #37: RequestValidation.RejectsUndeclaredSamplingScales ...................................................   Passed    0.01 sec
+        Start  38: RequestValidation.UnsupportedReductionIsExplicitPerNode
+ 38/719 Test  #38: RequestValidation.UnsupportedReductionIsExplicitPerNode .............................................   Passed    0.01 sec
+        Start  39: NativeEffectTest.GradeForwardAppliesDeclaredControlsPerChannel
+ 39/719 Test  #39: NativeEffectTest.GradeForwardAppliesDeclaredControlsPerChannel ......................................   Passed    0.01 sec
+        Start  40: NativeEffectTest.GradeReverseRoundTripsSignedHdrWithoutClamps
+ 40/719 Test  #40: NativeEffectTest.GradeReverseRoundTripsSignedHdrWithoutClamps .......................................   Passed    0.01 sec
+        Start  41: NativeEffectTest.GradeClampsAndRejectsInvalidCoefficients
+ 41/719 Test  #41: NativeEffectTest.GradeClampsAndRejectsInvalidCoefficients ...........................................   Passed    0.01 sec
+        Start  42: NativeEffectTest.EffectMaskSelectsChannelInvertsAndMixes
+ 42/719 Test  #42: NativeEffectTest.EffectMaskSelectsChannelInvertsAndMixes ............................................   Passed    0.01 sec
+        Start  43: NativeEffectTest.OptionalMaskSlotChangesResultIdentityAndCacheKey
+ 43/719 Test  #43: NativeEffectTest.OptionalMaskSlotChangesResultIdentityAndCacheKey ...................................   Passed    0.01 sec
+        Start  44: NativeEffectTest.BlurIsExactGaussianWithEdgeClampAndChannelSelection
+ 44/719 Test  #44: NativeEffectTest.BlurIsExactGaussianWithEdgeClampAndChannelSelection ................................   Passed    0.00 sec
+        Start  45: NativeEffectTest.TransformSelectsFiltersAndMapsCoordinates
+ 45/719 Test  #45: NativeEffectTest.TransformSelectsFiltersAndMapsCoordinates ..........................................   Passed    0.00 sec
+        Start  46: RegionalEvaluationTest.PointwiseChainRegionMatchesWholeFrameWindow
+ 46/719 Test  #46: RegionalEvaluationTest.PointwiseChainRegionMatchesWholeFrameWindow ..................................   Passed    0.02 sec
+        Start  47: RegionalEvaluationTest.OddOriginRegionsMatchWholeFrameAtReducedScales
+ 47/719 Test  #47: RegionalEvaluationTest.OddOriginRegionsMatchWholeFrameAtReducedScales ...............................   Passed    0.01 sec
+        Start  48: RegionalEvaluationTest.ChainedBlurAndTransformWithMaskAndMixMatchWholeFrame
+ 48/719 Test  #48: RegionalEvaluationTest.ChainedBlurAndTransformWithMaskAndMixMatchWholeFrame .........................   Passed    0.23 sec
+        Start  49: RegionalEvaluationTest.ExtremeFiniteTransformBoundsRemainOutsideTheImage
+ 49/719 Test  #49: RegionalEvaluationTest.ExtremeFiniteTransformBoundsRemainOutsideTheImage ............................   Passed    0.01 sec
+        Start  50: RegionalEvaluationTest.BlurRegionMatchesDeclaredGaussianIncludingImageBorders
+ 50/719 Test  #50: RegionalEvaluationTest.BlurRegionMatchesDeclaredGaussianIncludingImageBorders .......................   Passed    0.09 sec
+        Start  51: RegionalEvaluationTest.WholeFrameOnlyContributionEscalatesAndStillServesRegions
+ 51/719 Test  #51: RegionalEvaluationTest.WholeFrameOnlyContributionEscalatesAndStillServesRegions .....................   Passed    0.04 sec
+        Start  52: ReuseTest.SecondIdenticalRequestReusesWithoutRerender
+ 52/719 Test  #52: ReuseTest.SecondIdenticalRequestReusesWithoutRerender ...............................................   Passed    0.01 sec
+        Start  53: ReuseTest.SharedVfxWithIndependentGradesReuseAndInvalidateByDependency
+ 53/719 Test  #53: ReuseTest.SharedVfxWithIndependentGradesReuseAndInvalidateByDependency ..............................   Passed    0.01 sec
+        Start  54: ReuseTest.UnrelatedEditPreservesBranchReuse
+ 54/719 Test  #54: ReuseTest.UnrelatedEditPreservesBranchReuse .........................................................   Passed    0.01 sec
+        Start  55: ReuseTest.TimeVariantsCoexistWithoutBlanketDeletion
+ 55/719 Test  #55: ReuseTest.TimeVariantsCoexistWithoutBlanketDeletion .................................................   Passed    0.01 sec
+        Start  56: ReuseTest.MergeMaskSlotParticipatesInTheContentKey
+ 56/719 Test  #56: ReuseTest.MergeMaskSlotParticipatesInTheContentKey ..................................................   Passed    0.01 sec
+        Start  57: ReuseTest.AnimatedEffectiveValuesReuseAcrossHistoryRevisions
+ 57/719 Test  #57: ReuseTest.AnimatedEffectiveValuesReuseAcrossHistoryRevisions ........................................   Passed    0.01 sec
+        Start  58: ReuseTest.FullCoverageServesRegionalConsumersWithoutRecomputation
+ 58/719 Test  #58: ReuseTest.FullCoverageServesRegionalConsumersWithoutRecomputation ...................................   Passed    0.01 sec
+        Start  59: ReuseTest.OverlappingPansReuseSpatialCoverageWithoutRecomputingEffects
+ 59/719 Test  #59: ReuseTest.OverlappingPansReuseSpatialCoverageWithoutRecomputingEffects ..............................   Passed    0.95 sec
+        Start  60: ReuseTest.ViewerTransformEditInvalidatesViewerIdentityButNotSceneLinearReuse
+ 60/719 Test  #60: ReuseTest.ViewerTransformEditInvalidatesViewerIdentityButNotSceneLinearReuse ........................   Passed    0.01 sec
+        Start  61: ReuseTest.StalePublicationTicketIsRejected
+ 61/719 Test  #61: ReuseTest.StalePublicationTicketIsRejected ..........................................................   Passed    0.00 sec
+        Start  62: ReuseTest.UndoRedoRestoresEffectiveStateAndReuse
+ 62/719 Test  #62: ReuseTest.UndoRedoRestoresEffectiveStateAndReuse ....................................................   Passed    0.01 sec
+        Start  63: ReuseTest.EquivalentOccurrenceWithUnchangedEffectiveStateReuses
+ 63/719 Test  #63: ReuseTest.EquivalentOccurrenceWithUnchangedEffectiveStateReuses .....................................   Passed    0.01 sec
+        Start  64: ReuseTest.EvictedIdentityIsRecomputedOnDemand
+ 64/719 Test  #64: ReuseTest.EvictedIdentityIsRecomputedOnDemand .......................................................   Passed    0.01 sec
+        Start  65: ReuseTest.EntryCapDropsOldestEntries
+ 65/719 Test  #65: ReuseTest.EntryCapDropsOldestEntries ................................................................   Passed    0.01 sec
+        Start  66: ReuseTest.EditingCachedNodeInvalidatesOnlyItsResults
+ 66/719 Test  #66: ReuseTest.EditingCachedNodeInvalidatesOnlyItsResults ................................................   Passed    0.01 sec
+        Start  67: ReuseTest.AliasedParamSetsGetDistinctKeys
+ 67/719 Test  #67: ReuseTest.AliasedParamSetsGetDistinctKeys ...........................................................   Passed    0.00 sec
+        Start  68: ReuseTest.ImplementationIdentityChangesTheKey
+ 68/719 Test  #68: ReuseTest.ImplementationIdentityChangesTheKey .......................................................   Passed    0.00 sec
+        Start  69: CommandStackTest.PushAppliesImmediately
+ 69/719 Test  #69: CommandStackTest.PushAppliesImmediately .............................................................   Passed    0.01 sec
+        Start  70: CommandStackTest.UndoRestoresAndRedoReapplies
+ 70/719 Test  #70: CommandStackTest.UndoRestoresAndRedoReapplies .......................................................   Passed    0.01 sec
+        Start  71: CommandStackTest.NewCommandDropsRedoBranch
+ 71/719 Test  #71: CommandStackTest.NewCommandDropsRedoBranch ..........................................................   Passed    0.00 sec
+        Start  72: CommandStackTest.FailingApplyLeavesDocumentUntouched
+ 72/719 Test  #72: CommandStackTest.FailingApplyLeavesDocumentUntouched ................................................   Passed    0.02 sec
+        Start  73: CommandStackTest.FailedTransactionIsAtomic
+ 73/719 Test  #73: CommandStackTest.FailedTransactionIsAtomic ..........................................................   Passed    0.01 sec
+        Start  74: CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity
+ 74/719 Test  #74: CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity .................................   Passed    0.01 sec
+        Start  75: CommandStackTest.HistoryBoundedByCapacity
+ 75/719 Test  #75: CommandStackTest.HistoryBoundedByCapacity ...........................................................   Passed    0.00 sec
+        Start  76: CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks
+ 76/719 Test  #76: CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks .................   Passed    0.02 sec
+        Start  77: CommandStackTest.TypedParameterBatchResetAndUndoRedoAreAtomic
+ 77/719 Test  #77: CommandStackTest.TypedParameterBatchResetAndUndoRedoAreAtomic .......................................   Passed    0.01 sec
+        Start  78: CommandStackTest.InvalidTypedBatchLeavesDocumentAndHistoryUntouched
+ 78/719 Test  #78: CommandStackTest.InvalidTypedBatchLeavesDocumentAndHistoryUntouched .................................   Passed    0.01 sec
+        Start  79: CommandStackTest.InstanceParameterBatchRequiresDefinitionNetworkScope
+ 79/719 Test  #79: CommandStackTest.InstanceParameterBatchRequiresDefinitionNetworkScope ...............................   Passed    0.01 sec
+        Start  80: CommandStackTest.GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt
+ 80/719 Test  #80: CommandStackTest.GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt .........................   Passed    0.01 sec
+        Start  81: CommandStackTest.OccupiedInputReplacementPreservesMergeFanOutAndUndo
+ 81/719 Test  #81: CommandStackTest.OccupiedInputReplacementPreservesMergeFanOutAndUndo ................................   Passed    0.00 sec
+        Start  82: CommandStackTest.SwapInputsExchangesOccupiedPortsAsOneUndoStep
+ 82/719 Test  #82: CommandStackTest.SwapInputsExchangesOccupiedPortsAsOneUndoStep ......................................   Passed    0.01 sec
+        Start  83: CommandStackTest.SwapInputsMovesTheSingleOccupiedPort
+ 83/719 Test  #83: CommandStackTest.SwapInputsMovesTheSingleOccupiedPort ...............................................   Passed    0.01 sec
+        Start  84: CommandStackTest.SwapInputsRejectsMeaninglessAndInvalidRequestsWithoutHistory
+ 84/719 Test  #84: CommandStackTest.SwapInputsRejectsMeaninglessAndInvalidRequestsWithoutHistory .......................   Passed    0.01 sec
+        Start  85: CommandStackTest.SwapInputsConnectionRejectionLeavesBothConnectionsUntouched
+ 85/719 Test  #85: CommandStackTest.SwapInputsConnectionRejectionLeavesBothConnectionsUntouched ........................   Passed    0.01 sec
+        Start  86: CommandStackTest.InsertNodeOnEdgePreservesDestinationAndOutputFanOut
+ 86/719 Test  #86: CommandStackTest.InsertNodeOnEdgePreservesDestinationAndOutputFanOut ................................   Passed    0.00 sec
+        Start  87: CommandStackTest.RoutePointCommandsAndLayoutBatchAreAtomic
+ 87/719 Test  #87: CommandStackTest.RoutePointCommandsAndLayoutBatchAreAtomic ..........................................   Passed    0.01 sec
+        Start  88: CommandStackTest.GraphDeletionProtectsFormalOutputTerminal
+ 88/719 Test  #88: CommandStackTest.GraphDeletionProtectsFormalOutputTerminal ..........................................   Passed    0.01 sec
+        Start  89: CommandStackTest.ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode
+ 89/719 Test  #89: CommandStackTest.ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode ..............   Passed    0.01 sec
+        Start  90: CommandStackTest.CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically
+ 90/719 Test  #90: CommandStackTest.CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically .........................   Passed    0.00 sec
+        Start  91: CommandStackTest.CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch
+ 91/719 Test  #91: CommandStackTest.CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch ........................   Passed    0.00 sec
+        Start  92: CommandStackTest.RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic
+ 92/719 Test  #92: CommandStackTest.RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic .......................   Passed    0.01 sec
+        Start  93: CommandStackTest.ViewerAssignmentCreatesMissingViewerAndAttachesAtomically
+ 93/719 Test  #93: CommandStackTest.ViewerAssignmentCreatesMissingViewerAndAttachesAtomically ..........................   Passed    0.01 sec
+        Start  94: CommandStackTest.ViewerIndexCreatesEveryMissingViewerInOrder
+ 94/719 Test  #94: CommandStackTest.ViewerIndexCreatesEveryMissingViewerInOrder ........................................   Passed    0.01 sec
+        Start  95: CommandStackTest.ViewerAssignmentReplacesAndTogglesInOneHistoryEntry
+ 95/719 Test  #95: CommandStackTest.ViewerAssignmentReplacesAndTogglesInOneHistoryEntry ................................   Passed    0.01 sec
+        Start  96: CommandStackTest.ViewerAssignmentRejectsUnknownSourceWithoutChangingDocument
+ 96/719 Test  #96: CommandStackTest.ViewerAssignmentRejectsUnknownSourceWithoutChangingDocument ........................   Passed    0.01 sec
+        Start  97: CommandStackTest.RemovingAttachedNodeAndExplicitDetachLeaveViewerEmpty
+ 97/719 Test  #97: CommandStackTest.RemovingAttachedNodeAndExplicitDetachLeaveViewerEmpty ..............................   Passed    0.01 sec
+        Start  98: ProjectSessionTest.SharesDocumentHistoryAndPreservesSnapshots
+ 98/719 Test  #98: ProjectSessionTest.SharesDocumentHistoryAndPreservesSnapshots .......................................   Passed    0.01 sec
+        Start  99: ProjectSessionTest.TransitionLabelsDescribeCompoundUndoAndRedo
+ 99/719 Test  #99: ProjectSessionTest.TransitionLabelsDescribeCompoundUndoAndRedo ......................................   Passed    0.01 sec
+        Start 100: ProjectSessionTest.RejectedEditLeavesTransitionLabelsUntouched
+100/719 Test #100: ProjectSessionTest.RejectedEditLeavesTransitionLabelsUntouched ......................................   Passed    0.01 sec
+        Start 101: ProjectSessionTest.TransitionLabelsTrackEvictionAndRedoBranchReplacement
+101/719 Test #101: ProjectSessionTest.TransitionLabelsTrackEvictionAndRedoBranchReplacement ............................   Passed    0.01 sec
+        Start 102: ProjectSessionTest.DocumentReplacementClearsTransitionLabels
+102/719 Test #102: ProjectSessionTest.DocumentReplacementClearsTransitionLabels ........................................   Passed    0.01 sec
+        Start 103: ProjectSessionTest.RejectsStaleRevisionWithoutChangingDocument
+103/719 Test #103: ProjectSessionTest.RejectsStaleRevisionWithoutChangingDocument ......................................   Passed    0.01 sec
+        Start 104: ProjectSessionTest.NotifiesObserversOnlyForSuccessfulMutations
+104/719 Test #104: ProjectSessionTest.NotifiesObserversOnlyForSuccessfulMutations ......................................   Passed    0.01 sec
+        Start 105: ProjectSessionTest.ObserverCanUnsubscribeAndCannotReenterMutation
+105/719 Test #105: ProjectSessionTest.ObserverCanUnsubscribeAndCannotReenterMutation ...................................   Passed    0.01 sec
+        Start 106: ProjectSessionTest.RequestReplayDeduplicatesAcrossLaterEdits
+106/719 Test #106: ProjectSessionTest.RequestReplayDeduplicatesAcrossLaterEdits ........................................   Passed    0.01 sec
+        Start 107: ProjectSessionTest.CycleRejectionKeepsDocumentRevisionEventsAndHistoryUnchanged
+107/719 Test #107: ProjectSessionTest.CycleRejectionKeepsDocumentRevisionEventsAndHistoryUnchanged .....................   Passed    0.01 sec
+        Start 108: ProjectSessionTest.ValidReconvergentConnectionUndoRedoRestoresTopologyAndIdentities
+108/719 Test #108: ProjectSessionTest.ValidReconvergentConnectionUndoRedoRestoresTopologyAndIdentities .................   Passed    0.01 sec
+        Start 109: ProjectSessionTest.ChangesSinceReportsBoundedHistoryAndResync
+109/719 Test #109: ProjectSessionTest.ChangesSinceReportsBoundedHistoryAndResync .......................................   Passed    0.01 sec
+        Start 110: ProjectSessionTest.BatchFailurePreservesHistoryAndValidBatchUndoesEveryEdit
+110/719 Test #110: ProjectSessionTest.BatchFailurePreservesHistoryAndValidBatchUndoesEveryEdit .........................   Passed    0.01 sec
+        Start 111: ProjectSessionTest.SourceEventsAndHistoryRetriesCannotResurrectOldFreshness
+111/719 Test #111: ProjectSessionTest.SourceEventsAndHistoryRetriesCannotResurrectOldFreshness .........................   Passed    0.01 sec
+        Start 112: ProjectSessionTest.MissingJournalAndFutureRevisionRequireResynchronization
+112/719 Test #112: ProjectSessionTest.MissingJournalAndFutureRevisionRequireResynchronization ..........................   Passed    0.00 sec
+        Start 113: ProjectSessionTest.FilteredPagesPreserveSparseIdentitiesAndValueBoundaries
+113/719 Test #113: ProjectSessionTest.FilteredPagesPreserveSparseIdentitiesAndValueBoundaries ..........................   Passed    0.00 sec
+        Start 114: ProjectSessionTest.ValueQueriesIncludeTypedCatalogDefaults
+114/719 Test #114: ProjectSessionTest.ValueQueriesIncludeTypedCatalogDefaults ..........................................   Passed    0.01 sec
+        Start 115: ProjectSessionTest.ParameterGesturePreviewsAreTransientAndCommitOnce
+115/719 Test #115: ProjectSessionTest.ParameterGesturePreviewsAreTransientAndCommitOnce ................................   Passed    0.01 sec
+        Start 116: ProjectSessionTest.ParameterGestureCancelAndConflictDoNotPublish
+116/719 Test #116: ProjectSessionTest.ParameterGestureCancelAndConflictDoNotPublish ....................................   Passed    0.01 sec
+        Start 117: ProjectSessionTest.SharedWorkerSnapshotsRemainImmutableAcrossOwnerEdits
+117/719 Test #117: ProjectSessionTest.SharedWorkerSnapshotsRemainImmutableAcrossOwnerEdits .............................   Passed    0.01 sec
+        Start 118: ProjectSessionTest.OffOwnerDocumentReadIsDiagnosedBeforeStateAccess
+118/719 Test #118: ProjectSessionTest.OffOwnerDocumentReadIsDiagnosedBeforeStateAccess .................................   Passed    1.13 sec
+        Start 119: ProjectSessionTest.OffOwnerSnapshotIsDiagnosedBeforeStateAccess
+119/719 Test #119: ProjectSessionTest.OffOwnerSnapshotIsDiagnosedBeforeStateAccess .....................................   Passed    1.14 sec
+        Start 120: ProjectSessionTest.OffOwnerMutationIsDiagnosedBeforeStateAccess
+120/719 Test #120: ProjectSessionTest.OffOwnerMutationIsDiagnosedBeforeStateAccess .....................................   Passed    1.15 sec
+        Start 121: ProjectSessionTest.OffOwnerSubscriptionRegistrationIsDiagnosedBeforeStateAccess
+121/719 Test #121: ProjectSessionTest.OffOwnerSubscriptionRegistrationIsDiagnosedBeforeStateAccess .....................   Passed    1.13 sec
+        Start 122: ProjectSessionTest.OffOwnerSubscriptionMoveConstructionIsDiagnosed
+122/719 Test #122: ProjectSessionTest.OffOwnerSubscriptionMoveConstructionIsDiagnosed ..................................   Passed    1.15 sec
+        Start 123: ProjectSessionTest.OffOwnerSubscriptionReleaseByMoveAssignmentIsDiagnosed
+123/719 Test #123: ProjectSessionTest.OffOwnerSubscriptionReleaseByMoveAssignmentIsDiagnosed ...........................   Passed    1.14 sec
+        Start 124: ProjectSessionTest.OffOwnerSubscriptionMoveAssignmentOfEmptyDestinationIsDiagnosed
+124/719 Test #124: ProjectSessionTest.OffOwnerSubscriptionMoveAssignmentOfEmptyDestinationIsDiagnosed ..................   Passed    1.15 sec
+        Start 125: ProjectSessionTest.OffOwnerSelfMoveAssignmentIsDiagnosed
+125/719 Test #125: ProjectSessionTest.OffOwnerSelfMoveAssignmentIsDiagnosed ............................................   Passed    1.15 sec
+        Start 126: ProjectSessionTest.OffOwnerSubscriptionDestructionIsDiagnosed
+126/719 Test #126: ProjectSessionTest.OffOwnerSubscriptionDestructionIsDiagnosed .......................................   Passed    1.13 sec
+        Start 127: ProjectSessionTest.OffOwnerSubscriptionMoveAssignmentValidatesBothSessions
+127/719 Test #127: ProjectSessionTest.OffOwnerSubscriptionMoveAssignmentValidatesBothSessions ..........................   Passed    1.14 sec
+        Start 128: ProjectSessionTest.OffOwnerSessionDestructionIsDiagnosedBeforeMemberTeardown
+128/719 Test #128: ProjectSessionTest.OffOwnerSessionDestructionIsDiagnosedBeforeMemberTeardown ........................   Passed    1.14 sec
+        Start 129: ProjectSessionTest.OffOwnerSnapshotAfterDocumentReplacementIsDiagnosed
+129/719 Test #129: ProjectSessionTest.OffOwnerSnapshotAfterDocumentReplacementIsDiagnosed ..............................   Passed    1.16 sec
+        Start 130: CatalogTest.RegisteredFixtureSnapshotIsDiscoverableAndTyped
+130/719 Test #130: CatalogTest.RegisteredFixtureSnapshotIsDiscoverableAndTyped .........................................   Passed    0.01 sec
+        Start 131: CatalogTest.DeclaredFixtureReportsUnavailableExecutor
+131/719 Test #131: CatalogTest.DeclaredFixtureReportsUnavailableExecutor ...............................................   Passed    0.01 sec
+        Start 132: CatalogTest.InvalidDeclaredParametersIdentifyNodeAndPreserveState
+132/719 Test #132: CatalogTest.InvalidDeclaredParametersIdentifyNodeAndPreserveState ...................................   Passed    0.00 sec
+        Start 133: CatalogTest.InvalidDescriptorSchemaIsRejectedBeforeSnapshotPublication
+133/719 Test #133: CatalogTest.InvalidDescriptorSchemaIsRejectedBeforeSnapshotPublication ..............................   Passed    0.01 sec
+        Start 134: CatalogTest.ColorEditsRespectDeclaredBoundsAndFloatStorageAtomically
+134/719 Test #134: CatalogTest.ColorEditsRespectDeclaredBoundsAndFloatStorageAtomically ................................   Passed    0.01 sec
+        Start 135: CatalogTest.UnboundedColorPreservesHdrAndNegativeValues
+135/719 Test #135: CatalogTest.UnboundedColorPreservesHdrAndNegativeValues .............................................   Passed    0.01 sec
+        Start 136: CatalogTest.TaggedIntegerRejectsUnsignedOverflowAndNonfiniteValues
+136/719 Test #136: CatalogTest.TaggedIntegerRejectsUnsignedOverflowAndNonfiniteValues ..................................   Passed    0.01 sec
+        Start 137: CatalogTest.InspectorMetadataIsValidatedBeforeSnapshotPublication
+137/719 Test #137: CatalogTest.InspectorMetadataIsValidatedBeforeSnapshotPublication ...................................   Passed    0.01 sec
+        Start 138: CatalogTest.ViewerDescriptorIsDisplayOnlyAndNeverANetworkOutput
+138/719 Test #138: CatalogTest.ViewerDescriptorIsDisplayOnlyAndNeverANetworkOutput .....................................   Passed    0.00 sec
+        Start 139: CatalogTest.PresentationMetadataRejectsInvalidDeclarations
+139/719 Test #139: CatalogTest.PresentationMetadataRejectsInvalidDeclarations ..........................................   Passed    0.01 sec
+        Start 140: MediaCatalogTest.DuplicateEntriesHaveIndependentIdentityAndMetadataButShareSourceReference
+140/719 Test #140: MediaCatalogTest.DuplicateEntriesHaveIndependentIdentityAndMetadataButShareSourceReference ..........   Passed    0.01 sec
+        Start 141: MediaCatalogTest.DuplicateCommandAllocatesNewIdentityAndRetainsSourceKey
+141/719 Test #141: MediaCatalogTest.DuplicateCommandAllocatesNewIdentityAndRetainsSourceKey ............................   Passed    0.01 sec
+        Start 142: MediaCatalogTest.InvalidMarksAreRejectedWithoutMutationOrHistory
+142/719 Test #142: MediaCatalogTest.InvalidMarksAreRejectedWithoutMutationOrHistory ....................................   Passed    0.01 sec
+        Start 143: MediaCatalogTest.BinRenamePreservesStableIdentityAcrossUndoAndRedo
+143/719 Test #143: MediaCatalogTest.BinRenamePreservesStableIdentityAcrossUndoAndRedo ..................................   Passed    0.01 sec
+        Start 144: MediaCatalogTest.NestedTraversalSearchAndMetadataFiltersAreDeterministic
+144/719 Test #144: MediaCatalogTest.NestedTraversalSearchAndMetadataFiltersAreDeterministic ............................   Passed    0.01 sec
+        Start 145: MediaCatalogTest.ProjectSessionForwardsCatalogSearchAndBinQueries
+145/719 Test #145: MediaCatalogTest.ProjectSessionForwardsCatalogSearchAndBinQueries ...................................   Passed    0.01 sec
+        Start 146: MediaCatalogTest.ProjectSessionReportsCatalogIdentityChanges
+146/719 Test #146: MediaCatalogTest.ProjectSessionReportsCatalogIdentityChanges ........................................   Passed    0.01 sec
+        Start 147: MediaCatalogTest.InvalidMovesAndDuplicateNamesAreAtomicAndDoNotConsumeHistory
+147/719 Test #147: MediaCatalogTest.InvalidMovesAndDuplicateNamesAreAtomicAndDoNotConsumeHistory .......................   Passed    0.01 sec
+        Start 148: MediaCatalogTest.UsedSourceCannotBeRemovedAndFailureLeavesGraphAndCatalogUntouched
+148/719 Test #148: MediaCatalogTest.UsedSourceCannotBeRemovedAndFailureLeavesGraphAndCatalogUntouched ..................   Passed    0.01 sec
+        Start 149: MediaCatalogTest.RemovingBinWithKeepContentsReparentsEntriesAndUndoRestoresHierarchy
+149/719 Test #149: MediaCatalogTest.RemovingBinWithKeepContentsReparentsEntriesAndUndoRestoresHierarchy ................   Passed    0.01 sec
+        Start 150: MediaCatalogTest.CatalogCommandsHaveExactUndoRedoAndClearRedoBranch
+150/719 Test #150: MediaCatalogTest.CatalogCommandsHaveExactUndoRedoAndClearRedoBranch .................................   Passed    0.01 sec
+        Start 151: MediaCatalogTest.SmartMembershipUpdatesWithMetadataAndUndo
+151/719 Test #151: MediaCatalogTest.SmartMembershipUpdatesWithMetadataAndUndo ..........................................   Passed    0.01 sec
+        Start 152: MediaCatalogTest.SetMediaBinMetadataCommandNormalizesTagsAndUndoesAtomically
+152/719 Test #152: MediaCatalogTest.SetMediaBinMetadataCommandNormalizesTagsAndUndoesAtomically ........................   Passed    0.01 sec
+        Start 153: MediaCatalogTest.EmptyQueryDescriptorIsSavedAllMediaQueryAndNulloptResetsPlainBin
+153/719 Test #153: MediaCatalogTest.EmptyQueryDescriptorIsSavedAllMediaQueryAndNulloptResetsPlainBin ...................   Passed    0.01 sec
+        Start 154: MediaCatalogTest.BinMetadataAndAllMediaQueryRoundTripThroughSavedDocument
+154/719 Test #154: MediaCatalogTest.BinMetadataAndAllMediaQueryRoundTripThroughSavedDocument ...........................   Passed    0.01 sec
+        Start 155: MediaCatalogTest.SmartQueryTypedScopeRecursionAndKindFamilyDriveMembership
+155/719 Test #155: MediaCatalogTest.SmartQueryTypedScopeRecursionAndKindFamilyDriveMembership ..........................   Passed    0.01 sec
+        Start 156: MediaCatalogTest.DeletedQueryScopeIsUnavailableAndNeverFallsBackToProject
+156/719 Test #156: MediaCatalogTest.DeletedQueryScopeIsUnavailableAndNeverFallsBackToProject ...........................   Passed    0.01 sec
+        Start 157: MediaCatalogTest.RuntimeSourceFactsOverlayKindAndOfflineWithoutMutatingDocument
+157/719 Test #157: MediaCatalogTest.RuntimeSourceFactsOverlayKindAndOfflineWithoutMutatingDocument .....................   Passed    0.00 sec
+        Start 158: MediaCatalogTest.CatalogOnlyEditsLeaveSourceReferencesAndGraphOccurrencesUntouched
+158/719 Test #158: MediaCatalogTest.CatalogOnlyEditsLeaveSourceReferencesAndGraphOccurrencesUntouched ..................   Passed    0.00 sec
+        Start 159: MediaCatalogTest.ProbeProposalIsNotCommittedUntilExplicitProvenanceBearingCommit
+159/719 Test #159: MediaCatalogTest.ProbeProposalIsNotCommittedUntilExplicitProvenanceBearingCommit ....................   Passed    0.00 sec
+        Start 160: MediaCatalogTest.StaleProbeApplyAfterRelinkRejectsWithoutMutationOrHistory
+160/719 Test #160: MediaCatalogTest.StaleProbeApplyAfterRelinkRejectsWithoutMutationOrHistory ..........................   Passed    0.00 sec
+        Start 161: MediaCatalogTest.RelinkPreservesSharedSourceIdentityAndClearsProbesWithUndo
+161/719 Test #161: MediaCatalogTest.RelinkPreservesSharedSourceIdentityAndClearsProbesWithUndo .........................   Passed    0.01 sec
+        Start 162: MediaCatalogTest.ExpectedSourceGuardRejectsInterpretationAndMappingMismatchButAllowsMetadataEdits
+162/719 Test #162: MediaCatalogTest.ExpectedSourceGuardRejectsInterpretationAndMappingMismatchButAllowsMetadataEdits ...   Passed    0.01 sec
+        Start 163: PersistenceTest.SaveLoadRoundTripPreservesStructure
+163/719 Test #163: PersistenceTest.SaveLoadRoundTripPreservesStructure .................................................   Passed    0.01 sec
+        Start 164: PersistenceTest.TypedParametersUseTaggedSchemaAndRoundTrip
+164/719 Test #164: PersistenceTest.TypedParametersUseTaggedSchemaAndRoundTrip ..........................................   Passed    0.01 sec
+        Start 165: PersistenceTest.TypedInstanceOverridesRoundTrip
+165/719 Test #165: PersistenceTest.TypedInstanceOverridesRoundTrip .....................................................   Passed    0.01 sec
+        Start 166: PersistenceTest.MergeControlsRoundTripAndLegacyTwoPortDocumentsKeepOverOutput
+166/719 Test #166: PersistenceTest.MergeControlsRoundTripAndLegacyTwoPortDocumentsKeepOverOutput .......................   Passed    0.01 sec
+        Start 167: PersistenceTest.LegacyKnownParameterTextMigratesThroughCatalog
+167/719 Test #167: PersistenceTest.LegacyKnownParameterTextMigratesThroughCatalog ......................................   Passed    0.01 sec
+        Start 168: PersistenceTest.ParameterMigrationFailuresIdentifyLocation
+168/719 Test #168: PersistenceTest.ParameterMigrationFailuresIdentifyLocation ..........................................   Passed    0.01 sec
+        Start 169: PersistenceTest.UnknownNodeTypeIsRetainedWithWarning
+169/719 Test #169: PersistenceTest.UnknownNodeTypeIsRetainedWithWarning ................................................   Passed    0.00 sec
+        Start 170: PersistenceTest.NewerSchemaIsRejectedNotSilentlyMisread
+170/719 Test #170: PersistenceTest.NewerSchemaIsRejectedNotSilentlyMisread .............................................   Passed    0.01 sec
+        Start 171: PersistenceTest.MalformedRootRejected
+171/719 Test #171: PersistenceTest.MalformedRootRejected ...............................................................   Passed    0.01 sec
+        Start 172: PersistenceTest.EdgeToMissingNodeDroppedWithWarning
+172/719 Test #172: PersistenceTest.EdgeToMissingNodeDroppedWithWarning .................................................   Passed    0.01 sec
+        Start 173: PersistenceTest.ActiveCatalogRestoresContributedPortValidation
+173/719 Test #173: PersistenceTest.ActiveCatalogRestoresContributedPortValidation ......................................   Passed    0.01 sec
+        Start 174: PersistenceTest.SparseNodeAndEdgeIdsRoundTripExactly
+174/719 Test #174: PersistenceTest.SparseNodeAndEdgeIdsRoundTripExactly ................................................   Passed    0.01 sec
+        Start 175: PersistenceTest.DuplicateAndInvalidPersistedIdsAreDiagnostics
+175/719 Test #175: PersistenceTest.DuplicateAndInvalidPersistedIdsAreDiagnostics .......................................   Passed    0.01 sec
+        Start 176: PersistenceTest.LegacyEntriesWithoutIdsLoadWithMigrationWarnings
+176/719 Test #176: PersistenceTest.LegacyEntriesWithoutIdsLoadWithMigrationWarnings ....................................   Passed    0.01 sec
+        Start 177: PersistenceTest.DeletedIdentityHighWatermarkSurvivesRoundTrip
+177/719 Test #177: PersistenceTest.DeletedIdentityHighWatermarkSurvivesRoundTrip .......................................   Passed    0.01 sec
+        Start 178: PersistenceTest.LayoutInterfacesInstancesAndWatermarksRoundTrip
+178/719 Test #178: PersistenceTest.LayoutInterfacesInstancesAndWatermarksRoundTrip .....................................   Passed    0.01 sec
+        Start 179: PersistenceTest.SignedPortOverflowIsRejected
+179/719 Test #179: PersistenceTest.SignedPortOverflowIsRejected ........................................................   Passed    0.01 sec
+        Start 180: PersistenceTest.SelectedNonInitialRootRoundTripsWithoutGhostNetworks
+180/719 Test #180: PersistenceTest.SelectedNonInitialRootRoundTripsWithoutGhostNetworks ................................   Passed    0.01 sec
+        Start 181: PersistenceTest.IncompleteNetworkWithoutOutputRemainsSaveable
+181/719 Test #181: PersistenceTest.IncompleteNetworkWithoutOutputRemainsSaveable .......................................   Passed    0.00 sec
+        Start 182: PersistenceTest.MissingInstanceRecordIsRejectedWithNodeRelationship
+182/719 Test #182: PersistenceTest.MissingInstanceRecordIsRejectedWithNodeRelationship .................................   Passed    0.01 sec
+        Start 183: PersistenceTest.AnimationRoundTripPreservesCurvesAndScopedInstanceOverrides
+183/719 Test #183: PersistenceTest.AnimationRoundTripPreservesCurvesAndScopedInstanceOverrides .........................   Passed    0.01 sec
+        Start 184: PersistenceTest.AnimationRetiredIdentitiesSurviveSaveLoadAndCannotBeReused
+184/719 Test #184: PersistenceTest.AnimationRetiredIdentitiesSurviveSaveLoadAndCannotBeReused ..........................   Passed    0.01 sec
+        Start 185: PersistenceTest.SchemaThreeMigratesWithoutInventingAnimation
+185/719 Test #185: PersistenceTest.SchemaThreeMigratesWithoutInventingAnimation ........................................   Passed    0.01 sec
+        Start 186: PersistenceTest.AnimationRejectsConflictingIdentitiesTimesAndAddresses
+186/719 Test #186: PersistenceTest.AnimationRejectsConflictingIdentitiesTimesAndAddresses ..............................   Passed    0.01 sec
+        Start 187: PersistenceTest.AnimationRejectsMalformedValuesAndTangentsInsteadOfDroppingChannels
+187/719 Test #187: PersistenceTest.AnimationRejectsMalformedValuesAndTangentsInsteadOfDroppingChannels .................   Passed    0.01 sec
+        Start 188: PersistenceTest.MediaLibraryBinsEntriesAndWatermarksRoundTrip
+188/719 Test #188: PersistenceTest.MediaLibraryBinsEntriesAndWatermarksRoundTrip .......................................   Passed    0.01 sec
+        Start 189: PersistenceTest.DiscoveredSourceFactsRoundTripAndStayAbsentWhenUnknown
+189/719 Test #189: PersistenceTest.DiscoveredSourceFactsRoundTripAndStayAbsentWhenUnknown ..............................   Passed    0.01 sec
+        Start 190: PersistenceTest.UnknownExtensionDataSurvivesRoundTripWithoutResurrection
+190/719 Test #190: PersistenceTest.UnknownExtensionDataSurvivesRoundTripWithoutResurrection ............................   Passed    0.01 sec
+        Start 191: PersistenceTest.ProjectFormatAndRequiredFeaturesAreEnforced
+191/719 Test #191: PersistenceTest.ProjectFormatAndRequiredFeaturesAreEnforced .........................................   Passed    0.01 sec
+        Start 192: PersistenceTest.MediaIdentityWatermarksSurviveRoundTrip
+192/719 Test #192: PersistenceTest.MediaIdentityWatermarksSurviveRoundTrip .............................................   Passed    0.01 sec
+        Start 193: PersistenceTest.UnavailableNodeAnimationIsRetainedAndRecoversWithCatalog
+193/719 Test #193: PersistenceTest.UnavailableNodeAnimationIsRetainedAndRecoversWithCatalog ............................   Passed    0.01 sec
+        Start 194: PersistenceTest.OpaqueAnimatedValueMakesOnlyItsOwnEvaluationUnavailable
+194/719 Test #194: PersistenceTest.OpaqueAnimatedValueMakesOnlyItsOwnEvaluationUnavailable .............................   Passed    0.01 sec
+        Start 195: SessionPersistenceTest.ReadResolvesRelativeReferencesAndWarnsOnMissingDependencies
+195/719 Test #195: SessionPersistenceTest.ReadResolvesRelativeReferencesAndWarnsOnMissingDependencies ..................   Passed    0.05 sec
+        Start 196: SessionPersistenceTest.SaveAsRebasesResolvedTargetsWithoutCopyingResources
+196/719 Test #196: SessionPersistenceTest.SaveAsRebasesResolvedTargetsWithoutCopyingResources ..........................   Passed    0.05 sec
+        Start 197: SessionPersistenceTest.SequencePatternReferencesReportUnresolvedState
+197/719 Test #197: SessionPersistenceTest.SequencePatternReferencesReportUnresolvedState ...............................   Passed    0.05 sec
+        Start 198: SessionPersistenceTest.BackupRecoveryInfersAndProtectsTheOriginalTarget
+198/719 Test #198: SessionPersistenceTest.BackupRecoveryInfersAndProtectsTheOriginalTarget .............................   Passed    0.12 sec
+        Start 199: SessionPersistenceTest.ProtectedTargetFollowsHardLinks
+199/719 Test #199: SessionPersistenceTest.ProtectedTargetFollowsHardLinks ..............................................   Passed    0.04 sec
+        Start 200: SessionPersistenceTest.AtomicWritePreservesExistingTargetPermissions
+200/719 Test #200: SessionPersistenceTest.AtomicWritePreservesExistingTargetPermissions ................................   Passed    0.11 sec
+        Start 201: SessionPersistenceTest.BackupFailureRemovesTheCreatedTemporaryAndKeepsTarget
+201/719 Test #201: SessionPersistenceTest.BackupFailureRemovesTheCreatedTemporaryAndKeepsTarget ........................   Passed    0.07 sec
+        Start 202: SessionPersistenceTest.BackupReplacesSymlinkWithoutFollowingIt
+202/719 Test #202: SessionPersistenceTest.BackupReplacesSymlinkWithoutFollowingIt ......................................   Passed    0.11 sec
+        Start 203: SessionPersistenceTest.AtomicWriteKeepsPreviousGoodBackup
+203/719 Test #203: SessionPersistenceTest.AtomicWriteKeepsPreviousGoodBackup ...........................................   Passed    0.12 sec
+        Start 204: SessionPersistenceTest.AtomicWriteFailurePreservesPreviousGoodTarget
+204/719 Test #204: SessionPersistenceTest.AtomicWriteFailurePreservesPreviousGoodTarget ................................   Passed    0.02 sec
+        Start 205: SessionPersistenceTest.AtomicWriteNeverTouchesAUserFileAtThePredictableTempName
+205/719 Test #205: SessionPersistenceTest.AtomicWriteNeverTouchesAUserFileAtThePredictableTempName .....................   Passed    0.11 sec
+        Start 206: SessionPersistenceTest.CorruptExistingTargetIsNotDestructivelyReplaced
+206/719 Test #206: SessionPersistenceTest.CorruptExistingTargetIsNotDestructivelyReplaced ..............................   Passed    0.13 sec
+        Start 207: SessionPersistenceTest.TruncatedEmptyTargetIsNotDestructivelyReplaced
+207/719 Test #207: SessionPersistenceTest.TruncatedEmptyTargetIsNotDestructivelyReplaced ...............................   Passed    0.13 sec
+        Start 208: SessionPersistenceTest.UnsupportedNewerTargetIsNotDestructivelyReplaced
+208/719 Test #208: SessionPersistenceTest.UnsupportedNewerTargetIsNotDestructivelyReplaced .............................   Passed    0.01 sec
+        Start 209: SessionPersistenceTest.AtomicWriteRejectsDirectoryTarget
+209/719 Test #209: SessionPersistenceTest.AtomicWriteRejectsDirectoryTarget ............................................   Passed    0.01 sec
+        Start 210: SessionPersistenceTest.AutosaveStoreIsBoundedAndNeverWritesTheTarget
+210/719 Test #210: SessionPersistenceTest.AutosaveStoreIsBoundedAndNeverWritesTheTarget ................................   Passed    0.20 sec
+        Start 211: SessionPersistenceTest.CorruptOwnedAutosaveSlotIsReplacedWithoutLosingOtherSlots
+211/719 Test #211: SessionPersistenceTest.CorruptOwnedAutosaveSlotIsReplacedWithoutLosingOtherSlots ....................   Passed    0.21 sec
+        Start 212: SessionPersistenceTest.AutosaveNeverDestroysNewerSchemaRecoveryData
+212/719 Test #212: SessionPersistenceTest.AutosaveNeverDestroysNewerSchemaRecoveryData .................................   Passed    0.05 sec
+        Start 213: SessionPersistenceTest.AutosaveFailsVisiblyWhenEverySlotIsNewerData
+213/719 Test #213: SessionPersistenceTest.AutosaveFailsVisiblyWhenEverySlotIsNewerData .................................   Passed    0.01 sec
+        Start 214: SessionPersistenceTest.RecoveryIsAnUnsavedCopyThatProtectsTheOriginalTarget
+214/719 Test #214: SessionPersistenceTest.RecoveryIsAnUnsavedCopyThatProtectsTheOriginalTarget .........................   Passed    0.19 sec
+        Start 215: SessionPersistenceTest.ReadSourceChoicesAreIndependentPerReadAndSurviveSessionRoundTrip
+215/719 Test #215: SessionPersistenceTest.ReadSourceChoicesAreIndependentPerReadAndSurviveSessionRoundTrip .............   Passed    0.11 sec
+        Start 216: SessionPersistenceTest.RegisteredBuiltinColorConfigReferenceIsPersistedVerbatim
+216/719 Test #216: SessionPersistenceTest.RegisteredBuiltinColorConfigReferenceIsPersistedVerbatim .....................   Passed    0.08 sec
+        Start 217: SessionPersistenceTest.StaleSaveCompletionAfterReplacementDoesNotAdoptTheNewProject
+217/719 Test #217: SessionPersistenceTest.StaleSaveCompletionAfterReplacementDoesNotAdoptTheNewProject .................   Passed    0.08 sec
+        Start 218: SessionPersistenceTest.StaleSaveCompletionNeverClearsNewerEdits
+218/719 Test #218: SessionPersistenceTest.StaleSaveCompletionNeverClearsNewerEdits .....................................   Passed    0.06 sec
+        Start 219: SessionPersistenceTest.UndoToSavedStateIsClean
+219/719 Test #219: SessionPersistenceTest.UndoToSavedStateIsClean ......................................................   Passed    0.02 sec
+        Start 220: SessionPersistenceTest.ReplacementKeepsObserversAndClearsSessionHistory
+220/719 Test #220: SessionPersistenceTest.ReplacementKeepsObserversAndClearsSessionHistory .............................   Passed    0.04 sec
+        Start 221: SessionPersistenceTest.ReplacementClearsGesturesAndRequestDeduplication
+221/719 Test #221: SessionPersistenceTest.ReplacementClearsGesturesAndRequestDeduplication .............................   Passed    0.03 sec
+        Start 222: SessionPersistenceTest.SaveCompletionCreatesNoUndoEntry
+222/719 Test #222: SessionPersistenceTest.SaveCompletionCreatesNoUndoEntry .............................................   Passed    0.04 sec
+        Start 223: SessionPersistenceTest.PresentationEnvelopeRoundTripsAndStaysHeadless
+223/719 Test #223: SessionPersistenceTest.PresentationEnvelopeRoundTripsAndStaysHeadless ...............................   Passed    0.11 sec
+        Start 224: SessionPersistenceTest.WrittenProjectCarriesFormatAndRequiredFeatures
+224/719 Test #224: SessionPersistenceTest.WrittenProjectCarriesFormatAndRequiredFeatures ...............................   Passed    0.04 sec
+        Start 225: SessionPersistenceTest.ReadValidatesFormatDiscriminatorSchemaAndCorruption
+225/719 Test #225: SessionPersistenceTest.ReadValidatesFormatDiscriminatorSchemaAndCorruption ..........................   Passed    0.01 sec
+        Start 226: SessionPersistenceTest.MalformedColorConfigRejectsReadAndPreservesExistingTarget
+226/719 Test #226: SessionPersistenceTest.MalformedColorConfigRejectsReadAndPreservesExistingTarget ....................   Passed    0.12 sec
+        Start 227: SessionPersistenceTest.EmptyColorConfigReferenceLoadsLikeAnAbsentOne
+227/719 Test #227: SessionPersistenceTest.EmptyColorConfigReferenceLoadsLikeAnAbsentOne ................................   Passed    0.02 sec
+        Start 228: SessionPersistenceTest.ColorConfigReferenceResolvesRebasesAndDirtiesTheSession
+228/719 Test #228: SessionPersistenceTest.ColorConfigReferenceResolvesRebasesAndDirtiesTheSession ......................   Passed    0.14 sec
+        Start 229: SessionPersistenceTest.RelinkThroughSourceCommandSurvivesSaveAndReopen
+229/719 Test #229: SessionPersistenceTest.RelinkThroughSourceCommandSurvivesSaveAndReopen ..............................   Passed    0.13 sec
+        Start 230: GraphTest.AddNodeAssignsDistinctIncreasingIds
+230/719 Test #230: GraphTest.AddNodeAssignsDistinctIncreasingIds .......................................................   Passed    0.02 sec
+        Start 231: GraphTest.DuplicateNodeNameRejected
+231/719 Test #231: GraphTest.DuplicateNodeNameRejected .................................................................   Passed    0.02 sec
+        Start 232: GraphTest.ConnectRejectsUnknownNode
+232/719 Test #232: GraphTest.ConnectRejectsUnknownNode .................................................................   Passed    0.01 sec
+        Start 233: GraphTest.ConnectRejectsDirectAndTransitiveCycles
+233/719 Test #233: GraphTest.ConnectRejectsDirectAndTransitiveCycles ...................................................   Passed    0.01 sec
+        Start 234: GraphTest.ReachabilityFollowsFanOutAndReconvergentPaths
+234/719 Test #234: GraphTest.ReachabilityFollowsFanOutAndReconvergentPaths .............................................   Passed    0.01 sec
+        Start 235: GraphTest.ReconvergentPathsDecideCycleCandidates
+235/719 Test #235: GraphTest.ReconvergentPathsDecideCycleCandidates ....................................................   Passed    0.01 sec
+        Start 236: GraphTest.ReachabilitySeparatesComponentsAndUnknownIdentities
+236/719 Test #236: GraphTest.ReachabilitySeparatesComponentsAndUnknownIdentities .......................................   Passed    0.01 sec
+        Start 237: GraphTest.SparseDeletionAndRestorationPreserveReachabilityAndWatermarks
+237/719 Test #237: GraphTest.SparseDeletionAndRestorationPreserveReachabilityAndWatermarks .............................   Passed    0.01 sec
+        Start 238: GraphTest.RestoreEdgeWithIdRejectsCyclesWithoutAdvancingIdentity
+238/719 Test #238: GraphTest.RestoreEdgeWithIdRejectsCyclesWithoutAdvancingIdentity ....................................   Passed    0.01 sec
+        Start 239: GraphTest.InputPortOccupiedBySingleEdge
+239/719 Test #239: GraphTest.InputPortOccupiedBySingleEdge .............................................................   Passed    0.00 sec
+        Start 240: GraphTest.RemoveNodeDropsTouchingEdges
+240/719 Test #240: GraphTest.RemoveNodeDropsTouchingEdges ..............................................................   Passed    0.01 sec
+        Start 241: GraphTest.DisconnectUnknownEdgeExplains
+241/719 Test #241: GraphTest.DisconnectUnknownEdgeExplains .............................................................   Passed    0.01 sec
+        Start 242: GraphTest.RemovedIdsAreNeverReused
+242/719 Test #242: GraphTest.RemovedIdsAreNeverReused ..................................................................   Passed    0.00 sec
+        Start 243: GraphTest.LayoutAndRoutesArePersistentGraphData
+243/719 Test #243: GraphTest.LayoutAndRoutesArePersistentGraphData .....................................................   Passed    0.00 sec
+        Start 244: GraphTest.UnknownNodeHasNoFabricatedPortContract
+244/719 Test #244: GraphTest.UnknownNodeHasNoFabricatedPortContract ....................................................   Passed    0.00 sec
+        Start 245: GraphTest.FormalInputReservationRejectsBypassAndCanBeReleased
+245/719 Test #245: GraphTest.FormalInputReservationRejectsBypassAndCanBeReleased .......................................   Passed    0.00 sec
+        Start 246: GraphTest.MaskInputsAcceptImageOrMaskButMaskCannotFeedImage
+246/719 Test #246: GraphTest.MaskInputsAcceptImageOrMaskButMaskCannotFeedImage .........................................   Passed    0.00 sec
+        Start 247: GraphTest.ViewerAcceptsOneImageInputAndProvidesNoOutput
+247/719 Test #247: GraphTest.ViewerAcceptsOneImageInputAndProvidesNoOutput .............................................   Passed    0.01 sec
+        Start 248: NetworkTest.FreshDocumentHasRootNetworkAndDefaultOutput
+248/719 Test #248: NetworkTest.FreshDocumentHasRootNetworkAndDefaultOutput .............................................   Passed    0.01 sec
+        Start 249: NetworkTest.NetworkScopedIdentitiesUndoAndRedo
+249/719 Test #249: NetworkTest.NetworkScopedIdentitiesUndoAndRedo ......................................................   Passed    0.01 sec
+        Start 250: NetworkTest.UndoingNetworkCreationDoesNotLoseRetiredNodeWatermarks
+250/719 Test #250: NetworkTest.UndoingNetworkCreationDoesNotLoseRetiredNodeWatermarks ..................................   Passed    0.01 sec
+        Start 251: NetworkTest.ImageAndMaskBoundariesEnforceDirectionAndAtomicRejection
+251/719 Test #251: NetworkTest.ImageAndMaskBoundariesEnforceDirectionAndAtomicRejection ................................   Passed    0.01 sec
+        Start 252: NetworkTest.SharedDefinitionHasIndependentInstanceBindingsAndValues
+252/719 Test #252: NetworkTest.SharedDefinitionHasIndependentInstanceBindingsAndValues .................................   Passed    0.01 sec
+        Start 253: NetworkTest.TransactionCreatesNativeNodesAndSelectsOutputAsOneUndoStep
+253/719 Test #253: NetworkTest.TransactionCreatesNativeNodesAndSelectsOutputAsOneUndoStep ..............................   Passed    0.01 sec
+        Start 254: NetworkTest.NetworkSchemaRoundTripPreservesInterfacesAndInstances
+254/719 Test #254: NetworkTest.NetworkSchemaRoundTripPreservesInterfacesAndInstances ...................................   Passed    0.01 sec
+        Start 255: NetworkTest.SharedConstSnapshotEvaluatesNestedNetworksConcurrently
+255/719 Test #255: NetworkTest.SharedConstSnapshotEvaluatesNestedNetworksConcurrently ..................................   Passed    0.01 sec
+        Start 256: NetworkCommandsTest.CollapseClassifiesCrossingsAndUndoRestoresBothScopes
+256/719 Test #256: NetworkCommandsTest.CollapseClassifiesCrossingsAndUndoRestoresBothScopes ............................   Passed    0.01 sec
+        Start 257: NetworkCommandsTest.InvalidCollapseIsAtomic
+257/719 Test #257: NetworkCommandsTest.InvalidCollapseIsAtomic .........................................................   Passed    0.01 sec
+        Start 258: NetworkCommandsTest.PromotionIsMetadataOnlyAndIndependentCloneDetachesOneOccurrence
+258/719 Test #258: NetworkCommandsTest.PromotionIsMetadataOnlyAndIndependentCloneDetachesOneOccurrence .................   Passed    0.01 sec
+        Start 259: NetworkCommandsTest.ViewerOnlyCollapseRoutesExternalInputThroughSubnetOutput
+259/719 Test #259: NetworkCommandsTest.ViewerOnlyCollapseRoutesExternalInputThroughSubnetOutput ........................   Passed    0.01 sec
+        Start 260: NetworkCommandsTest.OwnedLocalDefinitionIsRemovedWithoutTouchingLinkedDefinition
+260/719 Test #260: NetworkCommandsTest.OwnedLocalDefinitionIsRemovedWithoutTouchingLinkedDefinition ....................   Passed    0.01 sec
+        Start 261: NetworkCommandsTest.NonconvexCollapseRejectsParentCycleWithoutPublishing
+261/719 Test #261: NetworkCommandsTest.NonconvexCollapseRejectsParentCycleWithoutPublishing ............................   Passed    0.01 sec
+        Start 262: NetworkCommandsTest.NestedCollapseRetainsExternalScopeAndUnpacksWithoutChangingPixels
+262/719 Test #262: NetworkCommandsTest.NestedCollapseRetainsExternalScopeAndUnpacksWithoutChangingPixels ...............   Passed    0.01 sec
+        Start 263: NetworkCommandsTest.CopyDuplicatesLocalStructureButRetainsNestedExplicitLinks
+263/719 Test #263: NetworkCommandsTest.CopyDuplicatesLocalStructureButRetainsNestedExplicitLinks .......................   Passed    0.01 sec
+        Start 264: NetworkCommandsTest.DisconnectedViewerCollapseRejectsWithoutInventingAnOutput
+264/719 Test #264: NetworkCommandsTest.DisconnectedViewerCollapseRejectsWithoutInventingAnOutput .......................   Passed    0.01 sec
+        Start 265: NetworkCommandsTest.ExposedParameterRejectsDuplicateSourceAndReorders
+265/719 Test #265: NetworkCommandsTest.ExposedParameterRejectsDuplicateSourceAndReorders ...............................   Passed    0.01 sec
+        Start 266: NetworkCommandsTest.ParameterInsertionAndUndoAreOneAtomicEdit
+266/719 Test #266: NetworkCommandsTest.ParameterInsertionAndUndoAreOneAtomicEdit .......................................   Passed    0.01 sec
+        Start 267: NetworkCommandsTest.ExposureInterfaceLayoutAndOwnershipSurviveSerialization
+267/719 Test #267: NetworkCommandsTest.ExposureInterfaceLayoutAndOwnershipSurviveSerialization .........................   Passed    0.01 sec
+        Start 268: NetworkCommandsTest.LinkedDuplicateSharesDefinitionAndPlacesTheOccurrence
+268/719 Test #268: NetworkCommandsTest.LinkedDuplicateSharesDefinitionAndPlacesTheOccurrence ...........................   Passed    0.01 sec
+        Start 269: ReadSourceTest.RegisterCreatesReferenceEntryAndNodeBindingAsOneHistoryEntry
+269/719 Test #269: ReadSourceTest.RegisterCreatesReferenceEntryAndNodeBindingAsOneHistoryEntry .........................   Passed    0.01 sec
+        Start 270: ReadSourceTest.SamePathSharesReferenceAndEntryRegardlessOfReadChoices
+270/719 Test #270: ReadSourceTest.SamePathSharesReferenceAndEntryRegardlessOfReadChoices ...............................   Passed    0.01 sec
+        Start 271: ReadSourceTest.RelinkUpdatesPathInPlaceAndReplacesProbe
+271/719 Test #271: ReadSourceTest.RelinkUpdatesPathInPlaceAndReplacesProbe .............................................   Passed    0.01 sec
+        Start 272: ReadSourceTest.StaleRelinkIsRejectedWithoutMutation
+272/719 Test #272: ReadSourceTest.StaleRelinkIsRejectedWithoutMutation .................................................   Passed    0.01 sec
+        Start 273: ReadSourceTest.TimingEditIsNodeScopedAndLeavesTheOtherReadUnchanged
+273/719 Test #273: ReadSourceTest.TimingEditIsNodeScopedAndLeavesTheOtherReadUnchanged .................................   Passed    0.01 sec
+        Start 274: ReadSourceTest.ReadValueEditsValidateThroughTheSharedParameterSeam
+274/719 Test #274: ReadSourceTest.ReadValueEditsValidateThroughTheSharedParameterSeam ..................................   Passed    0.01 sec
+        Start 275: ReadSourceTest.ReloadAdvancesRevisionOnceAndPreservesCustomTrim
+275/719 Test #275: ReadSourceTest.ReloadAdvancesRevisionOnceAndPreservesCustomTrim .....................................   Passed    0.01 sec
+        Start 276: ReadSourceTest.RegisterRejectsNonReadNode
+276/719 Test #276: ReadSourceTest.RegisterRejectsNonReadNode ...........................................................   Passed    0.01 sec
+        Start 277: ReadSourceTest.RegisterRejectsInadmissibleProbeAndChoices
+277/719 Test #277: ReadSourceTest.RegisterRejectsInadmissibleProbeAndChoices ...........................................   Passed    0.01 sec
+        Start 278: ReadSourceTest.AuthoredChoicesAndReferenceRoundTripThroughSaveLoad
+278/719 Test #278: ReadSourceTest.AuthoredChoicesAndReferenceRoundTripThroughSaveLoad ..................................   Passed    0.01 sec
+        Start 279: ReadSourceTest.Schema4MigrationMaterializesSharedTimingOnTheRead
+279/719 Test #279: ReadSourceTest.Schema4MigrationMaterializesSharedTimingOnTheRead ....................................   Passed    0.01 sec
+        Start 280: ReadSourceTest.NodeHintOverridesTheSharedPolicyButKeepsItsVocabulary
+280/719 Test #280: ReadSourceTest.NodeHintOverridesTheSharedPolicyButKeepsItsVocabulary ................................   Passed    0.01 sec
+        Start 281: ReadSourceTest.CoveragePolicyAppliesToBoundsAndHolesOnlyWhenAuthoritative
+281/719 Test #281: ReadSourceTest.CoveragePolicyAppliesToBoundsAndHolesOnlyWhenAuthoritative ...........................   Passed    0.01 sec
+        Start 282: ReadSourceTest.StillIsTimeIndependent
+282/719 Test #282: ReadSourceTest.StillIsTimeIndependent ...............................................................   Passed    0.01 sec
+        Start 283: ReadSourceTest.MappingArithmeticCoversStartAtReverseAndOverflowBoundaries
+283/719 Test #283: ReadSourceTest.MappingArithmeticCoversStartAtReverseAndOverflowBoundaries ...........................   Passed    0.01 sec
+        Start 284: ReadSourceTest.EffectiveIdentityIsContentDerivedAcrossNodes
+284/719 Test #284: ReadSourceTest.EffectiveIdentityIsContentDerivedAcrossNodes .........................................   Passed    0.01 sec
+        Start 285: ReadSourceTest.DecodeIdentityIsFrameIndependentWhileResultIdentityIsNot
+285/719 Test #285: ReadSourceTest.DecodeIdentityIsFrameIndependentWhileResultIdentityIsNot .............................   Passed    0.01 sec
+        Start 286: ReadSourceTest.OccurrenceBindingLeavesTheDefinitionAndOtherOccurrencesUntouched
+286/719 Test #286: ReadSourceTest.OccurrenceBindingLeavesTheDefinitionAndOtherOccurrencesUntouched .....................   Passed    0.01 sec
+        Start 287: ReadSourceTest.ReadBindingInitializesDefinitionOnceAndPreservesLaterChoices
+287/719 Test #287: ReadSourceTest.ReadBindingInitializesDefinitionOnceAndPreservesLaterChoices .........................   Passed    0.01 sec
+        Start 288: ReadSourceTest.ReadBindingFollowsTheExistingChannelRule
+288/719 Test #288: ReadSourceTest.ReadBindingFollowsTheExistingChannelRule .............................................   Passed    0.01 sec
+        Start 289: ReadSourceTest.ClearedOrAnimatedReadIsNotAFreshBinding
+289/719 Test #289: ReadSourceTest.ClearedOrAnimatedReadIsNotAFreshBinding ..............................................   Passed    0.01 sec
+        Start 290: ReadSourceTest.InitialChoicesNeverOverwriteAnAuthoredField
+290/719 Test #290: ReadSourceTest.InitialChoicesNeverOverwriteAnAuthoredField ..........................................   Passed    0.01 sec
+        Start 291: SourceCommand.RejectsInvalidReferencesWithoutTouchingDocument
+291/719 Test #291: SourceCommand.RejectsInvalidReferencesWithoutTouchingDocument .......................................   Passed    0.01 sec
+        Start 292: SourceCommand.AddUndoRedoRoundtrip
+292/719 Test #292: SourceCommand.AddUndoRedoRoundtrip ..................................................................   Passed    0.01 sec
+        Start 293: SourceCommand.ReplaceAndUndoRestoresPreviousReference
+293/719 Test #293: SourceCommand.ReplaceAndUndoRestoresPreviousReference ...............................................   Passed    0.01 sec
+        Start 294: SourceCommand.GraphHistoryPreservesConnectionsAcrossRepeatedRedo
+294/719 Test #294: SourceCommand.GraphHistoryPreservesConnectionsAcrossRepeatedRedo ....................................   Passed    0.01 sec
+        Start 295: SourceSerialization.SourcesRoundtripThroughSaveLoad
+295/719 Test #295: SourceSerialization.SourcesRoundtripThroughSaveLoad .................................................   Passed    0.01 sec
+        Start 296: SourceSerialization.DocumentWithoutSourcesBlockLoads
+296/719 Test #296: SourceSerialization.DocumentWithoutSourcesBlockLoads ................................................   Passed    0.01 sec
+        Start 297: SourceSerialization.MalformedSourceEntriesAreStructuralErrors
+297/719 Test #297: SourceSerialization.MalformedSourceEntriesAreStructuralErrors .......................................   Passed    0.01 sec
+        Start 298: SourceNode.DeclaresTypedPorts
+298/719 Test #298: SourceNode.DeclaresTypedPorts .......................................................................   Passed    0.01 sec
+        Start 299: SourceTimeMapping.OffsetPlusLocalTimesStep
+299/719 Test #299: SourceTimeMapping.OffsetPlusLocalTimesStep ..........................................................   Passed    0.00 sec
+        Start 300: SourceTimeMapping.RejectsNegativeMappedFrames
+300/719 Test #300: SourceTimeMapping.RejectsNegativeMappedFrames .......................................................   Passed    0.01 sec
+        Start 301: SourceTimeMapping.RejectsOverflowRatherThanWrapping
+301/719 Test #301: SourceTimeMapping.RejectsOverflowRatherThanWrapping .................................................   Passed    0.01 sec
+        Start 302: SourceTimeMapping.ReverseAndNegativeLocalTimeRemainSigned
+302/719 Test #302: SourceTimeMapping.ReverseAndNegativeLocalTimeRemainSigned ...........................................   Passed    0.01 sec
+        Start 303: SourceEvaluation.MissingSourceParameterIsANodeIdentifyingError
+303/719 Test #303: SourceEvaluation.MissingSourceParameterIsANodeIdentifyingError ......................................   Passed    0.01 sec
+        Start 304: SourceEvaluation.UnknownSourceKeyIsAnUnresolvedSourceError
+304/719 Test #304: SourceEvaluation.UnknownSourceKeyIsAnUnresolvedSourceError ..........................................   Passed    0.01 sec
+        Start 305: SourceEvaluation.WithoutProviderRealSourceIsRejectedExplicitly
+305/719 Test #305: SourceEvaluation.WithoutProviderRealSourceIsRejectedExplicitly ......................................   Passed    0.01 sec
+        Start 306: SourceEvaluation.ProviderServesMappedFramesAndPlanRecordsEffectiveState
+306/719 Test #306: SourceEvaluation.ProviderServesMappedFramesAndPlanRecordsEffectiveState .............................   Passed    0.01 sec
+        Start 307: SourceEvaluation.ReadMappingReplacesTheSharedReferenceMapping
+307/719 Test #307: SourceEvaluation.ReadMappingReplacesTheSharedReferenceMapping .......................................   Passed    0.01 sec
+        Start 308: SourceEvaluation.SharedAuthoredIntervalBoundsAndNodeRangeReplacesIt
+308/719 Test #308: SourceEvaluation.SharedAuthoredIntervalBoundsAndNodeRangeReplacesIt .................................   Passed    0.01 sec
+        Start 309: SourceEvaluation.ProviderRasterMustCoverTheRequestedRaster
+309/719 Test #309: SourceEvaluation.ProviderRasterMustCoverTheRequestedRaster ..........................................   Passed    0.01 sec
+        Start 310: SourceEvaluation.ProviderFailureIdentifiesNodeAndReason
+310/719 Test #310: SourceEvaluation.ProviderFailureIdentifiesNodeAndReason .............................................   Passed    0.01 sec
+        Start 311: SourceIdentity.SourceEditChangesSourceAndDependentKeysOnly
+311/719 Test #311: SourceIdentity.SourceEditChangesSourceAndDependentKeysOnly ..........................................   Passed    0.01 sec
+        Start 312: SourceIdentity.SourceEditInvalidatesOnlyDependentCacheEntries
+312/719 Test #312: SourceIdentity.SourceEditInvalidatesOnlyDependentCacheEntries .......................................   Passed    0.01 sec
+        Start 313: ScaleAwareRaster.DimensionsCeilAndStayFullResAnchored
+313/719 Test #313: ScaleAwareRaster.DimensionsCeilAndStayFullResAnchored ...............................................   Passed    0.00 sec
+        Start 314: ScaleAwareRaster.ReducedPatternSubsamplesTheFullResolutionPattern
+314/719 Test #314: ScaleAwareRaster.ReducedPatternSubsamplesTheFullResolutionPattern ...................................   Passed    0.01 sec
+        Start 315: ScaleAwareRaster.RegionLimitedRequestsPreserveFullResolutionCoordinates
+315/719 Test #315: ScaleAwareRaster.RegionLimitedRequestsPreserveFullResolutionCoordinates .............................   Passed    0.01 sec
+        Start 316: RequestIdentity.ScaleAndRegionAreDistinctIdentityComponents
+316/719 Test #316: RequestIdentity.ScaleAndRegionAreDistinctIdentityComponents .........................................   Passed    0.00 sec
+        Start 317: ViewerResolution.ExplicitModesOverrideAuto
+317/719 Test #317: ViewerResolution.ExplicitModesOverrideAuto ..........................................................   Passed    0.01 sec
+        Start 318: ViewerResolution.AutoKeepsFullWhenImageFitsOrIsZoomedIn
+318/719 Test #318: ViewerResolution.AutoKeepsFullWhenImageFitsOrIsZoomedIn .............................................   Passed    0.00 sec
+        Start 319: ViewerResolution.AutoReducesLargeImagesByPhysicalArea
+319/719 Test #319: ViewerResolution.AutoReducesLargeImagesByPhysicalArea ...............................................   Passed    0.00 sec
+        Start 320: ViewerResolution.AutoHonorsPixelAspectInFit
+320/719 Test #320: ViewerResolution.AutoHonorsPixelAspectInFit .........................................................   Passed    0.00 sec
+        Start 321: ViewerResolution.HysteresisHoldsAcrossEquivalentConfigurations
+321/719 Test #321: ViewerResolution.HysteresisHoldsAcrossEquivalentConfigurations ......................................   Passed    0.00 sec
+        Start 322: ViewerResolution.ZoomChangesTheRequestedSamplingDensity
+322/719 Test #322: ViewerResolution.ZoomChangesTheRequestedSamplingDensity .............................................   Passed    0.00 sec
+        Start 323: AnimationTest.LinearKeyframesEvaluateAtIntermediateAndEndpointFrames
+323/719 Test #323: AnimationTest.LinearKeyframesEvaluateAtIntermediateAndEndpointFrames ................................   Passed    0.00 sec
+        Start 324: AnimationTest.KeyedGestureUpdatesExistingKeyAndUndoesCompleteDragWithoutPublishingPreview
+324/719 Test #324: AnimationTest.KeyedGestureUpdatesExistingKeyAndUndoesCompleteDragWithoutPublishingPreview ...........   Passed    0.01 sec
+        Start 325: AnimationTest.HoldInterpolationAndDiscreteValuesDoNotBlend
+325/719 Test #325: AnimationTest.HoldInterpolationAndDiscreteValuesDoNotBlend ..........................................   Passed    0.01 sec
+        Start 326: AnimationTest.BezierInsertionPreservesNonlinearCurveAndEndpointExtrapolation
+326/719 Test #326: AnimationTest.BezierInsertionPreservesNonlinearCurveAndEndpointExtrapolation ........................   Passed    0.01 sec
+        Start 327: AnimationTest.ContinuousValuesUseActualUnitsForScalarVectorAndColor
+327/719 Test #327: AnimationTest.ContinuousValuesUseActualUnitsForScalarVectorAndColor .................................   Passed    0.01 sec
+        Start 328: AnimationTest.KeyedGestureRejectsResetValuesAndPreservesTransientPublication
+328/719 Test #328: AnimationTest.KeyedGestureRejectsResetValuesAndPreservesTransientPublication ........................   Passed    0.01 sec
+        Start 329: AnimationTest.KeyedBeginRejectsStaleRevisionAndGroupUpdatesShareOneGesture
+329/719 Test #329: AnimationTest.KeyedBeginRejectsStaleRevisionAndGroupUpdatesShareOneGesture ..........................   Passed    0.01 sec
+        Start 330: AnimationTest.KeyQueryCursorUsesStableIdsRatherThanMutableTimeOrder
+330/719 Test #330: AnimationTest.KeyQueryCursorUsesStableIdsRatherThanMutableTimeOrder .................................   Passed    0.01 sec
+        Start 331: AnimationTest.CollidingGroupMoveIsAtomicAndValidMoveIsOneHistoryEntry
+331/719 Test #331: AnimationTest.CollidingGroupMoveIsAtomicAndValidMoveIsOneHistoryEntry ...............................   Passed    0.01 sec
+        Start 332: AnimationTest.ExactBatchSwapsTimesAndRejectsEveryFieldOnTangentOrTargetConflicts
+332/719 Test #332: AnimationTest.ExactBatchSwapsTimesAndRejectsEveryFieldOnTangentOrTargetConflicts ....................   Passed    0.01 sec
+        Start 333: AnimationTest.NodeDeletionPrunesAnimationQueriesAndUndoRestoresIdentity
+333/719 Test #333: AnimationTest.NodeDeletionPrunesAnimationQueriesAndUndoRestoresIdentity .............................   Passed    0.01 sec
+        Start 334: AnimationTest.MixedValueGesturePreviewsBothKindsWithoutPublishing
+334/719 Test #334: AnimationTest.MixedValueGesturePreviewsBothKindsWithoutPublishing ...................................   Passed    0.01 sec
+        Start 335: AnimationTest.MixedValueGesturePublishesOnlyNetChangedTargets
+335/719 Test #335: AnimationTest.MixedValueGesturePublishesOnlyNetChangedTargets .......................................   Passed    0.01 sec
+        Start 336: AnimationTest.MixedValueGestureCancelStaleAndInvalidLeaveBothUnchanged
+336/719 Test #336: AnimationTest.MixedValueGestureCancelStaleAndInvalidLeaveBothUnchanged ..............................   Passed    0.01 sec
+        Start 337: AnimationTest.MixedValueGestureRejectsTargetsNotAdmittedAtBegin
+337/719 Test #337: AnimationTest.MixedValueGestureRejectsTargetsNotAdmittedAtBegin .....................................   Passed    0.01 sec
+        Start 338: AnimationTest.MixedValueGestureValidatesUnchangedBatches
+338/719 Test #338: AnimationTest.MixedValueGestureValidatesUnchangedBatches ............................................   Passed    0.01 sec
+        Start 339: Gpu.BootstrapCreateDestroy
+339/719 Test #339: Gpu.BootstrapCreateDestroy ..........................................................................   Passed    0.31 sec
+        Start 340: Gpu.VideoQueueFamiliesReportedWhenAdvertised
+340/719 Test #340: Gpu.VideoQueueFamiliesReportedWhenAdvertised ........................................................   Passed    0.27 sec
+        Start 341: Gpu.EmptySubmissionCompletes
+341/719 Test #341: Gpu.EmptySubmissionCompletes ........................................................................   Passed    0.28 sec
+        Start 342: Gpu.AllocatorBudgetAccounting
+342/719 Test #342: Gpu.AllocatorBudgetAccounting .......................................................................   Passed    0.29 sec
+        Start 343: Gpu.AsyncSubmitPollWaitLifecycle
+343/719 Test #343: Gpu.AsyncSubmitPollWaitLifecycle ....................................................................   Passed    0.28 sec
+        Start 344: Gpu.AsyncCapacityRejectsImmediately
+344/719 Test #344: Gpu.AsyncCapacityRejectsImmediately .................................................................   Passed    1.33 sec
+        Start 345: Gpu.RetainedResourcesReleasedOnlyAfterCompletion
+345/719 Test #345: Gpu.RetainedResourcesReleasedOnlyAfterCompletion ....................................................   Passed    1.28 sec
+        Start 346: Gpu.RecordExceptionRecoversSlot
+346/719 Test #346: Gpu.RecordExceptionRecoversSlot .....................................................................   Passed    0.28 sec
+        Start 347: Gpu.ConcurrentSubmittersSharePersistentQueue
+347/719 Test #347: Gpu.ConcurrentSubmittersSharePersistentQueue ........................................................   Passed    0.31 sec
+        Start 348: Gpu.LegacyTimeoutDrainsBeforeThrowing
+348/719 Test #348: Gpu.LegacyTimeoutDrainsBeforeThrowing ...............................................................   Passed    0.83 sec
+        Start 349: Gpu.QueueTeardownDrainsPendingSubmissions
+349/719 Test #349: Gpu.QueueTeardownDrainsPendingSubmissions ...........................................................   Passed    0.58 sec
+        Start 350: MediaTest.HalfFloatExrRoundTripIsIdentity
+350/719 Test #350: MediaTest.HalfFloatExrRoundTripIsIdentity ...........................................................   Passed    0.46 sec
+        Start 351: MediaTest.FloatExrRoundTrip
+351/719 Test #351: MediaTest.FloatExrRoundTrip .........................................................................   Passed    0.22 sec
+        Start 352: MediaTest.DisplayAndDataWindows
+352/719 Test #352: MediaTest.DisplayAndDataWindows .....................................................................   Passed    0.23 sec
+        Start 353: MediaTest.PixelAspectFromHeader
+353/719 Test #353: MediaTest.PixelAspectFromHeader .....................................................................   Passed    0.23 sec
+        Start 354: MediaTest.ResolveFramePathPatterns
+354/719 Test #354: MediaTest.ResolveFramePathPatterns ..................................................................   Passed    0.03 sec
+        Start 355: MediaTest.SequenceRoundTrip
+355/719 Test #355: MediaTest.SequenceRoundTrip .........................................................................   Passed    0.22 sec
+        Start 356: MediaTest.MissingFileErrorNamesPath
+356/719 Test #356: MediaTest.MissingFileErrorNamesPath .................................................................   Passed    0.07 sec
+        Start 357: MediaTest.ProbeReportsEvidenceAndReasons
+357/719 Test #357: MediaTest.ProbeReportsEvidenceAndReasons ............................................................   Passed    0.97 sec
+        Start 358: MediaTest.ExrStillEvaluatesThroughSourceFill
+358/719 Test #358: MediaTest.ExrStillEvaluatesThroughSourceFill ........................................................   Passed    0.24 sec
+        Start 359: MediaTest.ExrSequenceResolvesFramesThroughTimeMapping
+359/719 Test #359: MediaTest.ExrSequenceResolvesFramesThroughTimeMapping ...............................................   Passed    0.22 sec
+        Start 360: MediaTest.AuthoredSequenceRangeRejectsOutOfRangeFrames
+360/719 Test #360: MediaTest.AuthoredSequenceRangeRejectsOutOfRangeFrames ..............................................   Passed    0.23 sec
+        Start 361: MediaTest.SourceTimeMappingAndMissingFramesFailExplicitly
+361/719 Test #361: MediaTest.SourceTimeMappingAndMissingFramesFailExplicitly ...........................................   Passed    0.22 sec
+        Start 362: MediaTest.UndeclaredTiffColorMetadataIsRejectedAsAmbiguous
+362/719 Test #362: MediaTest.UndeclaredTiffColorMetadataIsRejectedAsAmbiguous ..........................................   Passed    0.23 sec
+        Start 363: MediaTest.SrgbPngIsLinearizedThroughTheDeclaredTransfer
+363/719 Test #363: MediaTest.SrgbPngIsLinearizedThroughTheDeclaredTransfer .............................................   Passed    0.22 sec
+        Start 364: MediaTest.SingleChannelSourceIsRejected
+364/719 Test #364: MediaTest.SingleChannelSourceIsRejected .............................................................   Passed    0.22 sec
+        Start 365: MediaTest.ExrChromaticitiesMustMatchTheWorkingSpace
+365/719 Test #365: MediaTest.ExrChromaticitiesMustMatchTheWorkingSpace .................................................   Passed    0.22 sec
+        Start 366: MediaTest.ReferenceInterpretationFillsOnlyUnspecifiedFields
+366/719 Test #366: MediaTest.ReferenceInterpretationFillsOnlyUnspecifiedFields .........................................   Passed    0.22 sec
+        Start 367: MediaTest.ProbeReportsHeaderFactsWithoutDecoding
+367/719 Test #367: MediaTest.ProbeReportsHeaderFactsWithoutDecoding ....................................................   Passed    0.22 sec
+        Start 368: MediaTest.ProviderRejectsNonImagePathExplicitly
+368/719 Test #368: MediaTest.ProviderRejectsNonImagePathExplicitly .....................................................   Passed    0.03 sec
+        Start 369: MediaTest.ProviderRejectsUnsupportedDocumentWorkingSpace
+369/719 Test #369: MediaTest.ProviderRejectsUnsupportedDocumentWorkingSpace ............................................   Passed    0.22 sec
+        Start 370: Color.PolicyRoundTrips
+370/719 Test #370: Color.PolicyRoundTrips ..............................................................................   Passed    0.16 sec
+        Start 371: Color.DefaultPolicyWhenAbsent
+371/719 Test #371: Color.DefaultPolicyWhenAbsent .......................................................................   Passed    0.03 sec
+        Start 372: Color.PartialPolicyFallsBackFieldWise
+372/719 Test #372: Color.PartialPolicyFallsBackFieldWise ...............................................................   Passed    0.02 sec
+        Start 373: Color.NonObjectPolicyWarnsAndUsesDefaults
+373/719 Test #373: Color.NonObjectPolicyWarnsAndUsesDefaults ...........................................................   Passed    0.02 sec
+        Start 374: Color.MissingConfigNamesPath
+374/719 Test #374: Color.MissingConfigNamesPath ........................................................................   Passed    0.04 sec
+        Start 375: Color.MissingNamesAreIdentified
+375/719 Test #375: Color.MissingNamesAreIdentified .....................................................................   Passed    0.07 sec
+        Start 376: Color.CpuReferenceAppliesViewingTransform
+376/719 Test #376: Color.CpuReferenceAppliesViewingTransform ...........................................................   Passed    0.04 sec
+        Start 377: Color.GpuViewingTransformMatchesCpuReferenceWithinTolerance
+377/719 Test #377: Color.GpuViewingTransformMatchesCpuReferenceWithinTolerance .........................................   Passed    0.97 sec
+        Start 378: Color.GpuAces2ViewMatchesCpuReference
+378/719 Test #378: Color.GpuAces2ViewMatchesCpuReference ...............................................................   Passed    1.34 sec
+        Start 379: Color.GpuMatrixViewMatchesCpuReferenceWithinTolerance
+379/719 Test #379: Color.GpuMatrixViewMatchesCpuReferenceWithinTolerance ...............................................   Passed    0.88 sec
+        Start 380: Color.ComputePipelineCacheReusesPipelineAcrossPasses
+380/719 Test #380: Color.ComputePipelineCacheReusesPipelineAcrossPasses ................................................   Passed    0.84 sec
+        Start 381: Color.ComputeRetainedExecutionSurvivesPassDestruction
+381/719 Test #381: Color.ComputeRetainedExecutionSurvivesPassDestruction ...............................................   Passed    0.83 sec
+        Start 382: InputColor.NewProjectDefaultIsThePinnedAcesStudioConfig
+382/719 Test #382: InputColor.NewProjectDefaultIsThePinnedAcesStudioConfig .............................................   Passed    0.87 sec
+        Start 383: InputColor.WorkingTargetIsVerifiedByMeaningNotNameOrRole
+383/719 Test #383: InputColor.WorkingTargetIsVerifiedByMeaningNotNameOrRole ............................................   Passed    1.28 sec
+        Start 384: InputColor.NamedInputSpaceConvertsToWorkingAgainstPublishedReference
+384/719 Test #384: InputColor.NamedInputSpaceConvertsToWorkingAgainstPublishedReference ................................   Passed    0.59 sec
+        Start 385: InputColor.ResolutionPrecedenceAndOrigin
+385/719 Test #385: InputColor.ResolutionPrecedenceAndOrigin ............................................................   Passed    0.10 sec
+        Start 386: InputColor.AlphaIsNormalizedInTheEncodedDomainAndRawStaysUntouched
+386/719 Test #386: InputColor.AlphaIsNormalizedInTheEncodedDomainAndRawStaysUntouched ..................................   Passed    0.24 sec
+        Start 387: InputColor.ProviderAppliesTheResolvedRequestIndependently
+387/719 Test #387: InputColor.ProviderAppliesTheResolvedRequestIndependently ...........................................   Passed    0.23 sec
+        Start 388: InputColor.WarmSourceCacheReportsAChangedWorkingTarget
+388/719 Test #388: InputColor.WarmSourceCacheReportsAChangedWorkingTarget ..............................................   Passed    0.21 sec
+        Start 389: InputColor.SamePathConfigEditRefreshesIdentityAndPixels
+389/719 Test #389: InputColor.SamePathConfigEditRefreshesIdentityAndPixels .............................................   Passed    0.23 sec
+        Start 390: InputColor.GpuInputTransformMatchesCpuReference
+390/719 Test #390: InputColor.GpuInputTransformMatchesCpuReference .....................................................   Passed    1.45 sec
+        Start 391: InputColor.GpuInputTransformMatchesCpuForAConfigBackedWorkingSpace
+391/719 Test #391: InputColor.GpuInputTransformMatchesCpuForAConfigBackedWorkingSpace ..................................   Passed    0.87 sec
+        Start 392: HwMedia.DecodeInteropProducesContractImages
+392/719 Test #392: HwMedia.DecodeInteropProducesContractImages .........................................................   Passed    0.47 sec
+        Start 393: HwMedia.ProbeMatchesDeviceVideoQueues
+393/719 Test #393: HwMedia.ProbeMatchesDeviceVideoQueues ...............................................................   Passed    1.29 sec
+        Start 394: HwMedia.SoftwareReferenceDecodesDistinctFrames
+394/719 Test #394: HwMedia.SoftwareReferenceDecodesDistinctFrames ......................................................   Passed    0.05 sec
+        Start 395: HwMedia.InteropRetainsDelayedForeignPlanesAndConvertsPixels
+395/719 Test #395: HwMedia.InteropRetainsDelayedForeignPlanesAndConvertsPixels .........................................   Passed    0.39 sec
+        Start 396: HwMedia.ViewerChunkEncodeRoundTrip
+396/719 Test #396: HwMedia.ViewerChunkEncodeRoundTrip ..................................................................   Passed    0.06 sec
+        Start 397: HwMedia.CodecSweepSingleChunkHasNoBoundaryAndFailuresHaveNoMeasurements
+397/719 Test #397: HwMedia.CodecSweepSingleChunkHasNoBoundaryAndFailuresHaveNoMeasurements .............................   Passed    0.06 sec
+        Start 398: HwMedia.CodecSweepRejectsInvalidWorkloadsWithoutEnteringEncodeLoop
+398/719 Test #398: HwMedia.CodecSweepRejectsInvalidWorkloadsWithoutEnteringEncodeLoop ..................................   Passed    0.04 sec
+        Start 399: HwMedia.CodecSweepMuxFailureNeverCreditsReusableFrames
+399/719 Test #399: HwMedia.CodecSweepMuxFailureNeverCreditsReusableFrames ..............................................   Passed    0.04 sec
+        Start 400: HwMedia.CodecSweepConcurrentRunsPreserveIndependentChunks
+400/719 Test #400: HwMedia.CodecSweepConcurrentRunsPreserveIndependentChunks ...........................................   Passed    0.05 sec
+        Start 401: HwMedia.UnavailableCodecEncodesFailWithReason
+401/719 Test #401: HwMedia.UnavailableCodecEncodesFailWithReason .......................................................   Passed    0.04 sec
+        Start 402: MediaDecode.IncrementalReferenceSamplesIndependentTaggedPixelsWithoutLinearizing
+402/719 Test #402: MediaDecode.IncrementalReferenceSamplesIndependentTaggedPixelsWithoutLinearizing ....................   Passed    0.04 sec
+        Start 403: MediaDecode.IncrementalReferencePreservesIndependentSpatialBoundary
+403/719 Test #403: MediaDecode.IncrementalReferencePreservesIndependentSpatialBoundary .................................   Passed    0.04 sec
+        Start 404: MediaDecode.SweepFrameLimitAcceptsCleanEofWithoutContainerFrameCount
+404/719 Test #404: MediaDecode.SweepFrameLimitAcceptsCleanEofWithoutContainerFrameCount ................................   Passed    0.04 sec
+        Start 405: MediaDecode.TaggedNonlinearMidgrayBecomesSceneLinear
+405/719 Test #405: MediaDecode.TaggedNonlinearMidgrayBecomesSceneLinear ................................................   Passed    0.04 sec
+        Start 406: MediaDecode.TaggedLinearTransferIsNotLinearizedAgain
+406/719 Test #406: MediaDecode.TaggedLinearTransferIsNotLinearizedAgain ................................................   Passed    0.05 sec
+        Start 407: MediaDecode.TenBitPrecisionSurvivesConversion
+407/719 Test #407: MediaDecode.TenBitPrecisionSurvivesConversion .......................................................   Passed    0.04 sec
+        Start 408: MediaDecode.TaggedColorUsesTransferAndMatrix
+408/719 Test #408: MediaDecode.TaggedColorUsesTransferAndMatrix ........................................................   Passed    0.04 sec
+        Start 409: MediaDecode.GrayscaleFfv1ConvertsWithoutChromaPlanes
+409/719 Test #409: MediaDecode.GrayscaleFfv1ConvertsWithoutChromaPlanes ................................................   Passed    0.04 sec
+        Start 410: MediaDecode.HighDepth444ConvertsIntoSceneLinear
+410/719 Test #410: MediaDecode.HighDepth444ConvertsIntoSceneLinear .....................................................   Passed    0.04 sec
+        Start 411: MediaDecode.MissingTransferIsNotSilentlyRelabeledLinear
+411/719 Test #411: MediaDecode.MissingTransferIsNotSilentlyRelabeledLinear .............................................   Passed    0.04 sec
+        Start 412: MediaDecode.ExplicitOverrideResolvesMissingTransferOnly
+412/719 Test #412: MediaDecode.ExplicitOverrideResolvesMissingTransferOnly .............................................   Passed    0.04 sec
+        Start 413: MediaDecode.UnsupportedWorkingPolicyIsNotSilentlyIgnored
+413/719 Test #413: MediaDecode.UnsupportedWorkingPolicyIsNotSilentlyIgnored ............................................   Passed    0.04 sec
+        Start 414: MediaDecode.CorruptInputNamesTheClip
+414/719 Test #414: MediaDecode.CorruptInputNamesTheClip ................................................................   Passed    0.04 sec
+        Start 415: MediaEncode.ChunkComparisonRejectsIncompleteDecodeAndDimensionMismatch
+415/719 Test #415: MediaEncode.ChunkComparisonRejectsIncompleteDecodeAndDimensionMismatch ..............................   Passed    0.05 sec
+        Start 416: MediaEncode.SweepFrameLimitDoesNotRejectShortDeclaredSources
+416/719 Test #416: MediaEncode.SweepFrameLimitDoesNotRejectShortDeclaredSources ........................................   Passed    0.05 sec
+        Start 417: MediaEncode.CompleteChunkTimingUsesMillisecondsAndIncludesExclusiveStages
+417/719 Test #417: MediaEncode.CompleteChunkTimingUsesMillisecondsAndIncludesExclusiveStages ...........................   Passed    0.05 sec
+        Start 418: MediaEncode.DeviceChunksUseGpuConversionAndIndependentRecovery
+418/719 Test #418: MediaEncode.DeviceChunksUseGpuConversionAndIndependentRecovery ......................................   Passed    0.95 sec
+        Start 419: MediaEncode.EncodedMetadataIsCompleteDisplayReferredBt709
+419/719 Test #419: MediaEncode.EncodedMetadataIsCompleteDisplayReferredBt709 ...........................................   Passed    0.04 sec
+        Start 420: MediaEncode.BitstreamCarriesBt709SignalInfo
+420/719 Test #420: MediaEncode.BitstreamCarriesBt709SignalInfo .........................................................   Passed    0.04 sec
+        Start 421: MediaEncode.NonlinearViewerValuesSurviveReplay
+421/719 Test #421: MediaEncode.NonlinearViewerValuesSurviveReplay ......................................................   Passed    0.05 sec
+        Start 422: MediaEncode.ChromaSamplesMatchDeclaredLeftSiting
+422/719 Test #422: MediaEncode.ChromaSamplesMatchDeclaredLeftSiting ....................................................   Passed    0.04 sec
+        Start 423: MediaEncode.SingleFrameChunkIsDecodable
+423/719 Test #423: MediaEncode.SingleFrameChunkIsDecodable .............................................................   Passed    0.04 sec
+        Start 424: MediaEncode.SaturatedGreenDoesNotGainRedFromWrongMatrix
+424/719 Test #424: MediaEncode.SaturatedGreenDoesNotGainRedFromWrongMatrix .............................................   Passed    0.04 sec
+        Start 425: MediaEncode.SceneLinearInputRequiresViewingTransform
+425/719 Test #425: MediaEncode.SceneLinearInputRequiresViewingTransform ................................................   Passed    0.04 sec
+        Start 426: MediaEncode.InjectedAllocationFailureThrowsAndCleansUp
+426/719 Test #426: MediaEncode.InjectedAllocationFailureThrowsAndCleansUp ..............................................   Passed    0.04 sec
+        Start 427: MediaEncode.InjectedInitFailureThrowsAndCleansUp
+427/719 Test #427: MediaEncode.InjectedInitFailureThrowsAndCleansUp ....................................................   Passed    0.04 sec
+        Start 428: MediaEncode.InjectedSubmissionFailureThrowsAndCleansUp
+428/719 Test #428: MediaEncode.InjectedSubmissionFailureThrowsAndCleansUp ..............................................   Passed    0.04 sec
+        Start 429: MediaEncode.InjectedWriteFailureThrowsAndCleansUp
+429/719 Test #429: MediaEncode.InjectedWriteFailureThrowsAndCleansUp ...................................................   Passed    0.05 sec
+        Start 430: MediaEncode.InjectedFinalizationFailureThrowsAndCleansUp
+430/719 Test #430: MediaEncode.InjectedFinalizationFailureThrowsAndCleansUp ............................................   Passed    0.05 sec
+        Start 431: MediaEncode.OddDimensionsFailWithDiagnostic
+431/719 Test #431: MediaEncode.OddDimensionsFailWithDiagnostic .........................................................   Passed    0.04 sec
+        Start 432: MediaEncode.InconsistentFrameDimensionsFailWithDiagnostic
+432/719 Test #432: MediaEncode.InconsistentFrameDimensionsFailWithDiagnostic ...........................................   Passed    0.04 sec
+        Start 433: MediaImport.StillImportProducesProbeAndDisplayReferredThumbnail
+433/719 Test #433: MediaImport.StillImportProducesProbeAndDisplayReferredThumbnail .....................................   Passed    0.25 sec
+        Start 434: MediaImport.SequenceImportResolvesPatternFrame
+434/719 Test #434: MediaImport.SequenceImportResolvesPatternFrame ......................................................   Passed    0.24 sec
+        Start 435: MediaImport.SourceTimeMappingDrivesSequenceFrameAndProbe
+435/719 Test #435: MediaImport.SourceTimeMappingDrivesSequenceFrameAndProbe ............................................   Passed    0.23 sec
+        Start 436: MediaImport.AnamorphicPreviewKeepsDisplayedAspect
+436/719 Test #436: MediaImport.AnamorphicPreviewKeepsDisplayedAspect ...................................................   Passed    0.22 sec
+        Start 437: MediaImport.MissingSourceIsOfflineWithPathDiagnostic
+437/719 Test #437: MediaImport.MissingSourceIsOfflineWithPathDiagnostic ................................................   Passed    0.04 sec
+        Start 438: MediaImport.AmbiguousColorIsRejectedWithoutThumbnail
+438/719 Test #438: MediaImport.AmbiguousColorIsRejectedWithoutThumbnail ................................................   Passed    0.23 sec
+        Start 439: MediaImport.ClipImportReportsActualFrameEvidence
+439/719 Test #439: MediaImport.ClipImportReportsActualFrameEvidence ....................................................   Passed    0.25 sec
+        Start 440: MediaImport.InterpretationOverrideResolvesMissingStreamTransfer
+440/719 Test #440: MediaImport.InterpretationOverrideResolvesMissingStreamTransfer .....................................   Passed    0.23 sec
+        Start 441: MediaImport.ServiceCoalescesSupersededRequestsBySourceKey
+441/719 Test #441: MediaImport.ServiceCoalescesSupersededRequestsBySourceKey ...........................................   Passed    0.23 sec
+        Start 442: MediaImport.ServiceCancelDropsSupersededSourceWork
+442/719 Test #442: MediaImport.ServiceCancelDropsSupersededSourceWork ..................................................   Passed    0.23 sec
+        Start 443: MediaImport.ServiceBoundsOutstandingAndReleasesOnCollect
+443/719 Test #443: MediaImport.ServiceBoundsOutstandingAndReleasesOnCollect ............................................   Passed    0.04 sec
+        Start 444: MediaImport.FreshSequenceSelectionAlignsToAnAvailableMember
+444/719 Test #444: MediaImport.FreshSequenceSelectionAlignsToAnAvailableMember .........................................   Passed    0.24 sec
+        Start 445: MediaImport.AmbiguousNumberingClaimsNoSequenceFacts
+445/719 Test #445: MediaImport.AmbiguousNumberingClaimsNoSequenceFacts .................................................   Passed    0.22 sec
+        Start 446: MediaImport.StillIsOneImageEvenWhenItsNameIsNumbered
+446/719 Test #446: MediaImport.StillIsOneImageEvenWhenItsNameIsNumbered ................................................   Passed    0.23 sec
+        Start 447: MediaImport.ClipCoverageTracesToDeclaredCountProvenance
+447/719 Test #447: MediaImport.ClipCoverageTracesToDeclaredCountProvenance .............................................   Passed    0.23 sec
+        Start 448: MediaImport.ReprobePicksUpOverwrittenAndAppendedSequenceFrames
+448/719 Test #448: MediaImport.ReprobePicksUpOverwrittenAndAppendedSequenceFrames ......................................   Passed    0.22 sec
+        Start 449: SequenceDiscovery.FindsFirstLastAndHoles
+449/719 Test #449: SequenceDiscovery.FindsFirstLastAndHoles ............................................................   Passed    0.23 sec
+        Start 450: SequenceDiscovery.LongerVersionRunIsNotMistakenForTheFrame
+450/719 Test #450: SequenceDiscovery.LongerVersionRunIsNotMistakenForTheFrame ..........................................   Passed    0.22 sec
+        Start 451: SequenceDiscovery.AmbiguousNumberingRequestsAnExplicitPattern
+451/719 Test #451: SequenceDiscovery.AmbiguousNumberingRequestsAnExplicitPattern .......................................   Passed    0.22 sec
+        Start 452: SequenceDiscovery.NumberedRunSelectionIsHonest
+452/719 Test #452: SequenceDiscovery.NumberedRunSelectionIsHonest ......................................................   Passed    0.22 sec
+        Start 453: SequenceDiscovery.CancelsAndBoundsExplicitly
+453/719 Test #453: SequenceDiscovery.CancelsAndBoundsExplicitly ........................................................   Passed    0.22 sec
+        Start 454: Effect.ConstcolorIsBitExact
+454/719 Test #454: Effect.ConstcolorIsBitExact .........................................................................   Passed    1.05 sec
+        Start 455: Effect.MultiNodeGpuCompositionMatchesCpuReference
+455/719 Test #455: Effect.MultiNodeGpuCompositionMatchesCpuReference ...................................................   Passed    0.38 sec
+        Start 456: Effect.SlangAndGlslEffectsAgree
+456/719 Test #456: Effect.SlangAndGlslEffectsAgree .....................................................................   Passed    0.99 sec
+        Start 457: Effect.WrongBindingsAndAlphaFailComparison
+457/719 Test #457: Effect.WrongBindingsAndAlphaFailComparison ..........................................................   Passed    1.07 sec
+        Start 458: Effect.MergeOperationsMatchCpuReferenceOnBothFrontEnds
+458/719 Test #458: Effect.MergeOperationsMatchCpuReferenceOnBothFrontEnds ..............................................   Passed    1.03 sec
+        Start 459: Effect.MergeHdrAndNegativeValuesSurviveBothFrontEnds
+459/719 Test #459: Effect.MergeHdrAndNegativeValuesSurviveBothFrontEnds ................................................   Passed    1.01 sec
+        Start 460: Effect.MergeMaskInvertAndMixMatchCpuReference
+460/719 Test #460: Effect.MergeMaskInvertAndMixMatchCpuReference .......................................................   Passed    0.99 sec
+        Start 461: Effect.SwappedMergePortsFailEveryOperation
+461/719 Test #461: Effect.SwappedMergePortsFailEveryOperation ..........................................................   Passed    0.99 sec
+        Start 462: Effect.RegionLimitedRequestPreservesCoordinates
+462/719 Test #462: Effect.RegionLimitedRequestPreservesCoordinates .....................................................   Passed    0.38 sec
+        Start 463: Effect.DependentChainSynchronizesWithoutIntermediateReadback
+463/719 Test #463: Effect.DependentChainSynchronizesWithoutIntermediateReadback ........................................   Passed    0.38 sec
+        Start 464: Effect.InvalidShaderSourceIdentifiesNodeAndLocation
+464/719 Test #464: Effect.InvalidShaderSourceIdentifiesNodeAndLocation .................................................   Passed    0.95 sec
+        Start 465: Effect.MissingSlangKernelFailsWithoutSubstitution
+465/719 Test #465: Effect.MissingSlangKernelFailsWithoutSubstitution ...................................................   Passed    0.94 sec
+        Start 466: Effect.GpuReuseAvoidsRecomputationAndPreservesResults
+466/719 Test #466: Effect.GpuReuseAvoidsRecomputationAndPreservesResults ...............................................   Passed    0.39 sec
+        Start 467: Effect.AnimatedParametersReachNativeGpuExecution
+467/719 Test #467: Effect.AnimatedParametersReachNativeGpuExecution ....................................................   Passed    0.40 sec
+        Start 468: Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion
+468/719 Test #468: Effect.DroppedAsyncGraphRetainsResourcesUntilCompletion .............................................   Passed    0.40 sec
+        Start 469: Effect.NativeGradeBlurTransformMatchCpuReference
+469/719 Test #469: Effect.NativeGradeBlurTransformMatchCpuReference ....................................................   Passed    1.04 sec
+        Start 470: Effect.RegionRequestReturnsNormalizedRectangleAndMatchesFullFrame
+470/719 Test #470: Effect.RegionRequestReturnsNormalizedRectangleAndMatchesFullFrame ...................................   Passed    0.99 sec
+        Start 471: Effect.BlurRegionRequestCarriesItsHaloAndMatchesFullFrame
+471/719 Test #471: Effect.BlurRegionRequestCarriesItsHaloAndMatchesFullFrame ...........................................   Passed    1.00 sec
+        Start 472: Effect.TransformRegionRequestMatchesFullFrameAndCpu
+472/719 Test #472: Effect.TransformRegionRequestMatchesFullFrameAndCpu .................................................   Passed    0.99 sec
+        Start 473: Effect.ReducedScaleBlurTransformRegionsPreserveSamplingAndBorders
+473/719 Test #473: Effect.ReducedScaleBlurTransformRegionsPreserveSamplingAndBorders ...................................   Passed    1.11 sec
+        Start 474: Effect.WholeFrameOnlyContributionEscalatesRegionRequest
+474/719 Test #474: Effect.WholeFrameOnlyContributionEscalatesRegionRequest .............................................   Passed    0.40 sec
+        Start 475: Effect.OverlappingRegionRequestsReuseTheResidentBackingAndKeepTheirKeys
+475/719 Test #475: Effect.OverlappingRegionRequestsReuseTheResidentBackingAndKeepTheirKeys .............................   Passed    0.39 sec
+        Start 476: Effect.ViewerResultKeyAgreesWithExecutedKeysForRegionAndFullRequests
+476/719 Test #476: Effect.ViewerResultKeyAgreesWithExecutedKeysForRegionAndFullRequests ................................   Passed    0.37 sec
+        Start 477: Effect.SourceRegionRequestFillsFullResolutionCoordinates
+477/719 Test #477: Effect.SourceRegionRequestFillsFullResolutionCoordinates ............................................   Passed    0.63 sec
+        Start 478: ContributionTest.AffineContributionFlowsThroughProjectSessionAndPersistence
+478/719 Test #478: ContributionTest.AffineContributionFlowsThroughProjectSessionAndPersistence .........................   Passed    0.45 sec
+        Start 479: ContributionTest.ImmutableContributionAssemblyRejectsInvalidDeclarationsAtomically
+479/719 Test #479: ContributionTest.ImmutableContributionAssemblyRejectsInvalidDeclarationsAtomically ..................   Passed    0.04 sec
+        Start 480: ContributionTest.EffectAssemblyRejectsInvalidAffineGpuDeclarationsAtomically
+480/719 Test #480: ContributionTest.EffectAssemblyRejectsInvalidAffineGpuDeclarationsAtomically ........................   Passed    0.04 sec
+        Start 481: ContributionTest.UnavailableAffineKernelDoesNotBlockUnrelatedRendering
+481/719 Test #481: ContributionTest.UnavailableAffineKernelDoesNotBlockUnrelatedRendering ..............................   Passed    0.38 sec
+        Start 482: ContributionTest.CpuReuseIsScopedToTheImplementationVersion
+482/719 Test #482: ContributionTest.CpuReuseIsScopedToTheImplementationVersion .........................................   Passed    0.04 sec
+        Start 483: ContributionTest.ActiveCpuRequestRetainsItsRegistration
+483/719 Test #483: ContributionTest.ActiveCpuRequestRetainsItsRegistration .............................................   Passed    0.04 sec
+        Start 484: ContributionTest.NativeSubmissionRetainsRegistrationUntilCompletion
+484/719 Test #484: ContributionTest.NativeSubmissionRetainsRegistrationUntilCompletion .................................   Passed    0.38 sec
+        Start 485: Viewer.SourceFlowsThroughSharedPlanWithKnownGrayOracle
+485/719 Test #485: Viewer.SourceFlowsThroughSharedPlanWithKnownGrayOracle ..............................................   Passed    0.68 sec
+        Start 486: Viewer.SourceEffectCompositionMatchesDeclaredOverOracle
+486/719 Test #486: Viewer.SourceEffectCompositionMatchesDeclaredOverOracle .............................................   Passed    1.25 sec
+        Start 487: Viewer.SourceTimeMappingAndBackwardsReEntry
+487/719 Test #487: Viewer.SourceTimeMappingAndBackwardsReEntry .........................................................   Passed    0.62 sec
+        Start 488: Viewer.SamplingScaleProducesConsistentRepresentations
+488/719 Test #488: Viewer.SamplingScaleProducesConsistentRepresentations ...............................................   Passed    0.39 sec
+        Start 489: Viewer.ViewerRenderAppliesTransformOnceAndMatchesCpuOcio
+489/719 Test #489: Viewer.ViewerRenderAppliesTransformOnceAndMatchesCpuOcio ............................................   Passed    1.07 sec
+        Start 490: Viewer.PresentationQuantizesExactlyOnceWithoutTransfer
+490/719 Test #490: Viewer.PresentationQuantizesExactlyOnceWithoutTransfer ..............................................   Passed    0.53 sec
+        Start 491: Viewer.PresentationIsolatesDisplayChannels
+491/719 Test #491: Viewer.PresentationIsolatesDisplayChannels ..........................................................   Passed    0.55 sec
+        Start 492: Viewer.SharedImageChargeSurvivesDroppedHandlesUntilConsumerCompletion
+492/719 Test #492: Viewer.SharedImageChargeSurvivesDroppedHandlesUntilConsumerCompletion ...............................   Passed    0.49 sec
+        Start 493: Viewer.UnsupportedFormatRejectedWithPreciseReason
+493/719 Test #493: Viewer.UnsupportedFormatRejectedWithPreciseReason ...................................................   Passed    0.53 sec
+        Start 494: Viewer.InterpretationMapIsParsedStrictly
+494/719 Test #494: Viewer.InterpretationMapIsParsedStrictly ............................................................***Failed    0.54 sec
+Running main() from /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest_main.cc
+Note: Google Test filter = Viewer.InterpretationMapIsParsedStrictly
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from Viewer
+[ RUN      ] Viewer.InterpretationMapIsParsedStrictly
+unknown file: Failure
+C++ exception with description "media decode: /tmp/nemo-viewer-InterpretationMapIsParsedStrictly-yuv444p-1-3132191-126.mkv: color: source interpretation has unknown field 'colorimetry' (context: clip '/tmp/nemo-viewer-InterpretationMapIsParsedStrictly-yuv444p-1-3132191-126.mkv'; known fields: transfer, primaries, matrix, range, chromaLocation)" thrown in the test body.
+
+[  FAILED  ] Viewer.InterpretationMapIsParsedStrictly (495 ms)
+[----------] 1 test from Viewer (495 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (495 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] Viewer.InterpretationMapIsParsedStrictly
+
+ 1 FAILED TEST
+
+        Start 495: Viewer.SourceRetentionUnderDelayedCompletion
+495/719 Test #495: Viewer.SourceRetentionUnderDelayedCompletion ........................................................   Passed    0.58 sec
+        Start 496: Viewer.StillImageFillMatchesCpuReference
+496/719 Test #496: Viewer.StillImageFillMatchesCpuReference ............................................................   Passed    0.57 sec
+        Start 497: Viewer.StillImageSamplingScaleNearestSourcePixel
+497/719 Test #497: Viewer.StillImageSamplingScaleNearestSourcePixel ....................................................   Passed    0.57 sec
+        Start 498: Viewer.StillSequenceResolvesFramesThroughTimeMapping
+498/719 Test #498: Viewer.StillSequenceResolvesFramesThroughTimeMapping ................................................   Passed    0.59 sec
+        Start 499: Viewer.StillSequenceOutOfRangeFrameFailsNamingPath
+499/719 Test #499: Viewer.StillSequenceOutOfRangeFrameFailsNamingPath ..................................................   Passed    0.53 sec
+        Start 500: Viewer.StillImageAmbiguousColorDeclarationFailsThroughGpu
+500/719 Test #500: Viewer.StillImageAmbiguousColorDeclarationFailsThroughGpu ...........................................   Passed    0.52 sec
+        Start 501: Viewer.StillImageHandoffSurvivesDroppedEvaluation
+501/719 Test #501: Viewer.StillImageHandoffSurvivesDroppedEvaluation ...................................................   Passed    0.57 sec
+        Start 502: Viewer.SiblingRepresentationReuseAcrossViewerRenders
+502/719 Test #502: Viewer.SiblingRepresentationReuseAcrossViewerRenders ................................................   Passed    1.05 sec
+        Start 503: Viewer.UntaggedClipIsDecodedFromTheRequestHints
+503/719 Test #503: Viewer.UntaggedClipIsDecodedFromTheRequestHints .....................................................   Passed    0.58 sec
+        Start 504: Viewer.SourceReplacementAndWorkingPolicyCannotReplayRetiredDecode
+504/719 Test #504: Viewer.SourceReplacementAndWorkingPolicyCannotReplayRetiredDecode ...................................   Passed    0.58 sec
+        Start 505: Viewer.CroppedSourceReductionPreservesFullImageCoordinates
+505/719 Test #505: Viewer.CroppedSourceReductionPreservesFullImageCoordinates ..........................................   Passed    0.57 sec
+        Start 506: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations
+506/719 Test #506: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations ...............................   Passed    1.06 sec
+        Start 507: Interactive.FullQueueReportsBackpressureWithoutDroppingAnotherViewer
+507/719 Test #507: Interactive.FullQueueReportsBackpressureWithoutDroppingAnotherViewer ................................   Passed    0.04 sec
+        Start 508: Interactive.CacheHistorySurvivesScrubButCancellationCannotBeResurrected
+508/719 Test #508: Interactive.CacheHistorySurvivesScrubButCancellationCannotBeResurrected .............................   Passed    0.04 sec
+        Start 509: Interactive.CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken
+509/719 Test #509: Interactive.CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken ..............................   Passed    0.04 sec
+        Start 510: Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot
+510/719 Test #510: Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot ................................   Passed    0.04 sec
+        Start 511: Interactive.CancellationRejectsInflightAndSupersededBacklogIsCounted
+511/719 Test #511: Interactive.CancellationRejectsInflightAndSupersededBacklogIsCounted ................................   Passed    0.04 sec
+        Start 512: Interactive.RangeAtLastRepresentableFrameTerminatesWithoutWrapping
+512/719 Test #512: Interactive.RangeAtLastRepresentableFrameTerminatesWithoutWrapping ..................................   Passed    0.04 sec
+        Start 513: Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion
+513/719 Test #513: Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion .............................   Passed    0.33 sec
+        Start 514: Interactive.DestinationScopedCancelDropsOnlyThatDestinationsWork
+514/719 Test #514: Interactive.DestinationScopedCancelDropsOnlyThatDestinationsWork ....................................   Passed    0.04 sec
+        Start 515: Interactive.RetireDestinationDropsQueuedWorkAndRejectsInflight
+515/719 Test #515: Interactive.RetireDestinationDropsQueuedWorkAndRejectsInflight ......................................   Passed    0.04 sec
+        Start 516: Interactive.CountsAreScopedPerDestinationAndGlobalStillAggregates
+516/719 Test #516: Interactive.CountsAreScopedPerDestinationAndGlobalStillAggregates ...................................   Passed    0.04 sec
+        Start 517: ViewerCache.SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform
+517/719 Test #517: ViewerCache.SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform .........................   Passed    1.18 sec
+        Start 518: ViewerCache.ViewEditsPreserveUpstreamReuseAndOnlyReplaceVisitedFrames
+518/719 Test #518: ViewerCache.ViewEditsPreserveUpstreamReuseAndOnlyReplaceVisitedFrames ...............................   Passed    1.10 sec
+        Start 519: ViewerCache.StaleRequestsAndFailedMuxesNeverBecomeReplayable
+519/719 Test #519: ViewerCache.StaleRequestsAndFailedMuxesNeverBecomeReplayable ........................................   Passed    1.14 sec
+        Start 520: ViewerCache.QueueContentionWaitsInsteadOfLosingARequestedFrame
+520/719 Test #520: ViewerCache.QueueContentionWaitsInsteadOfLosingARequestedFrame ......................................   Passed    1.08 sec
+        Start 521: ViewerCache.ActiveBatchConsumesAdmissionCapacity
+521/719 Test #521: ViewerCache.ActiveBatchConsumesAdmissionCapacity ....................................................   Passed    1.06 sec
+        Start 522: ViewerCache.SupersessionDuringEncodingRejectsTheCompletedWrite
+522/719 Test #522: ViewerCache.SupersessionDuringEncodingRejectsTheCompletedWrite ......................................   Passed    1.04 sec
+        Start 523: ViewerCache.StalePredecessorRetainsEncodedOffsetAcrossPersistence
+523/719 Test #523: ViewerCache.StalePredecessorRetainsEncodedOffsetAcrossPersistence ...................................   Passed    1.13 sec
+        Start 524: ViewerCache.OddSizedRegionsReplayAtTheirExactRequestedExtent
+524/719 Test #524: ViewerCache.OddSizedRegionsReplayAtTheirExactRequestedExtent ........................................   Passed    1.03 sec
+        Start 525: WorkspaceTest.NonDefaultRoundTripPreservesStructure
+525/719 Test #525: WorkspaceTest.NonDefaultRoundTripPreservesStructure .................................................   Passed    0.00 sec
+        Start 526: WorkspaceTest.MalformedLayoutThrows
+526/719 Test #526: WorkspaceTest.MalformedLayoutThrows .................................................................   Passed    0.00 sec
+        Start 527: WorkspaceTest.MalformedNodeThrows
+527/719 Test #527: WorkspaceTest.MalformedNodeThrows ...................................................................   Passed    0.00 sec
+        Start 528: WorkspaceTest.ExcessiveDepthRejected
+528/719 Test #528: WorkspaceTest.ExcessiveDepthRejected ................................................................   Passed    0.03 sec
+        Start 529: WorkspaceTest.SplitCreatesNestedSplitAndPreservesOriginalLeaf
+529/719 Test #529: WorkspaceTest.SplitCreatesNestedSplitAndPreservesOriginalLeaf .......................................   Passed    0.00 sec
+        Start 530: WorkspaceTest.ClosePanelRemovesAndReactivates
+530/719 Test #530: WorkspaceTest.ClosePanelRemovesAndReactivates .......................................................   Passed    0.00 sec
+        Start 531: WorkspaceTest.CloseLastPanelRejected
+531/719 Test #531: WorkspaceTest.CloseLastPanelRejected ................................................................   Passed    0.00 sec
+        Start 532: WorkspaceTest.ClosingLeafLastPanelCollapsesSplit
+532/719 Test #532: WorkspaceTest.ClosingLeafLastPanelCollapsesSplit ....................................................   Passed    0.00 sec
+        Start 533: WorkspaceTest.SplitRespectsMaxDepth
+533/719 Test #533: WorkspaceTest.SplitRespectsMaxDepth .................................................................   Passed    0.03 sec
+        Start 534: WorkspaceTest.InvalidOperationsDoNotModifyState
+534/719 Test #534: WorkspaceTest.InvalidOperationsDoNotModifyState .....................................................   Passed    0.00 sec
+        Start 535: WorkspaceTest.RatioTypeGroupAndActivationApply
+535/719 Test #535: WorkspaceTest.RatioTypeGroupAndActivationApply ......................................................   Passed    0.00 sec
+        Start 536: WorkspaceTest.MovePanelSameLeafReorderShiftsIndex
+536/719 Test #536: WorkspaceTest.MovePanelSameLeafReorderShiftsIndex ...................................................   Passed    0.00 sec
+        Start 537: WorkspaceTest.MovePanelSameLeafReorderNoOp
+537/719 Test #537: WorkspaceTest.MovePanelSameLeafReorderNoOp ..........................................................   Passed    0.00 sec
+        Start 538: WorkspaceTest.MovePanelCrossLeafTabInsert
+538/719 Test #538: WorkspaceTest.MovePanelCrossLeafTabInsert ...........................................................   Passed    0.00 sec
+        Start 539: WorkspaceTest.MovePanelCrossLeafTabAppend
+539/719 Test #539: WorkspaceTest.MovePanelCrossLeafTabAppend ...........................................................   Passed    0.00 sec
+        Start 540: WorkspaceTest.MovePanelSoleOwnTileNoOp
+540/719 Test #540: WorkspaceTest.MovePanelSoleOwnTileNoOp ..............................................................   Passed    0.00 sec
+        Start 541: WorkspaceTest.MovePanelSourceLeafCollapse
+541/719 Test #541: WorkspaceTest.MovePanelSourceLeafCollapse ...........................................................   Passed    0.00 sec
+        Start 542: WorkspaceTest.MovePanelEdgeSplitsAllDirections
+542/719 Test #542: WorkspaceTest.MovePanelEdgeSplitsAllDirections ......................................................   Passed    0.00 sec
+        Start 543: WorkspaceTest.MovePanelSameLeafEdgeSplit
+543/719 Test #543: WorkspaceTest.MovePanelSameLeafEdgeSplit ............................................................   Passed    0.00 sec
+        Start 544: WorkspaceTest.MovePanelInvalidRejectedNoPartialState
+544/719 Test #544: WorkspaceTest.MovePanelInvalidRejectedNoPartialState ................................................   Passed    0.00 sec
+        Start 545: WorkspaceTest.MovePanelDepthBoundRejected
+545/719 Test #545: WorkspaceTest.MovePanelDepthBoundRejected ...........................................................   Passed    0.03 sec
+        Start 546: WorkspaceTest.MovePanelDepthBoundAfterSourceCollapseAllowed
+546/719 Test #546: WorkspaceTest.MovePanelDepthBoundAfterSourceCollapseAllowed .........................................   Passed    0.03 sec
+        Start 547: WorkspaceTest.MovePanelPreservesIdentityAndUnaffectedRatios
+547/719 Test #547: WorkspaceTest.MovePanelPreservesIdentityAndUnaffectedRatios .........................................   Passed    0.00 sec
+        Start 548: WorkspaceTest.MovePanelMultipleMovesReload
+548/719 Test #548: WorkspaceTest.MovePanelMultipleMovesReload ..........................................................   Passed    0.00 sec
+        Start 549: WorkspaceTest.UnknownPanelTypeAndMetadataRoundTripForRecovery
+549/719 Test #549: WorkspaceTest.UnknownPanelTypeAndMetadataRoundTripForRecovery .......................................   Passed    0.00 sec
+        Start 550: WorkspaceTest.DuplicateRemapsEveryIdentityAndPreservesPanelState
+550/719 Test #550: WorkspaceTest.DuplicateRemapsEveryIdentityAndPreservesPanelState ....................................   Passed    0.00 sec
+        Start 551: ChooserOwnershipTest.MediaChoiceAfterAProjectSaveAsIsHandledOnlyByTheMediaWorkflow
+551/719 Test #551: ChooserOwnershipTest.MediaChoiceAfterAProjectSaveAsIsHandledOnlyByTheMediaWorkflow ..................   Passed    0.07 sec
+        Start 552: ChooserOwnershipTest.ProjectChoiceIsNeverAnImport
+552/719 Test #552: ChooserOwnershipTest.ProjectChoiceIsNeverAnImport ...................................................   Passed    0.07 sec
+        Start 553: ChooserOwnershipTest.CancellationAndFailureReachOnlyTheInitiatingWorkflow
+553/719 Test #553: ChooserOwnershipTest.CancellationAndFailureReachOnlyTheInitiatingWorkflow ...........................   Passed    0.07 sec
+        Start 554: ChooserOwnershipTest.RefusedSecondClientCannotCaptureTheOutstandingOutcome
+554/719 Test #554: ChooserOwnershipTest.RefusedSecondClientCannotCaptureTheOutstandingOutcome ..........................   Passed    0.07 sec
+        Start 555: ChooserOwnershipTest.DestroyedInitiatorReceivesNoOutcomeAndTheChooserRecovers
+555/719 Test #555: ChooserOwnershipTest.DestroyedInitiatorReceivesNoOutcomeAndTheChooserRecovers .......................   Passed    0.07 sec
+        Start 556: HistorySurface.GraphKeyboardAndEditMenuRestoreOneChronologicalTransition
+556/719 Test #556: HistorySurface.GraphKeyboardAndEditMenuRestoreOneChronologicalTransition ............................   Passed    1.48 sec
+        Start 557: HistorySurface.ExhaustedTextHistoryNeverFallsThroughKeyboardOrMenu
+557/719 Test #557: HistorySurface.ExhaustedTextHistoryNeverFallsThroughKeyboardOrMenu ..................................   Passed    1.20 sec
+        Start 558: HistorySurface.NumericTextMenuDoesNotCommitOrUndoDocument
+558/719 Test #558: HistorySurface.NumericTextMenuDoesNotCommitOrUndoDocument ...........................................   Passed    1.34 sec
+        Start 559: HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit
+559/719 Test #559: HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit ............................   Passed    1.83 sec
+        Start 560: HistorySurface.CompoundHistorySurvivesToolWindowReopeningAndScopedNavigation
+560/719 Test #560: HistorySurface.CompoundHistorySurvivesToolWindowReopeningAndScopedNavigation ........................   Passed    2.30 sec
+        Start 561: HistorySurface.InterleavedPanelEditsFollowDocumentChronologyAcrossFocus
+561/719 Test #561: HistorySurface.InterleavedPanelEditsFollowDocumentChronologyAcrossFocus .............................   Passed    1.92 sec
+        Start 562: HistorySurface.SavedIndicatorTracksNativeHistoryAndReplacement
+562/719 Test #562: HistorySurface.SavedIndicatorTracksNativeHistoryAndReplacement ......................................   Passed    1.49 sec
+        Start 563: AnimationUi.TargetUnionKeepsNetworkIdentityAndRejectsFilteredEdits
+563/719 Test #563: AnimationUi.TargetUnionKeepsNetworkIdentityAndRejectsFilteredEdits ..................................   Passed    0.07 sec
+        Start 564: AnimationUi.ParameterTargetSurvivesLastKeyRemovalAndRecreation
+564/719 Test #564: AnimationUi.ParameterTargetSurvivesLastKeyRemovalAndRecreation ......................................   Passed    0.07 sec
+        Start 565: AnimationUi.ComponentMovesCoalesceTimeAndPreserveUnselectedValues
+565/719 Test #565: AnimationUi.ComponentMovesCoalesceTimeAndPreserveUnselectedValues ...................................   Passed    0.07 sec
+        Start 566: AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory
+566/719 Test #566: AnimationUi.CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory .................................   Passed    0.07 sec
+        Start 567: AnimationUi.StaleGestureCannotOverwriteAnotherEditOrReplacement
+567/719 Test #567: AnimationUi.StaleGestureCannotOverwriteAnotherEditOrReplacement .....................................   Passed    0.07 sec
+        Start 568: AnimationUi.TangentsAndInsertionUseSharedCurveSemantics
+568/719 Test #568: AnimationUi.TangentsAndInsertionUseSharedCurveSemantics .............................................   Passed    0.07 sec
+        Start 569: AnimationUi.ExposedOccurrenceChannelsDoNotEditTheirDefinition
+569/719 Test #569: AnimationUi.ExposedOccurrenceChannelsDoNotEditTheirDefinition .......................................   Passed    0.07 sec
+        Start 570: AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation
+570/719 Test #570: AnimationSurface.HeaderSelectionAndHierarchyNeverWriteAnimation .....................................   Passed    0.61 sec
+        Start 571: AnimationSurface.HistoryCancelsKeyPreviewBeforeCommittedInsertion
+571/719 Test #571: AnimationSurface.HistoryCancelsKeyPreviewBeforeCommittedInsertion ...................................   Passed    0.74 sec
+        Start 572: AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag
+572/719 Test #572: AnimationSurface.NativeInsertionExactCollisionAndCancellableConstrainedDrag .........................   Passed    1.46 sec
+        Start 573: AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly
+573/719 Test #573: AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly .........................   Passed    0.97 sec
+        Start 574: AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory
+574/719 Test #574: AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory .......................   Passed    1.04 sec
+        Start 575: AnimationSurface.DenseTrackCurvesTangentsAndCompactDock
+575/719 Test #575: AnimationSurface.DenseTrackCurvesTangentsAndCompactDock .............................................   Passed    2.44 sec
+        Start 576: AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit
+576/719 Test #576: AnimationSurface.CollapsedTrackBandMovesHiddenDescendantsAsOneEdit ..................................   Passed    0.67 sec
+        Start 577: AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit
+577/719 Test #577: AnimationSurface.BoxSelectionPanZoomAndTreeResizeDoNotCommit ........................................   Passed    0.65 sec
+        Start 578: AnimationSurface.InspectorFollowingPinsAndMasksSurviveGroupAndWorkspaceChanges
+578/719 Test #578: AnimationSurface.InspectorFollowingPinsAndMasksSurviveGroupAndWorkspaceChanges ......................   Passed    1.82 sec
+        Start 579: AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels
+579/719 Test #579: AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels ...................   Passed    0.80 sec
+        Start 580: AnimationSurface.NumericEditorClickScrubAndCancellationUseOneGesture
+580/719 Test #580: AnimationSurface.NumericEditorClickScrubAndCancellationUseOneGesture ................................   Passed    0.82 sec
+        Start 581: AnimationSurface.NumericEditorTypedCommitAndRejectionPreserveState
+581/719 Test #581: AnimationSurface.NumericEditorTypedCommitAndRejectionPreserveState ..................................   Passed    0.89 sec
+        Start 582: AnimationSurface.NumericEditorKeyboardStepModifiedMarkerAndReset
+582/719 Test #582: AnimationSurface.NumericEditorKeyboardStepModifiedMarkerAndReset ....................................   Passed    0.93 sec
+        Start 583: AnimationSurface.TransformTranslatePairKeepsIndependentIdentities
+583/719 Test #583: AnimationSurface.TransformTranslatePairKeepsIndependentIdentities ...................................   Passed    0.91 sec
+        Start 584: AnimationSurface.GradeLinkedRgbEditingPreservesComponentsAndAlpha
+584/719 Test #584: AnimationSurface.GradeLinkedRgbEditingPreservesComponentsAndAlpha ...................................   Passed    1.42 sec
+        Start 585: AnimationSurface.ParametersPanelAdaptsColumnsWithoutRewritingThePreference
+585/719 Test #585: AnimationSurface.ParametersPanelAdaptsColumnsWithoutRewritingThePreference ..........................   Passed    1.06 sec
+        Start 586: AnimationSurface.MergeOperationEditorSwapsConnectedInputsAtomically
+586/719 Test #586: AnimationSurface.MergeOperationEditorSwapsConnectedInputsAtomically .................................   Passed    1.05 sec
+        Start 587: ReadSourceUiTest.ChosenPathRegistersAValidatedReferenceAndEntryAsOneHistoryEntry
+587/719 Test #587: ReadSourceUiTest.ChosenPathRegistersAValidatedReferenceAndEntryAsOneHistoryEntry ....................   Passed    0.34 sec
+        Start 588: ReadSourceUiTest.RejectedAndMissingPathsAuthorNothing
+588/719 Test #588: ReadSourceUiTest.RejectedAndMissingPathsAuthorNothing ...............................................   Passed    0.42 sec
+        Start 589: ReadSourceUiTest.NumberedSelectionAsksForTheExplicitSequenceOrSingleChoice
+589/719 Test #589: ReadSourceUiTest.NumberedSelectionAsksForTheExplicitSequenceOrSingleChoice ..........................   Passed    0.40 sec
+        Start 590: ReadSourceUiTest.ExplicitPatternBindsAlignedToTheDiscoveredFirstFrame
+590/719 Test #590: ReadSourceUiTest.ExplicitPatternBindsAlignedToTheDiscoveredFirstFrame ...............................   Passed    0.37 sec
+        Start 591: ReadSourceUiTest.TwoReadsShareMediaWithIndependentChoices
+591/719 Test #591: ReadSourceUiTest.TwoReadsShareMediaWithIndependentChoices ...........................................   Passed    0.41 sec
+        Start 592: ReadSourceUiTest.RangeModeCustomResetAndPoliciesAreNodeChoices
+592/719 Test #592: ReadSourceUiTest.RangeModeCustomResetAndPoliciesAreNodeChoices ......................................   Passed    0.32 sec
+        Start 593: ReadSourceUiTest.StartAtAndOffsetAreTheSameMapping
+593/719 Test #593: ReadSourceUiTest.StartAtAndOffsetAreTheSameMapping ..................................................   Passed    0.33 sec
+        Start 594: ReadSourceUiTest.AnimatedReadOffsetEditAuthorsAKeyInsteadOfAShadowedStaticValue
+594/719 Test #594: ReadSourceUiTest.AnimatedReadOffsetEditAuthorsAKeyInsteadOfAShadowedStaticValue .....................   Passed    0.34 sec
+        Start 595: ReadSourceUiTest.AmbiguousNumberingAsksForAnExplicitPattern
+595/719 Test #595: ReadSourceUiTest.AmbiguousNumberingAsksForAnExplicitPattern .........................................   Passed    0.33 sec
+        Start 596: ReadSourceUiTest.InputTransformStateFollowsTheProjectBoundary
+596/719 Test #596: ReadSourceUiTest.InputTransformStateFollowsTheProjectBoundary .......................................   Passed    0.37 sec
+        Start 597: ReadSourceUiTest.TwoOccurrencesOfOneReadDefinitionStayIndependent
+597/719 Test #597: ReadSourceUiTest.TwoOccurrencesOfOneReadDefinitionStayIndependent ...................................   Passed    0.66 sec
+        Start 598: ReadSourceUiTest.ControlsFollowTheEffectiveCurrentFrameValue
+598/719 Test #598: ReadSourceUiTest.ControlsFollowTheEffectiveCurrentFrameValue ........................................   Passed    0.33 sec
+        Start 599: ReadSourceUiTest.ReplacingMediaPreservesAuthoredTiming
+599/719 Test #599: ReadSourceUiTest.ReplacingMediaPreservesAuthoredTiming ..............................................   Passed    0.58 sec
+        Start 600: ReadSourceUiTest.AnimatedSourceBindingFollowsTheCurrentFrame
+600/719 Test #600: ReadSourceUiTest.AnimatedSourceBindingFollowsTheCurrentFrame ........................................   Passed    0.58 sec
+        Start 601: ReadSourceUiTest.ReloadRefreshesSharedFactsAndKeepsAuthoredChoices
+601/719 Test #601: ReadSourceUiTest.ReloadRefreshesSharedFactsAndKeepsAuthoredChoices ..................................   Passed    0.39 sec
+        Start 602: ReadSourceUiTest.ReloadUpdatesAutoRangeButNeverACustomTrim
+602/719 Test #602: ReadSourceUiTest.ReloadUpdatesAutoRangeButNeverACustomTrim ..........................................   Passed    0.46 sec
+        Start 603: ReadSourceUiTest.SupersededSelectionNeverAuthors
+603/719 Test #603: ReadSourceUiTest.SupersededSelectionNeverAuthors ....................................................   Passed    0.35 sec
+        Start 604: ReadSourceUiTest.StaleReloadProbeNeverPublishesIntoAChangedTarget
+604/719 Test #604: ReadSourceUiTest.StaleReloadProbeNeverPublishesIntoAChangedTarget ...................................   Passed    0.49 sec
+        Start 605: ReadSourceUiTest.ReloadChangesEvaluatedPixelsAndPicksUpAppendedFrames
+605/719 Test #605: ReadSourceUiTest.ReloadChangesEvaluatedPixelsAndPicksUpAppendedFrames ...............................   Passed    0.43 sec
+        Start 606: ReadSourceUiTest.MovieBindingKeepsItsValidatedIntervalAndCustomStartsThere
+606/719 Test #606: ReadSourceUiTest.MovieBindingKeepsItsValidatedIntervalAndCustomStartsThere ..........................   Passed    0.40 sec
+        Start 607: ReadSourceUiTest.UntaggedMovieRequiresAuthoredInterpretationThenExplicitRetry
+607/719 Test #607: ReadSourceUiTest.UntaggedMovieRequiresAuthoredInterpretationThenExplicitRetry .......................   Passed    0.40 sec
+        Start 608: WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct
+608/719 Test #608: WorkspaceDragTest.ClicksCancellationAndNormalReleaseRemainDistinct ..................................   Passed    0.66 sec
+        Start 609: WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures
+609/719 Test #609: WorkspaceDragTest.TabsReorderSplitAndRestoreAfterRealGestures .......................................   Passed    0.69 sec
+        Start 610: WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits
+610/719 Test #610: WorkspaceDragTest.DeactivationCancelsAndSmallTargetsRejectSplits ....................................   Passed    0.60 sec
+        Start 611: WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges
+611/719 Test #611: WorkspaceDragTest.EdgeTargetsAndDividersWorkAcrossNestedLayoutChanges ...............................   Passed    1.14 sec
+        Start 612: WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer
+612/719 Test #612: WorkspaceDragTest.NestedPanelMenusSwitchTypeAndCloseViewer ..........................................   Passed    0.62 sec
+        Start 613: WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks
+613/719 Test #613: WorkspaceDragTest.CatalogMenuCreatesRealNodesAndTimelineSeeks .......................................   Passed    0.76 sec
+        Start 614: WorkspaceDragTest.LowZoomConnectedNodeBodiesRemainSelectable
+614/719 Test #614: WorkspaceDragTest.LowZoomConnectedNodeBodiesRemainSelectable ........................................   Passed    0.60 sec
+        Start 615: WorkspaceDragTest.GraphWheelBurstAppliesPerTurnAndPersistsOnceWhenItSettles
+615/719 Test #615: WorkspaceDragTest.GraphWheelBurstAppliesPerTurnAndPersistsOnceWhenItSettles .........................   Passed    1.79 sec
+        Start 616: WorkspaceDragTest.GraphViewGestureWritesOnceAndOtherPanelsDoNotRewriteIt
+616/719 Test #616: WorkspaceDragTest.GraphViewGestureWritesOnceAndOtherPanelsDoNotRewriteIt ............................   Passed    0.65 sec
+        Start 617: WorkspaceDragTest.GraphViewInMotionIsPersistedWhenTheWindowCloses
+617/719 Test #617: WorkspaceDragTest.GraphViewInMotionIsPersistedWhenTheWindowCloses ...................................   Passed    0.60 sec
+        Start 618: WorkspaceDragTest.GraphScreenSpaceHitTestingSurvivesEveryZoomLevel
+618/719 Test #618: WorkspaceDragTest.GraphScreenSpaceHitTestingSurvivesEveryZoomLevel ..................................   Passed    2.31 sec
+        Start 619: WorkspaceDragTest.EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry
+619/719 Test #619: WorkspaceDragTest.EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry .............................   Passed    0.74 sec
+        Start 620: WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets
+620/719 Test #620: WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets .......................................   Passed    0.68 sec
+        Start 621: WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease
+621/719 Test #621: WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease .........................   Passed    0.85 sec
+        Start 622: WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress
+622/719 Test #622: WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress ......................................   Passed    0.84 sec
+        Start 623: WorkspaceDragTest.GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText
+623/719 Test #623: WorkspaceDragTest.GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText .................   Passed    0.68 sec
+        Start 624: WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView
+624/719 Test #624: WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView ..........................   Passed    1.11 sec
+        Start 625: WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition
+625/719 Test #625: WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition .......................   Passed    1.23 sec
+        Start 626: WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy
+626/719 Test #626: WorkspaceDragTest.CreatingWorkspaceThroughDialogActivatesAnIndependentCopy ..........................   Passed    0.61 sec
+        Start 627: WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows
+627/719 Test #627: WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows ..................................   Passed    2.11 sec
+        Start 628: WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance
+628/719 Test #628: WorkspaceDragTest.ResetLayoutPreservesWorkspaceTabsAndAppearance ....................................   Passed    0.46 sec
+        Start 629: WorkspaceControllerTest.WorkspaceOrderMovementValidatesAndPersists
+629/719 Test #629: WorkspaceControllerTest.WorkspaceOrderMovementValidatesAndPersists ..................................   Passed    0.09 sec
+        Start 630: WorkspaceControllerTest.CategoryResetDoesNotResetOtherAppearanceSettings
+630/719 Test #630: WorkspaceControllerTest.CategoryResetDoesNotResetOtherAppearanceSettings ............................   Passed    0.07 sec
+        Start 631: WorkspaceControllerTest.PresetsAppearanceAndIndependentLayoutsPersistTogether
+631/719 Test #631: WorkspaceControllerTest.PresetsAppearanceAndIndependentLayoutsPersistTogether .......................   Passed    0.09 sec
+        Start 632: WorkspaceControllerTest.UnreadableWorkspaceIsPreservedUntilExplicitReset
+632/719 Test #632: WorkspaceControllerTest.UnreadableWorkspaceIsPreservedUntilExplicitReset ............................   Passed    0.08 sec
+        Start 633: WorkspaceControllerTest.PanelStateWriteNotifiesItsOwnerWithoutRebuildingTheLayout
+633/719 Test #633: WorkspaceControllerTest.PanelStateWriteNotifiesItsOwnerWithoutRebuildingTheLayout ...................   Passed    0.07 sec
+        Start 634: WorkspaceControllerTest.NestedRootDeliveryIsCoalescedWithoutDroppingTheNestedChange
+634/719 Test #634: WorkspaceControllerTest.NestedRootDeliveryIsCoalescedWithoutDroppingTheNestedChange .................   Passed    0.07 sec
+        Start 635: Interactive.GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically
+635/719 Test #635: Interactive.GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically ................................   Passed    0.07 sec
+        Start 636: Interactive.GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds
+636/719 Test #636: Interactive.GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds ..........................   Passed    0.07 sec
+        Start 637: Interactive.GraphScopeEditsDoNotFallBackToRoot
+637/719 Test #637: Interactive.GraphScopeEditsDoNotFallBackToRoot ......................................................   Passed    0.07 sec
+        Start 638: Interactive.CollapseSelectionReturnsCommittedInstanceNodeAndRestoresAtomically
+638/719 Test #638: Interactive.CollapseSelectionReturnsCommittedInstanceNodeAndRestoresAtomically ......................   Passed    0.07 sec
+        Start 639: Interactive.DisconnectedProcessingNodeDropsOntoWireAtomically
+639/719 Test #639: Interactive.DisconnectedProcessingNodeDropsOntoWireAtomically .......................................   Passed    0.07 sec
+        Start 640: Interactive.GraphCreationUndoPreservesExistingConnections
+640/719 Test #640: Interactive.GraphCreationUndoPreservesExistingConnections ...........................................   Passed    0.07 sec
+        Start 641: Interactive.TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently
+641/719 Test #641: Interactive.TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently ...............................   Passed    0.07 sec
+        Start 642: Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata
+642/719 Test #642: Interactive.UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata .............................   Passed    0.07 sec
+        Start 643: Interactive.ViewerAssignmentAttachesTargetAndIsOneUndoableCommand
+643/719 Test #643: Interactive.ViewerAssignmentAttachesTargetAndIsOneUndoableCommand ...................................   Passed    0.08 sec
+        Start 644: Interactive.ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget
+644/719 Test #644: Interactive.ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget ..............................   Passed    0.07 sec
+        Start 645: Interactive.ViewerDetachAndNodeDeletionLeaveEmptyWithoutOutputFallback
+645/719 Test #645: Interactive.ViewerDetachAndNodeDeletionLeaveEmptyWithoutOutputFallback ..............................   Passed    0.07 sec
+        Start 646: Interactive.MediaFreeViewerRendersAttachedComposite
+646/719 Test #646: Interactive.MediaFreeViewerRendersAttachedComposite .................................................   Passed    1.20 sec
+        Start 647: Interactive.PlaybackWaitsForTheFrameItSubmitted
+647/719 Test #647: Interactive.PlaybackWaitsForTheFrameItSubmitted .....................................................   Passed    0.28 sec
+        Start 648: Interactive.PlaybackPublishesEveryFrameItRenders
+648/719 Test #648: Interactive.PlaybackPublishesEveryFrameItRenders ....................................................   Passed    1.42 sec
+        Start 649: Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement
+649/719 Test #649: Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement ............................   Passed    1.20 sec
+        Start 650: Interactive.ViewerControllerRegistryAllocatesIndependentDestinations
+650/719 Test #650: Interactive.ViewerControllerRegistryAllocatesIndependentDestinations ................................   Passed    0.07 sec
+        Start 651: Interactive.ViewerItemOutlivesItsReleasedControllerWithoutDereferencingIt
+651/719 Test #651: Interactive.ViewerItemOutlivesItsReleasedControllerWithoutDereferencingIt ...........................   Passed    0.07 sec
+        Start 652: Interactive.PresentationConsumersShareSessionHistoryAndLifetime
+652/719 Test #652: Interactive.PresentationConsumersShareSessionHistoryAndLifetime .....................................   Passed    0.07 sec
+        Start 653: Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically
+653/719 Test #653: Interactive.IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically ............................   Passed    0.07 sec
+        Start 654: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure
+654/719 Test #654: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure .......................................   Passed    1.16 sec
+        Start 655: Interactive.ParameterInspectorPublishesSchemaMetadataAndValues
+655/719 Test #655: Interactive.ParameterInspectorPublishesSchemaMetadataAndValues ......................................   Passed    0.07 sec
+        Start 656: Interactive.ParameterInspectorReportsUnavailableTargets
+656/719 Test #656: Interactive.ParameterInspectorReportsUnavailableTargets .............................................   Passed    0.07 sec
+        Start 657: Interactive.NodeParameterKeyingUpsertsRemovesAndReportsStatus
+657/719 Test #657: Interactive.NodeParameterKeyingUpsertsRemovesAndReportsStatus .......................................   Passed    0.08 sec
+        Start 658: Interactive.ParameterEditsDefineSingleUndoEntryAndRespectKeying
+658/719 Test #658: Interactive.ParameterEditsDefineSingleUndoEntryAndRespectKeying .....................................   Passed    0.07 sec
+        Start 659: Interactive.JavaScriptArrayEditsConvertVectorAndColorParameters
+659/719 Test #659: Interactive.JavaScriptArrayEditsConvertVectorAndColorParameters .....................................   Passed    0.07 sec
+        Start 660: Interactive.MediaRoleViewsCatalogReferenceWithoutAuthoringAGraphNode
+660/719 Test #660: Interactive.MediaRoleViewsCatalogReferenceWithoutAuthoringAGraphNode ................................   Passed    0.07 sec
+        Start 661: Interactive.ParameterEditorRegistryRegistersAndResolvesEditors
+661/719 Test #661: Interactive.ParameterEditorRegistryRegistersAndResolvesEditors ......................................   Passed    0.07 sec
+        Start 662: Interactive.SubnetExposurePublishesTypedControlsWithInstanceLocalEdits
+662/719 Test #662: Interactive.SubnetExposurePublishesTypedControlsWithInstanceLocalEdits ..............................   Passed    0.07 sec
+        Start 663: Interactive.BetweenKeyEditAuthorsTheCurrentFrameKey
+663/719 Test #663: Interactive.BetweenKeyEditAuthorsTheCurrentFrameKey .................................................   Passed    0.07 sec
+        Start 664: Interactive.ResetRestoresDefaultAtTheAuthoredScope
+664/719 Test #664: Interactive.ResetRestoresDefaultAtTheAuthoredScope ..................................................   Passed    0.07 sec
+        Start 665: Interactive.ResetResolvesOccurrenceAndExposedIdentity
+665/719 Test #665: Interactive.ResetResolvesOccurrenceAndExposedIdentity ...............................................   Passed    0.08 sec
+        Start 666: Interactive.NodeInputOccupancyGuardsTheAtomicSwap
+666/719 Test #666: Interactive.NodeInputOccupancyGuardsTheAtomicSwap ...................................................   Passed    0.07 sec
+        Start 667: Interactive.SemanticBoundsStayAuthoritativeWhilePresentationTravelIsSoft
+667/719 Test #667: Interactive.SemanticBoundsStayAuthoritativeWhilePresentationTravelIsSoft ............................   Passed    0.07 sec
+        Start 668: Interactive.MixedAnimatedAndStaticBatchIsOneAtomicEdit
+668/719 Test #668: Interactive.MixedAnimatedAndStaticBatchIsOneAtomicEdit ..............................................   Passed    0.07 sec
+        Start 669: Interactive.OccurrenceExposuresResolveTheirOwnChildTarget
+669/719 Test #669: Interactive.OccurrenceExposuresResolveTheirOwnChildTarget ...........................................   Passed    0.07 sec
+        Start 670: ViewerDestinationSurface.ViewerViewsStayIndependentPerPanel
+670/719 Test #670: ViewerDestinationSurface.ViewerViewsStayIndependentPerPanel .........................................***Skipped   0.07 sec
+        Start 671: ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations
+671/719 Test #671: ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations ...............................***Skipped   0.07 sec
+        Start 672: ReadViewerSurface.PngSelectedInReadAppearsInItsAttachedViewer
+672/719 Test #672: ReadViewerSurface.PngSelectedInReadAppearsInItsAttachedViewer .......................................***Skipped   0.07 sec
+        Start 673: ReadViewerSurface.GraphViewerUsesTheAttachedTargetsReferenceNotTheLegacySrcKey
+673/719 Test #673: ReadViewerSurface.GraphViewerUsesTheAttachedTargetsReferenceNotTheLegacySrcKey ......................***Skipped   0.07 sec
+        Start 674: ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt
+674/719 Test #674: ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt .............................***Skipped   0.07 sec
+        Start 675: ReadViewerSurface.ClearingTheReadShowsTheExplicitEmptyState
+675/719 Test #675: ReadViewerSurface.ClearingTheReadShowsTheExplicitEmptyState .........................................***Skipped   0.07 sec
+        Start 676: ReadViewerSurface.OfflineReadReportsItsPathOnTheViewer
+676/719 Test #676: ReadViewerSurface.OfflineReadReportsItsPathOnTheViewer ..............................................***Skipped   0.07 sec
+        Start 677: ReadViewerSurface.DownstreamEffectKeepsItsSingleMediaSourcesDomain
+677/719 Test #677: ReadViewerSurface.DownstreamEffectKeepsItsSingleMediaSourcesDomain ..................................***Skipped   0.07 sec
+        Start 678: ReadViewerSurface.SeveralMediaSourcesKeepTheDefaultCompositionCanvas
+678/719 Test #678: ReadViewerSurface.SeveralMediaSourcesKeepTheDefaultCompositionCanvas ................................***Skipped   0.07 sec
+        Start 679: ReadViewerSurface.RetiredContinuousZoomReopensAtItsScaleAndUnreadableStateFits
+679/719 Test #679: ReadViewerSurface.RetiredContinuousZoomReopensAtItsScaleAndUnreadableStateFits ......................***Skipped   0.07 sec
+        Start 680: ReadViewerSurface.UserDocumentDisplaysItsAttachedRead
+680/719 Test #680: ReadViewerSurface.UserDocumentDisplaysItsAttachedRead ...............................................***Skipped   0.07 sec
+        Start 681: ReadViewerSurface.ViewerWheelZoomIsContinuousAnchoredAndReversible
+681/719 Test #681: ReadViewerSurface.ViewerWheelZoomIsContinuousAnchoredAndReversible ..................................***Skipped   0.07 sec
+        Start 682: ReadViewerSurface.ViewerViewDrivesTheRequestRegionAndSampling
+682/719 Test #682: ReadViewerSurface.ViewerViewDrivesTheRequestRegionAndSampling .......................................***Skipped   0.07 sec
+        Start 683: ReadViewerSurface.ViewerDragPanKeepsTheZoomAndTheDocument
+683/719 Test #683: ReadViewerSurface.ViewerDragPanKeepsTheZoomAndTheDocument ...........................................***Skipped   0.07 sec
+        Start 684: ReadViewerSurface.ViewerZoomControlStatesAndAcceptsAnyScale
+684/719 Test #684: ReadViewerSurface.ViewerZoomControlStatesAndAcceptsAnyScale .........................................***Skipped   0.07 sec
+        Start 685: ReadViewerSurface.ForceFullFrameCoversTheWholeDomainAndKeepsTheView
+685/719 Test #685: ReadViewerSurface.ForceFullFrameCoversTheWholeDomainAndKeepsTheView .................................***Skipped   0.07 sec
+        Start 686: ForceFullFrameSplitSurface.ForceFullFrameStaysInsideItsPanel
+686/719 Test #686: ForceFullFrameSplitSurface.ForceFullFrameStaysInsideItsPanel ........................................***Skipped   0.07 sec
+        Start 687: PreparedConfigSurface.SamePathConfigRewriteRefreshesOnFirstReplacement
+687/719 Test #687: PreparedConfigSurface.SamePathConfigRewriteRefreshesOnFirstReplacement ..............................***Skipped   0.07 sec
+        Start 688: PanelContextRouter.RejectsInvalidValuesWithoutChangingBinding
+688/719 Test #688: PanelContextRouter.RejectsInvalidValuesWithoutChangingBinding .......................................   Passed    0.07 sec
+        Start 689: PanelContextRouter.GroupClocksAreIndependentAndNotifyOnlyAffectedPanels
+689/719 Test #689: PanelContextRouter.GroupClocksAreIndependentAndNotifyOnlyAffectedPanels .............................   Passed    0.07 sec
+        Start 690: PanelContextRouter.RetiredRoutingModesAreAbsentFromThePublicApi
+690/719 Test #690: PanelContextRouter.RetiredRoutingModesAreAbsentFromThePublicApi .....................................   Passed    0.07 sec
+        Start 691: PanelContextRouter.ViewerRoleSelectsTargetWithoutRepurposingGroupContext
+691/719 Test #691: PanelContextRouter.ViewerRoleSelectsTargetWithoutRepurposingGroupContext ............................   Passed    0.07 sec
+        Start 692: PanelContextRouter.MediaAvailabilityAndMarksFollowTheDocumentCatalog
+692/719 Test #692: PanelContextRouter.MediaAvailabilityAndMarksFollowTheDocumentCatalog ................................   Passed    0.07 sec
+        Start 693: PanelContextRouter.ExplicitSourceOpenIsGroupScopedAndDoesNotMutateTheDocument
+693/719 Test #693: PanelContextRouter.ExplicitSourceOpenIsGroupScopedAndDoesNotMutateTheDocument .......................   Passed    0.07 sec
+        Start 694: PanelContextRouter.InspectorRequestIsGroupScopedAndMediaFree
+694/719 Test #694: PanelContextRouter.InspectorRequestIsGroupScopedAndMediaFree ........................................   Passed    0.07 sec
+        Start 695: PanelContextRouter.InspectorMembershipUnionsCurrentWorkspaceCardsByGroup
+695/719 Test #695: PanelContextRouter.InspectorMembershipUnionsCurrentWorkspaceCardsByGroup ............................   Passed    0.07 sec
+        Start 696: PanelContextUiTest.RetiredBindingChromeIsGoneFromPanelHeaders
+696/719 Test #696: PanelContextUiTest.RetiredBindingChromeIsGoneFromPanelHeaders .......................................   Passed    0.40 sec
+        Start 697: PanelContextUiTest.GroupBadgeMenuRetargetsRoutingWithoutTouchingOtherGroups
+697/719 Test #697: PanelContextUiTest.GroupBadgeMenuRetargetsRoutingWithoutTouchingOtherGroups .........................   Passed    0.62 sec
+        Start 698: PanelContextUiTest.GroupContextsStayIsolatedWithoutLinkModes
+698/719 Test #698: PanelContextUiTest.GroupContextsStayIsolatedWithoutLinkModes ........................................   Passed    0.40 sec
+        Start 699: PanelContextUiTest.InspectorRequestsAreGroupScopedAndMediaFree
+699/719 Test #699: PanelContextUiTest.InspectorRequestsAreGroupScopedAndMediaFree ......................................   Passed    0.52 sec
+        Start 700: PanelContextUiTest.PresentationEditRacingProjectWriteKeepsProjectDirtyAndFileUnchangedByIt
+700/719 Test #700: PanelContextUiTest.PresentationEditRacingProjectWriteKeepsProjectDirtyAndFileUnchangedByIt ..........   Passed    0.56 sec
+        Start 701: PanelContextUiTest.SplitRatioChangeAfterSaveMarksProjectDirtyAndSecondSaveClearsIt
+701/719 Test #701: PanelContextUiTest.SplitRatioChangeAfterSaveMarksProjectDirtyAndSecondSaveClearsIt ..................   Passed    0.60 sec
+        Start 702: PanelContextUiTest.SaveAsToExtensionlessPathNeverRewritesAnExistingSiblingProject
+702/719 Test #702: PanelContextUiTest.SaveAsToExtensionlessPathNeverRewritesAnExistingSiblingProject ...................   Passed    0.50 sec
+        Start 703: PanelContextUiTest.AnimationRevealRequestsAreGroupScopedAndPresentationOnly
+703/719 Test #703: PanelContextUiTest.AnimationRevealRequestsAreGroupScopedAndPresentationOnly .........................   Passed    0.60 sec
+        Start 704: MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity
+704/719 Test #704: MediaLibraryModel.CatalogGesturesAreAtomicAndKeepStableSourceIdentity ...............................   Passed    0.07 sec
+        Start 705: MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected
+705/719 Test #705: MediaLibraryModel.DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtected ........................   Passed    0.07 sec
+        Start 706: MediaLibraryModel.MetadataGesturePublishesOnlyRequestedFields
+706/719 Test #706: MediaLibraryModel.MetadataGesturePublishesOnlyRequestedFields .......................................   Passed    0.07 sec
+        Start 707: MediaLibraryModel.PersistentSmartQueryBinsTrackMetadataAndUndo
+707/719 Test #707: MediaLibraryModel.PersistentSmartQueryBinsTrackMetadataAndUndo ......................................   Passed    0.07 sec
+        Start 708: MediaLibraryModel.QueryHonorsCoreScopeAndMissingScopeIsUnavailable
+708/719 Test #708: MediaLibraryModel.QueryHonorsCoreScopeAndMissingScopeIsUnavailable ..................................   Passed    0.07 sec
+        Start 709: MediaLibraryModel.BrowsingNeverOpensSourcesButExplicitOpenRoutesPerGroup
+709/719 Test #709: MediaLibraryModel.BrowsingNeverOpensSourcesButExplicitOpenRoutesPerGroup ............................   Passed    0.07 sec
+        Start 710: MediaLibraryModel.RevealActivatesExistingPanelPerGroupAndCreatesOnlyWhenAbsent
+710/719 Test #710: MediaLibraryModel.RevealActivatesExistingPanelPerGroupAndCreatesOnlyWhenAbsent ......................   Passed    0.08 sec
+        Start 711: MediaLibraryModel.InsertionIntentPreservesOrderRepeatsAndPerEntryMarks
+711/719 Test #711: MediaLibraryModel.InsertionIntentPreservesOrderRepeatsAndPerEntryMarks ..............................   Passed    0.07 sec
+        Start 712: MediaLibraryModel.RuntimeResultIsRejectedAfterRelinkAndReprobedPerEntry
+712/719 Test #712: MediaLibraryModel.RuntimeResultIsRejectedAfterRelinkAndReprobedPerEntry .............................   Passed    0.42 sec
+        Start 713: MediaLibraryModel.ReprobePicksUpOverwrittenMediaAndReplacesItsThumbnail
+713/719 Test #713: MediaLibraryModel.ReprobePicksUpOverwrittenMediaAndReplacesItsThumbnail .............................   Passed    0.40 sec
+        Start 714: MediaLibraryModel.ProjectResetDropsRuntimeStateAndRepopulatesLazily
+714/719 Test #714: MediaLibraryModel.ProjectResetDropsRuntimeStateAndRepopulatesLazily .................................   Passed    0.40 sec
+        Start 715: MediaLibraryModel.MetadataEditsKeepAProbeFreshButAViewingTransformChangeInvalidatesIt
+715/719 Test #715: MediaLibraryModel.MetadataEditsKeepAProbeFreshButAViewingTransformChangeInvalidatesIt ...............   Passed    0.41 sec
+        Start 716: MediaLibraryModel.RuntimeProbeOverlaysDisplayedRecordWithoutAuthoredMutation
+716/719 Test #716: MediaLibraryModel.RuntimeProbeOverlaysDisplayedRecordWithoutAuthoredMutation ........................   Passed    0.33 sec
+        Start 717: MediaLibraryModel.RuntimeCompletionSurvivesReentrantCatalogMutationDuringNotification
+717/719 Test #717: MediaLibraryModel.RuntimeCompletionSurvivesReentrantCatalogMutationDuringNotification ...............   Passed    0.33 sec
+        Start 718: MediaLibraryModel.ReentrantProjectResetCannotLeakAnOldRuntimeOutcome
+718/719 Test #718: MediaLibraryModel.ReentrantProjectResetCannotLeakAnOldRuntimeOutcome ................................   Passed    0.51 sec
+        Start 719: MediaLibraryModel.RuntimeOfflineDrivesTheOfflineFilterWithoutAuthoringMetadata
+719/719 Test #719: MediaLibraryModel.RuntimeOfflineDrivesTheOfflineFilterWithoutAuthoringMetadata ......................   Passed    0.14 sec
+
+99% tests passed, 1 tests failed out of 719
+
+Total Test time (real) = 171.90 sec
+
+The following tests did not run:
+	670 - ViewerDestinationSurface.ViewerViewsStayIndependentPerPanel (Skipped)
+	671 - ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations (Skipped)
+	672 - ReadViewerSurface.PngSelectedInReadAppearsInItsAttachedViewer (Skipped)
+	673 - ReadViewerSurface.GraphViewerUsesTheAttachedTargetsReferenceNotTheLegacySrcKey (Skipped)
+	674 - ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt (Skipped)
+	675 - ReadViewerSurface.ClearingTheReadShowsTheExplicitEmptyState (Skipped)
+	676 - ReadViewerSurface.OfflineReadReportsItsPathOnTheViewer (Skipped)
+	677 - ReadViewerSurface.DownstreamEffectKeepsItsSingleMediaSourcesDomain (Skipped)
+	678 - ReadViewerSurface.SeveralMediaSourcesKeepTheDefaultCompositionCanvas (Skipped)
+	679 - ReadViewerSurface.RetiredContinuousZoomReopensAtItsScaleAndUnreadableStateFits (Skipped)
+	680 - ReadViewerSurface.UserDocumentDisplaysItsAttachedRead (Skipped)
+	681 - ReadViewerSurface.ViewerWheelZoomIsContinuousAnchoredAndReversible (Skipped)
+	682 - ReadViewerSurface.ViewerViewDrivesTheRequestRegionAndSampling (Skipped)
+	683 - ReadViewerSurface.ViewerDragPanKeepsTheZoomAndTheDocument (Skipped)
+	684 - ReadViewerSurface.ViewerZoomControlStatesAndAcceptsAnyScale (Skipped)
+	685 - ReadViewerSurface.ForceFullFrameCoversTheWholeDomainAndKeepsTheView (Skipped)
+	686 - ForceFullFrameSplitSurface.ForceFullFrameStaysInsideItsPanel (Skipped)
+	687 - PreparedConfigSurface.SamePathConfigRewriteRefreshesOnFirstReplacement (Skipped)
+
+The following tests FAILED:
+	494 - Viewer.InterpretationMapIsParsedStrictly (Failed)
+Errors while running CTest

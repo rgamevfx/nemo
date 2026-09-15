@@ -267,9 +267,9 @@ TEST(MediaLibraryModel, CatalogGesturesAreAtomicAndKeepStableSourceIdentity) {
     EXPECT_EQ(item.value(QStringLiteral("sourceId")).toString(), QStringLiteral("shot"));
     EXPECT_EQ(fixture.model_.item(binId).toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Reel 1"));
 
-    ASSERT_TRUE(fixture.model_.undo());
+    ASSERT_TRUE(fixture.session_.undo({.expectedRevision = fixture.session_.revision()}).committed);
     EXPECT_EQ(fixture.model_.item(binId).toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Footage"));
-    ASSERT_TRUE(fixture.model_.redo());
+    ASSERT_TRUE(fixture.session_.redo({.expectedRevision = fixture.session_.revision()}).committed);
     EXPECT_EQ(fixture.model_.item(binId).toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Reel 1"));
 
     // A cycle/self move rejects atomically and leaves the catalog untouched.
@@ -352,7 +352,7 @@ TEST(MediaLibraryModel, DuplicateBuildsAnIndependentSubtreeAndUsedMediaIsProtect
     ASSERT_TRUE(fixture.model_.apply(removeShell));
     EXPECT_FALSE(fixture.model_.item(copiedOuter).isValid());
     EXPECT_TRUE(fixture.model_.item(copiedInner).isValid());
-    ASSERT_TRUE(fixture.model_.undo());
+    ASSERT_TRUE(fixture.session_.undo({.expectedRevision = fixture.session_.revision()}).committed);
     EXPECT_TRUE(fixture.model_.item(copiedOuter).isValid());
 }
 
@@ -454,7 +454,7 @@ TEST(MediaLibraryModel, PersistentSmartQueryBinsTrackMetadataAndUndo) {
     EXPECT_EQ(recordIds(matches()), (QStringList{mediaIdentity(first), mediaIdentity(second)}));
 
     // Undo restores the metadata, then removing the smart bin clears it.
-    ASSERT_TRUE(fixture.model_.undo());
+    ASSERT_TRUE(fixture.session_.undo({.expectedRevision = fixture.session_.revision()}).committed);
     EXPECT_EQ(recordIds(matches()), QStringList{mediaIdentity(first)});
     auto remove = operation(QStringLiteral("deleteSmartBin"));
     remove.insert(QStringLiteral("id"), binId);

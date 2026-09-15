@@ -323,6 +323,14 @@ FocusScope {
     property string dragAxis: ""
     property string pendingToggleKey: ""
     property bool dragMoved: false
+
+    // The authored previews that carry a live gesture are the key/band drags,
+    // the tangent drag and the exact-key editor; pan, scrub, box select and
+    // view changes stay presentation state. A preview-only Undo cancels these
+    // without publishing, so the release that follows cannot commit them.
+    readonly property bool historyGestureActive: gestureState === "key" || gestureState === "parameter span" || gestureState === "node band" || gestureState === "tangent" || keyEditPopup.visible
+    onHistoryGestureActiveChanged: syncHistoryGesture()
+
     property var hiddenCurveIds: ({})
     property var contextCurveIds: []
 
@@ -691,7 +699,11 @@ FocusScope {
     }
 
     function openEditorMenu(anchorItem) {
-        forceActiveFocus();
+        // Resolve the Undo/Redo target before anything can move focus: an
+        // active text buffer keeps its own history, and the shared history only
+        // takes over when there is no such buffer. The menu does not take focus
+        // either, so invoking it never commits the buffer it just captured.
+        historyController.beginMenu(animationPanel.Window.window);
         if (anchorItem && anchorItem.mapToItem) {
             var point = anchorItem.mapToItem(animationPanel, 0, anchorItem.height);
             editorMenu.x = Math.max(2, Math.min(width - editorMenu.width - 2, point.x));
@@ -798,6 +810,19 @@ FocusScope {
         dragAxis = "";
         pendingToggleKey = "";
         animationSurface.requestPaint();
+    }
+
+    // Shared history routing: a preview-only Undo drops the transient preview
+    // and never publishes. The exact-key editor owns its gesture through the
+    // popup, so closing it ends that gesture; cancelPreview then clears the
+    // panel's preview state.
+    function cancelHistoryGesture() {
+        if (keyEditPopup.visible)
+            keyEditPopup.close();
+        cancelPreview();
+    }
+    function syncHistoryGesture() {
+        historyController.setGesture(animationPanel, historyGestureActive);
     }
 
     function commitPreview() {
@@ -2033,6 +2058,9 @@ FocusScope {
     Menu {
         id: editorMenu
         objectName: "animationEditorContextMenu"
+        // Like the shell Edit menu: opening this menu must not take focus, or a
+        // live text buffer would commit merely to reach its own history.
+        focus: false
         MenuItem {
             objectName: "animationFrameSelected"
             text: "Frame selected"
@@ -2089,16 +2117,20 @@ FocusScope {
         }
         MenuSeparator {
         }
-        MenuItem {
-            text: "Undo"
-            enabled: model && model.canUndo
-            onTriggered: model.undo()
+        // Document history, described by its next operation ("Cancel edit"
+        // while this panel's preview owns Undo) and disabled when unavailable.
+        // The exact-key editor keeps its own text undo; nothing here dispatches
+        // to the panel's preview state.
+        HistoryMenuItem {
+            objectName: "animationUndoAction"
+            historyMenu: editorMenu
         }
-        MenuItem {
-            text: "Redo"
-            enabled: model && model.canRedo
-            onTriggered: model.redo()
+        HistoryMenuItem {
+            objectName: "animationRedoAction"
+            historyMenu: editorMenu
+            redo: true
         }
+        onClosed: historyController.endMenu()
     }
 
     Component {
@@ -2110,20 +2142,12 @@ FocusScope {
     }
 
     Keys.onPressed: function (event) {
-        var modifiers = event.modifiers;
-        var control = (modifiers & Qt.ControlModifier) !== 0 || (modifiers & Qt.MetaModifier) !== 0;
         if (event.key === Qt.Key_Escape) {
             if (keyEditPopup.visible)
                 keyEditPopup.close();
             keyContextMenu.close();
             editorMenu.close();
             cancelPreview();
-            event.accepted = true;
-        } else if (control && event.key === Qt.Key_Z) {
-            if ((modifiers & Qt.ShiftModifier) !== 0)
-                model.redo();
-            else
-                model.undo();
             event.accepted = true;
         } else if (event.key === Qt.Key_F) {
             frameSelected();
@@ -2192,5 +2216,13 @@ FocusScope {
         model = controller.createAnimationModel(animationPanel);
         networkId = controller.rootNetworkId;
         Qt.callLater(restoreState);
+        syncHistoryGesture();
+    }
+    // Teardown drops the registration so reopening a panel never accumulates
+    // competing owners; an open editor menu also releases its frozen target.
+    Component.onDestruction: {
+        historyController.setGesture(animationPanel, false);
+        if (editorMenu.visible)
+            historyController.endMenu();
     }
 }

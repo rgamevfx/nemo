@@ -110,6 +110,13 @@ FocusScope {
     property bool lastClickMoved: false
     property int positionEpoch: 0
 
+    // Only a cancellable authored edit takes Undo away from the document: node
+    // move, wire connect/rewire/disconnect, reroute and the pending pipe pull
+    // are the gestures whose release publishes. Navigation (pan, subnet entry),
+    // selection (box, toggle) and view changes stay presentation state.
+    readonly property bool historyGestureActive: gesture === "nodes" || gesture === "wire" || gesture === "reroute" || gesture === "pipe"
+    onHistoryGestureActiveChanged: syncHistoryGesture()
+
     property Component headerTools: Component {
         RowLayout {
             spacing: 4
@@ -1090,6 +1097,15 @@ FocusScope {
         positionEpoch++;
         refreshDisplayNodes();
     }
+    // Shared history routing: the controller calls this for a preview-only
+    // Undo, so the preview is dropped without publishing and the release that
+    // follows finds no gesture to commit.
+    function cancelHistoryGesture() {
+        cancelInteraction();
+    }
+    function syncHistoryGesture() {
+        historyController.setGesture(graphPanel, historyGestureActive);
+    }
     // One zoom application per event-loop turn, from the deltas accumulated
     // since the last turn, anchored at the pixel the pointer was last over.
     // Proportionality, the clamp and cursor anchoring are the accepted
@@ -1191,7 +1207,11 @@ FocusScope {
     Component.onCompleted: {
         restoreScopePath();
         switchNetwork();
+        syncHistoryGesture();
     }
+    // Teardown drops the registration so reopening a panel never accumulates
+    // competing owners.
+    Component.onDestruction: historyController.setGesture(graphPanel, false)
 
     // A view still in motion when the application closes is still the view the
     // project should record: the close is a boundary, not a teardown of a

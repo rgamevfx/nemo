@@ -61,7 +61,7 @@ TEST(Interactive, GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically) {
     EXPECT_FLOAT_EQ(color.at(1).toFloat(), 0.3F);
     EXPECT_FLOAT_EQ(color.at(2).toFloat(), 0.4F);
     EXPECT_FLOAT_EQ(color.at(3).toFloat(), 1.0F);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     const auto resetColor = namedNode(controller, "background").value("params").toMap().value("color").toList();
     ASSERT_EQ(resetColor.size(), 4);
     EXPECT_FLOAT_EQ(resetColor.at(0).toFloat(), 0.0F);
@@ -75,9 +75,9 @@ TEST(Interactive, GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically) {
                                                  namedNode(controller, "composite").value("id").toString(), 0));
     EXPECT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
     EXPECT_NE(controller.graphEdges(), originalEdges);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.graphEdges(), originalEdges);
-    ASSERT_TRUE(controller.redo());
+    ASSERT_TRUE(session.redo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_NE(controller.graphEdges(), originalEdges);
 }
 
@@ -109,7 +109,7 @@ TEST(Interactive, GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds
     ASSERT_TRUE(
         controller.commitGraphMove(scope, QVariantList{QVariantMap{{"id", sourceId}, {"x", 140.0}, {"y", 260.0}}}));
     EXPECT_EQ(namedNode(controller, "stableSource").value("id").toString(), sourceId);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_DOUBLE_EQ(namedNode(controller, "stableSource").value("x").toDouble(), 120.5);
 }
 
@@ -130,7 +130,7 @@ TEST(Interactive, GraphScopeEditsDoNotFallBackToRoot) {
     ASSERT_FALSE(node.isEmpty());
     EXPECT_EQ(controller.graphSnapshot(root), rootBefore);
     EXPECT_NE(controller.graphSnapshot(other), otherBefore);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.graphSnapshot(other), otherBefore);
     const auto revision = session.revision();
     EXPECT_TRUE(controller.createGraphNode("999999", "constcolor", "Invalid", 0, 0, {}, {}).isEmpty());
@@ -164,10 +164,10 @@ TEST(Interactive, CollapseSelectionReturnsCommittedInstanceNodeAndRestoresAtomic
     EXPECT_EQ(instance->node, subnet.toULongLong());
     EXPECT_TRUE(controller.graphSnapshot(parentNode.value("definition").toString()).value("available").toBool());
 
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_TRUE(namedNode(controller, "Collapsed").isEmpty());
     EXPECT_EQ(session.document().instances().size(), 0U);
-    ASSERT_TRUE(controller.redo());
+    ASSERT_TRUE(session.redo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(namedNode(controller, "Collapsed").value("id").toString(), subnet);
 }
 TEST(Interactive, DisconnectedProcessingNodeDropsOntoWireAtomically) {
@@ -192,7 +192,7 @@ TEST(Interactive, DisconnectedProcessingNodeDropsOntoWireAtomically) {
     EXPECT_DOUBLE_EQ(inserted.value("y").toDouble(), 0.0);
     EXPECT_EQ(controller.graphEdges().first().toMap().value("fromNode").toString(), sourceId);
     EXPECT_EQ(controller.graphEdges().last().toMap().value("toNode").toString(), outputId);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.graphEdges().size(), 1);
     EXPECT_TRUE(namedNode(controller, "wireMerge").value("id").toString() == mergeId);
 }
@@ -210,9 +210,9 @@ TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
     EXPECT_TRUE(
         controller.connectOrReplaceGraph(scope, namedNode(controller, "source").value("id"), 0, output.value("id"), 0));
     ASSERT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.graphEdges(), before);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_TRUE(namedNode(controller, "independentOutput").isEmpty());
     EXPECT_EQ(controller.graphEdges(), before);
 }
@@ -228,13 +228,14 @@ TEST(Interactive, TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently) {
     ASSERT_EQ(controller.timelineClips().size(), 1);
     EXPECT_EQ(controller.timelineClips().first().toMap().value("sourceFrame").toLongLong(), 13);
     EXPECT_EQ(controller.frame(), 3) << "Source timing edits must not move the playhead";
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.timelineClips().first().toMap().value("sourceFrame").toLongLong(), 10);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.timelineClips().first().toMap().value("sourceFrame").toLongLong(), 3);
     controller.retimeTimelineClip("src", 0);
     EXPECT_FALSE(controller.error().isEmpty());
-    ASSERT_TRUE(controller.redo()) << "Invalid timing must preserve command history";
+    ASSERT_TRUE(session.redo(nemo::EditOptions{.expectedRevision = session.revision()}).committed)
+        << "Invalid timing must preserve command history";
     EXPECT_EQ(controller.timelineClips().first().toMap().value("sourceFrame").toLongLong(), 10);
 }
 
@@ -247,13 +248,13 @@ TEST(Interactive, UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata) {
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     ASSERT_TRUE(controller.pending());
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_TRUE(controller.graphNodes().isEmpty());
     EXPECT_FALSE(controller.pending());
     EXPECT_FALSE(controller.hasSource());
     EXPECT_EQ(runtime.counts().queued, 0u);
 
-    ASSERT_TRUE(controller.redo());
+    ASSERT_TRUE(session.redo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_TRUE(controller.pending());
     EXPECT_EQ(namedNode(controller, "source").value("params").toMap().value("source").toString(), "src");
     EXPECT_EQ(runtime.counts().queued, 1u);
@@ -287,10 +288,10 @@ TEST(Interactive, ViewerAssignmentAttachesTargetAndIsOneUndoableCommand) {
     EXPECT_EQ(controller.viewerTargetName(), QStringLiteral("viewerMerge"));
 
     // Creation and attachment are one command: undo removes the viewer again.
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.viewerCount(scope), 0);
     EXPECT_TRUE(controller.viewerTargetId().isEmpty());
-    ASSERT_TRUE(controller.redo());
+    ASSERT_TRUE(session.redo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.viewerTargetId(), mergeId);
 }
 
@@ -680,14 +681,12 @@ TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
     nemo::ui::ViewerController first(&firstRuntime, session);
     QSignalSpy firstGraph(&first, &nemo::ui::ViewerController::graphChanged);
     QSignalSpy firstTimeline(&first, &nemo::ui::ViewerController::timelineChanged);
-    QSignalSpy firstHistory(&first, &nemo::ui::ViewerController::historyChanged);
     QSignalSpy firstCatalog(&first, &nemo::ui::ViewerController::catalogChanged);
 
     {
         nemo::ui::ViewerController second(&secondRuntime, session);
         QSignalSpy secondGraph(&second, &nemo::ui::ViewerController::graphChanged);
         QSignalSpy secondTimeline(&second, &nemo::ui::ViewerController::timelineChanged);
-        QSignalSpy secondHistory(&second, &nemo::ui::ViewerController::historyChanged);
         QSignalSpy secondCatalog(&second, &nemo::ui::ViewerController::catalogChanged);
 
         first.openSource("/tmp/nemo-shared-session-source.mkv");
@@ -695,38 +694,28 @@ TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
         EXPECT_EQ(secondGraph.count(), 1);
         EXPECT_EQ(firstTimeline.count(), 1);
         EXPECT_EQ(secondTimeline.count(), 1);
-        EXPECT_EQ(firstHistory.count(), 1);
-        EXPECT_EQ(secondHistory.count(), 1);
-        EXPECT_EQ(firstCatalog.count(), 1);
         EXPECT_EQ(secondCatalog.count(), 1);
-        ASSERT_TRUE(first.canUndo());
+        ASSERT_TRUE(session.canUndo());
 
         firstGraph.clear();
         secondGraph.clear();
         firstTimeline.clear();
         secondTimeline.clear();
-        firstHistory.clear();
-        secondHistory.clear();
         firstCatalog.clear();
         secondCatalog.clear();
-        ASSERT_TRUE(second.undo());
+        ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
         EXPECT_TRUE(first.graphNodes().isEmpty());
         EXPECT_TRUE(second.graphNodes().isEmpty());
         EXPECT_EQ(firstGraph.count(), 1);
         EXPECT_EQ(secondGraph.count(), 1);
         EXPECT_EQ(firstTimeline.count(), 1);
         EXPECT_EQ(secondTimeline.count(), 1);
-        EXPECT_EQ(firstHistory.count(), 1);
-        EXPECT_EQ(secondHistory.count(), 1);
-        EXPECT_EQ(firstCatalog.count(), 1);
         EXPECT_EQ(secondCatalog.count(), 1);
 
         firstGraph.clear();
         secondGraph.clear();
         firstTimeline.clear();
         secondTimeline.clear();
-        firstHistory.clear();
-        secondHistory.clear();
         firstCatalog.clear();
         secondCatalog.clear();
         static_cast<void>(
@@ -736,9 +725,6 @@ TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
         EXPECT_EQ(secondGraph.count(), 1);
         EXPECT_EQ(firstTimeline.count(), 1);
         EXPECT_EQ(secondTimeline.count(), 1);
-        EXPECT_EQ(firstHistory.count(), 1);
-        EXPECT_EQ(secondHistory.count(), 1);
-        EXPECT_EQ(firstCatalog.count(), 1);
         EXPECT_EQ(secondCatalog.count(), 1);
         EXPECT_FALSE(first.graphNodes().isEmpty());
         EXPECT_FALSE(second.graphNodes().isEmpty());
@@ -748,12 +734,10 @@ TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
     // explicit lifetime ends.
     firstGraph.clear();
     firstTimeline.clear();
-    firstHistory.clear();
     firstCatalog.clear();
-    EXPECT_TRUE(first.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(firstGraph.count(), 1);
     EXPECT_EQ(firstTimeline.count(), 1);
-    EXPECT_EQ(firstHistory.count(), 1);
     EXPECT_EQ(firstCatalog.count(), 1);
     EXPECT_TRUE(first.graphNodes().isEmpty());
 }
@@ -781,9 +765,9 @@ TEST(Interactive, IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically) 
     EXPECT_EQ(session.revision(), 2u);
     controller.setNodeParameter(id, "count", QVariant::fromValue<qulonglong>(std::numeric_limits<qulonglong>::max()));
     EXPECT_EQ(session.revision(), 2u);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(std::get<std::int64_t>(session.queryValues(network, node).front().value), 0);
-    EXPECT_FALSE(controller.canUndo());
+    EXPECT_FALSE(session.canUndo());
 }
 
 TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
@@ -1102,9 +1086,9 @@ TEST(Interactive, NodeParameterKeyingUpsertsRemovesAndReportsStatus) {
     EXPECT_TRUE(controller.keyNodeParameter(network, node, QStringLiteral("gain")));
     EXPECT_EQ(session.revision(), revision + 1);
 
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("animated"));
-    ASSERT_TRUE(controller.redo());
+    ASSERT_TRUE(session.redo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.nodeParameterKeyStatus(network, node, QStringLiteral("gain")), QStringLiteral("key"));
 
     EXPECT_TRUE(controller.removeNodeParameterKey(network, node, QStringLiteral("gain")));
@@ -1139,7 +1123,7 @@ TEST(Interactive, ParameterEditsDefineSingleUndoEntryAndRespectKeying) {
     ASSERT_FALSE(values.empty());
     EXPECT_EQ(values.front().value, nemo::ParameterValue{3.5});
     EXPECT_TRUE(session.queryAnimationChannels().empty());
-    EXPECT_TRUE(controller.undo());
+    EXPECT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     values = session.queryValues(networkId, fixture.node, "gain");
     ASSERT_FALSE(values.empty());
     EXPECT_EQ(values.front().value, nemo::ParameterValue{1.0});
@@ -1240,7 +1224,7 @@ TEST(Interactive, MediaRoleViewsCatalogReferenceWithoutAuthoringAGraphNode) {
     // and a catalog entry, no graph node at all.
     ASSERT_TRUE(session.document().network(network).graph().nodes().empty());
     const auto revisionBefore = session.revision();
-    const bool canUndoBefore = controller.canUndo();
+    const bool canUndoBefore = session.canUndo();
 
     // The catalog reference alone reaches the source-fill path: the routed
     // media role probes the referenced source, not the graph role's "src".
@@ -1254,7 +1238,7 @@ TEST(Interactive, MediaRoleViewsCatalogReferenceWithoutAuthoringAGraphNode) {
     EXPECT_TRUE(session.document().network(network).graph().nodes().empty());
     EXPECT_TRUE(controller.graphNodes().isEmpty());
     EXPECT_EQ(session.revision(), revisionBefore);
-    EXPECT_EQ(controller.canUndo(), canUndoBefore);
+    EXPECT_EQ(session.canUndo(), canUndoBefore);
     EXPECT_FALSE(session.document().mediaCatalog().sourceUsed(session.document(), "media-role-still"));
 
     // A decimal catalog entry id addresses the same reference; an unknown
@@ -1385,7 +1369,7 @@ TEST(Interactive, SubnetExposurePublishesTypedControlsWithInstanceLocalEdits) {
     ASSERT_NE(firstInstance, nullptr);
     EXPECT_TRUE(firstInstance->params.contains(source.toULongLong()));
 
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     const auto* restoredInstance = session.document().instance(instance.toULongLong());
     ASSERT_NE(restoredInstance, nullptr);
     EXPECT_FALSE(restoredInstance->params.contains(source.toULongLong()));
@@ -1645,7 +1629,7 @@ TEST(Interactive, NodeInputOccupancyGuardsTheAtomicSwap) {
     EXPECT_EQ(session.revision(), swapRevision + 1);
     EXPECT_NE(controller.graphEdges(), edgesBefore);
     // The mask slot is retained by the swap and undo restores both edges.
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     EXPECT_EQ(controller.graphEdges(), edgesBefore);
 
     // Two edges from one source cannot be swapped.
@@ -1791,7 +1775,7 @@ TEST(Interactive, MixedAnimatedAndStaticBatchIsOneAtomicEdit) {
     EXPECT_EQ(std::get<std::string>(values.front().value), "sRGB - Texture");
 
     // Undo restores both addresses together.
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
     const auto inputSpaceAfterUndo = session.queryValues(network, node, "inputColorSpace");
     ASSERT_EQ(inputSpaceAfterUndo.size(), 1U);
     EXPECT_EQ(inputSpaceAfterUndo.front().value, inputSpaceBefore.front().value);

@@ -1284,7 +1284,6 @@ MediaLibraryModel::MediaLibraryModel(nemo::ProjectSession& session, nemo::media:
     connect(pollTimer_, &QTimer::timeout, this, &MediaLibraryModel::pollRuntime);
     projectGeneration_ = session_.projectGeneration();
     lastDocumentStamp_ = documentStamp();
-    lastHistoryStamp_ = historyStamp();
     lastColorPolicy_ = session_.document().color;
     lastColorConfig_ = session_.colorConfigPath();
     subscription_ = session_.subscribe(this, &MediaLibraryModel::sessionChanged);
@@ -1316,21 +1315,9 @@ QQuickImageProvider* MediaLibraryModel::createThumbnailProvider() {
     return new MediaThumbnailProvider(thumbnails_);
 }
 
-bool MediaLibraryModel::canUndo() const {
-    return session_.canUndo();
-}
-
-bool MediaLibraryModel::canRedo() const {
-    return session_.canRedo();
-}
-
 std::uint64_t MediaLibraryModel::documentStamp() const {
     const std::uint64_t catalog = session_.document().mediaCatalog().stateHash();
     return (session_.revision() * 1099511628211ULL) ^ catalog;
-}
-
-std::uint64_t MediaLibraryModel::historyStamp() const {
-    return (session_.canUndo() ? 2ULL : 0ULL) | (session_.canRedo() ? 1ULL : 0ULL);
 }
 
 void MediaLibraryModel::sessionChanged(void* context) noexcept {
@@ -1349,7 +1336,6 @@ void MediaLibraryModel::sessionChanged(void* context) noexcept {
 void MediaLibraryModel::onSessionChanged() {
     const std::uint64_t generation = session_.projectGeneration();
     const std::uint64_t documentStampValue = documentStamp();
-    const std::uint64_t historyStampValue = historyStamp();
     const ColorPolicy colorPolicy = session_.document().color;
     const std::string colorConfig = session_.colorConfigPath();
     const bool colorChanged = !(colorPolicy == lastColorPolicy_) || colorConfig != lastColorConfig_;
@@ -1368,11 +1354,9 @@ void MediaLibraryModel::onSessionChanged() {
         thumbnails_->clear();
         revision_ += 1;
         lastDocumentStamp_ = documentStampValue;
-        lastHistoryStamp_ = historyStampValue;
         emit revisionChanged();
         emit catalogChanged();
         emit smartBinsChanged();
-        emit historyChanged();
         return;
     }
     if (documentStampValue != lastDocumentStamp_) {
@@ -1381,10 +1365,6 @@ void MediaLibraryModel::onSessionChanged() {
         emit revisionChanged();
         emit catalogChanged();
         emit smartBinsChanged();
-    }
-    if (historyStampValue != lastHistoryStamp_) {
-        lastHistoryStamp_ = historyStampValue;
-        emit historyChanged();
     }
     if (colorChanged) {
         // A viewing-transform change makes every produced thumbnail stale,
@@ -1962,22 +1942,6 @@ bool MediaLibraryModel::apply(const QVariantMap& operation) {
         return false;
     }
     return submitCommands(operationLabel(operation).toStdString(), std::move(commands));
-}
-
-bool MediaLibraryModel::undo() {
-    if (!session_.canUndo()) {
-        setError(QStringLiteral("Nothing to undo"));
-        return false;
-    }
-    return finishEdit(session_.undo(editOptions(session_)), QStringLiteral("Nothing to undo"));
-}
-
-bool MediaLibraryModel::redo() {
-    if (!session_.canRedo()) {
-        setError(QStringLiteral("Nothing to redo"));
-        return false;
-    }
-    return finishEdit(session_.redo(editOptions(session_)), QStringLiteral("Nothing to redo"));
 }
 
 bool MediaLibraryModel::newBinFromSelection(const QVariantList& ids, const QString& name, const QString& parentId) {

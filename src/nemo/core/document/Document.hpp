@@ -279,16 +279,26 @@ public:
     bool undo(const BeforeCommit& beforeCommit = {});
     bool redo(const BeforeCommit& beforeCommit = {});
 
+    // Authored label of the transition the next undo/redo would apply, or an
+    // empty view when that operation is unavailable. The view aliases the
+    // retained entry's own label, so the query allocates nothing and never
+    // traverses the document or a version; it stays valid until the next
+    // history transition (push, undo, redo or clear).
+    [[nodiscard]] std::string_view undoLabel() const noexcept;
+    [[nodiscard]] std::string_view redoLabel() const noexcept;
+
     [[nodiscard]] std::size_t depth() const { return undo_.size(); }
     void clear();
 
 private:
-    // One retained version handle plus the identities the transition between
-    // the adjacent versions touched. The version is a set of shared storage
-    // handles, not a second document payload.
+    // One retained version handle, the identities the transition between the
+    // adjacent versions touched, and the authored label of that transition.
+    // The version is a set of shared storage handles, not a second document
+    // payload, and the label is history metadata rather than document content.
     struct Entry {
         Document document;
         ChangeRecorder touched;
+        std::string label;
     };
     // Bounded ring storage: reaching capacity overwrites the oldest entry
     // instead of moving every remaining one. Slots are occupied only while an

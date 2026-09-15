@@ -712,6 +712,10 @@ ColumnLayout {
         }
         onScrubFinished: readEditor.scrubFinish(fieldName)
         onScrubCancelled: readEditor.scrubCancel()
+        // A cancelled gesture (Escape or a preview-only Undo) returns the field
+        // to the authored value at once instead of holding the cancelled
+        // preview until release.
+        gestureLive: readEditor.panel ? readEditor.panel.activeToken.length > 0 : false
         onTextCommitted: function (committed) {
             readEditor.commitFor(fieldName, String(committed));
         }

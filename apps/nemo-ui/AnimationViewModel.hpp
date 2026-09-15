@@ -19,8 +19,6 @@ class AnimationViewModel final : public QObject {
     Q_PROPERTY(QVariantList channels READ channels NOTIFY channelsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(bool available READ available NOTIFY channelsChanged)
-    Q_PROPERTY(bool canUndo READ canUndo NOTIFY historyChanged)
-    Q_PROPERTY(bool canRedo READ canRedo NOTIFY historyChanged)
 public:
     explicit AnimationViewModel(ProjectSession& session, QObject* parent = nullptr);
     // Selectors are {network, node}, optionally narrowed by parameter/component.
@@ -30,8 +28,6 @@ public:
     [[nodiscard]] QVariantList channels() const { return channels_; }
     [[nodiscard]] QString error() const { return error_; }
     [[nodiscard]] bool available() const { return available_; }
-    [[nodiscard]] bool canUndo() const { return session_.canUndo(); }
-    [[nodiscard]] bool canRedo() const { return session_.canRedo(); }
     Q_INVOKABLE bool beginGesture();
     Q_INVOKABLE void cancelGesture();
     Q_INVOKABLE bool moveKeys(const QStringList& ids, double deltaTime, double deltaValue);
@@ -41,13 +37,10 @@ public:
     Q_INVOKABLE bool setTangentMode(const QStringList& ids, const QString& mode);
     Q_INVOKABLE bool setTangent(const QString& id, const QString& side, double slope);
     Q_INVOKABLE bool removeKeys(const QStringList& ids);
-    Q_INVOKABLE bool undo();
-    Q_INVOKABLE bool redo();
 signals:
     void targetsChanged();
     void channelsChanged();
     void errorChanged();
-    void historyChanged();
     void projectChanged();
 
 private:

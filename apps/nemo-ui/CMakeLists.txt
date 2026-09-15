@@ -22,6 +22,7 @@ if(NEMO_BUILD_UI)
     # compile definitions, automoc handling and compiler options; neither
     # re-lists these sources.
     add_library(nemo_ui_shared STATIC
+        HistoryController.cpp HistoryController.hpp
         PanelContextRouter.cpp PanelContextRouter.hpp
         AnimationViewModel.cpp AnimationViewModel.hpp
         MediaLibraryModel.cpp MediaLibraryModel.hpp
@@ -63,6 +64,7 @@ if(NEMO_BUILD_UI)
                   qml/AnimationPanel.qml qml/AnimationHeaderTools.qml qml/PinButton.qml
                   qml/NumericField.qml qml/ChannelEditor.qml qml/MergeOperationEditor.qml
                   qml/KeyIndicator.qml qml/ExposureLabel.qml
+                  qml/HistoryMenu.qml qml/HistoryMenuItem.qml
     )
 
     # The application keeps its own entry point and loads the module's compiled

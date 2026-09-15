@@ -2980,14 +2980,6 @@ FocusScope {
         } else if ((modifiers & Qt.ControlModifier) && key === Qt.Key_V) {
             root.pasteSelection();
             event.accepted = true;
-        } else if ((modifiers & Qt.ControlModifier) && key === Qt.Key_Z && !(modifiers & Qt.ShiftModifier)) {
-            if (root.library && root.library.undo)
-                root.library.undo();
-            event.accepted = true;
-        } else if (((modifiers & Qt.ControlModifier) && key === Qt.Key_Z && (modifiers & Qt.ShiftModifier)) || ((modifiers & Qt.ShiftModifier) && key === Qt.Key_Z && !(modifiers & Qt.ControlModifier))) {
-            if (root.library && root.library.redo)
-                root.library.redo();
-            event.accepted = true;
         } else if (key === Qt.Key_Delete) {
             root.deleteSelection();
             event.accepted = true;

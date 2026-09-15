@@ -140,8 +140,6 @@ class MediaLibraryModel final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int revision READ revision NOTIFY revisionChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
-    Q_PROPERTY(bool canUndo READ canUndo NOTIFY historyChanged)
-    Q_PROPERTY(bool canRedo READ canRedo NOTIFY historyChanged)
     Q_PROPERTY(QVariantList smartBins READ smartBins NOTIFY smartBinsChanged)
 public:
     MediaLibraryModel(nemo::ProjectSession& session, nemo::media::MediaImportService& importer,
@@ -164,8 +162,6 @@ public:
 
     [[nodiscard]] int revision() const { return revision_; }
     [[nodiscard]] QString error() const { return error_; }
-    [[nodiscard]] bool canUndo() const;
-    [[nodiscard]] bool canRedo() const;
     // Persisted smart-query bins as prototype-shaped records
     // ({id,name,builtIn:false,parentId,query}); the panel keeps its own
     // built-in Offline/Unused entries, as the prototype did.
@@ -186,8 +182,6 @@ public:
     Q_INVOKABLE QVariantMap preview(const QVariantMap& operation) const;
     // Applies one catalog gesture as a single atomic history entry.
     Q_INVOKABLE bool apply(const QVariantMap& operation);
-    Q_INVOKABLE bool undo();
-    Q_INVOKABLE bool redo();
     Q_INVOKABLE bool newBinFromSelection(const QVariantList& ids, const QString& name, const QString& parentId);
 
     // --- Runtime import / relink / probe -----------------------------------
@@ -254,7 +248,6 @@ public:
 signals:
     void revisionChanged();
     void errorChanged();
-    void historyChanged();
     void catalogChanged();
     void smartBinsChanged();
     // A runtime probe/thumbnail result for `id` is stored; applyProbe(id) is
@@ -314,7 +307,6 @@ private:
     bool submitCommands(const std::string& label, std::vector<nemo::Command> commands);
     static nemo::EditOptions editOptions(const nemo::ProjectSession& session);
     [[nodiscard]] std::uint64_t documentStamp() const;
-    [[nodiscard]] std::uint64_t historyStamp() const;
 
     QVariantMap entryRecord(const MediaCatalogEntry& entry) const;
     // The live runtime result for a source key, only when it still matches the
@@ -368,7 +360,6 @@ private:
     std::uint64_t nextRequestId_{1};
     std::uint64_t projectGeneration_{0};
     std::uint64_t lastDocumentStamp_{0};
-    std::uint64_t lastHistoryStamp_{0};
     // Viewing-transform state the queued/stored results were requested with.
     ColorPolicy lastColorPolicy_;
     std::string lastColorConfig_;

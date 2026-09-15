@@ -1,3 +1,4 @@
+#include "HistoryController.hpp"
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
@@ -128,6 +129,9 @@ protected:
     QTemporaryDir directory_;
     std::unique_ptr<nemo::ui::ViewerRuntime> runtime_;
     std::unique_ptr<nemo::ProjectSession> session_;
+    // The shared presentation history the application composes: declared after
+    // the session and before the engine, so both lifetimes stay valid.
+    std::unique_ptr<nemo::ui::HistoryController> history_;
     std::unique_ptr<nemo::ui::PanelContextRouter> router_;
     std::unique_ptr<nemo::ui::ViewerController> facade_;
     std::unique_ptr<nemo::ui::ViewerControllerRegistry> registry_;
@@ -179,6 +183,7 @@ protected:
         }
 
         session_ = std::make_unique<nemo::ProjectSession>();
+        history_ = std::make_unique<nemo::ui::HistoryController>(*session_);
         router_ = std::make_unique<nemo::ui::PanelContextRouter>(*session_);
         facade_ = std::make_unique<nemo::ui::ViewerController>(runtime_.get(), *session_);
         registry_ = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime_.get(), *session_);
@@ -276,6 +281,7 @@ protected:
         engine_ = std::make_unique<QQmlApplicationEngine>();
         warnings_ = std::make_unique<QSignalSpy>(engine_.get(), &QQmlEngine::warnings);
         engine_->rootContext()->setContextProperty(QStringLiteral("workspace"), workspace_.get());
+        engine_->rootContext()->setContextProperty(QStringLiteral("historyController"), history_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), router_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("projectFile"), projectFile_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("viewerController"), facade_.get());
@@ -315,6 +321,7 @@ protected:
         chooser_.reset();
         registry_.reset();
         facade_.reset();
+        history_.reset();
         workspace_.reset();
         router_.reset();
         session_.reset();

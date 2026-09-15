@@ -245,6 +245,20 @@ public:
         assertOwnerThread();
         return commands_.canRedo();
     }
+    // Authored label of the transition the next Undo/Redo would apply, empty
+    // when that operation is unavailable (including an empty history and a
+    // label-less transition). Retained history metadata only: the query
+    // allocates nothing, reads no document content and never serializes or
+    // traverses the project. The returned view aliases the retained entry and
+    // stays valid until the next history transition.
+    [[nodiscard]] std::string_view undoLabel() const noexcept {
+        assertOwnerThread();
+        return commands_.undoLabel();
+    }
+    [[nodiscard]] std::string_view redoLabel() const noexcept {
+        assertOwnerThread();
+        return commands_.redoLabel();
+    }
     [[nodiscard]] std::uint64_t revision() const noexcept {
         assertOwnerThread();
         return revision_;

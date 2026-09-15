@@ -92,6 +92,7 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | Project file persistence, autosave, recovery | `src/nemo/core/session/ProjectFile.hpp`; `ProjectFile` owns read/write, path policy, file envelope and reference state; `AutosaveStore` owns bounded slots; `ProjectSession::prepareSave`/`commitSave` own path, dirty baseline and recovery guard | `apps/nemo-ui/ProjectFileController.*` and the CLI `file-state`/`open`/`save`/`save-as`/`autosave`/`recover` ops are the only callers; both go through this owner, never a second codec |
 | Node schemas and discovery | `src/nemo/core/nodes/NodeCatalog.hpp`; immutable `NodeDescriptor` records and exact-inventory `NodeCatalog(std::vector<NodeDescriptor>)` | `src/nemo/nodes/BuiltinNodes.inc` supplies the built-in inventory; `NodeContributions::catalog()` projects schema for `Graph::catalog()`, desktop and CLI. No mutation or unregister operation |
 | Validated edits and history | `src/nemo/core/document/Document.hpp` command factories plus `src/nemo/core/commands/`; `Command`, `CommandStack`, and `ProjectSession` | `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()` maps JSON operations; `ProjectSession::submit()` is the commit seam |
+| Desktop history routing | `apps/nemo-ui/HistoryController.hpp`, explicitly injected with the application `ProjectSession`; `qml/HistoryMenu.qml` / `HistoryMenuItem.qml` | Register existing document windows; use this adapter for shared shortcuts/menu actions, never a viewer forwarding method or per-panel stack. Context precedence and the gesture contribution contract are below |
 | Structural document storage | `src/nemo/core/SharedContainers.hpp` (`CowVector`, `CowMap`) and the document's controlled mutations; `ChangeRecorder` (`src/nemo/core/document/ChangeRecorder.hpp`) records the identities a transaction touched | Commands and sessions retain version handles, never deep copies; publication/undo/redo derive their notifications from the touched identities. See ADR-0007 "Structurally shared document versions (#72)"; do not reintroduce a whole-document copy, diff or serialization on the ordinary edit path |
 | CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies`, and the external media seam `SourceProvider::frame`/`colorConfigIdentity` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned. The provider receives the resolved `EffectiveSourceRequest` and supplies the opaque color-config identity the source-node keys mix in; without a provider a source node is an explicit error, never a synthetic pattern |
 | GPU primitives and resource lifetime | `src/nemo/gpu/` (`Device`, `Allocator`, `Submit`, `ComputePass`) | `src/nemo/eval/GpuExecutor.cpp` records/submits work; follow [`rendering.md`](rendering.md) for retained ownership and synchronization rather than copying those rules here |
@@ -338,6 +339,35 @@ stays a separate action. The CLI exposes only the static batch
 gestures are reached through the UI controller.
 [#50](https://github.com/rgamevfx/nemo/issues/50) retains the native comparison
 evidence and the outstanding owner image/internal-API review gate.
+
+### Extend desktop history access
+
+`HistoryController` is the session-injected presentation entry point for Undo/Redo
+(#86). `Main.qml` and `SubnetParameters.qml` register their existing window
+lifetimes. Standard Qt key sequences and shared `HistoryMenu` actions resolve
+text buffer → active authored gesture → chronological session history. Exhausted
+text history still owns the action. Menu invocation captures its target before
+focus can change; `HistoryMenuItem` preserves text focus even on Qt 6.4 menu hover.
+Do not add panel-local history shortcuts or restore the retired ViewerController,
+AnimationViewModel or MediaLibraryModel history forwarding.
+
+An authored-preview owner registers itself with `setGesture(owner, active)` and
+exposes `cancelHistoryGesture()`, which invokes its existing cancellation path.
+Graph, Parameters and Animation retain their own transient state machines. Redo
+is consumed while a gesture is active; Undo cancels only that preview. A cancelled
+control must discard its displayed preview immediately and ignore later motion
+or release from the same press. Pan, box selection and other navigation gestures
+are not authored-edit registrations.
+
+`CommandStack` retains each command label beside its version/touched identities.
+`ProjectSession::undoLabel()` / `redoLabel()` are owner-thread-only, read-only
+queries for the next transition. Labels move with history entries; they are not
+serialized document content. Availability and labels neither scan the graph nor
+retain snapshots. New panels use the shared adapter, not a new session or stack.
+
+For history-routing changes, reuse the native scenarios and distinguish the
+production and owner-appearance gates recorded in
+[`issue86-history-routing.json`](../evidence/issue86-history-routing.json).
 
 ### Extend graph editing
 

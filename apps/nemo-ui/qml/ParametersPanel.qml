@@ -58,6 +58,11 @@ FocusScope {
     property string gestureError: ""
     property string gestureErrorKey: ""
 
+    // The single live parameter gesture is this panel's cancellable authored
+    // edit: a preview-only Undo cancels it instead of touching the document.
+    readonly property bool historyGestureActive: activeToken.length > 0
+    onHistoryGestureActiveChanged: syncHistoryGesture()
+
     property alias headerTools: headerToolsComponent
 
     // --- identity helpers -------------------------------------------------
@@ -424,6 +429,16 @@ FocusScope {
         return result;
     }
 
+    // Shared history routing: a preview-only Undo reaches the one row gesture
+    // through its own cancellation path, so committing it stays impossible
+    // (commitEdit returns false once the token is cleared).
+    function cancelHistoryGesture() {
+        cancelEdit();
+    }
+    function syncHistoryGesture() {
+        historyController.setGesture(parametersPanel, historyGestureActive);
+    }
+
     // --- row errors -------------------------------------------------------
     function recordError() {
         if (!controller)
@@ -622,7 +637,11 @@ FocusScope {
     Component.onCompleted: {
         Qt.callLater(restoreState);
         revision++;
+        syncHistoryGesture();
     }
+    // Teardown drops the registration so reopening a panel never accumulates
+    // competing owners.
+    Component.onDestruction: historyController.setGesture(parametersPanel, false)
 
     // Panel injects ID, state and workspace together; wait for those bindings.
     // Arrangement edits save eagerly, never after an ID change or teardown.
@@ -1547,6 +1566,10 @@ FocusScope {
                                     onScrubFinished: parametersPanel.finishScrub()
                                     onScrubCancelled: parametersPanel.cancelScrub()
                                     onKeyRequested: parameterRow.keyAtFrame()
+                                    // A cancelled gesture (Escape or a
+                                    // preview-only Undo) returns the component
+                                    // to the authored value at once.
+                                    gestureLive: parametersPanel.activeToken.length > 0
                                 }
                             }
                         }
@@ -1617,6 +1640,10 @@ FocusScope {
                                     onScrubFinished: parametersPanel.finishScrub()
                                     onScrubCancelled: parametersPanel.cancelScrub()
                                     onKeyRequested: parameterRow.keyAtFrame()
+                                    // A cancelled gesture (Escape or a
+                                    // preview-only Undo) returns the component
+                                    // to the authored value at once.
+                                    gestureLive: parametersPanel.activeToken.length > 0
                                 }
                             }
                         }
@@ -1776,6 +1803,26 @@ FocusScope {
                     objectName: numericControl.row ? "slider_" + numericControl.row.nodeId + "_" + numericControl.row.parameterKey : ""
                     property bool movedDuringPress: false
                     property int revision: numericControl.panel ? numericControl.panel.revision : 0
+                    // This press owns the preview only while the one live
+                    // parameter gesture still accepts updates. A cancellation
+                    // (Escape or a preview-only Undo) clears that token
+                    // mid-press: the handle returns to the authored value at
+                    // once and this press stops driving the preview, so renewed
+                    // motion and the release cannot publish the cancelled edit.
+                    property bool scrubbing: false
+                    property bool gestureLive: numericControl.panel ? numericControl.panel.activeToken.length > 0 : false
+                    onGestureLiveChanged: if (!gestureLive) {
+                        if (!scrubbing)
+                            return;
+                        scrubbing = false;
+                        restoreAuthoredValue();
+                    }
+                    function authoredValue() {
+                        return Math.min(to, Math.max(from, numericControl.row ? numericControl.row.numberValue : 0));
+                    }
+                    function restoreAuthoredValue() {
+                        value = authoredValue();
+                    }
                     from: numericControl.row && numericControl.row.hasSoftMinimum ? numericControl.row.softMinimum : (numericControl.row && numericControl.row.hasMinimum ? numericControl.row.minimum : 0)
                     to: {
                         var low = bundleSlider.from;
@@ -1785,11 +1832,22 @@ FocusScope {
                     }
                     stepSize: numericControl.row ? numericControl.row.numberStep : 0.01
                     snapMode: Slider.SnapAlways
-                    value: Math.min(bundleSlider.to, Math.max(bundleSlider.from, numericControl.row ? numericControl.row.numberValue : 0))
+                    value: authoredValue()
                     Layout.fillWidth: true
                     implicitHeight: 20
                     Accessible.name: (numericControl.row ? numericControl.row.rowLabel : "") + " slider"
+                    // Qt 6.4 Slider ends its press on every key release, even
+                    // keys that never moved it. Keep a held pointer gesture
+                    // alive when another action owns the keyboard input.
+                    Keys.onReleased: function(event) {
+                        if (pressed && event.key !== Qt.Key_Left && event.key !== Qt.Key_Right)
+                            event.accepted = true;
+                    }
                     onMoved: {
+                        if (!scrubbing) {
+                            restoreAuthoredValue();
+                            return;
+                        }
                         movedDuringPress = true;
                         if (numericControl.panel && numericControl.row)
                             numericControl.panel.updateEdit(numericControl.row.integerParameter ? Math.round(value) : value);
@@ -1797,19 +1855,28 @@ FocusScope {
                     onPressedChanged: {
                         if (pressed) {
                             movedDuringPress = false;
+                            scrubbing = true;
                             if (numericControl.panel && numericControl.row)
                                 numericControl.panel.beginScrub(numericControl.row.rowRef());
-                        } else if (numericControl.panel && numericControl.panel.activeToken.length > 0) {
-                            if (movedDuringPress)
-                                numericControl.panel.commitEdit();
-                            else
-                                numericControl.panel.cancelEdit();
+                        } else {
+                            scrubbing = false;
+                            if (numericControl.panel && numericControl.panel.activeToken.length > 0) {
+                                if (movedDuringPress)
+                                    numericControl.panel.commitEdit();
+                                else
+                                    numericControl.panel.cancelEdit();
+                            } else if (movedDuringPress) {
+                                // The live gesture was cancelled under this
+                                // press: show the authored value, publish
+                                // nothing.
+                                restoreAuthoredValue();
+                            }
                         }
                     }
                     Component.onDestruction: if (pressed && numericControl.panel)
                         numericControl.panel.cancelEdit()
                     onRevisionChanged: if (!pressed)
-                        value = Math.min(bundleSlider.to, Math.max(bundleSlider.from, numericControl.row ? numericControl.row.numberValue : 0))
+                        restoreAuthoredValue()
                     background: Rectangle {
                         x: 0
                         y: bundleSlider.topPadding + bundleSlider.availableHeight / 2 - height / 2
@@ -1884,6 +1951,9 @@ FocusScope {
                         numericControl.panel.cancelScrub()
                     onKeyRequested: if (numericControl.row)
                         numericControl.row.keyAtFrame()
+                    // A cancelled gesture (Escape or a preview-only Undo)
+                    // returns the field to the authored value at once.
+                    gestureLive: numericControl.panel ? numericControl.panel.activeToken.length > 0 : false
                 }
             }
 

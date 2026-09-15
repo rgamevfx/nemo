@@ -10,6 +10,7 @@
 // panel-local ViewerController/ViewerRuntime must present recognizable pixels
 // on the actual QQuickWindow.
 
+#include "HistoryController.hpp"
 #include "MediaLibraryModel.hpp"
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
@@ -147,6 +148,9 @@ protected:
     QTemporaryDir directory_;
     std::unique_ptr<nemo::ui::ViewerRuntime> runtime_;
     std::unique_ptr<ProjectSession> session_;
+    // The shared presentation history the application composes: declared after
+    // the session and before the engine, so both lifetimes stay valid.
+    std::unique_ptr<nemo::ui::HistoryController> history_;
     std::unique_ptr<nemo::media::MediaImportService> importer_;
     std::unique_ptr<nemo::ui::MediaLibraryModel> media_;
     std::unique_ptr<nemo::ui::NativeFileChooser> chooser_;
@@ -200,6 +204,7 @@ protected:
         // owner: a scenario can install its configuration before the runtime,
         // the import worker or the read source ever resolve one.
         session_ = std::make_unique<ProjectSession>();
+        history_ = std::make_unique<nemo::ui::HistoryController>(*session_);
         if (prepareConfig)
             prepareConfig();
 
@@ -297,6 +302,7 @@ protected:
         engine_ = std::make_unique<QQmlApplicationEngine>();
         warnings_ = std::make_unique<QSignalSpy>(engine_.get(), &QQmlEngine::warnings);
         engine_->rootContext()->setContextProperty(QStringLiteral("workspace"), workspace_.get());
+        engine_->rootContext()->setContextProperty(QStringLiteral("historyController"), history_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), router_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("projectFile"), projectFile_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("viewerController"), facade_.get());
@@ -332,6 +338,7 @@ protected:
         facade_.reset();
         workspace_.reset();
         router_.reset();
+        history_.reset();
         session_.reset();
         runtime_.reset();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -696,10 +703,18 @@ TEST_F(ReadViewerSurface, ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt)
         return presentation && presentation->frame.width == 40 && controller_->sourceSize() == QSizeF(40, 20);
     })) << controller_->error().toStdString();
 
-    ASSERT_TRUE(controller_->undo());
+    window_->requestActivate();
+    ASSERT_TRUE(QTest::qWaitFor([&] { return window_->isActive(); }));
+    QTest::keyClick(window_, Qt::Key_Z, Qt::ControlModifier);
     ASSERT_TRUE(waitFor([&] {
         const auto presentation = controller_->presentation();
         return presentation && presentation->frame.width == 96 && controller_->sourceSize() == QSizeF(96, 64);
+    })) << controller_->error().toStdString();
+    capture(QStringLiteral("history-restored-read"));
+    QTest::keyClick(window_, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    ASSERT_TRUE(waitFor([&] {
+        const auto presentation = controller_->presentation();
+        return presentation && presentation->frame.width == 40 && controller_->sourceSize() == QSizeF(40, 20);
     })) << controller_->error().toStdString();
 }
 

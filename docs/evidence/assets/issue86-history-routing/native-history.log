@@ -1,0 +1,64 @@
+Note: Google Test filter = HistorySurface.*:AnimationSurface.HistoryCancelsKeyPreviewBeforeCommittedInsertion:WorkspaceDragTest.GraphPipePull*:WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets:WorkspaceDragTest.GraphScreenSpaceHitTestingSurvivesEveryZoomLevel:ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt
+[==========] Running 13 tests from 4 test suites.
+[----------] Global test environment set-up.
+[----------] 7 tests from HistorySurface
+[ RUN      ] HistorySurface.GraphKeyboardAndEditMenuRestoreOneChronologicalTransition
+[       OK ] HistorySurface.GraphKeyboardAndEditMenuRestoreOneChronologicalTransition (2669 ms)
+[ RUN      ] HistorySurface.ExhaustedTextHistoryNeverFallsThroughKeyboardOrMenu
+[       OK ] HistorySurface.ExhaustedTextHistoryNeverFallsThroughKeyboardOrMenu (1838 ms)
+[ RUN      ] HistorySurface.NumericTextMenuDoesNotCommitOrUndoDocument
+[       OK ] HistorySurface.NumericTextMenuDoesNotCommitOrUndoDocument (1482 ms)
+[ RUN      ] HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit
+[       OK ] HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit (1496 ms)
+[ RUN      ] HistorySurface.CompoundHistorySurvivesToolWindowReopeningAndScopedNavigation
+[       OK ] HistorySurface.CompoundHistorySurvivesToolWindowReopeningAndScopedNavigation (2529 ms)
+[ RUN      ] HistorySurface.InterleavedPanelEditsFollowDocumentChronologyAcrossFocus
+[       OK ] HistorySurface.InterleavedPanelEditsFollowDocumentChronologyAcrossFocus (2452 ms)
+[ RUN      ] HistorySurface.SavedIndicatorTracksNativeHistoryAndReplacement
+[       OK ] HistorySurface.SavedIndicatorTracksNativeHistoryAndReplacement (1613 ms)
+[----------] 7 tests from HistorySurface (14082 ms total)
+
+[----------] 1 test from AnimationSurface
+[ RUN      ] AnimationSurface.HistoryCancelsKeyPreviewBeforeCommittedInsertion
+[       OK ] AnimationSurface.HistoryCancelsKeyPreviewBeforeCommittedInsertion (1053 ms)
+[----------] 1 test from AnimationSurface (1053 ms total)
+
+[----------] 4 tests from WorkspaceDragTest
+[ RUN      ] WorkspaceDragTest.GraphScreenSpaceHitTestingSurvivesEveryZoomLevel
+[       OK ] WorkspaceDragTest.GraphScreenSpaceHitTestingSurvivesEveryZoomLevel (2488 ms)
+[ RUN      ] WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets
+[       OK ] WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets (802 ms)
+[ RUN      ] WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease
+[       OK ] WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease (819 ms)
+[ RUN      ] WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress
+[       OK ] WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress (875 ms)
+[----------] 4 tests from WorkspaceDragTest (4985 ms total)
+
+[----------] 1 test from ReadViewerSurface
+[ RUN      ] ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt
+[libx264 @ 0x7bee840c0680] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x7bee840c0680] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x7bee840c0680] frame I:1     Avg QP: 0.00  size:   711
+[libx264 @ 0x7bee840c0680] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x7bee840c0680] final ratefactor: -28.09
+[libx264 @ 0x7bee840c0680] 8x8 transform intra:0.0%
+[libx264 @ 0x7bee840c0680] coded y,uvDC,uvAC intra: 0.0% 4.2% 0.0%
+[libx264 @ 0x7bee840c0680] i16 v,h,dc,p: 75%  0% 25%  0%
+[libx264 @ 0x7bee840c0680] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x7bee840c0680] kb/s:136.51
+[libx264 @ 0x7bee840c0680] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x7bee840c0680] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x7bee840c0680] frame I:1     Avg QP: 0.00  size:   698
+[libx264 @ 0x7bee840c0680] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x7bee840c0680] final ratefactor: -35.39
+[libx264 @ 0x7bee840c0680] 8x8 transform intra:0.0%
+[libx264 @ 0x7bee840c0680] coded y,uvDC,uvAC intra: 0.0% 16.7% 0.0%
+[libx264 @ 0x7bee840c0680] i16 v,h,dc,p: 50%  0% 50%  0%
+[libx264 @ 0x7bee840c0680] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x7bee840c0680] kb/s:134.02
+[       OK ] ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt (2004 ms)
+[----------] 1 test from ReadViewerSurface (2004 ms total)
+
+[----------] Global test environment tear-down
+[==========] 13 tests from 4 test suites ran. (22127 ms total)
+[  PASSED  ] 13 tests.

@@ -26,6 +26,13 @@ ApplicationWindow {
     font.pixelSize: theme.fontSize
     palette: transientParent.palette
 
+    Component.onCompleted: historyController.registerWindow(subnetParameters)
+    Component.onDestruction: historyController.unregisterWindow(subnetParameters)
+
+    HistoryMenu {
+        id: editMenu
+    }
+
     header: Rectangle {
         height: 34
         color: subnetParameters.theme.header
@@ -40,6 +47,18 @@ ApplicationWindow {
             anchors.verticalCenter: parent.verticalCenter
             text: "Edit exposed parameters"
             color: subnetParameters.theme.text
+        }
+        ChromeButton {
+            id: editMenuTrigger
+            objectName: "editMenuButton"
+            anchors.right: parent.right
+            anchors.rightMargin: 40
+            anchors.verticalCenter: parent.verticalCenter
+            theme: subnetParameters.theme
+            text: "Edit"
+            focusPolicy: Qt.NoFocus
+            Accessible.name: "Edit menu"
+            onClicked: editMenu.openAt(editMenuTrigger)
         }
         ChromeButton {
             objectName: "subnetParametersClose"
@@ -240,15 +259,12 @@ ApplicationWindow {
                 Qt.callLater(subnetParameters.refresh);
         }
     }
-    Shortcut {
-        sequences: [StandardKey.Undo]
-        context: Qt.WindowShortcut
-        onActivated: subnetParameters.controller.undo()
-    }
-    Shortcut {
-        sequences: [StandardKey.Redo]
-        context: Qt.WindowShortcut
-        onActivated: subnetParameters.controller.redo()
+    Connections {
+        target: historyController
+        function onChanged() {
+            if (subnetParameters.active && historyController.error.length)
+                subnetParameters.message = historyController.error
+        }
     }
 
     ColumnLayout {

@@ -170,6 +170,10 @@ Item {
                         channelEditor.panel.cancelEdit();
                 }
                 onKeyRequested: channelEditor.requestKey()
+                // A cancelled gesture (Escape or a preview-only Undo) returns
+                // the field to the authored value at once instead of holding
+                // the cancelled preview until release.
+                gestureLive: channelEditor.panel ? channelEditor.panel.activeToken.length > 0 : false
             }
 
             // Expanded: labelled R, G, B with the same Alpha field, so a channel
@@ -241,6 +245,11 @@ Item {
                                     channelEditor.panel.cancelEdit();
                             }
                             onKeyRequested: channelEditor.requestKey()
+                            // A cancelled gesture (Escape or a preview-only
+                            // Undo) returns the field to the authored value at
+                            // once instead of holding the cancelled preview
+                            // until release.
+                            gestureLive: channelEditor.panel ? channelEditor.panel.activeToken.length > 0 : false
                         }
                     }
                 }
@@ -338,6 +347,10 @@ Item {
                         channelEditor.panel.cancelEdit();
                 }
                 onKeyRequested: channelEditor.requestKey()
+                // A cancelled gesture (Escape or a preview-only Undo) returns
+                // the field to the authored value at once instead of holding
+                // the cancelled preview until release.
+                gestureLive: channelEditor.panel ? channelEditor.panel.activeToken.length > 0 : false
             }
         }
 

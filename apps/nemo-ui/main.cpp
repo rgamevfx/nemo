@@ -1,3 +1,4 @@
+#include "HistoryController.hpp"
 #include "MediaLibraryModel.hpp"
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
@@ -158,6 +159,7 @@ int main(int argc, char* argv[]) {
     // The application composes one project owner; presentation facades may
     // come and go without taking the document or shared history with them.
     nemo::ProjectSession projectSession;
+    nemo::ui::HistoryController historyController(projectSession);
     // A fresh project adopts the owner-approved creation-time color default:
     // the version-pinned OCIO-embedded ACES Studio config with its scene-linear
     // Rec.709 working space and ACES 2.0 SDR viewing, recorded through the
@@ -250,6 +252,7 @@ int main(int argc, char* argv[]) {
         // before the model and its import worker.
         engine.addImageProvider(QStringLiteral("nemo-media"), mediaLibrary.createThumbnailProvider());
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
+        engine.rootContext()->setContextProperty(QStringLiteral("historyController"), &historyController);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &panelContextRouter);
         engine.rootContext()->setContextProperty(QStringLiteral("projectFile"), &projectFile);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);

@@ -1,0 +1,21 @@
+Note: Google Test filter = HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit:AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory:WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition
+[==========] Running 3 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from HistorySurface
+[ RUN      ] HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit
+[       OK ] HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit (2311 ms)
+[----------] 1 test from HistorySurface (2311 ms total)
+
+[----------] 1 test from AnimationSurface
+[ RUN      ] AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory
+[       OK ] AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory (1282 ms)
+[----------] 1 test from AnimationSurface (1282 ms total)
+
+[----------] 1 test from WorkspaceDragTest
+[ RUN      ] WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition
+[       OK ] WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition (1243 ms)
+[----------] 1 test from WorkspaceDragTest (1243 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 3 test suites ran. (4837 ms total)
+[  PASSED  ] 3 tests.

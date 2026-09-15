@@ -35,6 +35,9 @@ ApplicationWindow {
     property bool quitPending: false
     flags: Qt.Window | (frameless ? Qt.FramelessWindowHint : 0)
 
+    Component.onCompleted: historyController.registerWindow(window)
+    Component.onDestruction: historyController.unregisterWindow(window)
+
     Theme {
         id: appTheme
         workspace: window.controller
@@ -279,6 +282,16 @@ ApplicationWindow {
                     Accessible.name: "File menu"
                     onClicked: window.openFileMenu()
                 }
+            }
+
+            ChromeButton {
+                id: editMenuTrigger
+                objectName: "editMenuButton"
+                theme: appTheme
+                text: "Edit"
+                focusPolicy: Qt.NoFocus
+                Accessible.name: "Edit menu"
+                onClicked: editMenu.openAt(editMenuTrigger)
             }
 
             ChromeButton {
@@ -527,6 +540,10 @@ ApplicationWindow {
         }
     }
 
+    HistoryMenu {
+        id: editMenu
+    }
+
     Dialog {
         id: nameDialog
         objectName: "workspaceNameDialog"
@@ -760,7 +777,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: workspace.error.length > 0 ? 24 : 0
+        height: workspace.error.length > 0 || historyController.error.length > 0 ? 24 : 0
         visible: height > 0
         color: appTheme.errorSurface
         Text {
@@ -769,7 +786,7 @@ ApplicationWindow {
             anchors.rightMargin: 8
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
-            text: workspace.error
+            text: historyController.error.length > 0 ? historyController.error : workspace.error
             color: appTheme.errorText
             font.pixelSize: appTheme.fontSize
         }

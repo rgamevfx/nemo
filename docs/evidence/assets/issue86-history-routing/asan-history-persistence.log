@@ -1,0 +1,208 @@
+Running main() from /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest_main.cc
+Note: Google Test filter = ProjectSessionTest.*:CommandStackTest.*:SessionPersistenceTest.*
+[==========] Running 96 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 29 tests from CommandStackTest
+[ RUN      ] CommandStackTest.PushAppliesImmediately
+[       OK ] CommandStackTest.PushAppliesImmediately (4 ms)
+[ RUN      ] CommandStackTest.UndoRestoresAndRedoReapplies
+[       OK ] CommandStackTest.UndoRestoresAndRedoReapplies (1 ms)
+[ RUN      ] CommandStackTest.NewCommandDropsRedoBranch
+[       OK ] CommandStackTest.NewCommandDropsRedoBranch (0 ms)
+[ RUN      ] CommandStackTest.FailingApplyLeavesDocumentUntouched
+[       OK ] CommandStackTest.FailingApplyLeavesDocumentUntouched (0 ms)
+[ RUN      ] CommandStackTest.FailedTransactionIsAtomic
+[       OK ] CommandStackTest.FailedTransactionIsAtomic (0 ms)
+[ RUN      ] CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity
+[       OK ] CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity (0 ms)
+[ RUN      ] CommandStackTest.HistoryBoundedByCapacity
+[       OK ] CommandStackTest.HistoryBoundedByCapacity (0 ms)
+[ RUN      ] CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks
+[       OK ] CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks (0 ms)
+[ RUN      ] CommandStackTest.TypedParameterBatchResetAndUndoRedoAreAtomic
+[       OK ] CommandStackTest.TypedParameterBatchResetAndUndoRedoAreAtomic (1 ms)
+[ RUN      ] CommandStackTest.InvalidTypedBatchLeavesDocumentAndHistoryUntouched
+[       OK ] CommandStackTest.InvalidTypedBatchLeavesDocumentAndHistoryUntouched (0 ms)
+[ RUN      ] CommandStackTest.InstanceParameterBatchRequiresDefinitionNetworkScope
+[       OK ] CommandStackTest.InstanceParameterBatchRequiresDefinitionNetworkScope (1 ms)
+[ RUN      ] CommandStackTest.GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt
+[       OK ] CommandStackTest.GraphNodeDeletionRemovesIncidentAnimationAndUndoRestoresIt (1 ms)
+[ RUN      ] CommandStackTest.OccupiedInputReplacementPreservesMergeFanOutAndUndo
+[       OK ] CommandStackTest.OccupiedInputReplacementPreservesMergeFanOutAndUndo (0 ms)
+[ RUN      ] CommandStackTest.SwapInputsExchangesOccupiedPortsAsOneUndoStep
+[       OK ] CommandStackTest.SwapInputsExchangesOccupiedPortsAsOneUndoStep (1 ms)
+[ RUN      ] CommandStackTest.SwapInputsMovesTheSingleOccupiedPort
+[       OK ] CommandStackTest.SwapInputsMovesTheSingleOccupiedPort (0 ms)
+[ RUN      ] CommandStackTest.SwapInputsRejectsMeaninglessAndInvalidRequestsWithoutHistory
+[       OK ] CommandStackTest.SwapInputsRejectsMeaninglessAndInvalidRequestsWithoutHistory (1 ms)
+[ RUN      ] CommandStackTest.SwapInputsConnectionRejectionLeavesBothConnectionsUntouched
+[       OK ] CommandStackTest.SwapInputsConnectionRejectionLeavesBothConnectionsUntouched (2 ms)
+[ RUN      ] CommandStackTest.InsertNodeOnEdgePreservesDestinationAndOutputFanOut
+[       OK ] CommandStackTest.InsertNodeOnEdgePreservesDestinationAndOutputFanOut (1 ms)
+[ RUN      ] CommandStackTest.RoutePointCommandsAndLayoutBatchAreAtomic
+[       OK ] CommandStackTest.RoutePointCommandsAndLayoutBatchAreAtomic (1 ms)
+[ RUN      ] CommandStackTest.GraphDeletionProtectsFormalOutputTerminal
+[       OK ] CommandStackTest.GraphDeletionProtectsFormalOutputTerminal (0 ms)
+[ RUN      ] CommandStackTest.ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode
+[       OK ] CommandStackTest.ExistingDisconnectedNodeInsertionPreservesEdgeAndRejectsConnectedNode (1 ms)
+[ RUN      ] CommandStackTest.CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically
+[       OK ] CommandStackTest.CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomically (1 ms)
+[ RUN      ] CommandStackTest.CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch
+[       OK ] CommandStackTest.CreateAfterAnchorMakesSinkBranchAndRejectsInvalidShiftBatch (0 ms)
+[ RUN      ] CommandStackTest.RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic
+[       OK ] CommandStackTest.RewireNoOpPreservesRouteAndOccupiedTargetReplacementIsAtomic (0 ms)
+[ RUN      ] CommandStackTest.ViewerAssignmentCreatesMissingViewerAndAttachesAtomically
+[       OK ] CommandStackTest.ViewerAssignmentCreatesMissingViewerAndAttachesAtomically (0 ms)
+[ RUN      ] CommandStackTest.ViewerIndexCreatesEveryMissingViewerInOrder
+[       OK ] CommandStackTest.ViewerIndexCreatesEveryMissingViewerInOrder (0 ms)
+[ RUN      ] CommandStackTest.ViewerAssignmentReplacesAndTogglesInOneHistoryEntry
+[       OK ] CommandStackTest.ViewerAssignmentReplacesAndTogglesInOneHistoryEntry (1 ms)
+[ RUN      ] CommandStackTest.ViewerAssignmentRejectsUnknownSourceWithoutChangingDocument
+[       OK ] CommandStackTest.ViewerAssignmentRejectsUnknownSourceWithoutChangingDocument (0 ms)
+[ RUN      ] CommandStackTest.RemovingAttachedNodeAndExplicitDetachLeaveViewerEmpty
+[       OK ] CommandStackTest.RemovingAttachedNodeAndExplicitDetachLeaveViewerEmpty (1 ms)
+[----------] 29 tests from CommandStackTest (34 ms total)
+
+[----------] 32 tests from ProjectSessionTest
+[ RUN      ] ProjectSessionTest.SharesDocumentHistoryAndPreservesSnapshots
+[       OK ] ProjectSessionTest.SharesDocumentHistoryAndPreservesSnapshots (1 ms)
+[ RUN      ] ProjectSessionTest.TransitionLabelsDescribeCompoundUndoAndRedo
+[       OK ] ProjectSessionTest.TransitionLabelsDescribeCompoundUndoAndRedo (1 ms)
+[ RUN      ] ProjectSessionTest.RejectedEditLeavesTransitionLabelsUntouched
+[       OK ] ProjectSessionTest.RejectedEditLeavesTransitionLabelsUntouched (1 ms)
+[ RUN      ] ProjectSessionTest.TransitionLabelsTrackEvictionAndRedoBranchReplacement
+[       OK ] ProjectSessionTest.TransitionLabelsTrackEvictionAndRedoBranchReplacement (1 ms)
+[ RUN      ] ProjectSessionTest.DocumentReplacementClearsTransitionLabels
+[       OK ] ProjectSessionTest.DocumentReplacementClearsTransitionLabels (0 ms)
+[ RUN      ] ProjectSessionTest.RejectsStaleRevisionWithoutChangingDocument
+[       OK ] ProjectSessionTest.RejectsStaleRevisionWithoutChangingDocument (0 ms)
+[ RUN      ] ProjectSessionTest.NotifiesObserversOnlyForSuccessfulMutations
+[       OK ] ProjectSessionTest.NotifiesObserversOnlyForSuccessfulMutations (1 ms)
+[ RUN      ] ProjectSessionTest.ObserverCanUnsubscribeAndCannotReenterMutation
+[       OK ] ProjectSessionTest.ObserverCanUnsubscribeAndCannotReenterMutation (0 ms)
+[ RUN      ] ProjectSessionTest.RequestReplayDeduplicatesAcrossLaterEdits
+[       OK ] ProjectSessionTest.RequestReplayDeduplicatesAcrossLaterEdits (1 ms)
+[ RUN      ] ProjectSessionTest.CycleRejectionKeepsDocumentRevisionEventsAndHistoryUnchanged
+[       OK ] ProjectSessionTest.CycleRejectionKeepsDocumentRevisionEventsAndHistoryUnchanged (5 ms)
+[ RUN      ] ProjectSessionTest.ValidReconvergentConnectionUndoRedoRestoresTopologyAndIdentities
+[       OK ] ProjectSessionTest.ValidReconvergentConnectionUndoRedoRestoresTopologyAndIdentities (1 ms)
+[ RUN      ] ProjectSessionTest.ChangesSinceReportsBoundedHistoryAndResync
+[       OK ] ProjectSessionTest.ChangesSinceReportsBoundedHistoryAndResync (0 ms)
+[ RUN      ] ProjectSessionTest.BatchFailurePreservesHistoryAndValidBatchUndoesEveryEdit
+[       OK ] ProjectSessionTest.BatchFailurePreservesHistoryAndValidBatchUndoesEveryEdit (1 ms)
+[ RUN      ] ProjectSessionTest.SourceEventsAndHistoryRetriesCannotResurrectOldFreshness
+[       OK ] ProjectSessionTest.SourceEventsAndHistoryRetriesCannotResurrectOldFreshness (1 ms)
+[ RUN      ] ProjectSessionTest.MissingJournalAndFutureRevisionRequireResynchronization
+[       OK ] ProjectSessionTest.MissingJournalAndFutureRevisionRequireResynchronization (0 ms)
+[ RUN      ] ProjectSessionTest.FilteredPagesPreserveSparseIdentitiesAndValueBoundaries
+[       OK ] ProjectSessionTest.FilteredPagesPreserveSparseIdentitiesAndValueBoundaries (0 ms)
+[ RUN      ] ProjectSessionTest.ValueQueriesIncludeTypedCatalogDefaults
+[       OK ] ProjectSessionTest.ValueQueriesIncludeTypedCatalogDefaults (0 ms)
+[ RUN      ] ProjectSessionTest.ParameterGesturePreviewsAreTransientAndCommitOnce
+[       OK ] ProjectSessionTest.ParameterGesturePreviewsAreTransientAndCommitOnce (1 ms)
+[ RUN      ] ProjectSessionTest.ParameterGestureCancelAndConflictDoNotPublish
+[       OK ] ProjectSessionTest.ParameterGestureCancelAndConflictDoNotPublish (1 ms)
+[ RUN      ] ProjectSessionTest.SharedWorkerSnapshotsRemainImmutableAcrossOwnerEdits
+[       OK ] ProjectSessionTest.SharedWorkerSnapshotsRemainImmutableAcrossOwnerEdits (8 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerDocumentReadIsDiagnosedBeforeStateAccess
+[       OK ] ProjectSessionTest.OffOwnerDocumentReadIsDiagnosedBeforeStateAccess (1130 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSnapshotIsDiagnosedBeforeStateAccess
+[       OK ] ProjectSessionTest.OffOwnerSnapshotIsDiagnosedBeforeStateAccess (1136 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerMutationIsDiagnosedBeforeStateAccess
+[       OK ] ProjectSessionTest.OffOwnerMutationIsDiagnosedBeforeStateAccess (1148 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSubscriptionRegistrationIsDiagnosedBeforeStateAccess
+[       OK ] ProjectSessionTest.OffOwnerSubscriptionRegistrationIsDiagnosedBeforeStateAccess (1155 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSubscriptionMoveConstructionIsDiagnosed
+[       OK ] ProjectSessionTest.OffOwnerSubscriptionMoveConstructionIsDiagnosed (1207 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSubscriptionReleaseByMoveAssignmentIsDiagnosed
+[       OK ] ProjectSessionTest.OffOwnerSubscriptionReleaseByMoveAssignmentIsDiagnosed (1140 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSubscriptionMoveAssignmentOfEmptyDestinationIsDiagnosed
+[       OK ] ProjectSessionTest.OffOwnerSubscriptionMoveAssignmentOfEmptyDestinationIsDiagnosed (1135 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSelfMoveAssignmentIsDiagnosed
+[       OK ] ProjectSessionTest.OffOwnerSelfMoveAssignmentIsDiagnosed (1132 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSubscriptionDestructionIsDiagnosed
+[       OK ] ProjectSessionTest.OffOwnerSubscriptionDestructionIsDiagnosed (1136 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSubscriptionMoveAssignmentValidatesBothSessions
+[       OK ] ProjectSessionTest.OffOwnerSubscriptionMoveAssignmentValidatesBothSessions (2885 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSessionDestructionIsDiagnosedBeforeMemberTeardown
+[       OK ] ProjectSessionTest.OffOwnerSessionDestructionIsDiagnosedBeforeMemberTeardown (1137 ms)
+[ RUN      ] ProjectSessionTest.OffOwnerSnapshotAfterDocumentReplacementIsDiagnosed
+[       OK ] ProjectSessionTest.OffOwnerSnapshotAfterDocumentReplacementIsDiagnosed (1836 ms)
+[----------] 32 tests from ProjectSessionTest (16217 ms total)
+
+[----------] 35 tests from SessionPersistenceTest
+[ RUN      ] SessionPersistenceTest.ReadResolvesRelativeReferencesAndWarnsOnMissingDependencies
+[       OK ] SessionPersistenceTest.ReadResolvesRelativeReferencesAndWarnsOnMissingDependencies (5689 ms)
+[ RUN      ] SessionPersistenceTest.SaveAsRebasesResolvedTargetsWithoutCopyingResources
+[       OK ] SessionPersistenceTest.SaveAsRebasesResolvedTargetsWithoutCopyingResources (40 ms)
+[ RUN      ] SessionPersistenceTest.SequencePatternReferencesReportUnresolvedState
+[       OK ] SessionPersistenceTest.SequencePatternReferencesReportUnresolvedState (34 ms)
+[ RUN      ] SessionPersistenceTest.BackupRecoveryInfersAndProtectsTheOriginalTarget
+[       OK ] SessionPersistenceTest.BackupRecoveryInfersAndProtectsTheOriginalTarget (134 ms)
+[ RUN      ] SessionPersistenceTest.ProtectedTargetFollowsHardLinks
+[       OK ] SessionPersistenceTest.ProtectedTargetFollowsHardLinks (66 ms)
+[ RUN      ] SessionPersistenceTest.AtomicWritePreservesExistingTargetPermissions
+[       OK ] SessionPersistenceTest.AtomicWritePreservesExistingTargetPermissions (111 ms)
+[ RUN      ] SessionPersistenceTest.BackupFailureRemovesTheCreatedTemporaryAndKeepsTarget
+[       OK ] SessionPersistenceTest.BackupFailureRemovesTheCreatedTemporaryAndKeepsTarget (108 ms)
+[ RUN      ] SessionPersistenceTest.BackupReplacesSymlinkWithoutFollowingIt
+[       OK ] SessionPersistenceTest.BackupReplacesSymlinkWithoutFollowingIt (123 ms)
+[ RUN      ] SessionPersistenceTest.AtomicWriteKeepsPreviousGoodBackup
+[       OK ] SessionPersistenceTest.AtomicWriteKeepsPreviousGoodBackup (128 ms)
+[ RUN      ] SessionPersistenceTest.AtomicWriteFailurePreservesPreviousGoodTarget
+[       OK ] SessionPersistenceTest.AtomicWriteFailurePreservesPreviousGoodTarget (8 ms)
+[ RUN      ] SessionPersistenceTest.AtomicWriteNeverTouchesAUserFileAtThePredictableTempName
+[       OK ] SessionPersistenceTest.AtomicWriteNeverTouchesAUserFileAtThePredictableTempName (111 ms)
+[ RUN      ] SessionPersistenceTest.CorruptExistingTargetIsNotDestructivelyReplaced
+[       OK ] SessionPersistenceTest.CorruptExistingTargetIsNotDestructivelyReplaced (136 ms)
+[ RUN      ] SessionPersistenceTest.TruncatedEmptyTargetIsNotDestructivelyReplaced
+[       OK ] SessionPersistenceTest.TruncatedEmptyTargetIsNotDestructivelyReplaced (123 ms)
+[ RUN      ] SessionPersistenceTest.UnsupportedNewerTargetIsNotDestructivelyReplaced
+[       OK ] SessionPersistenceTest.UnsupportedNewerTargetIsNotDestructivelyReplaced (1 ms)
+[ RUN      ] SessionPersistenceTest.AtomicWriteRejectsDirectoryTarget
+[       OK ] SessionPersistenceTest.AtomicWriteRejectsDirectoryTarget (0 ms)
+[ RUN      ] SessionPersistenceTest.AutosaveStoreIsBoundedAndNeverWritesTheTarget
+[       OK ] SessionPersistenceTest.AutosaveStoreIsBoundedAndNeverWritesTheTarget (271 ms)
+[ RUN      ] SessionPersistenceTest.CorruptOwnedAutosaveSlotIsReplacedWithoutLosingOtherSlots
+[       OK ] SessionPersistenceTest.CorruptOwnedAutosaveSlotIsReplacedWithoutLosingOtherSlots (309 ms)
+[ RUN      ] SessionPersistenceTest.AutosaveNeverDestroysNewerSchemaRecoveryData
+[       OK ] SessionPersistenceTest.AutosaveNeverDestroysNewerSchemaRecoveryData (51 ms)
+[ RUN      ] SessionPersistenceTest.AutosaveFailsVisiblyWhenEverySlotIsNewerData
+[       OK ] SessionPersistenceTest.AutosaveFailsVisiblyWhenEverySlotIsNewerData (1 ms)
+[ RUN      ] SessionPersistenceTest.RecoveryIsAnUnsavedCopyThatProtectsTheOriginalTarget
+[       OK ] SessionPersistenceTest.RecoveryIsAnUnsavedCopyThatProtectsTheOriginalTarget (259 ms)
+[ RUN      ] SessionPersistenceTest.ReadSourceChoicesAreIndependentPerReadAndSurviveSessionRoundTrip
+[       OK ] SessionPersistenceTest.ReadSourceChoicesAreIndependentPerReadAndSurviveSessionRoundTrip (150 ms)
+[ RUN      ] SessionPersistenceTest.RegisteredBuiltinColorConfigReferenceIsPersistedVerbatim
+[       OK ] SessionPersistenceTest.RegisteredBuiltinColorConfigReferenceIsPersistedVerbatim (85 ms)
+[ RUN      ] SessionPersistenceTest.StaleSaveCompletionAfterReplacementDoesNotAdoptTheNewProject
+[       OK ] SessionPersistenceTest.StaleSaveCompletionAfterReplacementDoesNotAdoptTheNewProject (80 ms)
+[ RUN      ] SessionPersistenceTest.StaleSaveCompletionNeverClearsNewerEdits
+[       OK ] SessionPersistenceTest.StaleSaveCompletionNeverClearsNewerEdits (31 ms)
+[ RUN      ] SessionPersistenceTest.UndoToSavedStateIsClean
+[       OK ] SessionPersistenceTest.UndoToSavedStateIsClean (1 ms)
+[ RUN      ] SessionPersistenceTest.ReplacementKeepsObserversAndClearsSessionHistory
+[       OK ] SessionPersistenceTest.ReplacementKeepsObserversAndClearsSessionHistory (40 ms)
+[ RUN      ] SessionPersistenceTest.ReplacementClearsGesturesAndRequestDeduplication
+[       OK ] SessionPersistenceTest.ReplacementClearsGesturesAndRequestDeduplication (4394 ms)
+[ RUN      ] SessionPersistenceTest.SaveCompletionCreatesNoUndoEntry
+[       OK ] SessionPersistenceTest.SaveCompletionCreatesNoUndoEntry (62 ms)
+[ RUN      ] SessionPersistenceTest.PresentationEnvelopeRoundTripsAndStaysHeadless
+[       OK ] SessionPersistenceTest.PresentationEnvelopeRoundTripsAndStaysHeadless (125 ms)
+[ RUN      ] SessionPersistenceTest.WrittenProjectCarriesFormatAndRequiredFeatures
+[       OK ] SessionPersistenceTest.WrittenProjectCarriesFormatAndRequiredFeatures (68 ms)
+[ RUN      ] SessionPersistenceTest.ReadValidatesFormatDiscriminatorSchemaAndCorruption
+[       OK ] SessionPersistenceTest.ReadValidatesFormatDiscriminatorSchemaAndCorruption (8 ms)
+[ RUN      ] SessionPersistenceTest.MalformedColorConfigRejectsReadAndPreservesExistingTarget
+[       OK ] SessionPersistenceTest.MalformedColorConfigRejectsReadAndPreservesExistingTarget (156 ms)
+[ RUN      ] SessionPersistenceTest.EmptyColorConfigReferenceLoadsLikeAnAbsentOne
+[       OK ] SessionPersistenceTest.EmptyColorConfigReferenceLoadsLikeAnAbsentOne (5 ms)
+[ RUN      ] SessionPersistenceTest.ColorConfigReferenceResolvesRebasesAndDirtiesTheSession
+[       OK ] SessionPersistenceTest.ColorConfigReferenceResolvesRebasesAndDirtiesTheSession (202 ms)
+[ RUN      ] SessionPersistenceTest.RelinkThroughSourceCommandSurvivesSaveAndReopen
+[       OK ] SessionPersistenceTest.RelinkThroughSourceCommandSurvivesSaveAndReopen (835 ms)
+[----------] 35 tests from SessionPersistenceTest (13965 ms total)
+
+[----------] Global test environment tear-down
+[==========] 96 tests from 3 test suites ran. (30217 ms total)
+[  PASSED  ] 96 tests.

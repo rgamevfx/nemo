@@ -1,3 +1,4 @@
+#include "HistoryController.hpp"
 #include "PanelContextRouter.hpp"
 #include "ProjectFileController.hpp"
 #include "ViewerController.hpp"
@@ -97,6 +98,9 @@ protected:
     QTemporaryDir directory;
     nemo::workspace::WorkspaceController workspace{directory.filePath(QStringLiteral("workspace.json"))};
     nemo::ProjectSession projectSession;
+    // The shared presentation history the application composes: declared after
+    // the session and before the engine, so both lifetimes stay valid.
+    nemo::ui::HistoryController historyController{projectSession};
     nemo::ui::ViewerRuntime viewerRuntime;
     nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
     nemo::ui::PanelContextRouter router{projectSession};
@@ -118,6 +122,7 @@ protected:
                                     QStringLiteral("ParametersPanel.qml"));
         router.setWorkspaceController(&workspace);
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
+        engine.rootContext()->setContextProperty(QStringLiteral("historyController"), &historyController);
         engine.rootContext()->setContextProperty(QStringLiteral("viewerController"), &viewerController);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &router);
         engine.rootContext()->setContextProperty(QStringLiteral("projectFile"), &projectFile);

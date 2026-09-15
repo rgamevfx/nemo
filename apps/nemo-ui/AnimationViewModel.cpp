@@ -220,7 +220,6 @@ void AnimationViewModel::refresh() {
         channels_ = std::move(records);
         emit channelsChanged();
     }
-    emit historyChanged();
     if (replaced)
         emit projectChanged();
 }
@@ -396,15 +395,5 @@ bool AnimationViewModel::removeKeys(const QStringList& ids) {
     } catch (const std::exception& error) {
         return fail(QString::fromUtf8(error.what()));
     }
-}
-bool AnimationViewModel::undo() {
-    cancelGesture();
-    const auto result = session_.undo({.expectedRevision = session_.revision()});
-    return !result.error || fail(QString::fromStdString(result.error->message));
-}
-bool AnimationViewModel::redo() {
-    cancelGesture();
-    const auto result = session_.redo({.expectedRevision = session_.revision()});
-    return !result.error || fail(QString::fromStdString(result.error->message));
 }
 }  // namespace nemo::ui

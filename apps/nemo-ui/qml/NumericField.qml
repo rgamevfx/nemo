@@ -68,6 +68,17 @@ FocusScope {
     property real scrubPreview: 0
     property bool scrubChanged: false
     property real scrubOrigin: 0
+    // The host's live parameter gesture: false once the host no longer accepts
+    // preview updates. The host binds it from its own gesture owner, so this
+    // control never talks to the panel. A cancellation (Escape or a
+    // preview-only Undo) ends the local scrub at once - the authored value is
+    // shown again without waiting for a document refresh - and the press that
+    // produced the scrub may not start another one, so neither renewed motion
+    // nor the release can publish the cancelled preview.
+    property bool gestureLive: false
+    property bool scrubAbandoned: false
+    onGestureLiveChanged: if (!gestureLive)
+        endScrub()
     property bool hasError: errorText.length > 0
 
     // An exact integer outside the safe double range cannot be scrubbed or
@@ -162,6 +173,18 @@ FocusScope {
         textCommitted(entered);
     }
 
+    // Ends a live scrub without a panel round-trip: the display returns to the
+    // authored value the host last published, and the same press stops driving
+    // the preview.
+    function endScrub() {
+        if (!scrubbing)
+            return;
+        scrubbing = false;
+        scrubChanged = false;
+        scrubPreview = root.value;
+        scrubAbandoned = gesture.pressed;
+    }
+
     function cancelBuffer() {
         editing = false;
         buffer = "";
@@ -234,9 +257,10 @@ FocusScope {
         onPressed: function (mouse) {
             pressX = mouse.x;
             altPress = !!(mouse.modifiers & Qt.AltModifier);
+            root.scrubAbandoned = false;
         }
         onPositionChanged: function (mouse) {
-            if (!pressed || altPress || !root.incrementSafe)
+            if (!pressed || altPress || !root.incrementSafe || root.scrubAbandoned)
                 return;
             if (!root.scrubbing) {
                 if (Math.abs(mouse.x - pressX) < root.dragThreshold)
@@ -254,6 +278,12 @@ FocusScope {
             root.scrubbed(candidate);
         }
         onReleased: {
+            if (root.scrubAbandoned) {
+                // The live gesture was cancelled under this press: the release
+                // publishes nothing and does not fall through to a typed edit.
+                root.scrubAbandoned = false;
+                return;
+            }
             if (root.scrubbing) {
                 root.scrubbing = false;
                 if (root.scrubChanged)
@@ -268,6 +298,7 @@ FocusScope {
             }
         }
         onCanceled: {
+            root.scrubAbandoned = false;
             if (root.scrubbing) {
                 root.scrubbing = false;
                 root.scrubCancelled();

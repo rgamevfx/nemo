@@ -185,6 +185,139 @@ TEST(ProjectSessionTest, SharesDocumentHistoryAndPreservesSnapshots) {
     EXPECT_EQ(rootGraph(session.snapshot()).node(plate)->params.at("gain"), ParameterValue{std::string{"2.0"}});
 }
 
+TEST(ProjectSessionTest, TransitionLabelsDescribeCompoundUndoAndRedo) {
+    Document doc = emptyDocument();
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
+    ProjectSession session(std::move(doc));
+    const NetworkId network = session.document().rootNetworkId();
+
+    EXPECT_TRUE(session.undoLabel().empty());
+    EXPECT_TRUE(session.redoLabel().empty());
+
+    // A compound edit is one history entry, and its label describes that whole
+    // transition rather than its last part.
+    Command compound =
+        transactionCommand("rename and reposition", {renameNodeCommand(network, plate, "backplate"),
+                                                     setLayoutCommand(network, plate, LayoutPosition{320.0, 180.0})});
+    ASSERT_TRUE(session.submit(std::move(compound), current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "rename and reposition");
+    EXPECT_TRUE(session.redoLabel().empty());
+
+    Command gain = transactionCommand("double the gain",
+                                      {setParamCommand(network, plate, "gain", ParameterValue{std::string{"2.0"}})});
+    ASSERT_TRUE(session.submit(std::move(gain), current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "double the gain");
+
+    // Undo walks the retained labels backwards and redo exposes the same
+    // transitions forwards; each label stays attached to its own transition.
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "rename and reposition");
+    EXPECT_EQ(session.redoLabel(), "double the gain");
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    EXPECT_TRUE(session.undoLabel().empty());
+    EXPECT_EQ(session.redoLabel(), "rename and reposition");
+    EXPECT_FALSE(session.canUndo());
+
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "rename and reposition");
+    EXPECT_EQ(session.redoLabel(), "double the gain");
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "double the gain");
+    EXPECT_TRUE(session.redoLabel().empty());
+    EXPECT_FALSE(session.canRedo());
+}
+
+TEST(ProjectSessionTest, RejectedEditLeavesTransitionLabelsUntouched) {
+    Document doc = emptyDocument();
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
+    const double initialX = rootGraph(doc).node(plate)->layout.x;
+    ProjectSession session(std::move(doc));
+    const NetworkId network = session.document().rootNetworkId();
+
+    Command position =
+        transactionCommand("position plate", {setLayoutCommand(network, plate, LayoutPosition{40.0, 60.0})});
+    ASSERT_TRUE(session.submit(std::move(position), current(session)).committed);
+    ASSERT_EQ(session.undoLabel(), "position plate");
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    ASSERT_EQ(session.redoLabel(), "position plate");
+
+    // The candidate is discarded whole, so a rejected compound edit neither
+    // consumes history nor changes which transition the labels describe.
+    Command doomed = transactionCommand("rejected compound",
+                                        {setLayoutCommand(network, plate, LayoutPosition{80.0, 120.0}),
+                                         setParamCommand(network, 999, "gain", ParameterValue{std::string{"1.0"}})});
+    const auto rejected = session.submit(std::move(doomed), current(session));
+    EXPECT_FALSE(rejected.committed);
+    ASSERT_TRUE(rejected.error.has_value());
+    EXPECT_TRUE(session.undoLabel().empty());
+    EXPECT_EQ(session.redoLabel(), "position plate");
+    EXPECT_FALSE(session.canUndo());
+    EXPECT_TRUE(session.canRedo());
+    EXPECT_EQ(rootGraph(session.document()).node(plate)->layout.x, initialX);
+
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "position plate");
+    EXPECT_TRUE(session.redoLabel().empty());
+    EXPECT_EQ(rootGraph(session.document()).node(plate)->layout.x, 40.0);
+}
+
+TEST(ProjectSessionTest, TransitionLabelsTrackEvictionAndRedoBranchReplacement) {
+    Document doc = emptyDocument();
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
+    ProjectSession session(std::move(doc), /*historyCapacity=*/2);
+    const NetworkId network = session.document().rootNetworkId();
+
+    const auto gain = [&](std::string label, std::string value) {
+        return transactionCommand(std::move(label), {setParamCommand(network, plate, "gain", ParameterValue{value})});
+    };
+    ASSERT_TRUE(session.submit(gain("first gain", "1.0"), current(session)).committed);
+    ASSERT_TRUE(session.submit(gain("second gain", "2.0"), current(session)).committed);
+    ASSERT_TRUE(session.submit(gain("third gain", "3.0"), current(session)).committed);
+
+    // Capacity 2 retains the two newest transitions: the evicted first edit
+    // keeps neither its label nor its reachability.
+    EXPECT_EQ(session.undoLabel(), "third gain");
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "second gain");
+    EXPECT_EQ(session.redoLabel(), "third gain");
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    EXPECT_TRUE(session.undoLabel().empty());
+    EXPECT_FALSE(session.canUndo());
+    EXPECT_EQ(rootGraph(session.document()).node(plate)->params.at("gain"), ParameterValue{std::string{"1.0"}});
+
+    // Redo keeps the same labels, and a new committed edit replaces the redo
+    // branch together with the label of the transition it discarded.
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "second gain");
+    EXPECT_EQ(session.redoLabel(), "third gain");
+    ASSERT_TRUE(session.submit(gain("replacement gain", "4.0"), current(session)).committed);
+    EXPECT_EQ(session.undoLabel(), "replacement gain");
+    EXPECT_TRUE(session.redoLabel().empty());
+    EXPECT_FALSE(session.canRedo());
+}
+
+TEST(ProjectSessionTest, DocumentReplacementClearsTransitionLabels) {
+    Document doc = emptyDocument();
+    const NodeId plate = rootGraph(doc).addNode("testpattern", "plate");
+    ProjectSession session(std::move(doc));
+    const NetworkId network = session.document().rootNetworkId();
+
+    Command position =
+        transactionCommand("position plate", {setLayoutCommand(network, plate, LayoutPosition{40.0, 60.0})});
+    ASSERT_TRUE(session.submit(std::move(position), current(session)).committed);
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    ASSERT_EQ(session.redoLabel(), "position plate");
+
+    // Replacement starts a different project: its labels go away with the
+    // history they belonged to.
+    const auto replaced = session.replaceDocument(Document{});
+    ASSERT_TRUE(replaced.replaced);
+    EXPECT_FALSE(session.canUndo());
+    EXPECT_FALSE(session.canRedo());
+    EXPECT_TRUE(session.undoLabel().empty());
+    EXPECT_TRUE(session.redoLabel().empty());
+}
+
 TEST(ProjectSessionTest, RejectsStaleRevisionWithoutChangingDocument) {
     ProjectSession session(emptyDocument());
     const auto first =

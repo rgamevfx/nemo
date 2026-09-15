@@ -1261,6 +1261,11 @@ void CommandStack::push(Command command, const BeforeCommit& beforeCommit) {
         throw std::invalid_argument("command must provide an apply operation");
     static_assert(std::is_nothrow_move_assignable_v<Document>);
     static_assert(std::is_nothrow_move_constructible_v<Document>);
+    static_assert(std::is_nothrow_move_constructible_v<Entry>);
+    // Retained label metadata is taken from the command before the candidate is
+    // built: moving a string the factory already allocated cannot throw, so
+    // preparing it can never fail once the transition is under way.
+    std::string label = std::move(command.label);
     Document candidate = document_;
     ChangeRecorder touched;
     candidate.beginRecording(&touched);
@@ -1273,10 +1278,10 @@ void CommandStack::push(Command command, const BeforeCommit& beforeCommit) {
     prepare(candidate, &touched);
     if (beforeCommit)
         beforeCommit(document_, candidate, touched);
-    // The retained version and the identities its transition touched are
-    // stored together: undo replays the same transition in reverse without
-    // diffing either document.
-    Entry entry{std::move(document_), std::move(touched)};
+    // The retained version, the identities its transition touched and that
+    // transition's label are stored together: undo replays the same transition
+    // in reverse without diffing either document, and reports the same label.
+    Entry entry{std::move(document_), std::move(touched), std::move(label)};
     document_ = std::move(candidate);
     undo_.push(std::move(entry));
     redo_.clear();
@@ -1290,7 +1295,9 @@ bool CommandStack::undo(const BeforeCommit& beforeCommit) {
     prepare(candidate, &entry.touched);
     if (beforeCommit)
         beforeCommit(document_, candidate, entry.touched);
-    Entry forward{std::move(document_), entry.touched};
+    // The label travels with the transition: the entry pushed onto the redo
+    // ring describes the same operation seen from the other side.
+    Entry forward{std::move(document_), std::move(entry.touched), std::move(entry.label)};
     document_ = std::move(candidate);
     undo_.popBack();
     redo_.push(std::move(forward));
@@ -1305,11 +1312,21 @@ bool CommandStack::redo(const BeforeCommit& beforeCommit) {
     prepare(candidate, &entry.touched);
     if (beforeCommit)
         beforeCommit(document_, candidate, entry.touched);
-    Entry backward{std::move(document_), entry.touched};
+    // Mirrors undo: the transition carries the same label back to the other
+    // ring, so the next undo still describes this operation.
+    Entry backward{std::move(document_), std::move(entry.touched), std::move(entry.label)};
     document_ = std::move(candidate);
     redo_.popBack();
     undo_.push(std::move(backward));
     return true;
+}
+
+std::string_view CommandStack::undoLabel() const noexcept {
+    return undo_.empty() ? std::string_view{} : std::string_view{undo_.back().label};
+}
+
+std::string_view CommandStack::redoLabel() const noexcept {
+    return redo_.empty() ? std::string_view{} : std::string_view{redo_.back().label};
 }
 
 void CommandStack::clear() {

@@ -1,0 +1,255 @@
+{
+  "issue": "https://github.com/rgamevfx/nemo/issues/86",
+  "baseline": "96f36034239508f6b82d5503fa41127c1b763153",
+  "branch": "issue/85-region-evaluation",
+  "work_class": "system extension / integration repair",
+  "scope": "Session-injected history routing, lightweight transition labels, existing owner cancellation coordination, retired forwarding methods, native/public-session regressions and contribution documentation. No document storage, format, renderer or dependency change.",
+  "native_environment": {
+    "platform": "Linux Wayland",
+    "qt": "6.4.2",
+    "wayland_display": "wayland-1",
+    "flags": {
+      "NEMO_TEST_NATIVE_UI": "1",
+      "NEMO_TEST_VIEWER_WINDOW": "1",
+      "QT_QPA_PLATFORM": "wayland"
+    },
+    "surface": "Production Main.qml and existing SubnetParameters.qml loaded by the application input harness; native Qt key/menu/pointer input. Final captures use the native scene-graph renderer. The earlier software-renderer tool capture was black and is excluded."
+  },
+  "authority": {
+    "issue_contract": "https://github.com/rgamevfx/nemo/issues/86#issuecomment-5685069739",
+    "atomicity_correction": "https://github.com/rgamevfx/nemo/issues/86#issuecomment-5685297686",
+    "spec": "docs/composition_network_vfx_nle_spec_v2.md sections 10.2 and 12",
+    "storage": "docs/decisions/0007-evaluator-reuse-invalidation.md: Structurally shared document versions (#72)",
+    "prototype": "docs/evidence/issue25-coverage-v1.json and archived handlers in assets/issue25-prototype-reference-v1.tar.gz; exact coverage mapping is in the pre-edit contract. #86 is new history-access authority, not invented prototype parity.",
+    "slider_correction": "https://github.com/rgamevfx/nemo/issues/86#issuecomment-5685804120"
+  },
+  "acceptance": [
+    {
+      "scenario": "Graph without media or viewer target",
+      "proof": [
+        "HistorySurface.GraphKeyboardAndEditMenuRestoreOneChronologicalTransition",
+        "WorkspaceDragTest.GraphScreenSpaceHitTestingSurvivesEveryZoomLevel",
+        "WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "result": "Native creation, movement, connection, reroute, endpoint replacement, disconnect and deletion restore authored graph state through shared keys/menu; connection/reroute redo restores the same records."
+    },
+    {
+      "scenario": "Compound edit and nested graph",
+      "proof": [
+        "HistorySurface.CompoundHistorySurvivesToolWindowReopeningAndScopedNavigation",
+        "CommandStackTest.TransactionUsesOneUndoStepAndStableCreatedIdentity",
+        "WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition"
+      ],
+      "result": "Native collapse is one chronological step; undo unwinds the removed entered occurrence to its surviving graph. Existing scoped/atomic coverage supplies unchanged variants."
+    },
+    {
+      "scenario": "Interleaved edits and focus changes",
+      "proof": [
+        "HistorySurface.InterleavedPanelEditsFollowDocumentChronologyAcrossFocus",
+        "AnimationSurface.HistoryCancelsKeyPreviewBeforeCommittedInsertion"
+      ],
+      "result": "Graph, parameter and media edits follow document chronology across Graph/Media focus; animation insertion uses that same committed history."
+    },
+    {
+      "scenario": "Text editing and exhausted local history",
+      "proof": [
+        "HistorySurface.ExhaustedTextHistoryNeverFallsThroughKeyboardOrMenu",
+        "HistorySurface.NumericTextMenuDoesNotCommitOrUndoDocument"
+      ],
+      "result": "Real search/numeric text handles local key/menu undo and redo, including exhaustion, without document fallback or premature numeric commit. Explicit Return still commits."
+    },
+    {
+      "scenario": "Active graph, parameter and key gestures",
+      "proof": [
+        "HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit",
+        "AnimationSurface.HistoryCancelsKeyPreviewBeforeCommittedInsertion",
+        "WorkspaceDragTest.GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease"
+      ],
+      "result": "Undo cancels previews only; Redo cannot publish; resumed motion/release cannot commit. Prior authored content and revisions remain unchanged. Numeric and slider visible previews stay reverted during resumed motion; a fresh slider press still commits and undoes normally."
+    },
+    {
+      "scenario": "Main and existing tool window lifetime",
+      "proof": [
+        "HistorySurface.CompoundHistorySurvivesToolWindowReopeningAndScopedNavigation"
+      ],
+      "result": "Three tool reopen cycles target the same session; one input produces one transition. An unrelated active QQuickWindow cannot dispatch history."
+    },
+    {
+      "scenario": "Empty, rejected and branched history",
+      "proof": [
+        "HistorySurface.GraphKeyboardAndEditMenuRestoreOneChronologicalTransition",
+        "ProjectSessionTest.RejectedEditLeavesTransitionLabelsUntouched",
+        "ProjectSessionTest.TransitionLabelsTrackEvictionAndRedoBranchReplacement",
+        "AnimationSurface.NumericEditorTypedCommitAndRejectionPreserveState"
+      ],
+      "result": "Empty shared actions disable; rejected editing leaves state/history intact; existing feedback is retained; a new edit after undo clears the old redo branch."
+    },
+    {
+      "scenario": "Transition labels and atomicity",
+      "proof": [
+        "ProjectSessionTest.TransitionLabelsDescribeCompoundUndoAndRedo",
+        "ProjectSessionTest.TransitionLabelsTrackEvictionAndRedoBranchReplacement",
+        "CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks"
+      ],
+      "result": "Public label queries follow transactions, undo/redo, eviction and branch replacement. Labels are runtime-only. Opposite-ring transfers move both label and touched recorder after fallible preparation; Entry move is statically required to be noexcept."
+    },
+    {
+      "scenario": "Retained snapshots and freshness",
+      "proof": [
+        "ProjectSessionTest.SharesDocumentHistoryAndPreservesSnapshots",
+        "ProjectSessionTest.ValidReconvergentConnectionUndoRedoRestoresTopologyAndIdentities",
+        "CommandStackTest.FailedPublicationPreparationPreservesUndoAndIdentityHighWatermarks"
+      ],
+      "result": "Existing snapshot isolation, stable restored identities and monotonic freshness contracts remain intact. Native comparisons intentionally do not expect ID allocation watermarks to roll backward."
+    },
+    {
+      "scenario": "Saved state and replacement/open",
+      "proof": [
+        "HistorySurface.SavedIndicatorTracksNativeHistoryAndReplacement",
+        "SessionPersistenceTest.*",
+        "ProjectSessionTest.DocumentReplacementClearsTransitionLabels"
+      ],
+      "result": "A native parameter edit becomes dirty, undo to saved authored content becomes clean, redo becomes dirty; replacement clears availability/history. Existing persistence coverage protects save/open lifecycle. Structural ID allocation and presentation changes are not incorrectly treated as undoable saved-state changes."
+    },
+    {
+      "scenario": "Adjacent selection, navigation, view and layout",
+      "proof": [
+        "WorkspaceDragTest.GraphViewGestureWritesOnceAndOtherPanelsDoNotRewriteIt",
+        "WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "AnimationSurface.NumericEditorClickScrubAndCancellationUseOneGesture",
+        "AnimationSurface.GradeLinkedRgbEditingPreservesComponentsAndAlpha"
+      ],
+      "result": "Accepted view/panel routing and normal edit commit/cancel behavior remain with their owners. Navigation/selection are not registered as authored previews or document history."
+    },
+    {
+      "scenario": "Active viewer during history",
+      "proof": [
+        "ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt"
+      ],
+      "result": "Native Ctrl+Z restores the 96x64 Read presentation after a 40x20 replacement; Ctrl+Shift+Z restores 40x20. Existing request/revision stale-result protection is unchanged."
+    },
+    {
+      "scenario": "Existing large-project workload",
+      "proof": [
+        "HistorySurface.SavedIndicatorTracksNativeHistoryAndReplacement with NEMO_HISTORY_PROJECT=/tmp/nemo86-large.nemo"
+      ],
+      "result": "Existing #69/#72 driver seed with 1024 chain nodes: native edit, focus, undo/redo and clean/dirty transitions completed. Whole fixture took 11.078 seconds including load/setup/save/teardown; no per-edit latency measurement or claim of stall-free interaction. The seed retains its pre-existing overlapping layout.",
+      "reproduction": "Compile docs/evidence/assets/issue69-editing-scale/editing_scale_driver.cpp using the existing #72 recipe; run editing_scale_driver seed /tmp/nemo86-large.nemo 1024. No new builder, benchmark or threshold."
+    }
+  ],
+  "visual_review": {
+    "result": "Retained native captures inspected by the implementation agent; shared menus reuse shell controls/theme and existing tool header. Graph geometry, A–E chrome and inspector/animation owners are not redesigned.",
+    "remaining_gate": "Owner native appearance/interaction and minimal internal-interface acceptance remain separate. No prior #72/#75/#83–85 gate is closed; Windows remains on roadmap hold."
+  },
+  "diagnosis": {
+    "regression": "The initial native numeric menu test showed focus leaving the buffer before menu activation, committing text. Qt 6.4 QQuickMenuPrivate::onItemHovered forces item focus even when focusPolicy is NoFocus. Shared HistoryMenuItem disables the native hover-focus path and uses a focus-preserving pointer area; repeated text menu undo/redo now preserves the buffer.",
+    "qt_source": "https://github.com/qt/qtdeclarative/blob/6.4.2/src/quicktemplates2/qquickmenu.cpp",
+    "slider_regression": "Native held-slider Redo initially published because Qt 6.4 ends Slider.pressed on unrelated key release. Resumed pointer motion also rewrote value before moved. The existing Slider now ignores non-editing key releases while pressed and restores authored value for a cancelled press. The red regression passes, including a fresh subsequent press that commits normally and undoes correctly.",
+    "slider_qt_source": "https://github.com/qt/qtdeclarative/blob/6.4.2/src/quicktemplates2/qquickslider.cpp"
+  },
+  "limitations": [
+    "No hosted CI or Windows run was requested.",
+    "Native event/capture evidence is not human appearance approval or a per-action latency benchmark.",
+    "User-modified issue34 workflow/autosave/backup assets are excluded from the commit.",
+    "Archived #43 scenario-final-catalog-v8.json still references retired mediaLibrary.canUndo. Historical evidence is intentionally unchanged and is not a current replay script."
+  ],
+  "captures": [
+    "empty-menu.png",
+    "redo-create-menu.png",
+    "graph-restored.png",
+    "text-exhausted-menu.png",
+    "numeric-text-history.png",
+    "tool-edit-menu.png",
+    "cancelled-previews.png",
+    "interleaved-history.png",
+    "unsaved-indicator.png",
+    "history-cancelled-key-panel.png",
+    "history-restored-read.png",
+    "environment-history-restored-read.json",
+    "large-project-history.png"
+  ],
+  "capture_notes": "Client-surface captures; native window-title clean/dirty transitions are asserted by the input scenario, not pictured in client-only screenshots. The large workload capture used the native Wayland software scene-graph path; final small/tool/viewer captures use the native renderer.",
+  "review": {
+    "standards": "No unresolved hard violations. Replaced internal gesture/token test assertions with visible geometry/text/handle assertions. Explicit public-interface declarations are required in the commit/task. Small routing switches, capture state and owner registration remain deliberately narrow instead of introducing a generic framework.",
+    "spec": "No unresolved violations after slider evidence gap exposed and fixed the held-key-release/resumed-motion bugs. Independent reviewer checked the correction against the recorded issue scope.",
+    "owner_observation": "New history menus preserve text focus and are pointer-operated; standard Qt history shortcuts remain keyboard access. Keyboard menu navigation and final appearance/interaction remain with owner review."
+  },
+  "verification": [
+    {
+      "command": "cmake --build --preset debug -j 2",
+      "result": "passed after final slider correction",
+      "wall_seconds": 46.68
+    },
+    {
+      "command": "cmake --build --preset release -j 2",
+      "result": "passed after final slider correction",
+      "wall_seconds": 52.06
+    },
+    {
+      "command": "build/asan/tests/nemo_core_tests --gtest_filter=ProjectSessionTest.*:CommandStackTest.*:SessionPersistenceTest.*",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1"
+      },
+      "result": "96 passed; no sanitizer diagnostics",
+      "log": "assets/issue86-history-routing/asan-history-persistence.log"
+    },
+    {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=HistorySurface.*:AnimationSurface.HistoryCancelsKeyPreviewBeforeCommittedInsertion:WorkspaceDragTest.GraphPipePull*:WorkspaceDragTest.GraphDragPreviewCancellationAndGroupOffsets:WorkspaceDragTest.GraphScreenSpaceHitTestingSurvivesEveryZoomLevel:ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt",
+      "environment": "native_environment.flags; XDG_RUNTIME_DIR=/run/user/1000; DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; WAYLAND_DISPLAY=wayland-1",
+      "result": "13 passed on native renderer; slider follow-up below supersedes that one scenario",
+      "log": "assets/issue86-history-routing/native-history.log"
+    },
+    {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit:AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory:WorkspaceDragTest.RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition",
+      "environment": "same native renderer environment",
+      "result": "3 passed after final correction, including slider cancellation/resumed motion/release/fresh commit, normal keyed slider history and nearest-surviving-ancestor recovery",
+      "log": "assets/issue86-history-routing/native-slider-scoped.log"
+    },
+    {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=AnimationSurface.NumericEditor*:AnimationSurface.GradeLinkedRgbEditingPreservesComponentsAndAlpha:WorkspaceDragTest.GraphPipePull*:WorkspaceDragTest.SubnetNavigationShowsTypedTerminalsAndRestoresScopedView:WorkspaceDragTest.GraphViewGestureWritesOnceAndOtherPanelsDoNotRewriteIt",
+      "environment": "NEMO_TEST_NATIVE_UI=1; QT_QPA_PLATFORM=wayland; WAYLAND_DISPLAY=wayland-1; XDG_RUNTIME_DIR=/run/user/1000; DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+      "result": "8 passed"
+    },
+    {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=HistorySurface.SavedIndicatorTracksNativeHistoryAndReplacement",
+      "environment": "same Wayland native environment plus NEMO_HISTORY_PROJECT=/tmp/nemo86-large.nemo",
+      "result": "1 passed with existing 1024-chain-node seed",
+      "fixture_seconds": 11.078
+    },
+    {
+      "command": "ctest --preset debug",
+      "runs": 1,
+      "passed": 700,
+      "skipped": 18,
+      "failed": 1,
+      "wall_seconds": 171.9,
+      "failure": "Viewer.InterpretationMapIsParsedStrictly: unknown source interpretation field colorimetry. Known pre-existing unrelated failure; untouched.",
+      "log": "assets/issue86-history-routing/debug-suite.log"
+    }
+  ],
+  "build_warnings": [
+    "Existing minizip-ng mktemp linker warning.",
+    "Initial configure also reports the existing Qt QML module output-directory tooling warning."
+  ],
+  "public_interfaces": {
+    "added": [
+      "CommandStack::undoLabel()/redoLabel()",
+      "ProjectSession::undoLabel()/redoLabel()",
+      "Session-injected HistoryController and historyController QML context entry point",
+      "HistoryMenu/HistoryMenuItem and NumericField.gestureLive host coordination"
+    ],
+    "retired": [
+      "ViewerController history forwarding/availability/signals",
+      "AnimationViewModel history forwarding/availability/signals",
+      "MediaLibraryModel history forwarding/availability/signals and independent Shift+Z policy"
+    ],
+    "unchanged": [
+      "Core/CLI undo and redo commands",
+      "Document format/content equality",
+      "Storage, allocation watermarks, bounded version rings and renderer/media interfaces"
+    ]
+  },
+  "recorded_at": "2026-09-15T18:36:37.761Z"
+}

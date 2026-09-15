@@ -64,8 +64,6 @@ class ViewerController final : public QObject {
     Q_PROPERTY(QVariantList graphEdges READ graphEdges NOTIFY graphChanged)
     Q_PROPERTY(QVariantList nodeCatalog READ nodeCatalog NOTIFY catalogChanged)
     Q_PROPERTY(QVariantList timelineClips READ timelineClips NOTIFY timelineChanged)
-    Q_PROPERTY(bool canUndo READ canUndo NOTIFY historyChanged)
-    Q_PROPERTY(bool canRedo READ canRedo NOTIFY historyChanged)
     Q_PROPERTY(qulonglong queued READ queued NOTIFY schedulerChanged)
     Q_PROPERTY(qulonglong dropped READ dropped NOTIFY schedulerChanged)
     Q_PROPERTY(qulonglong staleRejected READ staleRejected NOTIFY schedulerChanged)
@@ -213,8 +211,6 @@ public:
     Q_INVOKABLE int viewerCount(const QString& networkId) const;
     Q_INVOKABLE QVariantMap viewerAttachment(const QString& networkId, int viewerIndex) const;
     Q_INVOKABLE bool assignViewer(const QString& networkId, int viewerIndex, const QVariant& nodeId);
-    Q_INVOKABLE bool undo();
-    Q_INVOKABLE bool redo();
     Q_INVOKABLE void cancelRender();
     Q_INVOKABLE void requestRange(int first, int last);
     // Panel transport. Playback produces one request per DISPLAYED frame: the
@@ -287,8 +283,6 @@ public:
     [[nodiscard]] QVariantList graphEdges() const;
     [[nodiscard]] QVariantList nodeCatalog() const;
     [[nodiscard]] QVariantList timelineClips() const;
-    [[nodiscard]] bool canUndo() const { return session_.canUndo(); }
-    [[nodiscard]] bool canRedo() const { return session_.canRedo(); }
     [[nodiscard]] qulonglong queued() const;
     [[nodiscard]] qulonglong dropped() const;
     [[nodiscard]] qulonglong staleRejected() const;
@@ -330,7 +324,6 @@ signals:
     void graphChanged();
     void timelineChanged();
     void catalogChanged();
-    void historyChanged();
     void schedulerChanged();
     void frameArrived();
     void destinationChanged();

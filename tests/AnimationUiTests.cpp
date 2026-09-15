@@ -1,4 +1,5 @@
 #include "AnimationViewModel.hpp"
+#include "HistoryController.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
 #include "ProjectFileController.hpp"
@@ -118,13 +119,13 @@ TEST(AnimationUi, ComponentMovesCoalesceTimeAndPreserveUnselectedValues) {
     const auto moved = session.document().animationChannels().front();
     EXPECT_DOUBLE_EQ(moved.keys[0].time, 12);
     EXPECT_EQ(moved.keys[0].value, (ParameterValue{ColorValue{{0.25F, 0.5F, 0.5F, 1.0F}}}));
-    ASSERT_TRUE(model.undo());
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
     EXPECT_EQ(session.document().animationChannels().front(), before);
-    ASSERT_TRUE(model.redo());
+    ASSERT_TRUE(session.redo({session.revision(), {}}).committed);
     EXPECT_EQ(session.document().animationChannels().front(), moved);
-    ASSERT_TRUE(model.undo());
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
     ASSERT_TRUE(model.editKey(key(model, 0, 0), 11, 0.5, 0, 0));
-    EXPECT_FALSE(model.redo());
+    EXPECT_FALSE(session.redo({session.revision(), {}}).committed);
     EXPECT_DOUBLE_EQ(session.document().animationChannels().front().keys[0].time, 11);
 }
 TEST(AnimationUi, CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory) {
@@ -146,7 +147,7 @@ TEST(AnimationUi, CollisionRejectsEveryExactFieldAndDoesNotConsumeHistory) {
     EXPECT_FLOAT_EQ(std::get<ColorValue>(edited.value).value[0], 0.75F);
     EXPECT_DOUBLE_EQ(edited.inSlope[0], 2);
     EXPECT_DOUBLE_EQ(edited.outSlope[0], 2);
-    ASSERT_TRUE(model.undo());
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
     EXPECT_EQ(session.document().animationChannels().front(), before);
 }
 TEST(AnimationUi, StaleGestureCannotOverwriteAnotherEditOrReplacement) {
@@ -178,9 +179,9 @@ TEST(AnimationUi, TangentsAndInsertionUseSharedCurveSemantics) {
     ASSERT_TRUE(model.setTangentMode({id}, "broken"));
     ASSERT_TRUE(model.setTangent(id, "out", 0.2));
     const auto broken = session.document().animationChannels().front();
-    ASSERT_TRUE(model.undo());
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
     EXPECT_DOUBLE_EQ(session.document().animationChannels().front().keys[0].outSlope[0], 0.1);
-    ASSERT_TRUE(model.redo());
+    ASSERT_TRUE(session.redo({session.revision(), {}}).committed);
     EXPECT_EQ(session.document().animationChannels().front(), broken);
     EXPECT_DOUBLE_EQ(session.document().animationChannels().front().keys[0].inSlope[0], 0.1);
     const auto address = session.document().animationChannels().front().address;
@@ -192,9 +193,9 @@ TEST(AnimationUi, TangentsAndInsertionUseSharedCurveSemantics) {
     const auto revision = session.revision();
     EXPECT_EQ(model.insertKey(channel, 20), inserted);
     EXPECT_EQ(session.revision(), revision);
-    ASSERT_TRUE(model.undo());
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
     EXPECT_EQ(session.document().animationChannels().front().keys.size(), 2U);
-    ASSERT_TRUE(model.redo());
+    ASSERT_TRUE(session.redo({session.revision(), {}}).committed);
     EXPECT_EQ(key(model, 0, 1), inserted);
     EXPECT_EQ(animatedParameterValue(session.document(), address, 20), middle);
 }
@@ -223,6 +224,9 @@ protected:
     QTemporaryDir directory;
     workspace::WorkspaceController workspace{directory.filePath("workspace.json")};
     ProjectSession session{animatedDocument()};
+    // The shared presentation history the application composes: declared after
+    // the session and before the engine, so both lifetimes stay valid.
+    ui::HistoryController historyController{session};
     ui::ViewerRuntime runtime;
     ui::ViewerController controller{&runtime, session};
     ui::PanelContextRouter router{session};
@@ -252,6 +256,7 @@ protected:
         workspace.setPanelType(panelId, "animation");
         router.setWorkspaceController(&workspace);
         engine.rootContext()->setContextProperty("workspace", &workspace);
+        engine.rootContext()->setContextProperty("historyController", &historyController);
         engine.rootContext()->setContextProperty("viewerController", &controller);
         engine.rootContext()->setContextProperty("panelContextRouter", &router);
         engine.rootContext()->setContextProperty("projectFile", &file);
@@ -370,6 +375,42 @@ TEST_F(AnimationSurface, HeaderSelectionAndHierarchyNeverWriteAnimation) {
     EXPECT_EQ(session.document().animationChannels(), before);
     EXPECT_EQ(session.revision(), revision);
     EXPECT_FALSE(session.canUndo());
+}
+
+TEST_F(AnimationSurface, HistoryCancelsKeyPreviewBeforeCommittedInsertion) {
+    click("animationCurvesView");
+    click("animationFrameAll");
+    const auto original = session.document().animationChannels().front();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::AltModifier, point(20, 0.5));
+    QTest::qWait(30);
+    ASSERT_EQ(session.document().animationChannels().front().keys.size(), 3U);
+    const auto inserted = session.document().animationChannels().front();
+    const auto revision = session.revision();
+    const auto from = point(20, 0.5);
+    const auto to = from + QPoint(35, -12);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, from);
+    for (int step = 1; step <= 6; ++step) {
+        const QPointF position = QPointF(from) + QPointF(to - from) * (step / 6.0);
+        QMouseEvent event(QEvent::MouseMove, position, window->mapToGlobal(position.toPoint()), Qt::NoButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QGuiApplication::sendEvent(window, &event);
+    }
+    ASSERT_TRUE(js("animation.historyGestureActive").toBool());
+    EXPECT_FALSE(historyController.canRedo());
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    EXPECT_EQ(session.revision(), revision);
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+    EXPECT_FALSE(js("animation.historyGestureActive").toBool());
+    EXPECT_TRUE(js("animation.previewIds.length === 0").toBool());
+    EXPECT_EQ(session.document().animationChannels().front(), inserted);
+    EXPECT_EQ(session.revision(), revision);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, to);
+    QTest::qWait(30);
+    EXPECT_EQ(session.document().animationChannels().front(), inserted);
+    EXPECT_EQ(session.revision(), revision);
+    capture("history-cancelled-key");
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+    EXPECT_EQ(session.document().animationChannels().front(), original);
 }
 
 TEST_F(AnimationSurface, NativeInsertionExactCollisionAndCancellableConstrainedDrag) {
@@ -540,7 +581,7 @@ TEST(AnimationUi, ExposedOccurrenceChannelsDoNotEditTheirDefinition) {
     ASSERT_TRUE(model.editKey(key(model, 0, 0), 15, 0.8, 0, 0));
     EXPECT_EQ(session.document().animationChannels().front(), definitionBefore);
     EXPECT_FLOAT_EQ(std::get<ColorValue>(animatedParameterValue(session.document(), address, 15)).value[0], 0.8F);
-    ASSERT_TRUE(model.undo());
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
     EXPECT_DOUBLE_EQ(session.document().animationChannel(address)->keys[0].time, 12);
     model.setTargets({nodeTarget(999999, occurrence.node)});
     EXPECT_FALSE(model.available());
@@ -1276,7 +1317,7 @@ TEST_F(AnimationSurface, MergeOperationEditorSwapsConnectedInputsAtomically) {
     QTest::qWait(40);
     EXPECT_EQ(session.revision(), revision + 1) << "one swap is one undo step";
     EXPECT_NE(controller.graphEdges(), edges);
-    ASSERT_TRUE(controller.undo());
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
     EXPECT_EQ(controller.graphEdges(), edges);
 }
 }  // namespace

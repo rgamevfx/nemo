@@ -1,4 +1,5 @@
 #include "GraphItem.hpp"
+#include "HistoryController.hpp"
 #include "PanelContextRouter.hpp"
 #include "ProjectFileController.hpp"
 #include "TimelineItem.hpp"
@@ -82,6 +83,9 @@ protected:
     nemo::workspace::WorkspaceController controller{directory.filePath("workspace.json")};
     nemo::ui::ViewerRuntime viewerRuntime;
     nemo::ProjectSession projectSession;
+    // The shared presentation history the application composes: declared after
+    // the session and before the engine, so both lifetimes stay valid.
+    nemo::ui::HistoryController historyController{projectSession};
     nemo::ui::PanelContextRouter panelContextRouter{projectSession};
     // Context bindings persist through the same workspace presentation state.
     // Rendering and document ownership remain in their existing objects.
@@ -106,6 +110,7 @@ protected:
                                      QStringLiteral("TimelinePanel.qml"), QString());
         panelContextRouter.setWorkspaceController(&controller);
         engine.rootContext()->setContextProperty("workspace", &controller);
+        engine.rootContext()->setContextProperty("historyController", &historyController);
         engine.rootContext()->setContextProperty("panelContextRouter", &panelContextRouter);
         engine.rootContext()->setContextProperty("projectFile", &projectFile);
         engine.rootContext()->setContextProperty("viewerController", &viewerController);
@@ -438,7 +443,7 @@ TEST_F(WorkspaceDragTest, CatalogMenuCreatesRealNodesAndTimelineSeeks) {
     QTest::qWait(30);
     ASSERT_EQ(viewerController.graphNodes().size(), before + 1);
     EXPECT_EQ(viewerController.graphNodes().last().toMap().value("type").toString(), "constcolor");
-    viewerController.undo();
+    static_cast<void>(projectSession.undo(nemo::EditOptions{projectSession.revision(), {}}));
     EXPECT_EQ(viewerController.graphNodes().size(), before);
 
     viewerController.openSource("/tmp/nemo-interactive-command-source.mkv");
@@ -790,7 +795,7 @@ TEST_F(WorkspaceDragTest, GraphScreenSpaceHitTestingSurvivesEveryZoomLevel) {
         const auto hoveredDot = graph->property("hoveredReroute").toMap();
         EXPECT_EQ(hoveredDot.value(QStringLiteral("edge")).toString(), edgeId);
         EXPECT_EQ(hoveredDot.value(QStringLiteral("index")).toInt(), 0);
-        ASSERT_TRUE(viewerController.undo());
+        QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
         QTest::qWait(20);
         ASSERT_EQ(viewerController.graphEdges().first().toMap().value(QStringLiteral("route")).toList().size(), 0);
 
@@ -818,9 +823,13 @@ TEST_F(WorkspaceDragTest, GraphScreenSpaceHitTestingSurvivesEveryZoomLevel) {
         QTest::qWait(40);
         ASSERT_EQ(viewerController.graphEdges().size(), 2);
         EXPECT_EQ(viewerController.graphEdges().last().toMap().value("toNode").toString(), b);
-        ASSERT_TRUE(viewerController.undo());
+        const auto connected = viewerController.graphEdges();
+        QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
         QTest::qWait(20);
         ASSERT_EQ(viewerController.graphEdges().size(), 1);
+        QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+        EXPECT_EQ(viewerController.graphEdges(), connected);
+        QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
 
         // Last-click placement is recorded in scene coordinates, so a creation
         // lands where the artist clicked, not where they happen to be zoomed.
@@ -840,7 +849,7 @@ TEST_F(WorkspaceDragTest, GraphScreenSpaceHitTestingSurvivesEveryZoomLevel) {
         const auto placed = viewerController.graphNodes().last().toMap();
         EXPECT_NEAR(placed.value(QStringLiteral("x")).toDouble(), lastClickX - 56.0, 1.0);
         EXPECT_NEAR(placed.value(QStringLiteral("y")).toDouble(), lastClickY - 14.0, 1.0);
-        ASSERT_TRUE(viewerController.undo());
+        QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
         QTest::qWait(20);
     }
 }
@@ -910,7 +919,7 @@ TEST_F(WorkspaceDragTest, GraphDragPreviewCancellationAndGroupOffsets) {
     QTest::qWait(30);
     EXPECT_NE(viewerController.graphNodes(), before);
     EXPECT_EQ(graph->nodeRect(b).topLeft() - graph->nodeRect(a).topLeft(), offset);
-    ASSERT_TRUE(viewerController.undo());
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
     EXPECT_EQ(viewerController.graphNodes(), before) << "One undo restores the entire group";
 }
 
@@ -932,13 +941,17 @@ TEST_F(WorkspaceDragTest, GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRele
     QTest::qWait(30);
     const auto routed = viewerController.graphEdges();
     ASSERT_EQ(routed.first().toMap().value("route").toList().size(), 1);
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+    EXPECT_TRUE(viewerController.graphEdges().first().toMap().value("route").toList().isEmpty());
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
+    EXPECT_EQ(viewerController.graphEdges(), routed);
     const auto body = graph->mapToScene(start * 0.7 + end * 0.3).toPoint();
     auto* surface = item("graphCanvasSurface");
     const auto empty = surface->mapToScene(QPointF(surface->width() - 15, surface->height() - 15)).toPoint();
     QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, body);
     QTest::mouseMove(window, empty, 20);
     EXPECT_EQ(viewerController.graphEdges(), routed);
-    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, empty);
     EXPECT_EQ(viewerController.graphEdges(), routed);
     QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, body);
@@ -946,7 +959,7 @@ TEST_F(WorkspaceDragTest, GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRele
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, empty);
     QTest::qWait(30);
     EXPECT_TRUE(viewerController.graphEdges().isEmpty());
-    ASSERT_TRUE(viewerController.undo());
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
     EXPECT_EQ(viewerController.graphEdges(), routed);
     EXPECT_EQ(viewerController.graphEdges().first().toMap().value("id").toString(), edgeId);
 }
@@ -972,7 +985,7 @@ TEST_F(WorkspaceDragTest, GraphPipePullLocksSourceOrDestinationOnPress) {
     ASSERT_EQ(viewerController.graphEdges().size(), 1);
     EXPECT_EQ(viewerController.graphEdges().first().toMap().value("fromNode").toString(), c);
     EXPECT_EQ(viewerController.graphEdges().first().toMap().value("toNode").toString(), b);
-    ASSERT_TRUE(viewerController.undo());
+    QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
     QTest::qWait(20);
     const auto destinationDrop = graph->mapToScene(graph->portPosition(d, 0, false)).toPoint();
     QTest::mousePress(window, Qt::LeftButton, Qt::ShiftModifier, body);
@@ -1011,7 +1024,7 @@ TEST_F(WorkspaceDragTest, GraphSearchCreatesImmediatelyAndProtectsSelectionWhile
     const auto edge = viewerController.graphEdges().first().toMap();
     EXPECT_EQ(edge.value("fromNode").toString(), a);
     EXPECT_EQ(edge.value("toNode").toString(), created.value("id").toString());
-    ASSERT_TRUE(viewerController.undo());
+    ASSERT_TRUE(projectSession.undo(nemo::EditOptions{projectSession.revision(), {}}).committed);
     EXPECT_EQ(viewerController.graphNodes(), before);
     EXPECT_TRUE(viewerController.graphEdges().isEmpty());
 }
@@ -1251,7 +1264,7 @@ TEST_F(WorkspaceDragTest, RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefin
     EXPECT_EQ(projectSession.document().instances().size(), 1U);
     EXPECT_GT(projectSession.revision(), revision);
 
-    ASSERT_TRUE(viewerController.undo());
+    ASSERT_TRUE(projectSession.undo(nemo::EditOptions{projectSession.revision(), {}}).committed);
     QTest::qWait(60);
     EXPECT_EQ(panel->property("graphNetworkId").toString(), network);
     EXPECT_TRUE(viewerController.graphSnapshot(definition).value(QStringLiteral("available")).toBool());
@@ -1362,7 +1375,7 @@ TEST_F(WorkspaceDragTest, SubnetParameterPopoutExposesEditsAndReordersRows) {
                   .value(QStringLiteral("name"))
                   .toString(),
               QStringLiteral("Tint"));
-    ASSERT_TRUE(viewerController.undo());
+    ASSERT_TRUE(projectSession.undo(nemo::EditOptions{projectSession.revision(), {}}).committed);
     QTest::qWait(40);
     EXPECT_EQ(viewerController.subnetExposure(network, subnet)
                   .value(QStringLiteral("rows"))
@@ -1436,7 +1449,7 @@ TEST_F(WorkspaceDragTest, SubnetParameterPopoutExposesEditsAndReordersRows) {
     EXPECT_TRUE(reorder.isAccepted());
     QTest::qWait(60);
     EXPECT_EQ(order().at(1).toString(), firstId);
-    ASSERT_TRUE(viewerController.undo());
+    ASSERT_TRUE(projectSession.undo(nemo::EditOptions{projectSession.revision(), {}}).committed);
     QTest::qWait(40);
     EXPECT_EQ(order().at(0).toString(), firstId);
 

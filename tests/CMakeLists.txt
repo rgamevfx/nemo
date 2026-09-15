@@ -130,6 +130,7 @@ if(NEMO_BUILD_UI)
     # and the test-specific source-tree QML location.
     add_executable(nemo_workspace_ui_tests
         ChooserOwnershipTests.cpp
+        HistoryUiTests.cpp
         AnimationUiTests.cpp
         ReadSourceUiTests.cpp
         WorkspaceDragTests.cpp

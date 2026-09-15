@@ -1722,7 +1722,6 @@ void ViewerController::documentChanged() {
     emit graphChanged();
     emit catalogChanged();
     emit timelineChanged();
-    emit historyChanged();
     emit statusChanged();
     invalidateRequest();
     refreshRequest();
@@ -3347,28 +3346,6 @@ void ViewerController::retimeTimelineClip(const QString& source, int step) {
         applyEdit(session_.submit(setSourceCommand(key, replacement), editOptions()));
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
-    }
-}
-
-bool ViewerController::undo() {
-    if (!session_.canUndo())
-        return false;
-    try {
-        return applyEdit(session_.undo(editOptions()));
-    } catch (const std::exception& error) {
-        fail(QString::fromUtf8(error.what()));
-        return false;
-    }
-}
-
-bool ViewerController::redo() {
-    if (!session_.canRedo())
-        return false;
-    try {
-        return applyEdit(session_.redo(editOptions()));
-    } catch (const std::exception& error) {
-        fail(QString::fromUtf8(error.what()));
-        return false;
     }
 }
 

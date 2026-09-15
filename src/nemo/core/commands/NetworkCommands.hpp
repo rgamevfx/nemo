@@ -34,6 +34,21 @@ Command bindInstanceInputToParentTerminalCommand(NetworkInstanceId instance, Int
                                                  InterfacePortId parentInput);
 Command unbindInstanceInputCommand(NetworkInstanceId instance, InterfacePortId input);
 
+// Canvas format edits (issue #96). `setNetworkFormatCommand` authors one
+// network's persistent format; a network the document does not hold, or a
+// format with a non-positive dimension or a non-finite/non-positive pixel
+// aspect, is rejected before anything is written. `setNamedFormatCommand`
+// creates or replaces one document-owned preset and `removeNamedFormatCommand`
+// retires one, both addressed by the authored preset name rather than by any
+// graph identity. `applyNamedFormatCommand` copies a preset's value into one
+// network, so a later preset edit never rewrites a network that used it, and
+// an unknown preset is rejected whole. Every rejection is reported through the
+// ordinary session result instead of a partial write.
+Command setNetworkFormatCommand(NetworkId network, ImageFormat format);
+Command setNamedFormatCommand(std::string name, ImageFormat format);
+Command removeNamedFormatCommand(std::string name);
+Command applyNamedFormatCommand(NetworkId network, std::string name);
+
 Command createLinkedInstanceCommand(NetworkId parentNetwork, NetworkId definition, std::string name,
                                     LayoutPosition position = {}, std::shared_ptr<NetworkInstanceId> created = {});
 Command makeIndependentCommand(NetworkInstanceId instance, std::shared_ptr<NetworkId> createdDefinition = {});

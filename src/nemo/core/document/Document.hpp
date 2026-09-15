@@ -97,7 +97,7 @@ private:
 // handles, so history entries, gesture previews and render snapshots retain
 // the same records until a controlled mutation replaces the ones it touched.
 struct Document {
-    static inline constexpr int kSchemaVersion = 5;
+    static inline constexpr int kSchemaVersion = 6;
     using NetworkStorage = CowVector<Network>;
     using InstanceStorage = CowVector<NetworkInstance>;
     using AnimationStorage = CowVector<AnimationChannel>;
@@ -138,6 +138,19 @@ struct Document {
     [[nodiscard]] NetworkId addNetworkWithId(NetworkId id, std::string name);
     void removeNetwork(NetworkId id);
     void setRootNetworkId(NetworkId id);
+
+    // Document-owned named canvas presets (issue #96). Storage is structurally
+    // shared like every other collection, so a version that did not edit the
+    // presets keeps the same map. A preset is a value: applying one copies it
+    // into a network, so editing a preset later never rewrites a network that
+    // already used it.
+    [[nodiscard]] const CowMap<std::string, ImageFormat>& namedFormats() const noexcept { return namedFormats_; }
+    // Creates or replaces one preset. The name must not be empty and the
+    // format must validate; a write that names the current value records
+    // nothing and publishes no change.
+    void setNamedFormat(std::string name, ImageFormat format);
+    // Removes one preset; an empty or unknown name is rejected.
+    void removeNamedFormat(std::string name);
 
     [[nodiscard]] const InstanceStorage& instances() const { return instances_; }
     [[nodiscard]] const NetworkInstance* instance(NetworkInstanceId id) const;
@@ -232,9 +245,11 @@ private:
     void recordInstance(NetworkInstanceId id);
     void recordNode(NetworkId network, NodeId id);
     void recordAnimationChannel(AnimationChannelId id);
+    void recordNamedFormat(const std::string& name);
 
     std::shared_ptr<const NodeCatalog> catalog_;
     MediaCatalog mediaCatalog_;
+    CowMap<std::string, ImageFormat> namedFormats_;
     NetworkStorage networks_;
     InstanceStorage instances_;
     AnimationStorage animationChannels_;

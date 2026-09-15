@@ -1,0 +1,149 @@
+{
+  "issue": 96,
+  "scope": "Approved saved-format prerequisite under #87; not eight-node or mixed-format completion",
+  "public_change": "ImageFormat, Network/Document format authoring and named-format command/query/change APIs; schema 6; shared validateRequestDomain",
+  "default": {
+    "width": 1920,
+    "height": 1080,
+    "pixelAspect": 1.0
+  },
+  "fixture": {
+    "width": 641,
+    "height": 359,
+    "pixelAspect": 1.5
+  },
+  "reference": "Nuke 17.0 documentation only; no installed Nuke runtime or runtime-parity claim",
+  "builds": {
+    "debug": "passed, including the real UI/CLI",
+    "release": "passed, including the real UI/CLI",
+    "warnings": "Existing minizip-ng mktemp linker warning; sanitizer reconfigure also reports existing Qt QML output-directory tooling warning"
+  },
+  "focused_checks": [
+    {
+      "command": "build/debug/tests/nemo_core_tests --gtest_filter=SessionPersistenceTest.NetworkFormatIsIndependentUndoableAndDurable",
+      "result": "1/1 passed; first regression was a pre-implementation missing-API compile failure"
+    },
+    {
+      "command": "build/debug/tests/nemo_core_tests --gtest_filter=SessionPersistenceTest.*:NetworkCommandsTest.*:PersistenceTest.*:ReadSourceTest.Schema4Migration*",
+      "result": "82 passed; one malformed-fixture failure corrected by supplying a valid schema-6 root fixture; corrected PersistenceTest.DuplicateAndInvalidPersistedIdsAreDiagnostics rerun passed"
+    },
+    {
+      "command": "build/debug/tests/nemo_core_tests --gtest_filter=ReuseTest.PixelAspectEditsNeverReturnStaleGeneratorMetadata",
+      "result": "1/1 passed; one-ULP aspect change invalidates generator metadata and undo reuses the prior result"
+    },
+    {
+      "command": "LSAN_OPTIONS=suppressions=tests/lsan_suppressions.txt build/asan/tests/nemo_core_tests --gtest_filter=SessionPersistenceTest.*:NetworkCommandsTest.*:PersistenceTest.*:CowMapTest.*:ReuseTest.PixelAspectEditsNeverReturnStaleGeneratorMetadata",
+      "result": "85/85 passed under ASan/UBSan"
+    }
+  ],
+  "cli_session": [
+    "Named preset creation/application/query pagination",
+    "Invalid transaction leaves revision and authored format unchanged",
+    "Missing-preset rejection",
+    "Save/undo/redo and saved dirty-baseline transitions",
+    "Schema-5 missing-format migration to HD, alongside the original schema-1 fixture",
+    "Unknown fields inside network and preset formats survive save/reopen",
+    "INT_MAX authored width survives persistence independently of renderer limits"
+  ],
+  "malformed_format_cases": [
+    {
+      "case": "missing",
+      "errors": [
+        "network 'Root': schema 6 network has no 'imageFormat'"
+      ]
+    },
+    {
+      "case": "zero-width",
+      "errors": [
+        "network 'Root' imageFormat: image format must have positive width and height, got 0x359"
+      ]
+    },
+    {
+      "case": "fractional-width",
+      "errors": [
+        "network 'Root' imageFormat: 'width' must be an integer"
+      ]
+    },
+    {
+      "case": "boolean-height",
+      "errors": [
+        "network 'Root' imageFormat: 'height' must be an integer"
+      ]
+    },
+    {
+      "case": "overflow-width",
+      "errors": [
+        "network 'Root' imageFormat: 'width' is out of range"
+      ]
+    },
+    {
+      "case": "zero-aspect",
+      "errors": [
+        "network 'Root' imageFormat: image format pixel aspect must be finite and positive, got 0.000000"
+      ]
+    },
+    {
+      "case": "overflow-aspect",
+      "errors": [
+        "network 'Root' imageFormat: image format pixel aspect must be finite and positive, got inf"
+      ]
+    },
+    {
+      "case": "string-aspect",
+      "errors": [
+        "network 'Root' imageFormat: 'pixelAspect' must be a number"
+      ]
+    }
+  ],
+  "cpu_native": {
+    "commands": [
+      "nemo-cli evaluate authored.nemo --width 641 --height 359 --out cpu.ppm",
+      "nemo-cli evaluate-gpu authored.nemo --width 641 --height 359 --out gpu.ppm --backend slang"
+    ],
+    "device": "NVIDIA GeForce GTX 1070",
+    "result": {
+      "width": 641,
+      "height": 359,
+      "pixelAspect": 1.5
+    },
+    "diagnostic_rgb_byte_difference_max": 0,
+    "readback": "One declared diagnostic output readback; no new executor readback"
+  },
+  "native_surface": {
+    "canvas": "Wayland/Vulkan image framing reflects the authored non-square pixel aspect",
+    "preview_controls": "Actual XWayland/Vulkan input selected Half, Quarter, Full and 50% zoom; native Ctrl+S after each retained 641x359 and pixelAspect 1.5",
+    "source": "Wayland Read displays a 53x31 square-pixel PNG independently of the 641x359 / 1.5 composition; real Slang evaluation reports 53x31 / 1.0",
+    "input_permission": "OS remote keyboard/pointer prompts were explicitly approved interactively; the persistent input connection was closed after verification",
+    "tool_limitation": "Aggregate accessibility inspection disconnected the application; individual AT-SPI reads and the approved X11 input fallback were used instead",
+    "image_scope": "Viewer panel only; unrelated desktop content excluded"
+  },
+  "fixtures": [
+    "legacy.nemo",
+    "authored.nemo",
+    "read-source.nemo",
+    "source.png"
+  ],
+  "captures": [
+    "wayland-canvas.png",
+    "half-preview.png",
+    "quarter-preview.png",
+    "full-preview.png",
+    "zoom-fifty.png",
+    "wayland-source.png"
+  ],
+  "reproduction_environment": {
+    "OCIO": "docs/evidence/issue12-view.ocio",
+    "native": "Use isolated XDG_CONFIG_HOME/XDG_CACHE_HOME and --viewer-cache-dir; QT_QPA_PLATFORM=wayland for framing or xcb for the recorded input checks"
+  },
+  "remaining": "Two-axis review pending. The full suite retains the known colorimetry failure; no claim of a green full-suite gate. Network Settings UI is deferred, #88 owns per-node mixed-format description/planning, and #92 the Reformat consumer.",
+  "full_debug_suite": {
+    "command": "ctest --preset debug --output-on-failure",
+    "total": 722,
+    "passed": 703,
+    "skipped": 18,
+    "failed": 1,
+    "seconds": 174.69,
+    "failure": "Viewer.InterpretationMapIsParsedStrictly: source interpretation has unknown field colorimetry",
+    "disposition": "Known baseline failure already recorded before this slice (#86); unchanged and not rerun independently. Native-surface evidence above was exercised separately from the 18 skipped suite cases."
+  }
+}

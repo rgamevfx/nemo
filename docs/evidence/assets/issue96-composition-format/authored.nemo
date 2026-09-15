@@ -1,0 +1,119 @@
+{
+  "animationChannels": [],
+  "color": {
+    "deliveryTransform": "sRGB/rec709",
+    "viewerTransform": "sRGB/rec709",
+    "workingSpace": "linear"
+  },
+  "format": "nemo",
+  "instances": [],
+  "mediaCatalog": {
+    "bins": [],
+    "entries": [],
+    "nextBinId": 1,
+    "nextEntryId": 1
+  },
+  "name": "Network Format Verification",
+  "namedFormats": {
+    "anamorphic": {
+      "height": 359,
+      "pixelAspect": 1.5,
+      "width": 641
+    },
+    "delivery": {
+      "height": 1080,
+      "pixelAspect": 1.0,
+      "width": 1920
+    }
+  },
+  "networks": [
+    {
+      "defaultOutput": 2,
+      "edges": [
+        {
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "id": 1,
+          "to": {
+            "node": 2,
+            "port": 0
+          }
+        },
+        {
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "id": 2,
+          "to": {
+            "node": 3,
+            "port": 0
+          }
+        }
+      ],
+      "exposedParameters": [],
+      "id": 1,
+      "imageFormat": {
+        "height": 359,
+        "pixelAspect": 1.5,
+        "width": 641
+      },
+      "inputConnections": [],
+      "inputs": [],
+      "name": "Root",
+      "nextEdgeId": 3,
+      "nextInterfacePortId": 1,
+      "nextNodeId": 4,
+      "nodes": [
+        {
+          "id": 1,
+          "layout": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "name": "Pattern",
+          "params": {},
+          "type": "testpattern"
+        },
+        {
+          "id": 2,
+          "layout": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "name": "Output",
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 3,
+          "layout": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "name": "Viewer",
+          "params": {},
+          "type": "viewer"
+        }
+      ],
+      "outputConnections": [],
+      "outputInputBindings": [],
+      "outputs": []
+    }
+  ],
+  "nextAnimationChannelId": 1,
+  "nextInstanceId": 1,
+  "nextKeyframeId": 1,
+  "nextNetworkId": 2,
+  "requiredFeatures": [
+    {
+      "id": "networks",
+      "version": 1
+    }
+  ],
+  "rootNetworkId": 1,
+  "schema": 6,
+  "sources": {}
+}

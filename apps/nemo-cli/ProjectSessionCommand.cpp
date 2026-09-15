@@ -86,6 +86,45 @@ template <typename T>
     throw std::invalid_argument("kind must be 'image', 'mask', or 'media'");
 }
 
+[[nodiscard]] int formatDimensionAt(const Json& format, const char* key) {
+    if (!format.contains(key) || !format.at(key).is_number_integer())
+        throw std::invalid_argument(std::string{"expected integer field "} + key);
+    if (format.at(key).is_number_unsigned() &&
+        format.at(key).get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+        throw std::invalid_argument(std::string{"integer field out of range: "} + key);
+    const auto value = format.at(key).get<std::int64_t>();
+    if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max())
+        throw std::invalid_argument(std::string{"integer field out of range: "} + key);
+    return static_cast<int>(value);
+}
+
+// The image-format value a request authors. This only types the JSON: the
+// dimension, aspect and range rules and their diagnostics stay in the shared
+// command-path validator, so there is exactly one description of a valid format.
+[[nodiscard]] nemo::ImageFormat imageFormatAt(const Json& command) {
+    const auto& format = command.at("format");
+    if (!format.is_object())
+        throw std::invalid_argument("format must be an object");
+    nemo::ImageFormat value;
+    value.width = formatDimensionAt(format, "width");
+    value.height = formatDimensionAt(format, "height");
+    if (!format.contains("pixel_aspect") || !format.at("pixel_aspect").is_number())
+        throw std::invalid_argument("expected numeric field pixel_aspect");
+    value.pixelAspect = static_cast<float>(format.at("pixel_aspect").get<double>());
+    return value;
+}
+
+[[nodiscard]] std::string namedFormatNameAt(const Json& command) {
+    const std::string name = command.value("name", std::string{});
+    if (name.empty())
+        throw std::invalid_argument("name must be a nonempty string");
+    return name;
+}
+
+[[nodiscard]] Json imageFormatJson(const nemo::ImageFormat& format) {
+    return Json{{"width", format.width}, {"height", format.height}, {"pixel_aspect", format.pixelAspect}};
+}
+
 [[nodiscard]] const char* parameterTypeName(nemo::ParameterType type) {
     switch (type) {
     case nemo::ParameterType::Boolean:
@@ -265,6 +304,18 @@ template <typename T>
         return nemo::unbindInstanceInputCommand(unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"),
                                                 interfaceIdAt(command, "input_id"));
     }
+    if (op == "set-network-format") {
+        return nemo::setNetworkFormatCommand(networkIdAt(command), imageFormatAt(command));
+    }
+    if (op == "apply-named-format") {
+        return nemo::applyNamedFormatCommand(networkIdAt(command), namedFormatNameAt(command));
+    }
+    if (op == "set-named-format") {
+        return nemo::setNamedFormatCommand(namedFormatNameAt(command), imageFormatAt(command));
+    }
+    if (op == "remove-named-format") {
+        return nemo::removeNamedFormatCommand(namedFormatNameAt(command));
+    }
     if (op == "transaction") {
         const auto& commands = command.at("commands");
         if (!commands.is_array() || commands.empty())
@@ -346,6 +397,7 @@ void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::K
     output["changed_source_ids"] = result.changedSourceIds;
     output["changed_animation_channel_ids"] = result.changedAnimationChannelIds;
     putAnimationKeyIds(output, "changed_animation_key_ids", result.changedAnimationKeyIds);
+    output["changed_named_format_ids"] = result.changedNamedFormatIds;
     output["color_policy_changed"] = result.colorPolicyChanged;
     return output;
 }
@@ -420,9 +472,21 @@ void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::K
                                {"path", source.reference.path},
                                {"frame_offset", source.reference.frameOffset},
                                {"frame_step", source.reference.frameStep}});
-    return Json{{"revision", session.revision()}, {"network", network},
-                {"nodes", std::move(nodes)},      {"edges", std::move(edges)},
-                {"sources", std::move(sources)},  {"next_node_after", nodeAfter},
+    // The saved image format is part of the network being inspected; the presets
+    // are document-scoped and reported alongside it, keyed by their stable name
+    // exactly as the project file stores them.
+    Json namedFormats = Json::object();
+    for (const auto& preset : session.queryNamedFormats(request.value("format_filter", std::string{}), limit,
+                                                        request.value("format_after", std::string{})))
+        namedFormats[preset.name] = imageFormatJson(preset.format);
+    return Json{{"revision", session.revision()},
+                {"network", network},
+                {"format", imageFormatJson(session.document().network(network).format())},
+                {"named_formats", std::move(namedFormats)},
+                {"nodes", std::move(nodes)},
+                {"edges", std::move(edges)},
+                {"sources", std::move(sources)},
+                {"next_node_after", nodeAfter},
                 {"next_edge_after", nextEdge}};
 }
 
@@ -698,7 +762,10 @@ int commandProjectSession(const std::vector<std::string>& args) {
         std::cerr << "usage: nemo-cli project-session <project.json> "
                      "(graph queries and edits require network_id)\n"
                      "  file ops: file-state | open {path,expected_revision} | save {path_policy,backup} | "
-                     "save-as {path,path_policy,backup} | autosave {slots} | recover {slot,expected_revision}\n";
+                     "save-as {path,path_policy,backup} | autosave {slots} | recover {slot,expected_revision}\n"
+                     "  format ops: set-network-format {network_id,format:{width,height,pixel_aspect}} | "
+                     "apply-named-format {network_id,name} | set-named-format {name,format} | "
+                     "remove-named-format {name}\n";
         return 2;
     }
     try {
@@ -742,6 +809,7 @@ int commandProjectSession(const std::vector<std::string>& args) {
                         encoded["created_instance_ids"] = event.createdInstanceIds;
                         encoded["changed_animation_channel_ids"] = event.changedAnimationChannelIds;
                         putAnimationKeyIds(encoded, "changed_animation_key_ids", event.changedAnimationKeyIds);
+                        encoded["changed_named_format_ids"] = event.changedNamedFormatIds;
                         events.push_back(std::move(encoded));
                     }
                     response = Json{{"revision", history.currentRevision},

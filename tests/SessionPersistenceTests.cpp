@@ -9,6 +9,7 @@
 
 #include <unistd.h>
 
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/commands/ReadSourceCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Serialization.hpp"
@@ -108,6 +109,68 @@ private:
 };
 
 int SessionPersistenceTest::counter_ = 0;
+
+TEST_F(SessionPersistenceTest, NetworkFormatIsIndependentUndoableAndDurable) {
+    ProjectSession session;
+    const NetworkId first = session.document().rootNetworkId();
+    auto second = std::make_shared<NetworkId>();
+    ASSERT_TRUE(session.submit(addNetworkCommand("second", second), EditOptions{session.revision(), {}}).committed);
+    const ImageFormat authored{.width = 2048, .height = 858, .pixelAspect = 1.5F};
+    ASSERT_TRUE(
+        session.submit(setNetworkFormatCommand(first, authored), EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().network(first).format(), authored);
+    EXPECT_EQ(session.document().network(*second).format(), ImageFormat{});
+
+    const fs::path target = dir_ / "formats.nemo";
+    const ProjectWriteRequest save = session.prepareSave(target);
+    const ProjectWriteResult written = ProjectFile::writeAtomic(save);
+    ASSERT_TRUE(written.ok) << written.error.message;
+    ASSERT_TRUE(session.commitSave(save, written).committed);
+    EXPECT_FALSE(session.isDirty());
+    ASSERT_TRUE(session.undo(EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().network(first).format(), ImageFormat{});
+    EXPECT_TRUE(session.isDirty());
+    ASSERT_TRUE(session.redo(EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().network(first).format(), authored);
+    EXPECT_FALSE(session.isDirty());
+
+    const ProjectReadResult reopened = ProjectFile::read(target);
+    ASSERT_TRUE(reopened.ok) << reopened.error.message;
+    EXPECT_EQ(reopened.document.network(first).format(), authored);
+    EXPECT_EQ(reopened.document.network(*second).format(), ImageFormat{});
+}
+
+TEST_F(SessionPersistenceTest, NamedFormatsApplyByValueAndRetainIndependentHistory) {
+    ProjectSession session;
+    const auto network = session.document().rootNetworkId();
+    const ImageFormat first{.width = 1280, .height = 720, .pixelAspect = 2.0F};
+    const ImageFormat revised{.width = 2048, .height = 858, .pixelAspect = 1.0F};
+    ASSERT_TRUE(session.submit(setNamedFormatCommand("working", first), EditOptions{session.revision(), {}}).committed);
+    ASSERT_TRUE(
+        session.submit(applyNamedFormatCommand(network, "working"), EditOptions{session.revision(), {}}).committed);
+    const Document retained = session.snapshot();
+    ASSERT_TRUE(
+        session.submit(setNamedFormatCommand("working", revised), EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().network(network).format(), first);
+    EXPECT_EQ(retained.namedFormats().at("working"), first);
+
+    const fs::path target = dir_ / "named-formats.nemo";
+    writeDocument(target, session.document());
+    const auto reopened = ProjectFile::read(target);
+    ASSERT_TRUE(reopened.ok) << reopened.error.message;
+    EXPECT_EQ(reopened.document.network(network).format(), first);
+    EXPECT_EQ(reopened.document.namedFormats().at("working"), revised);
+
+    ASSERT_TRUE(session.submit(removeNamedFormatCommand("working"), EditOptions{session.revision(), {}}).committed);
+    EXPECT_FALSE(session.document().namedFormats().contains("working"));
+    EXPECT_EQ(session.document().network(network).format(), first);
+    ASSERT_TRUE(session.undo(EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().namedFormats().at("working"), revised);
+    ASSERT_TRUE(session.undo(EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().namedFormats().at("working"), first);
+    ASSERT_TRUE(session.redo(EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().namedFormats().at("working"), revised);
+}
 
 TEST_F(SessionPersistenceTest, ReadResolvesRelativeReferencesAndWarnsOnMissingDependencies) {
     const fs::path media = dir_ / "media";

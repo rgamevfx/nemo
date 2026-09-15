@@ -55,6 +55,13 @@ public:
         if (id != kInvalidAnimationChannel)
             animationChannels_.insert(id);
     }
+    // Credited with the authored preset name. Named formats are document-owned
+    // and have no graph identity, so recording the name is the honest report;
+    // a preset edit never claims a source, network or instance identity.
+    void namedFormat(std::string id) {
+        if (!id.empty())
+            namedFormats_.insert(std::move(id));
+    }
     void colorPolicy() { colorPolicyChanged_ = true; }
 
     void clear() {
@@ -66,12 +73,14 @@ public:
         mediaEntries_.clear();
         mediaBins_.clear();
         animationChannels_.clear();
+        namedFormats_.clear();
         colorPolicyChanged_ = false;
     }
 
     [[nodiscard]] bool empty() const noexcept {
         return nodes_.empty() && edges_.empty() && networks_.empty() && instances_.empty() && sources_.empty() &&
-               mediaEntries_.empty() && mediaBins_.empty() && animationChannels_.empty() && !colorPolicyChanged_;
+               mediaEntries_.empty() && mediaBins_.empty() && animationChannels_.empty() && namedFormats_.empty() &&
+               !colorPolicyChanged_;
     }
 
     [[nodiscard]] const std::set<std::pair<NetworkId, NodeId>>& nodes() const noexcept { return nodes_; }
@@ -82,6 +91,7 @@ public:
     [[nodiscard]] const std::set<MediaSourceId>& mediaEntries() const noexcept { return mediaEntries_; }
     [[nodiscard]] const std::set<MediaBinId>& mediaBins() const noexcept { return mediaBins_; }
     [[nodiscard]] const std::set<AnimationChannelId>& animationChannels() const noexcept { return animationChannels_; }
+    [[nodiscard]] const std::set<std::string>& namedFormats() const noexcept { return namedFormats_; }
     [[nodiscard]] bool colorPolicyChanged() const noexcept { return colorPolicyChanged_; }
 
 private:
@@ -93,6 +103,7 @@ private:
     std::set<MediaSourceId> mediaEntries_;
     std::set<MediaBinId> mediaBins_;
     std::set<AnimationChannelId> animationChannels_;
+    std::set<std::string> namedFormats_;
     bool colorPolicyChanged_{false};
 };
 

@@ -32,6 +32,33 @@ struct PortRef {
     friend bool operator==(const PortRef&, const PortRef&) = default;
 };
 
+// The persistent canvas of one Network (issue #96): the image a generator node
+// falls back to and the explicit resize target a Reformat produces. Dimensions
+// are whole pixels at the authored pixel aspect; the owner-approved default is
+// square-pixel 1920x1080, and the format is authored per network rather than
+// chosen from an installed application or a selected Read.
+//
+// `extension` retains persisted fields this build does not model, exactly like
+// the other authored records, so a load/save cycle loses nothing. Numerical
+// consumers read the primitive fields and never copy this JSON per pixel; the
+// execution-size limits an evaluator enforces are evaluation-owned and are not
+// validated here.
+struct ImageFormat {
+    int width{1920};
+    int height{1080};
+    float pixelAspect{1.0F};
+    nlohmann::json extension{};
+
+    friend bool operator==(const ImageFormat&, const ImageFormat&) = default;
+};
+
+// Shared validation for every path that authors or restores an image format:
+// a canvas must have positive whole-pixel dimensions and a finite, positive
+// pixel aspect. Returns the problem, already prefixed with `context`, or
+// nullopt when `format` is valid. The check never throws, so callers can refuse
+// malformed stored state and report the same message a command rejection uses.
+[[nodiscard]] std::optional<std::string> validateImageFormat(const ImageFormat& format, std::string_view context);
+
 // A persistent node occurrence. Its identity is local to the owning Network.
 // For a nested occurrence, definition/instance identify the referenced shared
 // definition and the document-owned occurrence respectively. Unknown types
@@ -96,7 +123,12 @@ enum class GraphError {
     // A command carried an expected SourceReference that no longer matches the
     // document's current reference (path, revision, interpretation, or frame
     // mapping changed underneath it), so the edit would publish stale data.
-    StaleMediaSource
+    StaleMediaSource,
+    // An image format carried a non-positive dimension or a non-finite or
+    // non-positive pixel aspect, so it names no canvas to author against.
+    InvalidImageFormat,
+    // A named-format operation addressed a preset the document does not hold.
+    UnknownNamedFormat
 };
 
 struct GraphErrorDetails {
@@ -295,6 +327,13 @@ public:
     void rename(std::string name);
     [[nodiscard]] const Graph& graph() const { return graph_; }
     [[nodiscard]] Graph& graph() { return graph_; }
+    // This network's authored canvas. A definition owns its format; an
+    // occurrence never does, so a linked instance always renders its
+    // definition's format and never a copy.
+    [[nodiscard]] const ImageFormat& format() const noexcept { return format_; }
+    // Validates the shape, ignores a write that names the current canvas, and
+    // otherwise bumps this network's revision and records it.
+    void setFormat(ImageFormat format);
     [[nodiscard]] NodeId defaultOutput() const;
     void setDefaultOutput(NodeId output);
 
@@ -380,6 +419,7 @@ private:
     ChangeRecorder* recorder_{};
     std::string name_;
     Graph graph_;
+    ImageFormat format_{};
     NodeId defaultOutput_{kInvalidNode};
     std::vector<FormalPort> inputs_;
     std::vector<FormalPort> outputs_;

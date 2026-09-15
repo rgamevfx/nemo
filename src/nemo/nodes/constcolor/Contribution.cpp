@@ -27,11 +27,11 @@ NodeDescriptor constColorDescriptor() {
 
 // The catalog declares the one color parameter, so an authored value is already
 // typed and bounded; execution resolves it through the shared metadata seam and
-// fills the requested raster. The generated constant carries no input, so the
-// raster keeps the square-pixel default.
+// fills the requested raster, carrying its owning network's pixel aspect.
 CpuImage executeConstcolor(const CpuNodeContext& context) {
     const std::array<float, 4> color = effectiveColor4(context.catalog, context.node, context.effectiveParams, "color");
-    CpuImage output(effectRasterLayout(context.request));
+    CpuImage output(effectRasterLayout(context.request, nullptr,
+                                       context.document.network(context.request.network).format().pixelAspect));
     for (int y = 0; y < output.height(); ++y) {
         for (int x = 0; x < output.width(); ++x) {
             output.setPixel(x, y, color);

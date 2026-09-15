@@ -380,11 +380,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             continue;  // the execution loop reports an unregistered node honestly
         const auto& declaredInputs = catalog.inputPorts(effectiveNode->type);
         if (registration->role != NodeRole::Source) {
-            // A generator (no declared image input) has square pixels; every
-            // other node takes its main input's aspect, which the planner
-            // propagates through the plan.
+            // Generators use the owning network's canvas; downstream nodes
+            // inherit their main image's aspect through the shared planner.
             if (declaredInputs.empty())
-                pixelAspects.emplace(expandedNode.id, 1.0F);
+                pixelAspects.emplace(expandedNode.id, document.network(expandedNode.id.network).format().pixelAspect);
             continue;
         }
         if (sources == nullptr || !effectiveNode->params.contains("source")) {
@@ -562,7 +561,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
         std::shared_ptr<const gpu::Image> sourceFrame;
         RasterGeometry sourceRaster{};
-        float pixelAspect = 1.0F;
+        float pixelAspect = document.network(nodeRequest.network).format().pixelAspect;
         // Interpretation of the source node's produced image: SceneLinear for a
         // managed source, Data when the request bypassed color conversion. A
         // non-display-referred image is never assumed to be managed

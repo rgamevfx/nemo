@@ -260,12 +260,12 @@ RegionPlan planDependencyRegions(const Document& document, const EvaluationReque
     const Region whole = domainRegion(domainWidth, domainHeight);
 
     // Pixel aspect of every node's own output, dependencies first: generators
-    // are square, a source keeps a supplied aspect or reports unknown (never
-    // assumed square), and every other node propagates its main input's aspect.
+    // use their network's canvas, sources retain the supplied media aspect (or
+    // unknown), and downstream effects propagate the main input's aspect.
     std::map<EvaluationNodeId, float> aspects;
     for (const ExpandedNode& expanded : plan.order) {
         const NodeContribution* contribution = expanded.alias ? nullptr : contributions.find(expanded.node->type);
-        float aspect = 1.0F;
+        float aspect = document.network(expanded.id.network).format().pixelAspect;
         if (const auto supplied = pixelAspects.find(expanded.id); supplied != pixelAspects.end()) {
             aspect = supplied->second;
         } else if (contribution != nullptr && contribution->role == NodeRole::Source) {
@@ -430,17 +430,9 @@ NodeId resolveOutput(const Document& document, NetworkId networkId, const std::s
     }
     return outputs.front()->id;
 }
-// Shared request validation for both executors (CPU reference and native
-// GPU, issues #8/#11): executor support (currently Full/RGBA), region
-// bounds, output identity, and every declared capability of every scheduled
-// dependency. Unsupported metadata is an explicit error, never a silent
-// approximation or executor substitution.
-void validateRequest(const Document& document, const EvaluationRequest& request) {
-    if (request.network == kInvalidNetwork)
-        throw EvaluationException("evaluation request must identify a network");
-    // These are executor limitations, not schema declarations. A future
-    // executor may advertise more modes/channels, but this CPU/GPU pair
-    // currently implements only the full-quality RGBA contract.
+void validateRequestDomain(const EvaluationRequest& request) {
+    // Executor limits are not persistent-format limits. Presentation can check
+    // these before pixel/ROI arithmetic without walking the dependency graph.
     if (!isSamplingScale(request.samplingScale)) {
         throw EvaluationException("sampling scale " + std::to_string(request.samplingScale) +
                                   " is not a declared reduction (supported scales: 1, 2, 4; spec section 8: "
@@ -464,6 +456,12 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
     if (request.region.x > request.imageWidth() - request.region.width ||
         request.region.y > request.imageHeight() - request.region.height)
         throw EvaluationException("requested region lies outside the full-resolution image domain");
+}
+
+void validateRequest(const Document& document, const EvaluationRequest& request) {
+    if (request.network == kInvalidNetwork)
+        throw EvaluationException("evaluation request must identify a network");
+    validateRequestDomain(request);
     const NodeInstance* output = findNode(document, request.network, request.output);
     if (output == nullptr) {
         throw EvaluationException("request output node " + std::to_string(request.output) +

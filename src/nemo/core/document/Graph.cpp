@@ -2,6 +2,7 @@
 #include "nemo/core/evaluation/Request.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <iterator>
 #include <limits>
@@ -540,6 +541,27 @@ Network::Network(NetworkId id, std::string name, std::shared_ptr<const NodeCatal
     if (name_.empty())
         throw GraphException(GraphError::InvalidName, "network name must not be empty");
     defaultOutput_ = graph_.addNode("output", "Output");
+}
+
+std::optional<std::string> validateImageFormat(const ImageFormat& format, std::string_view context) {
+    const std::string prefix = context.empty() ? std::string{} : std::string(context) + ": ";
+    if (format.width <= 0 || format.height <= 0)
+        return prefix + "image format must have positive width and height, got " + std::to_string(format.width) + "x" +
+               std::to_string(format.height);
+    if (!std::isfinite(format.pixelAspect) || format.pixelAspect <= 0.0F)
+        return prefix + "image format pixel aspect must be finite and positive, got " +
+               std::to_string(format.pixelAspect);
+    return std::nullopt;
+}
+
+void Network::setFormat(ImageFormat format) {
+    if (const auto problem = validateImageFormat(format, "network " + std::to_string(id_)))
+        throw GraphException(GraphError::InvalidImageFormat, *problem);
+    if (format_ == format)
+        return;
+    format_ = std::move(format);
+    ++revision_;
+    record();
 }
 
 void Network::rename(std::string name) {

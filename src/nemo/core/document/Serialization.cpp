@@ -202,6 +202,68 @@ std::uint64_t unsignedValue(const nlohmann::json& value, const std::string& cont
     return value.get<std::uint64_t>();
 }
 
+// ---------------------------------------------------------------------------
+// Saved image format (issue #96).
+// ---------------------------------------------------------------------------
+
+// Strict JSON typing for an authored dimension. Positivity, the aspect rule and
+// the diagnostic wording belong to the shared validator below, never to a second
+// copy of the rules here.
+int formatDimension(const nlohmann::json& object, const char* field, const std::string& context) {
+    const auto it = object.find(field);
+    if (it == object.end())
+        throw DeserializeError(context + ": '" + field + "' is required");
+    if (!it->is_number_integer())
+        throw DeserializeError(context + ": '" + field + "' must be an integer");
+    if (it->is_number_unsigned()) {
+        const auto value = it->get<std::uint64_t>();
+        if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+            throw DeserializeError(context + ": '" + field + "' is out of range");
+        return static_cast<int>(value);
+    }
+    const auto value = it->get<std::int64_t>();
+    if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max())
+        throw DeserializeError(context + ": '" + field + "' is out of range");
+    return static_cast<int>(value);
+}
+
+// The shared validator reports invalid persisted state instead of accepting it.
+void requireValidImageFormat(const ImageFormat& format, const std::string& context) {
+    if (const auto error = validateImageFormat(format, context))
+        throw DeserializeError(*error);
+}
+
+// One persisted image format. Dimensions and aspect are extracted as primitives;
+// authored fields this build does not model are retained verbatim so a load/save
+// cycle loses nothing.
+ImageFormat parseImageFormat(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    ImageFormat format;
+    format.width = formatDimension(value, "width", context);
+    format.height = formatDimension(value, "height", context);
+    const auto aspect = value.find("pixelAspect");
+    if (aspect == value.end() || !aspect->is_number())
+        throw DeserializeError(context + ": 'pixelAspect' must be a number");
+    format.pixelAspect = static_cast<float>(aspect->get<double>());
+    requireValidImageFormat(format, context);
+    format.extension = collectUnknownFields(value, {"width", "height", "pixelAspect"});
+    return format;
+}
+
+nlohmann::json imageFormatJson(const ImageFormat& format) {
+    nlohmann::json value{{"width", format.width}, {"height", format.height}, {"pixelAspect", format.pixelAspect}};
+    applyUnknownFields(value, format.extension);
+    return value;
+}
+
+nlohmann::json namedFormatsJson(const CowMap<std::string, ImageFormat>& formats) {
+    nlohmann::json result = nlohmann::json::object();
+    for (const auto& [name, format] : formats)
+        result[name] = imageFormatJson(format);
+    return result;
+}
+
 const char* kindName(PortKind kind) {
     switch (kind) {
     case PortKind::Image:
@@ -957,6 +1019,14 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
         network.rename(entry.at("name").get<std::string>());
     }
     context = "network '" + network.name() + "'";
+    // Every schema-6 network states its format explicitly; an older file has no
+    // authored format and keeps the model's defaults instead of guessing from a
+    // viewer, output node or source selection.
+    if (entry.contains("imageFormat")) {
+        network.setFormat(parseImageFormat(entry.at("imageFormat"), context + " imageFormat"));
+    } else if (schema >= 6) {
+        throw DeserializeError(context + ": schema 6 network has no 'imageFormat'");
+    }
     clearNetwork(network);
     if (entry.contains("inputs")) {
         if (!entry.at("inputs").is_array())
@@ -1208,9 +1278,9 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
         }
     }
     network.setExtension(
-        collectUnknownFields(entry, {"id", "name", "defaultOutput", "nextNodeId", "nextEdgeId", "nextInterfacePortId",
-                                     "inputs", "outputs", "nodes", "edges", "inputConnections", "outputConnections",
-                                     "outputInputBindings", "exposedParameters"}));
+        collectUnknownFields(entry, {"id", "name", "imageFormat", "defaultOutput", "nextNodeId", "nextEdgeId",
+                                     "nextInterfacePortId", "inputs", "outputs", "nodes", "edges", "inputConnections",
+                                     "outputConnections", "outputInputBindings", "exposedParameters"}));
     network.restoreIdentityHighWatermarks(
         watermark(entry, "nextNodeId", "network").value_or(network.graph().nextNodeId()),
         watermark(entry, "nextEdgeId", "network").value_or(network.graph().nextEdgeId()),
@@ -1426,6 +1496,7 @@ nlohmann::json saveDocument(const Document& document) {
         };
         nlohmann::json value{{"id", network.id()},
                              {"name", network.name()},
+                             {"imageFormat", imageFormatJson(network.format())},
                              {"defaultOutput", network.defaultOutput()},
                              {"nextNodeId", network.graph().nextNodeId()},
                              {"nextEdgeId", network.graph().nextEdgeId()},
@@ -1530,6 +1601,7 @@ nlohmann::json saveDocument(const Document& document) {
                           {"schema", Document::kSchemaVersion},
                           {"requiredFeatures", requiredFeaturesJson(document)},
                           {"name", document.name},
+                          {"namedFormats", namedFormatsJson(document.namedFormats())},
                           {"color", std::move(color)},
                           {"sources", std::move(sources)},
                           {"mediaCatalog", mediaCatalogJson(document.mediaCatalog())},
@@ -1566,27 +1638,29 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
     LoadResult result{Document(std::move(catalog)), {}};
     // "presentation" belongs to the session/file envelope; the codec neither
     // reads, preserves nor writes it.
-    result.document.extension = collectUnknownFields(json, {"format",
-                                                            "schema",
-                                                            "requiredFeatures",
-                                                            "presentation",
-                                                            "name",
-                                                            "color",
-                                                            "sources",
-                                                            "mediaCatalog",
-                                                            "rootNetworkId",
-                                                            "nextNetworkId",
-                                                            "nextInstanceId",
-                                                            "networks",
-                                                            "instances",
-                                                            "animationChannels",
-                                                            "nextAnimationChannelId",
-                                                            "nextKeyframeId",
-                                                            "nodes",
-                                                            "edges",
-                                                            "nextNodeId",
-                                                            "nextEdgeId"});
+    result.document.extension = collectUnknownFields(
+        json,
+        {"format",   "schema",     "requiredFeatures",  "presentation",           "name",           "namedFormats",
+         "color",    "sources",    "mediaCatalog",      "rootNetworkId",          "nextNetworkId",  "nextInstanceId",
+         "networks", "instances",  "animationChannels", "nextAnimationChannelId", "nextKeyframeId", "nodes",
+         "edges",    "nextNodeId", "nextEdgeId"});
     result.document.name = json.value("name", std::string{});
+    // A named format is an authored preset: applying it copies its value, so
+    // editing the preset later never silently edits the networks that used it.
+    if (auto namedFormats = json.find("namedFormats"); namedFormats != json.end()) {
+        if (!namedFormats->is_object())
+            throw DeserializeError("document 'namedFormats' must be an object");
+        for (auto preset = namedFormats->begin(); preset != namedFormats->end(); ++preset) {
+            if (preset.key().empty())
+                throw DeserializeError("document 'namedFormats' has an empty preset name");
+            try {
+                result.document.setNamedFormat(preset.key(),
+                                               parseImageFormat(preset.value(), "named format '" + preset.key() + "'"));
+            } catch (const GraphException& error) {
+                throw DeserializeError(error.what());
+            }
+        }
+    }
     if (auto color = json.find("color"); color != json.end()) {
         if (!color->is_object()) {
             result.warnings.push_back("document 'color' field is not an object; using default color policy");

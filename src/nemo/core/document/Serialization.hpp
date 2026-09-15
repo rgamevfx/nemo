@@ -33,6 +33,15 @@ namespace nemo {
 // they cannot be typed. A top-level "presentation" record belongs to the
 // session/file envelope and is ignored by this codec.
 //
+// Schema 6 states the saved image format explicitly: every network carries
+// "imageFormat": {width, height, pixelAspect, ...unknown} and the document
+// carries its authored presets as "namedFormats": {name: {...}}. Networks of an
+// older file authored no format and migrate to the model's defaults rather than
+// deriving one from a viewer, output node or source selection. Dimensions must
+// be strict integers and the aspect finite, all positive; a schema-6 network
+// without a format, or any malformed format record, is refused. Unknown fields
+// inside either record are retained verbatim.
+//
 // Source and color-config paths are stored verbatim; resolving or rebasing them
 // to a project location is the file layer's job, never a codec side effect.
 struct LoadResult {

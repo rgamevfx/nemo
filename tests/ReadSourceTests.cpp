@@ -491,9 +491,8 @@ TEST(ReadSourceTest, Schema4MigrationMaterializesSharedTimingOnTheRead) {
     EXPECT_EQ(request.nodeInterpretationKeys & kSourceHintTransferBit, kSourceHintTransferBit);
     EXPECT_EQ(request.nodeInterpretationKeys & kSourceHintMatrixBit, kSourceHintMatrixBit);
 
-    // Migration is applied once: the saved schema-5 document reloads unchanged.
+    // Migration is applied once: saving and reopening retains the authored choices.
     const nlohmann::json resaved = saveDocument(loaded.document);
-    EXPECT_EQ(resaved.at("schema").get<int>(), 5);
     const LoadResult reopened = loadDocument(resaved);
     EXPECT_TRUE(reopened.warnings.empty());
     EXPECT_EQ(

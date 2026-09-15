@@ -1,0 +1,1 @@
+{"schema":1,"name":"Network Format Verification","nodes":[{"type":"testpattern","name":"Pattern"},{"type":"output","name":"Output"},{"type":"viewer","name":"Viewer"}],"edges":[{"from":{"node":1,"port":0},"to":{"node":2,"port":0}},{"from":{"node":1,"port":0},"to":{"node":3,"port":0}}]}

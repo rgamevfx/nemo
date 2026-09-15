@@ -78,9 +78,19 @@ void copyNodeExact(Graph& graph, const NodeInstance& node) {
         graph.setPortContract(node.id, node.inputPorts, node.outputPorts);
 }
 
+// Command-level network lookup: a command that names a network the document
+// does not hold reports the documented unknown-network error, so a caller
+// observes a missing object rather than the storage layer's own diagnostic.
+[[nodiscard]] Network& requireNetwork(Document& document, NetworkId id) {
+    if (document.networks().find([id](const Network& value) { return value.id() == id; }) == nullptr)
+        throw GraphException(GraphError::UnknownNetwork, "unknown network " + std::to_string(id));
+    return document.network(id);
+}
+
 [[nodiscard]] NetworkId addNetworkLike(Document& document, const Network& source, std::string name) {
     const Network sourceSnapshot = source;
     const NetworkId id = document.addNetwork(uniqueNetworkName(document, std::move(name)));
+    document.network(id).setFormat(sourceSnapshot.format());
     if (const auto automatic = document.network(id).defaultOutput(); automatic != kInvalidNode)
         document.network(id).graph().removeNode(automatic);
     for (const auto& port : sourceSnapshot.inputs()) {
@@ -174,6 +184,10 @@ void collapse(Document& document, NetworkId parentId, const std::vector<NodeId>&
         throw GraphException(GraphError::InvalidNetwork, "collapse requires at least one selected node");
     Network& parent = document.network(parentId);
     Graph& parentGraph = parent.graph();
+    // A collapsed subnet is authored against its parent's canvas; taking the
+    // value here keeps it valid across the mutations below, which replace the
+    // network storage the `parent` reference points into.
+    const ImageFormat parentFormat = parent.format();
     std::set<NodeId> selectedSet;
     std::vector<NodeInstance> selectedNodes;
     std::vector<std::pair<NetworkInstanceId, NodeId>> selectedNested;
@@ -332,6 +346,7 @@ void collapse(Document& document, NetworkId parentId, const std::vector<NodeId>&
     const NetworkId childId =
         document.addNetwork(uniqueNetworkName(document, requestedName.empty() ? "Subnet" : requestedName));
     Network& child = document.network(childId);
+    child.setFormat(parentFormat);
     if (const auto automatic = child.defaultOutput(); automatic != kInvalidNode)
         child.graph().removeNode(automatic);
     for (const auto& node : selectedNodes)
@@ -891,6 +906,40 @@ Command bindInstanceInputToParentTerminalCommand(NetworkInstanceId instance, Int
 Command unbindInstanceInputCommand(NetworkInstanceId instance, InterfacePortId input) {
     return Command{"unbind instance input",
                    [instance, input](Document& candidate) { candidate.eraseInstanceInputBinding(instance, input); }};
+}
+
+Command setNetworkFormatCommand(NetworkId network, ImageFormat format) {
+    return Command{"set network " + std::to_string(network) + " format",
+                   [network, format = std::move(format)](Document& candidate) {
+                       requireNetwork(candidate, network).setFormat(std::move(format));
+                   }};
+}
+
+Command setNamedFormatCommand(std::string name, ImageFormat format) {
+    const std::string label = "set named format '" + name + "'";
+    return Command{label, [name = std::move(name), format = std::move(format)](Document& candidate) {
+                       candidate.setNamedFormat(name, std::move(format));
+                   }};
+}
+
+Command removeNamedFormatCommand(std::string name) {
+    const std::string label = "remove named format '" + name + "'";
+    return Command{label, [name = std::move(name)](Document& candidate) { candidate.removeNamedFormat(name); }};
+}
+
+Command applyNamedFormatCommand(NetworkId network, std::string name) {
+    const std::string label = "apply named format '" + name + "'";
+    return Command{label, [network, name = std::move(name)](Document& candidate) {
+                       static_cast<void>(requireNetwork(candidate, network));
+                       const auto preset = candidate.namedFormats().find(name);
+                       if (preset == candidate.namedFormats().end())
+                           throw GraphException(GraphError::UnknownNamedFormat,
+                                                "cannot apply unknown named format '" + name + "'");
+                       // A preset is a value: the network copies it, so a later
+                       // preset edit leaves this canvas alone.
+                       const ImageFormat format = preset->second;
+                       candidate.network(network).setFormat(format);
+                   }};
 }
 
 Command createLinkedInstanceCommand(NetworkId parentNetwork, NetworkId definition, std::string name,

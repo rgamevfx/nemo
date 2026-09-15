@@ -170,6 +170,8 @@ EditResult ProjectSession::conflict(std::uint64_t expected) const {
         result.changedAnimationKeyIds.insert(result.changedAnimationKeyIds.end(), event.changedAnimationKeyIds.begin(),
                                              event.changedAnimationKeyIds.end());
         result.colorPolicyChanged |= event.colorPolicyChanged;
+        result.changedNamedFormatIds.insert(result.changedNamedFormatIds.end(), event.changedNamedFormatIds.begin(),
+                                            event.changedNamedFormatIds.end());
     }
     return result;
 }
@@ -350,6 +352,19 @@ void ProjectSession::derivePublication(const Document& before, const Document& a
             result.changedSourceIds.push_back(id);
     }
 
+    // Presets are reported by authored name: the touched set is the names the
+    // transaction wrote, and only one whose stored value actually differs is
+    // published, so a write that restated the current preset reports nothing.
+    for (const std::string& id : touched.namedFormats()) {
+        const auto prior = before.namedFormats().find(id);
+        const auto current = after.namedFormats().find(id);
+        if (prior == before.namedFormats().end() && current == after.namedFormats().end())
+            continue;
+        if (prior == before.namedFormats().end() || current == after.namedFormats().end() ||
+            !(current->second == prior->second))
+            result.changedNamedFormatIds.push_back(id);
+    }
+
     for (const MediaSourceId id : touched.mediaEntries()) {
         const MediaCatalogEntry* prior = before.mediaCatalog().entry(id);
         const MediaCatalogEntry* current = after.mediaCatalog().entry(id);
@@ -431,7 +446,8 @@ void ProjectSession::derivePublication(const Document& before, const Document& a
                       result.changedMediaEntryIds,
                       result.createdMediaEntryIds,
                       result.changedMediaBinIds,
-                      result.createdMediaBinIds};
+                      result.createdMediaBinIds,
+                      result.changedNamedFormatIds};
     if (!requestId.empty())
         requests_.push_back(RequestRecord{requestId, result});
     try {
@@ -500,6 +516,7 @@ EditResult ProjectSession::execute(Operation operation, Command* command, const 
                                                       error.errorCode() == GraphError::UnknownInstance ||
                                                       error.errorCode() == GraphError::UnknownMediaEntry ||
                                                       error.errorCode() == GraphError::UnknownMediaBin ||
+                                                      error.errorCode() == GraphError::UnknownNamedFormat ||
                                                       error.errorCode() == GraphError::MissingMediaSource
                                                   ? EditErrorCode::MissingObject
                                                   : EditErrorCode::InvalidArgument);
@@ -1007,6 +1024,25 @@ std::vector<SourceQueryResult> ProjectSession::querySources(std::string_view fil
     }
     return result;
 }
+
+std::vector<NamedFormatQueryResult> ProjectSession::queryNamedFormats(std::string_view filter, std::size_t limit,
+                                                                      std::string_view after) const {
+    assertOwnerThread();
+    limit = std::min<std::size_t>(limit, 256);
+    std::vector<NamedFormatQueryResult> result;
+    if (limit == 0)
+        return result;
+    for (auto it = document_.namedFormats().upper_bound(std::string(after)); it != document_.namedFormats().end();
+         ++it) {
+        if (!filter.empty() && it->first.find(filter) == std::string::npos)
+            continue;
+        result.push_back(NamedFormatQueryResult{it->first, it->second});
+        if (result.size() == limit)
+            break;
+    }
+    return result;
+}
+
 std::vector<MediaQueryResult> ProjectSession::queryMedia(std::string_view filter, std::optional<MediaKind> kind,
                                                          std::optional<bool> offline, std::optional<bool> unused,
                                                          MediaBinId scope, std::size_t limit,

@@ -188,6 +188,11 @@ evaluateCpu(const Document& document, EvaluationRequest request, ResultCache<Cpu
             SourceProvider* sources = nullptr,
             std::shared_ptr<const NodeContributions> contributions = builtinNodeContributions());
 
+// Checks only executor extent/sampling limits, before raster/ROI arithmetic.
+// An authored format may exceed current execution capabilities without being
+// invalid persistent state. No graph walk, allocation or media probe.
+void validateRequestDomain(const EvaluationRequest& request);
+
 // Validates a request for any executor (CPU reference and native GPU,
 // issue #8): quality must be Full (spec section 8), channels RGBA, region
 // within the reference bounds, the output node must exist and be an Output

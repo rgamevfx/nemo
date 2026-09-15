@@ -599,3 +599,58 @@ movie binding keeps its validated interval, an untagged movie is recovered only
 by authoring the missing interpretation and explicitly retrying the same
 selection, per-occurrence error/pending state, and Start At deriving the offset
 through core rather than UI arithmetic.
+
+## Saved composition formats and schema 6 (#96)
+
+Date: 2026-09-15. Status: Accepted by the owner in
+[#96](https://github.com/rgamevfx/nemo/issues/96#issuecomment-5688279619).
+
+### Context and decision
+
+A composition's authored canvas must survive a different viewer, source,
+preview resolution, or reopened project. Each `Network` therefore owns an
+`ImageFormat` value: positive integer width/height and finite positive pixel
+aspect, initially 1920×1080 square pixels. The network definition owns it, so
+linked occurrences share it; independent copies copy its value. Collapsing
+nodes preserves the parent format on the new definition. This does not define
+a composition timebase.
+
+Document-owned named formats are value presets, not live references. Applying
+one copies its value into a network; changing or removing the preset leaves
+previously authored networks unchanged. `NetworkCommands` and `ProjectSession`
+own edits, validation, touched identities, atomic publication and history.
+
+Schema 6 stores network `imageFormat` and document `namedFormats`; format
+members are `width`, `height`, and `pixelAspect`. Older files without a format
+receive the approved default, never an inferred Read/viewer size. Schema-6
+networks require the field. Malformed values fail explicitly, while unknown
+members inside network formats and named presets survive save/reopen.
+Persistence validity is independent of the executor's current size limit.
+
+### Consumers and consequences
+
+The existing viewer takes generator-only canvas dimensions from its target
+network and preserves probed source dimensions. CPU/native generators carry
+their owning network's pixel aspect; source/input images retain their own.
+Generator reuse includes exact pixel-aspect bits, so adjacent float values
+cannot collide through decimal rounding; downstream identity follows inputs.
+The shared request-domain validator rejects unsupported authored dimensions
+before the viewer's ROI arithmetic.
+
+The project-session CLI exposes `set-network-format`, `set-named-format`,
+`apply-named-format`, and `remove-named-format`. Format edit payloads use
+`format: {width, height, pixel_aspect}`; network queries return `format` and
+bounded `named_formats` (`limit`, `format_filter`, `format_after`).
+These edits use the existing revision/transaction/history protocol.
+
+The Network Settings UI remains deferred. #88 owns per-node mixed-format
+description/planning and the remaining consumers; this change is not that
+cutover. Headless `evaluate`/`evaluate-gpu` diagnostic request dimensions
+remain explicit options, not implicit composition-size defaults.
+
+### Verification
+
+Session persistence/history and retained snapshots, malformed/legacy/unknown
+format save/reopen through the real CLI, exact pixel-aspect cache invalidation,
+CPU/Slang execution, and native generator framing and preview controls are
+recorded in `docs/evidence/issue87-implementation-ledger.json`.

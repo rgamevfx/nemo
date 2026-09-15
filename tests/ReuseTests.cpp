@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -19,6 +20,7 @@
 #include <vector>
 
 #include "nemo/core/commands/AnimationCommands.hpp"
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/core/evaluation/Reuse.hpp"
@@ -145,6 +147,31 @@ TEST(ReuseTest, SecondIdenticalRequestReusesWithoutRerender) {
     for (const PlanStep& step : second.plan.steps) {
         EXPECT_TRUE(step.cacheReused) << "step " << step.name;
     }
+}
+
+TEST(ReuseTest, PixelAspectEditsNeverReturnStaleGeneratorMetadata) {
+    Document doc =
+        makeDocument({{"testpattern", "plate"}, {"constcolor", "color"}, {"output", "outA"}, {"output", "outB"}});
+    connect(rootGraph(doc), "plate", "outA");
+    connect(rootGraph(doc), "color", "outB");
+    ResultCache<CpuImage> cache;
+    const auto requestA = requestFor(doc, "outA", 0);
+    const auto requestB = requestFor(doc, "outB", 0);
+    EXPECT_EQ(evaluateCpu(doc, requestA, &cache).image.layout().pixelAspect, 1.0F);
+    EXPECT_EQ(evaluateCpu(doc, requestB, &cache).image.layout().pixelAspect, 1.0F);
+
+    CommandStack stack(doc);
+    // One ULP detects lossy decimal cache keys as well as a missing format dependency.
+    const float aspect = std::nextafter(1.0F, 2.0F);
+    stack.push(setNetworkFormatCommand(doc.rootNetworkId(), ImageFormat{1920, 1080, aspect}));
+    EXPECT_EQ(evaluateCpu(doc, requestA, &cache).image.layout().pixelAspect, aspect);
+    EXPECT_EQ(evaluateCpu(doc, requestB, &cache).image.layout().pixelAspect, aspect);
+
+    stack.undo();
+    const auto misses = cache.counts().misses;
+    EXPECT_EQ(evaluateCpu(doc, requestA, &cache).image.layout().pixelAspect, 1.0F);
+    EXPECT_EQ(evaluateCpu(doc, requestB, &cache).image.layout().pixelAspect, 1.0F);
+    EXPECT_EQ(cache.counts().misses, misses);
 }
 
 // Acceptance example 1: shared VFX with independent grades. Evaluating both

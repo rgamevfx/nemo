@@ -4,7 +4,7 @@
   "url": "https://github.com/rgamevfx/nemo/issues/87",
   "captured": "2026-09-15",
   "source_issue_body_sha256": "e5155708654c007afa64b46c84d37a4be1365fc205fda357569fbab4947bc302",
-  "status": "decomposed; implementation and reference freeze remain open",
+  "status": "Nuke 17 documentation and saved-format policy approved; #96 implemented and exercised, review pending with known baseline suite failure",
   "baseline": {
     "branch": "issue/85-region-evaluation",
     "commit": "dfbd6ea1cd97137aba1c9c02262006d3eb9ccf16",
@@ -19,7 +19,7 @@
     "unrelated_worktree_files": "workflow.nemo, three autosaves and workflow.nemo.bak are user work; excluded from this change"
   },
   "authority": [
-    "docs/composition_network_vfx_nle_spec_v2.md sections 3, 8, 10.2–10.4 and 12",
+    "docs/composition_network_vfx_nle_spec_v2.md sections 3, 8, 10.2\u201310.4 and 12",
     "docs/agents/ownership.md",
     "docs/agents/rendering.md",
     "docs/agents/issue-tracker.md",
@@ -31,8 +31,7 @@
   "approved_test_seams": [
     "ProjectSession commands/history and save/reopen, followed by existing CPU/native evaluation",
     "Actual native application input paths for inspector/mapping/handles/drawing",
-    "Shared public delivery-job submit/status/cancel, checked through independently read delivered files",
-    "Existing public GPU lifetime/cancellation/resource-admission seams; no private per-effect hooks"
+    "Shared public delivery-job submit/status/cancel, checked through independently read delivered files"
   ],
   "primary_ownership_rule": "Exactly one primary issue per story; implementation children carry cross-cutting obligations and #95 verifies integration. Mapping is not completion.",
   "stories": [
@@ -318,7 +317,7 @@
     },
     {
       "id": 41,
-      "text": "As a compositor, I want the Unpremult → Grade → Premult workflow to retain its authored meaning, so that automatic conversions neither cancel my operations nor apply them twice.",
+      "text": "As a compositor, I want the Unpremult \u2192 Grade \u2192 Premult workflow to retain its authored meaning, so that automatic conversions neither cancel my operations nor apply them twice.",
       "primary_issue": 89,
       "status": "not-implemented-under-87",
       "evidence": []
@@ -389,9 +388,11 @@
     {
       "id": 51,
       "text": "As a compositor, I want reusable named formats and a persistent composition-format fallback, so that generators and Reformat resolve dimensions without relying on the selected viewer or source.",
-      "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "primary_issue": 96,
+      "status": "format-owner-implemented-reformat-consumer-pending",
+      "evidence": [
+        "docs/evidence/assets/issue96-composition-format/verification.json"
+      ]
     },
     {
       "id": 52,
@@ -444,7 +445,7 @@
     },
     {
       "id": 59,
-      "text": "As a compositor, I want Bézier and B-spline shapes, including the reference's basic shape tools, so that I can choose the appropriate contour representation.",
+      "text": "As a compositor, I want B\u00e9zier and B-spline shapes, including the reference's basic shape tools, so that I can choose the appropriate contour representation.",
       "primary_issue": 93,
       "status": "not-implemented-under-87",
       "evidence": []
@@ -748,13 +749,13 @@
         "tests/contributions/Affine.cpp"
       ],
       "approval_gates": [
-        "Approve persistent generator/composition-format fallback and old-document migration before changing request-global format behavior.",
+        "Approved composition-format and migration policy is implemented by prerequisite #96; consume it rather than defining another fallback.",
         "Freeze source-window/coordinate reference cases needed by this slice; do not hold unrelated metadata work for Roto/Write reference completion.",
         "No alpha arithmetic or existing-image rebaseline; coordinate any affected interpretation change with the alpha child."
       ],
-      "blocked_by": [],
-      "state": "open",
-      "claimed": false
+      "blocked_by": [
+        96
+      ]
     },
     {
       "issue": 89,
@@ -789,10 +790,13 @@
         "Selected Nuke build and retained zero/near-zero/hidden-RGB/partial-selection captures are missing; online prose is not an oracle."
       ],
       "blocked_by": [
-        88
+        88,
+        90
       ],
-      "state": "open",
-      "claimed": false
+      "planned_node_modules": [
+        "src/nemo/nodes/premult/Contribution.cpp, Gpu.cpp and node-local .slang",
+        "src/nemo/nodes/unpremult/Contribution.cpp, Gpu.cpp and node-local .slang"
+      ]
     },
     {
       "issue": 90,
@@ -824,13 +828,14 @@
       ],
       "approval_gates": [
         "Freeze Nuke build and modern Shuffle generation, mapping defaults and disconnected/unmapped behavior.",
-        "Approve the new mapping editor’s exact observable layout/gestures; existing shared chrome is not redesign scope."
+        "Approve the new mapping editor\u2019s exact observable layout/gestures; existing shared chrome is not redesign scope."
       ],
       "blocked_by": [
         88
       ],
-      "state": "open",
-      "claimed": false
+      "planned_node_modules": [
+        "src/nemo/nodes/shuffle/Contribution.cpp, Gpu.cpp and node-local .slang"
+      ]
     },
     {
       "issue": 91,
@@ -850,23 +855,23 @@
         "src/nemo/core/evaluation/NodeContributions.hpp",
         "src/nemo/core/evaluation/Params.hpp",
         "src/nemo/core/evaluation/EffectCpu.hpp",
-        "src/nemo/nodes/BuiltinNodes.inc",
-        "apps/nemo-ui/qml/ParametersPanel.qml"
+        "src/nemo/nodes/BuiltinNodes.inc"
       ],
       "approval_gates": [
         "Freeze Copy missing-donor, mask-injection/fringe/unpremult, metadata/range defaults and control behavior."
       ],
       "blocked_by": [
-        90,
-        89
+        89,
+        90
       ],
-      "state": "open",
-      "claimed": false
+      "planned_node_modules": [
+        "src/nemo/nodes/copy/Contribution.cpp, Gpu.cpp and node-local .slang"
+      ]
     },
     {
       "issue": 92,
       "url": "https://github.com/rgamevfx/nemo/issues/92",
-      "title": "Deliver persistent formats and native Crop and Reformat workflows",
+      "title": "Deliver native Crop and Reformat workflows using saved composition formats",
       "work_class": "System extension; Crop viewer handles and any unreferenced format UI are new design",
       "primary_stories": [
         43,
@@ -877,7 +882,6 @@
         48,
         49,
         50,
-        51,
         52,
         53,
         54,
@@ -898,14 +902,17 @@
       ],
       "approval_gates": [
         "Owner must choose format fallback/default and old-document migration; no implicit 1920x1080 or selected-Read policy.",
-        "Freeze Crop/Reformat coordinates, softness, filter/clamp/defaults and odd/fractional rounding against a selected Nuke build.",
+        "Freeze Crop/Reformat coordinates, softness, filter/clamp/defaults and odd/fractional rounding against a Nuke 17 documentation contract.",
         "Approve new native handle/format-control behavior where #25 contains no reference."
       ],
       "blocked_by": [
-        88
+        88,
+        96
       ],
-      "state": "open",
-      "claimed": false
+      "planned_node_modules": [
+        "src/nemo/nodes/crop/Contribution.cpp, Gpu.cpp and node-local .slang",
+        "src/nemo/nodes/reformat/Contribution.cpp, Gpu.cpp and node-local .slang"
+      ]
     },
     {
       "issue": 93,
@@ -945,12 +952,13 @@
         "Approve new shape-tool/hierarchy/handle interactions within existing Nemo chrome before implementing unreferenced UI."
       ],
       "blocked_by": [
+        89,
         90,
-        92,
-        89
+        96
       ],
-      "state": "open",
-      "claimed": false
+      "planned_node_modules": [
+        "src/nemo/nodes/roto/Contribution.cpp, Gpu.cpp and node-local .slang"
+      ]
     },
     {
       "issue": 94,
@@ -983,8 +991,9 @@
         "src/nemo/media/ImageSource.hpp",
         "src/nemo/media/InputColor.hpp",
         "src/nemo/media/ViewingTransform.hpp",
-        "apps/nemo-cli/",
-        "apps/nemo-ui/"
+        "apps/nemo-cli/ProjectSessionCommand.cpp",
+        "apps/nemo-ui/ViewerRuntime.hpp",
+        "apps/nemo-ui/ViewerRuntime.cpp"
       ],
       "approval_gates": [
         "Owner must freeze initial formats/codecs/options/defaults and approve explicit-job UI behavior. EXR support is required; exact precision/compression inventory is not yet approved.",
@@ -992,11 +1001,12 @@
         "Integrate missing admission through #14, not a private delivery allocator or queue."
       ],
       "blocked_by": [
-        90,
-        89
+        89,
+        90
       ],
-      "state": "open",
-      "claimed": false
+      "planned_node_modules": [
+        "src/nemo/nodes/write/Contribution.cpp, Gpu.cpp and node-local .slang"
+      ]
     },
     {
       "issue": 95,
@@ -1019,7 +1029,7 @@
       ],
       "approval_gates": [
         "All constituent runtime/reference requirements must actually be exercised; child closure alone does not prove parity.",
-        "Existing #83–86 public-interface/image/landing holds and Linux-only execution remain."
+        "Existing #83\u201386 public-interface/image/landing holds and Linux-only execution remain."
       ],
       "blocked_by": [
         88,
@@ -1029,10 +1039,36 @@
         92,
         93,
         94,
-        14
+        96,
+        97
+      ]
+    },
+    {
+      "issue": 96,
+      "url": "https://github.com/rgamevfx/nemo/issues/96",
+      "title": "Persist composition formats and migrate canvas policy explicitly",
+      "work_class": "System extension; Network Settings UI explicitly deferred",
+      "primary_stories": [
+        51
       ],
-      "state": "open",
-      "claimed": false
+      "owners": [
+        "src/nemo/core/document/Graph.hpp",
+        "src/nemo/core/document/Graph.cpp",
+        "src/nemo/core/document/Document.hpp",
+        "src/nemo/core/document/Document.cpp",
+        "src/nemo/core/document/ChangeRecorder.hpp",
+        "src/nemo/core/document/Serialization.cpp",
+        "src/nemo/core/commands/NetworkCommands.hpp",
+        "src/nemo/core/commands/NetworkCommands.cpp",
+        "src/nemo/core/session/ProjectSession.hpp",
+        "src/nemo/core/session/ProjectSession.cpp",
+        "apps/nemo-cli/ProjectSessionCommand.cpp",
+        "apps/nemo-ui/ViewerController.cpp"
+      ],
+      "approval_gates": [
+        "Canvas default, migration and UI deferral approved by owner. Per-node mixed-format description/planning remains #88; Reformat remains #92."
+      ],
+      "blocked_by": []
     }
   ],
   "existing_owners": [
@@ -1050,7 +1086,8 @@
         92,
         93
       ],
-      "responsibility": "Byte admission, active working-set reservations, eligible eviction before allocation and explicit cannot-fit outcomes; include named-channel outputs, scratch, source/foreign/shape/delivery staging. No parallel memory manager."
+      "responsibility": "Byte admission, active working-set reservations, eligible eviction before allocation and explicit cannot-fit outcomes; include named-channel outputs, scratch, source/foreign/shape/delivery staging. No parallel memory manager. #97 isolates the required FX byte-admission capability from unrelated settings/bake UI in #14.",
+      "required_capability_issue": 97
     },
     {
       "issue": 16,
@@ -1058,13 +1095,69 @@
         95
       ],
       "responsibility": "Declared performance workload and endpoint definitions; #95 contributes scoped #87 measurements without claiming closure of #16/#18 or Windows #17."
+    },
+    {
+      "issue": 18,
+      "primary_stories": [],
+      "responsibility": "Reproducibility: headless GPU vs interactive full-quality agreement, CPU reference tolerances (spec \u00a711 reproducibility gate); existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 22,
+      "primary_stories": [],
+      "responsibility": "GPU execution foundation: completion-owned resources, reusable submissions and cached pipelines; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 24,
+      "primary_stories": [],
+      "responsibility": "Nemo development roadmap \u2014 implementation plan and progress; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 75,
+      "primary_stories": [],
+      "responsibility": "[Spec] Refine shared parameter editing and complete Grade, Merge, and Read workflows; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 76,
+      "primary_stories": [],
+      "responsibility": "Refine shared parameter numeric editing and animation actions; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 77,
+      "primary_stories": [],
+      "responsibility": "Deliver reusable linked RGB parameter editing for Grade; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 78,
+      "primary_stories": [],
+      "responsibility": "Extend Merge operations masking and atomic input swap; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 79,
+      "primary_stories": [],
+      "responsibility": "Move Read timing and interpretation choices to node scope; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 80,
+      "primary_stories": [],
+      "responsibility": "Discover Read media coverage and refresh source content safely; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 81,
+      "primary_stories": [],
+      "responsibility": "Implement config-backed Read input conversion and alpha interpretation; existing responsibility retained, no reassignment or closure claim."
+    },
+    {
+      "issue": 82,
+      "primary_stories": [],
+      "responsibility": "Integrate Read range reload and input-transform artist workflows; existing responsibility retained, no reassignment or closure claim."
     }
   ],
   "decision_gates": [
     {
-      "id": "reference-build",
-      "status": "awaiting-owner-reference-access",
+      "id": "reference-documentation",
+      "status": "approved-documentation-only",
       "affected_issues": [
+        88,
         89,
         90,
         91,
@@ -1073,8 +1166,8 @@
         94,
         95
       ],
-      "decision": "Select the Nuke version/build and modern Shuffle generation; supply runnable reference access or a retained build-identified fixture/native-capture bundle. Documentation cannot settle the listed numerical and interaction gaps.",
-      "not_approval": "No approximation or omitted reference control is accepted by this ledger."
+      "decision": "Use Foundry Nuke 17.0 documentation, including the modern socket-based Shuffle guide. A runnable Nuke build or captured binary oracle is not a prerequisite. State undocumented numerical or new native-tool choices as Nemo decisions requiring narrow approval; do not claim runtime Nuke parity.",
+      "not_approval": "Documentation-only authority does not approve undocumented arithmetic, image rebaselines or a redesign of accepted Nemo chrome."
     },
     {
       "id": "alpha-compatibility",
@@ -1090,14 +1183,16 @@
     },
     {
       "id": "composition-format",
-      "status": "awaiting-owner-decision",
+      "status": "approved-implementation-in-progress",
       "affected_issues": [
         88,
         92,
-        93
+        93,
+        96
       ],
-      "decision": "Choose persistent project/Composition Network format fallback/default, named-format policy and old-document migration. Existing viewer fallback is 1920x1080 but does not authorize making that every authored composition format.",
-      "not_approval": "No selected-viewer/Read dependency, timebase change or invented migration is approved."
+      "decision": "Each Composition Network owns a saved 1920x1080 square-pixel default. Store width/height/pixel aspect now; Network Settings UI is deferred. Generators use their owning canvas, Read retains source dimensions, Reformat is the explicit image-size change, and viewer zoom/proxy resolution do not mutate the saved format. Pre-format documents receive the same default rather than inferred viewer/source sizes. Named formats are reusable value presets, not mutable links that silently rewrite networks.",
+      "not_approval": "No timebase, viewer/source-driven composition resize or new Network Settings UI in #96.",
+      "approval": "https://github.com/rgamevfx/nemo/issues/96#issuecomment-5688279619"
     },
     {
       "id": "delivery-capabilities",
@@ -1110,7 +1205,7 @@
     },
     {
       "id": "new-native-tools",
-      "status": "awaiting-reference-or-narrow-owner-approval",
+      "status": "awaiting-narrow-owner-approval-with-documentation-reference",
       "affected_issues": [
         90,
         92,
@@ -1122,51 +1217,111 @@
     }
   ],
   "reference_inventory": {
-    "version": 1,
-    "status": "NOT FROZEN: mutable documentation observations only",
-    "source_note": "Primary Foundry pages were read; no selected Nuke build, numerical fixtures or native parity captures have been supplied. Control inventories include explicit unresolved/adjacent families instead of silently dropping them.",
+    "version": 2,
+    "status": "Nuke 17 documentation authority pinned; per-control implementation and remaining policy freeze open",
+    "source_note": "The owner has no Nuke installation and selected version 17 documentation as authority. The 17.0 reference and user-guide URLs below were successfully read. These are control-coverage candidates, not a runtime parity claim. Modern Shuffle uses the socket-based guide, not the legacy Shuffle control table; undocumented numerical and new Nemo input behavior needs explicit policy, not an unavailable binary.",
     "source_aliases": [
       {
-        "id": "crop-ref",
-        "url": "https://learn.foundry.com/nuke/content/reference_guide/transform_nodes/crop.html",
+        "id": "channels-guide",
+        "url": "https://learn.foundry.com/nuke/17.0/content/comp_environment/channels/creating_channels.html",
         "fetched": "2026-09-15",
-        "kind": "primary reference guide"
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "shuffle-guide",
+        "url": "https://learn.foundry.com/nuke/17.0/content/comp_environment/channels/swapping_channels.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
       },
       {
         "id": "crop-guide",
-        "url": "https://learn.foundry.com/nuke/content/comp_environment/reformatting_elements/cropping_elements.html",
+        "url": "https://learn.foundry.com/nuke/17.0/content/comp_environment/reformatting_elements/cropping_elements.html",
         "fetched": "2026-09-15",
-        "kind": "primary step-by-step guide"
-      },
-      {
-        "id": "reformat-ref",
-        "url": "https://learn.foundry.com/nuke/content/reference_guide/transform_nodes/reformat.html",
-        "fetched": "2026-09-15",
-        "kind": "primary reference guide"
+        "kind": "Foundry Nuke 17.0 primary documentation"
       },
       {
         "id": "reformat-guide",
-        "url": "https://learn.foundry.com/nuke/content/comp_environment/reformatting_elements/using_reformat.html",
+        "url": "https://learn.foundry.com/nuke/17.0/content/comp_environment/reformatting_elements/using_reformat.html",
         "fetched": "2026-09-15",
-        "kind": "primary step-by-step guide"
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "write-numbering-guide",
+        "url": "https://learn.foundry.com/nuke/17.0/content/comp_environment/rendering/changing_frame_numbering.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "write-reading-guide",
+        "url": "https://learn.foundry.com/nuke/17.0/content/comp_environment/rendering/reading_files_using_write.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "write-rendering-guide",
+        "url": "https://learn.foundry.com/nuke/17.0/content/comp_environment/rendering/rendering_output.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
       },
       {
         "id": "filter-guide",
-        "url": "https://learn.foundry.com/nuke/content/comp_environment/transforming_elements/filtering_algorithm_2d.html",
+        "url": "https://learn.foundry.com/nuke/17.0/content/comp_environment/transforming_elements/filtering_algorithm_2d.html",
         "fetched": "2026-09-15",
-        "kind": "primary filtering reference linked by the Reformat guide"
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "copy-ref",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/channel_nodes/copy.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "shuffle-ref",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/channel_nodes/shuffle.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
       },
       {
         "id": "roto-ref",
-        "url": "https://learn.foundry.com/nuke/current/content/reference_guide/draw_nodes/roto.html",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/draw_nodes/roto.html",
         "fetched": "2026-09-15",
-        "kind": "primary reference guide (plus embedded tutorial transcripts)"
+        "kind": "Foundry Nuke 17.0 primary documentation"
       },
       {
         "id": "rotopaint-ref",
-        "url": "https://learn.foundry.com/nuke/current/content/reference_guide/draw_nodes/rotopaint.html",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/draw_nodes/rotopaint.html",
         "fetched": "2026-09-15",
-        "kind": "primary reference guide, scope-boundary use only"
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "write-ref",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/image_nodes/write.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "premult-ref",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/merge_nodes/premult.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "unpremult-ref",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/merge_nodes/unpremult.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "crop-ref",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/crop.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
+      },
+      {
+        "id": "reformat-ref",
+        "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/reformat.html",
+        "fetched": "2026-09-15",
+        "kind": "Foundry Nuke 17.0 primary documentation"
       }
     ],
     "nodes": [
@@ -1183,13 +1338,12 @@
           27
         ],
         "reference_build": null,
-        "reference_generation": "modern Shuffle2 proposed; owner confirmation pending",
-        "status": "documentation-inventory-not-frozen",
+        "reference_generation": "Modern socket-based Shuffle (Shuffle2), per Nuke 17 guide",
+        "status": "documentation-authority-pinned; coverage-not-implemented",
         "sources": [
-          "https://learn.foundry.com/nuke/content/reference_guide/channel_nodes/shuffle.html",
-          "https://learn.foundry.com/nuke/content/comp_environment/channels/swapping_channels.html",
-          "https://learn.foundry.com/nuke/content/comp_environment/channels/creating_channels.html",
-          "https://learn.foundry.com/nuke/content/release_notes/nuke_12.1.html"
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/channel_nodes/shuffle.html",
+          "https://learn.foundry.com/nuke/17.0/content/comp_environment/channels/swapping_channels.html",
+          "https://learn.foundry.com/nuke/17.0/content/comp_environment/channels/creating_channels.html"
         ],
         "documentation_facts": [
           "The linked reference table is legacy Shuffle; modern toolbar Shuffle uses class Shuffle2, introduced in Nuke 12.1. Do not mix their controls/defaults.",
@@ -1203,71 +1357,71 @@
               2,
               27
             ],
-            "source_locator": "shuffle.html (head note); nuke_12.1.html section 'Shuffle'; swapping_channels.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-ref (head note); shuffle-guide section 'Shuffle'; shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "shuffle-02",
-            "control": "Inputs",
+            "control": "B image input and optional A image input",
             "stories": [
               22
             ],
-            "source_locator": "shuffle.html 'Inputs and Controls'; nuke_12.1.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "shuffle-03",
-            "control": "in1 / In fromInput1",
+            "control": "Input Layer from B",
             "stories": [
               21,
               22
             ],
-            "source_locator": "shuffle.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "shuffle-04",
-            "control": "in2 / In fromInput2",
+            "control": "Input Layer from A",
             "stories": [
               21,
               22
             ],
-            "source_locator": "shuffle.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "shuffle-05",
-            "control": "out1 / Output Layer",
+            "control": "first Output Layer",
             "stories": [
               25
             ],
-            "source_locator": "shuffle.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "shuffle-06",
-            "control": "out2 / Output Layer",
+            "control": "second Output Layer",
             "stories": [
               25
             ],
-            "source_locator": "shuffle.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "shuffle-07",
-            "control": "layer/channel capacity",
+            "control": "up to eight selected input and output channels in the documented editor",
             "stories": [
               25,
               26
             ],
-            "source_locator": "shuffle.html; swapping_channels.html; nuke_12.1.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1279,8 +1433,8 @@
               23,
               27
             ],
-            "source_locator": "swapping_channels.html; nuke_12.1.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1289,8 +1443,8 @@
             "stories": [
               24
             ],
-            "source_locator": "swapping_channels.html sections 'Assigning Constants' and shortcuts table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1299,8 +1453,8 @@
             "stories": [
               26
             ],
-            "source_locator": "swapping_channels.html note; nuke_12.1.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1310,8 +1464,8 @@
               25,
               27
             ],
-            "source_locator": "creating_channels.html steps; swapping_channels.html 'Creating Swap Layers'",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide; channels-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1321,8 +1475,8 @@
               25,
               26
             ],
-            "source_locator": "creating_channels.html 'Reserved Channels'",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "channels-guide 'Reserved Channels'",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1331,8 +1485,8 @@
             "stories": [
               27
             ],
-            "source_locator": "swapping_channels.html 'Shuffle Keyboard Shortcuts'",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1342,8 +1496,8 @@
               25,
               27
             ],
-            "source_locator": "swapping_channels.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1353,19 +1507,19 @@
               21,
               28
             ],
-            "source_locator": "shuffle.html; swapping_channels.html tip",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "shuffle-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           }
         ],
         "unresolved_cases": [
-          "Selected Nuke build and modern-versus-legacy generation.",
           "Untouched outputs, missing named source channels and disconnected socket render results.",
           "Layer/channel naming collisions, reserved names, capacity and ordering.",
           "Exact mapping editor gestures and appearance, including cancellation and narrow layouts."
         ],
         "numerical_evidence": [],
-        "native_evidence": []
+        "native_evidence": [],
+        "reference_version": "Nuke 17.0 documentation"
       },
       {
         "node": "Copy",
@@ -1381,10 +1535,10 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-inventory-not-frozen",
+        "status": "documentation-authority-pinned; coverage-not-implemented",
         "sources": [
-          "https://learn.foundry.com/nuke/content/reference_guide/channel_nodes/copy.html",
-          "https://learn.foundry.com/nuke/content/reference_guide/channel_nodes/shuffle.html"
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/channel_nodes/copy.html",
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/channel_nodes/shuffle.html"
         ],
         "documentation_facts": [
           "A donates channels; B is the destination. Layer-copy documentation says a missing A channel leaves its B counterpart unchanged; do not assume that settles individual mapping slots.",
@@ -1398,8 +1552,8 @@
             "stories": [
               28
             ],
-            "source_locator": "copy.html intro and input table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref intro and input table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1408,8 +1562,8 @@
             "stories": [
               31
             ],
-            "source_locator": "copy.html input table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref input table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1418,8 +1572,8 @@
             "stories": [
               29
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1428,8 +1582,8 @@
             "stories": [
               29
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1438,8 +1592,8 @@
             "stories": [
               29
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1449,8 +1603,8 @@
               29,
               30
             ],
-            "source_locator": "copy.html control table - this is the documented missing-donor policy",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table - this is the documented missing-donor policy",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1459,8 +1613,8 @@
             "stories": [
               33
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1469,8 +1623,8 @@
             "stories": [
               34
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1479,8 +1633,8 @@
             "stories": [
               34
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1489,8 +1643,8 @@
             "stories": [
               31
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1499,8 +1653,8 @@
             "stories": [
               31
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1509,8 +1663,8 @@
             "stories": [
               32
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1519,8 +1673,8 @@
             "stories": [
               31
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1529,8 +1683,8 @@
             "stories": [
               32
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1539,8 +1693,8 @@
             "stories": [
               32
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1549,8 +1703,8 @@
             "stories": [
               32
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1559,8 +1713,8 @@
             "stories": [
               32
             ],
-            "source_locator": "copy.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1569,8 +1723,8 @@
             "stories": [
               31
             ],
-            "source_locator": "copy.html control table and intro",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "copy-ref control table and intro",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           }
         ],
@@ -1581,7 +1735,8 @@
           "Signed/empty bounds and reserved mask.a collision behavior."
         ],
         "numerical_evidence": [],
-        "native_evidence": []
+        "native_evidence": [],
+        "reference_version": "Nuke 17.0 documentation"
       },
       {
         "node": "Premult",
@@ -1596,10 +1751,10 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-inventory-not-frozen",
+        "status": "documentation-authority-pinned; coverage-not-implemented",
         "sources": [
-          "https://learn.foundry.com/nuke/content/reference_guide/merge_nodes/premult.html",
-          "https://learn.foundry.com/nuke/content/reference_guide/merge_nodes/unpremult.html"
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/merge_nodes/premult.html",
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/merge_nodes/unpremult.html"
         ],
         "documentation_facts": [
           "Documented operation multiplies selected stored channels by the chosen channel. Defaults: rgb selection, rgba.alpha multiplier, inversion disabled."
@@ -1611,8 +1766,8 @@
             "stories": [
               35
             ],
-            "source_locator": "premult.html intro",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "premult-ref intro",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1623,8 +1778,8 @@
               36,
               39
             ],
-            "source_locator": "premult.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "premult-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1633,8 +1788,8 @@
             "stories": [
               36
             ],
-            "source_locator": "premult.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "premult-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1644,8 +1799,8 @@
               35,
               36
             ],
-            "source_locator": "premult.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "premult-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1654,8 +1809,8 @@
             "stories": [
               36
             ],
-            "source_locator": "premult.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "premult-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1665,8 +1820,8 @@
               41,
               42
             ],
-            "source_locator": "premult.html intro",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "premult-ref intro",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           }
         ],
@@ -1676,7 +1831,8 @@
           "Partial-channel interpretation and downstream filtering/merging/viewing/delivery behavior."
         ],
         "numerical_evidence": [],
-        "native_evidence": []
+        "native_evidence": [],
+        "reference_version": "Nuke 17.0 documentation"
       },
       {
         "node": "Unpremult",
@@ -1691,10 +1847,10 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-inventory-not-frozen",
+        "status": "documentation-authority-pinned; coverage-not-implemented",
         "sources": [
-          "https://learn.foundry.com/nuke/content/reference_guide/merge_nodes/unpremult.html",
-          "https://learn.foundry.com/nuke/content/reference_guide/merge_nodes/premult.html"
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/merge_nodes/unpremult.html",
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/merge_nodes/premult.html"
         ],
         "documentation_facts": [
           "Documented operation divides selected stored channels by the chosen channel. Defaults: rgb selection, rgba.alpha divisor, inversion disabled.",
@@ -1707,8 +1863,8 @@
             "stories": [
               37
             ],
-            "source_locator": "unpremult.html intro",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "unpremult-ref intro",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1719,8 +1875,8 @@
               38,
               39
             ],
-            "source_locator": "unpremult.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "unpremult-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1729,8 +1885,8 @@
             "stories": [
               38
             ],
-            "source_locator": "unpremult.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "unpremult-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1740,8 +1896,8 @@
               37,
               38
             ],
-            "source_locator": "unpremult.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "unpremult-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1750,8 +1906,8 @@
             "stories": [
               38
             ],
-            "source_locator": "unpremult.html control table",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "unpremult-ref control table",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1761,8 +1917,8 @@
               41,
               42
             ],
-            "source_locator": "unpremult.html intro",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "unpremult-ref intro",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           }
         ],
@@ -1772,7 +1928,8 @@
           "Owner compatibility decision and independent old/new transparent-edge evidence."
         ],
         "numerical_evidence": [],
-        "native_evidence": []
+        "native_evidence": [],
+        "reference_version": "Nuke 17.0 documentation"
       },
       {
         "node": "Crop",
@@ -1788,10 +1945,10 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-inventory-not-frozen",
+        "status": "documentation-authority-pinned; coverage-not-implemented",
         "sources": [
-          "https://learn.foundry.com/nuke/content/reference_guide/transform_nodes/crop.html",
-          "https://learn.foundry.com/nuke/content/comp_environment/reformatting_elements/cropping_elements.html"
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/crop.html",
+          "https://learn.foundry.com/nuke/17.0/content/comp_environment/reformatting_elements/cropping_elements.html"
         ],
         "documentation_facts": [
           "Box controls expose x/y/right/top or x/y/width/height. Nuke measures y from the bottom; Nemo currently stores y-down rasters.",
@@ -1806,7 +1963,7 @@
               43
             ],
             "source_locator": "crop-ref (Inputs and Controls table)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1816,7 +1973,7 @@
               44
             ],
             "source_locator": "crop-ref; crop-guide step 3",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1826,7 +1983,7 @@
               48
             ],
             "source_locator": "crop-ref; crop-guide step 5",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1836,7 +1993,7 @@
               46
             ],
             "source_locator": "crop-ref; crop-guide step 4",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1846,7 +2003,7 @@
               47
             ],
             "source_locator": "crop-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1857,7 +2014,7 @@
               49
             ],
             "source_locator": "crop-ref; crop-guide step 4",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1868,7 +2025,7 @@
               49
             ],
             "source_locator": "crop-ref (Connection Type table)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           }
         ],
@@ -1879,7 +2036,8 @@
           "Native handles under pan/zoom/aspect/preview and interrupted command gestures."
         ],
         "numerical_evidence": [],
-        "native_evidence": []
+        "native_evidence": [],
+        "reference_version": "Nuke 17.0 documentation"
       },
       {
         "node": "Reformat",
@@ -1896,11 +2054,11 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-inventory-not-frozen",
+        "status": "documentation-authority-pinned; coverage-not-implemented",
         "sources": [
-          "https://learn.foundry.com/nuke/content/reference_guide/transform_nodes/reformat.html",
-          "https://learn.foundry.com/nuke/content/comp_environment/reformatting_elements/using_reformat.html",
-          "https://learn.foundry.com/nuke/content/comp_environment/transforming_elements/filtering_algorithm_2d.html"
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/reformat.html",
+          "https://learn.foundry.com/nuke/17.0/content/comp_environment/reformatting_elements/using_reformat.html",
+          "https://learn.foundry.com/nuke/17.0/content/comp_environment/transforming_elements/filtering_algorithm_2d.html"
         ],
         "documentation_facts": [
           "Modes: to-format, to-box and scale. Resize policies: width, height, fit, fill, none and distort.",
@@ -1915,7 +2073,7 @@
               50
             ],
             "source_locator": "reformat-ref (Inputs and Controls); reformat-guide",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1926,7 +2084,7 @@
               51
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1936,7 +2094,7 @@
               50
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1947,7 +2105,7 @@
               53
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1957,7 +2115,7 @@
               52
             ],
             "source_locator": "reformat-ref; reformat-guide (Creating Thumbnails)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1968,7 +2126,7 @@
               56
             ],
             "source_locator": "reformat-ref; reformat-guide (Scaling Image Sequences)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1978,7 +2136,7 @@
               53
             ],
             "source_locator": "reformat-ref; reformat-guide",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1988,7 +2146,7 @@
               54
             ],
             "source_locator": "reformat-ref; reformat-guide step 6",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -1998,7 +2156,7 @@
               54
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2009,7 +2167,7 @@
               56
             ],
             "source_locator": "reformat-ref; filter-guide (table and notes)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2019,7 +2177,7 @@
               55
             ],
             "source_locator": "reformat-ref; filter-guide note; reformat-guide steps 8/7",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2029,7 +2187,7 @@
               55
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2039,7 +2197,7 @@
               55
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2049,7 +2207,7 @@
               51
             ],
             "source_locator": "reformat-guide (To Create/Edit/Delete/Apply a Format)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2060,7 +2218,7 @@
               57
             ],
             "source_locator": "reformat-guide (Converting Images to a Desired Image Format)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2070,7 +2228,7 @@
               57
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           }
         ],
@@ -2081,7 +2239,8 @@
           "Bounds preservation combined with black-outside, repeated format changes and mixed input formats/aspects."
         ],
         "numerical_evidence": [],
-        "native_evidence": []
+        "native_evidence": [],
+        "reference_version": "Nuke 17.0 documentation"
       },
       {
         "node": "Roto",
@@ -2104,10 +2263,10 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-inventory-not-frozen",
+        "status": "documentation-authority-pinned; coverage-not-implemented",
         "sources": [
-          "https://learn.foundry.com/nuke/current/content/reference_guide/draw_nodes/roto.html",
-          "https://learn.foundry.com/nuke/current/content/reference_guide/draw_nodes/rotopaint.html"
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/draw_nodes/roto.html",
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/draw_nodes/rotopaint.html"
         ],
         "documentation_facts": [
           "Roto supports Bezier/B-spline matte authoring with background or generator use; documented output default is alpha, unlike RotoPaint.",
@@ -2123,7 +2282,7 @@
               67
             ],
             "source_locator": "roto-ref (Inputs and Controls)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2133,7 +2292,7 @@
               66
             ],
             "source_locator": "roto-ref; rotopaint-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2143,7 +2302,7 @@
               66
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2154,7 +2313,7 @@
               67
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2164,7 +2323,7 @@
               66
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2174,7 +2333,7 @@
               67
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2184,7 +2343,7 @@
               66
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2194,7 +2353,7 @@
               66
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2204,7 +2363,7 @@
               63
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2214,7 +2373,7 @@
               61
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2224,7 +2383,7 @@
               64
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2234,18 +2393,20 @@
               62
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "roto-13",
             "control": "view / stereo offset x,y",
-            "stories": [
+            "stories": [],
+            "source_locator": "roto-ref",
+            "status": "adjacent-capability-disposition-required",
+            "evidence": [],
+            "related_stories": [
               70
             ],
-            "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
-            "evidence": []
+            "scope_note": "Not silently added to the related story and not silently waived: record narrow owner disposition before claiming this reference control covered."
           },
           {
             "id": "roto-14",
@@ -2254,7 +2415,7 @@
               62
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2264,7 +2425,7 @@
               63
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2274,7 +2435,7 @@
               68
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2284,7 +2445,7 @@
               68
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2297,19 +2458,21 @@
               66
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "roto-19",
             "control": "Clone tab",
-            "stories": [
+            "stories": [],
+            "source_locator": "roto-ref",
+            "status": "adjacent-capability-disposition-required",
+            "evidence": [],
+            "related_stories": [
               58,
               66
             ],
-            "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
-            "evidence": []
+            "scope_note": "Not silently added to the related story and not silently waived: record narrow owner disposition before claiming this reference control covered."
           },
           {
             "id": "roto-20",
@@ -2318,18 +2481,20 @@
               65
             ],
             "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "roto-21",
             "control": "Tracking tab",
-            "stories": [
+            "stories": [],
+            "source_locator": "roto-ref",
+            "status": "adjacent-capability-disposition-required",
+            "evidence": [],
+            "related_stories": [
               60
             ],
-            "source_locator": "roto-ref",
-            "status": "requires-build-and-coverage-freeze",
-            "evidence": []
+            "scope_note": "Not silently added to the related story and not silently waived: record narrow owner disposition before claiming this reference control covered."
           },
           {
             "id": "roto-22",
@@ -2339,7 +2504,7 @@
               60
             ],
             "source_locator": "roto-ref (workflow table)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2350,7 +2515,7 @@
               60
             ],
             "source_locator": "roto-ref (video tutorial transcripts; qualitative tool inventory, not a control table)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2361,7 +2526,7 @@
               63
             ],
             "source_locator": "roto-ref (tutorial transcript)",
-            "status": "requires-build-and-coverage-freeze",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           }
         ],
@@ -2374,7 +2539,8 @@
           "Dense native shape buffers, interruption/history and visible interaction measurements."
         ],
         "numerical_evidence": [],
-        "native_evidence": []
+        "native_evidence": [],
+        "reference_version": "Nuke 17.0 documentation"
       },
       {
         "node": "Write",
@@ -2398,12 +2564,12 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-inventory-not-frozen",
+        "status": "documentation-authority-pinned; coverage-not-implemented",
         "sources": [
-          "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html",
-          "https://learn.foundry.com/nuke/current/content/comp_environment/rendering/rendering_output.html",
-          "https://learn.foundry.com/nuke/current/content/comp_environment/rendering/changing_frame_numbering.html",
-          "https://learn.foundry.com/nuke/current/content/comp_environment/rendering/reading_files_using_write.html"
+          "https://learn.foundry.com/nuke/17.0/content/reference_guide/image_nodes/write.html",
+          "https://learn.foundry.com/nuke/17.0/content/comp_environment/rendering/rendering_output.html",
+          "https://learn.foundry.com/nuke/17.0/content/comp_environment/rendering/changing_frame_numbering.html",
+          "https://learn.foundry.com/nuke/17.0/content/comp_environment/rendering/reading_files_using_write.html"
         ],
         "documentation_facts": [
           "Write has upstream/downstream connectors; explicit rendering is distinct from ordinary evaluation and from formal Output/Viewer roles.",
@@ -2418,8 +2584,8 @@
               72,
               73
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (intro paragraph)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (intro paragraph)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2428,8 +2594,8 @@
             "stories": [
               75
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Write Tab: file, file type)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Write Tab: file, file type)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2438,8 +2604,8 @@
             "stories": [
               75
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Write Tab: frame) and https://learn.foundry.com/nuke/current/content/comp_environment/rendering/changing_frame_numbering.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Write Tab: frame) and write-numbering-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2449,8 +2615,8 @@
               76,
               77
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Write Tab: channels) and the transcription of the Playback and Rendering tutorial on the same page",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Write Tab: channels) and the transcription of the Playback and Rendering tutorial on the same page",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2459,8 +2625,8 @@
             "stories": [
               78
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Write Tab: output transform)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Write Tab: output transform)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2469,8 +2635,8 @@
             "stories": [
               78
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Write Tab: premultiplied)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Write Tab: premultiplied)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2479,8 +2645,8 @@
             "stories": [
               78
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Write Tab: raw data)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Write Tab: raw data)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2489,8 +2655,8 @@
             "stories": [
               80
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Write Tab: create directories)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Write Tab: create directories)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2501,8 +2667,8 @@
               79,
               81
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Render Tab) and https://learn.foundry.com/nuke/current/content/comp_environment/rendering/rendering_output.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Render Tab) and write-rendering-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2511,8 +2677,8 @@
             "stories": [
               79
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Write Tab: proxy; node introduction)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Write Tab: proxy; node introduction)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2521,8 +2687,8 @@
             "stories": [
               73
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Render Tab: read file) and https://learn.foundry.com/nuke/current/content/comp_environment/rendering/reading_files_using_write.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Render Tab: read file) and write-reading-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2532,8 +2698,8 @@
               73,
               82
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Render Tab: missing frames) vs https://learn.foundry.com/nuke/current/content/comp_environment/rendering/reading_files_using_write.html",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Render Tab: missing frames) vs write-reading-guide",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2542,8 +2708,8 @@
             "stories": [
               74
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Render Tab: render order)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Render Tab: render order)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2553,8 +2719,8 @@
               73,
               76
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Render Tab; Write Tab: views)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (Render Tab; Write Tab: views)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2564,8 +2730,8 @@
               76,
               77
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (File Type Specific Controls: EXR)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (File Type Specific Controls: EXR)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2574,8 +2740,8 @@
             "stories": [
               76
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (EXR)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (EXR)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2585,8 +2751,8 @@
               76,
               78
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (EXR)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (EXR)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2596,8 +2762,8 @@
               76,
               77
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (EXR)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (EXR)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2607,8 +2773,8 @@
               76,
               77
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (EXR)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (EXR)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2617,8 +2783,8 @@
             "stories": [
               77
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (EXR)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (EXR)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
@@ -2627,20 +2793,22 @@
             "stories": [
               76
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (File Type Specific Controls; intro)",
-            "status": "requires-build-and-coverage-freeze",
+            "source_locator": "write-ref (File Type Specific Controls; intro)",
+            "status": "requires-documentation-policy-and-coverage-freeze",
             "evidence": []
           },
           {
             "id": "write-22",
             "control": "Python callbacks on Write",
-            "stories": [
+            "stories": [],
+            "source_locator": "write-ref (Python Tab)",
+            "status": "adjacent-capability-disposition-required",
+            "evidence": [],
+            "related_stories": [
               85,
               86
             ],
-            "source_locator": "https://learn.foundry.com/nuke/current/content/reference_guide/image_nodes/write.html (Python Tab)",
-            "status": "requires-build-and-coverage-freeze",
-            "evidence": []
+            "scope_note": "Not silently added to the related story and not silently waived: record narrow owner disposition before claiming this reference control covered."
           }
         ],
         "unresolved_cases": [
@@ -2653,14 +2821,72 @@
           "Independent multilayer/window/aspect/precision file readback and accounted final GPU-to-host staging."
         ],
         "numerical_evidence": [],
-        "native_evidence": []
+        "native_evidence": [],
+        "reference_version": "Nuke 17.0 documentation"
       }
     ],
     "excluded_reference_node": {
       "node": "RotoPaint",
       "reason": "Brush/paint/clone strokes are explicitly outside #87. Shared Roto page controls are NOT thereby waived.",
       "source": "https://learn.foundry.com/nuke/current/content/reference_guide/draw_nodes/rotopaint.html"
-    }
+    },
+    "behavior_scenarios": [
+      {
+        "id": "alpha-arithmetic-extremes",
+        "stories": [
+          40
+        ],
+        "owner_issue": 89,
+        "scenario": "Zero, near-zero, negative and HDR arithmetic after explicit numerical-policy approval.",
+        "authority": "#87 story acceptance at the approved public/native seam; not a fabricated Nuke control",
+        "status": "not-implemented-under-87",
+        "evidence": []
+      },
+      {
+        "id": "roto-interrupted-history",
+        "stories": [
+          69
+        ],
+        "owner_issue": 93,
+        "scenario": "Interrupted native drawing/edit gestures, cancellation, undo/redo and save/reopen retain only committed typed geometry.",
+        "authority": "#87 story acceptance at the approved public/native seam; not a fabricated Nuke control",
+        "status": "not-implemented-under-87",
+        "evidence": []
+      },
+      {
+        "id": "roto-dense-animation",
+        "stories": [
+          71
+        ],
+        "owner_issue": 93,
+        "scenario": "Dense animated shape sets remain editable while evaluation runs; measure through #13/#16 owners.",
+        "authority": "#87 story acceptance at the approved public/native seam; not a fabricated Nuke control",
+        "status": "not-implemented-under-87",
+        "evidence": []
+      },
+      {
+        "id": "delivery-stable-snapshot",
+        "stories": [
+          83
+        ],
+        "owner_issue": 94,
+        "scenario": "Accepted job retains its exact snapshot/settings while the live document is edited; independently inspect delivered frames.",
+        "authority": "#87 story acceptance at the approved public/native seam; not a fabricated Nuke control",
+        "status": "not-implemented-under-87",
+        "evidence": []
+      },
+      {
+        "id": "delivery-bounded-work",
+        "stories": [
+          84
+        ],
+        "owner_issue": 94,
+        "scenario": "Delivery shares bounded scheduling and #97 byte admission while native interaction remains available.",
+        "authority": "#87 story acceptance at the approved public/native seam; not a fabricated Nuke control",
+        "status": "not-implemented-under-87",
+        "evidence": []
+      }
+    ]
   },
   "protected_presentation": {
     "inventory": "docs/evidence/issue25-prototype-acceptance-v1.md",
@@ -2668,57 +2894,79 @@
     "archive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
     "archive_sha256": "0027b39f6ba20fc2168f83215f8ba036fcc408284e6b3a2702a21c2c37b8e57e",
     "state": "No presentation implementation or parity claim in this decomposition. Each child must map its actual affected current entries and archived handlers before application edits; old follow/pinned routing and superseded viewer controls do not return.",
-    "owners": [
+    "remaining_proof": "Matched native source/production scenarios including focus, hover, cancellation, disabled and narrow states. Nuke guides specify new node semantics, not replacement Nemo styling.",
+    "owner_contracts": [
       "GraphPanel.qml / ViewerController: accepted catalog creation, wiring, context and scoped commands",
       "ParametersPanel.qml / ParameterEditorRegistry: one inspector host",
-      "HistoryController: text → active gesture → document routing",
+      "HistoryController: text \u2192 active gesture \u2192 document routing",
       "ViewerPanel.qml / ViewerController: existing pan/zoom and coordinate owner",
       "WorkspaceController: panel-local state and shared chrome"
     ],
-    "remaining_proof": "Matched native source/production scenarios including focus, hover, cancellation, disabled and narrow states. Nuke guides specify new node semantics, not replacement Nemo styling."
-  },
-  "reference_environment": {
-    "available": false,
-    "claim": "No Nuke found in checked locations; other installs or remote reference access may exist.",
-    "checked": [
-      "PATH: Nuke, Nuke16.0, Nuke15.2, nuke",
-      "/opt/Nuke*",
-      "/usr/local/Nuke*",
-      "/home/rgame/Nuke*",
-      "/home/rgame/.nuke/*",
-      "/home/rgame/Applications/*",
-      "/home/rgame/.local/bin/*Nuke*",
-      "/home/rgame/.local/bin/*nuke*"
-    ],
-    "unavailable_evidence": [
-      "Nuke build identity",
-      "Numerical oracle captures",
-      "Native reference input/capture sessions"
+    "owners": [
+      "apps/nemo-ui/qml/GraphPanel.qml",
+      "apps/nemo-ui/ViewerController.cpp",
+      "apps/nemo-ui/qml/ParametersPanel.qml",
+      "apps/nemo-ui/ParameterEditorRegistry.cpp",
+      "apps/nemo-ui/HistoryController.cpp",
+      "apps/nemo-ui/qml/ViewerPanel.qml",
+      "apps/nemo-ui/WorkspaceController.cpp"
     ]
   },
-  "dependency_policy": "Only listed native edges are completion prerequisites. A sibling capability may be developed independently of its unrelated UI/reference rows; body-only narrow design gates are not converted into a blanket parent/reference issue blocker. #94 needs channels/description/alpha, not Crop/Reformat UI. #13/#16 scoped evidence is reused without requiring their broader milestone closure.",
+  "reference_environment": {
+    "nuke_installed": false,
+    "documentation_available": true,
+    "documentation_version": "17.0",
+    "runtime_reference_required": false,
+    "runtime_parity_claimed": false,
+    "authority": "Owner: no Nuke installed; use the latest Nuke v17 documentation.",
+    "approval": "https://github.com/rgamevfx/nemo/issues/87#issuecomment-5688207263"
+  },
+  "dependency_policy": "Only listed native edges are completion prerequisites. A sibling capability may be developed independently of its unrelated UI/reference rows; body-only narrow design gates are not converted into a blanket parent/reference issue blocker. #94 needs channels/description/alpha, not Crop/Reformat UI. #13/#16 scoped evidence is reused without requiring their broader milestone closure. #96 is the narrow saved-format prerequisite shared by #88/#92/#93; Roto does not wait for Crop/Reformat UI. Premult/Unpremult complete selected-channel behavior depends on #90. #95 requires #97 byte admission, not unrelated whole-#14 settings/bake work. Current claim/triage status is authoritative only in the child issue, not a duplicated ledger field.",
   "verification": {
     "coordination_result": {
       "stories": 96,
       "primary_owners_per_story": 1,
-      "new_child_issues": [88, 89, 90, 91, 92, 93, 94, 95],
+      "new_child_issues": [
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95
+      ],
       "requested_nodes": 8,
       "reference_control_rows": 114,
       "owner_paths": "all exist",
       "native_body_dependencies": "exact match",
       "native_dependency_graph": "acyclic including reachable existing dependencies",
       "parent_story_table": "exact match",
-      "runtime_implementation": "none"
+      "runtime_implementation": "none",
+      "commit": "5511b57"
     },
-    "coordination": "Check unique exact stories 1–96 against fetched issue; all eight nodes and control rows mapped; existing paths; native/body child/dependency consistency; acyclic graph; separate Standards/Spec review.",
-    "implementation": "Use the approved ProjectSession → commands/history → save/reopen → CPU/native workflow; actual native application for presentation; the shared public delivery-job seam plus independent media readback for exports. Run focused tests/throwaway public-path experiments while iterating; `cmake --build --preset debug` for compile/type validation, `cmake --build --preset release` for landing, and `ctest --preset debug` ONCE at completion. Identify exact matching focused test names from the current suite before running; zero matches are not evidence. Relevant sanitizer/native GPU checks are required for ownership/concurrency changes. No hosted CI, repeated full suites, GPU-off parity claims or speculative benchmarks. Preserve and report the known unrelated colorimetry failure without re-running merely to confirm it. Source/reference documentation work uses coverage/link/contract checks instead of runtime tests.",
+    "coordination": "Check unique exact stories 1\u201396 against fetched issue; all eight nodes and control rows mapped; existing paths; native/body child/dependency consistency; acyclic graph; separate Standards/Spec review.",
+    "implementation": "Use the approved ProjectSession \u2192 commands/history \u2192 save/reopen \u2192 CPU/native workflow; actual native application for presentation; the shared public delivery-job seam plus independent media readback for exports. Run focused tests/throwaway public-path experiments while iterating; `cmake --build --preset debug` for compile/type validation, `cmake --build --preset release` for landing, and `ctest --preset debug` ONCE at completion. Identify exact matching focused test names from the current suite before running; zero matches are not evidence. Relevant sanitizer/native GPU checks are required for ownership/concurrency changes. No hosted CI, repeated full suites, GPU-off parity claims or speculative benchmarks. Preserve and report the known unrelated colorimetry failure without re-running merely to confirm it. Source/reference documentation work uses coverage/link/contract checks instead of runtime tests. Exercise real `nemo-cli evaluate` and `evaluate-gpu` (never the synthetic `render` pattern as composition evidence). Keep CPU numerical code, Slang production kernels, and GLSL reference kernels independently derived.",
     "not_run": [
-      "Application builds",
-      "Application test suites",
-      "Nuke",
-      "Native application scenarios"
+      "Two-axis review (pending)",
+      "Nuke runtime (not required by the owner-selected documentation-only reference)"
     ],
-    "reason": "This commit contains decomposition/reference documentation only; it does not implement or claim any #87 runtime behavior."
+    "reason": "Initial coordination_result is historical evidence for 5511b57. #96 has real CLI/native, debug/release and 85 passing ASan/UBSan checks; the single full debug suite has 703 passed, 18 skipped and the known colorimetry failure. Final review remains; no eight-node completion claim.",
+    "current_runtime_evidence": [
+      {
+        "issue": 96,
+        "record": "docs/evidence/assets/issue96-composition-format/verification.json",
+        "scope": "Saved-format authoring, history/persistence, generator/source consumption and real native preview controls; not completion of #87"
+      }
+    ]
   },
-  "next_action": "Obtain the narrow format/migration and required reference decisions for #88, complete that child’s exact pre-edit contract, and implement Read-through-existing-effects description/planning as a real consumer. Alpha, channel, format, Roto and Write gates remain visible on their owners. Do not close #87."
+  "next_action": "Finish and verify #96 saved formats on the current branch; consume that capability in #88 and later node children. Keep #87 open; do not equate the format foundation or green checks with all 96 stories.",
+  "source_issue_body_sha256_scope": {
+    "encoding": "UTF-8, exact bytes; no newline normalization",
+    "original_body_bytes": 48962,
+    "recovery": "Take the live #87 body prefix before '\\n\\n## Coordination ledger \u2014 2026-09-15'. Original exact prefix verified unchanged when recording this amendment."
+  },
+  "existing_verification_seams": [
+    "Existing public GPU lifetime/cancellation/resource-admission seams; no private per-effect hooks"
+  ]
 }

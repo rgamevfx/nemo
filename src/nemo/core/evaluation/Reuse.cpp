@@ -1,6 +1,7 @@
 #include "nemo/core/evaluation/Reuse.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <map>
 
 #include "nemo/core/Hashing.hpp"
@@ -99,6 +100,14 @@ ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
     if (node.type == "source") {
         appendCanonicalField(canonical, "source",
                              canonicalSource(document, node, request.localTime, context.colorConfigIdentity));
+    } else if (node.definition == kInvalidNetwork &&
+               document.network(request.network).graph().catalog().inputPorts(node.type).empty()) {
+        // A generator's non-pixel image metadata is authored on its network.
+        // Source metadata belongs to the source key; downstream metadata
+        // follows input identity. Do not invalidate Reads for a canvas edit.
+        appendCanonicalField(
+            canonical, "pixel-aspect",
+            std::to_string(std::bit_cast<std::uint32_t>(document.network(request.network).format().pixelAspect)));
     }
     appendCanonicalField(canonical, "time", std::to_string(request.localTime));
     appendCanonicalField(canonical, "region",

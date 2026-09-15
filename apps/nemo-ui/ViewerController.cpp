@@ -3492,15 +3492,6 @@ void ViewerController::receive() {
     }
 }
 
-namespace {
-// A media-free composition has no probed source to derive pixel dimensions
-// from. The interactive viewer still renders the attached target, evaluated
-// against this default composition canvas so a graph-only workflow displays
-// a result without an Output node.
-constexpr int kDefaultCompositionWidth = 1920;
-constexpr int kDefaultCompositionHeight = 1080;
-}  // namespace
-
 void ViewerController::refreshRequest() {
     // Without a destination this controller is a pure command/metadata facade:
     // it may not probe, submit, or cancel another panel's destination.
@@ -3609,7 +3600,8 @@ void ViewerController::refreshRequest() {
         const auto source = document.sources.find(sourceKey);
         bool mediaReady = false;
         if (source == document.sources.end()) {
-            forgetProbedMedia();
+            if (!sourceSize_.isEmpty() || !probedSource_.path.empty())
+                forgetProbedMedia();
         } else {
             const auto& reference = source->second;
             // The key is part of the probed identity: two keys can name the
@@ -3640,8 +3632,13 @@ void ViewerController::refreshRequest() {
         }
         if (viewport_.isEmpty())
             return;
-        const int width = mediaReady ? static_cast<int>(sourceSize_.width()) : kDefaultCompositionWidth;
-        const int height = mediaReady ? static_cast<int>(sourceSize_.height()) : kDefaultCompositionHeight;
+        const auto& canvas = document.network(targetNetwork).format();
+        const int width = mediaReady ? static_cast<int>(sourceSize_.width()) : canvas.width;
+        const int height = mediaReady ? static_cast<int>(sourceSize_.height()) : canvas.height;
+        if (!mediaReady && pixelAspect_ != canvas.pixelAspect) {
+            pixelAspect_ = canvas.pixelAspect;
+            emit sourceChanged();
+        }
         const auto mode = mode_ == "full"      ? ViewerResolution::Full
                           : mode_ == "half"    ? ViewerResolution::Half
                           : mode_ == "quarter" ? ViewerResolution::Quarter
@@ -3650,6 +3647,10 @@ void ViewerController::refreshRequest() {
         request.network = targetNetwork;
         request.output = target;
         request.localTime = frame_;
+        request.fullWidth = width;
+        request.fullHeight = height;
+        request.region = {0, 0, width, height};
+        nemo::validateRequestDomain(request);
         request.samplingScale =
             policy_.resolve(mode, width, height, pixelAspect_, viewport_.width(), viewport_.height(), zoom_);
         // Coverage of the request. Whole-frame mode deliberately ignores the
@@ -3675,8 +3676,6 @@ void ViewerController::refreshRequest() {
             const int bottom = std::min(height, static_cast<int>(std::ceil(centerY + visibleHeight / 2)));
             coverage = {x, y, right - x, bottom - y};
         }
-        request.fullWidth = width;
-        request.fullHeight = height;
         request.region = coverage;
         // One canonical coverage reaches the executor, the cache and the panel:
         // the region is rounded out to the image-space sampling lattice and
@@ -3722,8 +3721,12 @@ QSizeF ViewerController::compositionSize() const {
         return QSizeF(presentation_->request.imageWidth(), presentation_->request.imageHeight());
     if (hasSource())
         return sourceSize_;
-    if (viewerTargetNode_ != kInvalidNode)
-        return QSizeF(kDefaultCompositionWidth, kDefaultCompositionHeight);
+    if (viewerTargetNode_ != kInvalidNode) {
+        const auto network =
+            activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_ : session_.document().rootNetworkId();
+        const auto& format = session_.document().network(network).format();
+        return QSizeF(format.width, format.height);
+    }
     return {};
 }
 void ViewerController::setResolutionMode(const QString& mode) {

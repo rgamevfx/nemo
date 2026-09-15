@@ -329,18 +329,28 @@ TEST(PersistenceTest, SparseNodeAndEdgeIdsRoundTripExactly) {
 }
 
 TEST(PersistenceTest, DuplicateAndInvalidPersistedIdsAreDiagnostics) {
-    nlohmann::json duplicateNode{
+    nlohmann::json valid{
         {"schema", Document::kSchemaVersion},
+        {"rootNetworkId", 1},
         {"networks",
          {{{"id", 1},
            {"name", "root"},
+           {"imageFormat", {{"width", 1920}, {"height", 1080}, {"pixelAspect", 1.0F}}},
            {"nodes",
-            {{{"id", 7}, {"type", "testpattern"}, {"name", "a"}}, {{"id", 7}, {"type", "output"}, {"name", "b"}}}}}}}};
-    EXPECT_THROW(loadDocument(duplicateNode), DeserializeError);
-    nlohmann::json invalidNode{
-        {"schema", Document::kSchemaVersion},
-        {"networks", {{{"id", 1}, {"nodes", {{{"id", 0}, {"type", "testpattern"}, {"name", "a"}}}}}}}};
-    EXPECT_THROW(loadDocument(invalidNode), DeserializeError);
+            {{{"id", 7}, {"type", "testpattern"}, {"name", "a"}}, {{"id", 8}, {"type", "output"}, {"name", "b"}}}}}}}};
+    const auto loaded = loadDocument(valid);
+    const auto& graph = loaded.document.network(loaded.document.rootNetworkId()).graph();
+    ASSERT_NE(graph.node(7), nullptr);
+    EXPECT_EQ(graph.node(7)->name, "a");
+    ASSERT_NE(graph.node(8), nullptr);
+    EXPECT_EQ(graph.node(8)->name, "b");
+
+    auto duplicate = valid;
+    duplicate["networks"][0]["nodes"][1]["id"] = 7;
+    EXPECT_THROW(loadDocument(duplicate), DeserializeError);
+    auto invalid = valid;
+    invalid["networks"][0]["nodes"][0]["id"] = 0;
+    EXPECT_THROW(loadDocument(invalid), DeserializeError);
 }
 
 TEST(PersistenceTest, LegacyEntriesWithoutIdsLoadWithMigrationWarnings) {

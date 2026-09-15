@@ -110,6 +110,12 @@ void hashExposedParameter(std::uint64_t& hash, const ExposedParameter& parameter
     hashMixWord(hash, static_cast<std::uint64_t>(parameter.type));
 }
 
+void hashImageFormat(std::uint64_t& hash, const ImageFormat& format) {
+    hashMixWord(hash, static_cast<std::uint64_t>(static_cast<std::int64_t>(format.width)));
+    hashMixWord(hash, static_cast<std::uint64_t>(static_cast<std::int64_t>(format.height)));
+    hashMixWord(hash, std::bit_cast<std::uint32_t>(format.pixelAspect));
+}
+
 void hashPortRef(std::uint64_t& hash, PortRef ref) {
     hashMixWord(hash, ref.node);
     hashMixWord(hash, ref.port);
@@ -284,6 +290,11 @@ void Document::recordAnimationChannel(AnimationChannelId id) {
         recorder_->animationChannel(id);
 }
 
+void Document::recordNamedFormat(const std::string& name) {
+    if (recorder_)
+        recorder_->namedFormat(name);
+}
+
 NetworkId Document::addNetwork(std::string name) {
     checkAllocatable(nextNetworkId_, "network");
     return addNetworkWithId(nextNetworkId_, std::move(name));
@@ -351,6 +362,27 @@ void Document::setRootNetworkId(NetworkId id) {
     rootNetworkId_ = id;
     recordNetwork(previous);
     recordNetwork(id);
+}
+
+void Document::setNamedFormat(std::string name, ImageFormat format) {
+    if (name.empty())
+        throw GraphException(GraphError::InvalidName, "named format name must not be empty");
+    if (const auto problem = validateImageFormat(format, "named format '" + name + "'"))
+        throw GraphException(GraphError::InvalidImageFormat, *problem);
+    const auto existing = namedFormats_.find(name);
+    if (existing != namedFormats_.end() && existing->second == format)
+        return;
+    namedFormats_.insert_or_assign(name, std::move(format));
+    recordNamedFormat(name);
+}
+
+void Document::removeNamedFormat(std::string name) {
+    if (name.empty())
+        throw GraphException(GraphError::InvalidName, "named format name must not be empty");
+    if (!namedFormats_.contains(name))
+        throw GraphException(GraphError::UnknownNamedFormat, "cannot remove unknown named format '" + name + "'");
+    namedFormats_.erase(name);
+    recordNamedFormat(name);
 }
 
 const NetworkInstance* Document::instance(NetworkInstanceId id) const {
@@ -1088,6 +1120,7 @@ std::uint64_t Document::stateRevision() const {
     for (const auto& networkValue : networks_) {
         hashMixWord(hash, networkValue.id());
         hashMixText(hash, networkValue.name());
+        hashImageFormat(hash, networkValue.format());
         hashMixWord(hash, networkValue.defaultOutput());
         for (const auto& port : networkValue.inputs())
             hashFormalPort(hash, port);
@@ -1994,8 +2027,8 @@ bool edgeContentEquals(const Edge& left, const Edge& right) {
 }
 
 bool networkContentEquals(const Network& left, const Network& right) {
-    return left.name() == right.name() && left.defaultOutput() == right.defaultOutput() &&
-           left.graph().nextNodeId() == right.graph().nextNodeId() &&
+    return left.name() == right.name() && left.format() == right.format() &&
+           left.defaultOutput() == right.defaultOutput() && left.graph().nextNodeId() == right.graph().nextNodeId() &&
            left.graph().nextEdgeId() == right.graph().nextEdgeId() &&
            left.nextInterfacePortId() == right.nextInterfacePortId() && left.inputs() == right.inputs() &&
            left.outputs() == right.outputs() && left.inputConnections() == right.inputConnections() &&
@@ -2020,6 +2053,8 @@ bool documentContentEquals(const Document& left, const Document& right) {
             if (leftIt->first != rightIt->first || leftIt->second != rightIt->second)
                 return false;
     }
+    if (!left.namedFormats().sharesStorageWith(right.namedFormats()) && left.namedFormats() != right.namedFormats())
+        return false;
     if (!containerContentEquals(left.mediaCatalog().entries(), right.mediaCatalog().entries(),
                                 [](const MediaCatalogEntry& a, const MediaCatalogEntry& b) { return a == b; }))
         return false;

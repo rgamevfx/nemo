@@ -78,6 +78,10 @@ struct EditResult {
     std::vector<AnimationChannelId> changedAnimationChannelIds;
     std::vector<KeyframeRef> changedAnimationKeyIds;
     bool colorPolicyChanged{false};
+    // Authored names of the document's canvas presets this transition actually
+    // changed. Presets have no graph identity, so they are reported by name
+    // instead of borrowing a source, color or network identity.
+    std::vector<std::string> changedNamedFormatIds;
 };
 
 struct ProjectReplaceResult {
@@ -104,6 +108,7 @@ struct ChangeEvent {
     std::vector<MediaSourceId> createdMediaEntryIds;
     std::vector<MediaBinId> changedMediaBinIds;
     std::vector<MediaBinId> createdMediaBinIds;
+    std::vector<std::string> changedNamedFormatIds;
 };
 
 struct ChangeHistory {
@@ -146,6 +151,13 @@ struct EdgeQueryResult {
 struct SourceQueryResult {
     std::string id;
     SourceReference reference;
+};
+
+// One document-owned canvas preset. Persisted state only: the session never
+// resolves or validates an installed application's formats here.
+struct NamedFormatQueryResult {
+    std::string name;
+    ImageFormat format;
 };
 
 struct MediaQueryResult {
@@ -355,6 +367,10 @@ public:
                                                           std::size_t limit = 256, EdgeId after = kInvalidEdge) const;
     [[nodiscard]] std::vector<SourceQueryResult> querySources(std::string_view filter = {}, std::size_t limit = 256,
                                                               std::string_view after = {}) const;
+    // Document-owned canvas presets, ascending by authored name. A network's
+    // canvas is read through document().network(id).format().
+    [[nodiscard]] std::vector<NamedFormatQueryResult>
+    queryNamedFormats(std::string_view filter = {}, std::size_t limit = 256, std::string_view after = {}) const;
     [[nodiscard]] std::vector<MediaQueryResult>
     queryMedia(std::string_view filter = {}, std::optional<MediaKind> kind = {}, std::optional<bool> offline = {},
                std::optional<bool> unused = {}, MediaBinId scope = kInvalidMediaBin, std::size_t limit = 256,

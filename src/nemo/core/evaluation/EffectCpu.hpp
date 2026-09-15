@@ -24,15 +24,14 @@ namespace nemo {
 
 // Raster an effect produces for `request`: the requested region at the request's
 // sampling scale, carrying the main input's pixel aspect so raster metadata
-// propagates through pass-through effects. Generators keep the square-pixel
-// default because they have no main input.
+// propagates through pass-through effects. A generator supplies the pixel
+// aspect of its owning network's authored canvas.
 [[nodiscard]] inline ImageLayout effectRasterLayout(const EvaluationRequest& request,
-                                                    const CpuImage* mainInput = nullptr) {
+                                                    const CpuImage* mainInput = nullptr, float pixelAspect = 1.0F) {
     ImageLayout layout;
     layout.width = scaledDimension(request.region.width, request.samplingScale);
     layout.height = scaledDimension(request.region.height, request.samplingScale);
-    if (mainInput != nullptr)
-        layout.pixelAspect = mainInput->layout().pixelAspect;
+    layout.pixelAspect = mainInput != nullptr ? mainInput->layout().pixelAspect : pixelAspect;
     return layout;
 }
 

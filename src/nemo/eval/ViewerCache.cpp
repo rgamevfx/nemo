@@ -172,6 +172,24 @@ struct ViewerCache::Impl {
         std::shared_ptr<const gpu::Image> image;
         ImageLayout layout;
     };
+    // One retained replay decoder, positioned inside one chunk. Viewer replay
+    // decodes forward only, so without a cursor every hit paid a codec open
+    // plus a rescan from the chunk start: a forward replay of an n-frame chunk
+    // cost 1+2+...+n decodes, so replayed frames could never fit a playback
+    // tick. Holding the decoder and its position makes a forward replay one
+    // decode per frame (spec section 8, "a small decoded GPU playback queue").
+    //
+    // The cursor holds a lookup reference on its chunk for as long as it lives,
+    // so the chunk's file is never unlinked underneath the open decoder. That
+    // defers cleanup of at most one chunk until the cursor moves to another
+    // chunk or layout, the request goes behind the position (replay cannot
+    // rewind), an error makes the position untrustworthy, or the cache stops.
+    struct ReplayCursor {
+        std::unique_ptr<media::ClipDecoder> decoder;
+        std::shared_ptr<DiskChunk> chunk;
+        ImageLayout layout;
+        std::size_t nextIndex{0};
+    };
     struct Cleanup {
         std::filesystem::path mediaPath;
         std::filesystem::path metadataPath;
@@ -192,6 +210,7 @@ struct ViewerCache::Impl {
     std::map<ViewerDestination, std::uint64_t> latestGenerationByDestination;
     std::map<std::string, DecodedHot> decodedHot;
     std::deque<std::string> decodedHotOrder;
+    std::optional<ReplayCursor> cursor;
     std::deque<std::filesystem::path> compressedHotOrder;
     std::uint64_t compressedHotBytes{0};
     ViewerCacheOptions options;
@@ -452,6 +471,19 @@ struct ViewerCache::Impl {
         if (chunk->lookupRefs != 0)
             --chunk->lookupRefs;
         queueChunkCleanupLocked(chunk, cleanup);
+    }
+
+    // Detaches the retained cursor and releases its chunk reference, queueing
+    // whatever cleanup that unblocks. The caller owns the returned cursor and
+    // must destroy it WITHOUT holding `mutex`: decoder teardown submits
+    // freeing work, and the cache lock must not be held across it.
+    std::optional<ReplayCursor> takeCursorLocked(std::vector<Cleanup>& cleanup) {
+        if (!cursor)
+            return std::nullopt;
+        auto taken = std::move(cursor);
+        cursor.reset();
+        releaseLookupLocked(taken->chunk, cleanup);
+        return taken;
     }
 
     void removeFiles(const std::vector<Cleanup>& cleanup) {
@@ -845,10 +877,17 @@ struct ViewerCache::Impl {
     }
 
     void stop() noexcept {
+        std::optional<ReplayCursor> released;
+        std::vector<Cleanup> cleanup;
         {
             std::lock_guard lock(mutex);
             stopping = true;
+            released = takeCursorLocked(cleanup);
         }
+        // Destroyed before the files it holds open are removed, and outside the
+        // lock: a retained decoder still owns its chunk file.
+        released.reset();
+        removeFilesNoThrow(cleanup);
         wake.notify_all();
         if (worker.joinable())
             worker.join();
@@ -910,6 +949,7 @@ std::optional<ViewerCacheResult> ViewerCache::Impl::lookup(const std::string& id
     std::size_t offset = 0;
     std::shared_ptr<DiskChunk> chunk;
     std::shared_ptr<const std::vector<std::uint8_t>> compressedHot;
+    bool cursorServes = false;
     {
         std::lock_guard lock(mutex);
         if (!configured)
@@ -942,6 +982,12 @@ std::optional<ViewerCacheResult> ViewerCache::Impl::lookup(const std::string& id
         path = chunk->mediaPath;
         offset = it->second.offset;
         ++chunk->lookupRefs;
+        // A retained decoder can serve this request only when it belongs to the
+        // same chunk and layout and already sits at or before the wanted frame;
+        // replay cannot rewind, so a request behind the position reopens the
+        // chunk and scans forward again.
+        cursorServes =
+            cursor && cursor->chunk == chunk && sameLayout(cursor->layout, expected) && offset >= cursor->nextIndex;
     }
 
     const auto releaseDecoded = [&] {
@@ -974,6 +1020,18 @@ std::optional<ViewerCacheResult> ViewerCache::Impl::lookup(const std::string& id
         std::lock_guard lock(mutex);
         setErrorLocked(message);
     };
+    // Drops a cursor whose decoder may have advanced without producing the
+    // frame. Replay cannot rewind, so a position that is no longer known to be
+    // correct must not be reused.
+    const auto dropCursor = [&] {
+        std::optional<ReplayCursor> doomed;
+        std::vector<Cleanup> cleanup;
+        {
+            std::lock_guard lock(mutex);
+            doomed = takeCursorLocked(cleanup);
+        }
+        removeFilesNoThrow(cleanup);
+    };
 
     try {
         if (!compressedHot) {
@@ -986,18 +1044,63 @@ std::optional<ViewerCacheResult> ViewerCache::Impl::lookup(const std::string& id
                 }
             }
         }
-        auto decoder = compressedHot
-                           ? media::ClipDecoder::openViewerMemory(instance, device, allocator, path.string(),
-                                                                  compressedHot, convertSpirv)
-                           : media::ClipDecoder::openViewer(instance, device, allocator, path.string(), convertSpirv);
+        // The retained cursor is confined to this caller: `lookup` runs on the
+        // worker-only ViewerSession::render path, and only installation and
+        // release (which touch shared chunk state) take the cache mutex. The
+        // decode itself must stay outside it, as before.
         std::unique_ptr<gpu::Image> decodedImage;
-        for (std::size_t index = 0; index <= offset; ++index) {
-            decodedImage = decoder->nextViewer(timeout_ns);
-            if (!decodedImage)
-                throw media::MediaDecodeError(path.string(), "viewer chunk", "replay frame index is outside the chunk");
+        bool hardwareReplay = false;
+        std::string replayReason;
+        if (cursorServes) {
+            // Advance the retained decoder to the wanted frame: one decode for
+            // the next frame of a forward replay, instead of a codec open plus a
+            // rescan from the chunk start.
+            const auto& active = *cursor;
+            for (std::size_t index = active.nextIndex; index <= offset; ++index) {
+                decodedImage = active.decoder->nextViewer(timeout_ns);
+                if (!decodedImage)
+                    throw media::MediaDecodeError(path.string(), "viewer chunk",
+                                                  "replay frame index is outside the chunk");
+            }
+            hardwareReplay = active.decoder->decision().hardware;
+            replayReason = active.decoder->decision().reason;
+            cursor->nextIndex = offset + 1;
+        } else {
+            std::vector<Cleanup> cursorCleanup;
+            {
+                // Replace a decoder that cannot serve this request. The decoder
+                // is destroyed, and its chunk reference released, before the
+                // files that release unblocks are removed: cleanup then stays
+                // legal on every platform, and no codec teardown runs under the
+                // lock.
+                std::optional<ReplayCursor> replaced;
+                {
+                    std::lock_guard lock(mutex);
+                    replaced = takeCursorLocked(cursorCleanup);
+                }
+            }
+            removeFilesNoThrow(cursorCleanup);
+            auto decoder =
+                compressedHot
+                    ? media::ClipDecoder::openViewerMemory(instance, device, allocator, path.string(), compressedHot,
+                                                           convertSpirv)
+                    : media::ClipDecoder::openViewer(instance, device, allocator, path.string(), convertSpirv);
+            for (std::size_t index = 0; index <= offset; ++index) {
+                decodedImage = decoder->nextViewer(timeout_ns);
+                if (!decodedImage)
+                    throw media::MediaDecodeError(path.string(), "viewer chunk",
+                                                  "replay frame index is outside the chunk");
+            }
+            hardwareReplay = decoder->decision().hardware;
+            replayReason = decoder->decision().reason;
+            std::lock_guard lock(mutex);
+            if (configured && !stopping) {
+                // The cursor's own reference keeps the chunk file alive for as
+                // long as the retained decoder may read from it.
+                ++chunk->lookupRefs;
+                cursor = ReplayCursor{std::move(decoder), chunk, expected, offset + 1};
+            }
         }
-        const bool hardwareReplay = decoder->decision().hardware;
-        const std::string replayReason = decoder->decision().reason;
         const auto extent = decodedImage->extent();
         const auto codedWidth = (static_cast<std::uint32_t>(expected.width) + 1U) & ~1U;
         const auto codedHeight = (static_cast<std::uint32_t>(expected.height) + 1U) & ~1U;
@@ -1032,14 +1135,17 @@ std::optional<ViewerCacheResult> ViewerCache::Impl::lookup(const std::string& id
         return ViewerCacheResult{std::move(image), expected};
     } catch (const gpu::GpuException& error) {
         releaseDecoded();
+        dropCursor();
         recordTransient(std::string("viewer cache replay GPU failure: ") + error.what());
         return std::nullopt;
     } catch (const std::bad_alloc&) {
         releaseDecoded();
+        dropCursor();
         recordTransient("viewer cache replay allocation failed");
         return std::nullopt;
     } catch (const media::MediaDecodeError& error) {
         releaseDecoded();
+        dropCursor();
         if (transientReplayFailure(error)) {
             recordTransient(std::string("viewer cache replay I/O failure: ") + error.what());
             return std::nullopt;
@@ -1049,6 +1155,7 @@ std::optional<ViewerCacheResult> ViewerCache::Impl::lookup(const std::string& id
         return std::nullopt;
     } catch (const std::exception& error) {
         releaseDecoded();
+        dropCursor();
         if (transientReplayFailure(error)) {
             recordTransient(std::string("viewer cache replay transient failure: ") + error.what());
             return std::nullopt;

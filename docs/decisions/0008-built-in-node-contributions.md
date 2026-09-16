@@ -125,9 +125,13 @@ neither creates nor renames composition channels. Projection policy is part of
 viewer-cache identity. Replay crops use logical per-plane height.
 
 `nemo.shuffle.mapping` is a section editor hosted by the accepted inspector.
-Mapping edits use shared commands/history; routing keys and exposure labels
-live in the existing channel dialog. Unavailable custom editors expose all
-ordinary parameters through the generic fallback. Native evidence and the
+Mapping edits use shared commands/history. Output channel creation belongs to
+`Out → new`; repeating it for the same layer fills the next free output socket.
+`Out → none` disables that output group. There are no per-row add/clear buttons.
+Clicking an existing output name opens routing/key controls in the inline panel;
+shared Alt-click keying and exposure dragging remain on the labels.
+Unavailable custom editors expose all ordinary parameters through the generic
+fallback. Native evidence and the
 remaining review/landing holds are recorded in
 `docs/evidence/assets/issue90-channels/verification.json`.
 

@@ -1020,24 +1020,27 @@ ColumnLayout {
     }
 
     // --- new layer / channel dialog ----------------------------------------
-    // The reference's "new" entry: Name is the layer and Channels the channel
-    // inside it. Cancelling publishes nothing at all; confirming writes only the
-    // named row (or adds a draggable source socket) and never replaces another
-    // row's mapping.
+    // Creation belongs to Out -> new. Existing output labels open routing/key
+    // controls without exposing per-row channel creation or deletion.
     property var newChannelRequest: null
     property string newChannelProblem: ""
 
-    function openNewChannel(row, group) {
+    function openNewChannel(group) {
         shuffleEditor.newChannelProblem = "";
         shuffleEditor.newChannelRequest = ({
             "kind": "output",
-            "row": Number(row),
-            "group": Number(group),
-            "layer": shuffleEditor.outLayer(group).length > 0 ? shuffleEditor.outLayer(group) : shuffleEditor.rootLayerName,
-            "channel": shuffleEditor.rowEnabled(row) ? shuffleEditor.leafOf(shuffleEditor.rowOutput(row)) : ""
+            "group": Number(group)
         });
-        newLayerField.text = shuffleEditor.newChannelRequest.layer;
-        newChannelField.text = shuffleEditor.newChannelRequest.channel;
+        newLayerField.text = shuffleEditor.outLayer(group) || shuffleEditor.rootLayerName;
+        newChannelField.text = "";
+    }
+
+    function openRouting(row) {
+        shuffleEditor.newChannelProblem = "";
+        shuffleEditor.newChannelRequest = ({
+            "kind": "routing",
+            "row": Number(row)
+        });
     }
 
     function openNewSourceChannel(group) {
@@ -1085,25 +1088,32 @@ ColumnLayout {
             shuffleEditor.cancelNewChannel();
             return;
         }
+        var group = Number(request.group);
+        var first = shuffleEditor.firstRowOf(group);
+        var last = first + shuffleEditor.rowsPerGroup;
+        var sameLayer = layer === shuffleEditor.outLayer(group);
+        var row = first;
+        if (sameLayer) {
+            while (row < last && shuffleEditor.rowEnabled(row))
+                ++row;
+            if (row === last) {
+                shuffleEditor.newChannelProblem = "This output group has four channels. Use the other Out group for another layer.";
+                return;
+            }
+        }
         var values = {};
-        values["outputChannel" + Number(request.row)] = name;
-        if (!shuffleEditor.rowEnabled(Number(request.row)))
-            values["sourceKind" + Number(request.row)] = "zero";
-        values[shuffleEditor.outLayerKey(Number(request.group))] = layer;
+        if (!sameLayer) {
+            for (var other = first; other < last; ++other)
+                values["outputChannel" + other] = "";
+        }
+        values["outputChannel" + row] = name;
+        values["sourceKind" + row] = "zero";
+        values[shuffleEditor.outLayerKey(group)] = layer;
         if (!shuffleEditor.outputsUnique(values))
             return;
         if (!shuffleEditor.gestureValues(values))
             return;
         shuffleEditor.cancelNewChannel();
-    }
-
-    // Clearing a row's output name disables it: the schema creates no channel for
-    // an empty output row, and no authored B channel is touched by doing so.
-    function clearOutputRow(row) {
-        shuffleEditor.gestureProblem = "";
-        var values = {};
-        values["outputChannel" + row] = "";
-        return shuffleEditor.gestureValues(values);
     }
 
     // --- group handle drag (reorder / connect all) --------------------------
@@ -1188,10 +1198,8 @@ ColumnLayout {
     }
 
     // --- new layer / channel dialog ----------------------------------------
-    // The reference's "new" entry, as an inline panel of the editor: the fields
-    // exist from load, cancelling publishes nothing, and confirming writes the
-    // named row (or adds a draggable source socket) without touching any other
-    // row's mapping.
+    // Shared inline panel: layer-menu creation or an existing row's routing.
+    // Cancelling a creation draft publishes nothing.
     Rectangle {
         id: newChannelPanel
         objectName: "shuffleNewChannel_" + shuffleEditor.nodeId
@@ -1210,13 +1218,16 @@ ColumnLayout {
 
             Text {
                 Layout.fillWidth: true
-                text: shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) === "source" ? "New source channel" : "New output channel"
+                text: shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) === "routing"
+                    ? "Routing: " + shuffleEditor.rowOutput(shuffleEditor.newChannelRequest.row)
+                    : shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) === "source" ? "New source channel" : "New output channel"
                 color: shuffleEditor.textColor
                 font.pixelSize: shuffleEditor.fontSizeValue
             }
 
             RowLayout {
                 Layout.fillWidth: true
+                visible: shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) !== "routing"
                 spacing: 4
                 Text {
                     text: "Name"
@@ -1247,6 +1258,7 @@ ColumnLayout {
 
             RowLayout {
                 Layout.fillWidth: true
+                visible: shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) !== "routing"
                 spacing: 4
                 Text {
                     text: "Channels"
@@ -1277,7 +1289,7 @@ ColumnLayout {
             }
 
             Repeater {
-                model: shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) === "output"
+                model: shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) === "routing"
                        ? ["sourceKind" + shuffleEditor.newChannelRequest.row,
                           "sourceChannel" + shuffleEditor.newChannelRequest.row] : []
                 delegate: RowLayout {
@@ -1345,7 +1357,7 @@ ColumnLayout {
                     implicitWidth: 60
                     implicitHeight: 22
                     padding: 0
-                    text: "Cancel"
+                    text: shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) === "routing" ? "Close" : "Cancel"
                     onClicked: shuffleEditor.cancelNewChannel()
                     contentItem: Text {
                         text: newChannelCancel.text
@@ -1363,6 +1375,7 @@ ColumnLayout {
                 Button {
                     id: newChannelConfirm
                     objectName: "shuffleNewConfirm_" + shuffleEditor.nodeId
+                    visible: shuffleEditor.newChannelRequest && String(shuffleEditor.newChannelRequest.kind) !== "routing"
                     implicitWidth: 60
                     implicitHeight: 22
                     padding: 0
@@ -1973,7 +1986,7 @@ ColumnLayout {
                         Accessible.name: "Output " + (outputGroup.group + 1) + " layer"
                         onActivated: function (index) {
                             if (index === model.length - 1) {
-                                shuffleEditor.openNewChannel(shuffleEditor.firstRowOf(outputGroup.group), outputGroup.group);
+                                shuffleEditor.openNewChannel(outputGroup.group);
                                 outLayerBox.syncReadout();
                             } else {
                                 shuffleEditor.commitGroupSelection(outputGroup.group, "outLayer", currentText);
@@ -2171,11 +2184,8 @@ ColumnLayout {
                             }
                         }
 
-                        // The row's identity, as the shared label cell: the
-                        // exposure drag and the Alt-click hold-key gesture are
-                        // exactly the ones an ordinary row uses. The name itself
-                        // is authored through the "name output channel" button
-                        // beside it, so the label cell keeps its shared gesture.
+                        // Plain click opens routing/key controls; shared Alt-key
+                        // and exposure-drag gestures retain their own ownership.
                         ExposureLabel {
                             id: outputName
                             objectName: "shuffleOutName_" + outputRowItem.row + "_" + shuffleEditor.nodeId
@@ -2190,6 +2200,12 @@ ColumnLayout {
                             keyStatus: shuffleEditor.keyStatusOf("outputChannel" + outputRowItem.row)
                             frame: shuffleEditor.frame
                             onKeyRequested: shuffleEditor.keyAtFrame("outputChannel" + outputRowItem.row)
+                            ToolTip.text: "Click for routing and keys. " + outputName.tooltipText()
+                            TapHandler {
+                                acceptedModifiers: Qt.NoModifier
+                                enabled: shuffleEditor.rowEnabled(outputRowItem.row)
+                                onTapped: shuffleEditor.openRouting(outputRowItem.row)
+                            }
                         }
 
                         KeyIndicator {
@@ -2210,50 +2226,6 @@ ColumnLayout {
                             onRevealRequested: shuffleEditor.revealInAnimation("outputChannel" + outputRowItem.row)
                         }
 
-                        Button {
-                            id: nameButton
-                            objectName: "shuffleName_" + outputRowItem.row + "_" + shuffleEditor.nodeId
-                            Layout.preferredWidth: 18
-                            Layout.preferredHeight: 17
-                            padding: 0
-                            text: "\uFF0B"
-                            Accessible.name: "Name output channel " + (outputRowItem.row + 1)
-                            onClicked: shuffleEditor.openNewChannel(outputRowItem.row, outputGroup.group)
-                            contentItem: Text {
-                                text: nameButton.text
-                                color: shuffleEditor.mutedColor
-                                font.pixelSize: shuffleEditor.smallFontSize
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: Rectangle {
-                                color: nameButton.hovered ? shuffleEditor.hoverColor : "transparent"
-                                radius: shuffleEditor.smallRadiusValue
-                            }
-                        }
-
-                        Button {
-                            id: clearButton
-                            objectName: "shuffleClear_" + outputRowItem.row + "_" + shuffleEditor.nodeId
-                            Layout.preferredWidth: 18
-                            Layout.preferredHeight: 17
-                            padding: 0
-                            enabled: shuffleEditor.rowEnabled(outputRowItem.row)
-                            text: "\u00D7"
-                            Accessible.name: "Clear output channel " + (outputRowItem.row + 1)
-                            onClicked: shuffleEditor.clearOutputRow(outputRowItem.row)
-                            contentItem: Text {
-                                text: clearButton.text
-                                color: clearButton.enabled ? shuffleEditor.mutedColor : shuffleEditor.disabledColor
-                                font.pixelSize: shuffleEditor.smallFontSize
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: Rectangle {
-                                color: clearButton.hovered ? shuffleEditor.hoverColor : "transparent"
-                                radius: shuffleEditor.smallRadiusValue
-                            }
-                        }
                     }
                 }
             }

@@ -553,6 +553,10 @@ protected:
         const QPoint arrow = control->mapToScene(QPointF(control->width() - 12, control->height() / 2)).toPoint();
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, arrow);
         QTest::qWait(80);
+        // Resolve the final action after asynchronous channel metadata has
+        // populated the visible menu, not before opening it.
+        if (index < 0)
+            index = control->property("count").toInt() - 1;
         auto* popup = control->property("popup").value<QObject*>();
         ASSERT_NE(popup, nullptr);
         auto* list = popup->property("contentItem").value<QQuickItem*>();
@@ -1583,6 +1587,13 @@ protected:
         }
     }
 
+    void openNewOutput(int group) {
+        auto* selector = item(QStringLiteral("shuffleOutLayer_%1").arg(group));
+        ASSERT_NE(selector, nullptr);
+        pickPreset(selector, -1);
+        ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleNewChannel"))->isVisible(); }, 2000));
+    }
+
     void typeField(QQuickItem* field, std::string_view text) {
         ASSERT_NE(field, nullptr);
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(field));
@@ -1660,11 +1671,9 @@ TEST_F(ShuffleSurface, CreatingAnUnwiredOutputIsAtomicAndStartsAtZero) {
         for (const char character : text)
             QTest::keyClick(window_, character);
     };
-    auto* name = item(QStringLiteral("shuffleName_4"));
-    ASSERT_NE(name, nullptr);
+    ASSERT_NO_FATAL_FAILURE(openNewOutput(1));
     const auto before = session_->revision();
-    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(name));
-    ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleNewChannel"))->isVisible(); }, 10000));
+    ASSERT_TRUE(item(QStringLiteral("shuffleNewChannel"))->isVisible());
     auto* layer = item(QStringLiteral("shuffleNewLayer"));
     auto* channel = item(QStringLiteral("shuffleNewChannelField"));
     ASSERT_NE(layer, nullptr);
@@ -1682,8 +1691,7 @@ TEST_F(ShuffleSurface, CreatingAnUnwiredOutputIsAtomicAndStartsAtZero) {
                 .front()
                 .value)
             .empty());
-    name = item(QStringLiteral("shuffleName_4"));
-    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(name));
+    ASSERT_NO_FATAL_FAILURE(openNewOutput(1));
     layer = item(QStringLiteral("shuffleNewLayer"));
     channel = item(QStringLiteral("shuffleNewChannelField"));
     QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(layer));
@@ -1720,6 +1728,29 @@ TEST_F(ShuffleSurface, CreatingAnUnwiredOutputIsAtomicAndStartsAtZero) {
                 .front()
                 .value)
             .empty());
+    ASSERT_TRUE(session_->redo(nemo::EditOptions{session_->revision(), {}}).committed);
+    ASSERT_NO_FATAL_FAILURE(openNewOutput(1));
+    channel = item(QStringLiteral("shuffleNewChannelField"));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(channel));
+    type("b");
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(confirm));
+    ASSERT_TRUE(waitFor([&] { return !item(QStringLiteral("shuffleNewChannel"))->isVisible(); }, 2000));
+    EXPECT_EQ(std::get<std::string>(value("outputChannel4")), "mask.a");
+    EXPECT_EQ(std::get<std::string>(value("outputChannel5")), "mask.b");
+    pickPreset(item(QStringLiteral("shuffleOutLayer_1")), 0);
+    for (int row = 4; row < 8; ++row)
+        EXPECT_TRUE(std::get<std::string>(value("outputChannel" + std::to_string(row))).empty());
+    EXPECT_EQ(std::get<std::string>(value("outputChannel0")), "R");
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    EXPECT_EQ(std::get<std::string>(value("outputChannel4")), "mask.a");
+    EXPECT_EQ(std::get<std::string>(value("outputChannel5")), "mask.b");
+    ASSERT_TRUE(waitFor(
+        [&] {
+            return item(QStringLiteral("shuffleOutLayer_0"))->property("editText").toString() == "rgba" &&
+                   item(QStringLiteral("shuffleOutLayer_1"))->property("editText").toString() == "mask";
+        },
+        2000));
+    capture(QStringLiteral("shuffle-layer-menu-channels"), {}, false, true);
 }
 
 TEST_F(ShuffleSurface, InspectorColumnSwitchRetainsTheOpenMapping) {
@@ -1967,7 +1998,7 @@ TEST_F(ShuffleSurface, SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen) {
     ASSERT_NE(inspector, nullptr);
     inspector->setFrame(1);
     const auto openDialog = [&] {
-        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(item(QStringLiteral("shuffleName_0"))));
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(item(QStringLiteral("shuffleOutName_0"))));
         ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleRoutingKey_sourceChannel0")) != nullptr; }, 2000));
         QTest::qWait(50);
     };

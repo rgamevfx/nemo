@@ -317,5 +317,43 @@
       "log": "native-review-sanitizer.log",
       "limitation": "LeakSanitizer remains non-green; reported allocation stacks are Qt QML accessibility and QtWayland. Existing suppression file unchanged; no checks disabled."
     }
+  },
+  "ui_refinement": {
+    "approval": "User approved removing per-output-row add/clear controls while preserving both inputs and shared keying.",
+    "contract": "https://github.com/rgamevfx/nemo/issues/90#issuecomment-5694652364",
+    "changes": [
+      "Output creation uses Out -> new; additional channels in the same layer occupy the next free socket.",
+      "Out -> none disables the selected output group; undo restores its mappings.",
+      "Click an existing output name for routing/key controls; Alt-click keying and exposure dragging remain shared.",
+      "Both input groups, wiring gestures, and zero/one constants are unchanged."
+    ],
+    "debug_build": {
+      "command": "cmake --build --preset debug --parallel 2 --target nemo-ui nemo_workspace_ui_tests",
+      "result": "passed"
+    },
+    "release_build": {
+      "command": "cmake --build --preset release --parallel 2 --target nemo-ui",
+      "result": "passed"
+    },
+    "native": {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=ShuffleSurface.*",
+      "environment": {
+        "NEMO_TEST_NATIVE_UI": "1",
+        "NEMO_TEST_VIEWER_WINDOW": "1",
+        "NEMO74_EVIDENCE_DIR": "docs/evidence/assets/issue90-channels/native-refinement",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json"
+      },
+      "result": "11/11 passed, 30.44 seconds",
+      "capture_followup": "Rebuilt native target after adding a post-undo selector-readout wait; CreatingAnUnwiredOutputIsAtomicAndStartsAtZero passed, 3.41 seconds.",
+      "driver_correction": "Initial run passed 10/11. New-menu selection used an index computed before asynchronous metadata populated the popup. Resolve the final action after opening; native rerun passed.",
+      "visual_inspection": [
+        "shuffle-initial.png: no per-row add/clear buttons; both inputs and constants retained",
+        "shuffle-layer-menu-channels.png: rgba plus mask.a/mask.b, with settled Out selectors after none/undo",
+        "shuffle-held-routing-key.png: output-label routing panel with shared keyed source-channel control"
+      ],
+      "captures": "native-refinement/",
+      "supersedes": "native/ retains historical pre-refinement UI captures; native-refinement/ is the current Shuffle presentation."
+    },
+    "scope": "UI-only refinement. No schema, engine, dependency, or image-baseline changes. Original full-suite and sanitizer evidence/exceptions remain unchanged; neither was rerun. No push, merge, closure, or hold release."
   }
 }

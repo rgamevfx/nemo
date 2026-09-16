@@ -190,6 +190,8 @@ void recordRegionCopy(VkCommandBuffer command, const gpu::Image& source, const g
 // executors agree on which samples are data. An empty data window yields an
 // empty rectangle (a fully transparent raster), and a sample inside the data
 // bounds but outside the display format is kept (overscan is data, not black).
+// An explicitly extended description (issue #92) does not use this at all: its
+// finite bounds are a retained edge domain, so its pass declares no support.
 // Coverage, origin and sampling scale are never changed by this.
 [[nodiscard]] std::array<std::int32_t, 4> rasterSupport(const EvaluationRequest& request, const Region& dataBounds) {
     const int scale = request.samplingScale;
@@ -884,9 +886,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
         GpuPreparation preparation;
         try {
-            preparation = implementation.prepare({catalog, *effectiveNode, nodeRequest, node.params, maskPresent,
-                                                  pixelAspect, inputRequests, description,
-                                                  planNode.source ? &*planNode.source : nullptr, inputDescriptions});
+            preparation =
+                implementation.prepare({catalog, *effectiveNode, nodeRequest, node.params, maskPresent, pixelAspect,
+                                        inputRequests, description, planNode.source ? &*planNode.source : nullptr,
+                                        inputDescriptions, &document.network(expandedNode.id.network).format()});
         } catch (const std::exception& error) {
             failEffect(*effectiveNode, program, std::string("local preparation failed: ") + error.what());
         }
@@ -920,6 +923,20 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         Dispatch dispatch;
         dispatch.output = resident;
         dispatch.externalInput = std::move(sourceFrame);
+
+        // The node output pass's declared support (issue #88), resolved once:
+        // the half-open raster rectangle whose samples are the produced image's
+        // data, so a generator or an offsetting effect can never claim data
+        // outside its described window. An explicitly EXTENDED description
+        // (issue #92) declares its finite bounds as a retained edge domain the
+        // effect answers outside of, so that pass declares NO support
+        // (`{-1,-1,-1,-1}`: write the whole raster) instead of masking the
+        // extension away. An EMPTY data window still masks every sample, because
+        // `hasEdgeExtension` requires a non-empty retained domain: an empty
+        // image has no edge to extend.
+        const std::array<std::int32_t, 4> outputSupport = hasEdgeExtension(description)
+                                                              ? std::array<std::int32_t, 4>{-1, -1, -1, -1}
+                                                              : rasterSupport(nodeRequest, description.dataBounds);
 
         try {
             gpu::Buffer payloadBuffer;
@@ -956,13 +973,13 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                     result = image.get();
                     dispatch.scratch.emplace(definition.output.index, std::move(image));
                 }
-                // The produced raster carries its own support: the pass that
-                // writes the node's output is masked to the node's described
-                // data window, so a generator or an offsetting effect can never
-                // claim data outside it. A scratch raster has no declared
-                // support — only this node's next pass reads it.
+                // The produced raster carries its own support (resolved above):
+                // the pass that writes the node's output is masked to the node's
+                // described data window — or left unmasked when the description
+                // extends its edge. A scratch raster has no declared support —
+                // only this node's next pass reads it.
                 const std::array<std::int32_t, 4> support = definition.output.kind == EffectImageKind::Output
-                                                                ? rasterSupport(passRequest, description.dataBounds)
+                                                                ? outputSupport
                                                                 : std::array<std::int32_t, 4>{-1, -1, -1, -1};
                 std::vector<BoundInput> bound;
                 std::vector<const gpu::Image*> reads;

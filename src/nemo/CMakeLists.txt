@@ -22,9 +22,11 @@ add_library(nemo_core
     nodes/Builtins.cpp
     nodes/blur/Contribution.cpp
     nodes/constcolor/Contribution.cpp
+    nodes/crop/Contribution.cpp
     nodes/grade/Contribution.cpp
     nodes/merge/Contribution.cpp
     nodes/output/Contribution.cpp
+    nodes/reformat/Contribution.cpp
     nodes/shuffle/Contribution.cpp
     nodes/source/Contribution.cpp
     nodes/testpattern/Contribution.cpp

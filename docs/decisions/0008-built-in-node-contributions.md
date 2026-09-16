@@ -4,9 +4,10 @@ Date: 2026-09-14
 Status: Proposed — implemented on issue/83-node-contributions, extended by
 issue #88 (described images, integer `shiftX`/`shiftY` on the test extension)
 and issue #90 (named-channel Shuffle, per-input requirements and viewer
-projection), then #98 (native storage and viewer scheduling repairs);
+projection), then #98 (native storage and viewer scheduling repairs) and #92
+(retained-edge-domain claim, owning-format context, creation initial values);
 owner review pending and all prior landing holds still pending.
-References: issues #83, #85, #88, #90, #98; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
+References: issues #83, #85, #88, #90, #92, #98; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
 
 ## Decision
 
@@ -156,6 +157,77 @@ remaining review/landing holds are recorded in
 Issue #98's repair checks, native captures, matched playback/upload/kernel
 measurements and remaining limitations are recorded in
 `docs/evidence/assets/issue98-viewer-performance/verification.json`.
+
+## Retained-edge-domain claim and creation initial values (#92)
+
+`ImageDescription` gains one semantic field, `edgeExtension` (default `false`).
+`false` is the finite support every existing producer has: a sample outside
+`dataBounds` is transparent black, enforced centrally by the executors (CPU
+`enforceDataWindow`, native output support), never by node math. `true` is the
+producing effect's explicit claim that its FINITE `dataBounds` are the RETAINED
+edge domain instead of the image's support: the effect answers requested
+coordinates outside them with data of its own, so no consumer may treat them as
+transparent. Every guard reads the claim through `hasEdgeExtension()`, which also
+requires a NON-EMPTY retained domain — an empty image stays transparent whatever
+the flag says. The field participates in description equality, plan JSON and
+content-key identity (`image-space-v3`), so identical nodes, pixels and requests
+are different images once the retained window or the claim changes.
+
+The claim is shared execution behavior, not a per-node branch:
+
+- The CPU support guard clears nothing for an extended description; the native
+  node-output pass declares NO support (`{-1,-1,-1,-1}`) so the whole produced
+  raster is the effect's. Scratch passes keep their own rule.
+- A whole-frame-only extended producer's coverage is its retained domain
+  UNIONED with the demand instead of the domain alone; padding stays limited to
+  the retained domain, so no ordinary region escalates to the whole frame.
+- `requirementDomain` returns the caller's own bounded fallback for an extended
+  producer rather than clipping a read to geometry the producer answers outside
+  of (Blur's halo, Transform's inverse/filter read).
+- Merge and Shuffle propagate the claim from each operand their math really
+  reads; pointwise (Grade) and geometry-changing (Transform/Affine) effects
+  inherit it from the main input, because their own resampling of an extended
+  input is real data. A node that blacks out a region states `false` in its own
+  rule; the claim is never inferred from an input's flag alone.
+
+The same issue adds the one generic creation-time rule, so a node whose
+parameters are stated in the owning network's own frame is created from that
+network rather than from a transient selection: `ParameterInitialValue`
+(`Default`, `OwningNetworkWidth`, `OwningNetworkHeight`) on `ParameterSpec`
+seeds a scalar Integer/Float parameter in the creation owner
+(`initialNodeParameters`, applied by `addNodeCommand` and
+`insertNodeOnEdgeCommand`) from the owning network's saved `ImageFormat`. The
+captured value is authored state from then on, the rule is schema identity (a
+differing rule is an implementation mismatch), and a schema whose declared range
+cannot hold the seeded dimension fails creation with that relationship named.
+Rules are resolved from the graph's own catalog, so no node type is named in the
+creation owner. Crop declares `right`/`top` this way; Reformat resolves its
+composition target from `owningFormat` at description time.
+
+The `owningFormat` pointer on `NodeDescriptionContext`, `NodeRegionContext`,
+`CpuNodeContext` and `eval::GpuNodeContext` is that authored COMPOSITION canvas,
+resolved once by the shared plan for the network that owns the node; it is null
+only for a direct rule invocation without a network scope. It is deliberately
+not a universal runtime coordinate frame: the owner's reference defines Crop's
+box distances against the ORIGINAL INPUT image, so Crop converts its y-down
+value with the CURRENT INPUT's described format height (its normalized origin)
+and re-derives it whenever that input changes, while only the box's creation
+uses the canvas through the rule above. Reformat's composition target is the
+canvas. The shared regression is `tests/ContributionTests.cpp`
+`ExtendedDescriptionAnswersOutsideItsRetainedWindowThroughAnOrdinaryEffect`;
+Crop/Reformat numerical fixtures remain their own modules' evidence.
+
+Reformat's affine geometry and closed tap membership are resolved in host double
+precision. CPU, GLSL and Slang still independently evaluate and normalize their
+filter coefficients. Native preparation stores one geometry entry per driving
+output row/column in the existing retained `GpuPreparation::weights` buffer:
+integer endpoints/base use pairs of exact numeric 16-bit limbs, alongside flags
+and a fractional position relative to that base. All table floats stay finite
+without restricting the signed index range. This prevents a float-sized epsilon
+from adding a Notch tap or choosing the wrong Impulse neighbor; relative offsets
+also avoid subtracting large rounded float coordinates.
+The executor still owns upload and retirement; no new allocator, submission,
+readback or render-path coefficient sharing is introduced.
 
 ## Verification seam
 

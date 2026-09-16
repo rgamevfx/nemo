@@ -37,6 +37,7 @@ namespace nemo {
 
 class Document;
 struct NodeInstance;
+struct ImageFormat;
 class SourceProvider;
 struct EffectiveSourceRequest;
 
@@ -75,6 +76,14 @@ struct CpuNodeContext {
     const ImageDescription& description;
     const EffectiveSourceRequest* source;
     std::span<const ImageDescription* const> inputDescriptions;
+    // The authored format of the network that owns this node (issue #92): the
+    // composition's saved canvas, not this node's runtime coordinate frame. A
+    // node whose authored values are stated in the composition's own space reads
+    // it here; a node whose values are stated against the image it processes
+    // (Crop's bottom-left box) converts through its INPUT's described format
+    // instead, which travels in `description`/`inputDescriptions`. Null only for
+    // a direct adapter invocation without a network scope.
+    const ImageFormat* owningFormat{nullptr};
 };
 
 // One declared input port's demand (issue #88): the full-resolution signed
@@ -114,6 +123,13 @@ struct NodeRegionContext {
     float pixelAspect{1.0F};
     const ImageDescription& description;
     std::span<const ImageDescription* const> inputs;
+    // The authored format of the network that owns this node (issue #92): the
+    // composition's saved canvas. A rule that states its demand in the
+    // composition's own space reads it here; a rule stated against the image it
+    // reads (Crop's bottom-left box) converts through its input's described
+    // format, which travels in `inputs`/`description`. Null only for a direct
+    // rule invocation without a network scope.
+    const ImageFormat* owningFormat{nullptr};
 };
 
 // One node's description context (issue #88): everything a node needs to state
@@ -130,6 +146,16 @@ struct NodeDescriptionContext {
     std::int64_t localTime;
     std::span<const ImageDescription* const> inputs;
     ImageDescription inherited;
+    // The authored format of the network that OWNS this node (issue #92): the
+    // same saved canvas a generator's `inherited` description falls back to,
+    // never the selected viewer/Read. A node whose description is stated against
+    // the composition's saved format (Reformat's to-format target) reads it here
+    // instead of re-deriving geometry from its inputs; a node whose description
+    // is stated against the image it processes (Crop's box, converted against
+    // the input's own height) reads that input's format from `inputs` instead.
+    // Null only for a direct rule invocation that has no network scope at all; a
+    // real plan always supplies it.
+    const ImageFormat* owningFormat{nullptr};
 };
 
 // A node's CPU reference pixel implementation. `version` is the implementation

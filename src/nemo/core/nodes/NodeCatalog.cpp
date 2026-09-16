@@ -227,6 +227,12 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
         if (parameter.nonzero && !numeric)
             throw std::invalid_argument(context + ": parameter '" + parameter.name +
                                         "' declares nonzero for a non-numeric type");
+        if (parameter.initialValue != ParameterInitialValue::Default && parameter.type != ParameterType::Integer &&
+            parameter.type != ParameterType::Float) {
+            throw std::invalid_argument(context + ": parameter '" + parameter.name +
+                                        "' declares a creation-time initial value for a parameter that is not a "
+                                        "scalar Integer or Float");
+        }
         if ((parameter.softMinimum && parameter.minimum && *parameter.softMinimum < *parameter.minimum) ||
             (parameter.softMinimum && parameter.maximum && *parameter.softMinimum > *parameter.maximum) ||
             (parameter.softMaximum && parameter.maximum && *parameter.softMaximum > *parameter.maximum) ||

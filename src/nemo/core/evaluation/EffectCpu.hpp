@@ -151,12 +151,22 @@ struct InputAnchor {
 // An input whose description carries no format at all describes no geometry, so
 // the caller's own bounded fallback is used: the producer then serves whatever
 // raster its own policy defines (transparent black for an image with no data).
+//
+// An input that EXTENDS its edge (issue #92) is never clipped: its retained
+// domain is not the boundary of what it can answer, so clipping a node's own
+// read to it would demand less than the node's math needs and silently replace
+// real extended samples with transparent black. The caller's own bounded
+// fallback stands instead — a node still bounds its own read, the producer
+// decides what lies outside its retained domain.
 [[nodiscard]] inline Region requirementDomain(const NodeRegionContext& context, std::size_t port,
                                               const Region& fallback) {
     if (port >= context.inputs.size() || context.inputs[port] == nullptr) {
         return fallback;
     }
     const ImageDescription& described = *context.inputs[port];
+    if (hasEdgeExtension(described)) {
+        return fallback;
+    }
     const Region domain = regionUnion(described.format, described.dataBounds);
     return domain.width > 0 && domain.height > 0 ? domain : fallback;
 }

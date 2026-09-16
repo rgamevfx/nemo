@@ -278,7 +278,22 @@ public:
     // observe. Repeated calls for one identity reuse the retained answer; a
     // superseded identity replaces the outstanding query instead of queueing
     // beside it. `nodeChannelsChanged` reports the answer.
-    Q_INVOKABLE QVariantMap nodeInputChannels(const QString& networkId, const QVariant& nodeValue);
+    Q_INVOKABLE QVariantMap nodeInputChannels(const QString& networkValue, const QVariant& nodeValue);
+    // The document's authored canvas presets (#96), ascending by name, each
+    // {name, width, height, pixelAspect}. This is a read of the session's own
+    // stored state: presentation owns no second format registry, and a preset
+    // is only ever applied by copying its value.
+    Q_INVOKABLE QVariantList namedFormats() const;
+    // The saved canvas of ONE network ({available, width, height, pixelAspect}),
+    // which a format-source control states for its composition choice. A
+    // network with no format reports `available` false rather than a
+    // substituted canvas.
+    Q_INVOKABLE QVariantMap networkFormat(const QString& networkValue) const;
+    // Create/replace and delete an authored canvas preset through the shared
+    // document commands: each is one history entry, and the presentation layer
+    // never mutates stored formats itself.
+    Q_INVOKABLE bool setNamedFormat(const QString& name, int width, int height, double pixelAspect);
+    Q_INVOKABLE bool removeNamedFormat(const QString& name);
     Q_INVOKABLE QString timecodeForFrame(int frame) const;
     Q_INVOKABLE int frameForTimecode(const QString& text) const;
     // Forwards the resolved panel context (PanelContextRouter) into the render

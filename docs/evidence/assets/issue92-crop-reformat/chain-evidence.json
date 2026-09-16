@@ -1,0 +1,553 @@
+{
+  "issue": 92,
+  "fixture": "chain.nemo",
+  "seed": "seed.nemo",
+  "source": "plate.png",
+  "construction": {
+    "api": "nemo-cli session",
+    "operations": [
+      {
+        "op": "add-node",
+        "network_id": 1,
+        "type": "crop",
+        "name": "CropOne",
+        "expected_revision": 2
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 4,
+        "key": "x",
+        "value": {
+          "type": "float",
+          "value": 1.0
+        },
+        "expected_revision": 3
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 4,
+        "key": "y",
+        "value": {
+          "type": "float",
+          "value": 1.0
+        },
+        "expected_revision": 4
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 4,
+        "key": "right",
+        "value": {
+          "type": "float",
+          "value": 8.0
+        },
+        "expected_revision": 5
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 4,
+        "key": "top",
+        "value": {
+          "type": "float",
+          "value": 6.0
+        },
+        "expected_revision": 6
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 4,
+        "key": "reformat",
+        "value": {
+          "type": "boolean",
+          "value": true
+        },
+        "expected_revision": 7
+      },
+      {
+        "op": "connect",
+        "network_id": 1,
+        "from_node_id": 1,
+        "from_port": 0,
+        "to_node_id": 4,
+        "to_port": 0,
+        "expected_revision": 8
+      },
+      {
+        "op": "add-node",
+        "network_id": 1,
+        "type": "reformat",
+        "name": "Enlarge",
+        "expected_revision": 9
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 5,
+        "key": "type",
+        "value": {
+          "type": "choice",
+          "value": "box"
+        },
+        "expected_revision": 10
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 5,
+        "key": "boxWidth",
+        "value": {
+          "type": "integer",
+          "value": 14
+        },
+        "expected_revision": 11
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 5,
+        "key": "boxHeight",
+        "value": {
+          "type": "integer",
+          "value": 10
+        },
+        "expected_revision": 12
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 5,
+        "key": "forceShape",
+        "value": {
+          "type": "boolean",
+          "value": true
+        },
+        "expected_revision": 13
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 5,
+        "key": "resize",
+        "value": {
+          "type": "choice",
+          "value": "distort"
+        },
+        "expected_revision": 14
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 5,
+        "key": "filter",
+        "value": {
+          "type": "choice",
+          "value": "Impulse"
+        },
+        "expected_revision": 15
+      },
+      {
+        "op": "connect",
+        "network_id": 1,
+        "from_node_id": 4,
+        "from_port": 0,
+        "to_node_id": 5,
+        "to_port": 0,
+        "expected_revision": 16
+      },
+      {
+        "op": "add-node",
+        "network_id": 1,
+        "type": "crop",
+        "name": "CropTwo",
+        "expected_revision": 17
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 6,
+        "key": "x",
+        "value": {
+          "type": "float",
+          "value": 2.0
+        },
+        "expected_revision": 18
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 6,
+        "key": "y",
+        "value": {
+          "type": "float",
+          "value": 2.0
+        },
+        "expected_revision": 19
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 6,
+        "key": "right",
+        "value": {
+          "type": "float",
+          "value": 12.0
+        },
+        "expected_revision": 20
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 6,
+        "key": "top",
+        "value": {
+          "type": "float",
+          "value": 8.0
+        },
+        "expected_revision": 21
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 6,
+        "key": "reformat",
+        "value": {
+          "type": "boolean",
+          "value": true
+        },
+        "expected_revision": 22
+      },
+      {
+        "op": "connect",
+        "network_id": 1,
+        "from_node_id": 5,
+        "from_port": 0,
+        "to_node_id": 6,
+        "to_port": 0,
+        "expected_revision": 23
+      },
+      {
+        "op": "add-node",
+        "network_id": 1,
+        "type": "reformat",
+        "name": "ReduceAndFlop",
+        "expected_revision": 24
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 7,
+        "key": "type",
+        "value": {
+          "type": "choice",
+          "value": "scale"
+        },
+        "expected_revision": 25
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 7,
+        "key": "scaleX",
+        "value": {
+          "type": "float",
+          "value": 0.5
+        },
+        "expected_revision": 26
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 7,
+        "key": "scaleY",
+        "value": {
+          "type": "float",
+          "value": 0.5
+        },
+        "expected_revision": 27
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 7,
+        "key": "resize",
+        "value": {
+          "type": "choice",
+          "value": "distort"
+        },
+        "expected_revision": 28
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 7,
+        "key": "filter",
+        "value": {
+          "type": "choice",
+          "value": "Impulse"
+        },
+        "expected_revision": 29
+      },
+      {
+        "op": "set-param",
+        "network_id": 1,
+        "node_id": 7,
+        "key": "flop",
+        "value": {
+          "type": "boolean",
+          "value": true
+        },
+        "expected_revision": 30
+      },
+      {
+        "op": "connect",
+        "network_id": 1,
+        "from_node_id": 6,
+        "from_port": 0,
+        "to_node_id": 7,
+        "to_port": 0,
+        "expected_revision": 31
+      },
+      {
+        "op": "add-node",
+        "network_id": 1,
+        "type": "output",
+        "name": "Delivery",
+        "expected_revision": 32
+      },
+      {
+        "op": "connect",
+        "network_id": 1,
+        "from_node_id": 7,
+        "from_port": 0,
+        "to_node_id": 8,
+        "to_port": 0,
+        "expected_revision": 33
+      }
+    ],
+    "edit_responses": 32,
+    "all_edits_committed": true,
+    "save_succeeded": true
+  },
+  "oracle": {
+    "derivation": "Unfiltered nearest samples: source rows 2..4, columns 6..2 descending; directly indexed from the authored 9x7 RGB plate.",
+    "width": 5,
+    "height": 3,
+    "rgb_hex": "a0547488545870543c5854204054c8a072ac88729070727458725840723ca090208890c87090ac589090409074"
+  },
+  "commands": {
+    "cpu": "build/debug/apps/nemo-cli/nemo-cli evaluate docs/evidence/assets/issue92-crop-reformat/chain.nemo --output Delivery --width 5 --height 3 --out /tmp/chain-cpu.ppm",
+    "native": "build/debug/apps/nemo-cli/nemo-cli evaluate-gpu docs/evidence/assets/issue92-crop-reformat/chain.nemo --output Delivery --width 5 --height 3 --out /tmp/chain-gpu.ppm --backend <slang|glsl> --shaders build/debug/src/nemo/gpu/shaders/spv"
+  },
+  "reopened_results": {
+    "cpu": {
+      "pixels": "a0547488545870543c5854204054c8a072ac88729070727458725840723ca090208890c87090ac589090409074",
+      "description": {
+        "association": "straight",
+        "channels": [
+          "R",
+          "G",
+          "B",
+          "A"
+        ],
+        "color": "data",
+        "dataBounds": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "edgeExtension": false,
+        "format": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "pixelAspect": 1.0,
+        "precision": "float32"
+      },
+      "steps": {
+        "Plate": {
+          "height": 7,
+          "width": 9,
+          "x": 0,
+          "y": 0
+        },
+        "CropOne": {
+          "height": 5,
+          "width": 7,
+          "x": 0,
+          "y": 0
+        },
+        "Enlarge": {
+          "height": 10,
+          "width": 14,
+          "x": 0,
+          "y": 0
+        },
+        "CropTwo": {
+          "height": 6,
+          "width": 10,
+          "x": 0,
+          "y": 0
+        },
+        "ReduceAndFlop": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "Delivery": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "stderr": "",
+      "warnings": []
+    },
+    "slang": {
+      "pixels": "a0547488545870543c5854204054c8a072ac88729070727458725840723ca090208890c87090ac589090409074",
+      "description": {
+        "association": "straight",
+        "channels": [
+          "R",
+          "G",
+          "B",
+          "A"
+        ],
+        "color": "data",
+        "dataBounds": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "edgeExtension": false,
+        "format": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "pixelAspect": 1.0,
+        "precision": "float32"
+      },
+      "steps": {
+        "Plate": {
+          "height": 7,
+          "width": 9,
+          "x": 0,
+          "y": 0
+        },
+        "CropOne": {
+          "height": 5,
+          "width": 7,
+          "x": 0,
+          "y": 0
+        },
+        "Enlarge": {
+          "height": 10,
+          "width": 14,
+          "x": 0,
+          "y": 0
+        },
+        "CropTwo": {
+          "height": 6,
+          "width": 10,
+          "x": 0,
+          "y": 0
+        },
+        "ReduceAndFlop": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "Delivery": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "stderr": "",
+      "warnings": []
+    },
+    "glsl": {
+      "pixels": "a0547488545870543c5854204054c8a072ac88729070727458725840723ca090208890c87090ac589090409074",
+      "description": {
+        "association": "straight",
+        "channels": [
+          "R",
+          "G",
+          "B",
+          "A"
+        ],
+        "color": "data",
+        "dataBounds": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "edgeExtension": false,
+        "format": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "pixelAspect": 1.0,
+        "precision": "float32"
+      },
+      "steps": {
+        "Plate": {
+          "height": 7,
+          "width": 9,
+          "x": 0,
+          "y": 0
+        },
+        "CropOne": {
+          "height": 5,
+          "width": 7,
+          "x": 0,
+          "y": 0
+        },
+        "Enlarge": {
+          "height": 10,
+          "width": 14,
+          "x": 0,
+          "y": 0
+        },
+        "CropTwo": {
+          "height": 6,
+          "width": 10,
+          "x": 0,
+          "y": 0
+        },
+        "ReduceAndFlop": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        },
+        "Delivery": {
+          "height": 3,
+          "width": 5,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "stderr": "",
+      "warnings": []
+    }
+  },
+  "reference_limit": "Independent authored pixel oracle, not a Nuke runtime comparison."
+}

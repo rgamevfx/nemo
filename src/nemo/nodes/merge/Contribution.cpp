@@ -139,16 +139,27 @@ CpuImage executeMerge(const CpuNodeContext& context) {
 // empty. Everything else — the logical format, pixel aspect, channels and
 // interpretation — is inherited from the main input A; B never changes the
 // result's meaning, and the optional mask only blends values.
+//
+// The retained-edge-domain claim (issue #92) is the exception that B DOES
+// contribute to, because Merge's pixel math is pointwise in its operands: where
+// an operand answers requested coordinates outside its retained domain, its real
+// values are composited into the result, so an operand that extends makes the
+// composite extend too. With neither operand extending, the claim stays exactly
+// what A declared.
 [[nodiscard]] ImageDescription describeMerge(const NodeDescriptionContext& context) {
     ImageDescription described = context.inherited;
+    // Normalize before the union: an empty A has no edge to extend, even when
+    // its raw declaration carries the flag. B must not revive that claim.
+    described.edgeExtension = hasEdgeExtension(context.inherited);
     Region bounds = described.dataBounds;
-    // Declared ports 0 (A) and 1 (B) are the composite's operands; the optional
-    // mask at port 2 only blends values and never adds data.
-    for (std::size_t port = 0; port < 2 && port < context.inputs.size(); ++port) {
-        const ImageDescription* const input = context.inputs[port];
+    // A is already inherited. B contributes coverage; the optional mask at
+    // port 2 only blends values and never adds data.
+    if (context.inputs.size() > 1) {
+        const ImageDescription* const input = context.inputs[1];
         if (input != nullptr && input->dataBounds.width > 0 && input->dataBounds.height > 0) {
             bounds = regionUnion(bounds, input->dataBounds);
         }
+        described.edgeExtension = described.edgeExtension || (input != nullptr && hasEdgeExtension(*input));
     }
     described.dataBounds = bounds;
     return described;

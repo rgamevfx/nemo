@@ -1,0 +1,57 @@
+{
+  "issue": 92,
+  "baseline": "fc789a3",
+  "status": "implemented-and-reviewed-locally-verification-limitations-recorded-owner-landing-held",
+  "reference": "Foundry Nuke 17.0 documentation only; no runtime parity claim",
+  "sources": [
+    "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/crop.html",
+    "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/reformat.html",
+    "https://learn.foundry.com/nuke/17.0/content/comp_environment/reformatting_elements/cropping_elements.html",
+    "https://learn.foundry.com/nuke/17.0/content/comp_environment/reformatting_elements/using_reformat.html",
+    "https://learn.foundry.com/nuke/17.0/content/comp_environment/transforming_elements/filtering_algorithm_2d.html"
+  ],
+  "owner_approvals": {
+    "local_prerequisites": "Use local #88/#96; all landing holds preserved; commit current branch only.",
+    "tracker": "Assign/comment #92 and concise #24 updates authorized.",
+    "edge_extension": "Extend shared image description/planning/execution with explicit edge extension; transparent default unchanged; finite data bounds remain meaningful; empty stays transparent.",
+    "native_controls": "Themed Crop box with edge/corner resize and center move handles, only active inspected Crop directly viewed in same group. Left drag handles edits; outside pans; middle/wheel unchanged. One undo, Escape/context change cancels. Shared numeric/key/exposure x/y/right/top with width/height display toggle. Reformat composition default and named preset by value; compact create/edit/delete popup via existing commands.",
+    "coordinates": "Bottom-left Crop values converted to y-down. Initialize box from owning saved network, never selected source/viewer. Fractional bounds floor/ceil enclosure; reformat translates enclosure to zero; empty intersection valid; zero output format rejected.",
+    "reformat": "Round positive dimensions nearest ties up, minimum one. Fit contains; fill covers in physical aspect. Flip/flop then counter-clockwise turn then resize/alignment.",
+    "unforced_box": "The selected resize policy derives the canvas from both requested box dimensions, preserving physical aspect except distort. Owner explicitly approved to-box + forceShape=false + resize=none retaining the oriented input pixel dimensions (requested box dimensions ignored), with the requested pixel aspect. Force shape explicitly enables an unscaled crop/pad.",
+    "softness": "Inward linear ramp per edge in full-resolution pixels, product at corners, zero hard. Preserve association: straight primary RGB fades through alpha; premultiplied RGB directly; auxiliary channels numerically.",
+    "filters": "Impulse nearest; BC Cubic (0,0), Keys (0,.5), Simon (0,.75), Rifman (0,1), Mitchell (1/3,1/3), Parzen (1,0); Notch unit-width box; Lanczos4/6 radii2/3; Sinc4 truncated sinc radius2. Separable normalized kernels widen for minification. Clamp to contributing-sample extrema, not 0..1. Association-aware primary RGB; independent auxiliary planes.",
+    "tolerance": "Exact descriptions/bounds; pixels abs+relative 2e-5 + 2e-5*abs(expected).",
+    "softness_without_alpha": "Owner explicitly approved: with blackOutside=false and no stored alpha, multiply all stored channel values (including RGB) by softness coverage; do not invent alpha. Existing or blackOutside-added alpha retains association-aware fade."
+  },
+  "stories": [
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57
+  ],
+  "protected_reference": {
+    "archive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+    "entries": [
+      "viewer-session.json:/verified[12]",
+      "viewer-session.json:/verified[13]"
+    ],
+    "handlers": [
+      "ViewerPanel.qml:displayControlsComponent onActivated",
+      "ViewerPanel.qml:setZoom",
+      "ViewerPanel.qml:fitToSurface",
+      "ViewerPanel.qml:sceneArt/scene"
+    ],
+    "production": "ViewerPanel computeDisplayRect/viewCenter/imageScale/syncView; #84 continuous wheel/pan and #85 full-frame override supersede prototype wheel behavior."
+  },
+  "verification": "Approved ProjectSession/commands/history/save-reopen/CPU/native seam; real native UI. Focused debug builds/tests, one final full debug suite, release build, relevant sanitizers. Separate standards/spec review. Known unrelated colorimetry failure retained."
+}

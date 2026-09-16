@@ -695,7 +695,8 @@ CPU/native paths consume that same state. A viewer render shares one
 match the document snapshot/revision, registration snapshot and full demand.
 An inconsistent supplied plan is rejected, never silently substituted.
 
-Content keys include every description field and `image-space-v2` (#90);
+Content keys include every description field and `image-space-v3` (#90 added
+channel naming to the contract; #92 added the retained-edge-domain claim);
 channel names/order and requested channel demand distinguish representations.
 Coverage remains a separate representation key. Compatible larger rasters can
 serve smaller requests without recomputation, but changed format, bounds, PAR,

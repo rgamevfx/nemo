@@ -1,0 +1,142 @@
+[
+  {
+    "type": "crop",
+    "session": [
+      {
+        "changed_animation_channel_ids": [],
+        "changed_animation_key_ids": [],
+        "changed_edge_ids": [],
+        "changed_instance_ids": [],
+        "changed_named_format_ids": [],
+        "changed_network_ids": [
+          1
+        ],
+        "changed_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "changed_source_ids": [],
+        "color_policy_changed": false,
+        "committed": true,
+        "created_edge_ids": [],
+        "created_instance_ids": [],
+        "created_network_ids": [],
+        "created_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "ok": true,
+        "revision": 3
+      },
+      {
+        "changed_animation_channel_ids": [],
+        "changed_animation_key_ids": [],
+        "changed_edge_ids": [],
+        "changed_instance_ids": [],
+        "changed_named_format_ids": [],
+        "changed_network_ids": [],
+        "changed_node_ids": [],
+        "changed_source_ids": [],
+        "color_policy_changed": false,
+        "committed": false,
+        "created_edge_ids": [],
+        "created_instance_ids": [],
+        "created_network_ids": [],
+        "created_node_ids": [],
+        "error": {
+          "code": "invalid_argument",
+          "message": "cannot connect into node 4 port 0: node 'Crop' of unknown type 'crop' has no port contract"
+        },
+        "ok": false,
+        "revision": 3
+      },
+      {
+        "backup": "",
+        "dirty": false,
+        "ok": true,
+        "op": "save-as",
+        "path": "/tmp/nemo92-before-shldkr71/crop.nemo",
+        "recovered": false,
+        "recovery_original": "",
+        "revision": 3,
+        "saved_revision": 3,
+        "warnings": []
+      }
+    ],
+    "attempt": "Create node through public session, then connect testpattern to its image input."
+  },
+  {
+    "type": "reformat",
+    "session": [
+      {
+        "changed_animation_channel_ids": [],
+        "changed_animation_key_ids": [],
+        "changed_edge_ids": [],
+        "changed_instance_ids": [],
+        "changed_named_format_ids": [],
+        "changed_network_ids": [
+          1
+        ],
+        "changed_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "changed_source_ids": [],
+        "color_policy_changed": false,
+        "committed": true,
+        "created_edge_ids": [],
+        "created_instance_ids": [],
+        "created_network_ids": [],
+        "created_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "ok": true,
+        "revision": 3
+      },
+      {
+        "changed_animation_channel_ids": [],
+        "changed_animation_key_ids": [],
+        "changed_edge_ids": [],
+        "changed_instance_ids": [],
+        "changed_named_format_ids": [],
+        "changed_network_ids": [],
+        "changed_node_ids": [],
+        "changed_source_ids": [],
+        "color_policy_changed": false,
+        "committed": false,
+        "created_edge_ids": [],
+        "created_instance_ids": [],
+        "created_network_ids": [],
+        "created_node_ids": [],
+        "error": {
+          "code": "invalid_argument",
+          "message": "cannot connect into node 4 port 0: node 'Reformat' of unknown type 'reformat' has no port contract"
+        },
+        "ok": false,
+        "revision": 3
+      },
+      {
+        "backup": "",
+        "dirty": false,
+        "ok": true,
+        "op": "save-as",
+        "path": "/tmp/nemo92-before-shldkr71/reformat.nemo",
+        "recovered": false,
+        "recovery_original": "",
+        "revision": 3,
+        "saved_revision": 3,
+        "warnings": []
+      }
+    ],
+    "attempt": "Create node through public session, then connect testpattern to its image input."
+  }
+]

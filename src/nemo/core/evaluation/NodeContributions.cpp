@@ -47,9 +47,10 @@ namespace {
 }
 
 // Implementation identity of a declared parameter: name, typed kind, default,
-// hard range, choices and the nonzero constraint. Labels, sections, rows,
-// steps, soft ranges, decimals, channel hints and editor ids are presentation
-// and never make two declarations different implementations.
+// hard range, choices, the nonzero constraint and the creation-time initial
+// value rule. Labels, sections, rows, steps, soft ranges, decimals, channel
+// hints and editor ids are presentation and never make two declarations
+// different implementations.
 [[nodiscard]] std::optional<std::string> parameterMismatch(const ParameterSpec& document,
                                                            const ParameterSpec& registered) {
     if (document.name != registered.name)
@@ -64,6 +65,10 @@ namespace {
         return "parameter '" + document.name + "' has different choices";
     if (document.nonzero != registered.nonzero)
         return "parameter '" + document.name + "' has a different nonzero constraint";
+    // A creation-time initial value rule changes what a created node stores, so
+    // it is implementation identity, not presentation (issue #92).
+    if (document.initialValue != registered.initialValue)
+        return "parameter '" + document.name + "' has a different creation-time initial value rule";
     return std::nullopt;
 }
 

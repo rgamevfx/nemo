@@ -78,8 +78,10 @@ namespace {
 
 // Canonical content of one described image (issue #88). Every semantic field
 // participates: the logical format and the signed data window (so sliding a
-// window, or losing overscan, is a different image), the pixel aspect as exact
-// bits (not a decimal rendering, which would lose a one-ULP difference), the
+// window, or losing overscan, is a different image), the retained-edge-domain
+// claim (issue #92: the same rectangle answered outside of is a different
+// image than one that is transparent there), the pixel aspect as exact bits
+// (not a decimal rendering, which would lose a one-ULP difference), the
 // channel naming, precision, alpha association and colour interpretation. A
 // description-less key (a direct caller that has no plan) simply omits the
 // block; the coordinate contract version is mixed in regardless, so a change to
@@ -88,6 +90,10 @@ namespace {
     std::string canonical;
     appendCanonicalField(canonical, "format", canonicalRegion(description.format));
     appendCanonicalField(canonical, "data", canonicalRegion(description.dataBounds));
+    // The retained-edge-domain claim (issue #92): two images with the same
+    // rectangle but a different answer outside it are different images, so a
+    // result produced under one can never be served for the other.
+    appendCanonicalField(canonical, "edge", description.edgeExtension ? "1" : "0");
     appendCanonicalField(canonical, "par", std::to_string(std::bit_cast<std::uint32_t>(description.pixelAspect)));
     for (const std::string& channel : description.channels) {
         appendCanonicalField(canonical, "channel", channel);

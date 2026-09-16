@@ -439,6 +439,13 @@ void validateDescription(const NodeInstance& node, const ImageDescription& descr
 // executor's kernels; a contribution states what its image IS (its description)
 // and the executor makes the raster agree with it.
 //
+// An explicitly EXTENDED description (issue #92) is the one exception, and it
+// is a claim about the producer, not about a consumer: the finite data bounds
+// are the retained edge domain and the effect itself answered the coordinates
+// outside them, so clearing would destroy data the effect just produced. An
+// empty data window stays fully transparent whatever the flag says
+// (`hasEdgeExtension`), because there is no edge to extend.
+//
 // Geometry: the raster covers `request.region` at `request.samplingScale`, so
 // raster sample (x, y) is anchored at the full-resolution coordinate
 // (region.x + x*scale, region.y + y*scale) — the same sampling-lattice
@@ -449,6 +456,9 @@ void validateDescription(const NodeInstance& node, const ImageDescription& descr
 // delivered geometry are untouched; it runs before the produced image's
 // identity is computed, so a cached result is always the guarded one.
 void enforceDataWindow(CpuImage& image, const EvaluationRequest& request, const ImageDescription& description) {
+    if (hasEdgeExtension(description)) {
+        return;
+    }
     const int scale = isSamplingScale(request.samplingScale) ? request.samplingScale : 1;
     const Region& bounds = description.dataBounds;
     // Raster columns whose anchor is inside the data window, as a half-open
@@ -545,17 +555,20 @@ ImageDescriptionPlan describeDependencies(const Document& document, const Evalua
         }
 
         // The shared default an ordinary node keeps without a rule of its own.
+        // The owning network's authored canvas (issue #96) is also the frame a
+        // node states its own authored values in (issue #92), so the same
+        // resolved reference travels to the rule.
+        const ImageFormat& owningFormat = document.network(expanded.id.network).format();
         const ImageDescription* mainInput = !inputDescriptions.empty() ? inputDescriptions.front() : nullptr;
-        const ImageDescription inherited =
-            mainInput != nullptr ? *mainInput : canvasDescription(document.network(expanded.id.network).format());
+        const ImageDescription inherited = mainInput != nullptr ? *mainInput : canvasDescription(owningFormat);
 
         if (contribution->role == NodeRole::Source) {
             const EffectiveSourceRequest source = resolveSourceRequest(document, resolved.node, request.localTime);
             resolved.source = source;
             resolved.description = describeSource(document, resolved.node, source, sources);
         } else if (contribution->describe) {
-            resolved.description = contribution->describe(
-                NodeDescriptionContext{document, catalog, resolved.node, request.localTime, inputs, inherited});
+            resolved.description = contribution->describe(NodeDescriptionContext{
+                document, catalog, resolved.node, request.localTime, inputs, inherited, &owningFormat});
         } else {
             resolved.description = inherited;
         }
@@ -638,11 +651,18 @@ RegionPlan planResolvedRegions(const Document& document, const EvaluationRequest
         // A contribution that declares no regional support processes whole
         // images internally: its own coverage and every input's coverage
         // escalate to its whole useful domain, and consumers read the sub-region
-        // they asked for from it.
+        // they asked for from it. An explicitly EXTENDED producer (issue #92)
+        // has no finite whole domain to escalate to — its retained bounds are
+        // only the edge it extends from — so its coverage is the retained
+        // domain UNIONED with the demand, which keeps the demanded coverage
+        // (the sample-evaluation discipline of a whole-frame node stays intact)
+        // without clipping the request the consumer actually made.
         const bool wholeFrameOnly = contribution != nullptr && !contribution->descriptor.capabilities.supportsRegion;
         const Region domain = regionOnLattice(describedDomain(description), scale);
         const Region coverage =
-            wholeFrameOnly ? domain : plannedCoverage(producerDemand.at(expanded.id), scale, domain);
+            wholeFrameOnly
+                ? (hasEdgeExtension(description) ? regionUnion(domain, producerDemand.at(expanded.id)) : domain)
+                : plannedCoverage(producerDemand.at(expanded.id), scale, domain);
 
         // Every per-node request states this node's OWN format as its domain:
         // its coverage is in absolute image coordinates, so a consumer's own
@@ -693,8 +713,10 @@ RegionPlan planResolvedRegions(const Document& document, const EvaluationRequest
             const NodeCatalog& catalog = document.network(expanded.id.network).graph().catalog();
             const ParameterValues& effectiveParams = node.params;
             const std::span<const ImageDescription* const> inputs(inputDescriptions.data(), inputDescriptions.size());
+            const ImageFormat& owningFormat = document.network(expanded.id.network).format();
             const NodeRegionContext regionContext{
-                catalog, node, nodeRequest, effectiveParams, description.pixelAspect, description, inputs};
+                catalog,     node,   nodeRequest,  effectiveParams, description.pixelAspect,
+                description, inputs, &owningFormat};
             requirements = contribution->inputRequirements(regionContext);
         }
         if (requirements.size() > expanded.inputs.size()) {
@@ -1147,7 +1169,8 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                                          contextRequests,
                                          resolved.description,
                                          resolved.source ? &*resolved.source : nullptr,
-                                         contextDescriptions};
+                                         contextDescriptions,
+                                         &document.network(expandedNode.id.network).format()};
 
             if (contribution->role == NodeRole::Output) {
                 if (inputs.empty() || inputs[0] == nullptr)

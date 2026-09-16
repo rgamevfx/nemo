@@ -1585,12 +1585,60 @@ Command connectOutputCommand(NetworkId network, PortRef source, InterfacePortId 
                    }};
 }
 
+namespace {
+
+// Capture schema-declared creation values from the owning saved canvas. Other
+// parameters stay absent and resolve to their schema defaults.
+[[nodiscard]] ParameterValues initialNodeParameters(const Graph& graph, const ImageFormat& owningFormat,
+                                                    std::string_view type) {
+    ParameterValues params;
+    const NodeDescriptor* descriptor = graph.catalog().find(type);
+    if (descriptor == nullptr) {
+        return params;
+    }
+    for (const ParameterSpec& parameter : descriptor->parameters) {
+        std::optional<std::int64_t> dimension;
+        switch (parameter.initialValue) {
+        case ParameterInitialValue::Default:
+            continue;
+        case ParameterInitialValue::OwningNetworkWidth:
+            dimension = owningFormat.width;
+            break;
+        case ParameterInitialValue::OwningNetworkHeight:
+            dimension = owningFormat.height;
+            break;
+        }
+        // The declared type decides the variant the schema validates (a scalar
+        // Integer or Float, enforced by the catalog), so the seeded value is a
+        // value of exactly the declared kind. The rule is a declaration like any
+        // other, so a schema whose own range cannot hold the canvas it seeds from
+        // is reported instead of writing an inadmissible value into the graph.
+        const ParameterValue value = parameter.type == ParameterType::Integer
+                                         ? ParameterValue{*dimension}
+                                         : ParameterValue{static_cast<double>(*dimension)};
+        if (const std::optional<std::string> problem = graph.catalog().validateParameter(type, parameter.name, value)) {
+            throw GraphException(GraphError::ParameterValue,
+                                 "node type '" + std::string{type} + "' cannot initialize parameter '" +
+                                     parameter.name + "' from the owning network's saved format: " + *problem);
+        }
+        params.emplace(parameter.name, value);
+    }
+    return params;
+}
+
+}  // namespace
+
 Command addNodeCommand(NetworkId network, std::string type, std::string name, std::shared_ptr<NodeId> createdId,
                        LayoutPosition position, NodeId anchor, std::vector<LayoutEdit> shiftedNodes) {
     return Command{
         "add node '" + name + "'", [network, type = std::move(type), name = std::move(name), createdId, position,
                                     anchor, shiftedNodes = std::move(shiftedNodes)](Document& document) {
             auto& graph = document.network(network).graph();
+            // Creation-time initial values (issue #92) are derived from the
+            // owning network's authored state here, in the one creation owner:
+            // the created node captures them, a schema with no rule keeps its
+            // default, and no node type is named.
+            const ParameterValues initial = initialNodeParameters(graph, document.network(network).format(), type);
 
             // Validate all supplied layout edits before changing the candidate.
             // The command stack already applies against a private document copy,
@@ -1606,7 +1654,7 @@ Command addNodeCommand(NetworkId network, std::string type, std::string name, st
             }
 
             Graph candidate = graph;
-            const NodeId inserted = candidate.addNodeWithId(candidate.nextNodeId(), type, name, {}, position);
+            const NodeId inserted = candidate.addNodeWithId(candidate.nextNodeId(), type, name, initial, position);
 
             // Selected creation is deliberately tolerant of stale or
             // incompatible anchors: QML may have rendered against an older
@@ -1820,13 +1868,18 @@ Command insertNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, std::string ty
 
                        // Exercise all catalog, endpoint, cycle, name and identity
                        // validation against an isolated graph before publication.
+                       // Creation-time initial values (issue #92) are captured
+                       // here exactly as for a plain creation: the trial and the
+                       // published node are the same node.
+                       const ParameterValues initial =
+                           initialNodeParameters(graph, document.network(network).format(), type);
                        Graph trial = graph;
                        trial.disconnect(edgeId);
-                       const NodeId trialNode = trial.addNodeWithId(trial.nextNodeId(), type, name, {}, position);
+                       const NodeId trialNode = trial.addNodeWithId(trial.nextNodeId(), type, name, initial, position);
                        const EdgeId trialUpstream = trial.connect(original.from, PortRef{trialNode, 0});
                        const EdgeId trialDownstream = trial.connect(PortRef{trialNode, 0}, original.to);
 
-                       const NodeId inserted = graph.addNodeWithId(trialNode, type, name, {}, position);
+                       const NodeId inserted = graph.addNodeWithId(trialNode, type, name, initial, position);
                        graph.disconnect(edgeId);
                        const EdgeId actualUpstream = graph.connect(original.from, PortRef{inserted, 0});
                        const EdgeId actualDownstream = graph.connect(PortRef{inserted, 0}, original.to);

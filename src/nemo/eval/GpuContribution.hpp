@@ -59,7 +59,10 @@ struct EffectRequestUniforms {
     //
     // `(-1,-1,-1,-1)` means "this raster declares no support": a node-local
     // scratch image, whose only consumer is the node's own next pass within the
-    // same node, is written in full and is never masked.
+    // same node, is written in full and is never masked — and so is the output
+    // pass of an explicitly EDGE-EXTENDED description (issue #92), whose finite
+    // data bounds are a retained edge domain rather than the support of the
+    // image.
     //
     // The raster's extent, origin and sampling scale are NEVER changed by the
     // support: coverage stays what the request asked for and the guard only
@@ -195,6 +198,9 @@ struct EffectScratchRegion {
 
 struct GpuPreparation {
     std::vector<std::byte> payload;
+    // Node-local finite float table, uploaded verbatim at set 3/binding 0.
+    // Usually filter weights. Geometry indices wider than float's exact integer
+    // range use two numeric 16-bit limbs, preserving all signed 32-bit values.
     std::vector<float> weights;
     std::vector<std::uint32_t> passes;
     // One entry per scratch image the selected passes write; the executor
@@ -235,6 +241,14 @@ struct GpuNodeContext {
     // `inputRequests`). A node's describe callback reads its inputs' formats
     // and data bounds from here.
     std::span<const ImageDescription* const> inputDescriptions;
+    // The authored format of the network that owns this node (issue #92): the
+    // saved composition canvas, resolved once by the shared plan, never the
+    // selected viewer/Read. It is NOT automatically the node's runtime
+    // coordinate frame: a node whose values are stated against the image it
+    // processes (Crop's bottom-left box) converts through its input's described
+    // format, which travels in `inputDescriptions`/`description`. Null only for a
+    // direct preparation call without a network scope.
+    const ImageFormat* owningFormat{nullptr};
 };
 
 // Preparation is worker-side, reentrant value computation: no device,

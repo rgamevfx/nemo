@@ -8,9 +8,11 @@ add_library(nemo_eval
     EffectLibrary.cpp
     ../nodes/blur/Gpu.cpp
     ../nodes/constcolor/Gpu.cpp
+    ../nodes/crop/Gpu.cpp
     ../nodes/grade/Gpu.cpp
     ../nodes/merge/Gpu.cpp
     ../nodes/output/Gpu.cpp
+    ../nodes/reformat/Gpu.cpp
     ../nodes/shuffle/Gpu.cpp
     ../nodes/source/Gpu.cpp
     ../nodes/testpattern/Gpu.cpp

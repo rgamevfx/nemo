@@ -298,12 +298,13 @@ std::vector<InputRequirement> transformInputRequirements(const NodeRegionContext
     // (issue #88): a mapped coordinate outside that producer's image needs no
     // pixels, and demanding it would ask a node for coordinates it does not
     // have. The mask is read at the output coordinates and is clipped the same
-    // way.
-    const Region ownDomain = regionUnion(context.description.format, context.description.dataBounds);
-    const Region mainDomain = requirementDomain(context, 0, ownDomain.width > 0 ? ownDomain : request.region);
+    // way. A producer that EXTENDS its edge (issue #92) answers outside its
+    // retained domain, so nothing is clipped for it: the read this transform
+    // states is the whole bound, and `requirementDomain` returns that same
+    // fallback (see below, where the mapped demand is known).
     const Region maskDomain = requirementDomain(context, 1, request.region);
-    std::vector<InputRequirement> requirements{InputRequirement{regionIntersection(request.region, mainDomain), {}},
-                                               InputRequirement{regionIntersection(request.region, maskDomain), {}}};
+    std::vector<InputRequirement> requirements(2);
+    requirements[1] = InputRequirement{regionIntersection(request.region, maskDomain), {}};
     const float aspect = context.pixelAspect;
     if (!isFinite(aspect) || !(aspect > 0.0F)) {
         failNode(context.node, "transform cannot bound its read without a known main-input pixel aspect (the input "
@@ -362,7 +363,14 @@ std::vector<InputRequirement> transformInputRequirements(const NodeRegionContext
     const Region read =
         representableRegion(context.node, "the transform's inverse-mapped read", std::floor(minX) - margin,
                             std::floor(minY) - margin, std::ceil(maxX) + margin, std::ceil(maxY) + margin);
-    requirements[0] = InputRequirement{regionIntersection(regionUnion(read, request.region), mainDomain), {}};
+    // The transform's own bound on its main read, clipped to the producer's
+    // described image — unless that producer extends its edge (issue #92), in
+    // which case `requirementDomain` returns exactly this bound and the mapped
+    // demand survives instead of being trimmed to a retained domain the
+    // producer answers outside of.
+    const Region readDemand = regionUnion(read, request.region);
+    const Region mainDomain = requirementDomain(context, 0, readDemand);
+    requirements[0] = InputRequirement{regionIntersection(readDemand, mainDomain), {}};
     return requirements;
 }
 
@@ -419,7 +427,11 @@ std::vector<InputRequirement> transformInputRequirements(const NodeRegionContext
 // Transform changes the image's geometry, so it owns its output description
 // (issue #88): everything except the data window is inherited from the main
 // input (format, pixel aspect, channels, interpretation — a Data input stays
-// Data), and the data window follows the transform's own geometry.
+// Data), and the data window follows the transform's own geometry. An explicitly
+// EXTENDED main input (issue #92) keeps its claim as well: the transform reads
+// that input at every output coordinate it is asked for, and the input answers
+// outside its retained domain, so the values it produces there are its own
+// resampling of real extended data rather than a promise it cannot keep.
 [[nodiscard]] ImageDescription describeTransform(const NodeDescriptionContext& context) {
     const ParameterValues& authored = context.node.params;
     const TransformParameters params = effectiveTransform(context.catalog, context.node, authored);

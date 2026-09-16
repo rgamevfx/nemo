@@ -72,12 +72,13 @@ struct ResultKey {
 // cannot alias a previously cached result.
 //
 // `description` is the described image this key is computed for (issue #88):
-// its logical format and signed data bounds, its pixel aspect, channel naming,
-// precision, alpha association and colour interpretation all participate, so a
-// result can never be served for an image with different meaning. `source` is
-// the node's pre-resolved effective source request, supplied for a source node
-// so the key carries exactly the frame the executor reads instead of resolving
-// that request a second time.
+// its logical format and signed data bounds, its retained-edge-domain claim
+// (issue #92), its pixel aspect, channel naming, precision, alpha association
+// and colour interpretation all participate, so a result can never be served
+// for an image with different meaning. `source` is the node's pre-resolved
+// effective source request, supplied for a source node so the key carries
+// exactly the frame the executor reads instead of resolving that request a
+// second time.
 struct KeyContext {
     std::uint64_t implementationTag{0};
     std::string colorConfigIdentity;
@@ -93,7 +94,11 @@ struct KeyContext {
 // v2 (issue #90): channel naming is a named set, not a four-letter string —
 // an alpha-only or multilayer image and a request's channel demand carry
 // different identity than the fixed four-channel form.
-inline constexpr std::string_view kImageCoordinateContract = "image-space-v2";
+// v3 (issue #92): a description states whether its finite data bounds are a
+// retained edge domain the producer answers outside of, so an image whose
+// samples continue past those bounds is a different image than one that is
+// transparent there.
+inline constexpr std::string_view kImageCoordinateContract = "image-space-v3";
 
 // Input-key contribution for a declared-but-absent optional input slot. It is
 // a fixed, executor-independent token that keeps the slot's position in the

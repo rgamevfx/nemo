@@ -99,6 +99,15 @@ FocusScope {
         return null;
     }
 
+    // Aggregate editors address sibling parameters on one node. An exposed
+    // control addresses only its public interface key, so it keeps the ordinary
+    // typed control instead of exposing unrelated definition parameters.
+    function editorApplies(parameter, info) {
+        return !info || String(info.presentation) !== "section"
+                || !parameter || parameter.targetKey === undefined
+                || String(parameter.key) === String(parameter.targetKey);
+    }
+
     // Visibility is effective through the parent chain: a panel body inside a
     // hidden dock or inactive tab must not consume inspector requests.
     function effectivelyVisible() {
@@ -399,9 +408,9 @@ FocusScope {
             return false;
         if (!activeRow)
             return false;
-        var values = {};
-        values[String(activeRow.parameterKey)] = value;
-        return updateEditMany(values);
+        // The single-control API retains the resolved occurrence/exposed address.
+        // A batch map instead names concrete keys on its captured target.
+        return controller.updateNodeParameterEdit(activeToken, value);
     }
 
     function commitEdit() {
@@ -917,7 +926,7 @@ FocusScope {
                         if (editorId.length === 0)
                             continue;
                         var info = parameterEditors.editor(editorId);
-                        if (!info || info.available !== true)
+                        if (!info || info.available !== true || !parametersPanel.editorApplies(params[j], info))
                             continue;
                         var declared = info.consumes || [];
                         for (var k = 0; k < declared.length; ++k) {
@@ -1265,6 +1274,7 @@ FocusScope {
             }
             readonly property bool editorAvailable: parameterRow.editorInfo && parameterRow.editorInfo.available === true
             readonly property bool customEditorActive: parameterRow.hasCustomEditor && parameterRow.editorAvailable
+                && parametersPanel.editorApplies(parameterRow.parameter, parameterRow.editorInfo)
             // The registered editor's declared host layout. A "section" editor
             // is an aggregate control: it spans the full row and provides its own
             // per-parameter affordances, so no outer label/key/marker cell wraps
@@ -1448,7 +1458,15 @@ FocusScope {
                         Layout.fillWidth: true
                         implicitHeight: 23
                         Accessible.name: parameterRow.rowLabel
-                        onRevisionChanged: currentIndex = parameterRow.choiceIndex
+                        function syncSelection() {
+                            currentIndex = Qt.binding(function () {
+                                return parameterRow.choiceIndex;
+                            });
+                        }
+                        onRevisionChanged: syncSelection()
+                        // Match StudioComboBox's typed-readout lifecycle: Qt
+                        // resets selection after assigning a changed model.
+                        onModelChanged: Qt.callLater(syncSelection)
                         onActivated: parameterRow.commitDiscrete(String(currentText))
                         MouseArea {
                             anchors.fill: parent
@@ -1479,7 +1497,9 @@ FocusScope {
                         }
                         onRevisionChanged: {
                             syncing = true;
-                            checked = parameterRow.boolValue;
+                            checked = Qt.binding(function () {
+                                return parameterRow.boolValue;
+                            });
                             syncing = false;
                         }
                         indicator: Rectangle {

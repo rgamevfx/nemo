@@ -64,6 +64,7 @@ if(NEMO_BUILD_UI)
                   qml/AnimationPanel.qml qml/AnimationHeaderTools.qml qml/PinButton.qml
                   qml/NumericField.qml qml/ChannelEditor.qml qml/MergeOperationEditor.qml
                   qml/ShuffleEditor.qml
+                  qml/CropBoxEditor.qml qml/ReformatFormatEditor.qml
                   qml/KeyIndicator.qml qml/ExposureLabel.qml
                   qml/HistoryMenu.qml qml/HistoryMenuItem.qml
     )

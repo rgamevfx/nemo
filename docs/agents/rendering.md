@@ -161,10 +161,10 @@ mean*; neither re-implements the other.
   measurement shows the benefit; a reduced API-call count alone is not a
   performance win.
 
-## Native effects — Grade, Blur, Transform, Merge
+## Native effects — node-local execution
 
 The independent CPU, Slang and retained GLSL implementations live in
-`src/nemo/nodes/{grade,blur,transform,merge}/`. Each module contributes schema and
+`src/nemo/nodes/{grade,blur,transform,merge,shuffle,crop,reformat}/`. Each module contributes schema and
 CPU execution in `Contribution.cpp`, native payload/pass preparation and GLSL in
 `Gpu.cpp`, and its Slang kernel(s). Module-local `Parameters.hpp` owns typed
 effect interpretation; shared [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp)
@@ -332,6 +332,57 @@ approval in #88); explicit header PAR is preserved.
 Masks are read in output coordinates. A contribution declaring
 `supportsRegion=false` processes the whole domain internally and still serves
 regional consumers. See ADR-0007 for coverage reuse and its rectangular limit.
+
+### Described images and the retained-edge-domain claim (issue #92)
+
+A described image states what the image IS independently of the raster that
+backs it: `format` (the logical rectangle), `dataBounds` (the signed rectangle
+that holds data) and `edgeExtension`. The default `edgeExtension = false` is the
+finite support every existing producer has — a sample outside `dataBounds` is
+transparent black — and each executor enforces that centrally (CPU
+`enforceDataWindow`, native output support) rather than in node pixel math.
+
+`edgeExtension = true` is the producer's explicit claim that its FINITE
+`dataBounds` are the RETAINED edge domain instead of the support of the image:
+the effect answers requested coordinates outside them with real data of its own
+(Crop or Reformat with black-outside disabled), so no consumer may
+treat them as transparent. `hasEdgeExtension()` is the one predicate every guard
+reads, and it also requires a NON-EMPTY retained domain: an empty `dataBounds`
+stays fully transparent whatever the flag says, because an image that holds
+nothing has no edge to extend.
+When a contribution grows coverage by unioning inputs or adding constants, it
+must copy the input's **effective** `hasEdgeExtension()` claim before changing
+the bounds. Copying a raw true flag from an empty input and then making the
+bounds non-empty would revive a nonexistent edge; a downstream offset could
+then create out-of-domain pixels. Merge and Shuffle normalize at this boundary.
+
+The claim is shared behavior, not a node-local switch:
+
+- The CPU support guard stops clearing for such a description, and the native
+  node-output pass declares NO support (`{-1,-1,-1,-1}`), so the whole produced
+  raster is the effect's own output. Scratch passes are unchanged.
+- The planner keeps the explicitly demanded coverage: a whole-frame-only
+  extended producer's coverage is its retained domain UNIONED with the demand
+  rather than the domain alone, while padding stays limited to the retained
+  domain, so an ordinary region request never escalates to the whole frame.
+- `requirementDomain` — the shared helper a node's own read rule clips its
+  demand with — returns the caller's bounded fallback for an extended producer
+  instead of clipping to geometry that producer answers outside of, so Blur's
+  halo and Transform's inverse/filter read survive.
+- Merge and Shuffle propagate the claim from any operand their math really
+  reads; a pointwise effect (Grade) and a geometry-changing effect
+  (Transform/Affine) inherit it from the main input, because their own
+  resampling of an extended input is real data rather than a promise they cannot
+  keep. A node that blacks out a region states `false` itself; the claim is
+  never inferred from an input's flag alone.
+- Reuse identity carries the claim: content keys include it and mix
+  `image-space-v3`, so identical nodes, pixels and requests are NOT the same
+  image once the retained window or the claim changes.
+
+Regression: `tests/ContributionTests.cpp`
+`ExtendedDescriptionAnswersOutsideItsRetainedWindowThroughAnOrdinaryEffect`
+(finite vs extended vs empty-claim pixels through an ordinary downstream effect,
+plus the retained demand in the plan and reuse invalidation on the change).
 
 The owner accepted the issue34 native-effects controls, API/node behavior and
 images in chat; the #16 reference benchmark remains an open gate. Passing

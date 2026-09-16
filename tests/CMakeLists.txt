@@ -94,6 +94,8 @@ if(NEMO_BUILD_GPU)
 
     add_executable(nemo_contribution_tests
         ContributionTests.cpp
+        CropTests.cpp
+        ReformatTests.cpp
         contributions/Affine.cpp)
     target_link_libraries(nemo_contribution_tests PRIVATE nemo::eval nemo::gpu GTest::gtest_main OpenImageIO::OpenImageIO)
     target_compile_definitions(nemo_contribution_tests PRIVATE
@@ -143,6 +145,7 @@ if(NEMO_BUILD_UI)
         InteractiveUiTests.cpp
         Issue47ViewerDestinationUiTests.cpp
         Issue74ReadViewerUiTests.cpp
+        Issue92CropReformatUiTests.cpp
         PanelContextRouterTests.cpp
         PanelContextUiTests.cpp
         MediaLibraryModelTests.cpp

@@ -1,0 +1,384 @@
+{
+  "tests": 34,
+  "failures": 0,
+  "disabled": 0,
+  "errors": 0,
+  "timestamp": "2026-09-16T14:17:51Z",
+  "time": "19.44s",
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "ContributionTest",
+      "tests": 2,
+      "failures": 0,
+      "disabled": 0,
+      "errors": 0,
+      "timestamp": "2026-09-16T14:17:51Z",
+      "time": "0.007s",
+      "testsuite": [
+        {
+          "name": "ExtendedDescriptionAnswersOutsideItsRetainedWindowThroughAnOrdinaryEffect",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ContributionTests.cpp",
+          "line": 1465,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:51Z",
+          "time": "0.004s",
+          "classname": "ContributionTest"
+        },
+        {
+          "name": "CreationCapturesTheOwningNetworksSavedCanvas",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ContributionTests.cpp",
+          "line": 1549,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:51Z",
+          "time": "0.002s",
+          "classname": "ContributionTest"
+        }
+      ]
+    },
+    {
+      "name": "CropTest",
+      "tests": 13,
+      "failures": 0,
+      "disabled": 0,
+      "errors": 0,
+      "timestamp": "2026-09-16T14:17:51Z",
+      "time": "1.995s",
+      "testsuite": [
+        {
+          "name": "CropKeepsOnlyTheBoxEnclosureAndBlacksOutside",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 362,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:51Z",
+          "time": "0s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropReformatMovesASignedEnclosureToTheOutputOrigin",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 392,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:51Z",
+          "time": "0s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropIntersectCanEmptyTheDomainWithoutReformat",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 420,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:51Z",
+          "time": "0.001s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropIntersectClipsDataBoundsButNeverTheBoxFormat",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 455,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:51Z",
+          "time": "1.145s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropExtensionAnswersOutsideTheBoxThroughDownstreamEffects",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 522,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropBlackOutsideAddsAlphaAndFadesStraightRgbThroughIt",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 562,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0.191s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropPremultipliedFadeScalesStoredRgbAndAlphaTogether",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 602,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0.003s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropAbsentAlphaFadesEveryStoredValueWithoutInventingAlpha",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 645,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0.003s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropFullHalfAndQuarterAgreeAtSharedAnchors",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 693,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0.001s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropNamesTheParameterForNonFiniteOrUnrepresentableGeometry",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 792,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0.001s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropBoxConvertsThroughTheIncomingFormatHeight",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 853,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0.003s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropCreationSeedsTheBoxFromTheSavedCanvasAndSurvivesSaveReopen",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 882,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0.042s",
+          "classname": "CropTest"
+        },
+        {
+          "name": "CropNativeBackendsReproduceTheHandDerivedSamples",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/CropTests.cpp",
+          "line": 949,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:52Z",
+          "time": "0.597s",
+          "classname": "CropTest"
+        }
+      ]
+    },
+    {
+      "name": "ReformatTest",
+      "tests": 19,
+      "failures": 0,
+      "disabled": 0,
+      "errors": 0,
+      "timestamp": "2026-09-16T14:17:53Z",
+      "time": "17.438s",
+      "testsuite": [
+        {
+          "name": "CompositionTargetFollowsTheOwningNetworkCanvas",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 337,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.001s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "CustomFormatIsIndependentOfTheCompositionAndOfPresets",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 375,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.001s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "UnforcedBoxFollowsTheChosenResizePolicy",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 403,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.004s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "ResizePoliciesPlaceTheImageAsDeclared",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 432,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.003s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "AnamorphicAspectIsPhysical",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 508,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.002s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "OrientationIsFlopFlipThenCounterClockwiseTurn",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 541,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.003s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "BlackOutsideOffExtendsTheEdgeAndDeclaresIt",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 603,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.001s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "BlackOutsideFiltersTheRetainedBoundaryNotAnUpstreamExtension",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 640,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.887s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "BlackOutsideAddsASolidAlphaToAnAlphaLessInput",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 689,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.006s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "DeclaredKernelsResampleExactly",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 743,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.003s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "NotchSupportBoundaryFollowsTheAuthoredPixelAspect",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 800,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:53Z",
+          "time": "0.609s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "ImpulseNearestTapFollowsTheClosedPlacementEdge",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 932,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:54Z",
+          "time": "0.822s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "FarOutsideRegionalDemandAnswersWithTheRetainedEdge",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 1024,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:55Z",
+          "time": "2.099s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "ClampBoundsByContributingSamplesAndPreservesHdr",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 1089,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:57Z",
+          "time": "2.091s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "EveryFilterMatchesTheNativeBackends",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 1138,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:17:59Z",
+          "time": "0.674s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "RegionalAndReducedDensityRequestsKeepTheSameLattice",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 1177,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:18:00Z",
+          "time": "4.124s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "ChainedFormatsSurviveSaveAndReopen",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 1299,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:18:04Z",
+          "time": "5.472s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "AuxiliaryNamedPlanesAreResampledNumericallyAndPreserved",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 1418,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:18:09Z",
+          "time": "0.628s",
+          "classname": "ReformatTest"
+        },
+        {
+          "name": "InadmissibleCanvasAndScaleAreRefusedAtAuthoring",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ReformatTests.cpp",
+          "line": 1556,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T14:18:10Z",
+          "time": "0s",
+          "classname": "ReformatTest"
+        }
+      ]
+    }
+  ]
+}

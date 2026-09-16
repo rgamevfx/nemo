@@ -1,0 +1,142 @@
+{
+  "tests": 12,
+  "failures": 0,
+  "disabled": 0,
+  "errors": 0,
+  "timestamp": "2026-09-16T15:13:41Z",
+  "time": "17.747s",
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "CropReformatSurface",
+      "tests": 12,
+      "failures": 0,
+      "disabled": 0,
+      "errors": 0,
+      "timestamp": "2026-09-16T15:13:41Z",
+      "time": "17.747s",
+      "testsuite": [
+        {
+          "name": "Issue92CropHandlesDragTheAuthoredBox",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 447,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:41Z",
+          "time": "2.297s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92CropHandlesRequireTheInspectedDirectlyViewedCrop",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 518,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:43Z",
+          "time": "1.242s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92CropEscapeCancelsTheGesture",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 542,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:44Z",
+          "time": "1.202s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92CropInspectionChangeCancelsTheGesture",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 582,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:45Z",
+          "time": "1.215s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92CropCoordinatesShareTypedAndKeyedSemantics",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 611,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:47Z",
+          "time": "1.605s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92ExposedCropCoordinateEditsOnlyItsInstance",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 663,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:48Z",
+          "time": "1.003s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92CropCenterAndCornerPreserveCoordinatesAndRedo",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 708,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:49Z",
+          "time": "1.289s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92CropTracksItsInputFormatAndCancelsAnUpstreamChange",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 747,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:51Z",
+          "time": "1.105s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92ReformatCropHandlesMapOutputOffsetsBack",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 796,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:52Z",
+          "time": "1.123s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92CropHandlesHoldUnderZoomParProxyAndReopen",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 838,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:53Z",
+          "time": "1.983s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92ReformatOrientationUsesSharedBooleanEditing",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 920,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:55Z",
+          "time": "0.896s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92ReformatFormatEditorAppliesPresetsByValue",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 954,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:13:56Z",
+          "time": "2.782s",
+          "classname": "CropReformatSurface"
+        }
+      ]
+    }
+  ]
+}

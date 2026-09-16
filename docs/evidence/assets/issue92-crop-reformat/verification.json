@@ -1,0 +1,306 @@
+{
+  "issue": 92,
+  "baseline": "fc789a3a7f58b68c99bd48094ec53c100f2c4498",
+  "status": "implemented-and-reviewed-locally-with-recorded-gate-limitations-landing-held",
+  "reference": "Foundry Nuke 17.0 documentation and explicit owner-approved policy; no Nuke runtime parity claim.",
+  "contract": "contract.json",
+  "scope": {
+    "primary_stories": [
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57
+    ],
+    "consumed_owner": "#96 owns story 51 and saved composition/named formats; #92 consumes its commands and copies presets by value."
+  },
+  "public_changes": [
+    "Crop and Reformat built-in node types and schemas.",
+    "ImageDescription.edgeExtension, transparent by default and ineffective for an empty retained domain.",
+    "Owning-network ImageFormat context for description, region, CPU and GPU callbacks.",
+    "ParameterInitialValue creation rules through existing add/insert commands."
+  ],
+  "architecture": [
+    "Node-local schemas, CPU references, GPU preparation and independent GLSL/Slang filter coefficients.",
+    "Host-double closed tap geometry carried as finite numeric 16-bit limbs in the existing retained weights buffer; no integer range loss through float conversion.",
+    "Shared inspector single-control, typed, key/exposure, history and viewer coordinate owners; no private document mutation or undo stack.",
+    "No new dependency, no existing image-baseline change, no push or landing."
+  ],
+  "builds": {
+    "debug": {
+      "command": "cmake --build --preset debug -j 2",
+      "exit_code": 0,
+      "post_review": "Full incremental debug build passed after Merge/Shuffle correction."
+    },
+    "release": {
+      "command": "cmake --build --preset release -j 2",
+      "exit_code": 0,
+      "post_review": "Full incremental release build passed after Merge/Shuffle correction."
+    },
+    "asan": {
+      "command": "cmake --build --preset asan --target nemo_contribution_tests nemo_workspace_ui_tests -j 2",
+      "exit_code": 0,
+      "post_review": "Contribution target rebuilt and three-case gate passed after Merge/Shuffle correction."
+    },
+    "notes": "Existing minizip mktemp linker warning; no new compiler warning observed."
+  },
+  "focused_tests": {
+    "backend": {
+      "file": "backend-tests.json",
+      "passed": 34,
+      "failed": 0,
+      "scope": "CPU and both native Slang/GLSL backends, all 11 filters, named planes, regional/proxy demands, geometry, persistence and shared contracts."
+    },
+    "asan_backend": {
+      "file": "asan-backend-tests.json",
+      "passed": 34,
+      "failed": 0,
+      "sanitizers": "ASan+UBSan with leak detection and existing tests/lsan_suppressions.txt; no new suppression."
+    },
+    "native": {
+      "file": "native-tests.json",
+      "passed": 12,
+      "failed": 0,
+      "scope": "Actual Wayland surface: typed/keyed/exposed Crop, edge/corner/center gestures, undo/redo/Escape/context cancellation, zoom/PAR/proxy/reopen, delivered-coverage changes during drag, Reformat authored controls and preset create/edit/delete/apply-by-value."
+    },
+    "asan_native": {
+      "status": "behavior-passed-leak-sanitizer-process-failed",
+      "passed": 12,
+      "failed": 0,
+      "process_exit_code": 1,
+      "seconds": 328.3,
+      "results": "asan-native-tests.json",
+      "platform_leak_evidence": "qt-native-leak-evidence.json",
+      "notes": "QQmlData/checkable constructor and Wayland registry leaks reproduced in Qt-only program; no new suppressions or dependency changes."
+    },
+    "post_review_debug": {
+      "passed": 3,
+      "failed": 0,
+      "results": "review-regression-tests.json",
+      "scope": "Empty-edge domain union regression (three coverage paths, three backends, three densities), existing Shuffle named-data/transform chain and ordinary extended-image propagation."
+    },
+    "post_review_asan": {
+      "passed": 3,
+      "failed": 0,
+      "process_exit_code": 0,
+      "results": "asan-review-regression-tests.json",
+      "scope": "Same post-review three-case gate under ASan/UBSan with existing leak suppressions only."
+    }
+  },
+  "full_debug_suite": {
+    "runs": 1,
+    "command": "ctest --preset debug --output-junit /tmp/nemo92-ctest-debug.xml",
+    "status": "known-unrelated-colorimetry-failure",
+    "total": 807,
+    "passed": 764,
+    "skipped": 42,
+    "failed": 1,
+    "seconds": 217,
+    "failures": [
+      {
+        "name": "Viewer.InterpretationMapIsParsedStrictly",
+        "failure": {
+          "message": "Failed"
+        },
+        "output": "Running main() from /home/rgame/.local/share/vcpkg/buildtrees/gtest/src/v1.18.0-e6987f02b9.clean/googletest/src/gtest_main.cc\nNote: Google Test filter = Viewer.InterpretationMapIsParsedStrictly\n[==========] Running 1 test from 1 test suite.\n[----------] Global test environment set-up.\n[----------] 1 test from Viewer\n[ RUN      ] Viewer.InterpretationMapIsParsedStrictly\nunknown file: Failure\nC++ exception with description \"media decode: /tmp/nemo-viewer-InterpretationMapIsParsedStrictly-yuv444p-1-3828170-126.mkv: color: node 'plate' (id 2, type 'source'): source interpretation has unknown field 'colorimetry' (context: clip '/tmp/nemo-viewer-InterpretationMapIsParsedStrictly-yuv444p-1-3828170-126.mkv'; known fields: transfer, primaries, matrix, range, chromaLocation)\" thrown in the test body.\n\n[  FAILED  ] Viewer.InterpretationMapIsParsedStrictly (483 ms)\n[----------] 1 test from Viewer (483 ms total)\n\n[----------] Global test environment tear-down\n[==========] 1 test from 1 test suite ran. (483 ms total)\n[  PASSED  ] 0 tests.\n[  FAILED  ] 1 test, listed below:\n[  FAILED  ] Viewer.InterpretationMapIsParsedStrictly\n\n 1 FAILED TEST\n"
+      }
+    ],
+    "skipped_tests": [
+      "ViewerDestinationSurface.ViewerViewsStayIndependentPerPanel",
+      "ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations",
+      "ReadViewerSurface.PngSelectedInReadAppearsInItsAttachedViewer",
+      "ReadViewerSurface.GraphViewerUsesTheAttachedTargetsReferenceNotTheLegacySrcKey",
+      "ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt",
+      "ReadViewerSurface.ClearingTheReadShowsTheExplicitEmptyState",
+      "ReadViewerSurface.OfflineReadReportsItsPathOnTheViewer",
+      "ReadViewerSurface.DownstreamEffectKeepsItsSingleMediaSourcesDomain",
+      "ReadViewerSurface.MixedMediaSourcesKeepMainInputFormatWithoutStretching",
+      "ReadViewerSurface.RetiredContinuousZoomReopensAtItsScaleAndUnreadableStateFits",
+      "ReadViewerSurface.UserDocumentDisplaysItsAttachedRead",
+      "ReadViewerSurface.ViewerWheelZoomIsContinuousAnchoredAndReversible",
+      "ReadViewerSurface.ViewerViewDrivesTheRequestRegionAndSampling",
+      "ReadViewerSurface.ViewerDragPanKeepsTheZoomAndTheDocument",
+      "ReadViewerSurface.ViewerZoomControlStatesAndAcceptsAnyScale",
+      "ReadViewerSurface.ForceFullFrameCoversTheWholeDomainAndKeepsTheView",
+      "ShuffleSurface.NativeSocketDragCancellationAndHistory",
+      "ShuffleSurface.CreatingAnUnwiredOutputIsAtomicAndStartsAtZero",
+      "ShuffleSurface.InspectorColumnSwitchRetainsTheOpenMapping",
+      "ShuffleSurface.NamedDataLayerDoesNotSubstitutePixelsWhenItDisappears",
+      "ShuffleSurface.RefusedViewPublishesTheCurrentFramesChannelsAndRecoversBySelection",
+      "ShuffleSurface.ModifierRoutingUsesConsecutiveSourcesAndExactNamesAcrossGroups",
+      "ShuffleSurface.CrossGroupWiresFollowTheirSelectorThroughReorderAndDisconnection",
+      "ShuffleSurface.SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen",
+      "ShuffleSurface.MissingCustomEditorKeepsGenericMappingEditableAndRecovers",
+      "ShuffleSurface.LayerMenusKeepAuthoredReadoutsWhileDescriptionsChange",
+      "ShuffleSurface.OutputLayerMenuUsesRealChannelsAndOpensTheSharedNewDialog",
+      "ShuffleSurface.AlphaOnlyViewingBypassesColorAndCreatedRgbUsesNamedRoles",
+      "ForceFullFrameSplitSurface.ForceFullFrameStaysInsideItsPanel",
+      "PreparedConfigSurface.SamePathConfigRewriteRefreshesOnFirstReplacement",
+      "CropReformatSurface.Issue92CropHandlesDragTheAuthoredBox",
+      "CropReformatSurface.Issue92CropHandlesRequireTheInspectedDirectlyViewedCrop",
+      "CropReformatSurface.Issue92CropEscapeCancelsTheGesture",
+      "CropReformatSurface.Issue92CropInspectionChangeCancelsTheGesture",
+      "CropReformatSurface.Issue92CropCoordinatesShareTypedAndKeyedSemantics",
+      "CropReformatSurface.Issue92ExposedCropCoordinateEditsOnlyItsInstance",
+      "CropReformatSurface.Issue92CropCenterAndCornerPreserveCoordinatesAndRedo",
+      "CropReformatSurface.Issue92CropTracksItsInputFormatAndCancelsAnUpstreamChange",
+      "CropReformatSurface.Issue92ReformatCropHandlesMapOutputOffsetsBack",
+      "CropReformatSurface.Issue92CropHandlesHoldUnderZoomParProxyAndReopen",
+      "CropReformatSurface.Issue92ReformatOrientationUsesSharedBooleanEditing",
+      "CropReformatSurface.Issue92ReformatFormatEditorAppliesPresetsByValue"
+    ],
+    "notes": "The user-reported colorimetry failure was not rerun separately. Native feature scenarios ran explicitly in the focused native gate.",
+    "post_review_scope": "Ran once before review. Final Merge/Shuffle empty-edge normalization and its added regression are checked by focused post-review debug/sanitizer tests, not a second full-suite invocation.",
+    "shared_editor_cases": [
+      {
+        "name": "AnimationSurface.GradeLinkedRgbEditingPreservesComponentsAndAlpha",
+        "passed": true,
+        "seconds": 1.6671
+      },
+      {
+        "name": "AnimationSurface.MergeOperationEditorSwapsConnectedInputsAtomically",
+        "passed": true,
+        "seconds": 1.46336
+      }
+    ]
+  },
+  "smoke": {
+    "saved_chain": "chain-evidence.json",
+    "result": "CPU, Slang and GLSL reproduce the independent 45-byte RGB oracle after save/reopen; formats 7x5 -> 14x10 -> 10x6 -> 5x3.",
+    "closed_boundary": {
+      "source": "12x5 testpattern; Reformat 6x4, PAR 0.9999999, fit, Notch",
+      "before": "CPU first row black; Slang/GLSL first row colored.",
+      "after": "All three complete 6x4 RGB images identical; first row black."
+    },
+    "far_request": {
+      "regions": [
+        [
+          -100,
+          -100,
+          4,
+          4
+        ],
+        [
+          100,
+          100,
+          4,
+          4
+        ]
+      ],
+      "before": "Both requests returned transparent RGBA.",
+      "after_rgba": [
+        [
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ]
+      ],
+      "seam": "Public ProjectFile/ProjectSession/evaluateCpuReference; permanent regression also exercises Slang/GLSL and scales 1,2,4."
+    },
+    "upstream_extension": {
+      "before_alpha": {
+        "extended": 1,
+        "transparent": 0.15625
+      },
+      "after_alpha": {
+        "extended": 0.15625,
+        "transparent": 0.15625
+      },
+      "reason": "Reformat black-outside filters its retained input boundary, not an upstream Crop extension."
+    },
+    "native_regressions": [
+      {
+        "case": "Exposed Crop numeric entry",
+        "before": "Rejected exposed:3 as an underlying node parameter key.",
+        "after": "Shared single-control API uses its already resolved occurrence address; instance-only update and undo pass."
+      },
+      {
+        "case": "Initial boolean/choice projection",
+        "before": "Authored flip=true and resize=fit displayed unchecked and none; one click did not undo the authored flip.",
+        "after": "Bindings retained; selection restored after model reset; authored readout, one click and one undo pass."
+      },
+      {
+        "case": "Held Crop edge while presented coverage changes",
+        "before": "Partial-to-full delivery moved the authored edge by -642 pixels instead of following the pointer.",
+        "after": "Scalar camera capture removes delivered-raster origin from the held mapping; deterministic coverage transition passes."
+      }
+    ]
+  },
+  "native_proof": {
+    "platform": "Real Qt Wayland windows, production QML/controller/GPU path, QTest pointer/keyboard input and QQuickWindow captures.",
+    "captures": "native/",
+    "exposure_limitation": "The exposed Crop control changes only its instance override and undoes correctly. This fixture also shows an unsupported direct network.instance viewer target; its render output is not claimed by the exposure check."
+  },
+  "reviews": {
+    "fixed_point": "fc789a3",
+    "diff": "git diff --cached fc789a3 --",
+    "status": "completed-with-dispositions",
+    "standards": {
+      "findings": 6,
+      "documented_breaches": 1,
+      "judgement_calls": 5,
+      "worst_initial_severity": "medium",
+      "unresolved_required_changes": 0,
+      "dispositions": [
+        {
+          "finding": "Crop arithmetic responsibility duplicated without a contract distinction",
+          "resolution": "Documented signed authored extents versus continuous endpoint-preserving presentation versus validated discrete raster enclosure. Same rationale recorded in commit/task; presentation stays independent of node-internal sampling helpers."
+        },
+        {
+          "finding": "Native module documentation list stale",
+          "resolution": "Updated to include Shuffle, Crop and Reformat."
+        },
+        {
+          "finding": "Merge redundantly reprocesses inherited A",
+          "resolution": "Removed; A is normalized once and only B adds coverage. Follow-up exposed the spec bug below."
+        },
+        {
+          "finding": "Private payload v2 differs from node implementation version1",
+          "resolution": "Retained: private layout/cache identity is a distinct versioned contract, not a requirement to equal the public node version."
+        },
+        {
+          "finding": "Native fixture bootstrap duplicated across test files",
+          "resolution": "Retained established per-file fixture convention rather than introducing an unrelated test-framework abstraction."
+        },
+        {
+          "finding": "Crop input geometry scans formatted image inputs",
+          "resolution": "Retained: helper is gated to Crop, whose schema has exactly one image input."
+        }
+      ]
+    },
+    "spec": {
+      "findings": 1,
+      "worst_initial_severity": "correctness",
+      "unresolved_required_changes": 0,
+      "finding": "An empty inherited raw edge flag could revive when Merge or Shuffle added finite coverage, allowing downstream Grade offset to create out-of-domain RGB.",
+      "resolution": "Normalize effective hasEdgeExtension before growing bounds in both contributions. Public command regression covers Merge B, Shuffle constants and Shuffle input2, Full/Half/Quarter, CPU/Slang/GLSL. Reviewer confirmed both fixes and checked other growth sites.",
+      "regression": "ContributionTest.EmptyCropExtensionCannotReviveThroughFiniteCoverage",
+      "before": "Outside RGB was 1 instead of0 on CPU/Slang/GLSL; Merge and Shuffle failures reproduced independently.",
+      "owner_awareness": "Frame changes cancel an active Crop drag as a context boundary; no separate mid-drag frame-change scenario was run.",
+      "corrected_review_note": "Existing Grade linked-RGB and MergeOperationEditor swap cases both passed in the sole full suite; the initial claim that no shared-editor coverage executed was retracted."
+    }
+  },
+  "landing": {
+    "branch": "issue/85-region-evaluation",
+    "commit_only": true,
+    "pushed": false,
+    "issue_closed": false,
+    "holds": "All existing prerequisite and landing holds, including #75/#83-86/#88/#90/#96/#98, remain. No dependency removed."
+  }
+}

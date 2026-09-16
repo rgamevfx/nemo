@@ -47,7 +47,10 @@ FocusScope {
             restoreView();
         restoreForceFullFrame();
     }
-    onHasImageChanged: refreshView()
+    onHasImageChanged: {
+        refreshView();
+        refreshCropOverlay();
+    }
     // A view still in motion when the application closes is still the view the
     // project should record.
     Connections {
@@ -57,8 +60,14 @@ FocusScope {
     // The image domain can change without hasImage changing (a media probe
     // resolving, a retargeted viewer), and a record the fitted view cannot
     // represent is converted against that domain.
-    onSourceWidthChanged: refreshView()
-    onSourceHeightChanged: refreshView()
+    onSourceWidthChanged: {
+        refreshView();
+        refreshCropOverlay();
+    }
+    onSourceHeightChanged: {
+        refreshView();
+        refreshCropOverlay();
+    }
 
     // The coalescing and settling discipline of the wheel burst: one zoom
     // application per event-loop turn, one persisted view once it settles.
@@ -125,6 +134,29 @@ FocusScope {
     property bool viewReady: false
     property bool viewInitialised: false
     property bool viewRestorePending: false
+    // --- Crop box handles (issue #92, stories 43-44) ------------------------
+    // The overlay descriptor for the Crop node this panel DIRECTLY views and
+    // the same group's inspector has open, or null. It is refreshed from the
+    // existing inspector query and the worker's described input geometry; no
+    // pixel work, no source read and no second parameter model happens here.
+    property var cropOverlay: null
+    // Bumped when the described input geometry answer advances.
+    property int cropEpoch: 0
+    // The one live box gesture (the session's token) and the frozen mapping the
+    // pointer is interpreted through, so a reformat output that changes size
+    // during the drag cannot move the box under the pointer.
+    property string cropGestureToken: ""
+    property bool cropGestureActive: false
+    property string cropDragHandle: ""
+    property var cropDragFrozen: null
+    // The previewed box in canvas y-down coordinates while a gesture is live.
+    property var cropPreviewBox: null
+    property bool cropDragMoved: false
+    property string cropGestureError: ""
+    onCropGestureActiveChanged: syncCropHistoryGesture()
+    onCropOverlayChanged: cropCanvas.requestPaint()
+    onCropEpochChanged: cropCanvas.requestPaint()
+    onCropPreviewBoxChanged: cropCanvas.requestPaint()
     readonly property string viewerRole: panelContext && panelContext.viewerRole
                                         ? panelContext.viewerRole : "graph"
     readonly property string resolvedGroup: panelGroup
@@ -750,6 +782,453 @@ FocusScope {
         saveView()
     }
 
+    // --- Crop box handles ---------------------------------------------------
+    // The overlay is the reference Crop box drawn over THIS panel's own view.
+    // It exists only when the node this panel directly renders is also the node
+    // the same group's inspector has open, and only the graph role has such a
+    // target: another panel's inspection, a selected-but-not-viewed node or a
+    // media/timeline role never draws handles.
+    //
+    // The authored values are the node's typed parameters at the current frame,
+    // read from the same inspector query the parameters panel uses. Values are
+    // bottom-left coordinates in the incoming image's format; only creation
+    // defaults come from the owning network. Reformat translates the authored
+    // box enclosure to zero, independently of any data-bound intersection.
+    function refreshCropOverlay() {
+        var next = null;
+        if (controller && graphRole && hasImage && targetAvailable) {
+            var network = String(controller.rootNetworkId || "");
+            var target = String(controller.viewerTargetId || "");
+            var inspected = false;
+            var nodes = panelContext && panelContext.inspectorNodes ? panelContext.inspectorNodes : [];
+            for (var index = 0; index < nodes.length; ++index) {
+                if (String(nodes[index].network) === network && String(nodes[index].node) === target) {
+                    inspected = true;
+                    break;
+                }
+            }
+            if (inspected && network.length > 0 && target.length > 0)
+                next = cropOverlayFor(network, target);
+        }
+        cropOverlay = next;
+    }
+
+    function cropParamNumber(rows, key, fallback) {
+        var entry = rows[key];
+        if (!entry || entry.value === undefined || entry.value === null || entry.value.length !== undefined)
+            return fallback;
+        var value = Number(entry.value);
+        return isFinite(value) ? value : fallback;
+    }
+
+    function cropParamFlag(rows, key) {
+        var entry = rows[key];
+        return entry ? entry.value === true || String(entry.value) === "true" : false;
+    }
+
+    function cropOverlayFor(network, node) {
+        var inspector = controller.parameterInspector(network, node);
+        if (!inspector || inspector.available !== true || String(inspector.type) !== "crop")
+            return null;
+        var rows = ({});
+        var sections = inspector.sections || [];
+        for (var i = 0; i < sections.length; ++i) {
+            var parameters = sections[i].parameters || [];
+            for (var j = 0; j < parameters.length; ++j) {
+                if (parameters[j] && parameters[j].key !== undefined)
+                    rows[String(parameters[j].key)] = parameters[j];
+            }
+        }
+        // The authored box is stated in the ORIGINAL INPUT IMAGE's own space:
+        // x/right are distances from that image's left edge and y/top distances
+        // from its bottom edge. The input's ACTUAL described format therefore
+        // fixes the conversion, never the owning composition's saved canvas and
+        // never the selected source or another panel's viewer. Without a
+        // described input there is no honest mapping, so no box is drawn.
+        var input = cropInputGeometry(network, node);
+        if (!input)
+            return null;
+        var inputHeight = Number(input.height);
+        if (!(inputHeight > 0))
+            return null;
+        var x = cropParamNumber(rows, "x", 0);
+        var r = cropParamNumber(rows, "right", 0);
+        var y = cropParamNumber(rows, "y", 0);
+        var t = cropParamNumber(rows, "top", 0);
+        var left = Math.min(x, r);
+        var right = Math.max(x, r);
+        var top = inputHeight - Math.max(y, t);
+        var bottom = inputHeight - Math.min(y, t);
+        var reformat = cropParamFlag(rows, "reformat");
+        // A reformat crop's output format is the NONEMPTY floor/ceil enclosure
+        // of the authored box, translated to zero; `intersect` clips the DATA
+        // only, so it never moves or hides the box. An empty intersection is a
+        // valid (fully transparent) result and the handles stay usable.
+        var offsetX = 0;
+        var offsetY = 0;
+        if (reformat) {
+            offsetX = Math.floor(left);
+            offsetY = Math.floor(top);
+        }
+        return {
+            "network": network,
+            "node": node,
+            "left": left,
+            "right": right,
+            "top": top,
+            "bottom": bottom,
+            "leftKey": x <= r ? "x" : "right",
+            "rightKey": x <= r ? "right" : "x",
+            "bottomKey": y <= t ? "y" : "top",
+            "topKey": y <= t ? "top" : "y",
+            "inputWidth": Number(input.width),
+            "inputHeight": inputHeight,
+            "offsetX": offsetX,
+            "offsetY": offsetY,
+            "reformat": reformat,
+            "intersect": cropParamFlag(rows, "intersect")
+        };
+    }
+
+    // The described image arriving at the crop's own image input: its format,
+    // whose height fixes the authored box's y-up conversion. The authored box is
+    // stated in that image's OWN normalized space (distances from its left and
+    // bottom edges) and the presentation is resolved 0-based, so no origin term
+    // participates. Metadata only, answered by the worker; nothing is probed and
+    // no source is read on this thread.
+    function cropInputGeometry(network, node) {
+        var answer = controller.nodeInputChannels(network, node);
+        if (!answer || answer.available !== true)
+            return null;
+        var ports = answer.ports || [];
+        for (var index = 0; index < ports.length; ++index) {
+            var port = ports[index];
+            if (port.image !== true || !port.format)
+                continue;
+            if (Number(port.format.width) <= 0 || Number(port.format.height) <= 0)
+                continue;
+            return {
+                "width": Number(port.format.width),
+                "height": Number(port.format.height)
+            };
+        }
+        return null;
+    }
+
+    // The view the box is drawn through and the pointer is interpreted through.
+    // ONE mapping serves both, so a handle always sits under its own coordinate.
+    function cropViewMapping() {
+        var scale = imageScale()
+        var sx = scale * controller.pixelAspect
+        return {
+            "scale": scale,
+            "sx": sx,
+            // Snapshot scalar camera coordinates, not a live QRectF property
+            // reference whose raster origin can change when a frame arrives.
+            "originX": viewer.width / 2 - viewCenterX(scale) * sx,
+            "originY": viewer.height / 2 - viewCenterY(scale) * scale
+        }
+    }
+
+    function cropScreenX(view, imageX) {
+        return view.originX + imageX * view.sx
+    }
+
+    function cropScreenY(view, imageY) {
+        return view.originY + imageY * view.scale
+    }
+
+    // The box in the presented image's own y-down coordinates.
+    function cropDisplayBox(left, right, top, bottom, offsetX, offsetY) {
+        return {
+            "left": left - offsetX,
+            "right": right - offsetX,
+            "top": top - offsetY,
+            "bottom": bottom - offsetY
+        }
+    }
+
+    // The box's screen rectangle: the frozen mapping while a gesture is live (so
+    // a reformat output that changes size mid-drag cannot move it), the live
+    // view otherwise.
+    function cropScreenRect() {
+        if (cropDragHandle.length > 0 && cropDragFrozen) {
+            var frozenBox = cropPreviewBox
+            if (!frozenBox)
+                return null
+            var frozenView = cropDragFrozen.view
+            return Qt.rect(cropScreenX(frozenView, frozenBox.left - cropDragFrozen.offsetX),
+                           cropScreenY(frozenView, frozenBox.top - cropDragFrozen.offsetY),
+                           (frozenBox.right - frozenBox.left) * frozenView.sx,
+                           (frozenBox.bottom - frozenBox.top) * frozenView.scale)
+        }
+        var overlay = cropOverlay
+        if (!overlay)
+            return null
+        var view = cropViewMapping()
+        var box = cropDisplayBox(overlay.left, overlay.right, overlay.top, overlay.bottom, overlay.offsetX,
+                                 overlay.offsetY)
+        return Qt.rect(cropScreenX(view, box.left), cropScreenY(view, box.top),
+                       (box.right - box.left) * view.sx, (box.bottom - box.top) * view.scale)
+    }
+
+    function cropHandleRadius() {
+        return 6
+    }
+
+    // Which part of the box a point addresses: a corner or edge resize, the
+    // centre move handle, or nothing (blank image area, which pans).
+    function cropHandleAt(px, py) {
+        var rect = cropScreenRect()
+        if (!rect)
+            return ""
+        var radius = cropHandleRadius()
+        var nearLeft = Math.abs(px - rect.x) <= radius
+        var nearRight = Math.abs(px - (rect.x + rect.width)) <= radius
+        var nearTop = Math.abs(py - rect.y) <= radius
+        var nearBottom = Math.abs(py - (rect.y + rect.height)) <= radius
+        if (px < rect.x - radius || px > rect.x + rect.width + radius || py < rect.y - radius
+                || py > rect.y + rect.height + radius)
+            return ""
+        var horizontal = nearLeft ? "left" : nearRight ? "right" : ""
+        var vertical = nearTop ? "top" : nearBottom ? "bottom" : ""
+        if (horizontal.length > 0 && vertical.length > 0)
+            return horizontal + "-" + vertical
+        if (horizontal.length > 0)
+            return horizontal
+        if (vertical.length > 0)
+            return vertical
+        if (Math.abs(px - (rect.x + rect.width / 2)) <= radius
+                && Math.abs(py - (rect.y + rect.height / 2)) <= radius)
+            return "center"
+        return ""
+    }
+
+    // Pointer -> authored canvas coordinate, through ONE frozen mapping. The
+    // offset is captured with the mapping, so a reformat output whose size
+    // changes under the drag can never move the coordinate the pointer states.
+    function cropCanvasX(frozen, px) {
+        return (px - frozen.view.originX) / frozen.view.sx + frozen.offsetX
+    }
+
+    function cropCanvasYUp(frozen, py) {
+        return frozen.inputHeight - ((py - frozen.view.originY) / frozen.view.scale + frozen.offsetY)
+    }
+
+    function beginCropGesture(handle, px, py) {
+        if (!controller || cropGestureToken.length > 0)
+            return false
+        var overlay = cropOverlay
+        if (!overlay)
+            return false
+        cropGestureError = ""
+        var token = String(controller.beginNodeParameterEdits(overlay.network, overlay.node,
+                                                              ["x", "y", "right", "top"]))
+        if (token.length === 0) {
+            cropGestureError = String(controller.error)
+            return false
+        }
+        cropGestureToken = token
+        cropDragHandle = handle
+        cropDragMoved = false
+        var frozen = {
+            "view": cropViewMapping(),
+            "offsetX": overlay.offsetX,
+            "offsetY": overlay.offsetY,
+            "inputHeight": overlay.inputHeight,
+            "left": overlay.left,
+            "right": overlay.right,
+            "top": overlay.top,
+            "bottom": overlay.bottom,
+            "leftKey": overlay.leftKey,
+            "rightKey": overlay.rightKey,
+            "topKey": overlay.topKey,
+            "bottomKey": overlay.bottomKey,
+            "pointerX": 0,
+            "pointerY": 0
+        }
+        frozen.pointerX = cropCanvasX(frozen, px)
+        frozen.pointerY = cropCanvasYUp(frozen, py)
+        cropDragFrozen = frozen
+        cropPreviewBox = {
+            "left": overlay.left,
+            "right": overlay.right,
+            "top": overlay.top,
+            "bottom": overlay.bottom
+        }
+        cropGestureActive = true
+        return true
+    }
+
+    function updateCropGesture(px, py) {
+        if (cropGestureToken.length === 0 || !cropDragFrozen)
+            return false
+        var frozen = cropDragFrozen
+        var canvasX = cropCanvasX(frozen, px)
+        var canvasYUp = cropCanvasYUp(frozen, py)
+        var values = ({})
+        var box = {
+            "left": frozen.left,
+            "right": frozen.right,
+            "top": frozen.inputHeight - frozen.top,
+            "bottom": frozen.inputHeight - frozen.bottom
+        }
+        if (cropDragHandle === "center") {
+            var deltaX = canvasX - frozen.pointerX
+            var deltaYUp = canvasYUp - frozen.pointerY
+            box.left += deltaX
+            box.right += deltaX
+            box.bottom += deltaYUp
+            box.top += deltaYUp
+            values[frozen.leftKey] = box.left
+            values[frozen.rightKey] = box.right
+            values[frozen.bottomKey] = box.bottom
+            values[frozen.topKey] = box.top
+        } else {
+            if (cropDragHandle.indexOf("left") >= 0) {
+                values[frozen.leftKey] = canvasX
+                box.left = canvasX
+            }
+            if (cropDragHandle.indexOf("right") >= 0) {
+                values[frozen.rightKey] = canvasX
+                box.right = canvasX
+            }
+            if (cropDragHandle.indexOf("top") >= 0) {
+                values[frozen.topKey] = canvasYUp
+                box.top = canvasYUp
+            }
+            if (cropDragHandle.indexOf("bottom") >= 0) {
+                values[frozen.bottomKey] = canvasYUp
+                box.bottom = canvasYUp
+            }
+        }
+        // The preview box is stated in the frozen mapping's y-down terms, so it
+        // is the same rectangle the pointer is reading.
+        cropPreviewBox = {
+            "left": Math.min(box.left, box.right),
+            "right": Math.max(box.left, box.right),
+            "top": frozen.inputHeight - Math.max(box.top, box.bottom),
+            "bottom": frozen.inputHeight - Math.min(box.top, box.bottom)
+        }
+        cropDragMoved = true
+        if (controller.updateNodeParameterEdits(cropGestureToken, values) !== true) {
+            cropGestureError = String(controller.error)
+            cancelCropGesture()
+            return false
+        }
+        return true
+    }
+
+    // A release publishes the one history entry; a press that never moved
+    // cancels instead, so a click on a handle never creates a no-op entry.
+    function finishCropGesture() {
+        var token = cropGestureToken
+        var moved = cropDragMoved
+        cropGestureToken = ""
+        cropGestureActive = false
+        cropDragHandle = ""
+        cropDragFrozen = null
+        cropPreviewBox = null
+        cropDragMoved = false
+        if (token.length === 0)
+            return false
+        var committed = moved ? controller.commitNodeParameterEdit(token) : controller.cancelNodeParameterEdit(token)
+        if (!committed && moved)
+            cropGestureError = String(controller.error)
+        refreshCropOverlay()
+        return committed
+    }
+
+    function cancelCropGesture() {
+        var token = cropGestureToken
+        cropGestureToken = ""
+        cropGestureActive = false
+        cropDragHandle = ""
+        cropDragFrozen = null
+        cropPreviewBox = null
+        cropDragMoved = false
+        if (token.length === 0)
+            return false
+        return controller.cancelNodeParameterEdit(token)
+    }
+
+    // Escape and a preview-only Undo reach the one live box gesture through the
+    // shared history owner: the session's preview is discarded and the release
+    // that follows publishes nothing.
+    function cancelHistoryGesture() {
+        cancelCropGesture()
+    }
+
+    function syncCropHistoryGesture() {
+        if (typeof historyController === "undefined" || !historyController)
+            return
+        historyController.setGesture(viewerPanel, cropGestureActive)
+    }
+
+    function cropCursorShape(px, py) {
+        var handle = cropHandleAt(px, py)
+        if (handle === "center")
+            return Qt.SizeAllCursor
+        if (handle.indexOf("left") >= 0 || handle.indexOf("right") >= 0) {
+            if (handle.indexOf("top") >= 0 || handle.indexOf("bottom") >= 0)
+                return handle === "left-top" || handle === "right-bottom" ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+            return Qt.SizeHorCursor
+        }
+        if (handle.indexOf("top") >= 0 || handle.indexOf("bottom") >= 0)
+            return Qt.SizeVerCursor
+        return Qt.ArrowCursor
+    }
+
+    // The box is one thin themed outline with a solid grab handle at every
+    // corner and edge midpoint and a centre move affordance. It is drawn only
+    // over this panel's own image area and never becomes a raster of its own.
+    function paintCropHandles(ctx, width, height) {
+        ctx.reset()
+        var rect = cropScreenRect()
+        if (!rect)
+            return
+        var accent = themeColor("accent", "#3485f6")
+        var surround = themeColor("imageSurround", "#17191b")
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(0, 0, width, height)
+        ctx.clip()
+        ctx.strokeStyle = accent
+        ctx.lineWidth = 1
+        ctx.strokeRect(Math.round(rect.x) + 0.5, Math.round(rect.y) + 0.5,
+                       Math.round(rect.x + rect.width) - Math.round(rect.x),
+                       Math.round(rect.y + rect.height) - Math.round(rect.y))
+        var size = 5
+        var points = [
+            [rect.x, rect.y],
+            [rect.x + rect.width / 2, rect.y],
+            [rect.x + rect.width, rect.y],
+            [rect.x, rect.y + rect.height / 2],
+            [rect.x + rect.width, rect.y + rect.height / 2],
+            [rect.x, rect.y + rect.height],
+            [rect.x + rect.width / 2, rect.y + rect.height],
+            [rect.x + rect.width, rect.y + rect.height]
+        ]
+        for (var index = 0; index < points.length; ++index) {
+            var pointX = Math.round(points[index][0] - size / 2)
+            var pointY = Math.round(points[index][1] - size / 2)
+            ctx.fillStyle = surround
+            ctx.fillRect(pointX, pointY, size, size)
+            ctx.strokeStyle = accent
+            ctx.strokeRect(pointX + 0.5, pointY + 0.5, size - 1, size - 1)
+        }
+        var centreX = Math.round(rect.x + rect.width / 2) + 0.5
+        var centreY = Math.round(rect.y + rect.height / 2) + 0.5
+        ctx.strokeStyle = accent
+        ctx.beginPath()
+        ctx.moveTo(centreX - 5, centreY)
+        ctx.lineTo(centreX + 5, centreY)
+        ctx.moveTo(centreX, centreY - 5)
+        ctx.lineTo(centreX, centreY + 5)
+        ctx.stroke()
+        ctx.restore()
+    }
+
     // The view becomes live once the image domain and the panel geometry are
     // both known; afterwards a resize re-fits or re-derives the request region
     // without touching the artist's scale.
@@ -968,7 +1447,20 @@ FocusScope {
             MouseArea {
                 id: panArea
                 anchors.fill: parent
-                cursorShape: viewerPanel.imageScale() > viewerPanel.displayScale() ? Qt.OpenHandCursor : Qt.ArrowCursor
+                // The cursor states the box's handle under the pointer while an
+                // overlay is present, and keeps the accepted pan cursor
+                // otherwise. Hover is what makes that state follow the pointer.
+                hoverEnabled: true
+                cursorShape: {
+                    // A handle under the pointer states its own resize/move
+                    // cursor; everywhere else the accepted pan cursor is kept.
+                    if (viewerPanel.cropOverlay !== null) {
+                        var handleCursor = viewerPanel.cropCursorShape(mouseX, mouseY);
+                        if (handleCursor !== Qt.ArrowCursor)
+                            return handleCursor;
+                    }
+                    return viewerPanel.imageScale() > viewerPanel.displayScale() ? Qt.OpenHandCursor : Qt.ArrowCursor;
+                }
                 enabled: viewerPanel.targetAvailable
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                 onWheel: function(wheel) {
@@ -984,12 +1476,32 @@ FocusScope {
                     wheel.accepted = true;
                 }
                 onPressed: function(mouse) {
+                    // A left press that lands on the box's own handle edits the
+                    // authored crop box instead of panning; every other press
+                    // (blank image area, middle button) keeps the pan gesture.
+                    if (mouse.button === Qt.LeftButton && viewerPanel.cropOverlay !== null) {
+                        var handle = viewerPanel.cropHandleAt(mouse.x, mouse.y);
+                        if (handle.length > 0) {
+                            forceActiveFocus();
+                            mouse.accepted = true;
+                            viewerPanel.panLastX = mouse.x;
+                            viewerPanel.panLastY = mouse.y;
+                            viewerPanel.beginCropGesture(handle, mouse.x, mouse.y);
+                            return;
+                        }
+                    }
                     viewerPanel.panning = true;
                     viewerPanel.panLastX = mouse.x;
                     viewerPanel.panLastY = mouse.y;
                     forceActiveFocus();
                 }
                 onPositionChanged: function(mouse) {
+                    if (viewerPanel.cropDragHandle.length > 0) {
+                        viewerPanel.panLastX = mouse.x;
+                        viewerPanel.panLastY = mouse.y;
+                        viewerPanel.updateCropGesture(mouse.x, mouse.y);
+                        return;
+                    }
                     if (!viewerPanel.panning)
                         return;
                     // Panning is an image drag at any scale; it moves the view,
@@ -1004,15 +1516,63 @@ FocusScope {
                     viewerPanel.syncView();
                 }
                 onReleased: {
+                    if (viewerPanel.cropDragHandle.length > 0) {
+                        viewerPanel.finishCropGesture();
+                        return;
+                    }
                     if (!viewerPanel.panning)
                         return;
                     viewerPanel.panning = false;
                     viewerPanel.saveView();
                 }
                 onCanceled: {
+                    if (viewerPanel.cropDragHandle.length > 0) {
+                        viewerPanel.cancelCropGesture();
+                        return;
+                    }
                     viewerPanel.panning = false;
                 }
                 onClicked: viewer.makePrimary()
+            }
+
+            // Crop box handles (issue #92, stories 43-44). This layer draws the
+            // box over this panel's own image; the pan gesture above owns the
+            // pointer, so a blank press still pans, middle/wheel are unchanged
+            // and there is exactly ONE hit test for the handles.
+            Item {
+                id: cropHandleLayer
+                objectName: "cropHandleLayer_" + viewerPanel.panelId
+                anchors.fill: parent
+                visible: viewerPanel.cropOverlay !== null
+
+                Canvas {
+                    id: cropCanvas
+                    objectName: "cropBoxCanvas_" + viewerPanel.panelId
+                    anchors.fill: parent
+                    onPaint: viewerPanel.paintCropHandles(getContext("2d"), width, height)
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                    onVisibleChanged: requestPaint()
+                    Component.onCompleted: requestPaint()
+                    Connections {
+                        target: viewerPanel
+                        function onThemeChanged() { cropCanvas.requestPaint() }
+                        function onCropDragHandleChanged() { cropCanvas.requestPaint() }
+                        function onViewZoomChanged() { cropCanvas.requestPaint() }
+                        function onViewPanXChanged() { cropCanvas.requestPaint() }
+                        function onViewPanYChanged() { cropCanvas.requestPaint() }
+                        function onViewFittedChanged() { cropCanvas.requestPaint() }
+                    }
+                    Connections {
+                        target: viewerPanel.controller
+                        function onFrameArrived() { cropCanvas.requestPaint() }
+                    }
+                    Connections {
+                        target: viewerPanel.theme
+                        function onPresetChanged() { cropCanvas.requestPaint() }
+                        function onAccentOverrideChanged() { cropCanvas.requestPaint() }
+                    }
+                }
             }
         }
         Loader {
@@ -1406,26 +1966,74 @@ FocusScope {
         activateViewer()
         forwardContext()
         restoreForceFullFrame()
+        refreshCropOverlay()
     })
-    onViewerIndexChanged: activateViewer()
-    onGraphRoleChanged: if (graphRole) activateViewer()
+    onViewerIndexChanged: {
+        activateViewer();
+        refreshCropOverlay();
+    }
+    onGraphRoleChanged: {
+        if (graphRole)
+            activateViewer();
+        refreshCropOverlay();
+    }
     onVisibleChanged: if (visible && graphRole) activateViewer()
 
     // Resolved panel context is forwarded to this panel's own destination.
-    onPanelContextChanged: forwardContext()
-    onViewerRoleChanged: forwardContext()
+    onPanelContextChanged: {
+        forwardContext();
+        // A live box gesture belongs to the context it started in: another
+        // group's/panel's inspection or target change withdraws the overlay and
+        // discards the preview instead of committing it.
+        if (cropGestureActive)
+            cancelCropGesture();
+        refreshCropOverlay();
+    }
+    onViewerRoleChanged: {
+        forwardContext();
+        refreshCropOverlay();
+    }
     onRoutedClockChanged: forwardContext()
 
     Connections {
         target: viewerPanel.controller
         function onGraphChanged() {
             viewerPanel.graphRevision++
+            // A crop box gesture is a live authored edit against the topology
+            // it started on. Any other published change during the gesture
+            // (a deletion, an upstream geometry change, a reopen, an Undo from
+            // another owner) makes the frozen mapping stale, so the gesture is
+            // cancelled instead of committing through it.
+            if (viewerPanel.cropGestureActive)
+                viewerPanel.cancelCropGesture();
+            viewerPanel.refreshCropOverlay();
+        }
+        // The described input geometry a reformat+intersect offset needs
+        // arrives asynchronously from the worker, so the overlay is re-derived
+        // when that answer advances.
+        function onNodeChannelsChanged() {
+            viewerPanel.cropEpoch++;
+            viewerPanel.refreshCropOverlay();
         }
     }
+    onGraphRevisionChanged: refreshCropOverlay()
+    onCurrentFrameChanged: {
+        if (cropGestureActive)
+            cancelCropGesture();
+        refreshCropOverlay();
+    }
+    onTargetAvailableChanged: refreshCropOverlay()
 
     Keys.onPressed: function(event) {
         if (frameField.activeFocus || timecodeField.activeFocus)
             return
+        // Escape discards the one live box gesture: the authored values return
+        // and the release that follows publishes nothing.
+        if (event.key === Qt.Key_Escape && viewerPanel.cropGestureActive) {
+            viewerPanel.cancelCropGesture();
+            event.accepted = true;
+            return
+        }
         if (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
             var index = event.key - Qt.Key_1
             if (index < viewerPanel.viewerTotal) {

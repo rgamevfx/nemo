@@ -38,8 +38,10 @@
 #include <unistd.h>
 
 #include "contributions/Affine.hpp"
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/EffectCpu.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
@@ -283,6 +285,152 @@ void expectStoredChannel(const CpuImage& image, int x, int y, const std::string&
     ASSERT_NE(found, names.end()) << name;
     EXPECT_FLOAT_EQ(image.channel(x, y, static_cast<int>(found - names.begin())), expected)
         << name << " at raster " << x << "," << y;
+}
+
+// --- retained-edge-domain fixture (issue #92) -------------------------------
+// A generator with a fixed 4x4 format whose RETAINED data window is either the
+// whole format (the ordinary finite producer) or a strict 2x2 sub-rectangle it
+// claims to answer outside of (or nothing at all, with the claim still set).
+// Every sample it produces is the same constant, so "the effect answered this
+// coordinate" and "the executor cleared it" are distinguishable by pixels alone,
+// and the ordinary test-only Affine downstream grades whatever survived with an
+// independently hand-derived value. The fixture uses only public production
+// interfaces and adds no shared behavior of its own: the claim is one
+// description field that the shared planner, guards and keys must honor.
+//
+// `frameWidth`/`frameHeight` exist for the other half of the shared contract:
+// they declare the generic creation-time initial value rule, so a node of this
+// type created through the ordinary command must capture the owning network's
+// saved canvas dimension rather than anything about the node it will read. They
+// never take part in the pixel proof above.
+constexpr std::string_view kEdgeFixtureType{"nemo.test.edgeFixture"};
+constexpr Region kEdgeFormat{0, 0, 4, 4};
+constexpr Region kEdgeRetained{1, 1, 2, 2};
+constexpr std::array<float, 4> kEdgeSample{0.25F, 0.5F, 0.75F, 1.0F};
+// Affine is out.rgb = scale.rgb*in.rgb + offset.rgb with out.a = in.a exactly.
+constexpr std::array<float, 4> kEdgeGradedSample{kScale[0] * kEdgeSample[0] + kOffset[0],
+                                                 kScale[1] * kEdgeSample[1] + kOffset[1],
+                                                 kScale[2] * kEdgeSample[2] + kOffset[2], kEdgeSample[3]};
+
+[[nodiscard]] bool fixtureFlag(const NodeInstance& node, const char* name) {
+    const auto found = node.params.find(name);
+    if (found == node.params.end()) {
+        return false;
+    }
+    const auto* value = std::get_if<bool>(&found->second);
+    return value != nullptr && *value;
+}
+
+NodeDescriptor edgeFixtureDescriptor() {
+    return NodeDescriptor{.type = std::string{kEdgeFixtureType},
+                          .displayName = "Retained Edge Fixture",
+                          .group = "Tests",
+                          .implementationVersion = 1,
+                          .outputs = {{PortKind::Image, "out"}},
+                          .parameters = {{.name = "extend", .type = ParameterType::Boolean, .defaultValue = false},
+                                         {.name = "empty", .type = ParameterType::Boolean, .defaultValue = false},
+                                         {.name = "frameWidth",
+                                          .type = ParameterType::Float,
+                                          .defaultValue = 0.0,
+                                          .initialValue = ParameterInitialValue::OwningNetworkWidth},
+                                         {.name = "frameHeight",
+                                          .type = ParameterType::Integer,
+                                          .defaultValue = std::int64_t{0},
+                                          .initialValue = ParameterInitialValue::OwningNetworkHeight}},
+                          .capabilities = NodeCapabilities{.samplingScales = {1},
+                                                           .qualityModes = {Quality::Full},
+                                                           .channels = {std::string{kAnyChannelCapability}}}};
+}
+
+CpuImage executeEdgeFixture(const CpuNodeContext& context) {
+    CpuImage image(effectRasterLayout(context));
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            image.setPixel(x, y, kEdgeSample);
+        }
+    }
+    return image;
+}
+
+NodeContribution edgeFixtureContribution() {
+    NodeContribution contribution;
+    contribution.descriptor = edgeFixtureDescriptor();
+    contribution.role = NodeRole::Image;
+    // The claim travels through the shared contracts; a native kernel would add
+    // nothing to this CPU-reference proof, so no backend is promised.
+    contribution.nativeGpu = false;
+    contribution.cpu = CpuImplementation{1, executeEdgeFixture};
+    contribution.describe = [](const NodeDescriptionContext& context) {
+        const bool extend = fixtureFlag(context.node, "extend");
+        ImageDescription described;
+        described.format = kEdgeFormat;
+        described.dataBounds = extend ? kEdgeRetained : kEdgeFormat;
+        if (fixtureFlag(context.node, "empty")) {
+            // An empty image has no edge to extend: the claim is still stated,
+            // and the shared predicate must refuse to honor it.
+            described.dataBounds = Region{};
+        }
+        described.edgeExtension = extend;
+        return described;
+    };
+    return contribution;
+}
+
+std::shared_ptr<const NodeContributions> edgeRegistry() {
+    auto declarations = affineContributions();
+    declarations.push_back(edgeFixtureContribution());
+    return std::make_shared<const NodeContributions>(std::move(declarations));
+}
+
+// edge fixture -> affine -> Output.
+struct EdgeChain {
+    Document document;
+    NodeId fixture{kInvalidNode};
+    NodeId affine{kInvalidNode};
+    NodeId output{kInvalidNode};
+};
+
+[[nodiscard]] EdgeChain makeEdgeChain(const std::shared_ptr<const NodeContributions>& registry, bool extend,
+                                      bool empty = false) {
+    EdgeChain chain{Document(registry->catalog())};
+    Graph& graph = rootGraph(chain.document);
+    chain.output = graph.nodeByName("Output")->id;
+    chain.fixture = graph.addNode(std::string{kEdgeFixtureType}, "Edge");
+    graph.setParam(chain.fixture, "extend", extend);
+    graph.setParam(chain.fixture, "empty", empty);
+    chain.affine = graph.addNode(kAffineType, "Affine");
+    graph.setParam(chain.affine, "scale", ColorValue{kScale});
+    graph.setParam(chain.affine, "offset", ColorValue{kOffset});
+    static_cast<void>(graph.connect({chain.fixture, 0}, {chain.affine, 0}));
+    static_cast<void>(graph.connect({chain.affine, 0}, {chain.output, 0}));
+    return chain;
+}
+
+[[nodiscard]] const PlanStep* stepOf(const CpuEvaluation& evaluation, NodeId node) {
+    for (const PlanStep& step : evaluation.plan.steps) {
+        if (step.node == node) {
+            return &step;
+        }
+    }
+    return nullptr;
+}
+
+[[nodiscard]] EvaluationRequest windowRequest(const Document& document, NodeId output, Region region) {
+    EvaluationRequest request = requestFor(document, output);
+    request.region = region;
+    return request;
+}
+
+void expectUniform(const CpuImage& image, std::array<float, 4> expected, const char* what) {
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const std::array<float, 4> actual = image.pixel(x, y);
+            for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
+                ASSERT_FLOAT_EQ(actual[channel], expected[channel])
+                    << what << " raster (" << x << "," << y << ") channel " << channel;
+            }
+        }
+    }
 }
 
 }  // namespace
@@ -1298,4 +1446,208 @@ TEST_F(ContributionTest, NativeSubmissionRetainsRegistrationUntilCompletion) {
         throw;
     }
     expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #92: an explicit retained-edge-domain claim is part of the shared image
+// contract, not a node-local side effect. One independently written generator
+// declares a 4x4 format whose retained data window is a smaller rectangle, and
+// claims that its pixels answer beyond that window; the ordinary test-only
+// Affine downstream grades whatever it reads. The delivered window reaches two
+// samples past the retained rectangle on every side, so "the claim was honored"
+// and "the support guard cleared everything outside the window" are
+// distinguishable in the pixels of a node that knows nothing about the claim —
+// and the plan's own coverage proves the demand was retained instead of being
+// clipped to the retained rectangle.
+// ---------------------------------------------------------------------------
+TEST_F(ContributionTest, ExtendedDescriptionAnswersOutsideItsRetainedWindowThroughAnOrdinaryEffect) {
+    const auto registry = edgeRegistry();
+    const Region window{-2, -2, 8, 8};
+
+    // 1) The ordinary finite producer: the retained window is graded exactly, and
+    //    everything outside it is the transparent black every existing producer
+    //    produces today.
+    const EdgeChain finite = makeEdgeChain(registry, /*extend=*/false);
+    const CpuEvaluation finiteEvaluation =
+        evaluateCpu(finite.document, windowRequest(finite.document, finite.output, window), nullptr, nullptr, registry);
+    EXPECT_FALSE(finiteEvaluation.plan.description.edgeExtension);
+    ASSERT_EQ(finiteEvaluation.image.width(), window.width);
+    ASSERT_EQ(finiteEvaluation.image.height(), window.height);
+    expectRgba(finiteEvaluation.image, 0, 0, {0.0F, 0.0F, 0.0F, 0.0F});
+    expectRgba(finiteEvaluation.image, 2, 2, kEdgeGradedSample);
+    expectRgba(finiteEvaluation.image, 5, 5, kEdgeGradedSample);
+    expectRgba(finiteEvaluation.image, 6, 6, {0.0F, 0.0F, 0.0F, 0.0F});
+
+    // 2) The same pixels with a smaller retained window and the edge claimed: the
+    //    planner plans exactly the demanded window (its padding blocks are limited
+    //    to the retained domain, the demand itself is not), the claim survives the
+    //    ordinary downstream effect, and every sample of the delivered raster is
+    //    real graded data rather than transparent black.
+    EdgeChain extended = makeEdgeChain(registry, /*extend=*/true);
+    const CpuEvaluation extendedEvaluation = evaluateCpu(
+        extended.document, windowRequest(extended.document, extended.output, window), nullptr, nullptr, registry);
+    const PlanStep* extendedFixture = stepOf(extendedEvaluation, extended.fixture);
+    const PlanStep* extendedAffine = stepOf(extendedEvaluation, extended.affine);
+    ASSERT_NE(extendedFixture, nullptr);
+    ASSERT_NE(extendedAffine, nullptr);
+    EXPECT_TRUE(extendedFixture->description.edgeExtension);
+    EXPECT_EQ(extendedFixture->description.dataBounds, kEdgeRetained);
+    EXPECT_TRUE(extendedAffine->description.edgeExtension) << "an ordinary effect keeps the claim it inherits";
+    EXPECT_EQ(extendedEvaluation.plan.description.edgeExtension, true);
+    EXPECT_EQ(extendedFixture->region, window)
+        << "the demanded window is kept, not clipped to the retained domain or escalated to the format";
+    ASSERT_EQ(extendedEvaluation.image.width(), window.width);
+    ASSERT_EQ(extendedEvaluation.image.height(), window.height);
+    expectUniform(extendedEvaluation.image, kEdgeGradedSample, "extended samples survive the ordinary effect");
+
+    // 3) An empty retained window stays fully transparent even with the claim
+    //    set: there is no edge to extend, and the flag is not a license to keep
+    //    whatever a node happened to write.
+    const EdgeChain empty = makeEdgeChain(registry, /*extend=*/true, /*empty=*/true);
+    const CpuEvaluation emptyEvaluation =
+        evaluateCpu(empty.document, windowRequest(empty.document, empty.output, window), nullptr, nullptr, registry);
+    const PlanStep* emptyFixture = stepOf(emptyEvaluation, empty.fixture);
+    ASSERT_NE(emptyFixture, nullptr);
+    EXPECT_TRUE(emptyFixture->description.edgeExtension) << "the declaration itself travels verbatim";
+    EXPECT_EQ(emptyFixture->description.dataBounds, Region{});
+    expectUniform(emptyEvaluation.image, {0.0F, 0.0F, 0.0F, 0.0F}, "an empty image stays transparent");
+
+    // 4) Reuse identity follows the image's meaning: identical nodes, pixels and
+    //    request are NOT the same image once the retained window and the claim
+    //    change, while an unchanged request still reuses every node.
+    ResultCache<CpuImage> cache;
+    const std::size_t scheduled = extendedEvaluation.plan.steps.size();
+    ASSERT_GE(scheduled, 3U) << "the fixture, the ordinary effect and the delivery are all scheduled";
+    static_cast<void>(evaluateCpu(extended.document, windowRequest(extended.document, extended.output, window), &cache,
+                                  nullptr, registry));
+    const CacheCounts computed = cache.counts();
+    EXPECT_EQ(computed.misses, scheduled) << "one lookup per scheduled node, all cold";
+    EXPECT_EQ(computed.hits, 0U);
+    static_cast<void>(evaluateCpu(extended.document, windowRequest(extended.document, extended.output, window), &cache,
+                                  nullptr, registry));
+    const CacheCounts reused = cache.counts();
+    EXPECT_EQ(reused.hits - computed.hits, scheduled) << "an unchanged request still reuses every scheduled node";
+    rootGraph(extended.document).setParam(extended.fixture, "extend", false);
+    const CpuEvaluation finiteAgain = evaluateCpu(
+        extended.document, windowRequest(extended.document, extended.output, window), &cache, nullptr, registry);
+    const CacheCounts changed = cache.counts();
+    EXPECT_EQ(changed.misses - reused.misses, scheduled) << "a changed retained window and claim is a different image";
+    EXPECT_EQ(changed.hits, reused.hits) << "no cached result may be served for the changed meaning";
+    expectRgba(finiteAgain.image, 0, 0, {0.0F, 0.0F, 0.0F, 0.0F});
+    expectRgba(finiteAgain.image, 2, 2, kEdgeGradedSample);
+}
+
+TEST_F(ContributionTest, EmptyCropExtensionCannotReviveThroughFiniteCoverage) {
+    struct Coverage {
+        const char* type;
+        const char* sourceKind;
+        float red;
+    };
+    // Each path can grow an empty base into non-empty finite coverage: Merge B,
+    // a Shuffle constant, and a Shuffle row sourced from its other input.
+    for (const Coverage coverage :
+         {Coverage{"merge", nullptr, 1.25F}, Coverage{"shuffle", "one", 2.0F}, Coverage{"shuffle", "input2", 1.25F}}) {
+        SCOPED_TRACE(coverage.type);
+        ProjectSession session;
+        const auto network = session.document().rootNetworkId();
+        const auto output = session.document().network(network).defaultOutput();
+        const auto plate = createSessionNode(session, "constcolor", "Plate");
+        const auto crop = createSessionNode(session, "crop", "EmptyExtendedCrop");
+        const auto combine = createSessionNode(session, coverage.type, "FiniteCoverage");
+        const auto grade = createSessionNode(session, "grade", "Offset");
+        ASSERT_TRUE(session
+                        .submit(transactionCommand(
+                                    "empty extension through finite coverage",
+                                    {setParamCommand(network, plate, "color", ColorValue{{0.25F, 0.5F, 0.75F, 1.0F}}),
+                                     setParamCommand(network, crop, "right", 0.0),
+                                     setParamCommand(network, crop, "blackOutside", false),
+                                     setParamCommand(network, grade, "offset", ColorValue{{1, 1, 1, 1}}),
+                                     connectCommand(network, {plate, 0}, {crop, 0}),
+                                     connectCommand(network, {crop, 0}, {combine, 0}),
+                                     connectCommand(network, {plate, 0}, {combine, 1}),
+                                     connectCommand(network, {combine, 0}, {grade, 0}),
+                                     connectCommand(network, {grade, 0}, {output, 0})}),
+                                EditOptions{session.revision(), {}})
+                        .committed);
+        if (coverage.sourceKind != nullptr) {
+            ASSERT_TRUE(session
+                            .submit(transactionCommand("select finite Shuffle coverage",
+                                                       {setParamCommand(network, combine, "sourceKind0",
+                                                                        ChoiceValue{coverage.sourceKind}),
+                                                        setParamCommand(network, combine, "input2", ChoiceValue{"A"})}),
+                                    EditOptions{session.revision(), {}})
+                            .committed);
+        }
+        auto request = requestFor(session.document(), output);
+        request.region = {-4, -4, 8, 8};
+        const auto check = [&](const CpuImage& image, int scale) {
+            expectRgba(image, 0, 0, {0, 0, 0, 0});
+            EXPECT_FLOAT_EQ(image.pixel(4 / scale, 4 / scale)[0], coverage.red);
+        };
+        for (const int scale : {1, 2, 4}) {
+            request.samplingScale = scale;
+            check(evaluateCpu(session.document(), request).image, scale);
+        }
+        if (slangSpvDir().empty())
+            GTEST_SKIP() << "native Slang unavailable; CPU empty-extension workflow completed";
+        const Bootstrap boot = createBootstrap();
+        NEMO_SKIP_OR_FAIL(boot);
+        for (const auto& library :
+             {eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir()), eval::glslEffectLibrary()}) {
+            for (const int scale : {1, 2, 4}) {
+                request.samplingScale = scale;
+                auto rendered = eval::evaluateGpu(session.document(), request, library, *boot.device, *boot.allocator);
+                check(rendered.readBack(output, *boot.device, *boot.allocator), scale);
+            }
+        }
+        expectValidationClean(*boot.instance);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Issue #92: the other half of the shared contract is the ONE generic
+// creation-time initial value rule. A node whose authored values live in the
+// owning network's own frame must be created FROM that network's saved canvas
+// through the ordinary public creation command — never from the selected Read
+// or the viewer — and what it captured is authored state from that moment on.
+// ---------------------------------------------------------------------------
+TEST_F(ContributionTest, CreationCapturesTheOwningNetworksSavedCanvas) {
+    const auto registry = edgeRegistry();
+    ProjectSession session(Document(registry->catalog()));
+    const NetworkId network = session.document().rootNetworkId();
+    ASSERT_TRUE(
+        session
+            .submit(setNetworkFormatCommand(network, ImageFormat{1234, 567, 1.0F}), EditOptions{session.revision(), {}})
+            .committed);
+
+    const NodeId fixture = createSessionNode(session, std::string{kEdgeFixtureType}, "Edge");
+    {
+        const NodeInstance* created = rootGraph(session.document()).node(fixture);
+        ASSERT_NE(created, nullptr);
+        const auto width = created->params.find("frameWidth");
+        const auto height = created->params.find("frameHeight");
+        ASSERT_NE(width, created->params.end()) << "the declared rule seeds the parameter at creation";
+        ASSERT_NE(height, created->params.end());
+        ASSERT_TRUE(std::holds_alternative<double>(width->second));
+        ASSERT_TRUE(std::holds_alternative<std::int64_t>(height->second));
+        EXPECT_DOUBLE_EQ(std::get<double>(width->second), 1234.0);
+        EXPECT_EQ(std::get<std::int64_t>(height->second), 567);
+    }
+
+    // A later canvas edit never rewrites what the node captured, and a type that
+    // declares no rule keeps its schema default instead of an accidental seed.
+    ASSERT_TRUE(
+        session
+            .submit(setNetworkFormatCommand(network, ImageFormat{640, 480, 1.0F}), EditOptions{session.revision(), {}})
+            .committed);
+    const NodeInstance* afterEdit = rootGraph(session.document()).node(fixture);
+    ASSERT_NE(afterEdit, nullptr);
+    EXPECT_DOUBLE_EQ(std::get<double>(afterEdit->params.at("frameWidth")), 1234.0);
+    EXPECT_EQ(std::get<std::int64_t>(afterEdit->params.at("frameHeight")), 567);
+
+    const NodeId plain = createSessionNode(session, kAffineType, "Affine");
+    const NodeInstance* plainNode = rootGraph(session.document()).node(plain);
+    ASSERT_NE(plainNode, nullptr);
+    EXPECT_EQ(plainNode->params.count("frameWidth"), 0U);
+    EXPECT_EQ(plainNode->params.count("frameHeight"), 0U);
 }

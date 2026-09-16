@@ -181,6 +181,18 @@ namespace channelsDetail {
 //     even when it lies outside `format` (overscan IS data). The executor
 //     enforces this centrally on every produced raster, so no effect's pixel
 //     math has to remember it.
+//   * `edgeExtension` (issue #92) is the producing effect's explicit claim
+//     that its FINITE `dataBounds` are the RETAINED edge domain rather than the
+//     support of the image: the effect answers requested coordinates outside
+//     them with real data of its own (a Crop that keeps the clamped edge
+//     instead of blacking out), so a consumer must not treat them as
+//     transparent. The default is `false`, which preserves the finite
+//     transparent support every existing producer has, and an EMPTY
+//     `dataBounds` stays fully transparent whichever value the flag carries —
+//     there is no edge to extend. The executors honour the claim centrally (the
+//     support guards keep what the effect wrote instead of clearing it), so an
+//     extended node never needs a node-type branch anywhere, and reuse identity
+//     carries the claim like every other semantic field of a description.
 //   * `channels` names the stored channels in storage order (issue #90). The
 //     default four are the conventional RGBA image; an alpha-only or multilayer
 //     image states its own names instead, and no name is invented. Channel
@@ -201,6 +213,11 @@ namespace channelsDetail {
 struct ImageDescription {
     Region format;
     Region dataBounds;
+    // True when the finite `dataBounds` are the RETAINED edge domain and the
+    // producing effect answers requested coordinates outside them (issue #92).
+    // Read it through `hasEdgeExtension`, which also requires a non-empty
+    // retained domain.
+    bool edgeExtension{false};
     float pixelAspect{1.0F};
     std::vector<std::string> channels{"R", "G", "B", "A"};
     Precision precision{Precision::Float32};
@@ -214,6 +231,15 @@ struct ImageDescription {
 // the planner rejects it, so a described image always has a real format.
 [[nodiscard]] inline bool hasNoImageFormat(const ImageDescription& description) {
     return description.format.width <= 0 || description.format.height <= 0;
+}
+
+// True when this description's producer really answers outside its data bounds
+// (issue #92): the flag is set AND the retained edge domain is non-empty. An
+// empty data window is a fully transparent image whatever the flag says — an
+// effect has no edge to extend — so every guard reads the claim through this
+// one predicate instead of the raw flag.
+[[nodiscard]] inline bool hasEdgeExtension(const ImageDescription& description) {
+    return description.edgeExtension && description.dataBounds.width > 0 && description.dataBounds.height > 0;
 }
 
 struct ImageLayout {

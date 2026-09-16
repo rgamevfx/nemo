@@ -1,0 +1,52 @@
+{
+  "tests": 3,
+  "failures": 0,
+  "disabled": 0,
+  "errors": 0,
+  "timestamp": "2026-09-16T15:45:17Z",
+  "time": "55.61s",
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "ContributionTest",
+      "tests": 3,
+      "failures": 0,
+      "disabled": 0,
+      "errors": 0,
+      "timestamp": "2026-09-16T15:45:17Z",
+      "time": "55.609s",
+      "testsuite": [
+        {
+          "name": "ShuffleFanoutConstantsAndDataKeepTheirOwnCoordinatesThroughTransform",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ContributionTests.cpp",
+          "line": 672,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:45:17Z",
+          "time": "12.496s",
+          "classname": "ContributionTest"
+        },
+        {
+          "name": "ExtendedDescriptionAnswersOutsideItsRetainedWindowThroughAnOrdinaryEffect",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ContributionTests.cpp",
+          "line": 1463,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:45:29Z",
+          "time": "0.017s",
+          "classname": "ContributionTest"
+        },
+        {
+          "name": "EmptyCropExtensionCannotReviveThroughFiniteCoverage",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/ContributionTests.cpp",
+          "line": 1540,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T15:45:29Z",
+          "time": "43.095s",
+          "classname": "ContributionTest"
+        }
+      ]
+    }
+  ]
+}

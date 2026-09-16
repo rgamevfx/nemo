@@ -4,7 +4,7 @@
   "url": "https://github.com/rgamevfx/nemo/issues/87",
   "captured": "2026-09-15",
   "source_issue_body_sha256": "e5155708654c007afa64b46c84d37a4be1365fc205fda357569fbab4947bc302",
-  "status": "Nuke 17 documentation and saved-format policy approved; #96 implemented, reviewed and held locally with known baseline suite failure",
+  "status": "#96 saved-format owner and #92 Crop/Reformat consumer implemented locally; #92 review and verification evidence recorded with colorimetry/platform-leak limitations. All landing holds remain; #87 is not complete.",
   "baseline": {
     "branch": "issue/85-region-evaluation",
     "commit": "dfbd6ea1cd97137aba1c9c02262006d3eb9ccf16",
@@ -333,108 +333,151 @@
       "id": 43,
       "text": "As a compositor, I want an animatable crop box with Nuke-referenced coordinate and extent controls, so that I can define the area to retain precisely.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 44,
       "text": "As a compositor, I want to edit the crop box through native viewer handles, so that I can position it visually.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 45,
       "text": "As a compositor, I want Crop to change data bounds without necessarily changing format, so that I can remove unwanted image coverage while retaining the canvas.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 46,
       "text": "As a compositor, I want Crop's reformat option to make the output format match the cropped image, so that downstream nodes see the intended dimensions and coordinates.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 47,
       "text": "As a compositor, I want intersection and non-intersection bounding-box modes, so that the crop can either respect or extend incoming coverage.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 48,
       "text": "As a compositor, I want softness and black-outside/edge-extension behavior to match the reference, so that cropped edges behave correctly when composited.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 49,
       "text": "As a compositor, I want offset boxes, empty resulting data bounds, odd dimensions, and absent-alpha cases handled explicitly, so that cropping never produces mislabeled rasters or invalid memory access.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 50,
       "text": "As a compositor, I want Reformat's to-format, to-box, and scale modes, so that I can author delivery and working image sizes.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 51,
       "text": "As a compositor, I want reusable named formats and a persistent composition-format fallback, so that generators and Reformat resolve dimensions without relying on the selected viewer or source.",
       "primary_issue": 96,
-      "status": "format-owner-implemented-reformat-consumer-pending",
+      "status": "format-owner-96-implemented-consumed-by-92-locally-landing-held",
       "evidence": [
-        "docs/evidence/assets/issue96-composition-format/verification.json"
+        "docs/evidence/assets/issue96-composition-format/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/verification.json"
       ]
     },
     {
       "id": 52,
       "text": "As a compositor, I want pixel aspect and aspect-preserving resize modes, so that anamorphic and square-pixel images retain the intended shape.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 53,
       "text": "As a compositor, I want width, height, fit, fill, none, and distort behavior accounted for, so that the chosen sizing policy matches Nuke.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 54,
       "text": "As a compositor, I want centering, alignment, flip, flop, and turn behavior defined, so that format conversion positions the image predictably.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 55,
       "text": "As a compositor, I want filter selection, clamp, black-outside, and bounding-box preservation matched to the declared reference, so that resampling quality and overscan remain under my control.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 56,
       "text": "As a compositor, I want precise rounding and coordinate behavior at odd sizes and fractional scales, so that CPU, GPU, full-frame, and regional results agree within the declared tolerance.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 57,
       "text": "As a compositor, I want chains with differently sized inputs and multiple format changes to evaluate correctly, so that a Composition Network is not restricted to one global canvas.",
       "primary_issue": 92,
-      "status": "not-implemented-under-87",
-      "evidence": []
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ]
     },
     {
       "id": 58,
@@ -912,7 +955,13 @@
       "planned_node_modules": [
         "src/nemo/nodes/crop/Contribution.cpp, Gpu.cpp and node-local .slang",
         "src/nemo/nodes/reformat/Contribution.cpp, Gpu.cpp and node-local .slang"
-      ]
+      ],
+      "status": "implemented-and-reviewed-locally-verification-limitations-recorded-landing-held",
+      "evidence": [
+        "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "docs/evidence/assets/issue92-crop-reformat/contract.json"
+      ],
+      "approval_resolution": "Use local #88/#96, frozen Nuke 17 documentation contract and approved native controls; all existing dependencies and landing holds retained."
     },
     {
       "issue": 93,
@@ -1946,7 +1995,7 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-authority-pinned; coverage-not-implemented",
+        "status": "owner-policy-frozen-implemented-locally-landing-held",
         "sources": [
           "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/crop.html",
           "https://learn.foundry.com/nuke/17.0/content/comp_environment/reformatting_elements/cropping_elements.html"
@@ -1964,8 +2013,11 @@
               43
             ],
             "source_locator": "crop-ref (Inputs and Controls table)",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "crop-02",
@@ -1974,8 +2026,11 @@
               44
             ],
             "source_locator": "crop-ref; crop-guide step 3",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "crop-03",
@@ -1984,8 +2039,11 @@
               48
             ],
             "source_locator": "crop-ref; crop-guide step 5",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "crop-04",
@@ -1994,8 +2052,11 @@
               46
             ],
             "source_locator": "crop-ref; crop-guide step 4",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "crop-05",
@@ -2004,8 +2065,11 @@
               47
             ],
             "source_locator": "crop-ref",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "crop-06",
@@ -2015,8 +2079,11 @@
               49
             ],
             "source_locator": "crop-ref; crop-guide step 4",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "crop-07",
@@ -2026,19 +2093,46 @@
               49
             ],
             "source_locator": "crop-ref (Connection Type table)",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           }
         ],
-        "unresolved_cases": [
-          "Pixel-center/interval conversion and fractional/offset box storage.",
-          "Softness profile and its order with black-outside, intersect and reformat.",
-          "Off-format, empty, signed and absent-alpha results.",
-          "Native handles under pan/zoom/aspect/preview and interrupted command gestures."
+        "unresolved_cases": [],
+        "numerical_evidence": [
+          "docs/evidence/assets/issue92-crop-reformat/verification.json",
+          "docs/evidence/assets/issue92-crop-reformat/backend-tests.json",
+          "docs/evidence/assets/issue92-crop-reformat/chain-evidence.json"
         ],
-        "numerical_evidence": [],
-        "native_evidence": [],
-        "reference_version": "Nuke 17.0 documentation"
+        "native_evidence": [
+          "docs/evidence/assets/issue92-crop-reformat/native-tests.json",
+          "docs/evidence/assets/issue92-crop-reformat/native/"
+        ],
+        "reference_version": "Nuke 17.0 documentation",
+        "resolved_policy_cases": [
+          {
+            "case": "Pixel-center/interval conversion and fractional/offset box storage.",
+            "resolution": "docs/evidence/assets/issue92-crop-reformat/contract.json"
+          },
+          {
+            "case": "Softness profile and its order with black-outside, intersect and reformat.",
+            "resolution": "docs/evidence/assets/issue92-crop-reformat/contract.json"
+          },
+          {
+            "case": "Off-format, empty, signed and absent-alpha results.",
+            "resolution": "docs/evidence/assets/issue92-crop-reformat/contract.json"
+          },
+          {
+            "case": "Native handles under pan/zoom/aspect/preview and interrupted command gestures.",
+            "resolution": "docs/evidence/assets/issue92-crop-reformat/contract.json"
+          }
+        ],
+        "limitations": [
+          "Nuke 17 documentation only; no Nuke runtime comparison or pixel-parity claim.",
+          "Final verification/review and all prior landing holds remain explicit in docs/evidence/assets/issue92-crop-reformat/verification.json"
+        ]
       },
       {
         "node": "Reformat",
@@ -2055,7 +2149,7 @@
         ],
         "reference_build": null,
         "reference_generation": null,
-        "status": "documentation-authority-pinned; coverage-not-implemented",
+        "status": "owner-policy-frozen-implemented-locally-landing-held",
         "sources": [
           "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/reformat.html",
           "https://learn.foundry.com/nuke/17.0/content/comp_environment/reformatting_elements/using_reformat.html",
@@ -2074,8 +2168,11 @@
               50
             ],
             "source_locator": "reformat-ref (Inputs and Controls); reformat-guide",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-02",
@@ -2085,8 +2182,13 @@
               51
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ],
+            "format_owner": 96,
+            "consumer_issue": 92
           },
           {
             "id": "reformat-03",
@@ -2095,8 +2197,11 @@
               50
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-04",
@@ -2106,8 +2211,11 @@
               53
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-05",
@@ -2116,8 +2224,11 @@
               52
             ],
             "source_locator": "reformat-ref; reformat-guide (Creating Thumbnails)",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-06",
@@ -2127,8 +2238,11 @@
               56
             ],
             "source_locator": "reformat-ref; reformat-guide (Scaling Image Sequences)",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-07",
@@ -2137,8 +2251,11 @@
               53
             ],
             "source_locator": "reformat-ref; reformat-guide",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-08",
@@ -2147,8 +2264,11 @@
               54
             ],
             "source_locator": "reformat-ref; reformat-guide step 6",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-09",
@@ -2157,8 +2277,11 @@
               54
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-10",
@@ -2168,8 +2291,11 @@
               56
             ],
             "source_locator": "reformat-ref; filter-guide (table and notes)",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-11",
@@ -2178,8 +2304,11 @@
               55
             ],
             "source_locator": "reformat-ref; filter-guide note; reformat-guide steps 8/7",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-12",
@@ -2188,8 +2317,11 @@
               55
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-13",
@@ -2198,8 +2330,11 @@
               55
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           },
           {
             "id": "reformat-14",
@@ -2208,8 +2343,13 @@
               51
             ],
             "source_locator": "reformat-guide (To Create/Edit/Delete/Apply a Format)",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ],
+            "format_owner": 96,
+            "consumer_issue": 92
           },
           {
             "id": "reformat-15",
@@ -2219,8 +2359,13 @@
               57
             ],
             "source_locator": "reformat-guide (Converting Images to a Desired Image Format)",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ],
+            "format_owner": 96,
+            "consumer_issue": 92
           },
           {
             "id": "reformat-16",
@@ -2229,19 +2374,46 @@
               57
             ],
             "source_locator": "reformat-ref",
-            "status": "requires-documentation-policy-and-coverage-freeze",
-            "evidence": []
+            "status": "implemented-and-locally-covered-under-approved-policy-landing-held",
+            "evidence": [
+              "docs/evidence/assets/issue92-crop-reformat/verification.json",
+              "docs/evidence/assets/issue92-crop-reformat/contract.json"
+            ]
           }
         ],
-        "unresolved_cases": [
-          "Owner named-format inventory, persistent composition default/fallback and old-document migration.",
-          "Odd/fractional output rounding, aspect-preserving sizing and alignment.",
-          "Independent filter coefficients/footprints and clamp behavior, not a parity claim based on similar filter names.",
-          "Bounds preservation combined with black-outside, repeated format changes and mixed input formats/aspects."
+        "unresolved_cases": [],
+        "numerical_evidence": [
+          "docs/evidence/assets/issue92-crop-reformat/verification.json",
+          "docs/evidence/assets/issue92-crop-reformat/backend-tests.json",
+          "docs/evidence/assets/issue92-crop-reformat/chain-evidence.json"
         ],
-        "numerical_evidence": [],
-        "native_evidence": [],
-        "reference_version": "Nuke 17.0 documentation"
+        "native_evidence": [
+          "docs/evidence/assets/issue92-crop-reformat/native-tests.json",
+          "docs/evidence/assets/issue92-crop-reformat/native/"
+        ],
+        "reference_version": "Nuke 17.0 documentation",
+        "resolved_policy_cases": [
+          {
+            "case": "Owner named-format inventory, persistent composition default/fallback and old-document migration.",
+            "resolution": "docs/evidence/assets/issue92-crop-reformat/contract.json"
+          },
+          {
+            "case": "Odd/fractional output rounding, aspect-preserving sizing and alignment.",
+            "resolution": "docs/evidence/assets/issue92-crop-reformat/contract.json"
+          },
+          {
+            "case": "Independent filter coefficients/footprints and clamp behavior, not a parity claim based on similar filter names.",
+            "resolution": "docs/evidence/assets/issue92-crop-reformat/contract.json"
+          },
+          {
+            "case": "Bounds preservation combined with black-outside, repeated format changes and mixed input formats/aspects.",
+            "resolution": "docs/evidence/assets/issue92-crop-reformat/contract.json"
+          }
+        ],
+        "limitations": [
+          "Nuke 17 documentation only; no Nuke runtime comparison or pixel-parity claim.",
+          "Final verification/review and all prior landing holds remain explicit in docs/evidence/assets/issue92-crop-reformat/verification.json"
+        ]
       },
       {
         "node": "Roto",
@@ -2957,10 +3129,15 @@
         "issue": 96,
         "record": "docs/evidence/assets/issue96-composition-format/verification.json",
         "scope": "Saved-format authoring, history/persistence, generator/source consumption and real native preview controls; not completion of #87"
+      },
+      {
+        "issue": 92,
+        "record": "docs/evidence/assets/issue92-crop-reformat/verification.json",
+        "scope": "Stories 43-50 and 52-57; consume #96/story 51 without reassigning ownership. CPU/native behavior and real Qt surface evidence; not completion of #87."
       }
     ]
   },
-  "next_action": "Review the locally held #96 contracts/evidence; #88 consumes saved formats for per-node mixed-format description/planning, followed by the node children. Keep #87 open. Alpha compatibility, delivery capability inventory and unreferenced native tools still need their narrow owner decisions.",
+  "next_action": "Review the locally held #96 contracts/evidence; #88 consumes saved formats for per-node mixed-format description/planning, followed by the node children. Keep #87 open. Alpha compatibility, delivery capability inventory and unreferenced native tools still need their narrow owner decisions. #92 is implemented and reviewed locally; retain its recorded verification limitations and every landing hold. Local commit only, no push, merge, closure or dependency removal.",
   "source_issue_body_sha256_scope": {
     "encoding": "UTF-8, exact bytes; no newline normalization",
     "original_body_bytes": 48962,

@@ -4283,6 +4283,13 @@ QVariantMap ViewerController::channelQueryAnswer() const {
                               : !port.answered                ? QStringLiteral("pending")
                               : port.failure.isEmpty()        ? QStringLiteral("ready")
                                                               : QStringLiteral("unavailable");
+        const auto geometry = [&port]() {
+            return QVariantMap{{QStringLiteral("x"), port.description.format.x},
+                               {QStringLiteral("y"), port.description.format.y},
+                               {QStringLiteral("width"), port.description.format.width},
+                               {QStringLiteral("height"), port.description.format.height},
+                               {QStringLiteral("pixelAspect"), static_cast<double>(port.description.pixelAspect)}};
+        };
         ports.push_back(QVariantMap{{QStringLiteral("index"), static_cast<int>(index)},
                                     {QStringLiteral("name"), port.name},
                                     {QStringLiteral("kind"), port.kind},
@@ -4290,6 +4297,12 @@ QVariantMap ViewerController::channelQueryAnswer() const {
                                     {QStringLiteral("optional"), port.optional},
                                     {QStringLiteral("connected"), port.upstream != kInvalidNode},
                                     {QStringLiteral("state"), state},
+                                    // The described image arriving at this port: its
+                                    // format and pixel aspect. Presentation that must
+                                    // address the upstream coordinate space (a crop box
+                                    // drawn over the node's own output) reads this
+                                    // instead of probing media or reading source files.
+                                    {QStringLiteral("format"), port.answered ? geometry() : QVariantMap{}},
                                     {QStringLiteral("channels"), channels},
                                     {QStringLiteral("layers"), layers},
                                     {QStringLiteral("reason"), port.failure}});
@@ -4370,6 +4383,76 @@ QVariantMap ViewerController::nodeInputChannels(const QString& networkValue, con
         return unavailable(QString::fromUtf8(error.what()));
     }
 }
+
+QVariantList ViewerController::namedFormats() const {
+    QVariantList presets;
+    for (const auto& preset : session_.queryNamedFormats()) {
+        presets.push_back(QVariantMap{{QStringLiteral("name"), QString::fromStdString(preset.name)},
+                                      {QStringLiteral("width"), preset.format.width},
+                                      {QStringLiteral("height"), preset.format.height},
+                                      {QStringLiteral("pixelAspect"), static_cast<double>(preset.format.pixelAspect)}});
+    }
+    return presets;
+}
+
+QVariantMap ViewerController::networkFormat(const QString& networkValue) const {
+    const auto unavailable = [&networkValue](const QString& reason) {
+        return QVariantMap{{QStringLiteral("available"), false},
+                           {QStringLiteral("reason"), reason},
+                           {QStringLiteral("networkId"), networkValue},
+                           {QStringLiteral("width"), 0},
+                           {QStringLiteral("height"), 0},
+                           {QStringLiteral("pixelAspect"), 1.0}};
+    };
+    const auto identity = networkIdentity(networkValue);
+    if (!identity)
+        return unavailable(QStringLiteral("a network format requires a valid network ID"));
+    try {
+        const auto& format = session_.document().network(*identity).format();
+        return QVariantMap{{QStringLiteral("available"), true},
+                           {QStringLiteral("reason"), QString{}},
+                           {QStringLiteral("networkId"), QString::number(*identity)},
+                           {QStringLiteral("width"), format.width},
+                           {QStringLiteral("height"), format.height},
+                           {QStringLiteral("pixelAspect"), static_cast<double>(format.pixelAspect)}};
+    } catch (const std::exception& error) {
+        return unavailable(QString::fromUtf8(error.what()));
+    }
+}
+
+bool ViewerController::setNamedFormat(const QString& nameValue, int width, int height, double pixelAspect) {
+    const auto name = nameValue.trimmed();
+    if (name.isEmpty()) {
+        fail(QStringLiteral("a canvas preset requires a name"));
+        return false;
+    }
+    nemo::ImageFormat format;
+    format.width = width;
+    format.height = height;
+    format.pixelAspect = static_cast<float>(pixelAspect);
+    try {
+        return applyEdit(
+            session_.submit(nemo::setNamedFormatCommand(name.toStdString(), std::move(format)), editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool ViewerController::removeNamedFormat(const QString& nameValue) {
+    const auto name = nameValue.trimmed();
+    if (name.isEmpty()) {
+        fail(QStringLiteral("a canvas preset requires a name"));
+        return false;
+    }
+    try {
+        return applyEdit(session_.submit(nemo::removeNamedFormatCommand(name.toStdString()), editOptions()));
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
 QString ViewerController::timecode() const {
     return timecodeForFrame(frame_);
 }

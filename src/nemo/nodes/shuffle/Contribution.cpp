@@ -88,7 +88,11 @@ NodeDescriptor shuffleDescriptor() {
 // Support follows what the mapping really reads: B's own data window (its
 // untouched channels), A's data window for any row sourced from A (a sampled A
 // keeps its coordinates), and B's format for the zero/one constants, which are
-// defined everywhere the main image is.
+// defined everywhere the main image is. The retained-edge-domain claim (issue
+// #92) follows the same rule: the base's claim is inherited, and a row that
+// really samples A makes A's claim the result's too, because that row then
+// carries A's real values outside A's retained domain (a constant zero/one row
+// promises nothing beyond the format already accounted for).
 [[nodiscard]] ImageDescription describeShuffle(const NodeDescriptionContext& context) {
     const NodeInstance& node = context.node;
     const ImageDescription* const base = !context.inputs.empty() ? context.inputs[0] : nullptr;
@@ -98,6 +102,8 @@ NodeDescriptor shuffleDescriptor() {
     const ImageDescription* const second = context.inputs.size() > 1 ? context.inputs[1] : nullptr;
     const ShuffleParameters params = effectiveShuffle(context.catalog, node, node.params);
     ImageDescription described = *base;
+    // Added finite coverage must not revive an empty base's raw edge flag.
+    described.edgeExtension = hasEdgeExtension(*base);
     Region bounds = described.dataBounds;
     for (const ShuffleRow& row : params.rows) {
         if (!row.enabled()) {
@@ -108,6 +114,7 @@ NodeDescriptor shuffleDescriptor() {
         }
         if (row.source == ShuffleSource::InputA && second != nullptr) {
             bounds = regionUnion(bounds, second->dataBounds);
+            described.edgeExtension = described.edgeExtension || hasEdgeExtension(*second);
         } else if (row.source == ShuffleSource::Zero || row.source == ShuffleSource::One) {
             bounds = regionUnion(bounds, described.format);
         }

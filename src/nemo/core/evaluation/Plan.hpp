@@ -130,6 +130,9 @@ struct EvaluationPlan {
     nlohmann::json json;
     json["format"] = regionToJson(description.format);
     json["dataBounds"] = regionToJson(description.dataBounds);
+    // The explicit claim that the data bounds are a retained edge domain the
+    // producer answers outside of (issue #92) travels with the description.
+    json["edgeExtension"] = description.edgeExtension;
     json["pixelAspect"] = description.pixelAspect;
     json["channels"] = description.channels;
     json["precision"] = "float32";

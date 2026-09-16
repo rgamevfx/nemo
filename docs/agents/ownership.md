@@ -177,6 +177,21 @@ Desktop and CLI use these builders, not private inventories. See
    `inputRequirements` and read through supplied coverage geometry. Pointwise
    inputs default to output demand. Effective parameters are immutable and
    already resolved. Whole-frame-only declarations escalate inside Evaluation.
+   A node whose authored values live in the COMPOSITION's own frame reads the
+   network's saved canvas from `owningFormat` on
+   `NodeDescriptionContext`/`NodeRegionContext`/`CpuNodeContext`/
+   `eval::GpuNodeContext` (Reformat's to-format target; the canvas that also
+   seeds created Crop values). A node whose authored values are stated against
+   the IMAGE it processes reads that input's described format instead
+   (`inputs`/`inputDescriptions`/`description`) — Crop's bottom-left box is
+   converted against the current input height, never the composition canvas.
+   An effect
+   that answers requested coordinates OUTSIDE its finite data bounds states
+   `ImageDescription::edgeExtension` (read through `hasEdgeExtension`, which
+   requires a non-empty retained domain); ordinary pointwise/geometric effects
+   inherit the main input's claim, and a node whose own math blacks out a region
+   states `false` itself — see
+   [`rendering.md`](rendering.md#described-images-and-the-retained-edge-domain-claim-issue-92).
    A channel-creating contribution declares `ownsChannelLayout`; Shuffle is the
    example. Ordinary RGBA effects preserve the inherited auxiliary inventory.
    Names are resolved outside pixel loops; see ADR-0008 for the plane contract.
@@ -229,6 +244,14 @@ clamped or quantized to it), `displayDecimals` (display rounding only),
 `Translate` X/Y), `channels` (`ChannelHint`: `ChannelLink` Additive/
 Multiplicative plus `alphaSeparate`, the linked-RGB editing semantics) and
 `nonzero` (excludes zero in addition to any declared numeric bounds).
+`initialValue` (`ParameterInitialValue`, issue #92) is the only creation-time
+rule: `Default` keeps the schema default, and `OwningNetworkWidth`/
+`OwningNetworkHeight` make the creation owner
+(`initialNodeParameters` + `addNodeCommand`/`insertNodeOnEdgeCommand`) capture
+the owning network's saved canvas dimension as authored state when the node is
+created, so a later canvas edit never rewrites it. It is identity, not
+presentation, and is legal only on scalar Integer/Float parameters — declare it
+in a schema only when the declared range admits every valid canvas dimension.
 `ParameterValue.hpp` defines Boolean,
 Integer, Float, Choice, Vector2, Vector3, Color and String values; serialization
 and shared parameter commands own conversion/validation, not QML. Use those
@@ -269,6 +292,19 @@ with no outer wrapper for an aggregate control. Consumed keys are omitted from
 the generic rows and a fully consumed section is dropped, so exactly one control
 renders each setting; an unavailable editor consumes nothing and the generic
 rows stay usable, with the refusal reason reported by `editor(id)`.
+Section editors address sibling keys of their own node. A single exposed
+parameter keeps the generic typed/key/exposure control instead; the host neither
+mounts the aggregate editor nor consumes its sibling keys for that interface
+address. Row editors remain applicable. This shared rule prevents editing a
+definition's unrelated parameters through one instance override (#92).
+Single-control updates use `updateNodeParameterEdit`, which retains the resolved
+occurrence/exposed address captured at begin. Only aggregate controls send a
+concrete-key map to `updateNodeParameterEdits`; an exposed control ID is not a
+parameter key on the underlying node.
+Boolean refreshes retain their value binding, and choice refreshes restore the
+authored selection after Qt resets a changed model (the same deferred readout
+pattern as `StudioComboBox`). Opening an inspector must not show a transient
+control default in place of the authored value.
 `main.cpp` projects the node contributions into `ParameterEditorRegistry`:
 Read declares `nemo.read.source`
 (section — the Read control presents file/summary/timing/color itself),
@@ -279,6 +315,23 @@ coefficients), Merge declares `nemo.merge.operation`
 Shuffle declares `nemo.shuffle.mapping` (`ShuffleEditor.qml`, the full-width
 two-input socket mapper). Shuffle's routing key/exposure cells reuse the shared
 controls inside its channel dialog; generic fallback retains all 30 parameters.
+Crop declares `nemo.crop.box` (`CropBoxEditor.qml`, x/y/right/top with an
+extent-display toggle); Reformat declares `nemo.reformat.format`
+(`ReformatFormatEditor.qml`, saved-composition/custom target and named presets
+copied by value). Their numeric, key and exposure cells use those same controls.
+Viewer Crop handles use `ViewerPanel`'s existing image mapping and the shared
+batch-parameter gesture/history owner, not an independent undo stack.
+Their held-pointer mapping captures scalar camera coordinates; a newly delivered
+regional/full-domain raster must not change the coordinate of that pointer.
+The three box calculations have different contracts: `CropBoxEditor` displays
+signed authored extents (`right - x`, `top - y`) without sorting or rounding;
+`ViewerPanel` projects continuous edges while retaining which authored endpoint
+each handle edits; node-local `crop/Parameters.hpp` owns discrete floor/ceil
+raster enclosure, validation and sampling. Presentation must reproduce the
+enclosure origin only when projecting a reformatted image, not use intersected
+data bounds as that origin. Keep the frozen #92 coordinate contract and native
+reversed-endpoint/upstream-format cases aligned when changing either projection;
+do not couple presentation to node-internal sampling helpers.
 Linking or collapsing is presentation state: it never
 equalizes stored values, Alpha is never edited by a linked RGB change, and
 changing editor presentation never changes the effect's execution parameters.

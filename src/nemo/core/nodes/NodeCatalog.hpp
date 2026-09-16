@@ -36,6 +36,21 @@ struct PortSpec {
 
 enum class ParameterType { Boolean, Integer, Float, Choice, Vector2, Vector3, Color, String };
 
+// Where a parameter's authored value comes from when a node is CREATED
+// (issue #92). It is a generic schema fact, not a node-type branch: the creation
+// owner seeds every parameter that declares a rule from the owning network's
+// authored state, so a new Crop's box is the network's saved canvas instead of
+// whatever the application happened to be showing. `Default` is the schema
+// default and the behavior of every parameter that declares no rule, so an
+// ordinary node's creation is unchanged.
+enum class ParameterInitialValue {
+    Default,
+    // The owning network's saved canvas width (`ImageFormat::width`).
+    OwningNetworkWidth,
+    // The owning network's saved canvas height (`ImageFormat::height`).
+    OwningNetworkHeight,
+};
+
 // How a linked multichannel editor composes one shared adjustment onto a typed
 // tuple. Additive applies one common delta; Multiplicative applies one common
 // factor. It is presentation semantics consumed by the registered tuple editor,
@@ -85,6 +100,13 @@ struct ParameterSpec {
     // The catalog is the authoritative validator, so a generic parameter edit
     // cannot create an invalid mapping that only the evaluator would catch.
     bool nonzero{false};
+    // Creation-time initial value rule (issue #92). `Default` keeps the schema
+    // default; a rule that derives from the owning network's saved canvas is
+    // resolved by the creation owner when the node is created, so the captured
+    // value is authored state from that moment on (a later canvas edit never
+    // rewrites it). Only a scalar Integer/Float parameter may declare a rule,
+    // because the derived value is one whole-pixel dimension.
+    ParameterInitialValue initialValue{ParameterInitialValue::Default};
 };
 
 // Capabilities are schema facts only. They do not contain executor, Qt,

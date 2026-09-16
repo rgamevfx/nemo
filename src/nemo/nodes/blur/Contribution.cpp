@@ -20,7 +20,10 @@ NodeDescriptor blurDescriptor() {
     return NodeDescriptor{.type = "blur",
                           .displayName = "Blur",
                           .group = "Blur",
-                          .implementationVersion = 1,
+                          // 2: the adapter consumes the resolved image description
+                          // for its output raster and tolerates an empty input
+                          // data window (issue #88).
+                          .implementationVersion = 2,
                           .inputs = effectImageInputs(),
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = withMaskParameters({
@@ -94,8 +97,12 @@ struct BlurKernel {
 // starts before it and may be larger. Clamp-to-edge therefore stays what it
 // always was — the border of the actual image — because a clamped tap only ever
 // happens where the input raster ends, and that is exactly where the image ends.
-[[nodiscard]] CpuImage applyBlur(const NodeInstance& node, const EvaluationRequest& request,
-                                 const BlurParameters& params, const CpuImage& input, const InputAnchor& anchor) {
+// An input that holds no pixels at all is a valid empty image (issue #88): the
+// result is transparent black, never an out-of-bounds read.
+[[nodiscard]] CpuImage applyBlur(const CpuNodeContext& context, const BlurParameters& params, const CpuImage& input,
+                                 const InputAnchor& anchor) {
+    const NodeInstance& node = context.node;
+    const EvaluationRequest& request = context.request;
     if (!isFinite(params.size) || params.size < 0.0F) {
         failNode(node, "parameter 'size' must be finite and nonnegative");
     }
@@ -108,13 +115,18 @@ struct BlurKernel {
     const int scale = request.samplingScale;
     const int outputWidth = scaledDimension(request.region.width, scale);
     const int outputHeight = scaledDimension(request.region.height, scale);
+    if (width <= 0 || height <= 0) {
+        // The whole-image reference filters these samples as unpremultiplied
+        // transparent black, which stays transparent black.
+        return CpuImage(effectRasterLayout(context));
+    }
     if (params.size == 0.0F) {
         // Exact identity: the whole-image baseline shares the input raster, a
         // regional one is the requested window of it, bit for bit.
         if (anchor.offsetX == 0 && anchor.offsetY == 0 && width == outputWidth && height == outputHeight) {
             return input;
         }
-        return windowOf(input, anchor, effectRasterLayout(request, input.layout().pixelAspect));
+        return windowOf(input, anchor, effectRasterLayout(context));
     }
     const BlurKernel kernel = makeBlurKernel(scale, params.size);
 
@@ -167,7 +179,7 @@ struct BlurKernel {
         }
     };
 
-    CpuImage output(effectRasterLayout(request, input.layout().pixelAspect));
+    CpuImage output(effectRasterLayout(context));
     if (width > 1 && height > 1) {
         // The intermediate carries the horizontally filtered rows of the whole
         // input raster, not only this node's rows: the vertical pass reads the
@@ -207,34 +219,39 @@ struct BlurKernel {
 
 CpuImage executeBlur(const CpuNodeContext& context) {
     const CpuImage& input = requiredImageInput(context, 0, "native effect requires a connected main image input");
-    if (input.width() <= 0 || input.height() <= 0) {
-        failNode(context.node, "native effect requires a non-empty input raster");
-    }
     const InputAnchor anchor = anchorInput(context, 0, input);
     CpuImage processed =
-        applyBlur(context.node, context.request, effectiveBlur(context.catalog, context.node, context.effectiveParams),
-                  input, anchor);
+        applyBlur(context, effectiveBlur(context.catalog, context.node, context.effectiveParams), input, anchor);
     return blendEffectOutput(context, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
                              input, std::move(processed));
 }
 
 // Blur reads a halo of ceil(size/samplingScale) samples on every side of the
-// region it must produce, clipped to the image domain (issue #85); the optional
-// mask is read at the output coordinates only. The halo is what makes a
-// regional blur identical to the matching window of a whole-image blur: no tap
-// inside the domain is ever replaced by a clamped border pixel.
-std::vector<Region> blurInputRegions(const NodeRegionContext& context) {
+// region it must produce (issue #85); the optional mask is read at the output
+// coordinates only. The halo is what makes a regional blur identical to the
+// matching window of a whole-image blur: no tap inside the image is ever
+// replaced by a clamped border pixel.
+//
+// The halo is clipped to the producer's own described image (issue #88), so the
+// raster border a clamp-to-edge tap folds onto is the real image border and
+// never a coordinate that only this node's arithmetic invented. The halo is a
+// READ demand, never an output bound: Blur describes its output as exactly the
+// description it inherited from its main input, because clamp-to-edge keeps
+// every filtered sample inside the input's own data window.
+std::vector<InputRequirement> blurInputRequirements(const NodeRegionContext& context) {
     const BlurParameters params = effectiveBlur(context.catalog, context.node, context.effectiveParams);
     const EvaluationRequest& request = context.request;
     const int scale = isSamplingScale(request.samplingScale) ? request.samplingScale : 1;
     const int radius = static_cast<int>(std::ceil(params.size / static_cast<float>(scale))) * scale;
     const Region halo{request.region.x - radius, request.region.y - radius, request.region.width + 2 * radius,
                       request.region.height + 2 * radius};
-    return {halo, request.region};
+    const Region mask = regionIntersection(request.region, requirementDomain(context, 1, request.region));
+    return {InputRequirement{regionIntersection(halo, requirementDomain(context, 0, halo)), "RGBA"},
+            InputRequirement{mask, "RGBA"}};
 }
 
 std::optional<std::string> validateBlurParameters(const NodeCatalog& catalog, const NodeInstance& node,
-                                                  ParameterValues& effectiveParams) {
+                                                  const ParameterValues& effectiveParams) {
     return authoringAdmissibility([&] {
         static_cast<void>(effectiveBlur(catalog, node, effectiveParams));
         static_cast<void>(effectiveEffectMask(catalog, node, effectiveParams));
@@ -249,7 +266,7 @@ NodeContribution blurContribution() {
     contribution.role = NodeRole::Image;
     contribution.cpu = CpuImplementation{contribution.descriptor.implementationVersion, &executeBlur};
     contribution.validateParameters = &validateBlurParameters;
-    contribution.inputRegions = &blurInputRegions;
+    contribution.inputRequirements = &blurInputRequirements;
     return contribution;
 }
 

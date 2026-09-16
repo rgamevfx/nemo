@@ -70,30 +70,40 @@ void main() {
     // The main input covers a wider rectangle of the same lattice than this
     // scratch pass (the horizontal support on both sides): its raster origin
     // and extent locate the taps, and clamping to that extent is the image's
-    // clamp-to-edge border.
+    // clamp-to-edge border. An input with an empty raster has no pixels to
+    // clamp to: the filtered result is transparent black (issue #88).
     ivec2 mainOffset = inputGeometry[0].regionAndOffset.zw;
     ivec2 mainExtent = ivec2(inputGeometry[0].extent.xy);
-    if (blur.x <= 0.0) {  // exact identity
-        vec4 identity = imageLoad(in_main, ivec2(p) + mainOffset);
-        imageStore(out_color, ivec2(p), identity);
+    if (mainExtent.x <= 0 || mainExtent.y <= 0) {
+        gpuStore(out_color, ivec2(p), vec4(0.0));
         return;
     }
-    int support = int(blur.z);
+    int lastX = mainExtent.x - 1;
+    int lastY = mainExtent.y - 1;
+    ivec2 center = ivec2(p) + mainOffset;
+    if (blur.x <= 0.0) {  // exact identity
+        gpuStore(out_color, ivec2(p),
+                   imageLoad(in_main, ivec2(clamp(center.x, 0, lastX), clamp(center.y, 0, lastY))));
+        return;
+    }
+    // Raster support in samples per axis; named `taps` so the local never
+    // shadows the request's `support` word (native binding contract v5).
+    int taps = int(blur.z);
     vec4 acc = vec4(0.0);
-    for (int i = -support; i <= support; ++i) {
-        float w = weights[i + support];
-        vec4 s = imageLoad(in_main, ivec2(clamp(int(p.x) + i + mainOffset.x, 0, mainExtent.x - 1),
-                                          int(p.y) + mainOffset.y));
+    for (int i = -taps; i <= taps; ++i) {
+        float w = weights[i + taps];
+        vec4 s = imageLoad(in_main, ivec2(clamp(int(p.x) + i + mainOffset.x, 0, lastX),
+                                          clamp(int(p.y) + mainOffset.y, 0, lastY)));
         if ((mode & 8) != 0) { s.rgb *= s.a; }  // RGBA: premultiply before filtering
         acc += w * s;
     }
-    vec4 center = imageLoad(in_main, ivec2(p) + mainOffset);
+    vec4 centerPixel = imageLoad(in_main, ivec2(clamp(center.x, 0, lastX), clamp(center.y, 0, lastY)));
     if (mode == 7) {        // RGB: filter RGB, preserve original alpha
-        acc.a = center.a;
+        acc.a = centerPixel.a;
     } else if (mode == 8) { // Alpha: filter alpha, preserve original RGB
-        acc.rgb = center.rgb;
+        acc.rgb = centerPixel.rgb;
     }
-    imageStore(out_color, ivec2(p), acc);
+    gpuStore(out_color, ivec2(p), acc);
 }
 )GLSL";
 
@@ -112,24 +122,36 @@ layout(std430, set = 3, binding = 0) readonly buffer BlurWeights { float weights
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    // The described image's data support (native binding contract v5): a sample
+    // outside it is transparent black. This is the pass that writes the node
+    // result; the horizontal pass writes a scratch and declares no support.
+    if (!gpuHasData(ivec2(p))) {
+        gpuStore(out_color, ivec2(p), vec4(0.0));
+        return;
+    }
     int mode = int(blur.y);
     // The scratch intermediate and the original main image each cover their
     // own rectangle of the lattice; the scratch's Y extent is the row range
-    // the image's clamp-to-edge border lives on.
+    // the image's clamp-to-edge border lives on. A pixel outside either raster
+    // is outside that image's data, and an empty raster has no pixels at all:
+    // transparent black (issue #88), never an out-of-bounds load.
     ivec2 scratchOffset = inputGeometry[0].regionAndOffset.zw;
     ivec2 scratchExtent = ivec2(inputGeometry[0].extent.xy);
-    ivec2 mainOffset = inputGeometry[1].regionAndOffset.zw;
-    ivec2 maskOffset = inputGeometry[2].regionAndOffset.zw;
-    vec4 orig = imageLoad(in_main, ivec2(p) + mainOffset);
+    ivec2 mainPixel = ivec2(p) + inputGeometry[1].regionAndOffset.zw;
+    ivec2 mainExtent = ivec2(inputGeometry[1].extent.xy);
+    bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < mainExtent.x && mainPixel.y < mainExtent.y;
+    vec4 orig = mainInside ? imageLoad(in_main, mainPixel) : vec4(0.0);
     vec4 processed;
     if (blur.x <= 0.0) {  // exact identity (both passes are identity)
         processed = orig;
+    } else if (scratchExtent.x <= 0 || scratchExtent.y <= 0) {
+        processed = vec4(0.0);
     } else {
-        int support = int(blur.z);
+        int taps = int(blur.z);
         vec4 acc = vec4(0.0);
-        for (int i = -support; i <= support; ++i) {
-            float w = weights[i + support];
-            acc += w * imageLoad(in_scratch, ivec2(int(p.x) + scratchOffset.x,
+        for (int i = -taps; i <= taps; ++i) {
+            float w = weights[i + taps];
+            acc += w * imageLoad(in_scratch, ivec2(clamp(int(p.x) + scratchOffset.x, 0, scratchExtent.x - 1),
                                                   clamp(int(p.y) + i + scratchOffset.y, 0,
                                                         scratchExtent.y - 1)));
         }
@@ -147,14 +169,18 @@ void main() {
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(imageLoad(in_mask, ivec2(p) + maskOffset)[channel], 0.0, 1.0);
+        ivec2 maskPixel = ivec2(p) + inputGeometry[2].regionAndOffset.zw;
+        ivec2 maskExtent = ivec2(inputGeometry[2].extent.xy);
+        bool maskInside =
+            maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
+        float selected = maskInside ? clamp(imageLoad(in_mask, maskPixel)[channel], 0.0, 1.0) : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
     // processed pixel (avoids HDR 0*inf cancellation in mix()).
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
-    imageStore(out_color, ivec2(p), result);
+    gpuStore(out_color, ivec2(p), result);
 }
 )GLSL";
 

@@ -19,7 +19,10 @@ NodeDescriptor mergeDescriptor() {
         .type = "merge",
         .displayName = "Merge",
         .group = "Compositing",
-        .implementationVersion = 2,
+        // 3: the adapter consumes the resolved image description for its output
+        // raster, describes the union of its inputs' data windows, and treats an
+        // input that holds nothing as transparent black (issue #88).
+        .implementationVersion = 3,
         .inputs = {{PortKind::Image, "A", false}, {PortKind::Image, "B", false}, {PortKind::Mask, "mask", true}},
         .outputs = {{PortKind::Image, "out"}},
         .parameters = {{.name = "operation",
@@ -82,27 +85,25 @@ NodeDescriptor mergeDescriptor() {
 // coverage it was actually produced with (issue #85): A, B and the mask may
 // cover more than this node's raster — a halo, a whole-domain escalation, a
 // resident cache rectangle — so Merge reads exactly the requested window of
-// each instead of demanding identically shaped rasters.
+// each instead of demanding identically shaped rasters. An input that holds no
+// sample at all is a valid empty image and contributes transparent black
+// (issue #88), never an out-of-bounds read.
 CpuImage executeMerge(const CpuNodeContext& context) {
     const CpuImage& background = requiredImageInput(context, 0, "merge requires a connected A (background) input");
     const CpuImage& foreground = requiredImageInput(context, 1, "merge requires a connected B (foreground) input");
-    if (background.width() <= 0 || background.height() <= 0 || foreground.width() <= 0 || foreground.height() <= 0) {
-        failNode(context.node, "merge requires non-empty background (A) and foreground (B) rasters");
-    }
     const InputAnchor backgroundAnchor = anchorInput(context, 0, background);
     const InputAnchor foregroundAnchor = anchorInput(context, 1, foreground);
     const MergeOperation operation = effectiveMergeOperation(context.catalog, context.node, context.effectiveParams);
-    // The output raster keeps the spatial metadata the CPU dispatch path has
-    // always produced for Merge: the requested region at the request's sampling
-    // scale, with the background's pixel aspect and the storage defaults (RGBA
-    // float, scene-linear).
-    CpuImage composite(effectRasterLayout(context.request, background.layout().pixelAspect));
+    // The output raster carries the resolved description: the main input's
+    // logical format, pixel aspect, channels and interpretation, at the
+    // requested region and sampling scale.
+    CpuImage composite(effectRasterLayout(context));
     for (int y = 0; y < composite.height(); ++y) {
         for (int x = 0; x < composite.width(); ++x) {
             const std::array<float, kImageChannels> bg =
-                background.pixel(backgroundAnchor.offsetX + x, backgroundAnchor.offsetY + y);
+                sampledPixel(background, backgroundAnchor.offsetX + x, backgroundAnchor.offsetY + y);
             const std::array<float, kImageChannels> fg =
-                foreground.pixel(foregroundAnchor.offsetX + x, foregroundAnchor.offsetY + y);
+                sampledPixel(foreground, foregroundAnchor.offsetX + x, foregroundAnchor.offsetY + y);
             std::array<float, kImageChannels> result{};
             if (operation == MergeOperation::Over) {
                 // The reference's existing Over expression, unchanged: the
@@ -132,8 +133,29 @@ CpuImage executeMerge(const CpuNodeContext& context) {
                              background, std::move(composite), 2);
 }
 
+// Merge's described data bounds (issue #88) are the union of its two image
+// inputs' data windows: the composite holds a sample wherever either operand
+// does, and an operand's data window may extend past the format (overscan) or be
+// empty. Everything else — the logical format, pixel aspect, channels and
+// interpretation — is inherited from the main input A; B never changes the
+// result's meaning, and the optional mask only blends values.
+[[nodiscard]] ImageDescription describeMerge(const NodeDescriptionContext& context) {
+    ImageDescription described = context.inherited;
+    Region bounds = described.dataBounds;
+    // Declared ports 0 (A) and 1 (B) are the composite's operands; the optional
+    // mask at port 2 only blends values and never adds data.
+    for (std::size_t port = 0; port < 2 && port < context.inputs.size(); ++port) {
+        const ImageDescription* const input = context.inputs[port];
+        if (input != nullptr && input->dataBounds.width > 0 && input->dataBounds.height > 0) {
+            bounds = regionUnion(bounds, input->dataBounds);
+        }
+    }
+    described.dataBounds = bounds;
+    return described;
+}
+
 std::optional<std::string> validateMergeParameters(const NodeCatalog& catalog, const NodeInstance& node,
-                                                   ParameterValues& effectiveParams) {
+                                                   const ParameterValues& effectiveParams) {
     return authoringAdmissibility([&] {
         static_cast<void>(effectiveMergeOperation(catalog, node, effectiveParams));
         static_cast<void>(effectiveEffectMask(catalog, node, effectiveParams));
@@ -148,6 +170,7 @@ NodeContribution mergeContribution() {
     contribution.role = NodeRole::Image;
     contribution.cpu = CpuImplementation{contribution.descriptor.implementationVersion, &executeMerge};
     contribution.validateParameters = &validateMergeParameters;
+    contribution.describe = &describeMerge;
     contribution.editors = {NodeEditorContribution{.id = "nemo.merge.operation",
                                                    .source = "qrc:/qt/qml/Nemo/qml/MergeOperationEditor.qml",
                                                    .consumes = {}}};

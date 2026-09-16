@@ -24,20 +24,24 @@
 namespace nemo {
 
 // Raster an effect produces for `request`: the requested region at the request's
-// sampling scale. Callers supply the resolved aspect; there is no implicit
-// square-pixel fallback.
-[[nodiscard]] inline ImageLayout effectRasterLayout(const EvaluationRequest& request, float pixelAspect) {
-    ImageLayout layout;
-    layout.width = scaledDimension(request.region.width, request.samplingScale);
-    layout.height = scaledDimension(request.region.height, request.samplingScale);
-    layout.pixelAspect = pixelAspect;
-    return layout;
+// sampling scale, interpreted exactly as the resolved image description says
+// (issue #88). Pixel aspect, named channels, precision and color interpretation
+// travel with the description, so an effect over a Data or DisplayReferred input
+// produces a raster that says what it is instead of resetting the result to
+// scene-linear.
+[[nodiscard]] inline ImageLayout effectRasterLayout(const EvaluationRequest& request,
+                                                    const ImageDescription& description) {
+    return imageLayoutOf(description, scaledDimension(request.region.width, request.samplingScale),
+                         scaledDimension(request.region.height, request.samplingScale));
 }
 
-// Generator adapters share the authored-canvas policy here rather than each
-// discovering persistent format ownership themselves.
-[[nodiscard]] inline ImageLayout generatorRasterLayout(const CpuNodeContext& context) {
-    return effectRasterLayout(context.request, context.document.network(context.request.network).format().pixelAspect);
+// The node's own output raster (issue #88): the geometry of the request at the
+// request's sampling scale, interpreted as the planner's resolved description
+// for this node says. A generator's description is its owning network's authored
+// canvas format, an ordinary effect's the main input's meaning it inherits, so
+// no adapter rediscovers either one.
+[[nodiscard]] inline ImageLayout effectRasterLayout(const CpuNodeContext& context) {
+    return effectRasterLayout(context.request, context.description);
 }
 
 // Declared-port input access. An absent optional slot is null, never a
@@ -96,34 +100,89 @@ struct InputAnchor {
 }
 
 // The offset of this node's output raster inside the raster that anchored
-// declared input `port` (issue #85), reported as a node-identified failure when
-// the input does not cover the node's request.
+// declared input `port` (issue #85). The only invariant is that the producer
+// delivered the raster it was asked for: the offset can be anything, because
+// both rasters sit on the same lattice, and everything the node reads outside
+// the delivered raster is transparent black (issue #88).
+//
+// Nothing about this node's own coordinates or the producer's described image
+// is an error: a request may reach past what a producer holds — a mixed-format
+// merge, a transform whose inverse map leaves the frame, a whole-domain
+// escalation, an image with an empty data window — and every such read is
+// transparent black, exactly as the whole-image reference has it. A raster
+// with no pixels is the empty case of the same rule, and an adapter invoked
+// without per-port geometry (a direct call with a single raster) reads at its
+// own coordinates as it always did.
 [[nodiscard]] inline InputAnchor anchorInput(const CpuNodeContext& context, std::size_t port, const CpuImage& image) {
     const EvaluationRequest& request = context.request;
     const EvaluationRequest& source = inputRequest(context, port);
     const InputAnchor anchor = anchorBetween(source, request);
     const int scale = isSamplingScale(request.samplingScale) ? request.samplingScale : 1;
-    const int width = scaledDimension(request.region.width, scale);
-    const int height = scaledDimension(request.region.height, scale);
-    if (source.samplingScale != scale || anchor.offsetX < 0 || anchor.offsetY < 0 ||
-        anchor.offsetX + width > image.width() || anchor.offsetY + height > image.height()) {
+    if (source.samplingScale != scale) {
+        failNode(context.node, "input raster at sampling scale " + std::to_string(source.samplingScale) +
+                                   " cannot be read at this node's scale " + std::to_string(scale));
+    }
+    if (image.width() <= 0 || image.height() <= 0) {
+        return anchor;
+    }
+    const int demandedWidth = scaledDimension(source.region.width, scale);
+    const int demandedHeight = scaledDimension(source.region.height, scale);
+    if (image.width() < demandedWidth || image.height() < demandedHeight) {
         failNode(context.node, "input raster " + std::to_string(image.width()) + "x" + std::to_string(image.height()) +
-                                   " at origin (" + std::to_string(source.region.x) + "," +
-                                   std::to_string(source.region.y) + ") does not cover the requested region " +
-                                   std::to_string(width) + "x" + std::to_string(height) + " at origin (" +
-                                   std::to_string(request.region.x) + "," + std::to_string(request.region.y) + ")");
+                                   " does not cover the demand placed on this port (" + std::to_string(demandedWidth) +
+                                   "x" + std::to_string(demandedHeight) + " at origin (" +
+                                   std::to_string(source.region.x) + "," + std::to_string(source.region.y) + "))");
     }
     return anchor;
 }
 
+// The domain a producer can actually answer a demand from: its own described
+// image, `format ∪ dataBounds` — the exact rectangle its pixels may exist in
+// (issue #88). A demand past that boundary needs no pixels at all: that is
+// outside the producer's data, and every read of this node returns transparent
+// black there. Clipping a node's requirement to it is what keeps a clamp-to-edge
+// filter clamped at the real image border, keeps a rotated inverse map from
+// demanding coordinates that cannot exist, and keeps a demand bounded by the
+// producer's own geometry instead of this node's arithmetic.
+//
+// An input whose description carries no format at all describes no geometry, so
+// the caller's own bounded fallback is used: the producer then serves whatever
+// raster its own policy defines (transparent black for an image with no data).
+[[nodiscard]] inline Region requirementDomain(const NodeRegionContext& context, std::size_t port,
+                                              const Region& fallback) {
+    if (port >= context.inputs.size() || context.inputs[port] == nullptr) {
+        return fallback;
+    }
+    const ImageDescription& described = *context.inputs[port];
+    const Region domain = regionUnion(described.format, described.dataBounds);
+    return domain.width > 0 && domain.height > 0 ? domain : fallback;
+}
+
+// Straight (non-premultiplied) sample of `image` at raster coordinates, with
+// transparent black for anything the raster does not hold (issue #88). A
+// producer's raster carries the coverage it was asked for, which is not
+// necessarily every sample a consumer would like: a node whose own demand
+// reaches past it — a shifted or otherwise inverse-mapped region, a mixed-format
+// neighbor, an image with an empty data window — reads outside data as
+// transparent black, exactly as the whole-image reference does, instead of
+// reading out of bounds or inventing a border pixel.
+[[nodiscard]] inline std::array<float, kImageChannels> sampledPixel(const CpuImage& image, int x, int y) {
+    if (x < 0 || y < 0 || x >= image.width() || y >= image.height()) {
+        return {0.0F, 0.0F, 0.0F, 0.0F};
+    }
+    return image.pixel(x, y);
+}
+
 // This node's own raster of an input, copied out of that input's raster (which
 // may be larger). Only used where the output is honestly a window of an input,
-// so the copy is the result rather than a needless intermediate.
+// so the copy is the result rather than a needless intermediate. A sample the
+// input does not hold is transparent black (issue #88): the window may reach
+// past an input whose own data ends earlier.
 [[nodiscard]] inline CpuImage windowOf(const CpuImage& image, const InputAnchor& anchor, ImageLayout layout) {
     CpuImage window(std::move(layout));
     for (int y = 0; y < window.height(); ++y) {
         for (int x = 0; x < window.width(); ++x) {
-            window.setPixel(x, y, image.pixel(anchor.offsetX + x, anchor.offsetY + y));
+            window.setPixel(x, y, sampledPixel(image, anchor.offsetX + x, anchor.offsetY + y));
         }
     }
     return window;
@@ -132,10 +191,7 @@ struct InputAnchor {
 // Filtering and spatial interpolation are alpha-aware: samples are read as
 // premultiplied RGB so transparent neighbors cannot contribute color.
 [[nodiscard]] inline std::array<float, kImageChannels> premultipliedPixel(const CpuImage& image, int x, int y) {
-    if (x < 0 || y < 0 || x >= image.width() || y >= image.height()) {
-        return {0.0F, 0.0F, 0.0F, 0.0F};
-    }
-    const std::array<float, kImageChannels> pixel = image.pixel(x, y);
+    const std::array<float, kImageChannels> pixel = sampledPixel(image, x, y);
     return {pixel[0] * pixel[3], pixel[1] * pixel[3], pixel[2] * pixel[3], pixel[3]};
 }
 
@@ -160,9 +216,11 @@ straightPixel(const std::array<float, kImageChannels>& premultiplied) {
 //
 // Both the original and the mask are read through their own anchors (issue
 // #85): they may be larger than this node's raster, so the blended samples are
-// the node's own region, taken from each input's real origin. `original` is the
-// node's main image input (declared port 0) and `maskPort` is the declared port
-// its optional mask lives on.
+// the node's own region, taken from each input's real origin. Neither input is
+// required to hold every sample of that region — an empty or short data window
+// contributes transparent black (issue #88), never a border pixel or an
+// out-of-bounds read. `original` is the node's main image input (declared port
+// 0) and `maskPort` is the declared port its optional mask lives on.
 [[nodiscard]] inline CpuImage blendEffectOutput(const CpuNodeContext& context, const EffectMaskParameters& maskParams,
                                                 const CpuImage& original, CpuImage processed,
                                                 std::size_t maskPort = 1) {
@@ -186,7 +244,8 @@ straightPixel(const std::array<float, kImageChannels>& premultiplied) {
         }
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
-                const std::array<float, kImageChannels> source = original.pixel(anchor.offsetX + x, anchor.offsetY + y);
+                const std::array<float, kImageChannels> source =
+                    sampledPixel(original, anchor.offsetX + x, anchor.offsetY + y);
                 if (maskParams.mix == 0.0F) {
                     processed.setPixel(x, y, source);
                     continue;
@@ -205,7 +264,7 @@ straightPixel(const std::array<float, kImageChannels>& premultiplied) {
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             const std::array<float, kImageChannels> maskPixel =
-                mask->pixel(maskAnchor.offsetX + x, maskAnchor.offsetY + y);
+                sampledPixel(*mask, maskAnchor.offsetX + x, maskAnchor.offsetY + y);
             float coverage = std::clamp(maskPixel[static_cast<std::size_t>(maskParams.channel)], 0.0F, 1.0F);
             if (maskParams.invert) {
                 coverage = 1.0F - coverage;
@@ -214,7 +273,8 @@ straightPixel(const std::array<float, kImageChannels>& premultiplied) {
             if (weight == 1.0F) {
                 continue;
             }
-            const std::array<float, kImageChannels> source = original.pixel(anchor.offsetX + x, anchor.offsetY + y);
+            const std::array<float, kImageChannels> source =
+                sampledPixel(original, anchor.offsetX + x, anchor.offsetY + y);
             if (weight == 0.0F) {
                 processed.setPixel(x, y, source);
                 continue;

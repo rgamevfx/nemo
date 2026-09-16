@@ -76,18 +76,46 @@ private:
 [[nodiscard]] EffectLibrary glslEffectLibrary();
 
 // Computes the content-derived viewer identity for a request without
-// executing GPU work. Dependencies are walked in the same order as the
-// native evaluator, so a cache lookup can happen before any allocation or
-// dispatch. The returned key includes the effect-library implementation tag
-// and the document's viewer policy; callers append their concrete OCIO
-// program/config identity and encoding representation settings.
+// executing GPU work and without acquiring a pixel (issue #88). The same
+// described plan the native executor consumes resolves every node's effective
+// state, described output and source request, so a cache lookup can happen
+// before any allocation, dispatch or decode. The returned key includes the
+// effect-library implementation tag and the document's viewer policy; callers
+// append their concrete OCIO program/config identity and encoding
+// representation settings.
 //
 // `colorConfigIdentity` (issue #81) is the media module's opaque OCIO
 // config/context content identity; it participates in every source node's
 // key, so a changed config can never serve a stale transform. Empty means
 // "no config" and is a defined value, not a fallback.
+//
+// `sources` describes real media through the source description provider seam
+// (a SourceSession, or any provider implementing
+// SourceDescriptionProvider): the media's own metadata decides the described
+// format and the pre-resolved request decides the source identity, so no
+// decoder is opened and no frame is uploaded. A graph that needs a source
+// description without a provider fails honestly here, exactly as the executor
+// would.
+//
+// `plan` is the prebuilt resolved plan seam (issue #88). A caller that already
+// built the described plan for THIS document snapshot, request and effect
+// library — the viewer render path does, so key and execution never resolve the
+// same authored state twice — passes it here and to evaluateGpu/submitGpu. The
+// plan must come from
+// `planDependencyRegions(document, canonicalizeRequest(request),
+// *effects.contributions(), sources)`, and it is verified strictly against its
+// recorded origin identity (document object, state revision, registration and
+// the exact canonical demand): a plan that does not provably resolve this call
+// is REFUSED with EvaluationException rather than replanned, so a supplied plan
+// and its request can never disagree and the caller's key always describes the
+// pixels that were executed. The plan BORROWS the document and the registration
+// for the duration of the call — it must not be retained past the evaluation
+// that owns them — and the request it is compared against is the caller's own
+// canonical demand, domain included. nullptr (the default) plans here.
 [[nodiscard]] ResultKey queryViewerResultKey(const Document& document, EvaluationRequest request,
-                                             const EffectLibrary& effects, std::string_view colorConfigIdentity = {});
+                                             const EffectLibrary& effects, std::string_view colorConfigIdentity = {},
+                                             SourceDescriptionProvider* sources = nullptr,
+                                             const RegionPlan* plan = nullptr);
 
 // One executed step's device-resident result. Shared ownership: a cache
 // entry (issue #9) and a returned evaluation can hold the same image.
@@ -125,9 +153,16 @@ public:
 // submitter, e.g. the presentation device, issue #11); no host GPU wait.
 // Compilation/allocation are CPU preparation, not suitable for the UI event
 // thread. No cache publication is performed; consumers own
-// freshness/publication after completion. With `sources` (issue #11),
-// `source` nodes resolve their decoded frames through that session —
-// pass nullptr for graphs without real-media sources (the default).
+// freshness/publication after completion.
+//
+// Planning is metadata-only (issue #88): the shared described plan resolves
+// every node's effective state, described output and — for a Source node —
+// its media request WITHOUT touching a pixel, and the sources are acquired
+// lazily, per node, only after the plan and the backend are validated and the
+// reuse cache has declined to serve that node. External media is described
+// through the provider (`SourceSession` implements it); pass nullptr for
+// graphs without real-media sources (the default), where a node that needs a
+// source description fails honestly before anything is scheduled.
 //
 // `colorConfigIdentity` (issue #81) is the media module's opaque OCIO
 // config/context content identity; it participates in every source node's
@@ -135,10 +170,19 @@ public:
 // "no config" and is a defined value, not a fallback. The caller that owns
 // the color state supplies it (the same value it passes to
 // queryViewerResultKey), so this executor stays OCIO-agnostic.
+//
+// `plan` is the same prebuilt resolved plan seam queryViewerResultKey accepts
+// (issue #88): passing the plan the key query already built makes one viewer
+// render resolve its authored state exactly once. It is verified against its
+// recorded origin identity and REFUSED (EvaluationException) when it does not
+// provably resolve this exact document snapshot, registration and canonical
+// demand; only an absent plan is planned here. Like the key query, this call
+// borrows the plan's document/registration and never retains it.
 [[nodiscard]] std::optional<GpuEvaluation> submitGpu(const Document& document, EvaluationRequest request,
                                                      const EffectLibrary& effects, gpu::Device& device,
                                                      gpu::Allocator& allocator, SourceSession* sources = nullptr,
-                                                     std::string_view colorConfigIdentity = {});
+                                                     std::string_view colorConfigIdentity = {},
+                                                     const RegionPlan* plan = nullptr);
 
 // Executes `request` on `device` through the effect library's native
 // kernels, keeping every intermediate GPU-resident. With `reuse` (issue
@@ -146,10 +190,10 @@ public:
 // and are reused in place; computed results publish under the evaluation
 // ticket's freshness guard. Throws EvaluationException (node-identifying)
 // for plan/effect failures and GpuException for Vulkan failures.
-// `colorConfigIdentity` follows submitGpu (issue #81).
+// `colorConfigIdentity` and `plan` follow submitGpu (issues #81, #88).
 [[nodiscard]] GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request,
                                         const EffectLibrary& effects, gpu::Device& device, gpu::Allocator& allocator,
                                         std::uint64_t timeout_ns = 10'000'000'000ULL,
                                         ResultCache<GpuNodeImage>* reuse = nullptr, SourceSession* sources = nullptr,
-                                        std::string_view colorConfigIdentity = {});
+                                        std::string_view colorConfigIdentity = {}, const RegionPlan* plan = nullptr);
 }  // namespace nemo::eval

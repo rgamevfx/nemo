@@ -1,0 +1,2355 @@
+{
+  "issue": 88,
+  "baseline": "485c0482941108360a179bc930ff9e6736e0ec35",
+  "reference": "Nuke 17.0 documentation only; no runtime parity claim",
+  "baseline_reproduction": {
+    "command": "build/debug/apps/nemo-cli/nemo-cli evaluate docs/evidence/assets/issue88-images/windowed-read.nemo --out /tmp/issue88-before.ppm --width 12 --height 12",
+    "exit": 0,
+    "plan": {
+      "request": {
+        "channels": "RGBA",
+        "fullHeight": 12,
+        "fullWidth": 12,
+        "localTime": 0,
+        "network": 1,
+        "output": 2,
+        "quality": "full",
+        "region": {
+          "height": 12,
+          "width": 12,
+          "x": 0,
+          "y": 0
+        },
+        "samplingScale": 1
+      },
+      "result": {
+        "channels": [
+          "R",
+          "G",
+          "B",
+          "A"
+        ],
+        "color": "scene-linear",
+        "contentHash": "4eae070ed22ade9e",
+        "height": 12,
+        "pixelAspect": 1.5,
+        "precision": "float32",
+        "residency": "host-cpu-reference",
+        "width": 12
+      },
+      "steps": [
+        {
+          "effectiveParams": {
+            "frame": {
+              "type": "integer",
+              "value": 0
+            },
+            "inputTransform": {
+              "type": "choice",
+              "value": "raw"
+            },
+            "source": {
+              "type": "string",
+              "value": "plate"
+            },
+            "sourcePath": {
+              "type": "string",
+              "value": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue88-images/overscan.exr"
+            }
+          },
+          "inputImages": [],
+          "inputs": [],
+          "instance": 0,
+          "name": "Plate",
+          "network": 1,
+          "node": 1,
+          "outputPort": 4294967295,
+          "path": [],
+          "produced": {
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "data",
+            "contentHash": "69292c07cd3212b8",
+            "height": 12,
+            "pixelAspect": 1.5,
+            "precision": "float32",
+            "residency": "host-cpu-reference",
+            "width": 12
+          },
+          "region": {
+            "height": 12,
+            "width": 12,
+            "x": 0,
+            "y": 0
+          },
+          "reused": false,
+          "scopedInputs": []
+        },
+        {
+          "effectiveParams": {},
+          "inputImages": [
+            {
+              "channels": [
+                "R",
+                "G",
+                "B",
+                "A"
+              ],
+              "color": "data",
+              "contentHash": "69292c07cd3212b8",
+              "height": 12,
+              "pixelAspect": 1.5,
+              "precision": "float32",
+              "residency": "host-cpu-reference",
+              "width": 12
+            }
+          ],
+          "inputs": [
+            1
+          ],
+          "instance": 0,
+          "name": "Output",
+          "network": 1,
+          "node": 2,
+          "outputPort": 4294967295,
+          "path": [],
+          "produced": {
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "scene-linear",
+            "contentHash": "4eae070ed22ade9e",
+            "height": 12,
+            "pixelAspect": 1.5,
+            "precision": "float32",
+            "residency": "host-cpu-reference",
+            "width": 12
+          },
+          "region": {
+            "height": 12,
+            "width": 12,
+            "x": 0,
+            "y": 0
+          },
+          "reused": false,
+          "scopedInputs": [
+            {
+              "instance": 0,
+              "network": 1,
+              "node": 1,
+              "outputPort": 4294967295,
+              "path": []
+            }
+          ]
+        }
+      ]
+    },
+    "observation": "Read resized its 8x8 logical format to the 12x12 request; Output also relabelled Data to SceneLinear. Signed overscan was not retained as a logical description.",
+    "first_two_rgb_bytes": [
+      [
+        80,
+        80,
+        64
+      ],
+      [
+        80,
+        80,
+        64
+      ]
+    ]
+  },
+  "native_tool_limitations": [
+    "orca-ide command not found while loading skill guide; no alternative Orca executable used.",
+    "Built-in computer inspection: Wayland capture unavailable; windows query timed out after30s. Native Qt surface capture through existing application harness remains available for verification."
+  ],
+  "reference_mapping": {
+    "entries": [
+      "viewer-session.json:/verified[12]",
+      "viewer-session.json:/verified[13]"
+    ],
+    "archive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+    "archived_handlers": [
+      "ViewerPanel.qml: displayControlsComponent proxyMenu.onActivated",
+      "ViewerPanel.qml: setZoom and fitToSurface",
+      "ViewerPanel.qml: sceneArt and scene proxyScale layout"
+    ],
+    "protected_production": [
+      "ViewerPanel existing Full/Half/Quarter and zoom controls",
+      "ViewerController/ViewerRuntime view/request geometry",
+      "issue84 continuous cursor-anchored pan/zoom and issue85 full-frame override"
+    ],
+    "status": "Actual Wayland viewer exercised: mixed-source Full/Half/Quarter preserves main-input format and placement; saved windowed Read\u2192Grade\u2192Viewer uses 8x8 source format instead of 641x359 network format."
+  },
+  "approved_policy": {
+    "intervals": "signed half-open [x,x+width) x [y,y+height); x right, y down",
+    "source_windows": "normalize display origin to(0,0), translate data origin equally; preserve negative and off-format data",
+    "sampling": "existing global Full/Half/Quarter lattice; density never authors format",
+    "borders": "outside described data transparent black; preserve existing Blur clamp-edge and Transform filter arithmetic",
+    "inheritance": "main-input format/PAR/interpretation inherited; Merge unions data bounds; generator fallback Network.format from#96",
+    "empty": "valid connected image with empty data bounds, distinct from disconnected required input",
+    "alpha": "no alpha arithmetic change; existing straight-input numerical baseline protected"
+  },
+  "reference_matrix": [
+    {
+      "node": "Read",
+      "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/image_nodes/read.html",
+      "documented": "native resolution; header format/PAR; EXR display/data windows; format-dependent edge policy",
+      "nemo_policy": "display origin normalized; data samples preserved with transparent outside; existing Read mapping/color/alpha choices unchanged"
+    },
+    {
+      "node": "Grade",
+      "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/color_nodes/grade.html",
+      "documented": "rgb channels, blackpoint/lift/offset0; whitepoint/gain/multiply/gamma1; reverse off; black clamp on, white clamp off",
+      "nemo_policy": "existing accepted controls and signed-HDR equation unchanged; finite described support, no new unpremult controls"
+    },
+    {
+      "node": "Blur",
+      "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/filter_nodes/blur.html",
+      "documented": "Gaussian default, size0, crop enabled, mask optional, mix1",
+      "nemo_policy": "existing size/3 sigma and clamp-edge RGBA/RGB/Alpha kernels retained; producer-local halo; no added filter/quality controls"
+    },
+    {
+      "node": "Transform",
+      "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/transform_nodes/transform.html",
+      "documented": "translate0, rotate0, scale1, black outside enabled, filter options",
+      "nemo_policy": "existing image-center pivot, physical PAR rotation, clockwise stored y-down and existing filter/default retained; inverse/filter footprint and output-space masks"
+    },
+    {
+      "node": "Merge",
+      "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/merge_nodes/merge.html",
+      "documented": "bbox union; over default; Nuke A foreground/B background; typically premultiplied",
+      "nemo_policy": "retain Nemo A background/B foreground and straight-alpha five-operation arithmetic; main-input format and union bounds; no implicit resize"
+    },
+    {
+      "node": "Constcolor",
+      "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/image_nodes/constant.html",
+      "documented": "format from project; constant including outside image area",
+      "nemo_policy": "approved saved Network.format fallback and finite data/transparent-outside policy, not infinite Nuke parity"
+    },
+    {
+      "node": "Testpattern/Output/Viewer",
+      "url": null,
+      "documented": "Nemo diagnostic generator and production delivery/presentation roles",
+      "nemo_policy": "testpattern keeps existing pixel equation within authored format; Output/Viewer inherit description; viewing transform remains downstream"
+    }
+  ],
+  "independent_fixture": {
+    "file": "overscan.exr",
+    "encoding": "independently written uncompressed OpenEXR float32 RGBA; scanline coordinates increase down",
+    "display_window_inclusive": [
+      -2,
+      -3,
+      5,
+      4
+    ],
+    "data_window_inclusive": [
+      -6,
+      -7,
+      5,
+      4
+    ],
+    "normalized_format": [
+      0,
+      0,
+      8,
+      8
+    ],
+    "normalized_data_bounds": [
+      -4,
+      -4,
+      12,
+      12
+    ],
+    "pixel_aspect": 1.5,
+    "known_source_pixels": {
+      "-4,-4": [
+        0.0625,
+        0.0625,
+        0.25,
+        1
+      ],
+      "0,0": [
+        0.3125,
+        0.3125,
+        0.25,
+        1
+      ],
+      "1,0": [
+        0.375,
+        0.3125,
+        0.25,
+        1
+      ]
+    },
+    "after_grade_multiply_rgb2": {
+      "-4,-4": [
+        0.125,
+        0.125,
+        0.5,
+        1
+      ],
+      "0,0": [
+        0.625,
+        0.625,
+        0.5,
+        1
+      ]
+    },
+    "cpu_native_tolerance": 1e-06,
+    "status": "prechange CLI exercised; postchange tests pending"
+  },
+  "public_cli_after": {
+    "cpu": {
+      "command": [
+        "build/debug/apps/nemo-cli/nemo-cli",
+        "evaluate",
+        "docs/evidence/assets/issue88-images/windowed-read.nemo",
+        "--out",
+        "/tmp/issue88-after-cpu.ppm",
+        "--width",
+        "12",
+        "--height",
+        "12"
+      ],
+      "exit": 0,
+      "response": {
+        "errors": [],
+        "evaluation": {
+          "description": {
+            "association": "premultiplied",
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "data",
+            "dataBounds": {
+              "height": 12,
+              "width": 12,
+              "x": -4,
+              "y": -4
+            },
+            "format": {
+              "height": 8,
+              "width": 8,
+              "x": 0,
+              "y": 0
+            },
+            "pixelAspect": 1.5,
+            "precision": "float32"
+          },
+          "request": {
+            "channels": "RGBA",
+            "fullHeight": 8,
+            "fullWidth": 8,
+            "localTime": 0,
+            "network": 1,
+            "output": 2,
+            "quality": "full",
+            "region": {
+              "height": 12,
+              "width": 12,
+              "x": 0,
+              "y": 0
+            },
+            "samplingScale": 1
+          },
+          "result": {
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "data",
+            "contentHash": "6a5af0280a8c5458",
+            "height": 12,
+            "pixelAspect": 1.5,
+            "precision": "float32",
+            "residency": "host-cpu-reference",
+            "width": 12
+          },
+          "steps": [
+            {
+              "description": {
+                "association": "premultiplied",
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "dataBounds": {
+                  "height": 12,
+                  "width": 12,
+                  "x": -4,
+                  "y": -4
+                },
+                "format": {
+                  "height": 8,
+                  "width": 8,
+                  "x": 0,
+                  "y": 0
+                },
+                "pixelAspect": 1.5,
+                "precision": "float32"
+              },
+              "effectiveParams": {
+                "afterPolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "alphaMode": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "beforePolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "frame": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "frameOffset": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "frameStep": {
+                  "type": "integer",
+                  "value": 1
+                },
+                "inputColorSpace": {
+                  "type": "string",
+                  "value": ""
+                },
+                "inputTransform": {
+                  "type": "choice",
+                  "value": "raw"
+                },
+                "missingPolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "rangeFirst": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "rangeLast": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "rangeMode": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "source": {
+                  "type": "string",
+                  "value": "plate"
+                },
+                "sourceChromaLocation": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceMatrix": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourcePath": {
+                  "type": "string",
+                  "value": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue88-images/overscan.exr"
+                },
+                "sourcePrimaries": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceRange": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceTransfer": {
+                  "type": "choice",
+                  "value": "auto"
+                }
+              },
+              "inputImages": [],
+              "inputs": [],
+              "instance": 0,
+              "name": "Plate",
+              "network": 1,
+              "node": 1,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "contentHash": "6a5af0280a8c5458",
+                "height": 12,
+                "pixelAspect": 1.5,
+                "precision": "float32",
+                "residency": "host-cpu-reference",
+                "width": 12
+              },
+              "region": {
+                "height": 12,
+                "width": 12,
+                "x": 0,
+                "y": 0
+              },
+              "reused": false,
+              "scopedInputs": []
+            },
+            {
+              "description": {
+                "association": "premultiplied",
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "dataBounds": {
+                  "height": 12,
+                  "width": 12,
+                  "x": -4,
+                  "y": -4
+                },
+                "format": {
+                  "height": 8,
+                  "width": 8,
+                  "x": 0,
+                  "y": 0
+                },
+                "pixelAspect": 1.5,
+                "precision": "float32"
+              },
+              "effectiveParams": {},
+              "inputImages": [
+                {
+                  "channels": [
+                    "R",
+                    "G",
+                    "B",
+                    "A"
+                  ],
+                  "color": "data",
+                  "contentHash": "6a5af0280a8c5458",
+                  "height": 12,
+                  "pixelAspect": 1.5,
+                  "precision": "float32",
+                  "residency": "host-cpu-reference",
+                  "width": 12
+                }
+              ],
+              "inputs": [
+                1
+              ],
+              "instance": 0,
+              "name": "Output",
+              "network": 1,
+              "node": 2,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "contentHash": "6a5af0280a8c5458",
+                "height": 12,
+                "pixelAspect": 1.5,
+                "precision": "float32",
+                "residency": "host-cpu-reference",
+                "width": 12
+              },
+              "region": {
+                "height": 12,
+                "width": 12,
+                "x": 0,
+                "y": 0
+              },
+              "reused": false,
+              "scopedInputs": [
+                {
+                  "instance": 0,
+                  "network": 1,
+                  "node": 1,
+                  "outputPort": 4294967295,
+                  "path": []
+                }
+              ]
+            }
+          ]
+        },
+        "ok": true,
+        "rendered": {
+          "frame": 0,
+          "height": 12,
+          "network": 1,
+          "path": "/tmp/issue88-after-cpu.ppm",
+          "width": 12
+        },
+        "warnings": []
+      },
+      "stderr": "",
+      "row0_rgb": [
+        [
+          80,
+          80,
+          64
+        ],
+        [
+          96,
+          80,
+          64
+        ],
+        [
+          112,
+          80,
+          64
+        ],
+        [
+          128,
+          80,
+          64
+        ],
+        [
+          143,
+          80,
+          64
+        ],
+        [
+          159,
+          80,
+          64
+        ],
+        [
+          175,
+          80,
+          64
+        ],
+        [
+          191,
+          80,
+          64
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "slang": {
+      "command": [
+        "build/debug/apps/nemo-cli/nemo-cli",
+        "evaluate-gpu",
+        "docs/evidence/assets/issue88-images/windowed-read.nemo",
+        "--out",
+        "/tmp/issue88-after-slang.ppm",
+        "--width",
+        "12",
+        "--height",
+        "12",
+        "--backend",
+        "slang",
+        "--shaders",
+        "build/debug/src/nemo/gpu/shaders/spv"
+      ],
+      "exit": 0,
+      "response": {
+        "errors": [],
+        "evaluation": {
+          "description": {
+            "association": "premultiplied",
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "data",
+            "dataBounds": {
+              "height": 12,
+              "width": 12,
+              "x": -4,
+              "y": -4
+            },
+            "format": {
+              "height": 8,
+              "width": 8,
+              "x": 0,
+              "y": 0
+            },
+            "pixelAspect": 1.5,
+            "precision": "float32"
+          },
+          "request": {
+            "channels": "RGBA",
+            "fullHeight": 12,
+            "fullWidth": 12,
+            "localTime": 0,
+            "network": 1,
+            "output": 2,
+            "quality": "full",
+            "region": {
+              "height": 12,
+              "width": 12,
+              "x": 0,
+              "y": 0
+            },
+            "samplingScale": 1
+          },
+          "result": {
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "data",
+            "contentHash": "6a5af0280a8c5458",
+            "height": 12,
+            "pixelAspect": 1.5,
+            "precision": "float32",
+            "residency": "gpu-device",
+            "width": 12
+          },
+          "steps": [
+            {
+              "description": {
+                "association": "premultiplied",
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "dataBounds": {
+                  "height": 12,
+                  "width": 12,
+                  "x": -4,
+                  "y": -4
+                },
+                "format": {
+                  "height": 8,
+                  "width": 8,
+                  "x": 0,
+                  "y": 0
+                },
+                "pixelAspect": 1.5,
+                "precision": "float32"
+              },
+              "effectiveParams": {
+                "afterPolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "alphaMode": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "beforePolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "frame": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "frameOffset": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "frameStep": {
+                  "type": "integer",
+                  "value": 1
+                },
+                "inputColorSpace": {
+                  "type": "string",
+                  "value": ""
+                },
+                "inputTransform": {
+                  "type": "choice",
+                  "value": "raw"
+                },
+                "missingPolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "rangeFirst": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "rangeLast": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "rangeMode": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "source": {
+                  "type": "string",
+                  "value": "plate"
+                },
+                "sourceChromaLocation": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceMatrix": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourcePrimaries": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceRange": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceTransfer": {
+                  "type": "choice",
+                  "value": "auto"
+                }
+              },
+              "inputImages": [],
+              "inputs": [],
+              "instance": 0,
+              "name": "Plate",
+              "network": 1,
+              "node": 1,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "contentHash": "0000000000000000",
+                "height": 12,
+                "pixelAspect": 1.5,
+                "precision": "float32",
+                "residency": "gpu-device",
+                "width": 12
+              },
+              "region": {
+                "height": 12,
+                "width": 12,
+                "x": 0,
+                "y": 0
+              },
+              "reused": false,
+              "scopedInputs": []
+            },
+            {
+              "description": {
+                "association": "premultiplied",
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "dataBounds": {
+                  "height": 12,
+                  "width": 12,
+                  "x": -4,
+                  "y": -4
+                },
+                "format": {
+                  "height": 8,
+                  "width": 8,
+                  "x": 0,
+                  "y": 0
+                },
+                "pixelAspect": 1.5,
+                "precision": "float32"
+              },
+              "effectiveParams": {},
+              "inputImages": [
+                {
+                  "channels": [
+                    "R",
+                    "G",
+                    "B",
+                    "A"
+                  ],
+                  "color": "data",
+                  "contentHash": "0000000000000000",
+                  "height": 12,
+                  "pixelAspect": 1.5,
+                  "precision": "float32",
+                  "residency": "gpu-device",
+                  "width": 12
+                }
+              ],
+              "inputs": [
+                1
+              ],
+              "instance": 0,
+              "name": "Output",
+              "network": 1,
+              "node": 2,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "contentHash": "6a5af0280a8c5458",
+                "height": 12,
+                "pixelAspect": 1.5,
+                "precision": "float32",
+                "residency": "gpu-device",
+                "width": 12
+              },
+              "region": {
+                "height": 12,
+                "width": 12,
+                "x": 0,
+                "y": 0
+              },
+              "reused": false,
+              "scopedInputs": [
+                {
+                  "instance": 0,
+                  "network": 1,
+                  "node": 1,
+                  "outputPort": 4294967295,
+                  "path": []
+                }
+              ]
+            }
+          ]
+        },
+        "ok": true,
+        "readback": {
+          "network": 1,
+          "node": 2,
+          "note": "diagnostic-only; the executor path itself performs no host readback"
+        },
+        "rendered": {
+          "backend": "slang",
+          "color": "data",
+          "device": "NVIDIA GeForce GTX 1070",
+          "frame": 0,
+          "height": 12,
+          "network": 1,
+          "path": "/tmp/issue88-after-slang.ppm",
+          "precision": "float32",
+          "width": 12
+        },
+        "warnings": []
+      },
+      "stderr": "",
+      "row0_rgb": [
+        [
+          80,
+          80,
+          64
+        ],
+        [
+          96,
+          80,
+          64
+        ],
+        [
+          112,
+          80,
+          64
+        ],
+        [
+          128,
+          80,
+          64
+        ],
+        [
+          143,
+          80,
+          64
+        ],
+        [
+          159,
+          80,
+          64
+        ],
+        [
+          175,
+          80,
+          64
+        ],
+        [
+          191,
+          80,
+          64
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "glsl": {
+      "command": [
+        "build/debug/apps/nemo-cli/nemo-cli",
+        "evaluate-gpu",
+        "docs/evidence/assets/issue88-images/windowed-read.nemo",
+        "--out",
+        "/tmp/issue88-after-glsl.ppm",
+        "--width",
+        "12",
+        "--height",
+        "12",
+        "--backend",
+        "glsl",
+        "--shaders",
+        "build/debug/src/nemo/gpu/shaders/spv"
+      ],
+      "exit": 0,
+      "response": {
+        "errors": [],
+        "evaluation": {
+          "description": {
+            "association": "premultiplied",
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "data",
+            "dataBounds": {
+              "height": 12,
+              "width": 12,
+              "x": -4,
+              "y": -4
+            },
+            "format": {
+              "height": 8,
+              "width": 8,
+              "x": 0,
+              "y": 0
+            },
+            "pixelAspect": 1.5,
+            "precision": "float32"
+          },
+          "request": {
+            "channels": "RGBA",
+            "fullHeight": 12,
+            "fullWidth": 12,
+            "localTime": 0,
+            "network": 1,
+            "output": 2,
+            "quality": "full",
+            "region": {
+              "height": 12,
+              "width": 12,
+              "x": 0,
+              "y": 0
+            },
+            "samplingScale": 1
+          },
+          "result": {
+            "channels": [
+              "R",
+              "G",
+              "B",
+              "A"
+            ],
+            "color": "data",
+            "contentHash": "6a5af0280a8c5458",
+            "height": 12,
+            "pixelAspect": 1.5,
+            "precision": "float32",
+            "residency": "gpu-device",
+            "width": 12
+          },
+          "steps": [
+            {
+              "description": {
+                "association": "premultiplied",
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "dataBounds": {
+                  "height": 12,
+                  "width": 12,
+                  "x": -4,
+                  "y": -4
+                },
+                "format": {
+                  "height": 8,
+                  "width": 8,
+                  "x": 0,
+                  "y": 0
+                },
+                "pixelAspect": 1.5,
+                "precision": "float32"
+              },
+              "effectiveParams": {
+                "afterPolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "alphaMode": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "beforePolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "frame": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "frameOffset": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "frameStep": {
+                  "type": "integer",
+                  "value": 1
+                },
+                "inputColorSpace": {
+                  "type": "string",
+                  "value": ""
+                },
+                "inputTransform": {
+                  "type": "choice",
+                  "value": "raw"
+                },
+                "missingPolicy": {
+                  "type": "choice",
+                  "value": "error"
+                },
+                "rangeFirst": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "rangeLast": {
+                  "type": "integer",
+                  "value": 0
+                },
+                "rangeMode": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "source": {
+                  "type": "string",
+                  "value": "plate"
+                },
+                "sourceChromaLocation": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceMatrix": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourcePrimaries": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceRange": {
+                  "type": "choice",
+                  "value": "auto"
+                },
+                "sourceTransfer": {
+                  "type": "choice",
+                  "value": "auto"
+                }
+              },
+              "inputImages": [],
+              "inputs": [],
+              "instance": 0,
+              "name": "Plate",
+              "network": 1,
+              "node": 1,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "contentHash": "0000000000000000",
+                "height": 12,
+                "pixelAspect": 1.5,
+                "precision": "float32",
+                "residency": "gpu-device",
+                "width": 12
+              },
+              "region": {
+                "height": 12,
+                "width": 12,
+                "x": 0,
+                "y": 0
+              },
+              "reused": false,
+              "scopedInputs": []
+            },
+            {
+              "description": {
+                "association": "premultiplied",
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "dataBounds": {
+                  "height": 12,
+                  "width": 12,
+                  "x": -4,
+                  "y": -4
+                },
+                "format": {
+                  "height": 8,
+                  "width": 8,
+                  "x": 0,
+                  "y": 0
+                },
+                "pixelAspect": 1.5,
+                "precision": "float32"
+              },
+              "effectiveParams": {},
+              "inputImages": [
+                {
+                  "channels": [
+                    "R",
+                    "G",
+                    "B",
+                    "A"
+                  ],
+                  "color": "data",
+                  "contentHash": "0000000000000000",
+                  "height": 12,
+                  "pixelAspect": 1.5,
+                  "precision": "float32",
+                  "residency": "gpu-device",
+                  "width": 12
+                }
+              ],
+              "inputs": [
+                1
+              ],
+              "instance": 0,
+              "name": "Output",
+              "network": 1,
+              "node": 2,
+              "outputPort": 4294967295,
+              "path": [],
+              "produced": {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "contentHash": "6a5af0280a8c5458",
+                "height": 12,
+                "pixelAspect": 1.5,
+                "precision": "float32",
+                "residency": "gpu-device",
+                "width": 12
+              },
+              "region": {
+                "height": 12,
+                "width": 12,
+                "x": 0,
+                "y": 0
+              },
+              "reused": false,
+              "scopedInputs": [
+                {
+                  "instance": 0,
+                  "network": 1,
+                  "node": 1,
+                  "outputPort": 4294967295,
+                  "path": []
+                }
+              ]
+            }
+          ]
+        },
+        "ok": true,
+        "readback": {
+          "network": 1,
+          "node": 2,
+          "note": "diagnostic-only; the executor path itself performs no host readback"
+        },
+        "rendered": {
+          "backend": "glsl",
+          "color": "data",
+          "device": "NVIDIA GeForce GTX 1070",
+          "frame": 0,
+          "height": 12,
+          "network": 1,
+          "path": "/tmp/issue88-after-glsl.ppm",
+          "precision": "float32",
+          "width": 12
+        },
+        "warnings": []
+      },
+      "stderr": "",
+      "row0_rgb": [
+        [
+          80,
+          80,
+          64
+        ],
+        [
+          96,
+          80,
+          64
+        ],
+        [
+          112,
+          80,
+          64
+        ],
+        [
+          128,
+          80,
+          64
+        ],
+        [
+          143,
+          80,
+          64
+        ],
+        [
+          159,
+          80,
+          64
+        ],
+        [
+          175,
+          80,
+          64
+        ],
+        [
+          191,
+          80,
+          64
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    }
+  },
+  "public_cli_assertions": {
+    "byte_identical_cpu_slang_glsl": true,
+    "unstretched_second_pixel": [
+      96,
+      80,
+      64
+    ],
+    "outside_data_transparent_rgb_export": [
+      0,
+      0,
+      0
+    ],
+    "status": "passed",
+    "post_integration_rerun": "CPU/Slang/GLSL commands exited0; complete PPM bytes identical after signed-bound, GLSL validation and header-description fixes."
+  },
+  "focused_regressions": [
+    {
+      "command": "ctest --preset debug --output-on-failure -R '^(EvaluationTest|RegionalEvaluationTest|NativeEffectTest|ReuseTest|MediaTest)\\.' -j 2",
+      "passed": 60,
+      "failed": 10,
+      "cause": "legacy request-authored test fixtures and the now-honest unrepresentable Transform rejection; subsequently authored fixture formats explicitly without changing numerical expectations"
+    },
+    {
+      "command": "ctest --preset debug --output-on-failure -R '^(ContributionTest|EvaluationTest|RegionalEvaluationTest|NativeEffectTest|ReuseTest)\\.' -j 2",
+      "passed": 60,
+      "failed": 1,
+      "regression": "KnownEmptyReadRemainsEmptyThroughTransformAndGradeOffset",
+      "actual": "Transform fabricated format-sized data bounds for an empty Read; Grade offset then produced {1,1,1,0} instead of transparent black",
+      "state": "red confirmed, corrected Transform description; focused CPU/native regression passed"
+    },
+    {
+      "command": "ctest --preset debug --output-on-failure -R '^(ContributionTest|EvaluationTest|RegionalEvaluationTest|NativeEffectTest|ReuseTest|Effect|Viewer|MediaTest)\\.' -E '^Viewer\\.InterpretationMapIsParsedStrictly$' -j 2",
+      "passed": 120,
+      "failed": 9,
+      "causes": [
+        "GLSL image format lost through image2D function parameter",
+        "noncanonical negative-size empty intersection",
+        "whole-frame test had not authored its expected format",
+        "clip metadata unnecessarily invoked decoder setup"
+      ],
+      "state": "source fixes applied; rerun pending"
+    },
+    {
+      "matched": 129,
+      "passed": 128,
+      "failed": 1,
+      "remaining": "Viewer.UnsupportedFormatRejectedWithPreciseReason: decoder failure type was wrapped as EvaluationException; preserve MediaDecodeError and add offending node to its reason",
+      "state": "fix applied; sanitizer/native rerun pending"
+    },
+    {
+      "matched": 59,
+      "passed": 50,
+      "failed": 9,
+      "cause": "strict rejection of unspecified clip PAR broke established supported Read/viewer fixtures",
+      "resolution": "Owner approved preserving existing square default; implementation restored it without packet probing or decode."
+    }
+  ],
+  "public_session_workflow": {
+    "commands": [
+      {
+        "op": "add-node",
+        "network_id": 1,
+        "type": "grade",
+        "name": "Gain",
+        "expected_revision": 2
+      },
+      {
+        "op": "transaction",
+        "label": "Connect windowed workflow",
+        "commands": [
+          {
+            "op": "connect",
+            "network_id": 1,
+            "from_node_id": 1,
+            "from_port": 0,
+            "to_node_id": 4,
+            "to_port": 0
+          },
+          {
+            "op": "connect",
+            "network_id": 1,
+            "from_node_id": 4,
+            "from_port": 0,
+            "to_node_id": 2,
+            "to_port": 0
+          },
+          {
+            "op": "connect",
+            "network_id": 1,
+            "from_node_id": 4,
+            "from_port": 0,
+            "to_node_id": 3,
+            "to_port": 0
+          },
+          {
+            "op": "set-param",
+            "network_id": 1,
+            "node_id": 4,
+            "key": "multiply",
+            "value": {
+              "type": "color",
+              "value": [
+                2,
+                2,
+                2,
+                1
+              ]
+            }
+          }
+        ],
+        "expected_revision": 3
+      },
+      {
+        "op": "undo",
+        "expected_revision": 4
+      },
+      {
+        "op": "redo",
+        "expected_revision": 5
+      },
+      {
+        "op": "save-as",
+        "path": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue88-images/workflow.nemo",
+        "path_policy": "relative",
+        "backup": false
+      },
+      {
+        "op": "file-state"
+      }
+    ],
+    "responses": [
+      {
+        "changed_animation_channel_ids": [],
+        "changed_animation_key_ids": [],
+        "changed_edge_ids": [],
+        "changed_instance_ids": [],
+        "changed_named_format_ids": [],
+        "changed_network_ids": [
+          1
+        ],
+        "changed_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "changed_source_ids": [],
+        "color_policy_changed": false,
+        "committed": true,
+        "created_edge_ids": [],
+        "created_instance_ids": [],
+        "created_network_ids": [],
+        "created_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "ok": true,
+        "revision": 3
+      },
+      {
+        "changed_animation_channel_ids": [],
+        "changed_animation_key_ids": [],
+        "changed_edge_ids": [
+          {
+            "id": 3,
+            "network": 1
+          },
+          {
+            "id": 4,
+            "network": 1
+          },
+          {
+            "id": 5,
+            "network": 1
+          }
+        ],
+        "changed_instance_ids": [],
+        "changed_named_format_ids": [],
+        "changed_network_ids": [
+          1
+        ],
+        "changed_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "changed_source_ids": [],
+        "color_policy_changed": false,
+        "committed": true,
+        "created_edge_ids": [
+          {
+            "id": 3,
+            "network": 1
+          },
+          {
+            "id": 4,
+            "network": 1
+          },
+          {
+            "id": 5,
+            "network": 1
+          }
+        ],
+        "created_instance_ids": [],
+        "created_network_ids": [],
+        "created_node_ids": [],
+        "ok": true,
+        "revision": 4
+      },
+      {
+        "changed_animation_channel_ids": [],
+        "changed_animation_key_ids": [],
+        "changed_edge_ids": [
+          {
+            "id": 3,
+            "network": 1
+          },
+          {
+            "id": 4,
+            "network": 1
+          },
+          {
+            "id": 5,
+            "network": 1
+          }
+        ],
+        "changed_instance_ids": [],
+        "changed_named_format_ids": [],
+        "changed_network_ids": [
+          1
+        ],
+        "changed_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "changed_source_ids": [],
+        "color_policy_changed": false,
+        "committed": true,
+        "created_edge_ids": [],
+        "created_instance_ids": [],
+        "created_network_ids": [],
+        "created_node_ids": [],
+        "ok": true,
+        "revision": 5
+      },
+      {
+        "changed_animation_channel_ids": [],
+        "changed_animation_key_ids": [],
+        "changed_edge_ids": [
+          {
+            "id": 3,
+            "network": 1
+          },
+          {
+            "id": 4,
+            "network": 1
+          },
+          {
+            "id": 5,
+            "network": 1
+          }
+        ],
+        "changed_instance_ids": [],
+        "changed_named_format_ids": [],
+        "changed_network_ids": [
+          1
+        ],
+        "changed_node_ids": [
+          {
+            "id": 4,
+            "network": 1
+          }
+        ],
+        "changed_source_ids": [],
+        "color_policy_changed": false,
+        "committed": true,
+        "created_edge_ids": [
+          {
+            "id": 3,
+            "network": 1
+          },
+          {
+            "id": 4,
+            "network": 1
+          },
+          {
+            "id": 5,
+            "network": 1
+          }
+        ],
+        "created_instance_ids": [],
+        "created_network_ids": [],
+        "created_node_ids": [],
+        "ok": true,
+        "revision": 6
+      },
+      {
+        "backup": "",
+        "dirty": false,
+        "ok": true,
+        "op": "save-as",
+        "path": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue88-images/workflow.nemo",
+        "recovered": false,
+        "recovery_original": "",
+        "revision": 6,
+        "saved_revision": 6,
+        "warnings": []
+      },
+      {
+        "can_redo": false,
+        "can_undo": true,
+        "color_config": "",
+        "dirty": false,
+        "has_presentation": false,
+        "ok": true,
+        "op": "file-state",
+        "path": "/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue88-images/workflow.nemo",
+        "recovered": false,
+        "recovery_original": "",
+        "revision": 6,
+        "saved_revision": 6,
+        "warnings": []
+      }
+    ],
+    "document": "workflow.nemo",
+    "source": "overscan.exr",
+    "history": "connect+grade transaction undone and redone, then saved through ProjectFile"
+  },
+  "native_surface": {
+    "platform": "Wayland / Qt 6.4.2 / NVIDIA GTX 1070",
+    "mixed_format_test": "ReadViewerSurface.MixedMediaSourcesKeepMainInputFormatWithoutStretching",
+    "mixed_format_result": "passed",
+    "mixed_captures": [
+      "issue88-mixed-full.png",
+      "issue88-mixed-half.png",
+      "issue88-mixed-quarter.png"
+    ],
+    "saved_workflow_test": "ReadViewerSurface.UserDocumentDisplaysItsAttachedRead",
+    "saved_workflow_result": "passed; displayed raster 8x8, full 8x8, output node4, frame0",
+    "saved_workflow_capture": "issue88-windowed-grade-workflow.png",
+    "input": "workflow.nemo (temporary replay copy resolves source path absolutely because the existing native harness uses loadDocument, not ProjectFile)",
+    "prior_native_suite": "12 passed, 1 skipped without supplied user document, 1 failed on old sourceSize assertion; corrected to compositionSize and focused rerun passed",
+    "final_rerun": {
+      "tests": [
+        "ReadViewerSurface.MixedMediaSourcesKeepMainInputFormatWithoutStretching",
+        "ReadViewerSurface.UserDocumentDisplaysItsAttachedRead"
+      ],
+      "passed": 2,
+      "seconds": 5.19,
+      "surface": "Qt 6.4.2 Wayland, real production QML/Vulkan window",
+      "visual": "Inspected mixed-playback capture: bounded red foreground over larger blue main input, quarter density, frame 3, unchanged 96x64 logical region."
+    }
+  },
+  "builds": {
+    "debug": "Passed final application code; focused followup6/6 and actual Wayland supersession refresh passed.",
+    "compiler_warnings": "no application warnings observed; existing minizip-ng linker warning about mktemp remains",
+    "release": "Passed final code including range-supersession correction."
+  },
+  "reviews": {
+    "standards": {
+      "hard_findings": 2,
+      "resolution": "Corrected stale unknown-metadata/PAR rendering contract and targetFraming fallback comment. Shared GLSL support predicate; removed unused GpuNodeContext source dimensions; removed duplicate alpha parsing.",
+      "retained_judgements": "Kept existing string channel-demand representation consistent with EvaluationRequest; avoided adding a new described-raster abstraction. Decoded storage extent and authored format remain deliberately distinct.",
+      "final_delta": "Reviewer verified successful range admission clears only pending/outstanding state, while rejected admission retains it. Supersession finding closed; no standards blockers."
+    },
+    "spec": {
+      "findings": 2,
+      "resolution": "One 1x1 full-resolution cleared source raster separates empty source storage from preview demand. Unspecified clip PAR keeps existing square default by explicit owner approval after strict rejection broke protected cases; explicit header PAR and unavailable dimensions retain header-only semantics.",
+      "reviewer_agreement": "Reviewer confirmed singleton raster design. PAR finding was escalated to owner, who selected preserving square default.",
+      "final_delta": "Reviewer approved identity-only metadata matching and pending-request deduplication; error/admission rejection paths remain retryable."
+    }
+  },
+  "unspecified_par_compatibility": {
+    "command": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate-gpu",
+      "/tmp/issue88-unknown-par.nemo",
+      "--out",
+      "/tmp/issue88-unknown-par.ppm",
+      "--width",
+      "64",
+      "--height",
+      "48",
+      "--backend",
+      "slang",
+      "--shaders",
+      "build/debug/src/nemo/gpu/shaders/spv"
+    ],
+    "before": {
+      "errors": [],
+      "evaluation": {
+        "description": {
+          "association": "straight",
+          "channels": [
+            "R",
+            "G",
+            "B",
+            "A"
+          ],
+          "color": "data",
+          "dataBounds": {
+            "height": 48,
+            "width": 64,
+            "x": 0,
+            "y": 0
+          },
+          "format": {
+            "height": 48,
+            "width": 64,
+            "x": 0,
+            "y": 0
+          },
+          "pixelAspect": 1.0,
+          "precision": "float32"
+        },
+        "request": {
+          "channels": "RGBA",
+          "fullHeight": 48,
+          "fullWidth": 64,
+          "localTime": 0,
+          "network": 1,
+          "output": 2,
+          "quality": "full",
+          "region": {
+            "height": 48,
+            "width": 64,
+            "x": 0,
+            "y": 0
+          },
+          "samplingScale": 1
+        },
+        "result": {
+          "channels": [
+            "R",
+            "G",
+            "B",
+            "A"
+          ],
+          "color": "data",
+          "contentHash": "3d53add7adcec388",
+          "height": 48,
+          "pixelAspect": 1.0,
+          "precision": "float32",
+          "residency": "gpu-device",
+          "width": 64
+        },
+        "steps": [
+          {
+            "description": {
+              "association": "straight",
+              "channels": [
+                "R",
+                "G",
+                "B",
+                "A"
+              ],
+              "color": "data",
+              "dataBounds": {
+                "height": 48,
+                "width": 64,
+                "x": 0,
+                "y": 0
+              },
+              "format": {
+                "height": 48,
+                "width": 64,
+                "x": 0,
+                "y": 0
+              },
+              "pixelAspect": 1.0,
+              "precision": "float32"
+            },
+            "effectiveParams": {
+              "afterPolicy": {
+                "type": "choice",
+                "value": "error"
+              },
+              "alphaMode": {
+                "type": "choice",
+                "value": "auto"
+              },
+              "beforePolicy": {
+                "type": "choice",
+                "value": "error"
+              },
+              "frame": {
+                "type": "integer",
+                "value": 0
+              },
+              "frameOffset": {
+                "type": "integer",
+                "value": 0
+              },
+              "frameStep": {
+                "type": "integer",
+                "value": 1
+              },
+              "inputColorSpace": {
+                "type": "string",
+                "value": ""
+              },
+              "inputTransform": {
+                "type": "choice",
+                "value": "raw"
+              },
+              "missingPolicy": {
+                "type": "choice",
+                "value": "error"
+              },
+              "rangeFirst": {
+                "type": "integer",
+                "value": 0
+              },
+              "rangeLast": {
+                "type": "integer",
+                "value": 0
+              },
+              "rangeMode": {
+                "type": "choice",
+                "value": "auto"
+              },
+              "source": {
+                "type": "string",
+                "value": "plate"
+              },
+              "sourceChromaLocation": {
+                "type": "choice",
+                "value": "auto"
+              },
+              "sourceMatrix": {
+                "type": "choice",
+                "value": "auto"
+              },
+              "sourcePrimaries": {
+                "type": "choice",
+                "value": "auto"
+              },
+              "sourceRange": {
+                "type": "choice",
+                "value": "auto"
+              },
+              "sourceTransfer": {
+                "type": "choice",
+                "value": "auto"
+              }
+            },
+            "inputImages": [],
+            "inputs": [],
+            "instance": 0,
+            "name": "Plate",
+            "network": 1,
+            "node": 1,
+            "outputPort": 4294967295,
+            "path": [],
+            "produced": {
+              "channels": [
+                "R",
+                "G",
+                "B",
+                "A"
+              ],
+              "color": "data",
+              "contentHash": "0000000000000000",
+              "height": 48,
+              "pixelAspect": 1.0,
+              "precision": "float32",
+              "residency": "gpu-device",
+              "width": 64
+            },
+            "region": {
+              "height": 48,
+              "width": 64,
+              "x": 0,
+              "y": 0
+            },
+            "reused": false,
+            "scopedInputs": []
+          },
+          {
+            "description": {
+              "association": "straight",
+              "channels": [
+                "R",
+                "G",
+                "B",
+                "A"
+              ],
+              "color": "data",
+              "dataBounds": {
+                "height": 48,
+                "width": 64,
+                "x": 0,
+                "y": 0
+              },
+              "format": {
+                "height": 48,
+                "width": 64,
+                "x": 0,
+                "y": 0
+              },
+              "pixelAspect": 1.0,
+              "precision": "float32"
+            },
+            "effectiveParams": {},
+            "inputImages": [
+              {
+                "channels": [
+                  "R",
+                  "G",
+                  "B",
+                  "A"
+                ],
+                "color": "data",
+                "contentHash": "0000000000000000",
+                "height": 48,
+                "pixelAspect": 1.0,
+                "precision": "float32",
+                "residency": "gpu-device",
+                "width": 64
+              }
+            ],
+            "inputs": [
+              1
+            ],
+            "instance": 0,
+            "name": "Output",
+            "network": 1,
+            "node": 2,
+            "outputPort": 4294967295,
+            "path": [],
+            "produced": {
+              "channels": [
+                "R",
+                "G",
+                "B",
+                "A"
+              ],
+              "color": "data",
+              "contentHash": "3d53add7adcec388",
+              "height": 48,
+              "pixelAspect": 1.0,
+              "precision": "float32",
+              "residency": "gpu-device",
+              "width": 64
+            },
+            "region": {
+              "height": 48,
+              "width": 64,
+              "x": 0,
+              "y": 0
+            },
+            "reused": false,
+            "scopedInputs": [
+              {
+                "instance": 0,
+                "network": 1,
+                "node": 1,
+                "outputPort": 4294967295,
+                "path": []
+              }
+            ]
+          }
+        ]
+      },
+      "ok": true,
+      "readback": {
+        "network": 1,
+        "node": 2,
+        "note": "diagnostic-only; the executor path itself performs no host readback"
+      },
+      "rendered": {
+        "backend": "slang",
+        "color": "data",
+        "device": "NVIDIA GeForce GTX 1070",
+        "frame": 0,
+        "height": 48,
+        "network": 1,
+        "path": "/tmp/issue88-unknown-par.ppm",
+        "precision": "float32",
+        "width": 64
+      },
+      "warnings": []
+    },
+    "before_exit": 0,
+    "authored_decode_interpretation": {
+      "matrix": "bt709",
+      "range": "limited",
+      "chromaLocation": "left",
+      "transfer": "bt709",
+      "primaries": "bt709"
+    },
+    "fixture": "unknown-par.avi / unknown-par.nemo",
+    "generator": [
+      "ffmpeg",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=gray:s=64x48:r=24",
+      "-vf",
+      "setsar=0",
+      "-frames:v",
+      "1",
+      "-c:v",
+      "rawvideo",
+      "-pix_fmt",
+      "yuv420p",
+      "unknown-par.avi"
+    ],
+    "independent_ffprobe": {
+      "width": 64,
+      "height": 48,
+      "sample_aspect_ratio": "absent"
+    },
+    "result": "Strict PAR rejection broke 9 protected Viewer cases. Owner explicitly approved preserving the established square-pixel default when clip PAR is unspecified; explicit header PAR remains authoritative.",
+    "strict_trial_response": {
+      "errors": [
+        "node 'Plate' (id 1, type 'source'): source 'plate' (/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue88-images/unknown-par.avi) could not be described at frame 0: source 'plate' (/home/rgame/dev/Nemo_Dev2/docs/evidence/assets/issue88-images/unknown-par.avi): source 'plate' reports an invalid pixel aspect (0.000000)"
+      ],
+      "ok": false,
+      "warnings": []
+    },
+    "strict_trial_exit": 1,
+    "final_verification": {
+      "command": [
+        "build/debug/apps/nemo-cli/nemo-cli",
+        "evaluate-gpu",
+        "docs/evidence/assets/issue88-images/unknown-par.nemo",
+        "--out",
+        "/tmp/issue88-unknown-par.ppm",
+        "--width",
+        "64",
+        "--height",
+        "48",
+        "--backend",
+        "slang",
+        "--shaders",
+        "build/debug/src/nemo/gpu/shaders/spv"
+      ],
+      "exit": 0,
+      "description": {
+        "association": "straight",
+        "channels": [
+          "R",
+          "G",
+          "B",
+          "A"
+        ],
+        "color": "data",
+        "dataBounds": {
+          "height": 48,
+          "width": 64,
+          "x": 0,
+          "y": 0
+        },
+        "format": {
+          "height": 48,
+          "width": 64,
+          "x": 0,
+          "y": 0
+        },
+        "pixelAspect": 1.0,
+        "precision": "float32"
+      },
+      "result": {
+        "channels": [
+          "R",
+          "G",
+          "B",
+          "A"
+        ],
+        "color": "data",
+        "contentHash": "3d53add7adcec388",
+        "height": 48,
+        "pixelAspect": 1.0,
+        "precision": "float32",
+        "residency": "gpu-device",
+        "width": 64
+      },
+      "policy": "Owner-approved existing square-pixel default only when clip PAR is unspecified; explicit PAR retained."
+    },
+    "strict_trial_command": [
+      "build/debug/apps/nemo-cli/nemo-cli",
+      "evaluate-gpu",
+      "docs/evidence/assets/issue88-images/unknown-par.nemo",
+      "--out",
+      "/tmp/issue88-unknown-par.ppm",
+      "--width",
+      "64",
+      "--height",
+      "48",
+      "--backend",
+      "slang",
+      "--shaders",
+      "build/debug/src/nemo/gpu/shaders/spv"
+    ]
+  },
+  "documentation_checks": {
+    "relative_links_checked": 36,
+    "missing": [],
+    "reference_matrix": "Nuke17 docs only; actual archived #25 handlers and current verified[12]/[13] mappings recorded; no Nuke runtime parity claim.",
+    "clang_format_18": {
+      "files": 65,
+      "result": "Final dry-run/Werror passed."
+    }
+  },
+  "full_debug_suite": {
+    "command": "ctest --preset debug --output-on-failure --output-log /tmp/issue88-debug-full.log --output-junit /tmp/issue88-debug-full.xml -j 2",
+    "runs": 1,
+    "discovered": 732,
+    "passed": 709,
+    "failed": [
+      "SourceEvaluation.WithoutProviderRealSourceIsRejectedExplicitly",
+      "Viewer.InterpretationMapIsParsedStrictly",
+      "Interactive.RoutedMediaCanvasDoesNotReuseGraphScopeFormat",
+      "Interactive.PlaybackWaitsForTheFrameItSubmitted",
+      "Interactive.PlaybackPublishesEveryFrameItRenders"
+    ],
+    "skipped": [
+      "ViewerDestinationSurface.ViewerViewsStayIndependentPerPanel",
+      "ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations",
+      "ReadViewerSurface.PngSelectedInReadAppearsInItsAttachedViewer",
+      "ReadViewerSurface.GraphViewerUsesTheAttachedTargetsReferenceNotTheLegacySrcKey",
+      "ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt",
+      "ReadViewerSurface.ClearingTheReadShowsTheExplicitEmptyState",
+      "ReadViewerSurface.OfflineReadReportsItsPathOnTheViewer",
+      "ReadViewerSurface.DownstreamEffectKeepsItsSingleMediaSourcesDomain",
+      "ReadViewerSurface.MixedMediaSourcesKeepMainInputFormatWithoutStretching",
+      "ReadViewerSurface.RetiredContinuousZoomReopensAtItsScaleAndUnreadableStateFits",
+      "ReadViewerSurface.UserDocumentDisplaysItsAttachedRead",
+      "ReadViewerSurface.ViewerWheelZoomIsContinuousAnchoredAndReversible",
+      "ReadViewerSurface.ViewerViewDrivesTheRequestRegionAndSampling",
+      "ReadViewerSurface.ViewerDragPanKeepsTheZoomAndTheDocument",
+      "ReadViewerSurface.ViewerZoomControlStatesAndAcceptsAnyScale",
+      "ReadViewerSurface.ForceFullFrameCoversTheWholeDomainAndKeepsTheView",
+      "ForceFullFrameSplitSurface.ForceFullFrameStaysInsideItsPanel",
+      "PreparedConfigSurface.SamePathConfigRewriteRefreshesOnFirstReplacement"
+    ],
+    "followup": {
+      "in_scope_failures": "All four passed focused rerun after correction; full suite not repeated.",
+      "known_remaining_failure": "Viewer.InterpretationMapIsParsedStrictly (unknown colorimetry), unchanged.",
+      "focused_time_seconds": 4.77,
+      "tests": [
+        "SourceEvaluation.WithoutProviderRealSourceIsRejectedExplicitly",
+        "Interactive.RoutedMediaCanvasDoesNotReuseGraphScopeFormat",
+        "Interactive.PlaybackWaitsForTheFrameItSubmitted",
+        "Interactive.PlaybackPublishesEveryFrameItRenders",
+        "Interactive.CacheRangeSupersedingDescriptionDoesNotStallViewer",
+        "Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure"
+      ],
+      "passed": 6,
+      "retained_logs": [
+        "debug-followup.log.gz",
+        "debug-followup.xml.gz"
+      ],
+      "new_regression_after_full_run": "CacheRangeSupersedingDescriptionDoesNotStallViewer was added after the single 732-case full run and verified separately; no second full run."
+    }
+  },
+  "playback_regression": {
+    "reproduction": "ctest --preset debug --output-on-failure -R ^Interactive.Playback(WaitsForTheFrameItSubmitted|PublishesEveryFrameItRenders)$ -j 1",
+    "red": "2/2 failed in1.76s; dropped1, staleRejected1",
+    "hypothesis": "Viewport/density refresh replaced an already-pending description with identical authored identity; preserve that request and use latest view when it answers.",
+    "state": "Fixed; both unchanged regressions and native playback passed.",
+    "final_verification": {
+      "focused": "Both original playback assertions passed unchanged.",
+      "native": "Actual Wayland mixed-source test advanced at least three frames, paused, and matched presentation localTime to controller.frame; passed.",
+      "capture": "issue88-mixed-playback.png",
+      "environment": "environment-issue88-mixed-playback.json",
+      "observed_warning": "ViewerPanel.qml routedClock binding-loop diagnostic during native playback; playback and framing assertions passed. QML unchanged; origin not established."
+    }
+  },
+  "range_supersession_regression": {
+    "origin": "Standards reviewer final-delta liveness finding.",
+    "red": "Public controller/native regression stayed on presented frame0 instead of frame1 for10s after range superseded its pending description (11.23s test).",
+    "fix": "Successful range admission clears pending_ and outstandingRequest_; displayed frame and last request remain retained. Later view refresh can re-issue metadata.",
+    "green": "New regression plus five protected cases passed in focused debug rerun.",
+    "test": "Interactive.CacheRangeSupersedingDescriptionDoesNotStallViewer",
+    "native_surface": {
+      "result": "Passed actual Wayland mixed-source viewer; refresh reached frame4 at quarter density after range supersession.",
+      "seconds": 4.67,
+      "capture": "issue88-mixed-range-refresh.png",
+      "environment": "environment-issue88-mixed-range-refresh.json",
+      "visual": "Inspected: frame4, unchanged 96x64 logical region and bounded foreground; no mixed-format stretch."
+    },
+    "sanitizers": "Passed ASan + UBSan + enabled leak detection on final controller code."
+  },
+  "sanitizer_gate": {
+    "preset": "asan (ASan + UBSan)",
+    "selected": 74,
+    "passed": 74,
+    "failed": [],
+    "skipped": [],
+    "seconds": 737.58,
+    "excluded_known_failure": "Viewer.InterpretationMapIsParsedStrictly",
+    "scope": "GPU, contribution, effect, Viewer, source-error, and three controller metadata/playback cases; not a second full suite.",
+    "environment": {
+      "ASAN_OPTIONS": "detect_leaks=1",
+      "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+      "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json"
+    },
+    "suppression_policy": "Existing preset LSAN suppressions unchanged; private issue70 repaired Mesa vendor plus system NVIDIA; no system/vendor configuration changes.",
+    "logs": [
+      "asan-focused.log.gz",
+      "asan-focused.xml.gz"
+    ],
+    "final_delta": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 18.8,
+      "test": "Interactive.CacheRangeSupersedingDescriptionDoesNotStallViewer",
+      "logs": [
+        "asan-supersession.log.gz",
+        "asan-supersession.xml.gz"
+      ]
+    },
+    "total_distinct_passed": 75
+  }
+}

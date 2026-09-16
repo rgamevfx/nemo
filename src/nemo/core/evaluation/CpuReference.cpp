@@ -229,105 +229,407 @@ std::vector<ExpandedNode> expandDependencies(const Document& document, NetworkId
 
 namespace {
 
-// Coverage a node must actually produce for one demand (issue #85): the demand
-// rounded outward to whole coverage-padding blocks and clipped to the image
-// domain. Padding keeps overlapping pans inside already resident coverage;
-// clipping keeps a region inside the data that exists. An empty result (a
-// demand entirely outside the domain) escalates to the whole domain rather than
-// planning a zero-sized raster.
-[[nodiscard]] Region plannedCoverage(const Region& demand, int scale, int domainWidth, int domainHeight) {
-    const int block = kCoveragePaddingRasterPixels * (isSamplingScale(scale) ? scale : 1);
-    Region coverage = block > 0 ? regionOnLattice(demand, block, domainWidth, domainHeight)
-                                : regionOnLattice(demand, scale, domainWidth, domainHeight);
-    if (coverage.width <= 0 || coverage.height <= 0)
-        coverage = domainRegion(domainWidth, domainHeight);
-    return coverage;
+// Coverage a node must actually produce for one demand (issue #88): the demand
+// rounded outward to whole coverage-padding blocks, with that padding limited to
+// the node's useful domain, and the demanded rectangle itself always retained.
+//
+// Padding keeps overlapping pans inside coverage that is already resident, so
+// limiting it to the domain avoids manufacturing black pixels outside the image
+// that nobody can pan onto. The demand is not padding: a demand outside the
+// format is exactly the transparent black the caller asked for, and neither
+// discarding it nor escalating it to the whole domain would answer the request.
+[[nodiscard]] Region plannedCoverage(const Region& demand, int scale, const Region& usefulDomain) {
+    const int block = kCoveragePaddingRasterPixels > 0 ? kCoveragePaddingRasterPixels * scale : scale;
+    const Region demanded = regionOnLattice(demand, scale);
+    const Region padded = regionOnLattice(demand, block);
+    const Region domain = regionOnLattice(usefulDomain, scale);
+    return regionUnion(regionIntersection(padded, domain), demanded);
+}
+
+// The domain a described image can produce: its format unioned with its data
+// window. An empty data window (a described image whose every pixel is
+// transparent) therefore produces exactly its format.
+[[nodiscard]] Region describedDomain(const ImageDescription& description) {
+    return regionUnion(description.format, description.dataBounds);
+}
+
+// The canvas description a generator falls back to (issue #96): the owning
+// network's authored format, fully covered by data.
+[[nodiscard]] ImageDescription canvasDescription(const ImageFormat& format) {
+    const Region region{0, 0, format.width, format.height};
+    ImageDescription description;
+    description.format = region;
+    description.dataBounds = region;
+    description.pixelAspect = format.pixelAspect;
+    return description;
+}
+
+// Admissibility of one described image. A described image is always
+// geometrically complete: it states a positive format, a finite positive pixel
+// aspect and named stored channels. Unknown geometry has no representation
+// here — the seam that could not obtain it fails with the offending node and
+// source instead — so a consumer never has to interpret a zero as "unknown".
+[[nodiscard]] bool representableImageRegion(const Region& bounds) {
+    const std::int64_t right = static_cast<std::int64_t>(bounds.x) + bounds.width;
+    const std::int64_t bottom = static_cast<std::int64_t>(bounds.y) + bounds.height;
+    return bounds.width >= 0 && bounds.height >= 0 && bounds.x >= -kMaxDescribedCoordinate &&
+           bounds.y >= -kMaxDescribedCoordinate && bounds.x <= kMaxDescribedCoordinate &&
+           bounds.y <= kMaxDescribedCoordinate && right <= kMaxDescribedCoordinate && bottom <= kMaxDescribedCoordinate;
+}
+
+void validateDescription(const NodeInstance& node, const ImageDescription& description) {
+    if (hasNoImageFormat(description)) {
+        failNode(node, "node description has no image format: every produced image states its format "
+                       "(a source that cannot be inspected reports that failure instead of an empty one)");
+    }
+    if (!std::isfinite(description.pixelAspect) || description.pixelAspect <= 0.0F) {
+        failNode(node,
+                 "node description reports an invalid pixel aspect (" + std::to_string(description.pixelAspect) + ")");
+    }
+    if (description.format.x != 0 || description.format.y != 0) {
+        failNode(node, "node description format must be normalized to origin (0,0); data bounds may be signed");
+    }
+    const auto validateBounds = [&node](const Region& bounds, const char* field) {
+        if (!representableImageRegion(bounds))
+            failNode(node, std::string("node description has unrepresentable ") + field);
+    };
+    validateBounds(description.format, "format");
+    validateBounds(description.dataBounds, "data bounds");
+    for (const std::string& channel : description.channels) {
+        if (channel.empty()) {
+            failNode(node, "node description declares an unnamed image channel");
+        }
+    }
+}
+
+// The channels a node's declared capabilities can produce: the demand must be
+// covered by one declared channel set, so a node declaring RGBA answers an RGBA
+// or RGB demand but not a channel set it never claimed to carry.
+[[nodiscard]] bool capabilitiesCoverChannels(const std::vector<std::string>& declared, const std::string& demand) {
+    for (const std::string& supported : declared) {
+        if (std::all_of(demand.begin(), demand.end(),
+                        [&supported](char channel) { return supported.find(channel) != std::string::npos; })) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Union of two channel demands in the canonical RGBA order, preserving any
+// channel name outside that vocabulary in the order it was demanded.
+[[nodiscard]] std::string unionChannels(const std::string& left, const std::string& right) {
+    std::string result;
+    for (const char channel : std::string_view{"RGBA"}) {
+        if (left.find(channel) != std::string::npos || right.find(channel) != std::string::npos) {
+            result.push_back(channel);
+        }
+    }
+    for (const std::string* source : {&left, &right}) {
+        for (const char channel : *source) {
+            if (result.find(channel) == std::string::npos) {
+                result.push_back(channel);
+            }
+        }
+    }
+    return result;
+}
+
+// Describes one source node through the media description seam (issue #88). The
+// resolver's own policy decision is raised first — it is a metadata failure and
+// belongs before any provider call — and a provider failure is wrapped with the
+// offending node, source key, path and frame, exactly like the frame seam, so
+// both seams name the same relationship. A source whose media cannot be
+// inspected fails HERE: there is no empty or sentinel description, and the
+// executor never invents geometry for it.
+[[nodiscard]] ImageDescription describeSource(const Document& document, const NodeInstance& node,
+                                              const EffectiveSourceRequest& source,
+                                              SourceDescriptionProvider* sources) {
+    if (source.policyError) {
+        failNode(node, sourcePolicyProblem(source));
+    }
+    const std::string subject = "source '" + source.sourceKey + "' (" + source.path + ")";
+    if (sources == nullptr) {
+        failNode(node,
+                 subject + " requires a source description provider; this executor never invents source geometry");
+    }
+    try {
+        return sources->describe(document, source);
+    } catch (const EvaluationException& error) {
+        if (error.hasNode()) {
+            throw;
+        }
+        failNode(node, subject + " could not be described at frame " + std::to_string(source.readFrame) + ": " +
+                           error.what());
+    } catch (const std::exception& error) {
+        failNode(node, subject + " could not be described at frame " + std::to_string(source.readFrame) + ": " +
+                           error.what());
+    }
+}
+
+// The described data window is the support of a produced image (issue #88):
+// every sample outside it is transparent black, whichever node produced the
+// raster — a generator cannot fabricate samples beyond its canvas, a grade with
+// an offset cannot leak nonzero samples outside the described window, and an
+// empty data window is a fully transparent image rather than anything else.
+//
+// One central guard, applied where a node's own implementation returns pixels,
+// keeps that policy out of every effect's pixel math and out of every
+// executor's kernels; a contribution states what its image IS (its description)
+// and the executor makes the raster agree with it.
+//
+// Geometry: the raster covers `request.region` at `request.samplingScale`, so
+// raster sample (x, y) is anchored at the full-resolution coordinate
+// (region.x + x*scale, region.y + y*scale) — the same sampling-lattice
+// convention every executor and shader uses. A sample whose anchor lies inside
+// `dataBounds` is kept even when it lies outside the format (overscan IS data),
+// and one whose anchor lies outside is cleared. The guard never changes the
+// raster's extent, region or scale, so anchors, coverage and identities of the
+// delivered geometry are untouched; it runs before the produced image's
+// identity is computed, so a cached result is always the guarded one.
+void enforceDataWindow(CpuImage& image, const EvaluationRequest& request, const ImageDescription& description) {
+    const int scale = isSamplingScale(request.samplingScale) ? request.samplingScale : 1;
+    const Region& bounds = description.dataBounds;
+    // Raster columns whose anchor is inside the data window, as a half-open
+    // index range: the lattice helpers keep signed origins and non-multiple
+    // extents exact at every sampling scale.
+    const int firstX = std::max(0, latticeCeil(bounds.x - request.region.x, scale) / scale);
+    const int firstY = std::max(0, latticeCeil(bounds.y - request.region.y, scale) / scale);
+    const int lastX = std::min(image.width(), latticeCeil(bounds.x + bounds.width - request.region.x, scale) / scale);
+    const int lastY = std::min(image.height(), latticeCeil(bounds.y + bounds.height - request.region.y, scale) / scale);
+    if (firstX <= 0 && firstY <= 0 && lastX >= image.width() && lastY >= image.height()) {
+        return;  // the whole raster is inside the data window; nothing to clear
+    }
+    // Clear only the four bands outside the window: the common case (a raster
+    // inside its own data window) costs four comparisons, and a padded raster
+    // pays for the padding it actually has rather than for a full scan.
+    const std::array<float, kImageChannels> transparent{0.0F, 0.0F, 0.0F, 0.0F};
+    const auto clear = [&image, &transparent](int yBegin, int yEnd, int xBegin, int xEnd) {
+        for (int y = std::max(0, yBegin); y < std::min(image.height(), yEnd); ++y) {
+            for (int x = std::max(0, xBegin); x < std::min(image.width(), xEnd); ++x) {
+                image.setPixel(x, y, transparent);
+            }
+        }
+    };
+    clear(0, firstY, 0, image.width());
+    clear(lastY, image.height(), 0, image.width());
+    clear(firstY, lastY, 0, firstX);
+    clear(firstY, lastY, lastX, image.width());
 }
 
 }  // namespace
 
-RegionPlan planDependencyRegions(const Document& document, const EvaluationRequest& request,
-                                 const NodeContributions& contributions,
-                                 const std::map<EvaluationNodeId, float>& pixelAspects) {
-    RegionPlan plan;
+ImageDescriptionPlan describeDependencies(const Document& document, const EvaluationRequest& request,
+                                          const NodeContributions& contributions, SourceDescriptionProvider* sources) {
+    ImageDescriptionPlan plan;
     plan.order = expandDependencies(document, request.network, request.output);
-    if (plan.order.empty())
+    if (plan.order.empty()) {
         throw EvaluationException("evaluation plan has no scheduled nodes");
-    const EvaluationRequest normalized = canonicalizeRequest(request);
-    const int scale = isSamplingScale(normalized.samplingScale) ? normalized.samplingScale : 1;
-    const int domainWidth = normalized.imageWidth();
-    const int domainHeight = normalized.imageHeight();
-    const Region whole = domainRegion(domainWidth, domainHeight);
-
-    // Pixel aspect of every node's own output, dependencies first: generators
-    // use their network's canvas, sources retain the supplied media aspect (or
-    // unknown), and downstream effects propagate the main input's aspect.
-    std::map<EvaluationNodeId, float> aspects;
-    for (const ExpandedNode& expanded : plan.order) {
-        const NodeContribution* contribution = expanded.alias ? nullptr : contributions.find(expanded.node->type);
-        float aspect = document.network(expanded.id.network).format().pixelAspect;
-        if (const auto supplied = pixelAspects.find(expanded.id); supplied != pixelAspects.end()) {
-            aspect = supplied->second;
-        } else if (contribution != nullptr && contribution->role == NodeRole::Source) {
-            aspect = 0.0F;
-        } else if (!expanded.inputs.empty() && expanded.inputs.front().node != kInvalidNode) {
-            aspect = aspects.at(expanded.inputs.front());
-        }
-        aspects.emplace(expanded.id, aspect);
     }
+
+    for (const ExpandedNode& expanded : plan.order) {
+        ResolvedImageNode resolved;
+        std::optional<NodeInstance> localNode;
+        const NodeInstance* effective =
+            resolveEffectiveNode(document, expanded, localNode, static_cast<double>(request.localTime));
+        resolved.node = localNode ? std::move(*localNode) : *effective;
+
+        // The declared inputs' descriptions, in declared-port order with a null
+        // for an absent optional slot: what a node's own description rule and
+        // the planner both read, in one shape.
+        std::vector<const ImageDescription*> inputDescriptions;
+        inputDescriptions.reserve(expanded.inputs.size());
+        for (const EvaluationNodeId& producer : expanded.inputs) {
+            inputDescriptions.push_back(producer.node == kInvalidNode ? nullptr : &plan.nodes.at(producer).description);
+        }
+        const std::span<const ImageDescription* const> inputs(inputDescriptions.data(), inputDescriptions.size());
+
+        if (expanded.alias) {
+            // A nested network instance is routing: it produces the image its
+            // selected internal producer produces, descriptions included.
+            const ResolvedImageNode& target = plan.nodes.at(*expanded.alias);
+            resolved.description = target.description;
+            resolved.source = target.source;
+            plan.nodes.emplace(expanded.id, std::move(resolved));
+            continue;
+        }
+
+        const NodeCatalog& catalog = document.network(expanded.id.network).graph().catalog();
+        const NodeContribution* contribution = contributions.find(resolved.node.type);
+        if (contribution == nullptr) {
+            failNode(resolved.node, catalog.find(resolved.node.type) != nullptr
+                                        ? "declared node type has no registered implementation (executor unavailable)"
+                                        : "unknown node type has no registered implementation");
+        }
+        contributions.validate(catalog, resolved.node);
+        for (const ParameterSpec& parameter : contribution->descriptor.parameters) {
+            resolved.node.params.try_emplace(parameter.name, parameter.defaultValue);
+        }
+        // The node's typed parameter interpretation is metadata too: it is
+        // validated here, from the resolved state the executor will consume, so
+        // an inadmissible authored value is reported before any node's pixels
+        // are produced. The message is the contribution's own (the node-local
+        // helper the executor also reads through), with the node identified.
+        if (const std::optional<std::string> problem =
+                contributions.validateParameters(catalog, resolved.node, resolved.node.params)) {
+            throw EvaluationException(*problem, resolved.node.id, resolved.node.name);
+        }
+
+        // The shared default an ordinary node keeps without a rule of its own.
+        const ImageDescription* mainInput = !inputDescriptions.empty() ? inputDescriptions.front() : nullptr;
+        const ImageDescription inherited =
+            mainInput != nullptr ? *mainInput : canvasDescription(document.network(expanded.id.network).format());
+
+        if (contribution->role == NodeRole::Source) {
+            const EffectiveSourceRequest source = resolveSourceRequest(document, resolved.node, request.localTime);
+            resolved.source = source;
+            resolved.description = describeSource(document, resolved.node, source, sources);
+        } else if (contribution->describe) {
+            resolved.description = contribution->describe(
+                NodeDescriptionContext{document, catalog, resolved.node, request.localTime, inputs, inherited});
+        } else {
+            resolved.description = inherited;
+        }
+        validateDescription(resolved.node, resolved.description);
+        plan.nodes.emplace(expanded.id, std::move(resolved));
+    }
+    return plan;
+}
+
+RegionPlan planDependencyRegions(const Document& document, const EvaluationRequest& request,
+                                 const NodeContributions& contributions, SourceDescriptionProvider* sources) {
+    RegionPlan plan;
+    plan.images = describeDependencies(document, request, contributions, sources);
+
+    // The described target defines the request's logical format, so the caller's
+    // demand is re-based on it: a caller asks for a region and the graph says
+    // what image that region belongs to. The described format is authoritative,
+    // so a caller need not state one at all.
+    const ImageDescription& target = plan.images.nodes.at(plan.images.order.back().id).description;
+    const int scale = isSamplingScale(request.samplingScale) ? request.samplingScale : 1;
+    EvaluationRequest demanded = request;
+    demanded.fullWidth = target.format.width;
+    demanded.fullHeight = target.format.height;
+    plan.request = canonicalizeRequest(demanded);
+    validateRequestDomain(plan.request);
+    // Origin identity: the immutable snapshot, the registration and the exact
+    // canonical demand this plan resolves. A consumer handed this plan (the
+    // viewer shares one between its cache key and its execution) compares these
+    // instead of re-deriving them.
+    plan.document = &document;
+    plan.documentRevision = document.stateRevision();
+    plan.contributions = &contributions;
+    plan.demand = canonicalizeRequest(request);
 
     // Coverage travels backwards from the requested output, so a node is only
     // visited after every consumer has contributed its demand (the order is
     // dependency-first, hence its reverse is consumer-first).
-    std::map<EvaluationNodeId, Region> demand;
-    demand.emplace(plan.order.back().id, normalized.region);
+    std::map<EvaluationNodeId, Region> producerDemand;
+    std::map<EvaluationNodeId, std::string> channelDemand;
+    const EvaluationNodeId& targetId = plan.images.order.back().id;
+    producerDemand.emplace(targetId, plan.request.region);
+    channelDemand.emplace(targetId, plan.request.channels);
 
-    for (auto entry = plan.order.rbegin(); entry != plan.order.rend(); ++entry) {
+    for (auto entry = plan.images.order.rbegin(); entry != plan.images.order.rend(); ++entry) {
         const ExpandedNode& expanded = *entry;
-        const NodeContribution* contribution = expanded.alias ? nullptr : contributions.find(expanded.node->type);
+        const ResolvedImageNode& resolved = plan.images.nodes.at(expanded.id);
+        const NodeInstance& node = resolved.node;
+        const ImageDescription& description = resolved.description;
+        const NodeContribution* contribution = expanded.alias ? nullptr : contributions.find(node.type);
         // A contribution that declares no regional support processes whole
         // images internally: its own coverage and every input's coverage
-        // escalate, and consumers read the sub-region they asked for from it.
+        // escalate to its whole useful domain, and consumers read the sub-region
+        // they asked for from it.
         const bool wholeFrameOnly = contribution != nullptr && !contribution->descriptor.capabilities.supportsRegion;
-
-        std::optional<NodeInstance> resolvedNode;
-        const NodeInstance* effectiveNode =
-            resolveEffectiveNode(document, expanded, resolvedNode, static_cast<double>(normalized.localTime));
+        const Region domain = regionOnLattice(describedDomain(description), scale);
         const Region coverage =
-            wholeFrameOnly ? whole : plannedCoverage(demand.at(expanded.id), scale, domainWidth, domainHeight);
+            wholeFrameOnly ? domain : plannedCoverage(producerDemand.at(expanded.id), scale, domain);
 
-        EvaluationRequest nodeRequest = normalized;
+        // Every per-node request states this node's OWN format as its domain:
+        // its coverage is in absolute image coordinates, so a consumer's own
+        // canvas must never be imposed on it.
+        EvaluationRequest nodeRequest = plan.request;
         nodeRequest.network = expanded.id.network;
         nodeRequest.region = coverage;
+        nodeRequest.fullWidth = description.format.width;
+        nodeRequest.fullHeight = description.format.height;
+        nodeRequest.channels = channelDemand.at(expanded.id);
+        validateRequestDomain(nodeRequest);
+        if (contribution != nullptr) {
+            const std::string& demandedChannels = nodeRequest.channels;
+            const bool carried =
+                std::all_of(demandedChannels.begin(), demandedChannels.end(), [&description](char channel) {
+                    return std::any_of(
+                        description.channels.begin(), description.channels.end(),
+                        [channel](const std::string& name) { return name.size() == 1 && name.front() == channel; });
+                });
+            if (!carried) {
+                failNode(node, "the requested channels '" + demandedChannels +
+                                   "' are not part of this node's described image channels");
+            }
+            if (!capabilitiesCoverChannels(contribution->descriptor.capabilities.channels, demandedChannels)) {
+                failNode(node, "the requested channels '" + demandedChannels + "' are not declared by node type '" +
+                                   node.type + "'");
+            }
+        }
         plan.requests[expanded.id] = nodeRequest;
 
-        // The node's own dependency rule states what it reads per declared
+        // The node's own requirement rule states what it reads per declared
         // input port. Ports it does not cover are read at the node's own
         // coverage; a node with no rule reads every input at its own coverage
         // (the pointwise default).
-        std::vector<Region> reads;
-        if (!wholeFrameOnly && contribution != nullptr && contribution->inputRegions) {
+        std::vector<const ImageDescription*> inputDescriptions;
+        inputDescriptions.reserve(expanded.inputs.size());
+        for (const EvaluationNodeId& producer : expanded.inputs) {
+            inputDescriptions.push_back(producer.node == kInvalidNode ? nullptr
+                                                                      : &plan.images.nodes.at(producer).description);
+        }
+        std::vector<InputRequirement> requirements;
+        if (!wholeFrameOnly && contribution != nullptr && contribution->inputRequirements) {
             const NodeCatalog& catalog = document.network(expanded.id.network).graph().catalog();
-            ParameterValues effectiveParams = effectiveNode->params;
-            const NodeRegionContext regionContext{catalog, *effectiveNode, nodeRequest, effectiveParams,
-                                                  aspects.at(expanded.id)};
-            reads = contribution->inputRegions(regionContext);
+            const ParameterValues& effectiveParams = node.params;
+            const std::span<const ImageDescription* const> inputs(inputDescriptions.data(), inputDescriptions.size());
+            const NodeRegionContext regionContext{
+                catalog, node, nodeRequest, effectiveParams, description.pixelAspect, description, inputs};
+            requirements = contribution->inputRequirements(regionContext);
+        }
+        if (requirements.size() > expanded.inputs.size()) {
+            failNode(node, "input requirements declare a port beyond this node's input contract");
+        }
+        for (std::size_t port = 0; port < requirements.size(); ++port) {
+            if (!representableImageRegion(requirements[port].region)) {
+                failNode(node, "input requirement for port " + std::to_string(port) + " has unrepresentable bounds");
+            }
         }
         for (std::size_t port = 0; port < expanded.inputs.size(); ++port) {
             const EvaluationNodeId& producer = expanded.inputs[port];
             if (producer.node == kInvalidNode)
                 continue;  // absent optional slot: no source, no demand
+            // A port the rule does not cover (or covers with an empty region and
+            // no channels) inherits this node's own coverage and channels.
             Region read = coverage;
-            if (wholeFrameOnly) {
-                read = whole;
-            } else if (port < reads.size()) {
-                read = plannedCoverage(reads[port], scale, domainWidth, domainHeight);
+            std::string channels = nodeRequest.channels;
+            if (port < requirements.size()) {
+                const InputRequirement& requirement = requirements[port];
+                if (requirement.region.width > 0 && requirement.region.height > 0) {
+                    read = requirement.region;
+                }
+                if (!requirement.channels.empty()) {
+                    channels = requirement.channels;
+                }
             }
-            const auto found = demand.find(producer);
-            if (found == demand.end()) {
-                demand.emplace(producer, read);
+            const Region projected =
+                plannedCoverage(read, scale, describedDomain(plan.images.nodes.at(producer).description));
+            const auto found = producerDemand.find(producer);
+            if (found == producerDemand.end()) {
+                producerDemand.emplace(producer, projected);
             } else {
-                found->second = regionUnion(found->second, read);
+                found->second = regionUnion(found->second, projected);
+            }
+            const auto demandedChannels = channelDemand.find(producer);
+            if (demandedChannels == channelDemand.end()) {
+                channelDemand.emplace(producer, channels);
+            } else {
+                demandedChannels->second = unionChannels(demandedChannels->second, channels);
             }
         }
     }
@@ -447,15 +749,21 @@ void validateRequestDomain(const EvaluationRequest& request) {
                                   " pixel reference limit");
     }
     if (request.imageWidth() > kMaxDimension || request.imageHeight() > kMaxDimension)
-        throw EvaluationException("full image domain exceeds the 8192 pixel reference limit");
-    if (request.region.x < 0 || request.region.y < 0 || request.fullWidth < 0 || request.fullHeight < 0)
-        throw EvaluationException("image domain and region origin must be nonnegative");
-    if ((request.fullWidth == 0) != (request.fullHeight == 0) ||
-        ((request.region.x != 0 || request.region.y != 0) && request.fullWidth == 0))
-        throw EvaluationException("cropped requests require explicit fullWidth and fullHeight");
-    if (request.region.x > request.imageWidth() - request.region.width ||
-        request.region.y > request.imageHeight() - request.region.height)
-        throw EvaluationException("requested region lies outside the full-resolution image domain");
+        throw EvaluationException("full image domain exceeds the " + std::to_string(kMaxDimension) +
+                                  " pixel reference limit");
+    if (request.fullWidth < 0 || request.fullHeight < 0)
+        throw EvaluationException("image domain must be nonnegative");
+    if ((request.fullWidth == 0) != (request.fullHeight == 0))
+        throw EvaluationException("an explicit image domain requires both fullWidth and fullHeight");
+    // The region is signed and may extend outside the domain, and a caller need
+    // not state the domain at all (issue #88): planning re-bases the demand on
+    // the described target's format, which is the authoritative image format.
+    // Only the raster the region needs and the coordinate range a signed origin
+    // may reach are bounded, so lattice arithmetic stays exact.
+    if (request.region.x < -kMaxDimension || request.region.x > kMaxDimension || request.region.y < -kMaxDimension ||
+        request.region.y > kMaxDimension)
+        throw EvaluationException("request region origin is outside the " + std::to_string(kMaxDimension) +
+                                  " pixel coordinate range");
 }
 
 void validateRequest(const Document& document, const EvaluationRequest& request) {
@@ -510,7 +818,7 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
         }
         // Declared region support is a planner fact, not a rejection
         // (issue #85): a contribution that declares supportsRegion=false is
-        // processed over the whole image domain internally and its consumers
+        // processed over its whole described domain internally and its consumers
         // still receive exactly the region they asked for.
     }
     // Apply the executor's narrower implementation contract only after the
@@ -565,15 +873,33 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
     if (!contributions)
         throw std::invalid_argument("evaluateCpu requires a node registration snapshot");
 
-    // The caller's coverage, normalized to the image-space sampling lattice, is
-    // what this call delivers. Per-node coverage is planned from it and may be
-    // larger (padding, halos, whole-domain escalation); every consumer reads an
-    // input through the coverage its producer really has.
-    const EvaluationRequest normalized = canonicalizeRequest(request);
-    const RegionPlan regionPlan = planDependencyRegions(document, normalized, *contributions);
+    // Descriptions, coverage and coverage channels are resolved once, before
+    // any pixel work: every metadata, declaration, parameter and source
+    // geometry failure is reported with its offending node here, and this
+    // call's delivered region is the plan's normalized request.
+    const RegionPlan regionPlan = planDependencyRegions(document, request, *contributions, sources);
+    const EvaluationRequest& normalized = regionPlan.request;
     // Publication freshness (issue #9): capture revision + generation at
     // request start; computed results publish only while both hold.
     const EvaluationTicket ticket = reuse != nullptr ? reuse->beginTicket(document) : EvaluationTicket{};
+
+    // Executor-specific availability is a declaration failure too, so it is
+    // reported for every scheduled node before the first raster is allocated.
+    for (const ExpandedNode& expandedNode : regionPlan.images.order) {
+        if (expandedNode.alias)
+            continue;
+        const NodeInstance& node = regionPlan.images.nodes.at(expandedNode.id).node;
+        const NodeContribution* contribution = contributions->find(node.type);
+        const bool producesPixels = contribution->role == NodeRole::Image || contribution->role == NodeRole::Source;
+        if (producesPixels && !contribution->cpu) {
+            // A GPU-only (or otherwise unavailable) contribution is honest
+            // about it: report the node and its reason instead of inventing
+            // a fallback image.
+            failNode(node, contribution->cpuUnavailableReason.empty()
+                               ? "no CPU reference implementation is registered for this node type"
+                               : contribution->cpuUnavailableReason);
+        }
+    }
 
     std::map<EvaluationNodeId, std::shared_ptr<const CpuImage>> images;
     std::map<EvaluationNodeId, ImageIdentity> identities;
@@ -585,9 +911,11 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
     std::map<EvaluationNodeId, EvaluationRequest> coverage;
     EvaluationPlan plan;
     plan.request = normalized;
+    plan.description = regionPlan.images.nodes.at(regionPlan.images.order.back().id).description;
 
-    for (const ExpandedNode& expandedNode : regionPlan.order) {
-        const NodeInstance& node = *expandedNode.node;
+    for (const ExpandedNode& expandedNode : regionPlan.images.order) {
+        const ResolvedImageNode& resolved = regionPlan.images.nodes.at(expandedNode.id);
+        const NodeInstance& node = resolved.node;
         PlanStep step;
         step.network = expandedNode.id.network;
         step.instance = expandedNode.id.instance;
@@ -596,38 +924,13 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         step.path = expandedNode.id.path;
         step.type = node.type;
         step.name = node.name;
-        std::optional<NodeInstance> resolvedNode;
-        const NodeInstance* effectiveNode =
-            resolveEffectiveNode(document, expandedNode, resolvedNode, static_cast<double>(normalized.localTime));
-        step.effectiveParams = effectiveNode->params;
+        // The resolution happened once, in the plan: execution consumes that
+        // immutable state and never re-derives animation or source mapping.
+        step.effectiveParams = node.params;
+        step.description = resolved.description;
         const EvaluationRequest nodeRequest = regionPlan.requests.at(expandedNode.id);
         const NodeCatalog& scopedCatalog = document.network(expandedNode.id.network).graph().catalog();
-
-        // Registration compatibility precedes every cache, alias and
-        // implementation decision: a node this registration does not cover, or
-        // one whose declared schema the registered implementation no longer
-        // matches, is reported before a cached result could be reused for it.
-        const NodeContribution* contribution = nullptr;
-        if (!expandedNode.alias) {
-            contribution = contributions->find(effectiveNode->type);
-            if (contribution == nullptr) {
-                if (scopedCatalog.find(effectiveNode->type) != nullptr) {
-                    failNode(*effectiveNode,
-                             "declared node type has no CPU reference implementation (executor unavailable)");
-                }
-                failNode(*effectiveNode, "unknown node type has no CPU reference implementation");
-            }
-            contributions->validate(scopedCatalog, *effectiveNode);
-            const bool producesPixels = contribution->role == NodeRole::Image || contribution->role == NodeRole::Source;
-            if (producesPixels && !contribution->cpu) {
-                // A GPU-only (or otherwise unavailable) contribution is honest
-                // about it: report the node and its reason instead of inventing
-                // a fallback image.
-                failNode(*effectiveNode, contribution->cpuUnavailableReason.empty()
-                                             ? "no CPU reference implementation is registered for this node type"
-                                             : contribution->cpuUnavailableReason);
-            }
-        }
+        const NodeContribution* contribution = expandedNode.alias ? nullptr : contributions->find(node.type);
 
         std::vector<std::uint64_t> inputContentHashes;
         inputContentHashes.reserve(expandedNode.inputs.size());
@@ -652,22 +955,29 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
             step.scopedInputs.push_back(ScopedPlanInput{producer.network, producer.instance, producer.node,
                                                         producer.outputPort, producer.path});
         }
-        // Hash exactly the parameter map execution consumes. In particular,
-        // animated values must affect this node's identity and all dependent
-        // identities, while equal effective values remain reusable across
-        // unrelated history revisions. A source node's key additionally carries
+        // Hash exactly the parameter map execution consumes, plus the described
+        // meaning of the image this node produces. In particular, animated
+        // values must affect this node's identity and all dependent identities,
+        // while equal effective values remain reusable across unrelated history
+        // revisions. A source node's key additionally carries its pre-resolved
+        // effective request (the one thing that decides which frame is read) and
         // the content identity of the color configuration the provider resolves
         // media color against, so a changed configuration can never serve a
         // result produced under the previous one (issue #75).
         KeyContext keyContext;
+        keyContext.description = &resolved.description;
+        keyContext.source = resolved.source ? &*resolved.source : nullptr;
+        if (resolved.source && contribution != nullptr && contribution->role == NodeRole::Source) {
+            step.effectiveParams["sourcePath"] = resolved.source->path;
+            step.effectiveParams["frame"] = resolved.source->sourceFrame;
+        }
         if (sources != nullptr && contribution != nullptr && contribution->role == NodeRole::Source)
             keyContext.colorConfigIdentity = sources->colorConfigIdentity();
         // Content identity is deliberately independent of coverage, and inputs
         // contribute their CONTENT hashes: which rectangle currently backs an
         // upstream image must never change what this node's pixels mean
         // (issue #85), or a pan would invalidate the whole graph.
-        const ResultKey contentKey =
-            nodeContentKey(document, *effectiveNode, inputContentHashes, nodeRequest, keyContext);
+        const ResultKey contentKey = nodeContentKey(document, node, inputContentHashes, nodeRequest, keyContext);
         contentKeyByIdentity.emplace(expandedNode.id, contentKey);
 
         // The registration is retained by `contributions` for the whole call,
@@ -694,28 +1004,52 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         if (!image) {
             std::vector<const CpuImage*> inputs;
             std::vector<EvaluationRequest> inputRequests;
+            std::vector<const ImageDescription*> inputDescriptions;
             inputs.reserve(expandedNode.inputs.size());
             inputRequests.reserve(expandedNode.inputs.size());
+            inputDescriptions.reserve(expandedNode.inputs.size());
             for (const EvaluationNodeId& producer : expandedNode.inputs) {
                 inputs.push_back(producer.node == kInvalidNode ? nullptr : images.at(producer).get());
                 inputRequests.push_back(producer.node == kInvalidNode ? EvaluationRequest{} : coverage.at(producer));
+                inputDescriptions.push_back(
+                    producer.node == kInvalidNode ? nullptr : &regionPlan.images.nodes.at(producer).description);
             }
             const std::span<const CpuImage* const> contextInputs(inputs.data(), inputs.size());
             const std::span<const EvaluationRequest> contextRequests(inputRequests.data(), inputRequests.size());
-            const CpuNodeContext context{document,    scopedCatalog,        *effectiveNode,
-                                         nodeRequest, step.effectiveParams, contextInputs,
-                                         sources,     contextRequests};
+            const std::span<const ImageDescription* const> contextDescriptions(inputDescriptions.data(),
+                                                                               inputDescriptions.size());
+            const CpuNodeContext context{document,
+                                         scopedCatalog,
+                                         node,
+                                         nodeRequest,
+                                         node.params,
+                                         contextInputs,
+                                         sources,
+                                         contextRequests,
+                                         resolved.description,
+                                         resolved.source ? &*resolved.source : nullptr,
+                                         contextDescriptions};
 
             if (contribution->role == NodeRole::Output) {
                 if (inputs.empty() || inputs[0] == nullptr)
-                    failNode(*effectiveNode, "output requires a connected color input");
+                    failNode(node, "output requires a connected color input");
                 const CpuImage& source = *inputs[0];
-                const ImageLayout layout = effectRasterLayout(nodeRequest, source.layout().pixelAspect);
+                // The delivered raster carries the described image's
+                // interpretation, not a default one: an inherited Data or
+                // premultiplied interpretation survives delivery.
+                const ImageLayout layout = imageLayoutOf(
+                    resolved.description, scaledDimension(nodeRequest.region.width, nodeRequest.samplingScale),
+                    scaledDimension(nodeRequest.region.height, nodeRequest.samplingScale));
                 const InputAnchor anchor = anchorInput(context, 0, source);
                 const EvaluationRequest& sourceRequest = inputRequests[0];
+                const ImageDescription* sourceDescription = inputDescriptions[0];
+                // Identical raster, origin AND described image: delivery really
+                // is the input, whose support the producing node already
+                // enforced. A different description is a different image, so it
+                // is copied (and guarded) rather than relabelled in place.
                 if (sourceRequest.region == nodeRequest.region &&
-                    sourceRequest.samplingScale == nodeRequest.samplingScale && source.layout() == layout) {
-                    // Identical raster and origin: delivery really is the input.
+                    sourceRequest.samplingScale == nodeRequest.samplingScale && source.layout() == layout &&
+                    sourceDescription != nullptr && *sourceDescription == resolved.description) {
                     image = images.at(expandedNode.inputs[0]);
                     step.produced = identities.at(expandedNode.inputs[0]);
                 } else {
@@ -725,6 +1059,7 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                     // wider resident rectangle), so the delivered raster is the
                     // requested window at its real origin.
                     auto fresh = std::make_shared<CpuImage>(windowOf(source, anchor, layout));
+                    enforceDataWindow(*fresh, nodeRequest, resolved.description);
                     step.produced = identityOf(*fresh, Residency::HostCpuReference);
                     image = std::move(fresh);
                 }
@@ -732,11 +1067,15 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                 // Unreachable through a valid request (the viewer is not a
                 // network output), but never silently rendered: a Viewer has no
                 // pixel implementation.
-                failNode(*effectiveNode, contribution->cpuUnavailableReason.empty()
-                                             ? "the Viewer role has no CPU pixel implementation"
-                                             : contribution->cpuUnavailableReason);
+                failNode(node, contribution->cpuUnavailableReason.empty()
+                                   ? "the Viewer role has no CPU pixel implementation"
+                                   : contribution->cpuUnavailableReason);
             } else {
                 auto fresh = std::make_shared<CpuImage>(contribution->cpu->execute(context));
+                // The one central support guard: whatever a node's own pixel
+                // math produced, the raster agrees with the description it
+                // declared (transparent black outside the data window).
+                enforceDataWindow(*fresh, nodeRequest, resolved.description);
                 step.produced = identityOf(*fresh, Residency::HostCpuReference);
                 image = std::move(fresh);
             }
@@ -760,9 +1099,14 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
         evaluation.plan.result = identities.at(outputKey);
     } else {
         // The delivered raster is exactly the normalized request, even when the
-        // executor computed (or reused) more for the sake of reuse.
-        evaluation.image = windowOf(*images.at(outputKey), requiredAnchor(*images.at(outputKey), delivered, normalized),
-                                    effectRasterLayout(normalized, images.at(outputKey)->layout().pixelAspect));
+        // executor computed (or reused) more for the sake of reuse, and it
+        // carries the described target's interpretation.
+        const ImageDescription& description = evaluation.plan.description;
+        const ImageLayout layout =
+            imageLayoutOf(description, scaledDimension(normalized.region.width, normalized.samplingScale),
+                          scaledDimension(normalized.region.height, normalized.samplingScale));
+        evaluation.image =
+            windowOf(*images.at(outputKey), requiredAnchor(*images.at(outputKey), delivered, normalized), layout);
         evaluation.plan.result = identityOf(evaluation.image, Residency::HostCpuReference);
     }
     return evaluation;

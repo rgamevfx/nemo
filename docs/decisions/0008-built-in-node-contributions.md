@@ -2,7 +2,7 @@
 
 Date: 2026-09-14
 Status: Proposed — implemented on issue/83-node-contributions; owner review pending
-References: issues #83, #85; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
+References: issues #83, #85, #88; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
 
 ## Decision
 
@@ -32,22 +32,33 @@ new shared capabilities still require a change in their existing owning module.
   shared evaluator. Read delegates to the existing source request/media owners;
   media error types remain intact. Output and Viewer retain their distinct roles.
   Formal inputs and network instances remain structural Evaluation behavior.
-- Dependency regions belong to Evaluation. Contributions declare per-port
-  `inputRegions`; pointwise inputs default to output coverage. Blur expands
-  filter halos; Transform requests inverse/filter bounds plus original mix
-  coverage, with masks in output space. `supportsRegion=false` escalates the
-  node and its inputs to the whole domain instead of rejecting a regional
-  consumer. Executors pass actual input coverage to each implementation.
-- Native binding contract v3 separates a 48-byte **pass-raster** coordinate/time
+- Image descriptions and dependency demands use this same contribution, not a
+  second registry. Optional `describe` changes the inherited description;
+  `inputRequirements` declares each input's region and channels. Pointwise
+  nodes inherit their main input's format/PAR/data bounds/interpretation and
+  request their output coverage. Generators inherit their owning saved network
+  format. Read describes its selected source through the media header seam.
+  Evaluation resolves animation, instance overrides and source mapping once
+  into a shared plan consumed by descriptions, demand rules, keys and execution.
+- Data bounds, logical format, demand, coverage and density are distinct.
+  Blur requests producer-local halos; Transform requests inverse/filter bounds
+  plus original Mix coverage, with masks in output space. Merge inherits A's
+  format and unions A/B data bounds; it never stretches B. Transform maps data
+  support, preserving original support when Mix/masking can retain it; empty
+  input remains empty. `supportsRegion=false` expands to that producer's useful
+  domain. Executors receive each input's actual coverage and description.
+- Native binding contract v5 separates a 64-byte **pass-raster** coordinate/time
   request at set 0/binding 0 from the optional node-local aligned payload at
-  binding 1. Image-sampling passes receive 32-byte per-input geometry records
-  at binding 2: origin, raster offset, extent and sampling scale. Pass inputs
+  binding 1. The request includes signed origin and a data-support rectangle,
+  independent of coverage; final output stores outside support become
+  transparent black. Scratch passes retain their declared working coverage.
+  Image-sampling passes receive 32-byte per-input geometry records at binding 2:
+  origin, raster offset, extent and sampling scale. External decoded images
+  carry their actual signed coverage rather than a resize ratio. Pass inputs
   use set 1 in declared order; output uses set 2/binding 0 and optional float
-  weights set 3/binding 0. Full-resolution external source frames retain their
-  source-coordinate contract. Blur declares its horizontal scratch coverage
-  separately from its output. The executor owns allocations, barriers,
-  submission and retirement, including a device-side final crop when needed.
-  No per-node waits or routine intermediate CPU readback are introduced.
+  weights set 3/binding 0. Blur declares horizontal scratch separately.
+  The executor owns allocations, barriers, submission and retirement, including
+  a device-side final crop. No per-node waits or routine intermediate readback.
 - CPU and GPU preparation callbacks may execute concurrently. Captures must be
   immutable or internally synchronized; context references/spans are valid only
   during invocation. A CPU request retains its registration until return. A GPU
@@ -65,7 +76,8 @@ new shared capabilities still require a change in their existing owning module.
 - Optional editor declarations are projected into `ParameterEditorRegistry` at
   desktop assembly. The existing generic inspector, graph gestures, Commands,
   history and serialization remain their owners. Runtime registrations are not
-  serialized; built-in node/parameter identities and image contracts are unchanged.
+  serialized. #88 changes the runtime image-space contract, not built-in node
+  identities, inspector ownership or persistent graph state.
 
 ## Verification seam
 
@@ -77,3 +89,11 @@ unavailability, stale-reuse prevention and retained ownership. Existing effect
 regressions remain the numerical oracle; a production Wayland inspector/Blur
 scenario separately checks the accepted surface. Exact results and limitations
 are recorded in the issue #83 evidence, not implied by this decision's status.
+
+Issue #88 extends Affine with integer `shiftX`/`shiftY`: its description translates
+data bounds and its per-input requirement translates demand inversely, while
+scale/offset pixel math remains independently implemented on CPU and Slang.
+The public session/history/save-reopen scenario reads independently authored
+windowed EXR samples through that extension. The retained #88 JSON evidence and
+task record distinguish CPU/native numerical checks from native viewer surface
+checks; no Nuke runtime parity is claimed.

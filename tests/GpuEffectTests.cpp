@@ -30,6 +30,7 @@
 
 #include "contributions/Affine.hpp"
 #include "nemo/core/commands/AnimationCommands.hpp"
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
@@ -1232,6 +1233,8 @@ TEST(Effect, WholeFrameOnlyContributionEscalatesRegionRequest) {
     (void)rootGraph(doc).connect({affine, 0}, {output, 0});
 
     const Region domain{0, 0, 256, 192};
+    CommandStack commands(doc);
+    commands.push(setNetworkFormatCommand(doc.rootNetworkId(), ImageFormat{domain.width, domain.height, 1.0F}));
     const Region region{80, 64, 48, 32};
     const EvaluationRequest fullRequest = requestFor(doc, domain, 0);
     const EvaluationRequest regionRequest = roiRequestFor(doc, region, domain.width, domain.height, 0);

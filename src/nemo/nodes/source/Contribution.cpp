@@ -45,7 +45,10 @@ NodeDescriptor sourceDescriptor() {
         .type = "source",
         .displayName = "Read",
         .group = "I/O",
-        .implementationVersion = 2,
+        // 3: the adapter consumes the planner's resolved source request instead
+        // of re-deriving it, and its output description comes from the media's
+        // own display/data windows (issue #88).
+        .implementationVersion = 3,
         .inputs = {},
         .outputs = {{PortKind::Image, "color"}},
         .parameters =
@@ -86,17 +89,21 @@ NodeDescriptor sourceDescriptor() {
 // Real source media (issue #11). The reference lives in the Document; the pixels
 // come from the provider. There is NO synthetic fallback: an unresolved or
 // unprovided source is an explicit evaluation error that identifies the node.
+//
+// The planner resolves the node's effective source request exactly once
+// (issue #88) and hands it to every executor through the context, so this
+// adapter never re-derives mapping, coverage or policy, and the frame it returns
+// is the requested raster at its own actual coverage and pixel aspect — nothing
+// is resized to a fill ratio, and nothing is decoded merely to discover
+// geometry.
 CpuImage executeSource(const CpuNodeContext& context) {
     const NodeInstance& node = context.node;
     const EvaluationRequest& request = context.request;
-    // One resolution owns mapping, coverage and policy (issue #75): the node's
-    // own mapping replaces the shared reference's, never composes with it, so
-    // offset/step apply exactly once.
-    const EffectiveSourceRequest source = resolveSourceRequest(context.document, node, request.localTime);
+    if (context.source == nullptr) {
+        failNode(node, "source node has no resolved source request (the planner resolves one per evaluation)");
+    }
+    const EffectiveSourceRequest& source = *context.source;
     const std::string& key = source.sourceKey;
-    context.effectiveParams["source"] = std::string(key);
-    context.effectiveParams["sourcePath"] = source.path;
-    context.effectiveParams["frame"] = source.sourceFrame;
     if (source.policyError) {
         // The resolver never throws for a policy decision; the executor raises
         // the node-identifying error here, before any frame is opened, using the

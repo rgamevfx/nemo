@@ -33,7 +33,13 @@ layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_col
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    imageStore(out_color, ivec2(p), color);
+    // The described image's data support (native binding contract v5): a sample
+    // outside it is transparent black, never the authored color computed there.
+    if (!gpuHasData(ivec2(p))) {
+        gpuStore(out_color, ivec2(p), vec4(0.0));
+        return;
+    }
+    gpuStore(out_color, ivec2(p), color);
 }
 )GLSL";
 

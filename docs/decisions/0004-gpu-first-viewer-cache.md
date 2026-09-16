@@ -88,19 +88,25 @@ software decode path are disclosed; effects, OCIO, and presentation stay
 device-resident. Presentation quantization targets RGBA8 UNORM and
 premultiplies alpha for Qt; it does not apply another viewing transform.
 
-Evaluation requests separate the full image domain (`fullWidth`,
-`fullHeight`), full-resolution ROI, and sampling scale (1/2/4). An omitted
-domain is valid only for an origin-aligned whole-image request. Generators
-and source sampling use the full domain even for cropped requests.
-Unsupported node reductions and out-of-domain requests are errors.
-The current reference domain limit is 8192 pixels on each axis.
+Issue #88 separates the described logical format/PAR and signed data bounds
+from full-resolution demand, delivered raster coverage and sampling density.
+`fullWidth`/`fullHeight` on planned requests come from each producer's own
+description; callers may omit them. Generators use their saved network format;
+Read uses header metadata, never request dimensions or decoded pixels.
+Unsupported reductions and raster extents remain explicit errors; the current
+reference raster/domain limit is 8192 pixels on each axis.
 
-Issue #85 anchors requests to the image-wide sampling lattice: odd-origin
-Half/Quarter regions expand outward to enclosing samples, clipped to the image
-domain. Dependency planning requests each input's necessary coverage; whole-frame
-implementations expand internally. Regional consumers still receive their
-normalized rectangle. See ADR-0007 for spatial reuse and ADR-0008 for contribution
-and pass geometry.
+The image-wide Full/Half/Quarter lattice remains unchanged. Odd-origin regions
+expand outward to enclosing samples, including negative and off-format demand;
+they are not clipped to the logical format. Samples outside described data are
+transparent black, while overscan data outside the format remains accessible.
+Dependency planning requests each input's necessary coverage; whole-frame
+implementations expand internally. Regional consumers receive their normalized
+rectangle. Header-only target descriptions run on the existing viewer worker,
+memoized by target, document revision and local time; they determine framing
+without changing Fit, pan/zoom or resolution controls. Unknown metadata reports
+an error, not a fabricated canvas. See ADR-0007 for semantic/spatial reuse and
+ADR-0008 for contribution and native pass geometry.
 
 The viewer's icon-only **Force full-frame rendering** switch overrides coverage,
 not Auto/Full/Half/Quarter density, zoom or pan. Its state belongs to each viewer

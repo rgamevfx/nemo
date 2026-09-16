@@ -91,7 +91,7 @@ if(NEMO_BUILD_GPU)
     add_executable(nemo_contribution_tests
         ContributionTests.cpp
         contributions/Affine.cpp)
-    target_link_libraries(nemo_contribution_tests PRIVATE nemo::eval nemo::gpu GTest::gtest_main)
+    target_link_libraries(nemo_contribution_tests PRIVATE nemo::eval nemo::gpu GTest::gtest_main OpenImageIO::OpenImageIO)
     if(DEFINED NEMO_SLANG_SPV_DIR)
         nemo_add_slang_shaders(nemo_contribution_shaders
             OUTPUT_DIRECTORY "${NEMO_SLANG_SPV_DIR}"

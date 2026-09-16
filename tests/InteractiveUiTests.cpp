@@ -296,6 +296,14 @@ TEST(Interactive, ViewerAssignmentAttachesTargetAndIsOneUndoableCommand) {
 }
 
 TEST(Interactive, RoutedMediaCanvasDoesNotReuseGraphScopeFormat) {
+#ifndef NEMO_SLANG_SPV_DIR
+    GTEST_SKIP() << "Native viewer evidence requires compiled Slang shaders";
+#else
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const auto config = std::filesystem::path(NEMO_UI_QML_DIR).parent_path().parent_path().parent_path() /
+                        "docs/evidence/issue12-view.ocio";
+    const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
     auto document = emptyDocument();
     document.network(document.rootNetworkId()).setFormat({1280, 720, 1.0F});
     const auto child = document.addNetwork("Anamorphic");
@@ -304,17 +312,43 @@ TEST(Interactive, RoutedMediaCanvasDoesNotReuseGraphScopeFormat) {
     nemo::assignViewerCommand(child, 0, color).apply(document);
     document.sources["plate"].path = "not-probed.exr";
     nemo::ui::ViewerRuntime runtime;
+    nemo::eval::ViewerCacheOptions options;
+    options.directory = directory.path().toStdString();
+    options.encoding.codec = "libx264-cpu";
+    try {
+        runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
+    } catch (const nemo::gpu::GpuException& error) {
+        if (error.errorCode() == nemo::gpu::GpuError::NoDevice)
+            GTEST_SKIP() << error.what();
+        throw;
+    }
     nemo::ProjectSession session{std::move(document)};
     nemo::ui::ViewerController controller(&runtime, session);
+    controller.setDestination(nemo::eval::ViewerDestination::Interactive);
+    const auto awaitFormat = [&](QSizeF format) {
+        QElapsedTimer deadline;
+        deadline.start();
+        while (controller.compositionSize() != format && deadline.elapsed() < 60000)
+            QTest::qWait(10);
+        return controller.compositionSize() == format;
+    };
 
     controller.setActiveViewer(QString::number(child), 0);
-    EXPECT_EQ(controller.compositionSize(), QSizeF(2048, 858));
-    // Before a source probe completes, the media role's fallback must address
-    // the same root-network canvas as its request, not a remembered graph scope.
+    ASSERT_TRUE(awaitFormat(QSizeF(2048, 858)));
+    // No viewport is attached, so only descriptions run. An unavailable
+    // routed source must not borrow either network's format.
     controller.setViewerContext(QStringLiteral("media"), QStringLiteral("plate"), 0);
-    EXPECT_EQ(controller.compositionSize(), QSizeF(1280, 720));
+    EXPECT_FALSE(controller.compositionSize().isValid());
+    QElapsedTimer deadline;
+    deadline.start();
+    while (controller.error().isEmpty() && deadline.elapsed() < 60000)
+        QTest::qWait(10);
+    ASSERT_FALSE(controller.error().isEmpty());
+    EXPECT_TRUE(controller.error().contains(QStringLiteral("not-probed.exr")));
+    EXPECT_FALSE(controller.compositionSize().isValid());
     controller.setViewerContext(QStringLiteral("graph"), {}, 0);
-    EXPECT_EQ(controller.compositionSize(), QSizeF(2048, 858));
+    ASSERT_TRUE(awaitFormat(QSizeF(2048, 858)));
+#endif
 }
 
 TEST(Interactive, ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget) {
@@ -527,6 +561,58 @@ TEST(Interactive, PlaybackPublishesEveryFrameItRenders) {
     EXPECT_EQ(counts.dropped, 0u);
     // The transport advanced once per displayed frame, not once per tick.
     EXPECT_EQ(controller.frame(), start + arrived.count());
+#endif
+}
+
+TEST(Interactive, CacheRangeSupersedingDescriptionDoesNotStallViewer) {
+#ifndef NEMO_SLANG_SPV_DIR
+    GTEST_SKIP() << "Native viewer evidence requires compiled Slang shaders";
+#else
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const auto config = std::filesystem::path(NEMO_UI_QML_DIR).parent_path().parent_path().parent_path() /
+                        "docs/evidence/issue12-view.ocio";
+    const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
+    nemo::eval::ViewerCacheOptions options;
+    options.directory = directory.path().toStdString();
+    options.encoding.codec = "libx264-cpu";
+    options.chunkFrames = 1;
+    nemo::ui::ViewerRuntime runtime;
+    try {
+        runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
+    } catch (const nemo::gpu::GpuException& error) {
+        if (error.errorCode() == nemo::gpu::GpuError::NoDevice)
+            GTEST_SKIP() << error.what();
+        throw;
+    }
+    nemo::ProjectSession session{emptyDocument()};
+    nemo::ui::ViewerController controller(&runtime, session);
+    controller.setDestination(nemo::eval::ViewerDestination::Interactive);
+    const auto scope = QString::number(session.document().rootNetworkId());
+    const auto color = controller.createGraphNode(scope, "constcolor", "rangeColor", 0.0, 0.0, {}, {});
+    ASSERT_FALSE(color.isEmpty());
+    ASSERT_TRUE(controller.assignViewer(scope, 0, color));
+    controller.setResolutionMode("quarter");
+    controller.viewportChanged(QSizeF(320.0, 240.0));
+    QElapsedTimer deadline;
+    deadline.start();
+    while (!controller.presentation() && controller.error().isEmpty() && deadline.elapsed() < 10000)
+        QTest::qWait(10);
+    ASSERT_TRUE(controller.presentation()) << controller.error().toStdString();
+    ASSERT_EQ(controller.presentation()->request.localTime, 0);
+
+    // No GUI event delivery between these calls: frame 1's description has
+    // not been consumed when the range supersedes it. A later view refresh
+    // must request the metadata again instead of waiting for the lost answer.
+    controller.setFrame(1);
+    controller.requestRange(0, 0);
+    controller.setResolutionMode("half");
+    deadline.restart();
+    while (controller.presentation()->request.localTime != 1 && controller.error().isEmpty() &&
+           deadline.elapsed() < 10000)
+        QTest::qWait(10);
+    EXPECT_TRUE(controller.error().isEmpty()) << controller.error().toStdString();
+    EXPECT_EQ(controller.presentation()->request.localTime, 1);
 #endif
 }
 

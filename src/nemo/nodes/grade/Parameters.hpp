@@ -20,7 +20,7 @@ struct GradeParameters {
 };
 
 [[nodiscard]] inline GradeParameters effectiveGrade(const NodeCatalog& catalog, const NodeInstance& node,
-                                                    ParameterValues& effectiveParams) {
+                                                    const ParameterValues& effectiveParams) {
     GradeParameters grade;
     grade.blackpoint = effectiveColor4(catalog, node, effectiveParams, "blackpoint");
     grade.whitepoint = effectiveColor4(catalog, node, effectiveParams, "whitepoint");

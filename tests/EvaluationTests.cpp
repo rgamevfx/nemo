@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "nemo/core/commands/AnimationCommands.hpp"
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/ParameterValue.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
@@ -28,8 +29,11 @@ const Graph& rootGraph(const Document& document) {
     return document.network(document.rootNetworkId()).graph();
 }
 
-Document makeDocument(const std::vector<std::pair<std::string, std::string>>& typeAndName) {
+Document makeDocument(const std::vector<std::pair<std::string, std::string>>& typeAndName, int width = 8,
+                      int height = 4) {
     Document document;
+    CommandStack stack(document);
+    stack.push(setNetworkFormatCommand(document.rootNetworkId(), ImageFormat{width, height, 1.0F}));
     rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
     for (const auto& [type, name] : typeAndName) {
         rootGraph(document).addNode(type, name);
@@ -762,7 +766,21 @@ namespace {
     const EvaluationRequest request = wholeRasterRequest(input.width(), input.height());
     const std::array<const CpuImage*, 2> inputs{&input, mask};
     const std::span<const CpuImage* const> contextInputs(inputs.data(), inputs.size());
-    const CpuNodeContext context{document, catalog, node, request, node.params, contextInputs, nullptr};
+    const ImageDescription inputDescription{.format = request.region,
+                                            .dataBounds = request.region,
+                                            .pixelAspect = input.layout().pixelAspect,
+                                            .color = input.layout().color};
+    const ImageDescription maskDescription{.format = mask ? Region{0, 0, mask->width(), mask->height()} : Region{},
+                                           .dataBounds = mask ? Region{0, 0, mask->width(), mask->height()} : Region{}};
+    const std::array<const ImageDescription*, 2> descriptions{&inputDescription, mask ? &maskDescription : nullptr};
+    const std::array<EvaluationRequest, 2> inputRequests{
+        request, mask ? wholeRasterRequest(mask->width(), mask->height()) : EvaluationRequest{}};
+    const ImageDescription description =
+        contribution->describe
+            ? contribution->describe(NodeDescriptionContext{document, catalog, node, 0, descriptions, inputDescription})
+            : inputDescription;
+    const CpuNodeContext context{document, catalog,       node,        request, node.params, contextInputs,
+                                 nullptr,  inputRequests, description, nullptr, descriptions};
     return contribution->cpu->execute(context);
 }
 
@@ -1229,17 +1247,14 @@ void expectWindowMatchesWholeFrame(const CpuImage& window, const CpuImage& whole
     }
 }
 
-// Coverage may only grow: every planned region contains what the consumer asked
-// for, stays inside the image domain, and keeps its origin on the lattice.
+// Coverage satisfies the consumer's request on the common sampling lattice;
+// raster padding never rewrites the authored logical format.
 void expectCoverageInvariants(const EvaluationPlan& plan, Region requested, int scale, int domainWidth,
                               int domainHeight) {
-    EXPECT_EQ(plan.request.region, regionOnLattice(requested, scale, domainWidth, domainHeight));
+    EXPECT_EQ(plan.request.region, regionOnLattice(requested, scale));
+    EXPECT_EQ(plan.description.format, (Region{0, 0, domainWidth, domainHeight}));
     for (const PlanStep& step : plan.steps) {
         EXPECT_TRUE(regionContains(step.region, requested)) << "step " << step.name;
-        EXPECT_GE(step.region.x, 0) << "step " << step.name;
-        EXPECT_GE(step.region.y, 0) << "step " << step.name;
-        EXPECT_LE(step.region.x + step.region.width, domainWidth) << "step " << step.name;
-        EXPECT_LE(step.region.y + step.region.height, domainHeight) << "step " << step.name;
         EXPECT_EQ(step.region.x % scale, 0) << "step " << step.name;
         EXPECT_EQ(step.region.y % scale, 0) << "step " << step.name;
     }
@@ -1286,7 +1301,7 @@ CpuImage executeWholeFrameFixture(const CpuNodeContext& context) {
         for (int x = 0; x < input.width(); ++x)
             total += static_cast<double>(input.pixel(x, y)[0]);
     const float mean = static_cast<float>(total / (static_cast<double>(input.width()) * input.height()));
-    CpuImage output(effectRasterLayout(request, input.layout().pixelAspect));
+    CpuImage output(effectRasterLayout(context));
     for (int y = 0; y < output.height(); ++y) {
         for (int x = 0; x < output.width(); ++x) {
             const std::array<float, kImageChannels> pixel = input.pixel(x, y);
@@ -1299,7 +1314,7 @@ CpuImage executeWholeFrameFixture(const CpuNodeContext& context) {
 }  // namespace
 
 TEST(RegionalEvaluationTest, PointwiseChainRegionMatchesWholeFrameWindow) {
-    Document document = makeDocument({{"testpattern", "plate"}, {"grade", "grade"}, {"output", "out"}});
+    Document document = makeDocument({{"testpattern", "plate"}, {"grade", "grade"}, {"output", "out"}}, 320, 160);
     Graph& graph = rootGraph(document);
     graph.setParam(graph.nodeByName("grade")->id, "gain", ColorValue{{1.5F, 1.5F, 1.5F, 2.0F}});
     connect(graph, "plate", "grade");
@@ -1319,14 +1334,14 @@ TEST(RegionalEvaluationTest, PointwiseChainRegionMatchesWholeFrameWindow) {
 }
 
 TEST(RegionalEvaluationTest, OddOriginRegionsMatchWholeFrameAtReducedScales) {
-    Document document = makeDocument({{"testpattern", "plate"}, {"output", "out"}});
+    Document document = makeDocument({{"testpattern", "plate"}, {"output", "out"}}, 320, 160);
     connect(rootGraph(document), "plate", "out");
 
     for (const int scale : {2, 4}) {
         // An origin that is not a multiple of the sampling scale is rounded
         // outward to the enclosing lattice cell, never inward.
         const Region requested{77, 41, 50, 26};
-        const Region normalized = regionOnLattice(requested, scale, 320, 160);
+        const Region normalized = regionOnLattice(requested, scale);
         const auto wholeFrame =
             evaluateCpu(document, windowRequest(document, "out", {0, 0, 320, 160}, scale, 320, 160));
         const auto cropped = evaluateCpu(document, windowRequest(document, "out", requested, scale, 320, 160));
@@ -1342,7 +1357,8 @@ TEST(RegionalEvaluationTest, ChainedBlurAndTransformWithMaskAndMixMatchWholeFram
                                       {"testpattern", "mask"},
                                       {"blur", "soften"},
                                       {"transform", "move"},
-                                      {"output", "out"}});
+                                      {"output", "out"}},
+                                     320, 160);
     Graph& graph = rootGraph(document);
     graph.setParam(graph.nodeByName("soften")->id, "size", 5.0);
     graph.setParam(graph.nodeByName("move")->id, "translateX", 3.5);
@@ -1382,21 +1398,24 @@ TEST(RegionalEvaluationTest, ChainedBlurAndTransformWithMaskAndMixMatchWholeFram
     EXPECT_TRUE(regionContains(mask->region, region));
 }
 
-TEST(RegionalEvaluationTest, ExtremeFiniteTransformBoundsRemainOutsideTheImage) {
+TEST(RegionalEvaluationTest, UnrepresentableTransformGeometryFailsByNodeInsteadOfInventingBounds) {
     Document document = makeDocument({{"testpattern", "plate"}, {"transform", "move"}, {"output", "out"}});
     Graph& graph = rootGraph(document);
     graph.setParam(graph.nodeByName("move")->id, "scale", 1e-20);
     graph.setParam(graph.nodeByName("move")->id, "translateX", 1e30);
     connect(graph, "plate", "move");
     connect(graph, "move", "out");
-    const auto result = evaluateCpu(document, windowRequest(document, "out", {80, 40, 40, 30}, 1, 320, 160));
-    for (int y = 0; y < result.image.height(); ++y)
-        for (int x = 0; x < result.image.width(); ++x)
-            EXPECT_EQ(result.image.pixel(x, y), (std::array<float, 4>{0.0F, 0.0F, 0.0F, 0.0F}));
+    try {
+        static_cast<void>(evaluateCpu(document, windowRequest(document, "out", {80, 40, 40, 30}, 1, 320, 160)));
+        FAIL() << "unrepresentable geometry must not produce fabricated bounds";
+    } catch (const EvaluationException& error) {
+        EXPECT_EQ(error.node, graph.nodeByName("move")->id);
+        EXPECT_NE(std::string(error.what()).find("representable image coordinates"), std::string::npos);
+    }
 }
 
 TEST(RegionalEvaluationTest, BlurRegionMatchesDeclaredGaussianIncludingImageBorders) {
-    Document document = makeDocument({{"testpattern", "plate"}, {"blur", "soften"}, {"output", "out"}});
+    Document document = makeDocument({{"testpattern", "plate"}, {"blur", "soften"}, {"output", "out"}}, 256, 192);
     Graph& graph = rootGraph(document);
     graph.setParam(graph.nodeByName("soften")->id, "size", 3.0);
     connect(graph, "plate", "soften");
@@ -1457,6 +1476,8 @@ TEST(RegionalEvaluationTest, BlurRegionMatchesDeclaredGaussianIncludingImageBord
 TEST(RegionalEvaluationTest, WholeFrameOnlyContributionEscalatesAndStillServesRegions) {
     auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema({wholeFrameFixtureDescriptor()}));
     Document document(catalog);
+    CommandStack stack(document);
+    stack.push(setNetworkFormatCommand(document.rootNetworkId(), ImageFormat{320, 160, 1.0F}));
     Graph& graph = document.network(document.rootNetworkId()).graph();
     graph.removeNode(graph.nodeByName("Output")->id);
     const NodeId plate = graph.addNode("testpattern", "plate");

@@ -54,17 +54,7 @@ struct ImageIdentity {
     // Report what the image actually is: a Raw/Data source result is not
     // managed scene-linear, and a display-referred viewer result is not either
     // (issue #81).
-    json["color"] = [](ColorInterpretation color) {
-        switch (color) {
-        case ColorInterpretation::SceneLinear:
-            return "scene-linear";
-        case ColorInterpretation::DisplayReferred:
-            return "display-referred";
-        case ColorInterpretation::Data:
-            return "data";
-        }
-        return "scene-linear";
-    }(identity.layout.color);
+    json["color"] = colorInterpretationName(identity.layout.color);
     json["residency"] = residencyName(identity.residency);
     return json;
 }
@@ -96,13 +86,19 @@ struct PlanStep {
     std::vector<ScopedPlanInput> scopedInputs;
     std::vector<ImageIdentity> inputImages;
     ImageIdentity produced;
+    // The described meaning of the image this step produced (issue #88): the
+    // node's resolved description, which is what its consumers read it as and
+    // what its reuse key carries. Independent of `region`, which reports the
+    // rectangle this step actually rastered.
+    ImageDescription description;
     // True when this step's result was reused from the evaluator result
     // cache instead of recomputed (issue #9 plan evidence).
     bool cacheReused{false};
     // Actual full-resolution coverage of this step's raster (issue #85). It is
     // the region the executor really produced: the planned demand, escalated to
-    // the whole image domain for a whole-frame-only contribution, or a larger
-    // resident rectangle served from the cache. A consumer reads this step's
+    // the node's whole useful domain (its described format unioned with its data
+    // window) for a whole-frame-only contribution, or a larger resident
+    // rectangle served from the cache. A consumer reads this step's
     // image through this coverage, never by assuming the raster starts at the
     // consumer's own origin.
     // GPU output steps include the final device crop when needed. CPU backing
@@ -119,7 +115,28 @@ struct EvaluationPlan {
     EvaluationRequest request;
     std::vector<PlanStep> steps;
     ImageIdentity result;
+    // The described meaning of the target this plan produced (issue #88): the
+    // image the caller asked for, as the dependency graph describes it. Its
+    // format is the requested raster's logical format, independently of the
+    // requested region and sampling scale.
+    ImageDescription description;
 };
+
+[[nodiscard]] inline nlohmann::json regionToJson(const Region& region) {
+    return {{"x", region.x}, {"y", region.y}, {"width", region.width}, {"height", region.height}};
+}
+
+[[nodiscard]] inline nlohmann::json imageDescriptionToJson(const ImageDescription& description) {
+    nlohmann::json json;
+    json["format"] = regionToJson(description.format);
+    json["dataBounds"] = regionToJson(description.dataBounds);
+    json["pixelAspect"] = description.pixelAspect;
+    json["channels"] = description.channels;
+    json["precision"] = "float32";
+    json["association"] = imageAssociationName(description.association);
+    json["color"] = colorInterpretationName(description.color);
+    return json;
+}
 
 [[nodiscard]] inline nlohmann::json planToJson(const EvaluationPlan& plan) {
     nlohmann::json steps = nlohmann::json::array();
@@ -150,27 +167,22 @@ struct EvaluationPlan {
         }
         json["inputImages"] = std::move(inputImages);
         json["produced"] = imageIdentityToJson(step.produced);
+        json["description"] = imageDescriptionToJson(step.description);
         json["reused"] = step.cacheReused;
-        json["region"] = {{"x", step.region.x},
-                          {"y", step.region.y},
-                          {"width", step.region.width},
-                          {"height", step.region.height}};
+        json["region"] = regionToJson(step.region);
         steps.push_back(std::move(json));
     }
     nlohmann::json json;
     json["request"] = {{"network", plan.request.network},
                        {"output", plan.request.output},
                        {"localTime", plan.request.localTime},
-                       {"region",
-                        {{"x", plan.request.region.x},
-                         {"y", plan.request.region.y},
-                         {"width", plan.request.region.width},
-                         {"height", plan.request.region.height}}},
+                       {"region", regionToJson(plan.request.region)},
                        {"channels", plan.request.channels},
                        {"quality", qualityName(plan.request.quality)},
                        {"samplingScale", plan.request.samplingScale}};
     json["request"]["fullWidth"] = plan.request.imageWidth();
     json["request"]["fullHeight"] = plan.request.imageHeight();
+    json["description"] = imageDescriptionToJson(plan.description);
     json["steps"] = std::move(steps);
     json["result"] = imageIdentityToJson(plan.result);
     return json;

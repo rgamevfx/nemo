@@ -93,23 +93,36 @@ vec4 gradePixel(vec4 x) {
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    // The described image's data support (native binding contract v5): a sample
+    // outside it is transparent black, never grade(0) fabricated there.
+    if (!gpuHasData(ivec2(p))) {
+        gpuStore(out_color, ivec2(p), vec4(0.0));
+        return;
+    }
     // Same-lattice inputs: the pixel with the same full-resolution sample,
-    // located through each input's own raster origin.
-    ivec2 mainOffset = inputGeometry[0].regionAndOffset.zw;
-    ivec2 maskOffset = inputGeometry[1].regionAndOffset.zw;
-    vec4 orig = imageLoad(in_main, ivec2(p) + mainOffset);
+    // located through each input's own raster origin and extent. A sample the
+    // input does not hold is outside its data (a smaller or empty data window):
+    // transparent black, never an out-of-bounds load.
+    ivec2 mainPixel = ivec2(p) + inputGeometry[0].regionAndOffset.zw;
+    ivec2 mainExtent = ivec2(inputGeometry[0].extent.xy);
+    bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < mainExtent.x && mainPixel.y < mainExtent.y;
+    vec4 orig = mainInside ? imageLoad(in_main, mainPixel) : vec4(0.0);
     vec4 processed = gradePixel(orig);
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(imageLoad(in_mask, ivec2(p) + maskOffset)[channel], 0.0, 1.0);
+        ivec2 maskPixel = ivec2(p) + inputGeometry[1].regionAndOffset.zw;
+        ivec2 maskExtent = ivec2(inputGeometry[1].extent.xy);
+        bool maskInside =
+            maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
+        float selected = maskInside ? clamp(imageLoad(in_mask, maskPixel)[channel], 0.0, 1.0) : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
     // processed pixel, so no HDR 0*inf cancellation occurs in mix().
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
-    imageStore(out_color, ivec2(p), result);
+    gpuStore(out_color, ivec2(p), result);
 }
 )GLSL";
 

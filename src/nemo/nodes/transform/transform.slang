@@ -2,7 +2,7 @@
 // module per issue #83)
 // ---------------------------------------------------------
 // name: transform
-// version: 1
+// version: 2
 // ports:
 //   - in_main : image2D input (main image, required port 0)
 //   - in_mask : image2D input (optional mask, port 1; bound to the main
@@ -12,7 +12,7 @@
 //   - translateX/translateY (pixels), scale, rotate (degrees, positive
 //     clockwise in the stored raster), filter [Cubic, Linear, Nearest], plus
 //     the common maskChannel/invertMask/mix controls.
-// bindings (native binding contract v3, see GpuGeometry.slang):
+// bindings (native binding contract v5, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.transform.payload.v1")
 //   set 0, binding 2 : per-input spatial geometry (main, mask)
@@ -21,8 +21,11 @@
 // dependencies:
 //   region: output pixel (x, y) samples the inverse-mapped input; the input is
 //     located through its own full-resolution region origin and raster extent
-//     (region evaluation, wider cache-backed inputs), so the resample stays
-//     exact on any sub-rectangle of the lattice.
+//     (region evaluation, wider cache-backed inputs, signed or beyond-format
+//     origins), so the resample stays exact on any sub-rectangle of the lattice.
+//     A mapped coordinate with no sample behind it — outside the bound raster,
+//     or anywhere at all when the input's data window is empty — is transparent
+//     black (issue #88), never an out-of-bounds load.
 //   channels: RGBA uniform; interpolation is alpha-aware.
 //   temporal: none.
 // quality_modes: 1
@@ -44,12 +47,17 @@
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
-    // meta: (full image width, full image height, region.x, region.y)
-    uint4 meta;
+    // meta: (full image width, full image height, region.x, region.y; signed)
+    int4 meta;
     // meta2: raster (image width, image height, samplingScale, 0)
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
+    // support: half-open RASTER-INDEX rect (x, y, width, height) of the samples
+    // that ARE this image's data; (-1,-1,-1,-1) means the raster declares no
+    // support (a node-local scratch), a non-positive size means every sample is
+    // transparent black. Samples outside it must be written transparent black.
+    int4 support;
 };
 
 [[vk::binding(1, 0)]]
@@ -84,15 +92,24 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
+    // The described image's data support (native binding contract v5): a sample
+    // outside the transform's described data window is transparent black.
+    if (support.z >= 0 && support.w >= 0 &&
+        ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
+         (int)p.y >= support.y + support.w)) {
+        out_color[p] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
     // The resampled input may cover a different rectangle of the same lattice
     // (region evaluation, wider cache-backed inputs): its full-resolution
     // region origin and raster extent come from the bound geometry.
     int2 inputOrigin = inputGeometry[0].regionAndOffset.xy;
     int2 dims = int2(inputGeometry[0].extent.xy);
-    int2 mainOffset = inputGeometry[0].regionAndOffset.zw;
-    int2 maskOffset = inputGeometry[1].regionAndOffset.zw;
+    int2 mainPixel = int2(p) + inputGeometry[0].regionAndOffset.zw;
+    bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < dims.x && mainPixel.y < dims.y;
 
-    float4 orig = in_main.Load(int2(p) + mainOffset);
+    float4 orig = mainInside ? in_main.Load(mainPixel) : float4(0.0, 0.0, 0.0, 0.0);
 
     int scale = int(meta2.z);
     float fullWidth = float(meta.x);
@@ -165,7 +182,11 @@ void main(uint3 tid : SV_DispatchThreadID)
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(in_mask.Load(int2(p) + maskOffset)[channel], 0.0, 1.0);
+        int2 maskPixel = int2(p) + inputGeometry[1].regionAndOffset.zw;
+        int2 maskExtent = int2(inputGeometry[1].extent.xy);
+        bool maskInside =
+            maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
+        float selected = maskInside ? clamp(in_mask.Load(maskPixel)[channel], 0.0, 1.0) : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully

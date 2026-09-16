@@ -22,6 +22,12 @@ layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_col
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    // The described image's data support (native binding contract v5): a sample
+    // outside it is transparent black, never an extrapolated pattern.
+    if (!gpuHasData(ivec2(p))) {
+        gpuStore(out_color, ivec2(p), vec4(0.0));
+        return;
+    }
     // Full-resolution coordinate frame (issue #11): the reduced raster
     // samples the frame at fullX = region.x + p.x * scale, so the pattern
     // is the SAME image every representation — not a smaller replica.
@@ -35,7 +41,7 @@ void main() {
     int barWidth = max(2, fullWidth / 16);
     int barPos = (int(misc.x) * (fullWidth / 8)) % (fullWidth + barWidth);
     bool inBar = fullX >= barPos && fullX < barPos + barWidth;
-    imageStore(out_color, ivec2(p), vec4(u, v, inBar ? 1.0 : 0.0, 1.0));
+    gpuStore(out_color, ivec2(p), vec4(u, v, inBar ? 1.0 : 0.0, 1.0));
 }
 )GLSL";
 

@@ -51,8 +51,25 @@ layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_col
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    vec4 bg = imageLoad(in_a, ivec2(p) + inputGeometry[0].regionAndOffset.zw);
-    vec4 fg = imageLoad(in_b, ivec2(p) + inputGeometry[1].regionAndOffset.zw);
+    // The described image's data support (native binding contract v5): a sample
+    // outside it is transparent black, never a composite of operands that hold
+    // nothing there.
+    if (!gpuHasData(ivec2(p))) {
+        gpuStore(out_color, ivec2(p), vec4(0.0));
+        return;
+    }
+    // Each operand is read at the pixel holding the same full-resolution sample,
+    // located through its own raster origin and extent. A pixel outside the
+    // operand's raster is outside its data (a smaller, differently anchored or
+    // empty data window): transparent black, never an out-of-bounds load.
+    ivec2 bgPixel = ivec2(p) + inputGeometry[0].regionAndOffset.zw;
+    ivec2 bgExtent = ivec2(inputGeometry[0].extent.xy);
+    ivec2 fgPixel = ivec2(p) + inputGeometry[1].regionAndOffset.zw;
+    ivec2 fgExtent = ivec2(inputGeometry[1].extent.xy);
+    bool bgInside = bgPixel.x >= 0 && bgPixel.y >= 0 && bgPixel.x < bgExtent.x && bgPixel.y < bgExtent.y;
+    bool fgInside = fgPixel.x >= 0 && fgPixel.y >= 0 && fgPixel.x < fgExtent.x && fgPixel.y < fgExtent.y;
+    vec4 bg = bgInside ? imageLoad(in_a, bgPixel) : vec4(0.0);
+    vec4 fg = fgInside ? imageLoad(in_b, fgPixel) : vec4(0.0);
 
     int operation = int(op.x);
     vec4 composite;
@@ -75,14 +92,17 @@ void main() {
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected =
-            clamp(imageLoad(in_mask, ivec2(p) + inputGeometry[2].regionAndOffset.zw)[channel], 0.0, 1.0);
+        ivec2 maskPixel = ivec2(p) + inputGeometry[2].regionAndOffset.zw;
+        ivec2 maskExtent = ivec2(inputGeometry[2].extent.xy);
+        bool maskInside =
+            maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
+        float selected = maskInside ? clamp(imageLoad(in_mask, maskPixel)[channel], 0.0, 1.0) : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the background, weight 1 the
     // unmasked composite, so Mix 0 or zero coverage returns the background.
     float weight = coverage * mask.z;
-    imageStore(out_color, ivec2(p), weight <= 0.0 ? bg : (weight >= 1.0 ? composite : mix(bg, composite, weight)));
+    gpuStore(out_color, ivec2(p), weight <= 0.0 ? bg : (weight >= 1.0 ? composite : mix(bg, composite, weight)));
 }
 )GLSL";
 

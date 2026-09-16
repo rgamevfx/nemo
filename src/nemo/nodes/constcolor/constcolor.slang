@@ -2,13 +2,13 @@
 // module per issue #83)
 // ---------------------------------------------------------
 // name: constcolor
-// version: 1
+// version: 2
 // ports:
 //   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
 // parameters:
 //   - color = the authored scene-linear RGBA color (straight alpha; may lie
 //     outside [0, 1] — stored values are never clamped)
-// bindings (native binding contract v3, see testpattern.slang):
+// bindings (native binding contract v5, see testpattern.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.constcolor.payload.v1")
 //   set 2, binding 0 : output image2D
@@ -22,12 +22,17 @@
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
-    // meta: (full image width, full image height, region.x, region.y)
-    uint4 meta;
+    // meta: (full image width, full image height, region.x, region.y; signed)
+    int4 meta;
     // meta2: raster (image width, image height, samplingScale, 0)
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
+    // support: half-open RASTER-INDEX rect (x, y, width, height) of the samples
+    // that ARE this image's data; (-1,-1,-1,-1) means the raster declares no
+    // support (a node-local scratch), a non-positive size means every sample is
+    // transparent black. Samples outside it must be written transparent black.
+    int4 support;
 };
 
 [[vk::binding(1, 0)]]
@@ -44,5 +49,13 @@ void main(uint3 tid : SV_DispatchThreadID)
 {
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    // The described image's data support (native binding contract v5): a sample
+    // outside it is transparent black, never the authored color computed there.
+    if (support.z >= 0 && support.w >= 0 &&
+        ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
+         (int)p.y >= support.y + support.w)) {
+        out_color[p] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
     out_color[p] = color;
 }

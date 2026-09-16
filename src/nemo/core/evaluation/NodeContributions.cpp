@@ -249,7 +249,7 @@ void NodeContributions::validate(const NodeCatalog& catalog, const NodeInstance&
 }
 
 std::optional<std::string> NodeContributions::validateParameters(const NodeCatalog& catalog, const NodeInstance& node,
-                                                                 ParameterValues& effectiveParams) const {
+                                                                 const ParameterValues& effectiveParams) const {
     const NodeContribution* contribution = find(node.type);
     if (contribution == nullptr || !contribution->validateParameters)
         return std::nullopt;

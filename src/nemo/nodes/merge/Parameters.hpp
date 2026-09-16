@@ -16,7 +16,7 @@ enum class MergeOperation { Over, Plus, Multiply, Screen, Difference };
 // supported set in every execution path (the descriptor's choices reject it
 // earlier still, on author and on deserialize).
 [[nodiscard]] inline MergeOperation effectiveMergeOperation(const NodeCatalog& catalog, const NodeInstance& node,
-                                                            ParameterValues& effectiveParams) {
+                                                            const ParameterValues& effectiveParams) {
     const std::string& operation = effectiveChoice(catalog, node, effectiveParams, "operation");
     if (operation == "over") {
         return MergeOperation::Over;

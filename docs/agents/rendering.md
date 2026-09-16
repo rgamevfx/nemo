@@ -175,12 +175,13 @@ Independent analytic fixtures, not agreement between implementations, remain
 the correctness oracle (ADR-0004, Fidelity below). Change the independent
 implementations together when a numerical contract changes.
 
-The internal native binding contract is version 3
+The internal native binding contract is version 5
 ([ADR-0008](../decisions/0008-built-in-node-contributions.md#boundaries)).
 `GpuPreparation` supplies owned payload/weight values, local passes and
-per-scratch coverage. Image-sampling kernels address inputs through their actual
-geometry, not the output raster's dimensions. Allocation, barriers, submission
-and retirement stay in `GpuExecutor` and the existing GPU owners. See
+per-scratch coverage. Image-sampling kernels address signed producer coverage,
+not the output raster's dimensions; final writes respect described data support.
+Header description is independent of decode and GPU setup. Allocation, barriers,
+submission and retirement stay in `GpuExecutor` and the existing GPU owners. See
 [ADR-0008](../decisions/0008-built-in-node-contributions.md) and
 [`ownership.md`](ownership.md#add-a-node-or-effect).
 
@@ -315,8 +316,10 @@ Grade, Merge, Blur and Transform support regional requests at sampling scales
 1/2/4. Their spatial parameters remain full-resolution. The shared dependency
 planner anchors coverage to the image-wide sampling lattice and combines
 per-port requirements across consumers. Blur supplies its halo; Transform
-supplies inverse/filter bounds plus original mix coverage. Unknown source pixel
-aspect requires conservative whole-input coverage, not an assumed square pixel.
+supplies inverse/filter bounds plus original mix coverage. Unknown source
+dimensions fail description explicitly rather than borrowing a network canvas.
+Clip headers without PAR retain the established square-pixel default (owner
+approval in #88); explicit header PAR is preserved.
 Masks are read in output coordinates. A contribution declaring
 `supportsRegion=false` processes the whole domain internally and still serves
 regional consumers. See ADR-0007 for coverage reuse and its rectangular limit.

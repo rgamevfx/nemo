@@ -655,8 +655,8 @@ struct MemoryReader {
     }
 };
 
-// Owns common initialization without opening the codec: the native path must
-// attach its Vulkan device and format callback before openCodec().
+// Owns container metadata independently of decoder setup. Native execution
+// prepares the codec before attaching its Vulkan device and format callback.
 struct PreparedDecoder {
     std::unique_ptr<MemoryReader> memory;
     FormatGuard format;
@@ -668,7 +668,8 @@ struct PreparedDecoder {
     explicit PreparedDecoder(const std::string& path)
         : PreparedDecoder(path, std::shared_ptr<const std::vector<std::uint8_t>>{}) {}
 
-    PreparedDecoder(const std::string& path, std::shared_ptr<const std::vector<std::uint8_t>> bytes)
+    PreparedDecoder(const std::string& path, std::shared_ptr<const std::vector<std::uint8_t>> bytes,
+                    bool inspectPackets = true)
         : memory(bytes ? std::make_unique<MemoryReader>(std::move(bytes)) : nullptr) {
         int openStatus = 0;
         if (memory) {
@@ -684,12 +685,15 @@ struct PreparedDecoder {
         }
         if (openStatus < 0)
             failStatus(path, "avformat_open_input failed", openStatus);
-        if (avformat_find_stream_info(format.context, nullptr) < 0)
+        if (inspectPackets && avformat_find_stream_info(format.context, nullptr) < 0)
             failStatus(path, "avformat_find_stream_info failed");
         streamIndex = av_find_best_stream(format.context, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
         if (streamIndex < 0)
             failStatus(path, "no video stream");
         stream = format.context->streams[streamIndex];
+    }
+
+    void prepareCodec(const std::string& path) {
         decoderCodec = avcodec_find_decoder(stream->codecpar->codec_id);
         if (decoderCodec == nullptr)
             failStatus(path, "no decoder for codec id " + std::to_string(stream->codecpar->codec_id));
@@ -706,6 +710,8 @@ struct PreparedDecoder {
     PreparedDecoder& operator=(const PreparedDecoder&) = delete;
 
     [[nodiscard]] ClipInfo openCodec(const std::string& path) {
+        if (codec.context == nullptr)
+            prepareCodec(path);
         const int status = avcodec_open2(codec.context, decoderCodec, nullptr);
         if (status < 0) {
             const std::string profile = declaredProfile(stream->codecpar);
@@ -713,11 +719,20 @@ struct PreparedDecoder {
                  std::string("avcodec_open2 failed") + (profile.empty() ? "" : " (unsupported " + profile + ")"),
                  status);
         }
+        ClipInfo result = metadata(path);
+        result.width = codec.context->width;
+        result.height = codec.context->height;
+        return result;
+    }
+
+    [[nodiscard]] ClipInfo metadata(const std::string& path) const {
         const AVRational aspect = av_guess_sample_aspect_ratio(format.context, stream, nullptr);
+        // Owner-approved compatibility policy (#88): unspecified clip PAR
+        // keeps the existing square-pixel default; explicit header PAR wins.
         return {path,
-                avcodec_get_name(codec.context->codec_id),
-                codec.context->width,
-                codec.context->height,
+                avcodec_get_name(stream->codecpar->codec_id),
+                stream->codecpar->width,
+                stream->codecpar->height,
                 frameRateOf(stream),
                 stream->nb_frames > 0 ? stream->nb_frames : -1,
                 aspect.num > 0 && aspect.den > 0 ? av_q2d(aspect) : 1.0,
@@ -726,6 +741,12 @@ struct PreparedDecoder {
 };
 
 }  // namespace
+
+ClipInfo inspectClipHeader(const std::string& path) {
+    // Stream probing may decode frames internally; descriptions use only the
+    // container header and report unavailable geometry rather than doing that.
+    return PreparedDecoder(path, {}, false).metadata(path);
+}
 
 struct ClipDecoder::Impl {
     std::unique_ptr<MemoryReader> memory;
@@ -791,6 +812,7 @@ std::unique_ptr<ClipDecoder> ClipDecoder::openInternal(gpu::Instance& instance, 
     Impl& d = *decoder->impl_;
 
     PreparedDecoder prepared(path, std::move(memoryBytes));
+    prepared.prepareCodec(path);
     auto& codec = prepared.codec;
     AVStream* stream = prepared.stream;
 

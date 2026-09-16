@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ViewerRuntime.hpp"
+#include "nemo/core/evaluation/Image.hpp"
 #include "nemo/core/evaluation/ViewerResolution.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
@@ -52,10 +53,11 @@ class ViewerController final : public QObject {
     Q_PROPERTY(int frame READ frame WRITE setFrame NOTIFY frameChanged)
     Q_PROPERTY(int effectiveScale READ effectiveScale NOTIFY effectiveScaleChanged)
     Q_PROPERTY(QRectF presentedRegion READ presentedRegion NOTIFY frameArrived)
-    // Full-resolution image domain the current presentation was evaluated
-    // against: the probed media size, or the default composition canvas when
-    // no media source is loaded. Display math reads this rather than the
-    // media-only source size so a media-free graph still shows its result.
+    // Full-resolution image domain in effect: the retained frame's own domain
+    // while one is displayed, otherwise the ACTUAL format the target's
+    // description states for the current frame (issue #88). Display math reads
+    // this instead of the media-only source size; a target whose description
+    // states no format reports no size rather than a substituted canvas.
     Q_PROPERTY(QSizeF compositionSize READ compositionSize NOTIFY frameArrived)
     Q_PROPERTY(QString viewerTargetName READ viewerTargetName NOTIFY viewerTargetChanged)
     Q_PROPERTY(QString viewerTargetId READ viewerTargetId NOTIFY viewerTargetChanged)
@@ -364,6 +366,36 @@ private:
     [[nodiscard]] int frameDomainEnd() const;
     void buildGraph(const SourceReference& reference);
     void refreshRequest();
+    // The target's authored output description, resolved on the worker through
+    // the shared dependency planner (issue #88): no pixels, no device work and
+    // no GUI-thread media access. The answer is memoized for exactly one
+    // target/revision identity AT ONE LOCAL TIME: geometry and format may be
+    // animated (an animated generator format, an image sequence whose frames
+    // declare different windows), so a description answered for another frame
+    // must never frame this one. A stale answer cannot become current either:
+    // the worker reply is matched against the request that is still outstanding,
+    // and the recorded local time is part of the identity, not just a field.
+    struct TargetDescription {
+        NetworkId network{kInvalidNetwork};
+        NodeId target{kInvalidNode};
+        std::string sourceKey;
+        std::uint64_t revision{};
+        std::int64_t localTime{};
+        // False while the worker's answer for this identity is still in flight.
+        bool answered{false};
+        ImageDescription description;
+    };
+    struct Framing {
+        int width{};
+        int height{};
+        double pixelAspect{1.0};
+    };
+    // Framing comes only from the target's resolved image description.
+    // Unknown metadata stays unavailable; a known-empty image retains its format.
+    [[nodiscard]] std::optional<Framing> targetFraming() const;
+    [[nodiscard]] bool targetDescriptionMatches(NetworkId network, NodeId target, const std::string& sourceKey,
+                                                std::uint64_t revision, std::int64_t localTime) const;
+    [[nodiscard]] EvaluationRequest descriptionRequest(NetworkId network, NodeId target) const;
     // Forgets the probed media when the request no longer addresses it: a
     // cleared Read, a replaced target, or a target that names no reference.
     void forgetProbedMedia();
@@ -407,6 +439,9 @@ private:
     // rejects superseded probes; the key is carried so the accepted result
     // publishes exactly the reference that was probed.
     std::string probeSourceKey_{"src"};
+    // Target description in effect (issue #88). It frames the next request and
+    // is the answer the worker returned for exactly the identity it stores.
+    std::optional<TargetDescription> targetDescription_;
     // Revision of the exact snapshot handed to the last submission. A result
     // carries that snapshot's revision, which is the authored revision except
     // when the media role added its request-owned node.

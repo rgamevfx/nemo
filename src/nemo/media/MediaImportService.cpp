@@ -164,6 +164,36 @@ struct PreviewSize {
     return {std::clamp(width, 1, maxWidth), std::clamp(height, 1, maxHeight)};
 }
 
+// Frames a decoded data raster back into its declared format for display
+// (issue #88): the read returns the data extent alone, so a preview must place
+// it at its own signed origin inside the frame's format, with transparent black
+// where the source declares no samples. Nothing is stretched — a source whose
+// data extends past its format keeps its authored framing, and data outside the
+// format is cropped exactly as the display would crop it.
+[[nodiscard]] CpuImage framedToFormat(const CpuImage& raster, const Region& coverage, const Region& format) {
+    if (format.width <= 0 || format.height <= 0) {
+        return raster;  // no known format to frame: the data raster is all there is
+    }
+    ImageLayout layout = raster.layout();
+    layout.width = format.width;
+    layout.height = format.height;
+    CpuImage framed(layout);
+    for (int y = 0; y < raster.height(); ++y) {
+        const int targetY = coverage.y + y - format.y;
+        if (targetY < 0 || targetY >= layout.height) {
+            continue;
+        }
+        for (int x = 0; x < raster.width(); ++x) {
+            const int targetX = coverage.x + x - format.x;
+            if (targetX < 0 || targetX >= layout.width) {
+                continue;
+            }
+            framed.setPixel(targetX, targetY, raster.pixel(x, y));
+        }
+    }
+    return framed;
+}
+
 // Bounded point-sample downsample onto the preview raster. Output (x, y)
 // reads the source pixel at the center of its fill-ratio cell — the same
 // integer mapping convertDecodedFrame applies for a bounded clip decode, so
@@ -282,7 +312,10 @@ void importStill(const MediaImportRequest& request, const std::string& framePath
     }
     // readImageFrame returns scene-linear straight-alpha pixels; the preview
     // is reduced first and then taken to display through the viewing
-    // transform, exactly like the clip path.
+    // transform, exactly like the clip path. The read returns the data raster
+    // alone, so the preview re-frames it into the declared format through its
+    // own coverage: the thumbnail shows the frame as authored, not just the
+    // data window.
     const ImageFrame decoded = readImageFrame(*colors, request.inputColor, framePath, probeFrame, context);
     // The decoded read is authoritative for the frame actually produced.
     result.probe.width = decoded.info.width;
@@ -290,9 +323,10 @@ void importStill(const MediaImportRequest& request, const std::string& framePath
     result.probe.pixelAspect = decoded.info.pixelAspect;
     result.pixelFormat = decoded.info.nativePrecision;
     result.bitDepth = bitDepthFromPrecision(decoded.info.nativePrecision);
-    const PreviewSize preview = previewSize(decoded.image.width(), decoded.image.height(), decoded.info.pixelAspect,
+    const CpuImage framed = framedToFormat(decoded.image, decoded.info.coverage, decoded.info.description.format);
+    const PreviewSize preview = previewSize(framed.width(), framed.height(), decoded.info.pixelAspect,
                                             request.thumbnailWidth, request.thumbnailHeight);
-    CpuImage thumb = downsampleTo(decoded.image, preview.width, preview.height);
+    CpuImage thumb = downsampleTo(framed, preview.width, preview.height);
     if (toDisplayReferred(thumb, request, result)) {
         result.thumbnail = std::make_shared<const CpuImage>(std::move(thumb));
     }

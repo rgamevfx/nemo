@@ -821,9 +821,9 @@ TEST_F(ReadViewerSurface, DownstreamEffectKeepsItsSingleMediaSourcesDomain) {
     EXPECT_EQ(controller_->presentation()->request.output, static_cast<nemo::NodeId>(grade.toULongLong()));
 }
 
-// Several media sources have no defined composition format, so the viewer keeps
-// the established default canvas rather than picking one source arbitrarily.
-TEST_F(ReadViewerSurface, SeveralMediaSourcesKeepTheDefaultCompositionCanvas) {
+// Mixed inputs keep Merge's main-input format; the smaller foreground occupies
+// its own coordinates rather than being stretched across the background.
+TEST_F(ReadViewerSurface, MixedMediaSourcesKeepMainInputFormatWithoutStretching) {
     const auto first = writePng(directory_.path().toStdString(), "first", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
     const auto second = writePng(directory_.path().toStdString(), "second", 40, 20, {0.9F, 0.1F, 0.1F, 1.0F});
     const auto readA = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"), QStringLiteral("ReadA"),
@@ -854,10 +854,59 @@ TEST_F(ReadViewerSurface, SeveralMediaSourcesKeepTheDefaultCompositionCanvas) {
         << controller_->error().toStdString();
     ASSERT_TRUE(controller_->presentation())
         << "status=" << controller_->status().toStdString() << " error=" << controller_->error().toStdString();
-    EXPECT_TRUE(controller_->sourceSize().isEmpty());
-    EXPECT_EQ(controller_->frameCount(), -1);
-    EXPECT_EQ(controller_->presentation()->request.fullWidth, 1920);
-    EXPECT_EQ(controller_->presentation()->request.fullHeight, 1080);
+    EXPECT_EQ(controller_->compositionSize(), QSizeF(96, 64));
+    EXPECT_EQ(controller_->presentation()->request.fullWidth, 96);
+    EXPECT_EQ(controller_->presentation()->request.fullHeight, 64);
+    for (const auto& mode : {QStringLiteral("full"), QStringLiteral("half"), QStringLiteral("quarter")}) {
+        controller_->setResolutionMode(mode);
+        const int expectedScale = mode == QStringLiteral("full") ? 1 : mode == QStringLiteral("half") ? 2 : 4;
+        ASSERT_TRUE(waitFor([&] {
+            const auto presentation = controller_->presentation();
+            return presentation && presentation->request.samplingScale == expectedScale &&
+                   presentation->request.fullWidth == 96 && presentation->request.fullHeight == 64;
+        })) << controller_->error().toStdString();
+        QTest::qWait(100);
+        const auto image = grabImageArea();
+        ASSERT_FALSE(image.isNull());
+        const auto backgroundPixels = countPixelsNear(image, expectedDisplayRgb(first), 12);
+        const auto foregroundPixels = countPixelsNear(image, expectedDisplayRgb(second), 12);
+        EXPECT_GT(foregroundPixels, 100);
+        EXPECT_GT(backgroundPixels, foregroundPixels * 3) << "40x20 foreground must not cover the 96x64 background";
+        capture(QStringLiteral("issue88-mixed-") + mode);
+    }
+    // Description queries must not displace the frame playback is waiting for.
+    const auto firstFrame = controller_->frame();
+    controller_->play();
+    const bool advanced = waitFor(
+        [&] {
+            const auto presentation = controller_->presentation();
+            return presentation && presentation->request.localTime >= firstFrame + 3;
+        },
+        10000);
+    controller_->pause();
+    ASSERT_TRUE(advanced) << controller_->error().toStdString();
+    const auto pausedFrame = controller_->frame();
+    ASSERT_TRUE(waitFor([&] {
+        const auto presentation = controller_->presentation();
+        return presentation && presentation->request.localTime == pausedFrame;
+    }));
+    EXPECT_EQ(controller_->compositionSize(), QSizeF(96, 64));
+    QTest::qWait(100);
+    capture(QStringLiteral("issue88-mixed-playback"));
+
+    // Cache-range admission may supersede metadata work; the real panel must
+    // still repaint a later view refresh rather than waiting indefinitely.
+    const auto nextFrame = pausedFrame + 1;
+    controller_->setFrame(nextFrame);
+    controller_->requestRange(0, 0);
+    controller_->setResolutionMode(QStringLiteral("half"));
+    controller_->setResolutionMode(QStringLiteral("quarter"));
+    ASSERT_TRUE(waitFor([&] {
+        const auto presentation = controller_->presentation();
+        return presentation && presentation->request.localTime == nextFrame && presentation->request.samplingScale == 4;
+    })) << controller_->error().toStdString();
+    QTest::qWait(100);
+    capture(QStringLiteral("issue88-mixed-range-refresh"));
 }
 
 // The retired continuous wheel zoom stored a scale relative to the fitted

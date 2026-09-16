@@ -5,7 +5,8 @@
 // One explicitly assembled list of built-in node modules supplies, per node
 // type: the immutable schema descriptor, the node's role in the network, an
 // optional CPU reference adapter, an optional authoring-time parameter
-// interpretation, and optional namespaced editor declarations. The schema
+// interpretation, optional namespaced editor declarations, an optional input
+// requirement rule and an optional output description rule. The schema
 // catalog stays free of callbacks, Qt objects and GPU handles: this projection
 // is the runtime registration the CPU executor consumes, and the GPU
 // EffectLibrary projects the same list onto its own backend.
@@ -37,6 +38,7 @@ namespace nemo {
 class Document;
 struct NodeInstance;
 class SourceProvider;
+struct EffectiveSourceRequest;
 
 // What a node is in the network. Ordinary effects produce one image from their
 // declared inputs; a Source reads external media through the provider seam; an
@@ -47,36 +49,81 @@ enum class NodeRole { Image, Source, Output, Viewer };
 
 // One node's resolved evaluation context. `inputs` is declared-port aligned and
 // holds null for an absent optional slot; the adapter never allocates a
-// placeholder for one. `effectiveParams` is the resolved static/animated
-// parameter state the executor will record in the plan, and an adapter adds the
-// values it actually consumed to it. `inputRequests` is the coverage each image
+// placeholder for one. `effectiveParams` borrows the immutable defaulted,
+// overridden and animated parameter state shared with description and planning.
+// `inputRequests` is the coverage each image
 // in `inputs` was actually produced with (issue #85), in the same declared-port
 // order, so a spatial effect reads an input through its real origin instead of
 // assuming the input raster starts where its own request does. The slot of an
 // absent optional input holds a default request and is never read.
+//
+// `description` is this node's resolved description (issue #88) — the meaning
+// of the image it produces — and `inputDescriptions` is the same declared-port
+// aligned view of its inputs' descriptions, null for an absent optional slot.
+// `source` is the node's pre-resolved effective source request, non-null only
+// for a Source node: the source callback consumes it instead of re-resolving
+// authored state during execution.
 struct CpuNodeContext {
     const Document& document;
     const NodeCatalog& catalog;
     const NodeInstance& node;
     const EvaluationRequest& request;
-    ParameterValues& effectiveParams;
+    const ParameterValues& effectiveParams;
     std::span<const CpuImage* const> inputs;
     SourceProvider* sources;
     std::span<const EvaluationRequest> inputRequests;
+    const ImageDescription& description;
+    const EffectiveSourceRequest* source;
+    std::span<const ImageDescription* const> inputDescriptions;
+};
+
+// One declared input port's demand (issue #88): the full-resolution signed
+// region this node's description or pixel implementation reads from that port,
+// and the channels it requires there. A port outside the returned vector, an
+// entry whose region is empty, or an entry with no channels inherits the node's
+// own request region and channels (the pointwise default), so a contribution
+// states only what is different about its inputs.
+struct InputRequirement {
+    Region region;
+    std::string channels{"RGBA"};
 };
 
 // One node's region context (issue #85): the resolved state the node's
 // dependency rules project input coverage from, without executing anything.
 // `request` is the coverage the node has been asked to produce. `pixelAspect`
-// follows the connected main input, or the owning network's canvas for a
-// generator; an unknown source aspect is 0. `effectiveParams` is the same
-// request-local resolved parameter state execution will consume.
+// is the node's own resolved output aspect (equal to `description.pixelAspect`):
+// an aspect is always a real finite positive number, because an image without
+// obtainable geometry fails where it is described rather than travelling as a
+// zero sentinel. `effectiveParams` borrows the same immutable resolved parameter
+// state execution consumes; callbacks never fill defaults or re-resolve
+// animation/source state. `description` is
+// the node's resolved description and `inputs` the descriptions of its declared
+// input ports (null for an absent optional slot), so a rule that depends on an
+// input's real geometry reads it instead of assuming the node's own.
 struct NodeRegionContext {
     const NodeCatalog& catalog;
     const NodeInstance& node;
     const EvaluationRequest& request;
-    ParameterValues& effectiveParams;
+    const ParameterValues& effectiveParams;
     float pixelAspect{1.0F};
+    const ImageDescription& description;
+    std::span<const ImageDescription* const> inputs;
+};
+
+// One node's description context (issue #88): everything a node needs to state
+// the meaning of the image it produces, resolved once, before any pixel work.
+// `inputs` is declared-port aligned with null for an absent optional slot, and
+// `inherited` is the shared default this node would have without a rule of its
+// own: the connected main input's description, or the owning network's authored
+// canvas (issue #96) for a generator. A node that changes nothing about its
+// image declares no rule at all and keeps `inherited` verbatim.
+struct NodeDescriptionContext {
+    const Document& document;
+    const NodeCatalog& catalog;
+    const NodeInstance& node;
+    std::int64_t localTime;
+    std::span<const ImageDescription* const> inputs;
+    ImageDescription inherited;
 };
 
 // A node's CPU reference pixel implementation. `version` is the implementation
@@ -106,9 +153,9 @@ struct NodeEditorContribution {
 // Authoring-time admissibility of one node's resolved parameters: the failure
 // message, or nullopt when they are admissible.
 using NodeParameterValidation =
-    std::function<std::optional<std::string>(const NodeCatalog&, const NodeInstance&, ParameterValues&)>;
+    std::function<std::optional<std::string>(const NodeCatalog&, const NodeInstance&, const ParameterValues&)>;
 
-// One registered built-in node. `inputRegions` is the last field by contract.
+// One registered built-in node. `describe` is the last field by contract.
 struct NodeContribution {
     NodeDescriptor descriptor;
     NodeRole role{NodeRole::Image};
@@ -120,17 +167,23 @@ struct NodeContribution {
     // carry no interpretation of their own.
     NodeParameterValidation validateParameters;
     std::vector<NodeEditorContribution> editors;
-    // Spatial dependency rule (issue #85): the input coverage this node's
-    // pixel implementation reads for a regional request. The result is indexed
-    // by declared input port; a port the result does not cover (and an absent
-    // optional slot) falls back to the node's own request, so an empty result
-    // means "every real port needs exactly this node's region". Rules are the
-    // node's own math (Blur's halo, Transform's inverse map and filter
-    // footprint), never a node-type branch in the executor: the planner merely
-    // clips and lattice-aligns what a contribution returns, and escalates the
-    // whole image domain for a node whose capabilities declare
-    // supportsRegion=false.
-    std::function<std::vector<Region>(const NodeRegionContext&)> inputRegions;
+    // Spatial dependency rule (issue #88): the input requirements this node's
+    // pixel implementation reads for a regional request, indexed by declared
+    // input port. A port the result does not cover (and an absent optional
+    // slot) inherits this node's own request region and channels, so an empty
+    // result means "every real port needs exactly this node's region and
+    // channels". Rules are the node's own math (Blur's halo, Transform's
+    // inverse map and filter footprint), never a node-type branch in the
+    // executor: the planner merely rounds, unions and clips what a contribution
+    // returns against the producing node's own geometry.
+    std::function<std::vector<InputRequirement>(const NodeRegionContext&)> inputRequirements;
+    // Output description rule (issue #88): what the image this node produces is.
+    // An empty rule keeps the description the node inherits (its main input's,
+    // or the owning network's canvas for a generator), which is the shared
+    // default: a simple effect states nothing about its image and repeats no
+    // image rule. A rule that changes part of the description returns the whole
+    // description, so what it does not restate is explicitly its own choice.
+    std::function<ImageDescription(const NodeDescriptionContext&)> describe;
 };
 
 // An immutable, exactly assembled registration snapshot. The constructor
@@ -175,7 +228,7 @@ public:
     // when the parameters are admissible or the node type contributes no
     // parameter interpretation (unknown/schema-only nodes stay recoverable).
     [[nodiscard]] std::optional<std::string> validateParameters(const NodeCatalog& catalog, const NodeInstance& node,
-                                                                ParameterValues& effectiveParams) const;
+                                                                const ParameterValues& effectiveParams) const;
 
 private:
     std::vector<NodeContribution> contributions_;

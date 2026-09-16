@@ -1,6 +1,9 @@
 #include "nemo/media/ImageIO.hpp"
 
+#include <algorithm>
 #include <array>
+#include <limits>
+#include <memory>
 #include <string_view>
 
 #include <OpenImageIO/imageio.h>
@@ -11,8 +14,11 @@ namespace {
 
 PixelWindow specWindow(const OIIO::ImageSpec& spec) {
     // OIIO reports the data window as origin (x, y) + extent; EXR display
-    // windows equal this for formats without an explicit one.
-    return PixelWindow{spec.x, spec.y, spec.x + spec.width - 1, spec.y + spec.height - 1};
+    // windows equal this for formats without an explicit one. The edge is
+    // computed in 64-bit because a declared window is file input; the header
+    // validation rejects a declaration that does not fit before this runs.
+    return PixelWindow{spec.x, spec.y, static_cast<int>(static_cast<std::int64_t>(spec.x) + spec.width - 1),
+                       static_cast<int>(static_cast<std::int64_t>(spec.y) + spec.height - 1)};
 }
 
 int channelIndex(const OIIO::ImageSpec& spec, std::string_view name) {
@@ -77,6 +83,71 @@ std::vector<float> declaredChromaticities(const OIIO::ImageSpec& spec) {
     return values;
 }
 
+// The declared windows of one spec: the data extent OIIO reports, and the
+// display extent its full_* fields carry (a degenerate display declaration
+// falls back to the data extent). Every coordinate and extent is validated as
+// representable first: a declared window is file input, and the geometry this
+// adapter normalizes must not overflow — header parsing is where that is
+// decided, so nothing downstream ever sees a window that wrapped.
+ImageWindows windowsOf(const OIIO::ImageSpec& spec, const std::string& path) {
+    const auto representable = [](const std::int64_t value) {
+        return value >= std::numeric_limits<int>::min() && value <= std::numeric_limits<int>::max();
+    };
+    const auto edge = [](const std::int64_t origin, const int extent) {
+        return origin + static_cast<std::int64_t>(extent) - 1;
+    };
+    const auto require = [&](const bool fits, const std::string& what) {
+        if (!fits) {
+            throw ImageIoException(path, "the declared " + what +
+                                             " cannot be represented as image coordinates; the header is not "
+                                             "usable as image geometry");
+        }
+    };
+    require(representable(edge(spec.x, spec.width)) && representable(edge(spec.y, spec.height)), "data window");
+    const bool hasDisplay = spec.full_width > 0 && spec.full_height > 0;
+    if (hasDisplay) {
+        require(representable(edge(spec.full_x, spec.full_width)) && representable(edge(spec.full_y, spec.full_height)),
+                "display window");
+        // Normalization translates the data window by the display origin, so that
+        // difference must be representable as well.
+        require(representable(static_cast<std::int64_t>(spec.x) - spec.full_x) &&
+                    representable(static_cast<std::int64_t>(spec.y) - spec.full_y),
+                "display-window normalization offset");
+    }
+
+    ImageWindows windows;
+    windows.data = specWindow(spec);
+    windows.display = displayWindow(spec);
+    return windows;
+}
+
+// Every header fact this adapter reports, from one already-open input. Shared
+// by the header-only inspection and the pixel read, so a description and the
+// samples it describes are extracted by the same code.
+ImageHeader headerOf(const OIIO::ImageInput& input, const std::string& path) {
+    const OIIO::ImageSpec& spec = input.spec();
+    ImageHeader header;
+    header.path = path;
+    header.formatName = input.format_name();
+    header.declaredColorSpace = spec.get_string_attribute("oiio:ColorSpace");
+    header.chromaticities = declaredChromaticities(spec);
+    header.channelNames.assign(spec.channelnames.begin(), spec.channelnames.end());
+    header.nativePrecision = std::string(typeName(spec.format));
+    header.windows = windowsOf(spec, path);
+    header.pixelAspect = spec.get_float_attribute("pixelaspectratio", 1.0F);
+    header.hasAlpha = channelIndex(spec, "A") >= 0;
+    return header;
+}
+
+// Opens an image input or reports the offending file (never a bare OIIO error).
+[[nodiscard]] std::unique_ptr<OIIO::ImageInput> openImage(const std::string& path) {
+    auto input = OIIO::ImageInput::open(path);
+    if (!input) {
+        throw ImageIoException(path, OIIO::geterror());
+    }
+    return input;
+}
+
 }  // namespace
 
 std::string resolveFramePath(const std::string& pattern, std::int64_t frame) {
@@ -114,70 +185,63 @@ AlphaAssociation declaredAlphaAssociation(const std::string_view formatName, con
     return formatName == "openexr" ? AlphaAssociation::Premultiplied : AlphaAssociation::Straight;
 }
 
+ImageHeader inspectImageHeader(const std::string& path) {
+    const std::unique_ptr<OIIO::ImageInput> input = openImage(path);
+    const ImageHeader header = headerOf(*input, path);
+    static_cast<void>(input->close());
+    return header;
+}
+
 ImageReadResult readImage(const std::string& path) {
-    auto input = OIIO::ImageInput::open(path);
-    if (!input) {
-        throw ImageIoException(path, OIIO::geterror());
-    }
+    const std::unique_ptr<OIIO::ImageInput> input = openImage(path);
 
-    const OIIO::ImageSpec spec = input->spec();
+    const OIIO::ImageSpec& spec = input->spec();
     ImageReadResult result;
-    result.dataWindow = specWindow(spec);
-    result.displayWindow = displayWindow(spec);
-    result.channelNames.assign(spec.channelnames.begin(), spec.channelnames.end());
-    result.nativePrecision = std::string(typeName(spec.format));
-    result.formatName = std::string(input->format_name());
-    result.declaredColorSpace = spec.get_string_attribute("oiio:ColorSpace");
-    result.chromaticities = declaredChromaticities(spec);
+    result.header = headerOf(*input, path);
 
-    std::vector<float> raw(static_cast<std::size_t>(spec.width) * static_cast<std::size_t>(spec.height) *
-                           static_cast<std::size_t>(spec.nchannels));
-    if (!input->read_image(0, 0, 0, spec.nchannels, OIIO::TypeDesc::FLOAT, raw.data())) {
-        throw ImageIoException(path, OIIO::geterror());
-    }
-    input.reset();
+    const PixelWindow& data = result.header.windows.data;
+    const int width = std::max(data.width(), 0);
+    const int height = std::max(data.height(), 0);
 
     const int r = channelIndex(spec, "R");
     const int g = channelIndex(spec, "G");
     const int b = channelIndex(spec, "B");
     const int a = channelIndex(spec, "A");
     if (r < 0 || g < 0 || b < 0) {
-        throw ImageIoException(path, "no R/G/B channels in " + result.formatName +
+        throw ImageIoException(path, "no R/G/B channels in " + result.header.formatName +
                                          " file: " + std::to_string(spec.nchannels) + " channels");
     }
 
     ImageLayout layout;
-    layout.width = result.displayWindow.width();
-    layout.height = result.displayWindow.height();
-    layout.pixelAspect = spec.get_float_attribute("pixelaspectratio", 1.0F);
+    // The raster is the data extent, in the file's own pixel order: the display
+    // extent is a declared format, not storage (issue #88), so a windowed
+    // source is not uploaded as a padded display canvas.
+    layout.width = width;
+    layout.height = height;
+    layout.pixelAspect = result.header.pixelAspect;
     result.image = CpuImage(layout);
-
-    // Display pixels outside the data window are opaque black (the buffer
-    // default is 0 everywhere).
-    for (int y = 0; y < layout.height; ++y) {
-        for (int x = 0; x < layout.width; ++x) {
-            result.image.setPixel(x, y, {0.0F, 0.0F, 0.0F, 1.0F});
-        }
+    if (width == 0 || height == 0) {
+        return result;  // an empty data window is a valid image with no samples
     }
 
-    for (int row = result.dataWindow.yMin; row <= result.dataWindow.yMax; ++row) {
-        for (int col = result.dataWindow.xMin; col <= result.dataWindow.xMax; ++col) {
-            const int x = col - result.displayWindow.xMin;
-            const int y = row - result.displayWindow.yMin;
-            if (x < 0 || y < 0 || x >= layout.width || y >= layout.height) {
-                continue;  // data pixels outside the display extent are not representable here
-            }
-            const float* src = &raw[(static_cast<std::size_t>(row - spec.y) * static_cast<std::size_t>(spec.width) +
-                                     static_cast<std::size_t>(col - spec.x)) *
+    std::vector<float> raw(static_cast<std::size_t>(spec.width) * static_cast<std::size_t>(spec.height) *
+                           static_cast<std::size_t>(spec.nchannels));
+    if (!input->read_image(0, 0, 0, spec.nchannels, OIIO::TypeDesc::FLOAT, raw.data())) {
+        throw ImageIoException(path, OIIO::geterror());
+    }
+
+    // Samples the file does not declare are transparent black (the CpuImage
+    // buffer default), so off-format coverage never fabricates opaque pixels.
+    for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col) {
+            const float* src = &raw[(static_cast<std::size_t>(row) * static_cast<std::size_t>(spec.width) +
+                                     static_cast<std::size_t>(col)) *
                                     static_cast<std::size_t>(spec.nchannels)];
             std::array<float, kImageChannels> rgba{src[r], src[g], src[b], 1.0F};
             if (a >= 0) {
                 rgba[3] = src[a];
-                // Declared association, not converted (issue #81 owns the
-                // association application on the source path).
-                result.alpha = declaredAlphaAssociation(result.formatName, true);
             }
-            result.image.setPixel(x, y, rgba);
+            result.image.setPixel(col, row, rgba);
         }
     }
     return result;

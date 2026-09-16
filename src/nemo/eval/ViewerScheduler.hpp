@@ -25,6 +25,12 @@ enum class ViewerRequestKind : std::uint8_t {
     Render,
     Probe,
     CacheRange,
+    // Metadata-only description of one target (issue #88): the worker resolves
+    // the target's authored output description through the shared dependency
+    // planner, without acquiring a pixel. The viewer needs the actual format
+    // before it can build a render request, so this travels through the same
+    // bounded admission, coalescing and cancellation as every other request.
+    Describe,
 };
 
 struct ViewerScheduledRequest {
@@ -80,6 +86,14 @@ public:
                ViewerDestination destination = ViewerDestination::Interactive,
                std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),
                std::string colorConfigPath = {});
+    // Metadata-only target description (issue #88). `request` identifies the
+    // target (network, output, local time); its domain is not consulted, so a
+    // caller that does not yet know the target's format still gets the
+    // authored description back through the normal interactive admission path.
+    bool describe(Document document, EvaluationRequest request, std::uint64_t id,
+                  ViewerDestination destination = ViewerDestination::Interactive,
+                  std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),
+                  std::string colorConfigPath = {});
     bool requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
                       ViewerDestination destination = ViewerDestination::Cache,
                       std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),

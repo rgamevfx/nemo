@@ -1093,13 +1093,12 @@ TEST(Viewer, SourceRetentionUnderDelayedCompletion) {
                                                          slangSpvDir() / "mediaConvert.spv");
     std::weak_ptr<const void> sourceAllocation;
     {
-        // Decode before blocking execution: decode owns synchronous upload. The
-        // session consumes the resolved effective source request (issue #75), and
-        // the evaluation request supplies the raster a transparent-black policy
-        // would produce.
+        // Decode before blocking execution: decode owns synchronous upload.
+        // The session consumes the resolved effective source request; decoded
+        // source coverage is independent of the evaluation's preview density.
         const NodeInstance& plate = *rootGraph(composition.doc).nodeByName("plate");
         const EffectiveSourceRequest source = resolveSourceRequest(composition.doc, plate, 0);
-        auto decoded = sources->acquire(composition.doc, source, request, 10'000'000'000ULL);
+        auto decoded = sources->acquire(composition.doc, source, 10'000'000'000ULL);
         sourceAllocation = decoded.image->retain();
     }
     struct Gate {

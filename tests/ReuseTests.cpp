@@ -563,14 +563,16 @@ TEST(ReuseTest, EvictedIdentityIsRecomputedOnDemand) {
     const PlanStep* outStep = stepFor(first.plan, "out");
     ASSERT_NE(tintStep, nullptr);
     ASSERT_NE(outStep, nullptr);
-    const ResultKey tintKey = nodeContentKey(doc, *rootGraph(doc).nodeByName("tint"), {}, request);
-    EvaluationRequest tintCoverage = request;
+    const ResultKey tintKey = nodeContentKey(doc, *rootGraph(doc).nodeByName("tint"), {}, first.plan.request,
+                                             KeyContext{.description = &tintStep->description});
+    EvaluationRequest tintCoverage = first.plan.request;
     tintCoverage.region = tintStep->region;
-    EvaluationRequest outCoverage = request;
+    EvaluationRequest outCoverage = first.plan.request;
     outCoverage.region = outStep->region;
     cache.evict(regionResultKey(tintKey, tintCoverage));
-    cache.evict(
-        regionResultKey(nodeContentKey(doc, *rootGraph(doc).nodeByName("out"), {tintKey.hash}, request), outCoverage));
+    cache.evict(regionResultKey(nodeContentKey(doc, *rootGraph(doc).nodeByName("out"), {tintKey.hash},
+                                               first.plan.request, KeyContext{.description = &outStep->description}),
+                                outCoverage));
 
     const CpuEvaluation recomputed = evaluateCpu(doc, request, &cache);
     EXPECT_EQ(cache.counts().hits, 0u);  // both representations were evicted

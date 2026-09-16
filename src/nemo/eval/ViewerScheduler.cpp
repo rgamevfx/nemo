@@ -102,6 +102,19 @@ bool ViewerScheduler::probe(Document document, std::string source, std::uint64_t
                                .colorConfigPath = std::move(colorConfigPath)});
 }
 
+bool ViewerScheduler::describe(Document document, EvaluationRequest request, std::uint64_t id,
+                               ViewerDestination destination, std::chrono::steady_clock::time_point requestedAt,
+                               std::string colorConfigPath) {
+    return enqueueInteractive({.document = std::make_shared<const Document>(std::move(document)),
+                               .request = std::move(request),
+                               .source = {},
+                               .id = id,
+                               .kind = ViewerRequestKind::Describe,
+                               .destination = destination,
+                               .requestedAt = requestedAt,
+                               .colorConfigPath = std::move(colorConfigPath)});
+}
+
 bool ViewerScheduler::requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
                                    ViewerDestination destination, std::chrono::steady_clock::time_point requestedAt,
                                    std::string colorConfigPath) {

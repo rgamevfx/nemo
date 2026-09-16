@@ -63,14 +63,21 @@ void catmullRomWeights(float t, out float w[4]) {
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    // The described image's data support (native binding contract v5): a sample
+    // outside the transform's described data window is transparent black.
+    if (!gpuHasData(ivec2(p))) {
+        gpuStore(out_color, ivec2(p), vec4(0.0));
+        return;
+    }
     // The resampled input may cover a different rectangle of the same lattice
     // (region evaluation, wider cache-backed inputs): its full-resolution
     // region origin and raster extent come from the bound geometry, never
     // from this pass's own request.
     ivec2 inputOrigin = inputGeometry[0].regionAndOffset.xy;
     ivec2 dims = ivec2(inputGeometry[0].extent.xy);
-    ivec2 maskOffset = inputGeometry[1].regionAndOffset.zw;
-    vec4 orig = imageLoad(in_main, ivec2(p) + inputGeometry[0].regionAndOffset.zw);
+    ivec2 mainPixel = ivec2(p) + inputGeometry[0].regionAndOffset.zw;
+    bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < dims.x && mainPixel.y < dims.y;
+    vec4 orig = mainInside ? imageLoad(in_main, mainPixel) : vec4(0.0);
 
     int scale = int(meta2.z);
     float fullWidth = float(meta.x);
@@ -136,14 +143,18 @@ void main() {
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(imageLoad(in_mask, ivec2(p) + maskOffset)[channel], 0.0, 1.0);
+        ivec2 maskPixel = ivec2(p) + inputGeometry[1].regionAndOffset.zw;
+        ivec2 maskExtent = ivec2(inputGeometry[1].extent.xy);
+        bool maskInside =
+            maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
+        float selected = maskInside ? clamp(imageLoad(in_mask, maskPixel)[channel], 0.0, 1.0) : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
     // processed pixel (avoids HDR 0*inf cancellation in mix()).
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
-    imageStore(out_color, ivec2(p), result);
+    gpuStore(out_color, ivec2(p), result);
 }
 )GLSL";
 

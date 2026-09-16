@@ -1072,15 +1072,18 @@ namespace {
 
 // The media reference a render target displays. A source node names its own
 // through its 'source' parameter, so an attached Read drives the viewer with
-// the media it actually names — dimensions, pixel aspect, duration and rate —
-// instead of the command-line fixture key "src". A downstream target consumes
-// the single media source its dependency closure reaches, so an effect on a
-// Read keeps the Read's domain without inventing a multi-source composition
-// format: several sources (or none) keep the established default canvas.
+// the media it actually names — duration, rate and decode selection — instead
+// of the command-line fixture key "src". A downstream target consumes the
+// single media source its dependency closure reaches, so an effect on a Read
+// keeps the Read's reference. This resolution exists ONLY to key the worker's
+// media probe (timeline length, codec and decode selection); it never states
+// geometry: the request domain, pixel aspect and framing come from the target's
+// described output (issue #88), which a target with several sources or none
+// also describes from its own authored state.
 struct TargetMedia {
     std::string key;
     // The target itself is a media source node that names no reference: an
-    // explicit empty viewer, never a default canvas standing in for media the
+    // explicit empty viewer, never a substituted reference for media the
     // artist has not chosen.
     bool unbound{};
 };
@@ -1119,8 +1122,9 @@ struct TargetMedia {
         if (sources == 1 && !key.empty())
             media.key = std::move(key);
     } catch (const std::exception&) {
-        // An unresolvable target keeps the established default canvas; the
-        // evaluation reports the offending relationship.
+        // An unresolvable target simply has no probed reference; the evaluation
+        // reports the offending relationship, and geometry is never inferred
+        // from this resolution.
     }
     return media;
 }
@@ -1588,7 +1592,8 @@ void ViewerController::refreshContextTarget() {
 
 NetworkId ViewerController::renderTargetNetwork(const Document& document) const {
     // Routed media lives in the root scope; graph viewers retain their own
-    // attachment scope. Requests and pre-presentation canvas geometry agree.
+    // attachment scope. Requests, the described-output query and the displayed
+    // frame all address this one target scope.
     return contextRole_ != ContextRole::Media && activeViewerNetwork_ != kInvalidNetwork ? activeViewerNetwork_
                                                                                          : document.rootNetworkId();
 }
@@ -3396,6 +3401,10 @@ void ViewerController::requestRange(int first, int last) {
         pollScheduler();
         return;
     }
+    // Range admission supersedes this destination's interactive work without
+    // a reply. A subsequent view refresh must not await that lost answer.
+    pending_ = false;
+    outstandingRequest_ = 0;
     status_ = QStringLiteral("Caching requested range %1–%2; viewer identity unchanged").arg(first).arg(last);
     emit statusChanged();
     pollScheduler();
@@ -3433,6 +3442,20 @@ void ViewerController::receive() {
     if (auto* failure = std::get_if<ViewerFailure>(&*result)) {
         if (failure->requestId == generation_ || failure->requestId == 0)
             fail(QString::fromStdString(failure->message));
+    } else if (auto* described = std::get_if<ViewerTargetDescription>(&*result)) {
+        // The worker resolved the target's authored description (issue #88):
+        // the memo becomes answered and the request is re-resolved against the
+        // actual format. The identity was recorded when the request was issued,
+        // so an answer can never frame a different target or revision.
+        if (described->requestId != generation_)
+            return;
+        outstandingRequest_ = 0;
+        if (targetDescription_) {
+            targetDescription_->description = described->description;
+            targetDescription_->answered = true;
+        }
+        pending_ = false;
+        refreshRequest();
     } else if (auto* probe = std::get_if<SourceProbeResult>(&*result)) {
         if (probe->requestId != generation_)
             return;
@@ -3454,7 +3477,9 @@ void ViewerController::receive() {
         pending_ = false;
         outstandingRequest_ = 0;
         sourceSize_ = QSizeF(info.width, info.height);
-        pixelAspect_ = info.pixelAspect;
+        // The probe reports media metadata (codec, frame count, decode
+        // selection). Framing and pixel aspect come from the target's described
+        // output, so this is deliberately not a second aspect source.
         applyFrameCount(static_cast<int>(std::min<std::int64_t>(info.frameCount, std::numeric_limits<int>::max())));
         // The probed media rate deliberately does NOT pace playback: transport
         // runs at the composition rate (setFrameRate), so a 25 fps clip inside a
@@ -3478,6 +3503,15 @@ void ViewerController::receive() {
         if (frame->requestId != generation_ || frame->revision != submittedRevision_)
             return;
         outstandingRequest_ = 0;
+        // The delivered frame carries the exact description it was produced
+        // from. Recording it (with the local time it was rendered for) makes
+        // the memo answer for that frame, so returning to a frame reuses the
+        // geometry that frame actually had instead of a neighbouring frame's.
+        if (targetDescription_ && targetDescription_->target == frame->request.output &&
+            !(targetDescription_->description == frame->description)) {
+            targetDescription_->description = frame->description;
+            targetDescription_->localTime = frame->request.localTime;
+        }
         presentation_ = std::move(frame);
         pending_ = false;
         outdated_ = false;
@@ -3544,7 +3578,8 @@ void ViewerController::refreshRequest() {
         if (targetEmpty_) {
             // A Read that names no media is an explicit empty viewer: the
             // previous image is not current output and must not linger, and no
-            // default canvas stands in for media that was never chosen.
+            // substituted reference or geometry stands in for media that was
+            // never chosen.
             const bool hadPresentation = static_cast<bool>(presentation_);
             forgetProbedMedia();
             presentation_.reset();
@@ -3601,6 +3636,43 @@ void ViewerController::refreshRequest() {
                 emit frameArrived();
             return;
         }
+        // The target's ACTUAL described output arrives from the worker before
+        // any request is built (issue #88): framing reads the authored format
+        // stated for THIS frame's local time — geometry and format may be
+        // animated — instead of a request-global canvas or a GUI-thread media
+        // probe. The answer is memoized for exactly one target identity and
+        // local time, so a zoom or pan in the same frame costs no round trip
+        // while a frame change asks again for its own description.
+        const bool sameDescription = targetDescriptionMatches(targetNetwork, target, sourceKey, revision, frame_);
+        // Viewport/density changes do not change authored metadata. Keep its
+        // admitted query; its answer will render the latest view state.
+        if (sameDescription && !targetDescription_->answered && outstandingRequest_ != 0)
+            return;
+        if (!sameDescription || !targetDescription_->answered) {
+            const bool hadPresentation = static_cast<bool>(presentation_);
+            TargetDescription pending;
+            pending.network = targetNetwork;
+            pending.target = target;
+            pending.sourceKey = sourceKey;
+            pending.revision = revision;
+            pending.localTime = frame_;
+            targetDescription_ = std::move(pending);
+            pending_ = true;
+            outdated_ = hadPresentation;
+            generation_ = ++nextRequestId_;
+            submittedRevision_ = revision;
+            status_ = QStringLiteral("Describing %1")
+                          .arg(viewerTargetName_.isEmpty() ? QStringLiteral("viewer target") : viewerTargetName_);
+            emit statusChanged();
+            outstandingRequest_ = runtime_->describe(document, descriptionRequest(targetNetwork, target), generation_,
+                                                     *destination_, session_.colorConfigPath())
+                                      ? generation_
+                                      : 0;
+            if (outstandingRequest_ == 0)
+                fail(QStringLiteral("Viewer target description admission rejected"));
+            pollScheduler();
+            return;
+        }
         const auto source = document.sources.find(sourceKey);
         bool mediaReady = false;
         if (source == document.sources.end()) {
@@ -3636,11 +3708,29 @@ void ViewerController::refreshRequest() {
         }
         if (viewport_.isEmpty())
             return;
-        const auto& canvas = document.network(targetNetwork).format();
-        const int width = mediaReady ? static_cast<int>(sourceSize_.width()) : canvas.width;
-        const int height = mediaReady ? static_cast<int>(sourceSize_.height()) : canvas.height;
-        if (!mediaReady && pixelAspect_ != canvas.pixelAspect) {
-            pixelAspect_ = canvas.pixelAspect;
+        // Framing is the described output's: the actual authored format and
+        // pixel aspect of what this target produces, never the request-global
+        // canvas and never the media probe's size.
+        const auto framing = targetFraming();
+        if (!framing) {
+            // The target's description carries no image format. Nothing is
+            // inferred for it — no canvas stands in for source geometry that
+            // could not be described. A previously displayed frame stays (it is
+            // marked outdated) so the panel does not blank out mid-edit.
+            const bool hadPresentation = static_cast<bool>(presentation_);
+            pending_ = false;
+            outstandingRequest_ = 0;
+            outdated_ = hadPresentation;
+            error_ = QStringLiteral("Viewer target '%1' has no described image format")
+                         .arg(viewerTargetName_.isEmpty() ? QStringLiteral("target") : viewerTargetName_);
+            status_ = error_;
+            emit statusChanged();
+            return;
+        }
+        const int width = framing->width;
+        const int height = framing->height;
+        if (pixelAspect_ != framing->pixelAspect) {
+            pixelAspect_ = framing->pixelAspect;
             emit sourceChanged();
         }
         const auto mode = mode_ == "full"      ? ViewerResolution::Full
@@ -3721,17 +3811,58 @@ QRectF ViewerController::presentedRegion() const {
 }
 
 QSizeF ViewerController::compositionSize() const {
+    // The image domain in effect: the displayed frame's own domain while a frame
+    // is retained (display continuity), otherwise the target's ACTUAL described
+    // output format (issue #88). A canvas is never inferred for a target whose
+    // description states no geometry, so a Read whose header could not be
+    // described reports no image rather than a fabricated size.
     if (presentation_)
         return QSizeF(presentation_->request.imageWidth(), presentation_->request.imageHeight());
-    if (hasSource())
-        return sourceSize_;
-    if (viewerTargetNode_ != kInvalidNode) {
-        const auto& document = session_.document();
-        const auto& format = document.network(renderTargetNetwork(document)).format();
-        return QSizeF(format.width, format.height);
-    }
+    if (!targetDescription_)
+        return {};
+    if (const auto framing = targetFraming())
+        return QSizeF(framing->width, framing->height);
     return {};
 }
+
+std::optional<ViewerController::Framing> ViewerController::targetFraming() const {
+    if (!targetDescription_ || !targetDescription_->answered)
+        return std::nullopt;
+    const ImageDescription& described = targetDescription_->description;
+    // Only a format the TARGET's own description states frames the view. A
+    // description that carries no geometry (a Read whose header/media could not
+    // be described, a black-policy source) is NOT turned into an inferred
+    // canvas: the panel reports the failure and keeps whatever frame it already
+    // displayed, so no fabricated source geometry is ever presented as the
+    // target's format.
+    if (hasNoImageFormat(described))
+        return std::nullopt;
+    return Framing{described.format.width, described.format.height, static_cast<double>(described.pixelAspect)};
+}
+
+bool ViewerController::targetDescriptionMatches(NetworkId network, NodeId target, const std::string& sourceKey,
+                                                std::uint64_t revision, std::int64_t localTime) const {
+    // Pending and answered descriptions share the same authored identity.
+    // A view change can reuse pending work, but time/target/revision changes
+    // must obtain a new description.
+    return targetDescription_ && targetDescription_->network == network && targetDescription_->target == target &&
+           targetDescription_->sourceKey == sourceKey && targetDescription_->revision == revision &&
+           targetDescription_->localTime == localTime;
+}
+
+EvaluationRequest ViewerController::descriptionRequest(NetworkId network, NodeId target) const {
+    // Description is domain-independent, so the query carries the smallest valid
+    // domain: it identifies the target and its local time and nothing else.
+    EvaluationRequest request;
+    request.network = network;
+    request.output = target;
+    request.localTime = frame_;
+    request.region = {0, 0, 1, 1};
+    request.fullWidth = 1;
+    request.fullHeight = 1;
+    return request;
+}
+
 void ViewerController::setResolutionMode(const QString& mode) {
     if (mode != "auto" && mode != "full" && mode != "half" && mode != "quarter") {
         fail(QStringLiteral("unknown viewer resolution: %1").arg(mode));

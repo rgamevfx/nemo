@@ -38,16 +38,27 @@ namespace {
 // requests match wherever they are reached from, while two Reads of one file
 // with different mapping, policies or interpretation never alias.
 //
+// `resolved` is the request the plan already resolved for this node (issue
+// #88), so key computation and execution can never disagree about which frame
+// a source node reads; without one the request is resolved here, and a Read
+// with no bound source reference keeps the defined "unresolved" identity
+// instead of inventing a frame.
+//
 // The color-config identity is mixed here rather than into every key: it enters
 // the graph at the source seam, and every dependent inherits it through its
 // inputs' key hashes (ADR-0004/ADR-0007).
 [[nodiscard]] std::string canonicalSource(const Document& document, const NodeInstance& node, std::int64_t localTime,
-                                          std::string_view colorConfigIdentity) {
+                                          std::string_view colorConfigIdentity,
+                                          const EffectiveSourceRequest* resolved) {
+    std::string out;
+    if (resolved != nullptr) {
+        appendEffectiveSourceIdentity(out, *resolved, document.color.workingSpace, colorConfigIdentity);
+        return out;
+    }
     const auto paramIt = node.params.find("source");
     const auto* sourceValue = paramIt != node.params.end() ? std::get_if<std::string>(&paramIt->second) : nullptr;
     const std::string key = sourceValue != nullptr ? *sourceValue : std::string{};
     if (!document.sources.contains(key)) {
-        std::string out;
         appendCanonicalField(out, "key", key);
         appendCanonicalField(out, "unresolved", "1");
         return out;
@@ -56,9 +67,35 @@ namespace {
     // evaluation error with node identity; letting it surface here keeps key
     // computation from inventing a fallback identity for a node that cannot run.
     const EffectiveSourceRequest request = resolveSourceRequest(document, node, localTime);
-    std::string out;
     appendEffectiveSourceIdentity(out, request, document.color.workingSpace, colorConfigIdentity);
     return out;
+}
+
+[[nodiscard]] std::string canonicalRegion(const Region& region) {
+    return std::to_string(region.x) + ',' + std::to_string(region.y) + ',' + std::to_string(region.width) + ',' +
+           std::to_string(region.height);
+}
+
+// Canonical content of one described image (issue #88). Every semantic field
+// participates: the logical format and the signed data window (so sliding a
+// window, or losing overscan, is a different image), the pixel aspect as exact
+// bits (not a decimal rendering, which would lose a one-ULP difference), the
+// channel naming, precision, alpha association and colour interpretation. A
+// description-less key (a direct caller that has no plan) simply omits the
+// block; the coordinate contract version is mixed in regardless, so a change to
+// what the numbers mean can never be served from an older representation.
+[[nodiscard]] std::string canonicalDescription(const ImageDescription& description) {
+    std::string canonical;
+    appendCanonicalField(canonical, "format", canonicalRegion(description.format));
+    appendCanonicalField(canonical, "data", canonicalRegion(description.dataBounds));
+    appendCanonicalField(canonical, "par", std::to_string(std::bit_cast<std::uint32_t>(description.pixelAspect)));
+    for (const std::string& channel : description.channels) {
+        appendCanonicalField(canonical, "channel", channel);
+    }
+    appendCanonicalField(canonical, "precision", std::to_string(static_cast<int>(description.precision)));
+    appendCanonicalField(canonical, "association", std::to_string(static_cast<int>(description.association)));
+    appendCanonicalField(canonical, "color", std::to_string(static_cast<int>(description.color)));
+    return canonical;
 }
 
 }  // namespace
@@ -66,24 +103,26 @@ namespace {
 ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
                         const std::vector<std::uint64_t>& inputKeyHashes, const EvaluationRequest& request,
                         const KeyContext& context) {
-    //   network|impl|type|effectiveParams|inputs|source|time|region|scale|
-    //   channels|quality|working|tag
+    //   network|impl|type|effectiveParams|inputs|source|coordinates|image|time|
+    //   region|scale|channels|quality|working|tag
     // Input identity enters through the inputs' key hashes in port order,
     // so a change anywhere upstream changes every downstream key while
     // unrelated branches keep theirs (spec section 10.3: reuse follows
     // effective dependencies). `node` is a request-local resolved copy when
     // evaluating animation; no document revision is part of this identity.
     //
-    // Source nodes additionally carry the persistent source reference in
-    // the canonical form: a Document::sources edit changes the key of the
-    // source node and everything downstream of it, and only those (issue
-    // #11 acceptance: source map changes invalidate only dependent
-    // content). samplingScale is part of the identity like quality (spec
-    // section 8: a reduced result must not satisfy a higher-resolution
-    // request); region stays full-resolution so scale and ROI are
-    // distinguishable in the identity.
+    // Source nodes additionally carry their resolved effective request in the
+    // canonical form, and every node carries the described image it produces
+    // plus the coordinate contract version: a Document::sources edit changes the
+    // key of the source node and everything downstream of it, and only those
+    // (issue #11 acceptance), while a changed format, data window, aspect,
+    // channel naming, association or interpretation can never serve an image
+    // with different meaning (issue #88 story 89). samplingScale is part of the
+    // identity like quality (spec section 8: a reduced result must not satisfy a
+    // higher-resolution request); region stays full-resolution so scale and ROI
+    // are distinguishable in the identity.
     std::string canonical;
-    canonical.reserve(112 + node.params.size() * 24);
+    canonical.reserve(224 + node.params.size() * 24);
     appendCanonicalField(canonical, "network", std::to_string(request.network));
     appendCanonicalField(
         canonical, "impl",
@@ -98,16 +137,18 @@ ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
     }
     canonical.push_back('\x1F');
     if (node.type == "source") {
-        appendCanonicalField(canonical, "source",
-                             canonicalSource(document, node, request.localTime, context.colorConfigIdentity));
-    } else if (node.definition == kInvalidNetwork &&
-               document.network(request.network).graph().catalog().inputPorts(node.type).empty()) {
-        // A generator's non-pixel image metadata is authored on its network.
-        // Source metadata belongs to the source key; downstream metadata
-        // follows input identity. Do not invalidate Reads for a canvas edit.
         appendCanonicalField(
-            canonical, "pixel-aspect",
-            std::to_string(std::bit_cast<std::uint32_t>(document.network(request.network).format().pixelAspect)));
+            canonical, "source",
+            canonicalSource(document, node, request.localTime, context.colorConfigIdentity, context.source));
+    }
+    // The described image this key is computed for (issue #88), and the version
+    // of the coordinate contract it is expressed in. A direct caller that has no
+    // plan supplies neither and keeps a description-independent key; every
+    // executor supplies the description, so format, data window, aspect,
+    // channels, precision, association and interpretation all decide reuse.
+    appendCanonicalField(canonical, "coordinates", kImageCoordinateContract);
+    if (context.description != nullptr) {
+        appendCanonicalField(canonical, "image", canonicalDescription(*context.description));
     }
     appendCanonicalField(canonical, "time", std::to_string(request.localTime));
     appendCanonicalField(canonical, "region",

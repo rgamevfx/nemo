@@ -59,6 +59,20 @@ void ViewerSession::refreshColorConfig() {
     sources_.refreshColorConfig();
 }
 
+ImageDescription ViewerSession::describe(const Document& document, const EvaluationRequest& request) {
+    // Description is domain-independent: the target's authored format must not
+    // depend on how much of it a panel happens to be looking at, so the plan is
+    // taken from a minimal valid request that identifies the target and time.
+    EvaluationRequest query = request;
+    query.region = Region{0, 0, 1, 1};
+    query.fullWidth = 1;
+    query.fullHeight = 1;
+    validateRequestDomain(query);
+    const RegionPlan plan = planDependencyRegions(document, query, *effects_.contributions(), &sources_);
+    const EvaluationNodeId outputKey{query.network, kInvalidNetworkInstance, query.output, kEvaluationWholeNode};
+    return plan.images.nodes.at(outputKey).description;
+}
+
 ViewerSession::SourceProbe ViewerSession::probeSource(const Document& document, const std::string& sourceKey) const {
     const SourceSession::Probe probe = sources_.probe(document, sourceKey);
     return SourceProbe{probe.info, probe.decision};
@@ -169,16 +183,29 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     expected.width = scaledDimension(request.region.width, request.samplingScale);
     expected.height = scaledDimension(request.region.height, request.samplingScale);
     expected.color = ColorInterpretation::DisplayReferred;
+    // ONE resolved plan per render (issue #88): the cache key and the execution
+    // consume the same resolved nodes, descriptions and source requests, so a
+    // media header or authored-state change can never make the key describe
+    // different pixels than the execution produced.
+    const std::string colorIdentity = sources_.colorConfigIdentity();
+    const RegionPlan plan = planDependencyRegions(document, request, *effects_.contributions(), &sources_);
+
     if (cache_) {
         cache_->supersede(revision, generation, destination);
-        const std::string colorIdentity = sources_.colorConfigIdentity();
-        const ResultKey key = queryViewerResultKey(document, request, effects_, colorIdentity);
+        // The same described plan the render path consumes (issue #88): the
+        // lookup keys the authored target instead of decoding media or guessing
+        // a canvas domain.
+        const ResultKey key = queryViewerResultKey(document, request, effects_, colorIdentity, &sources_, &plan);
         identity = cacheIdentity(key, viewing.identity, cache_->optionsForIdentity());
         if (auto hit = cache_->lookup(*identity, expected, timeout_ns)) {
             ViewerFrame frame;
             frame.image = std::move(hit->image);
             frame.layout = hit->layout;
             frame.request = request;
+            frame.description = plan.images.nodes
+                                    .at(EvaluationNodeId{request.network, kInvalidNetworkInstance, request.output,
+                                                         kEvaluationWholeNode})
+                                    .description;
             frame.revision = revision;
             frame.requestId = requestId;
             frame.cacheHit = true;
@@ -189,9 +216,8 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     // Shared dependency plan: scene-linear reuse under the evaluator's own
     // ticket; decoded frames flow through SourceSession. Compression is not
     // on this path, so the live frame is returned without waiting for it.
-    const std::string colorIdentity = sources_.colorConfigIdentity();
-    const auto evaluation =
-        evaluateGpu(document, request, effects_, device_, allocator_, timeout_ns, &reuse_, &sources_, colorIdentity);
+    const auto evaluation = evaluateGpu(document, request, effects_, device_, allocator_, timeout_ns, &reuse_,
+                                        &sources_, colorIdentity, &plan);
 
     const GpuNodeImage& composition = *evaluation.images.at(request.output);
     if (composition.layout.color == ColorInterpretation::DisplayReferred) {
@@ -223,6 +249,9 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     frame.image = image;
     frame.layout = composition.layout;
     frame.layout.color = ColorInterpretation::DisplayReferred;
+    // The described output the composition was actually produced from: framing
+    // consumers read the real format instead of a global canvas guess.
+    frame.description = evaluation.plan.description;
     frame.request = request;
     frame.revision = revision;
     frame.requestId = requestId;

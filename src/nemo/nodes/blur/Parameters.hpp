@@ -9,7 +9,7 @@ struct BlurParameters {
 };
 
 [[nodiscard]] inline BlurParameters effectiveBlur(const NodeCatalog& catalog, const NodeInstance& node,
-                                                  ParameterValues& effectiveParams) {
+                                                  const ParameterValues& effectiveParams) {
     BlurParameters blur;
     blur.size = effectiveNumber(catalog, node, effectiveParams, "size");
     if (!(blur.size >= 0.0F) || !(blur.size <= 100.0F)) {

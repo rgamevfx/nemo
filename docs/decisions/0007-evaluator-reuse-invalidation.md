@@ -636,13 +636,13 @@ each boundary owns primitive decoding and its own error context.
 
 ### Consumers and consequences
 
-The existing viewer takes generator-only canvas dimensions from its target
-network and preserves probed source dimensions. CPU/native generators carry
-their owning network's pixel aspect; source/input images retain their own.
-Generator reuse includes exact pixel-aspect bits, so adjacent float values
-cannot collide through decimal rounding; downstream identity follows inputs.
-The shared request-domain validator rejects unsupported authored dimensions
-before the viewer's ROI arithmetic.
+Issue #88 completes these consumers: every evaluated target has its own
+description; the viewer no longer guesses a mixed graph's canvas from source
+count or a probe. Generators inherit their owning network format and source
+images keep their header format. Exact format/PAR/data bounds and image
+interpretation enter semantic reuse identity, so adjacent float aspects cannot
+collide through decimal rounding. The shared request-domain validator rejects
+unsupported dimensions before viewer ROI arithmetic.
 
 The project-session CLI exposes `set-network-format`, `set-named-format`,
 `apply-named-format`, and `remove-named-format`. Format edit payloads use
@@ -650,10 +650,9 @@ The project-session CLI exposes `set-network-format`, `set-named-format`,
 bounded `named_formats` (`limit`, `format_filter`, `format_after`).
 These edits use the existing revision/transaction/history protocol.
 
-The Network Settings UI remains deferred. #88 owns per-node mixed-format
-description/planning and the remaining consumers; this change is not that
-cutover. Headless `evaluate`/`evaluate-gpu` diagnostic request dimensions
-remain explicit options, not implicit composition-size defaults.
+The Network Settings UI remains deferred. Headless `evaluate`/`evaluate-gpu`
+diagnostic dimensions remain explicit requested coverage, not an authored
+composition format or an instruction to stretch source images.
 
 ### Verification
 
@@ -661,3 +660,51 @@ Session persistence/history and retained snapshots, malformed/legacy/unknown
 format save/reopen through the real CLI, exact pixel-aspect cache invalidation,
 CPU/Slang execution, and native generator framing and preview controls are
 recorded in `docs/evidence/issue87-implementation-ledger.json`.
+
+## Described images and per-input demands (#88)
+
+An image's logical format/PAR, signed half-open data bounds, channel names,
+precision, association and interpretation form one `ImageDescription`.
+Descriptions are runtime facts, not new Document state. They are independent
+of requested region, delivered backing coverage and Full/Half/Quarter density.
+File display origins normalize to zero; data origins shift equally. Negative
+and off-format data survive. Empty data bounds describe a valid connected
+transparent image; unknown format is an error naming the node/source, not an
+empty-image sentinel or a fallback canvas.
+
+Header-only media description precedes pixels and backend dispatch. A Black
+frame policy retains a readable admitted frame's format/PAR/interpretation
+with empty data bounds; an entirely uninspectable source fails. Clip headers
+are inspected without codec setup or packet probing; unavailable dimensions
+remain unavailable. The owner approved retaining the established square-pixel
+default for unspecified clip PAR; explicit header PAR is preserved. A cleared
+one-sample native raster represents empty source data independently of preview
+density; its storage coverage never substitutes for the logical format. Pixel reads
+retain the data raster and its signed coverage. Sampling places those pixels
+in authored coordinates without mixed-format stretch; samples outside data
+are transparent black. Media still owns color/alpha conversion. Raw Data stays
+Data through effects and Output; viewing conversion remains downstream.
+Existing straight-alpha operations, Blur edge/filter math and Transform
+sampling conventions are retained, not replaced with Nuke's defaults.
+
+The existing contribution declares optional output description and per-port
+region/channel requirements. Shared evaluation freezes effective parameter,
+instance, animation and source-request state before describing/planning.
+CPU/native paths consume that same state. A viewer render shares one
+`RegionPlan` between its cache-key query and execution; supplied plans must
+match the document snapshot/revision, registration snapshot and full demand.
+An inconsistent supplied plan is rejected, never silently substituted.
+
+Content keys include every description field and `image-space-v1`; coverage
+remains a separate representation key. Compatible larger rasters can serve
+smaller requests without recomputation, but changed format, bounds, PAR,
+interpretation or implementation cannot reuse incompatible representations.
+The source frame owner validates image-header descriptions before decoded-frame
+reuse; container/pixel content changes retain the existing revision/reload
+contract. This adds no tiling framework, memory-budget system or CPU fallback.
+
+The owner-approved policy and versioned documentation references, independent
+windowed EXR, before/after public CLI output and verification results are retained
+in `docs/evidence/assets/issue88-images/verification.json`. Production numerical
+correctness and protected #25 viewer interaction conformance remain separate
+gates. The #96 review hold and downstream channel/alpha tasks remain unchanged.

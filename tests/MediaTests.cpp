@@ -102,12 +102,11 @@ TEST(MediaTest, HalfFloatExrRoundTripIsIdentity) {
     EXPECT_EQ(read.image.layout(), written.layout());
     EXPECT_EQ(read.image.layout().precision, Precision::Float32);
     EXPECT_EQ(read.image.layout().color, ColorInterpretation::SceneLinear);
-    EXPECT_EQ(read.nativePrecision, "half");
-    EXPECT_EQ(read.formatName, "openexr");
-    EXPECT_EQ(read.channelNames, (std::vector<std::string>{"R", "G", "B", "A"}));
-    EXPECT_EQ(read.alpha, AlphaAssociation::Premultiplied);
-    EXPECT_EQ(read.dataWindow, (PixelWindow{0, 0, 5, 3}));
-    EXPECT_EQ(read.displayWindow, (PixelWindow{0, 0, 5, 3}));
+    EXPECT_EQ(read.header.nativePrecision, "half");
+    EXPECT_EQ(read.header.formatName, "openexr");
+    EXPECT_EQ(read.header.channelNames, (std::vector<std::string>{"R", "G", "B", "A"}));
+    EXPECT_EQ(read.header.windows.data, (PixelWindow{0, 0, 5, 3}));
+    EXPECT_EQ(read.header.windows.display, (PixelWindow{0, 0, 5, 3}));
     for (int y = 0; y < 4; ++y) {
         for (int x = 0; x < 6; ++x) {
             EXPECT_EQ(read.image.pixel(x, y), written.pixel(x, y)) << "at (" << x << ", " << y << ")";
@@ -123,13 +122,13 @@ TEST(MediaTest, FloatExrRoundTrip) {
     writeImage(path.string(), written, OutputPrecision::Float32);
 
     const ImageReadResult read = readImage(path.string());
-    EXPECT_EQ(read.nativePrecision, "float");
+    EXPECT_EQ(read.header.nativePrecision, "float");
     EXPECT_EQ(read.image.layout(), written.layout());
     std::filesystem::remove(path);
 }
 
-// EXR display/data windows: the adapter reports both and lands the data at
-// its display offset; untouched display area stays black/opaque.
+// Display framing never crops or pads the decoded data raster. The explicit
+// window contract locates those samples for evaluators and thumbnail consumers.
 TEST(MediaTest, DisplayAndDataWindows) {
     const auto path = tempDir() / "windowed.exr";
     auto output = OIIO::ImageOutput::create(path.string());
@@ -149,14 +148,14 @@ TEST(MediaTest, DisplayAndDataWindows) {
     output.reset();
 
     const ImageReadResult read = readImage(path.string());
-    EXPECT_EQ(read.dataWindow, (PixelWindow{2, 1, 5, 2}));
-    EXPECT_EQ(read.displayWindow, (PixelWindow{0, 0, 7, 5}));
-    EXPECT_EQ(read.image.width(), 8);
-    EXPECT_EQ(read.image.height(), 6);
-    EXPECT_EQ(read.image.pixel(2, 1), (std::array<float, 4>{0.25F, 0.25F, 0.25F, 0.25F}));
-    EXPECT_EQ(read.image.pixel(5, 2), (std::array<float, 4>{0.25F, 0.25F, 0.25F, 0.25F}));
-    EXPECT_EQ(read.image.pixel(0, 0), (std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F}));
-    EXPECT_EQ(read.image.pixel(7, 5), (std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F}));
+    EXPECT_EQ(read.header.windows.data, (PixelWindow{2, 1, 5, 2}));
+    EXPECT_EQ(read.header.windows.display, (PixelWindow{0, 0, 7, 5}));
+    EXPECT_EQ(read.header.windows.format(), (Region{0, 0, 8, 6}));
+    EXPECT_EQ(read.header.windows.dataBounds(), (Region{2, 1, 4, 2}));
+    EXPECT_EQ(read.image.width(), 4);
+    EXPECT_EQ(read.image.height(), 2);
+    EXPECT_EQ(read.image.pixel(0, 0), (std::array<float, 4>{0.25F, 0.25F, 0.25F, 0.25F}));
+    EXPECT_EQ(read.image.pixel(3, 1), (std::array<float, 4>{0.25F, 0.25F, 0.25F, 0.25F}));
     std::filesystem::remove(path);
 }
 

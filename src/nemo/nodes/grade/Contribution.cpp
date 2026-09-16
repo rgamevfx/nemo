@@ -22,7 +22,11 @@ NodeDescriptor gradeDescriptor() {
     return NodeDescriptor{.type = "grade",
                           .displayName = "Grade",
                           .group = "Color",
-                          .implementationVersion = 1,
+                          // 2: the adapter consumes the resolved image description
+                          // for its output raster, so a Data or display-referred
+                          // input stays that meaning, and an image with an empty
+                          // data window stays transparent black (issue #88).
+                          .implementationVersion = 2,
                           .inputs = effectImageInputs(),
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = withMaskParameters({
@@ -166,10 +170,19 @@ struct GradeCoefficients {
     return coefficients;
 }
 
-[[nodiscard]] CpuImage applyGrade(const GradeParameters& params, const EvaluationRequest& request,
-                                  const CpuImage& input, const InputAnchor& anchor) {
+// Grade is a pointwise value operation: blackpoint, whitepoint, lift, gain,
+// multiply, offset, gamma and the clamps change sample values only. The image
+// it produces therefore keeps the main input's format, data window, channels,
+// pixel aspect and interpretation (issue #88) — a Data input stays Data — and
+// an image with an empty data window has no sample to grade, so its transparent
+// black stays transparent black instead of being fabricated into grade(0).
+[[nodiscard]] CpuImage applyGrade(const CpuNodeContext& context, const GradeParameters& params, const CpuImage& input,
+                                  const InputAnchor& anchor) {
     const GradeCoefficients coefficients = resolveGradeCoefficients(params);
-    CpuImage output(effectRasterLayout(request, input.layout().pixelAspect));
+    CpuImage output(effectRasterLayout(context));
+    if (input.width() <= 0 || input.height() <= 0) {
+        return output;
+    }
     const int width = output.width();
     const int inputWidth = input.width();
     for (int y = 0; y < output.height(); ++y) {
@@ -214,18 +227,15 @@ struct GradeCoefficients {
 
 CpuImage executeGrade(const CpuNodeContext& context) {
     const CpuImage& input = requiredImageInput(context, 0, "native effect requires a connected main image input");
-    if (input.width() <= 0 || input.height() <= 0) {
-        failNode(context.node, "native effect requires a non-empty input raster");
-    }
     const InputAnchor anchor = anchorInput(context, 0, input);
-    CpuImage processed = applyGrade(effectiveGrade(context.catalog, context.node, context.effectiveParams),
-                                    context.request, input, anchor);
+    CpuImage processed =
+        applyGrade(context, effectiveGrade(context.catalog, context.node, context.effectiveParams), input, anchor);
     return blendEffectOutput(context, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
                              input, std::move(processed));
 }
 
 std::optional<std::string> validateGradeParameters(const NodeCatalog& catalog, const NodeInstance& node,
-                                                   ParameterValues& effectiveParams) {
+                                                   const ParameterValues& effectiveParams) {
     return authoringAdmissibility([&] {
         static_cast<void>(effectiveGrade(catalog, node, effectiveParams));
         static_cast<void>(effectiveEffectMask(catalog, node, effectiveParams));
@@ -234,6 +244,10 @@ std::optional<std::string> validateGradeParameters(const NodeCatalog& catalog, c
 
 }  // namespace
 
+// Grade declares no dependency rule of its own: it is pointwise, so every
+// declared input port falls back to the node's own requested region, and its
+// description is the one it inherited — the shared "unchanged image properties"
+// default of issue #88, which is exactly the frozen treatment of black/offset.
 NodeContribution gradeContribution() {
     NodeContribution contribution;
     contribution.descriptor = gradeDescriptor();

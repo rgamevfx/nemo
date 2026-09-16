@@ -21,7 +21,9 @@ namespace nemo::nodes {
 // Every built-in declares the full-quality RGBA contract at the three sampling
 // scales; a Read additionally participates in time. Region support is declared
 // alongside it: every built-in that produces pixels states its spatial
-// dependency rule (NodeContribution::inputRegions) instead of refusing regions.
+// dependency rule (NodeContribution::inputRequirements) instead of refusing
+// regions, and keeps the shared "unchanged image properties" description default
+// unless it really changes the image's meaning (issue #88).
 [[nodiscard]] inline NodeCapabilities builtinCapabilities(bool temporal = false) {
     return NodeCapabilities{.samplingScales = {1, 2, 4},
                             .qualityModes = {Quality::Full},

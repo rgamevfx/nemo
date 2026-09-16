@@ -465,21 +465,33 @@ int commandImageInfo(const std::vector<std::string>& args) {
         }
         const std::string path = nemo::media::resolveFramePath(args.front(), frame);
         const nemo::media::ImageReadResult read = nemo::media::readImage(path);
+        const nemo::media::ImageHeader& header = read.header;
+        const nemo::Region format = header.windows.format();
+        const nemo::Region dataBounds = header.windows.dataBounds();
         report["ok"] = true;
+        // Geometry is reported as the adapter describes it: the format at the
+        // normalized origin 0, the signed data bounds the samples occupy, and
+        // the raster actually read (issue #88). A consumer that needs the file's
+        // own window offsets never has to infer them from the raster.
+        const auto alpha = nemo::media::declaredAlphaAssociation(header.formatName, header.hasAlpha);
         report["image"] = {
             {"path", path},
-            {"format", read.formatName},
-            {"width", read.image.width()},
-            {"height", read.image.height()},
-            {"pixel_aspect", read.image.layout().pixelAspect},
-            {"channels", read.channelNames},
-            {"precision", read.nativePrecision},
-            {"alpha", read.alpha == nemo::media::AlphaAssociation::Premultiplied ? "premultiplied"
-                      : read.alpha == nemo::media::AlphaAssociation::Straight    ? "straight"
-                                                                                 : "none"},
-            {"data_window", {read.dataWindow.xMin, read.dataWindow.yMin, read.dataWindow.xMax, read.dataWindow.yMax}},
+            {"format", header.formatName},
+            {"width", format.width},
+            {"height", format.height},
+            {"pixel_aspect", header.pixelAspect},
+            {"channels", header.channelNames},
+            {"precision", header.nativePrecision},
+            {"alpha", alpha == nemo::media::AlphaAssociation::Premultiplied ? "premultiplied"
+                      : alpha == nemo::media::AlphaAssociation::Straight    ? "straight"
+                                                                            : "none"},
+            {"data_bounds", {dataBounds.x, dataBounds.y, dataBounds.width, dataBounds.height}},
+            {"raster", {read.image.width(), read.image.height()}},
+            {"data_window",
+             {header.windows.data.xMin, header.windows.data.yMin, header.windows.data.xMax, header.windows.data.yMax}},
             {"display_window",
-             {read.displayWindow.xMin, read.displayWindow.yMin, read.displayWindow.xMax, read.displayWindow.yMax}}};
+             {header.windows.display.xMin, header.windows.display.yMin, header.windows.display.xMax,
+              header.windows.display.yMax}}};
     } catch (const nemo::media::ImageIoException& e) {
         report["errors"].push_back(e.what());
     } catch (const std::exception& e) {

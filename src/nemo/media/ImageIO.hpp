@@ -7,6 +7,14 @@
 // for CPU-reference and GPU-native consumption; it imposes no CPU-only
 // residency contract (GPU interop validation is issue #10).
 //
+// Windowed images (issue #88): a file declares a data window (the samples it
+// stores) and a display window (its format). The read path reports both, moves
+// the display window origin to the logical origin 0 and translates the data
+// window by the same offset, so negative and off-format samples keep their
+// authored coordinates instead of being clamped away. The returned raster is
+// exactly the data extent: a declared format is description, not storage, so a
+// windowed source is never uploaded as a padded display canvas.
+//
 // Pass-through values, explicit metadata: this reader does not itself apply
 // color management or alpha-association conversion. It reports what the file
 // declares (declared color space, chromaticities, alpha association) so the
@@ -19,6 +27,7 @@
 #include <vector>
 
 #include "nemo/core/evaluation/Image.hpp"
+#include "nemo/core/evaluation/Request.hpp"
 
 namespace nemo::media {
 
@@ -32,17 +41,75 @@ enum class AlphaAssociation { None, Straight, Premultiplied };
 // itself agree by construction.
 [[nodiscard]] AlphaAssociation declaredAlphaAssociation(std::string_view formatName, bool hasAlpha);
 
-// Inclusive pixel window (spec section 10.4 bounds).
+// Inclusive pixel window in the file's own coordinates (spec section 10.4
+// bounds). The accessors widen before they subtract: a declared window is file
+// input, and `inspectImageHeader` rejects a declaration whose coordinates or
+// extents cannot be represented, so the narrowed result is always defined.
 struct PixelWindow {
     int xMin{0};
     int yMin{0};
     int xMax{-1};
     int yMax{-1};
 
-    [[nodiscard]] int width() const { return xMax - xMin + 1; }
-    [[nodiscard]] int height() const { return yMax - yMin + 1; }
+    [[nodiscard]] int width() const { return static_cast<int>(static_cast<std::int64_t>(xMax) - xMin + 1); }
+    [[nodiscard]] int height() const { return static_cast<int>(static_cast<std::int64_t>(yMax) - yMin + 1); }
     [[nodiscard]] bool operator==(const PixelWindow&) const = default;
 };
+
+// The windows one image declares (issue #88): the data extent (the samples the
+// file stores) and the display extent (the image format), both in the file's
+// own coordinates.
+struct ImageWindows {
+    PixelWindow data;
+    PixelWindow display;
+
+    [[nodiscard]] bool operator==(const ImageWindows&) const = default;
+
+    // The normalized geometry contract: the display window origin becomes the
+    // logical origin 0 and the data window is translated by the same offset.
+    // `format` is the display extent at origin 0; `dataBounds` is the
+    // translated, half-open data extent — possibly negative, possibly outside
+    // the format, empty when the file declares no samples. A consumer reads the
+    // raster through `dataBounds` and never assumes it starts at the format
+    // origin. Both subtract in 64-bit and narrow once: the header inspection
+    // that produced these windows has already rejected a declaration whose
+    // normalized coordinates or extents cannot be represented.
+    [[nodiscard]] Region format() const {
+        return Region{0, 0, std::max(display.width(), 0), std::max(display.height(), 0)};
+    }
+    [[nodiscard]] Region dataBounds() const {
+        const int width = data.width();
+        const int height = data.height();
+        if (width <= 0 || height <= 0) {
+            return Region{};
+        }
+        return Region{static_cast<int>(static_cast<std::int64_t>(data.xMin) - display.xMin),
+                      static_cast<int>(static_cast<std::int64_t>(data.yMin) - display.yMin), width, height};
+    }
+};
+
+// Header-only facts of one image (issue #88): everything the adapter reports
+// about a file without loading a plane. This is the single owner of the
+// declared geometry normalization and of the declared color metadata, consumed
+// by the pixel read and by the metadata probe alike, so a description never
+// costs a decode and can never disagree with the samples it describes.
+struct ImageHeader {
+    std::string path;
+    std::string formatName;                 // e.g. "openexr"
+    std::string declaredColorSpace;         // OpenImageIO `oiio:ColorSpace`, "" when undeclared
+    std::vector<float> chromaticities;      // 8 values (rx,ry,gx,gy,bx,by,wx,wy) when declared, else empty
+    std::vector<std::string> channelNames;  // all channels in storage order
+    std::string nativePrecision;            // e.g. "half"
+    ImageWindows windows;                   // declared data/display windows
+    float pixelAspect{1.0F};
+    bool hasAlpha{false};
+};
+
+// Inspects one image's header. No plane is loaded and nothing is decoded, so an
+// unavailable geometry is diagnosed from the header rather than discovered by
+// rendering. Throws ImageIoException naming `path` when the file is missing,
+// unreadable, or not image data.
+[[nodiscard]] ImageHeader inspectImageHeader(const std::string& path);
 
 // Native storage precision name of the source data (e.g. "half", "float");
 // read values are always converted to the contract's float32.
@@ -51,17 +118,13 @@ enum class OutputPrecision { Half, Float32 };
 // A successful read: RGBA float32 pixels in the application image layout,
 // plus everything the contract requires downstream stages to know.
 struct ImageReadResult {
+    // The data raster. It covers exactly the declared data extent: pixel (i, j)
+    // holds the sample authored at normalized full-resolution coordinate
+    // (header.windows.dataBounds().x + i, .y + j). Samples the file does not
+    // declare are transparent black, and the display window is deliberately
+    // *not* padded into the raster — framing is the description's job.
     CpuImage image;
-    PixelWindow dataWindow;     // pixel data extent, may be smaller
-    PixelWindow displayWindow;  // full image extent, defines dimensions
-    AlphaAssociation alpha{AlphaAssociation::None};
-    std::vector<std::string> channelNames;  // all channels in storage order
-    std::string nativePrecision;            // e.g. "half"
-    std::string formatName;                 // e.g. "openexr"
-    // Declared color metadata (issue #62): what the file itself says its
-    // samples mean. Both empty exactly when the file declares nothing.
-    std::string declaredColorSpace;     // OpenImageIO `oiio:ColorSpace`, e.g. "srgb_rec709_scene"
-    std::vector<float> chromaticities;  // 8 values (rx,ry,gx,gy,bx,by,wx,wy) when declared, else empty
+    ImageHeader header;
 };
 
 // Media I/O failures always identify the offending file (repo rule: errors

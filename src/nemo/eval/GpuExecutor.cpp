@@ -6,6 +6,7 @@
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Error.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -121,36 +122,71 @@ void recordRegionCopy(VkCommandBuffer command, const gpu::Image& source, const g
                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_SHADER_READ_BIT);
 }
 
+// The half-open raster-index rectangle of the samples that ARE the produced
+// image's data (issue #88), for the pass that writes a node's own output. A
+// sample at raster index (x, y) is data exactly when its full-resolution anchor
+// `(region.x + x*scale, region.y + y*scale)` lies inside `dataBounds` — half-open
+// integer intervals, the same rule the CPU reference guard applies, so the two
+// executors agree on which samples are data. An empty data window yields an
+// empty rectangle (a fully transparent raster), and a sample inside the data
+// bounds but outside the display format is kept (overscan is data, not black).
+// Coverage, origin and sampling scale are never changed by this.
+[[nodiscard]] std::array<std::int32_t, 4> rasterSupport(const EvaluationRequest& request, const Region& dataBounds) {
+    const int scale = request.samplingScale;
+    if (dataBounds.width <= 0 || dataBounds.height <= 0 || scale <= 0)
+        return {0, 0, 0, 0};
+    const auto floorDiv = [](int value, int divisor) {
+        return value >= 0 ? value / divisor : -((-value + divisor - 1) / divisor);
+    };
+    const auto ceilDiv = [&floorDiv](int value, int divisor) { return floorDiv(value + divisor - 1, divisor); };
+    const int width = scaledDimension(request.region.width, scale);
+    const int height = scaledDimension(request.region.height, scale);
+    const int left = std::clamp(ceilDiv(dataBounds.x - request.region.x, scale), 0, width);
+    const int right = std::clamp(ceilDiv(dataBounds.x + dataBounds.width - request.region.x, scale), 0, width);
+    const int top = std::clamp(ceilDiv(dataBounds.y - request.region.y, scale), 0, height);
+    const int bottom = std::clamp(ceilDiv(dataBounds.y + dataBounds.height - request.region.y, scale), 0, height);
+    return {left, top, std::max(0, right - left), std::max(0, bottom - top)};
+}
+
 // The common request describes the raster the pass about to be recorded
 // produces: a node-local scratch pass covers its own declared region, so its
-// dispatch extent, pixel-origin mapping and raster size are its own.
-EffectRequestUniforms requestUniforms(const EvaluationRequest& request) {
+// dispatch extent, pixel-origin mapping and raster size are its own. Region
+// origins are signed (issue #88): a described output's coverage may extend
+// outside `[0, format)`. `support` is the data rectangle of the produced raster:
+// the node's own declared support for the pass that writes the node output, or
+// "no support" for a node-local scratch raster.
+EffectRequestUniforms requestUniforms(const EvaluationRequest& request, const std::array<std::int32_t, 4>& support) {
     EffectRequestUniforms result;
     const int scale = request.samplingScale;
-    result.meta[0] = static_cast<std::uint32_t>(request.imageWidth());
-    result.meta[1] = static_cast<std::uint32_t>(request.imageHeight());
-    result.meta[2] = static_cast<std::uint32_t>(request.region.x);
-    result.meta[3] = static_cast<std::uint32_t>(request.region.y);
+    result.meta[0] = static_cast<std::int32_t>(request.imageWidth());
+    result.meta[1] = static_cast<std::int32_t>(request.imageHeight());
+    result.meta[2] = static_cast<std::int32_t>(request.region.x);
+    result.meta[3] = static_cast<std::int32_t>(request.region.y);
     result.meta2[0] = static_cast<std::uint32_t>(scaledDimension(request.region.width, scale));
     result.meta2[1] = static_cast<std::uint32_t>(scaledDimension(request.region.height, scale));
     result.meta2[2] = static_cast<std::uint32_t>(scale);
     result.misc[0] = static_cast<float>(request.localTime);
+    std::copy(support.begin(), support.end(), result.support);
     return result;
 }
 
-// A pass input as it is actually bound: the image, and the raster it covers.
+// A pass input as it is actually bound: the image, the raster it covers, and
+// whether it is addressed by absolute full-resolution coordinates instead of by
+// a lattice-relative offset (the External decoded frame, issue #88).
 struct BoundInput {
     const gpu::Image* image{};
     RasterGeometry raster;
+    bool fullResolution{false};
 };
 
-// A pass declares the geometry block exactly when it samples an Input or
-// Scratch image: the External source frame is the full-resolution decoded
-// frame and is addressed by full-resolution coordinates, so it carries no
-// raster origin.
+// A pass declares the geometry block whenever it binds any sampled image: the
+// Input and Scratch rasters are located by raster offset, and the External
+// decoded frame by its absolute full-resolution origin and extent (issue #88),
+// so every image binding contributes one entry.
 [[nodiscard]] bool needsInputGeometry(const EffectPassDefinition& pass) {
     return std::any_of(pass.inputs.begin(), pass.inputs.end(), [](const EffectImageRef& input) {
-        return input.kind == EffectImageKind::Input || input.kind == EffectImageKind::Scratch;
+        return input.kind == EffectImageKind::Input || input.kind == EffectImageKind::Scratch ||
+               input.kind == EffectImageKind::External;
     });
 }
 
@@ -163,6 +199,23 @@ struct BoundInput {
     std::vector<EffectInputGeometry> block;
     block.reserve(inputs.size());
     for (const BoundInput& input : inputs) {
+        EffectInputGeometry geometry;
+        if (input.fullResolution) {
+            // External media keeps full-resolution coordinate semantics: the
+            // raster is located by its own absolute origin and extent, never by
+            // a relative offset and never rescaled by a fill ratio. Its
+            // sampling scale is 1 by construction.
+            geometry.regionAndOffset[0] = input.raster.originX;
+            geometry.regionAndOffset[1] = input.raster.originY;
+            geometry.regionAndOffset[2] = 0;
+            geometry.regionAndOffset[3] = 0;
+            geometry.extent[0] = static_cast<std::uint32_t>(input.raster.width);
+            geometry.extent[1] = static_cast<std::uint32_t>(input.raster.height);
+            geometry.extent[2] = 1u;
+            geometry.extent[3] = 1u;
+            block.push_back(geometry);
+            continue;
+        }
         if (input.raster.scale != pass.scale) {
             failEffect(node, program,
                        "pass input is sampled at scale " + std::to_string(input.raster.scale) +
@@ -173,7 +226,6 @@ struct BoundInput {
         if (dx % pass.scale != 0 || dy % pass.scale != 0) {
             failEffect(node, program, "pass input raster origin is not on the pass output's sampling lattice");
         }
-        EffectInputGeometry geometry;
         geometry.regionAndOffset[0] = input.raster.originX;
         geometry.regionAndOffset[1] = input.raster.originY;
         geometry.regionAndOffset[2] = dx / pass.scale;
@@ -258,28 +310,87 @@ struct BoundInput {
     return request;
 }
 
+// A caller-supplied prebuilt plan (issue #88) is trusted only when it provably
+// resolves THIS call: the same document snapshot, the same registration, and
+// exactly this canonical demand — region, domain, time, quality, channels and
+// sampling scale included, because two requests can agree on network/time/scale
+// and still address different pixels.
+//
+// A mismatching plan is REFUSED, never silently replanned: a caller that hands
+// over a plan and a request that disagree has a bug, and quietly resolving a
+// second state would hide it while making the caller's cache key and the
+// executed pixels describe different things.
+void verifySuppliedPlan(const RegionPlan& plan, const Document& document, const NodeContributions& contributions,
+                        const EvaluationRequest& normalized) {
+    const auto refuse = [](const std::string& detail) {
+        throw EvaluationException("supplied region plan does not resolve this request: " + detail);
+    };
+    if (plan.document != &document)
+        refuse("it was planned from a different document object");
+    if (plan.documentRevision != document.stateRevision())
+        refuse("the document changed since it was planned (revision " + std::to_string(plan.documentRevision) + " vs " +
+               std::to_string(document.stateRevision()) + ")");
+    if (plan.contributions != &contributions)
+        refuse("it was planned with a different node registration");
+    if (!(plan.demand == normalized))
+        refuse("the planned demand differs from the request");
+    if (plan.images.order.empty() || plan.requests.empty())
+        refuse("it carries no scheduled nodes");
+}
+
+// The resolved plan this call consumes: a verified caller plan when one is
+// supplied, otherwise one planned right here.
+[[nodiscard]] const RegionPlan& resolvedPlan(const Document& document, const EvaluationRequest& normalized,
+                                             const NodeContributions& contributions, SourceDescriptionProvider* sources,
+                                             const RegionPlan* supplied, RegionPlan& owned) {
+    if (supplied != nullptr) {
+        verifySuppliedPlan(*supplied, document, contributions, normalized);
+        return *supplied;
+    }
+    owned = planDependencyRegions(document, normalized, contributions, sources);
+    return owned;
+}
+
 }  // namespace
 
 ResultKey queryViewerResultKey(const Document& document, EvaluationRequest request, const EffectLibrary& effects,
-                               std::string_view colorConfigIdentity) {
+                               std::string_view colorConfigIdentity, SourceDescriptionProvider* sources,
+                               const RegionPlan* plan) {
     validateRequest(document, request);
     // Content identity is coverage-independent, and the viewer's key is the
     // normalized request's — independently of which backing rectangle the
     // cache happens to hold (issue #85).
     const EvaluationRequest normalized = canonicalizeRequest(request);
     const auto registrations = effects.contributions();
-    const RegionPlan plan = planDependencyRegions(document, normalized, *registrations);
-    KeyContext context{effects.fingerprint(), std::string(colorConfigIdentity)};
+    // The SAME described plan the executor consumes (issue #88): the query
+    // resolves every node's effective state, description and source request
+    // through the shared planner, so a cache lookup never acquires a pixel and
+    // both executors key one authored state identically. With `sources` a
+    // real-media graph is described from the media's own metadata; without one
+    // a graph that needs a source description fails honestly here, before any
+    // work is scheduled. A caller that already built this plan for this exact
+    // demand (the viewer render path) hands it over, so key and execution share
+    // one resolution instead of resolving the same state twice.
+    const EvaluationNodeId outputKey{normalized.network, kInvalidNetworkInstance, normalized.output,
+                                     kEvaluationWholeNode};
+    RegionPlan owned;
+    const RegionPlan& resolved = resolvedPlan(document, normalized, *registrations, sources, plan, owned);
+    const KeyContext base{effects.fingerprint(), std::string(colorConfigIdentity)};
     std::map<EvaluationNodeId, ResultKey> contentKeys;
 
-    for (const ExpandedNode& expandedNode : plan.order) {
+    for (const ExpandedNode& expandedNode : resolved.images.order) {
+        const ResolvedImageNode& resolvedNode = resolved.images.nodes.at(expandedNode.id);
         if (!expandedNode.alias)
             static_cast<void>(
-                effects.require(document.network(expandedNode.id.network).graph().catalog(), *expandedNode.node));
-        std::optional<NodeInstance> resolvedNode;
-        const NodeInstance* effectiveNode =
-            resolveEffectiveNode(document, expandedNode, resolvedNode, static_cast<double>(request.localTime));
-        EvaluationRequest scopedRequest = plan.requests.at(expandedNode.id);
+                effects.require(document.network(expandedNode.id.network).graph().catalog(), resolvedNode.node));
+        // The node's own described state participates in its key: a changed
+        // logical format, data bounds, aspect, channels or interpretation is a
+        // different result, and a source's pre-resolved media request is used
+        // as-is instead of being re-derived.
+        KeyContext context = base;
+        context.description = &resolvedNode.description;
+        context.source = resolvedNode.source ? &*resolvedNode.source : nullptr;
+        EvaluationRequest scopedRequest = resolved.requests.at(expandedNode.id);
         scopedRequest.network = expandedNode.id.network;
         std::vector<std::uint64_t> inputHashes;
         for (const auto& producer : expandedNode.inputs) {
@@ -288,11 +399,9 @@ ResultKey queryViewerResultKey(const Document& document, EvaluationRequest reque
             // and a connected mask never collide and both executors agree.
             inputHashes.push_back(producer.node == kInvalidNode ? kAbsentInputKeyHash : contentKeys.at(producer).hash);
         }
-        const auto key = nodeContentKey(document, *effectiveNode, inputHashes, scopedRequest, context);
+        const auto key = nodeContentKey(document, resolvedNode.node, inputHashes, scopedRequest, context);
         contentKeys.emplace(expandedNode.id, key);
     }
-    const EvaluationNodeId outputKey{normalized.network, kInvalidNetworkInstance, normalized.output,
-                                     kEvaluationWholeNode};
     return viewerResultKey(regionResultKey(contentKeys.at(outputKey), normalized), document.color);
 }
 
@@ -330,7 +439,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                                                const EffectLibrary& effects, gpu::Device& device,
                                                gpu::Allocator& allocator, std::optional<std::uint64_t> timeout_ns,
                                                ResultCache<GpuNodeImage>* reuse, SourceSession* sources,
-                                               std::string_view colorConfigIdentity) {
+                                               std::string_view colorConfigIdentity, const RegionPlan* suppliedPlan) {
     validateRequest(document, request);
     if (request.samplingScale != 1 && request.samplingScale != 2 && request.samplingScale != 4) {
         throw EvaluationException("samplingScale " + std::to_string(request.samplingScale) +
@@ -351,60 +460,30 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
     const EvaluationTicket ticket = reuse != nullptr ? reuse->beginTicket(document) : EvaluationTicket{};
     // The caller-supplied OCIO identity participates in every key (issue
     // #81): a changed config/context can never serve a stale source result.
-    KeyContext keyContext{effects.fingerprint(), std::string(colorConfigIdentity)};
+    const KeyContext keyContext{effects.fingerprint(), std::string(colorConfigIdentity)};
 
-    // External media is acquired once per execution, full-frame, before any
-    // region planning: the decode's actual pixel aspect is what the planner
-    // needs for a tight Transform bound, and the frame itself is what the
-    // source pass binds. Acquiring here also means one decode/probe per source
-    // regardless of how many representations read it.
-    struct AcquiredSource {
-        std::shared_ptr<const gpu::Image> frame;
-        RasterGeometry raster;
-        float pixelAspect{1.0F};
-        ColorInterpretation color{ColorInterpretation::SceneLinear};
-        std::int64_t frameIndex{0};
-    };
-    const std::vector<ExpandedNode> order = expandDependencies(document, normalized.network, normalized.output);
-    std::map<EvaluationNodeId, AcquiredSource> acquired;
-    std::map<EvaluationNodeId, float> pixelAspects;
-    for (const ExpandedNode& expandedNode : order) {
-        std::optional<NodeInstance> resolvedNode;
-        const NodeInstance* effectiveNode =
-            resolveEffectiveNode(document, expandedNode, resolvedNode, static_cast<double>(normalized.localTime));
-        if (effectiveNode->definition != kInvalidNetwork)
-            continue;
-        const NodeContribution* registration = registrations->find(effectiveNode->type);
-        if (registration == nullptr)
-            continue;  // the execution loop reports an unregistered node honestly
-        // The shared region planner owns the generator-canvas fallback.
-        if (registration->role != NodeRole::Source)
-            continue;
-        if (sources == nullptr || !effectiveNode->params.contains("source")) {
-            pixelAspects.emplace(expandedNode.id, 0.0F);  // unknown, never assumed square
-            continue;
-        }
-        EvaluationRequest sourceRequest = normalized;
-        sourceRequest.network = expandedNode.id.network;
-        sourceRequest.output = effectiveNode->id;
-        const EffectiveSourceRequest source = resolveSourceRequest(document, *effectiveNode, sourceRequest.localTime);
-        SourceSession::DecodedFrame decoded =
-            sources->acquire(document, source, sourceRequest, timeout_ns.value_or(10'000'000'000ULL));
-        const auto width = static_cast<int>(decoded.width);
-        const auto height = static_cast<int>(decoded.height);
-        pixelAspects.emplace(expandedNode.id, decoded.pixelAspect);
-        acquired.emplace(expandedNode.id,
-                         AcquiredSource{std::move(decoded.image), RasterGeometry{0, 0, width, height, 1},
-                                        decoded.pixelAspect, decoded.color, decoded.frame});
-    }
-
-    // Dependency-first order plus the actual request of every node: the
-    // planner owns the dependency rules (region expansion, aliasing, whole-
-    // domain escalation), the executor only renders what it reports.
-    const RegionPlan plan = planDependencyRegions(document, normalized, *registrations, pixelAspects);
+    // Dependency-first order, every node's once-resolved effective state, its
+    // described output and (for a Source node) its once-resolved media request,
+    // plus the actual request of every node. NO PIXEL is touched here (issue
+    // #88): the planner describes real media through the source description
+    // provider instead of decoding a frame to learn its geometry, so a
+    // metadata-only plan costs no decode, and a node whose result is reused
+    // never acquires media at all. A caller that already built this plan for
+    // this exact demand (the viewer render path, whose cache key came from it)
+    // hands it over, so one render resolves its authored state ONCE: the same
+    // nodes, descriptions and source requests key the lookup and are then
+    // executed.
+    const EvaluationNodeId outputKey{normalized.network, kInvalidNetworkInstance, normalized.output,
+                                     kEvaluationWholeNode};
+    RegionPlan plannedHere;
+    const RegionPlan& plan = resolvedPlan(document, normalized, *registrations, sources, suppliedPlan, plannedHere);
 
     GpuEvaluation evaluation;
     evaluation.plan.request = normalized;
+    // The target's described output is the plan's own result description
+    // (issue #88): the caller reads the actual format/data bounds of what it
+    // received instead of re-deriving them from the request.
+    evaluation.plan.description = plan.images.nodes.at(outputKey).description;
     // All contributed local passes are recorded into one shared submission.
     struct SubDispatch {
         std::unique_ptr<ComputePass> pass;
@@ -440,22 +519,21 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
     std::map<EvaluationNodeId, ResolvedResult> resolved;
     std::optional<std::size_t> outputStep;
     const NodeInstance* outputNode = nullptr;
-    const EvaluationNodeId outputKey{normalized.network, kInvalidNetworkInstance, normalized.output,
-                                     kEvaluationWholeNode};
 
-    for (const ExpandedNode& expandedNode : plan.order) {
-        const NodeInstance& node = *expandedNode.node;
-        std::optional<NodeInstance> resolvedNode;
-        const NodeInstance* effectiveNode =
-            resolveEffectiveNode(document, expandedNode, resolvedNode, static_cast<double>(normalized.localTime));
+    for (const ExpandedNode& expandedNode : plan.images.order) {
+        // Every node's effective state was resolved exactly once by the shared
+        // planner (issue #88): the executor never re-resolves animation,
+        // instance overrides or defaults during execution, so what was planned
+        // is what is executed.
+        const ResolvedImageNode& planNode = plan.images.nodes.at(expandedNode.id);
+        const NodeInstance& node = planNode.node;
+        const NodeInstance* effectiveNode = &planNode.node;
         EvaluationRequest nodeRequest = plan.requests.at(expandedNode.id);
         nodeRequest.network = expandedNode.id.network;
-        // The domain is explicit on every per-node request: a regional request
-        // without it would make imageWidth() mean the ROI width.
-        if (nodeRequest.fullWidth == 0)
-            nodeRequest.fullWidth = normalized.imageWidth();
-        if (nodeRequest.fullHeight == 0)
-            nodeRequest.fullHeight = normalized.imageHeight();
+        // The domain and coverage are the planner's: every per-node request
+        // already carries that node's own described format as its domain and a
+        // lattice-aligned coverage, which may be signed and may exceed the
+        // format. Nothing here re-derives or clips it.
         PlanStep step;
         step.network = expandedNode.id.network;
         step.instance = expandedNode.id.instance;
@@ -466,6 +544,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         step.name = node.name;
         step.effectiveParams = effectiveNode->params;
         step.region = nodeRequest.region;
+        step.description = planNode.description;
         if (expandedNode.id == outputKey) {
             outputStep = evaluation.plan.steps.size();
             outputNode = &node;
@@ -483,18 +562,21 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         inputs.reserve(expandedNode.inputs.size());
         std::vector<EvaluationRequest> inputRequests;  // declared-port aligned; default for absent
         inputRequests.reserve(expandedNode.inputs.size());
+        std::vector<const ImageDescription*> inputDescriptions;  // declared-port aligned; null for absent
+        inputDescriptions.reserve(expandedNode.inputs.size());
         for (const EvaluationNodeId& producer : expandedNode.inputs) {
             if (producer.node == kInvalidNode) {
                 // Absent optional slot: keep declared-port alignment with an
                 // invalid/default entry (issue #34) and the shared absent
                 // constant in the content key. No producer key, image
-                // identity, or descriptor exists.
+                // identity, description, or descriptor exists.
                 inputKeyHashes.push_back(kAbsentInputKeyHash);
                 step.inputs.push_back(kInvalidNode);
                 step.scopedInputs.push_back(ScopedPlanInput{});
                 step.inputImages.push_back(ImageIdentity{});
                 inputs.push_back(nullptr);
                 inputRequests.push_back(EvaluationRequest{});
+                inputDescriptions.push_back(nullptr);
                 continue;
             }
             // Content identity of the input, never its coverage: a wider
@@ -507,8 +589,17 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             step.inputImages.push_back(input.identity);
             inputs.push_back(&input.image->image);
             inputRequests.push_back(input.request);
+            inputDescriptions.push_back(&plan.images.nodes.at(producer).description);
         }
-        const ResultKey contentKey = nodeContentKey(document, *effectiveNode, inputKeyHashes, nodeRequest, keyContext);
+        // The node's own described state participates in its key, so a changed
+        // format, data bounds, aspect, channels or interpretation is a
+        // different result and a source's pre-resolved media request is used
+        // as-is rather than re-derived.
+        KeyContext nodeKeyContext = keyContext;
+        nodeKeyContext.description = &planNode.description;
+        nodeKeyContext.source = planNode.source ? &*planNode.source : nullptr;
+        const ResultKey contentKey =
+            nodeContentKey(document, *effectiveNode, inputKeyHashes, nodeRequest, nodeKeyContext);
         contentKeys.emplace(expandedNode.id, contentKey);
 
         if (reuse != nullptr) {
@@ -518,10 +609,6 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             if (const auto hit = reuse->findRegion(contentKey, nodeRequest)) {
                 EvaluationRequest backing = hit->request;
                 backing.network = expandedNode.id.network;
-                if (backing.fullWidth == 0)
-                    backing.fullWidth = normalized.imageWidth();
-                if (backing.fullHeight == 0)
-                    backing.fullHeight = normalized.imageHeight();
                 resolved.emplace(expandedNode.id, ResolvedResult{hit->image, backing, hit->identity, true});
                 step.produced = hit->identity;
                 step.region = backing.region;
@@ -553,44 +640,61 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             if (declaredInputs[i].optional && declaredInputs[i].kind == PortKind::Mask)
                 maskPresent = inputs[i] != nullptr;
 
+        // The node's described output state and every semantic fact derived
+        // from it come from the plan (issue #88): geometry, pixel aspect,
+        // channels and interpretation are described once, so native and CPU
+        // execution agree on the authored state and neither re-derives it from
+        // the request's domain (which may legitimately differ from the format,
+        // e.g. for a description with an empty format).
+        const ImageDescription& description = planNode.description;
+        const float pixelAspect = description.pixelAspect;
+
+        // External media is acquired HERE, after the shared plan described the
+        // node and after the reuse lookup declined to serve it: a metadata plan
+        // and a reused result both cost zero pixels (issue #88). The decoded
+        // raster's ACTUAL coverage — not 0 and not the request region, and
+        // never a fill ratio — is the geometry the source pass is bound with.
         std::shared_ptr<const gpu::Image> sourceFrame;
         RasterGeometry sourceRaster{};
-        float pixelAspect = document.network(nodeRequest.network).format().pixelAspect;
-        // Interpretation of the source node's produced image: SceneLinear for a
-        // managed source, Data when the request bypassed color conversion. A
-        // non-display-referred image is never assumed to be managed
-        // scene-linear (issue #81).
-        ColorInterpretation sourceColor = ColorInterpretation::SceneLinear;
         if (role == NodeRole::Source) {
             if (sources == nullptr)
                 failEffect(*effectiveNode, program, "real-media source node evaluated without a SourceSession");
-            if (!effectiveNode->params.contains("source"))
-                failEffect(*effectiveNode, program, "parameter 'source' (the document source key) is required");
-            const auto frame = acquired.find(expandedNode.id);
-            if (frame == acquired.end())
+            if (!planNode.source)
                 failEffect(*effectiveNode, program,
-                           "the source session did not supply a decoded full-resolution frame");
-            // The decoded frame was acquired once, before region planning; the
-            // same device image is bound here rather than probed again.
-            sourceFrame = frame->second.frame;
-            sourceRaster = frame->second.raster;
-            sourceColor = frame->second.color;
-            step.effectiveParams.emplace("frame", frame->second.frameIndex);
-            pixelAspect = frame->second.pixelAspect;
-        }
-        // Pixel aspect travels with the main image layout (issue #34): the
-        // transform rotates physical coordinates, and consumers see the same
-        // propagated aspect in the produced identity.
-        if (!expandedNode.inputs.empty() && expandedNode.inputs[0].node != kInvalidNode) {
-            pixelAspect = resolved.at(expandedNode.inputs[0]).image->layout.pixelAspect;
+                           "the shared plan did not resolve this source node's media request (parameter 'source' "
+                           "is required, or the source description provider is missing)");
+            SourceSession::DecodedFrame decoded;
+            try {
+                decoded = sources->acquire(document, *planNode.source, timeout_ns.value_or(10'000'000'000ULL));
+            } catch (const EvaluationException& error) {
+                // A provider failure is reported with the offending node, unless
+                // it already names one; a device-level failure keeps its own
+                // type so callers can still tell Vulkan failures apart.
+                if (error.hasNode())
+                    throw;
+                failEffect(*effectiveNode, program, "decoding source media failed: " + std::string(error.what()));
+            } catch (const media::MediaDecodeError& error) {
+                throw media::MediaDecodeError(error.clip, error.format,
+                                              describeNode(*effectiveNode) + ": " + error.reason);
+            } catch (const gpu::GpuException&) {
+                throw;
+            } catch (const std::exception& error) {
+                failEffect(*effectiveNode, program, "decoding source media failed: " + std::string(error.what()));
+            }
+            if (decoded.coverage.width <= 0 || decoded.coverage.height <= 0)
+                failEffect(*effectiveNode, program,
+                           "the source session returned a decoded frame without an actual raster coverage");
+            sourceFrame = std::move(decoded.image);
+            sourceRaster = RasterGeometry{decoded.coverage.x, decoded.coverage.y, decoded.coverage.width,
+                                          decoded.coverage.height, 1};
+            step.effectiveParams.emplace("frame", decoded.frame);
         }
 
         GpuPreparation preparation;
         try {
-            preparation =
-                implementation.prepare({catalog, *effectiveNode, nodeRequest, step.effectiveParams, maskPresent,
-                                        pixelAspect, sourceFrame ? sourceFrame->extent().width : 0,
-                                        sourceFrame ? sourceFrame->extent().height : 0, inputRequests});
+            preparation = implementation.prepare({catalog, *effectiveNode, nodeRequest, node.params, maskPresent,
+                                                  pixelAspect, inputRequests, description,
+                                                  planNode.source ? &*planNode.source : nullptr, inputDescriptions});
         } catch (const std::exception& error) {
             failEffect(*effectiveNode, program, std::string("local preparation failed: ") + error.what());
         }
@@ -604,12 +708,13 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         nodeLayout.width = nodeRaster.width;
         nodeLayout.height = nodeRaster.height;
         nodeLayout.pixelAspect = pixelAspect;
-        if (role == NodeRole::Source) {
-            // The source node's produced metadata reports the decoded
-            // interpretation truthfully: Data when the request bypassed color
-            // conversion, scene-linear otherwise.
-            nodeLayout.color = sourceColor;
-        }
+        nodeLayout.channels = description.channels;
+        nodeLayout.precision = description.precision;
+        // The produced raster reports the described interpretation, so a Data
+        // source (or anything downstream of one) is never relabelled
+        // scene-linear and a display-referred result is never transformed
+        // twice.
+        nodeLayout.color = description.color;
         auto resident = std::make_shared<GpuNodeImage>();
         resident->layout = nodeLayout;
         try {
@@ -651,7 +756,15 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                     result = image.get();
                     dispatch.scratch.emplace(definition.output.index, std::move(image));
                 }
-                const auto uniforms = requestUniforms(passRequest);
+                // The produced raster carries its own support: the pass that
+                // writes the node's output is masked to the node's described
+                // data window, so a generator or an offsetting effect can never
+                // claim data outside it. A scratch raster has no declared
+                // support — only this node's next pass reads it.
+                const std::array<std::int32_t, 4> support = definition.output.kind == EffectImageKind::Output
+                                                                ? rasterSupport(passRequest, description.dataBounds)
+                                                                : std::array<std::int32_t, 4>{-1, -1, -1, -1};
+                const auto uniforms = requestUniforms(passRequest, support);
                 gpu::Buffer requestBuffer = allocator.create_buffer(
                     sizeof(uniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, gpu::MemoryPreference::HostMapped);
                 std::memcpy(requestBuffer.mapped(), &uniforms, sizeof(uniforms));
@@ -667,6 +780,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                     const auto reference = definition.inputs[binding];
                     const gpu::Image* image = nullptr;
                     RasterGeometry raster{};
+                    bool fullResolution = false;
                     switch (reference.kind) {
                     case EffectImageKind::Input: {
                         image = inputs[reference.index];
@@ -686,18 +800,30 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                         raster = rasterGeometry(*effectiveNode, passProgram, withRegion(nodeRequest, region));
                         break;
                     }
-                    case EffectImageKind::External:
+                    case EffectImageKind::External: {
+                        // The decoded frame is full resolution and is addressed
+                        // by absolute image coordinates: its geometry entry is
+                        // its own actual coverage (issue #88), which is neither
+                        // the request's rectangle nor a fill-ratio resample.
                         image = dispatch.externalInput.get();
                         raster = sourceRaster;
+                        fullResolution = true;
                         break;
+                    }
                     case EffectImageKind::Output:
                         break;  // Invalid declarations are rejected before publication.
                     }
-                    if (image == nullptr)
+                    if (image == nullptr) {
+                        if (reference.kind == EffectImageKind::External && planNode.source == std::nullopt)
+                            failEffect(*effectiveNode, passProgram,
+                                       "local pass '" + definition.id +
+                                           "' binds decoded media but parameter 'source' (the document source key) "
+                                           "is absent");
                         failEffect(*effectiveNode, passProgram,
                                    "local pass '" + definition.id + "' requires unavailable image binding " +
                                        std::to_string(binding));
-                    bound.push_back(BoundInput{image, raster});
+                    }
+                    bound.push_back(BoundInput{image, raster, fullResolution});
                     if (reference.kind != EffectImageKind::External &&
                         std::find(reads.begin(), reads.end(), image) == reads.end())
                         reads.push_back(image);
@@ -848,17 +974,18 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
 std::optional<GpuEvaluation> submitGpu(const Document& document, EvaluationRequest request,
                                        const EffectLibrary& effects, gpu::Device& device, gpu::Allocator& allocator,
-                                       SourceSession* sources, std::string_view colorConfigIdentity) {
+                                       SourceSession* sources, std::string_view colorConfigIdentity,
+                                       const RegionPlan* plan) {
     return executeGpu(document, request, effects, device, allocator, std::nullopt, nullptr, sources,
-                      colorConfigIdentity);
+                      colorConfigIdentity, plan);
 }
 
 GpuEvaluation evaluateGpu(const Document& document, EvaluationRequest request, const EffectLibrary& effects,
                           gpu::Device& device, gpu::Allocator& allocator, std::uint64_t timeout_ns,
                           ResultCache<GpuNodeImage>* reuse, SourceSession* sources,
-                          std::string_view colorConfigIdentity) {
-    auto evaluation =
-        executeGpu(document, request, effects, device, allocator, timeout_ns, reuse, sources, colorConfigIdentity);
+                          std::string_view colorConfigIdentity, const RegionPlan* plan) {
+    auto evaluation = executeGpu(document, request, effects, device, allocator, timeout_ns, reuse, sources,
+                                 colorConfigIdentity, plan);
     if (!evaluation)
         throw gpu::GpuException(gpu::GpuError::InvalidRequest, "GPU submission capacity exhausted");
     return std::move(*evaluation);

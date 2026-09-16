@@ -13,7 +13,7 @@ struct TransformParameters {
 };
 
 [[nodiscard]] inline TransformParameters effectiveTransform(const NodeCatalog& catalog, const NodeInstance& node,
-                                                            ParameterValues& effectiveParams) {
+                                                            const ParameterValues& effectiveParams) {
     TransformParameters transform;
     transform.translateX = effectiveNumber(catalog, node, effectiveParams, "translateX");
     transform.translateY = effectiveNumber(catalog, node, effectiveParams, "translateY");

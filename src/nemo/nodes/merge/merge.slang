@@ -2,7 +2,7 @@
 // masking per issue #75; contribution-local module per issue #83)
 // ---------------------------------------------------------
 // name: merge
-// version: 2
+// version: 3
 // ports:
 //   - in_a : image2D input, port A (background / base)
 //   - in_b : image2D input, port B (foreground / source)
@@ -17,7 +17,7 @@
 //     op.x: 0 Over, 1 Plus, 2 Multiply, 3 Screen, 4 Difference.
 //   - mask = (maskChannel, invertMask, mix, maskPresent), the shared effect
 //     mask word.
-// bindings (native binding contract v3, see GpuGeometry.slang):
+// bindings (native binding contract v5, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.merge.payload.v1")
 //   set 0, binding 2 : per-input spatial geometry (A, B, mask)
@@ -26,9 +26,12 @@
 //   set 2, binding 0 : output image2D
 // dependencies:
 //   region: output pixel (x, y) depends only on the input pixels holding the
-//     same full-resolution sample; each input's raster origin is bound with it
-//     (region evaluation, wider cache-backed inputs), so no neighborhood
-//     reads and no support-region expansion.
+//     same full-resolution sample; each input's raster origin and extent are
+//     bound with it (region evaluation, wider cache-backed inputs, signed or
+//     beyond-format origins, mixed formats), so no neighborhood reads and no
+//     support-region expansion. A sample outside an operand's raster is outside
+//     that operand's data and reads as transparent black (issue #88): an
+//     operand may hold less than the request, or nothing at all.
 //   channels: RGBA uniform.
 //   temporal: none.
 // quality_modes: 1
@@ -47,12 +50,17 @@
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
-    // meta: (full image width, full image height, region.x, region.y)
-    uint4 meta;
+    // meta: (full image width, full image height, region.x, region.y; signed)
+    int4 meta;
     // meta2: raster (image width, image height, samplingScale, 0) — issue #11
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
+    // support: half-open RASTER-INDEX rect (x, y, width, height) of the samples
+    // that ARE this image's data; (-1,-1,-1,-1) means the raster declares no
+    // support (a node-local scratch), a non-positive size means every sample is
+    // transparent black. Samples outside it must be written transparent black.
+    int4 support;
 };
 
 [[vk::binding(1, 0)]]
@@ -82,14 +90,30 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    // Same-lattice inputs: the pixels holding the same full-resolution sample
-    // as this pass output pixel, located through each input's own origin.
-    int2 aOffset = inputGeometry[0].regionAndOffset.zw;
-    int2 bOffset = inputGeometry[1].regionAndOffset.zw;
-    int2 maskOffset = inputGeometry[2].regionAndOffset.zw;
+    // The described image's data support (native binding contract v5): a sample
+    // outside it is transparent black, never a composite of operands that hold
+    // nothing there.
+    if (support.z >= 0 && support.w >= 0 &&
+        ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
+         (int)p.y >= support.y + support.w)) {
+        out_color[p] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
 
-    float4 bg = in_a.Load(int2(p) + aOffset);   // port A: background (base)
-    float4 fg = in_b.Load(int2(p) + bOffset);   // port B: foreground (source)
+    // Same-lattice inputs: the pixels holding the same full-resolution sample
+    // as this pass output pixel, located through each input's own origin and
+    // extent. A pixel outside an operand's raster is outside its data (a
+    // smaller, differently anchored or empty data window): transparent black,
+    // never an out-of-bounds load.
+    int2 aPixel = int2(p) + inputGeometry[0].regionAndOffset.zw;
+    int2 aExtent = int2(inputGeometry[0].extent.xy);
+    int2 bPixel = int2(p) + inputGeometry[1].regionAndOffset.zw;
+    int2 bExtent = int2(inputGeometry[1].extent.xy);
+    bool aInside = aPixel.x >= 0 && aPixel.y >= 0 && aPixel.x < aExtent.x && aPixel.y < aExtent.y;
+    bool bInside = bPixel.x >= 0 && bPixel.y >= 0 && bPixel.x < bExtent.x && bPixel.y < bExtent.y;
+
+    float4 bg = aInside ? in_a.Load(aPixel) : float4(0.0, 0.0, 0.0, 0.0);  // port A: background (base)
+    float4 fg = bInside ? in_b.Load(bPixel) : float4(0.0, 0.0, 0.0, 0.0);  // port B: foreground (source)
 
     int operation = int(op.x);
     float4 composite;
@@ -113,7 +137,11 @@ void main(uint3 tid : SV_DispatchThreadID)
     float coverage = 1.0;
     int channel = int(mask.x);
     if (mask.w > 0.5 && channel >= 0) {
-        float selected = clamp(in_mask.Load(int2(p) + maskOffset)[channel], 0.0, 1.0);
+        int2 maskPixel = int2(p) + inputGeometry[2].regionAndOffset.zw;
+        int2 maskExtent = int2(inputGeometry[2].extent.xy);
+        bool maskInside =
+            maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
+        float selected = maskInside ? clamp(in_mask.Load(maskPixel)[channel], 0.0, 1.0) : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the background, weight 1 the

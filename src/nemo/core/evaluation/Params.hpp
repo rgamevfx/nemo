@@ -33,7 +33,7 @@ namespace nemo {
 }
 
 [[nodiscard]] inline const ParameterValue& effectiveParameter(const NodeCatalog& catalog, const NodeInstance& node,
-                                                              ParameterValues& effectiveParams, const char* key) {
+                                                              const ParameterValues& effectiveParams, const char* key) {
     const auto authored = effectiveParams.find(key);
     if (authored != effectiveParams.end()) {
         return authored->second;
@@ -42,11 +42,11 @@ namespace nemo {
     if (!declared) {
         failNode(node, std::string("parameter '") + key + "' has no declared default");
     }
-    return effectiveParams.emplace(key, *declared).first->second;
+    return *declared;
 }
 
 [[nodiscard]] inline std::array<float, 4> effectiveColor4(const NodeCatalog& catalog, const NodeInstance& node,
-                                                          ParameterValues& effectiveParams, const char* key) {
+                                                          const ParameterValues& effectiveParams, const char* key) {
     const auto& value = effectiveParameter(catalog, node, effectiveParams, key);
     const auto* color = std::get_if<ColorValue>(&value);
     if (color == nullptr) {
@@ -77,7 +77,7 @@ struct EffectMaskParameters {
 };
 
 [[nodiscard]] inline float effectiveNumber(const NodeCatalog& catalog, const NodeInstance& node,
-                                           ParameterValues& effectiveParams, const char* key) {
+                                           const ParameterValues& effectiveParams, const char* key) {
     const auto& value = effectiveParameter(catalog, node, effectiveParams, key);
     const auto* number = std::get_if<double>(&value);
     if (number == nullptr || !std::isfinite(*number) || !std::isfinite(static_cast<float>(*number))) {
@@ -88,7 +88,7 @@ struct EffectMaskParameters {
 }
 
 [[nodiscard]] inline bool effectiveFlag(const NodeCatalog& catalog, const NodeInstance& node,
-                                        ParameterValues& effectiveParams, const char* key) {
+                                        const ParameterValues& effectiveParams, const char* key) {
     const auto& value = effectiveParameter(catalog, node, effectiveParams, key);
     const auto* flag = std::get_if<bool>(&value);
     if (flag == nullptr) {
@@ -98,7 +98,7 @@ struct EffectMaskParameters {
 }
 
 [[nodiscard]] inline const std::string& effectiveChoice(const NodeCatalog& catalog, const NodeInstance& node,
-                                                        ParameterValues& effectiveParams, const char* key) {
+                                                        const ParameterValues& effectiveParams, const char* key) {
     const auto& value = effectiveParameter(catalog, node, effectiveParams, key);
     const auto* choice = std::get_if<ChoiceValue>(&value);
     if (choice == nullptr) {
@@ -109,7 +109,7 @@ struct EffectMaskParameters {
 }
 
 [[nodiscard]] inline EffectMaskParameters effectiveEffectMask(const NodeCatalog& catalog, const NodeInstance& node,
-                                                              ParameterValues& effectiveParams) {
+                                                              const ParameterValues& effectiveParams) {
     EffectMaskParameters mask;
     const std::string& channel = effectiveChoice(catalog, node, effectiveParams, "maskChannel");
     if (channel == "none") {

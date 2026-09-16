@@ -33,6 +33,10 @@ struct Region {
     [[nodiscard]] bool operator==(const Region&) const = default;
 };
 
+// Leaves room for union extents, signed differences and outward lattice
+// rounding in 32-bit geometry. This is not a raster allocation limit.
+inline constexpr int kMaxDescribedCoordinate = 1 << 28;
+
 // Sampling reduction of a request (issue #11, spec section 8): 1 = Full,
 // 2 = Half, 4 = Quarter image resolution. Full-resolution coordinate
 // semantics are preserved at every supported scale; unsupported scales are
@@ -89,7 +93,8 @@ inline constexpr int kSamplingScales[] = {1, 2, 4};
            inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
 }
 
-// Smallest rectangle containing both regions.
+// Smallest rectangle containing both regions. An empty region (non-positive
+// width/height) contributes nothing.
 [[nodiscard]] inline Region regionUnion(const Region& left, const Region& right) {
     if (left.width <= 0 || left.height <= 0) {
         return right;
@@ -103,26 +108,33 @@ inline constexpr int kSamplingScales[] = {1, 2, 4};
                   std::max(left.y + left.height, right.y + right.height) - y};
 }
 
-// `region` rounded outward to whole samples of `scale` and clipped to the
-// image domain. Rounded outward first so the rounded result stays inside the
-// domain, then clipped last so a domain edge that is not a lattice multiple
-// (e.g. a 30 pixel image at sampling scale 4) remains reachable.
-[[nodiscard]] inline Region regionOnLattice(const Region& region, int scale, int domainWidth, int domainHeight) {
-    Region normalized;
-    normalized.x = std::clamp(latticeFloor(region.x, scale), 0, std::max(0, domainWidth));
-    normalized.y = std::clamp(latticeFloor(region.y, scale), 0, std::max(0, domainHeight));
-    const int right = std::clamp(latticeCeil(region.x + region.width, scale), normalized.x, std::max(0, domainWidth));
-    const int bottom =
-        std::clamp(latticeCeil(region.y + region.height, scale), normalized.y, std::max(0, domainHeight));
-    normalized.width = right - normalized.x;
-    normalized.height = bottom - normalized.y;
-    return normalized;
+// Largest rectangle contained in both regions, or canonical empty bounds.
+[[nodiscard]] inline Region regionIntersection(const Region& left, const Region& right) {
+    const int x = std::max(left.x, right.x);
+    const int y = std::max(left.y, right.y);
+    const int rightEdge = std::min(left.x + left.width, right.x + right.width);
+    const int bottomEdge = std::min(left.y + left.height, right.y + right.height);
+    if (rightEdge <= x || bottomEdge <= y)
+        return {};
+    return Region{x, y, rightEdge - x, bottomEdge - y};
 }
 
-// The image domain a request addresses, as a region at the request's own
-// sampling lattice.
-[[nodiscard]] inline Region domainRegion(int domainWidth, int domainHeight) {
-    return Region{0, 0, std::max(0, domainWidth), std::max(0, domainHeight)};
+// `region` rounded outward to whole samples of `scale` (issue #88). Signed
+// coordinates are preserved exactly and the region is never clipped: an image's
+// format is a description, not a storage bound, so a demand outside it — a
+// negative data window, overscan, a region the caller asks for beyond the
+// format — is a real, representable request for transparent black rather than
+// something to discard.
+[[nodiscard]] inline Region regionOnLattice(const Region& region, int scale) {
+    if (scale <= 1 || region.width <= 0 || region.height <= 0) {
+        return region;
+    }
+    Region normalized;
+    normalized.x = latticeFloor(region.x, scale);
+    normalized.y = latticeFloor(region.y, scale);
+    normalized.width = latticeCeil(region.x + region.width, scale) - normalized.x;
+    normalized.height = latticeCeil(region.y + region.height, scale) - normalized.y;
+    return normalized;
 }
 
 // An evaluation request identifies the network scope as well as its output,
@@ -139,7 +151,10 @@ struct EvaluationRequest {
     int samplingScale{1};
     // Full-resolution image domain, independent of ROI and sampling scale.
     // Zero/zero means region is the entire image at origin (0,0).
-    // Cropped requests supply the domain explicitly.
+    // Cropped requests supply the domain explicitly. The region is signed and
+    // may extend outside this domain: the domain is the image's format, while
+    // the region is what the caller wants to see (issue #88). Planning re-bases
+    // both on the described target format, so a caller need not know it.
     int fullWidth{0};
     int fullHeight{0};
     [[nodiscard]] int imageWidth() const { return fullWidth ? fullWidth : region.width; }
@@ -149,17 +164,17 @@ struct EvaluationRequest {
 
 // The normalized form of a request: full-domain identity is preserved and made
 // explicit, and the region is moved outward to the enclosing image-space
-// sampling lattice (clipped to the domain). Sampling scale, quality, channels
-// and time are never changed, and coverage is never reduced. Executors report
-// this coverage as the plan's request and deliver exactly this raster.
+// sampling lattice. Sampling scale, quality, channels and time are never
+// changed, coverage is never reduced, and the region is never clipped: a signed
+// demand that lies partly or wholly outside the format is exactly what the
+// caller asked for (transparent black there), never silently trimmed. Executors
+// report this coverage as the plan's request and deliver exactly this raster.
 [[nodiscard]] inline EvaluationRequest canonicalizeRequest(const EvaluationRequest& request) {
     EvaluationRequest canonical = request;
-    const int width = request.imageWidth();
-    const int height = request.imageHeight();
-    canonical.fullWidth = width;
-    canonical.fullHeight = height;
+    canonical.fullWidth = request.imageWidth();
+    canonical.fullHeight = request.imageHeight();
     if (isSamplingScale(request.samplingScale)) {
-        canonical.region = regionOnLattice(request.region, request.samplingScale, width, height);
+        canonical.region = regionOnLattice(request.region, request.samplingScale);
     }
     return canonical;
 }

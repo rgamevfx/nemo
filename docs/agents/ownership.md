@@ -89,13 +89,14 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | Responsibility | Owner and interface | Concrete use site / boundary |
 | --- | --- | --- |
 | Persistent document, graph, IDs, serialization | `src/nemo/core/document/Document.hpp`, `Graph.hpp`, `Serialization.hpp`; `Document`, `Graph`, and `NodeCatalog` own persistent state | `apps/nemo-ui/ViewerController.cpp` submits commands; UI and automation do not mutate graph primitives directly |
-| Saved composition formats | `Network::format()` in `Graph.hpp`, document-owned named presets, and `core/commands/NetworkCommands.hpp` | `ProjectSession`/CLI own authoring and history; the existing viewer/evaluators consume the values. See ADR-0007 "Saved composition formats and schema 6 (#96)" for migration, value-copy semantics and the remaining #88 planning boundary |
+| Saved composition formats | `Network::format()` in `Graph.hpp`, document-owned named presets, and `core/commands/NetworkCommands.hpp` | `ProjectSession`/CLI own authoring and history. ADR-0007 documents migration/value-copy semantics; per-node descriptions consume this format for generators, not as a request-global canvas |
 | Project file persistence, autosave, recovery | `src/nemo/core/session/ProjectFile.hpp`; `ProjectFile` owns read/write, path policy, file envelope and reference state; `AutosaveStore` owns bounded slots; `ProjectSession::prepareSave`/`commitSave` own path, dirty baseline and recovery guard | `apps/nemo-ui/ProjectFileController.*` and the CLI `file-state`/`open`/`save`/`save-as`/`autosave`/`recover` ops are the only callers; both go through this owner, never a second codec |
 | Node schemas and discovery | `src/nemo/core/nodes/NodeCatalog.hpp`; immutable `NodeDescriptor` records and exact-inventory `NodeCatalog(std::vector<NodeDescriptor>)` | `src/nemo/nodes/BuiltinNodes.inc` supplies the built-in inventory; `NodeContributions::catalog()` projects schema for `Graph::catalog()`, desktop and CLI. No mutation or unregister operation |
 | Validated edits and history | `src/nemo/core/document/Document.hpp` command factories plus `src/nemo/core/commands/`; `Command`, `CommandStack`, and `ProjectSession` | `apps/nemo-cli/ProjectSessionCommand.cpp::makeCommand()` maps JSON operations; `ProjectSession::submit()` is the commit seam |
 | Desktop history routing | `apps/nemo-ui/HistoryController.hpp`, explicitly injected with the application `ProjectSession`; `qml/HistoryMenu.qml` / `HistoryMenuItem.qml` | Register existing document windows; use this adapter for shared shortcuts/menu actions, never a viewer forwarding method or per-panel stack. Context precedence and the gesture contribution contract are below |
 | Structural document storage | `src/nemo/core/SharedContainers.hpp` (`CowVector`, `CowMap`) and the document's controlled mutations; `ChangeRecorder` (`src/nemo/core/document/ChangeRecorder.hpp`) records the identities a transaction touched | Commands and sessions retain version handles, never deep copies; publication/undo/redo derive their notifications from the touched identities. See ADR-0007 "Structurally shared document versions (#72)"; do not reintroduce a whole-document copy, diff or serialization on the ordinary edit path |
 | CPU evaluation and shared plan | `src/nemo/core/evaluation/CpuReference.hpp`; `evaluateCpu`, `expandDependencies`, `scheduleDependencies`, and the external media seam `SourceProvider::frame`/`colorConfigIdentity` | `apps/nemo-cli/main.cpp` uses `evaluateCpu`; input is a `const Document` snapshot and the CPU image is reference-owned. The provider receives the resolved `EffectiveSourceRequest` and supplies the opaque color-config identity the source-node keys mix in; without a provider a source node is an explicit error, never a synthetic pattern |
+| Per-node image descriptions and demand | `ImageDescription` in `Image.hpp`; `describeDependencies`/`planRegions` in `CpuReference`; contribution `describe`/`inputRequirements` | Resolve authored state once, then borrow it for description, planning and execution. `SourceDescriptionProvider` obtains still/sequence headers through `ImageSource` and clip headers through `media::inspectClipHeader` (`VideoDecode.hpp`); the existing viewer worker consumes target descriptions. See ADR-0007/0008 for signed bounds, empty images and reuse identity |
 | GPU primitives and resource lifetime | `src/nemo/gpu/` (`Device`, `Allocator`, `Submit`, `ComputePass`) | `src/nemo/eval/GpuExecutor.cpp` records/submits work; follow [`rendering.md`](rendering.md) for retained ownership and synchronization rather than copying those rules here |
 | Native effect execution | `core/evaluation/NodeContributions.hpp` and `eval/GpuContribution.hpp` declare immutable CPU/native adapters; `eval/GpuExecutor.hpp` exposes `EffectLibrary`, `submitGpu`, and `evaluateGpu` | `src/nemo/nodes/<slug>/` owns schema, independent CPU/Slang/GLSL pixels, typed effect parameters and local pass preparation. Shared evaluators own traversal, requests, reuse and resource lifetime; see the contribution recipe below and [`rendering.md`](rendering.md) |
 | Optional input ports and absent slots | `src/nemo/core/nodes/NodeCatalog.hpp` (`PortSpec::optional`); `Plan.hpp` slot model with `CpuReference.cpp` expansion | An absent optional slot keeps its declared port position as `EvaluationNodeId{}` (node == `kInvalidNode`) in `ExpandedNode.inputs`/`PlanStep.inputs`; `Reuse.hpp` marks it in result identity with `kAbsentInputKeyHash`; `GpuExecutor` binds the main image as a valid dummy descriptor with `maskPresent=0`, never an allocated fallback. Grade/Blur/Transform's optional input is port 1 `mask`; Merge's is port 2 (its port 1 is the required foreground). Merge's `A`/`B` roles are production order — A background/base, B foreground/source — and are never silently reversed; `swapInputsCommand` (`Document.hpp`, exposed as `ViewerController::swapNodeInputs` and the `swap-inputs` CLI op) exchanges exactly the two *image* sources as one atomic undo step, retaining the mask, parameters, node identity and layout, and refuses an empty pair or two edges from one source before touching history |
@@ -171,10 +172,11 @@ Desktop and CLI use these builders, not private inventories. See
    runtime objects out of the descriptor. Add effect-local typed interpretation
    in `Parameters.hpp` when both CPU and GPU need it; reuse generic typed reads,
    mask/channel rules and effective animation from `core/evaluation/Params.hpp`.
-   Neighborhood/geometric effects also declare per-port `inputRegions`; read
-   inputs through the supplied coverage geometry. Pointwise inputs default to
-   output coverage. A whole-frame-only declaration escalates inside Evaluation,
-   rather than breaking a regional viewer request.
+   Override `describe` only for changed output properties; otherwise inherit the
+   main input. Neighborhood/geometric effects declare per-port region/channel
+   `inputRequirements` and read through supplied coverage geometry. Pointwise
+   inputs default to output demand. Effective parameters are immutable and
+   already resolved. Whole-frame-only declarations escalate inside Evaluation.
 2. Add `Gpu.cpp` with versioned `GpuImplementation`, independent GLSL pixels,
    node-local payload preparation and local pass definitions; keep independent
    Slang kernels beside it. `eval/GpuContribution.hpp` defines the supported
@@ -205,7 +207,9 @@ plus `ContributionTests.cpp`: append its declaration to a supplied contribution
 vector, assemble through the production builders, and use the resulting catalog
 with the ordinary ProjectSession, persistence and CPU/GPU APIs. It is test-only,
 not shipped in the artist catalog. Its scale/offset RGB operation preserves
-negative/HDR values and alpha; the expected pixels are independently derived.
+negative/HDR values and alpha; integer shifts translate the output data bounds
+and inverse-translate input demand. Independent source labels verify the result
+through session history, save/reopen and CPU/native evaluation.
 
 These internal C++ interfaces are not a plugin loader or stable binary SDK.
 New types, public interfaces, shaders, dependencies and image baselines still

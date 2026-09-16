@@ -21,7 +21,11 @@ NodeDescriptor transformDescriptor() {
     return NodeDescriptor{.type = "transform",
                           .displayName = "Transform",
                           .group = "Transform",
-                          .implementationVersion = 1,
+                          // 2: the adapter consumes the resolved image description
+                          // for its output raster, describes the geometry its
+                          // data bounds change to, and tolerates an empty input
+                          // data window (issue #88).
+                          .implementationVersion = 2,
                           .inputs = effectImageInputs(),
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = withMaskParameters({
@@ -85,9 +89,13 @@ NodeDescriptor transformDescriptor() {
 // rotation (stored raster has x right/y down) and translation, rotating in
 // physical coordinates (x*pixelAspect, y) so non-square pixels stay rigid.
 // The mapped full-resolution coordinate then selects an input raster sample.
-[[nodiscard]] CpuImage applyTransform(const NodeInstance& node, const EvaluationRequest& request,
-                                      const TransformParameters& params, const CpuImage& input,
-                                      const InputAnchor& anchor) {
+// A mapped coordinate with no input sample behind it — outside the raster, or
+// anywhere at all when the input's data window is empty — is transparent black
+// (issue #88), never an out-of-bounds read.
+[[nodiscard]] CpuImage applyTransform(const CpuNodeContext& context, const TransformParameters& params,
+                                      const CpuImage& input, const InputAnchor& anchor) {
+    const NodeInstance& node = context.node;
+    const EvaluationRequest& request = context.request;
     if (!isFinite(params.translateX) || !isFinite(params.translateY) || !isFinite(params.rotate) ||
         !isFinite(params.scale) || !(params.scale > 0.0F)) {
         failNode(node, "Transform parameters must be finite with a positive 'scale'");
@@ -131,7 +139,7 @@ NodeDescriptor transformDescriptor() {
     const int outputWidth = scaledDimension(request.region.width, scale);
     const int outputHeight = scaledDimension(request.region.height, scale);
 
-    CpuImage output(effectRasterLayout(request, input.layout().pixelAspect));
+    CpuImage output(effectRasterLayout(context));
     for (int y = 0; y < outputHeight; ++y) {
         const float outputY = originY + (static_cast<float>(y) + 0.5F) * sampling;
         for (int x = 0; x < outputWidth; ++x) {
@@ -242,36 +250,66 @@ NodeDescriptor transformDescriptor() {
 
 CpuImage executeTransform(const CpuNodeContext& context) {
     const CpuImage& input = requiredImageInput(context, 0, "native effect requires a connected main image input");
-    if (input.width() <= 0 || input.height() <= 0) {
-        failNode(context.node, "native effect requires a non-empty input raster");
-    }
     const InputAnchor anchor = anchorInput(context, 0, input);
-    CpuImage processed =
-        applyTransform(context.node, context.request,
-                       effectiveTransform(context.catalog, context.node, context.effectiveParams), input, anchor);
+    CpuImage processed = applyTransform(
+        context, effectiveTransform(context.catalog, context.node, context.effectiveParams), input, anchor);
     return blendEffectOutput(context, effectiveEffectMask(context.catalog, context.node, context.effectiveParams),
                              input, std::move(processed));
+}
+
+// One mapped full-resolution bound as a Region, or a node-identifying failure:
+// truncating an unrepresentable bound would silently declare and demand a window
+// other than the transform's own.
+[[nodiscard]] Region representableRegion(const NodeInstance& node, const char* what, double left, double top,
+                                         double right, double bottom) {
+    const auto representable = [](double value) {
+        return std::isfinite(value) && std::abs(value) <= static_cast<double>(kMaxDescribedCoordinate);
+    };
+    if (!representable(left) || !representable(top) || !representable(right) || !representable(bottom)) {
+        failNode(node, std::string(what) + " lies outside the representable image coordinates (|coordinate| <= " +
+                           std::to_string(kMaxDescribedCoordinate) + ")");
+    }
+    const int x = static_cast<int>(std::floor(left));
+    const int y = static_cast<int>(std::floor(top));
+    return Region{x, y, static_cast<int>(std::ceil(right)) - x, static_cast<int>(std::ceil(bottom)) - y};
 }
 
 // Transform reads the inverse image of the region it must produce, expanded by
 // the sampling filter's footprint, UNION the region itself (issue #85): the
 // pass-through, mix and mask paths read the original input at the output
 // coordinates, so that coverage is a dependency too. The mask is read at the
-// output coordinates only. A boundary that maps outside the image domain needs
-// no pixels: Transform samples there as transparent black, exactly as the
-// whole-image reference does. An unknown input pixel aspect makes any tight
-// inverse bound meaningless, so the whole input domain is requested rather than
-// assuming square pixels.
-std::vector<Region> transformInputRegions(const NodeRegionContext& context) {
+// output coordinates only. A boundary that maps outside the image needs no
+// pixels: Transform samples there as transparent black, exactly as the
+// whole-image reference does.
+//
+// Both demands are full-resolution signed rectangles clipped to what each
+// producer's own description can hold (issue #88): a mapped coordinate outside
+// the producer's image is not a pixel anyone has, and demanding it would ask a
+// node for coordinates it never described. A read bound the transform's own
+// geometry cannot represent is reported as a node-identifying failure — never
+// truncated into a demand for a different region — and an unknown main-input
+// pixel aspect cannot bound the read at all, so it fails rather than demanding
+// the whole producer on an assumption.
+std::vector<InputRequirement> transformInputRequirements(const NodeRegionContext& context) {
     const TransformParameters params = effectiveTransform(context.catalog, context.node, context.effectiveParams);
     const EvaluationRequest& request = context.request;
     const int scale = isSamplingScale(request.samplingScale) ? request.samplingScale : 1;
-    std::vector<Region> regions{request.region, request.region};
-    const Region whole = domainRegion(request.imageWidth(), request.imageHeight());
+    // A demand is bounded by what each producer's own description can hold
+    // (issue #88): a mapped coordinate outside that producer's image needs no
+    // pixels, and demanding it would ask a node for coordinates it does not
+    // have. The mask is read at the output coordinates and is clipped the same
+    // way.
+    const Region ownDomain = regionUnion(context.description.format, context.description.dataBounds);
+    const Region mainDomain = requirementDomain(context, 0, ownDomain.width > 0 ? ownDomain : request.region);
+    const Region maskDomain = requirementDomain(context, 1, request.region);
+    std::vector<InputRequirement> requirements{
+        InputRequirement{regionIntersection(request.region, mainDomain), "RGBA"},
+        InputRequirement{regionIntersection(request.region, maskDomain), "RGBA"}};
     const float aspect = context.pixelAspect;
     if (!isFinite(aspect) || !(aspect > 0.0F)) {
-        regions[0] = whole;
-        return regions;
+        failNode(context.node, "transform cannot bound its read without a known main-input pixel aspect (the input "
+                               "reports " +
+                                   std::to_string(aspect) + ")");
     }
     constexpr double kDegreesToRadians = 3.14159265358979323846 / 180.0;
     const double radians = static_cast<double>(params.rotate) * kDegreesToRadians;
@@ -305,8 +343,10 @@ std::vector<Region> transformInputRegions(const NodeRegionContext& context) {
                 static_cast<double>(request.region.y) + (static_cast<double>(y) + 0.5) * static_cast<double>(scale);
             const std::array<double, 2> point = mapped(outputX, outputY);
             if (!std::isfinite(point[0]) || !std::isfinite(point[1])) {
-                regions[0] = whole;
-                return regions;
+                failNode(context.node, "the transform's inverse map is not finite for region (" +
+                                           std::to_string(request.region.x) + "," + std::to_string(request.region.y) +
+                                           ") " + std::to_string(request.region.width) + "x" +
+                                           std::to_string(request.region.height) + ")");
             }
             minX = std::min(minX, point[0]);
             minY = std::min(minY, point[1]);
@@ -320,23 +360,81 @@ std::vector<Region> transformInputRegions(const NodeRegionContext& context) {
     // sampled centers.
     const int footprint = params.filter == 0 ? 2 : 1;
     const int margin = (footprint + 1) * scale;
-    // Valid typed transforms can map far beyond integer coordinates. Clip in
-    // floating point before conversion; pixels outside the domain are black.
-    const int left =
-        static_cast<int>(std::clamp(std::floor(minX) - margin, 0.0, static_cast<double>(request.imageWidth())));
-    const int top =
-        static_cast<int>(std::clamp(std::floor(minY) - margin, 0.0, static_cast<double>(request.imageHeight())));
-    const int right =
-        static_cast<int>(std::clamp(std::ceil(maxX) + margin, 0.0, static_cast<double>(request.imageWidth())));
-    const int bottom =
-        static_cast<int>(std::clamp(std::ceil(maxY) + margin, 0.0, static_cast<double>(request.imageHeight())));
-    const Region read{left, top, right - left, bottom - top};
-    regions[0] = regionUnion(read, request.region);
-    return regions;
+    const Region read =
+        representableRegion(context.node, "the transform's inverse-mapped read", std::floor(minX) - margin,
+                            std::floor(minY) - margin, std::ceil(maxX) + margin, std::ceil(maxY) + margin);
+    requirements[0] = InputRequirement{regionIntersection(regionUnion(read, request.region), mainDomain), "RGBA"};
+    return requirements;
+}
+
+// Transform the data window, not the logical format. The filter footprint is
+// conservative support; Mix and output-space masks may retain the original
+// data window as well. Empty input has no support to transform.
+[[nodiscard]] Region transformedDataBounds(const NodeInstance& node, const ImageDescription& inherited,
+                                           const TransformParameters& params) {
+    const Region bounds = inherited.dataBounds;
+    const float aspect = inherited.pixelAspect;
+    if (bounds.width <= 0 || bounds.height <= 0) {
+        return bounds;
+    }
+    if (!isFinite(aspect) || !(aspect > 0.0F)) {
+        failNode(node, "transform cannot describe its output geometry without a known main-input pixel aspect (the "
+                       "input reports " +
+                           std::to_string(aspect) + ")");
+    }
+    constexpr double kDegreesToRadians = 3.14159265358979323846 / 180.0;
+    const double radians = static_cast<double>(params.rotate) * kDegreesToRadians;
+    const double cosine = static_cast<double>(static_cast<float>(std::cos(radians)));
+    const double sine = static_cast<double>(static_cast<float>(std::sin(radians)));
+    const double centerX = static_cast<double>(inherited.format.width) * 0.5;
+    const double centerY = static_cast<double>(inherited.format.height) * 0.5;
+    const double cornerX[2] = {static_cast<double>(bounds.x), static_cast<double>(bounds.x + bounds.width)};
+    const double cornerY[2] = {static_cast<double>(bounds.y), static_cast<double>(bounds.y + bounds.height)};
+    double minX = std::numeric_limits<double>::max();
+    double minY = std::numeric_limits<double>::max();
+    double maxX = std::numeric_limits<double>::lowest();
+    double maxY = std::numeric_limits<double>::lowest();
+    for (const double x : cornerX) {
+        for (const double y : cornerY) {
+            // Undo the inverse map: scale about the format center, rotate back
+            // into physical coordinates, then translate.
+            const double scaledX = (x - centerX) * static_cast<double>(params.scale);
+            const double scaledY = (y - centerY) * static_cast<double>(params.scale);
+            const double physicalX = cosine * scaledX - sine * scaledY / static_cast<double>(aspect);
+            const double physicalY = sine * static_cast<double>(aspect) * scaledX + cosine * scaledY;
+            const double outX = centerX + static_cast<double>(params.translateX) + physicalX;
+            const double outY = centerY + static_cast<double>(params.translateY) + physicalY;
+            minX = std::min(minX, outX);
+            minY = std::min(minY, outY);
+            maxX = std::max(maxX, outX);
+            maxY = std::max(maxY, outY);
+        }
+    }
+    const int footprint = params.filter == 0 ? 2 : 1;
+    const double padding = static_cast<double>(footprint + 2) * static_cast<double>(params.scale) *
+                           static_cast<double>(std::max(1.0F, aspect));
+    return representableRegion(node, "the transform's mapped data window", std::floor(minX - padding),
+                               std::floor(minY - padding), std::ceil(maxX + padding), std::ceil(maxY + padding));
+}
+
+// Transform changes the image's geometry, so it owns its output description
+// (issue #88): everything except the data window is inherited from the main
+// input (format, pixel aspect, channels, interpretation — a Data input stays
+// Data), and the data window follows the transform's own geometry.
+[[nodiscard]] ImageDescription describeTransform(const NodeDescriptionContext& context) {
+    const ParameterValues& authored = context.node.params;
+    const TransformParameters params = effectiveTransform(context.catalog, context.node, authored);
+    ImageDescription described = context.inherited;
+    described.dataBounds = transformedDataBounds(context.node, context.inherited, params);
+    const EffectMaskParameters mask = effectiveEffectMask(context.catalog, context.node, authored);
+    if (mask.mix < 1.0F || (mask.channel >= 0 && context.inputs.size() > 1 && context.inputs[1] != nullptr)) {
+        described.dataBounds = regionUnion(described.dataBounds, context.inherited.dataBounds);
+    }
+    return described;
 }
 
 std::optional<std::string> validateTransformParameters(const NodeCatalog& catalog, const NodeInstance& node,
-                                                       ParameterValues& effectiveParams) {
+                                                       const ParameterValues& effectiveParams) {
     return authoringAdmissibility([&] {
         static_cast<void>(effectiveTransform(catalog, node, effectiveParams));
         static_cast<void>(effectiveEffectMask(catalog, node, effectiveParams));
@@ -351,7 +449,8 @@ NodeContribution transformContribution() {
     contribution.role = NodeRole::Image;
     contribution.cpu = CpuImplementation{contribution.descriptor.implementationVersion, &executeTransform};
     contribution.validateParameters = &validateTransformParameters;
-    contribution.inputRegions = &transformInputRegions;
+    contribution.inputRequirements = &transformInputRequirements;
+    contribution.describe = &describeTransform;
     return contribution;
 }
 

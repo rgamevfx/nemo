@@ -41,6 +41,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -57,13 +58,14 @@
 
 namespace nemo::eval {
 
-class SourceSession {
+class SourceSession : public SourceDescriptionProvider {
 public:
     // One decoded source frame handed to the executor. Scene-linear
     // (project working space) or Data for a Raw bypass, full resolution,
-    // rgba32f, straight alpha, GENERAL layout, GPU-complete.
+    // rgba32f, association from description, GENERAL layout, GPU-complete.
     struct DecodedFrame {
         std::shared_ptr<const gpu::Image> image;
+        // Storage extents of the retained raster, exactly `coverage`'s extent.
         int width{0};
         int height{0};
         std::int64_t frame{0};
@@ -77,6 +79,17 @@ public:
         // #81). A consumer must not assume every non-display-referred frame is
         // managed scene-linear.
         ColorInterpretation color{ColorInterpretation::SceneLinear};
+        // What the retained raster means (issue #88): its logical format, signed
+        // data bounds, pixel aspect, channels, precision, association and
+        // interpretation. A policy-cleared frame retains the admitted header's
+        // logical format with empty data bounds.
+        ImageDescription description;
+        // Where the retained raster actually sits: the signed full-resolution
+        // origin of raster pixel (0, 0) plus its extent, in the frame's own
+        // normalized coordinates. A windowed source's data raster does not
+        // start at the format origin — anchor sampling on this geometry, never
+        // on a request-global canvas. `width`/`height` are this extent.
+        Region coverage;
     };
 
     // `mediaConvertSpirv` is the compiled mediaConvert kernel (the
@@ -99,7 +112,17 @@ public:
     // transparent-black raster in the requested geometry; a policy error is
     // refused here rather than decoding a substituted frame.
     [[nodiscard]] DecodedFrame acquire(const Document& document, const EffectiveSourceRequest& source,
-                                       const EvaluationRequest& request, std::uint64_t timeout_ns);
+                                       std::uint64_t timeout_ns);
+
+    // Header-only description of the frame this request resolves to (issue
+    // #88). No decode, no upload, no readback: a still/sequence frame is
+    // described from its file header, and a clip from its container metadata
+    // (ClipInfo), which is what the decode would report. A request whose policy
+    // requires failure is refused with the shared core wording, and a source
+    // whose authored geometry cannot be read at all is described as unknown
+    // geometry rather than given an invented format. Never touches session
+    // decode state, so it is safe on a planning thread while frames decode.
+    [[nodiscard]] ImageDescription describe(const Document& document, const EffectiveSourceRequest& source) override;
 
     // OCIO content identity of the configuration this session resolves source
     // color against ("" when no configuration is available). The GPU executor
@@ -160,24 +183,37 @@ private:
     // Requires colorMutex_.
     [[nodiscard]] std::shared_ptr<const media::OcioConfigSnapshot> snapshotLocked() const;
 
-    // A cleared transparent-black device image in the requested geometry,
-    // retained and reused per raster size.
-    [[nodiscard]] std::shared_ptr<const gpu::Image> transparentBlack(int width, int height, std::uint64_t timeout_ns);
+    // One cleared full-resolution sample, retained under mutex_.
+    [[nodiscard]] std::shared_ptr<const gpu::Image> transparentBlack(std::uint64_t timeout_ns);
 
     // Inserts a decoded frame into the bounded least-recently-used cache.
     // target frame shares ownership with the returned DecodedFrame. The
     // frame's actual pixel aspect is cached alongside it so a reused raster
     // reports the same source metadata.
     // One retained decoded raster plus the metadata a reuse must report with
-    // it: the source pixel aspect and the frame's interpretation.
+    // it: the source pixel aspect, the frame's interpretation, and the
+    // description/coverage the frame was decoded under — a reused raster that
+    // forgot either would describe the same pixels differently.
     struct CachedFrame {
         std::shared_ptr<const gpu::Image> image;
         float pixelAspect{1.0F};
         ColorInterpretation color{ColorInterpretation::SceneLinear};
+        ImageDescription description;
+        Region coverage;
     };
 
     void cachePut(const std::pair<std::string, std::int64_t>& cacheKey, std::shared_ptr<const gpu::Image> image,
-                  float pixelAspect, ColorInterpretation color);
+                  float pixelAspect, ColorInterpretation color, const ImageDescription& description,
+                  const Region& coverage);
+
+    // Serves one cached frame and marks it most recently used, or nothing when
+    // the frame is not cached. `required` (when supplied) must equal the cached
+    // frame's description: a raster decoded under a different header — a changed
+    // format, data bounds or pixel aspect — is never served for the current one,
+    // while pixel-only edits stay under the explicit revision/reload contract
+    // because a description cannot observe them. Requires mutex_.
+    [[nodiscard]] std::optional<DecodedFrame> cachedLocked(const std::pair<std::string, std::int64_t>& cacheKey,
+                                                           const ImageDescription* required);
 
     gpu::Instance& instance_;
     gpu::Device& device_;
@@ -195,7 +231,7 @@ private:
     mutable std::map<std::string, std::shared_ptr<const media::InputColorCache>> colors_;
     mutable bool identityResolved_{false};
     mutable std::string identity_;
-    std::map<std::pair<int, int>, std::shared_ptr<const gpu::Image>> blackFrames_;
+    std::shared_ptr<const gpu::Image> blackFrame_;
 
     // Bounded runtime state. kMaxDecoders bounds open decoder contexts
     // (decode queues and NVDEC surfaces are the expensive resource);
@@ -206,7 +242,11 @@ private:
     std::map<std::string, DecoderState> decoders_;
     std::deque<std::string> decoderOrder_;           // LRU: front = least recently used
     std::map<std::string, DecodeKind> decodeKinds_;  // memoized, guarded by mutex_
-    // cached image plus its actual source pixel aspect and interpretation.
+    // Cached image plus the metadata it must be reported with: its actual source
+    // pixel aspect, interpretation and description/coverage. An image frame is
+    // only served when the frame's CURRENT header still describes it, so an
+    // in-place format/data-window/aspect rewrite never returns a stale raster or
+    // its old geometry.
     std::map<std::pair<std::string, std::int64_t>, CachedFrame> frames_;
     std::deque<std::pair<std::string, std::int64_t>> frameOrder_;  // LRU, same convention
 };

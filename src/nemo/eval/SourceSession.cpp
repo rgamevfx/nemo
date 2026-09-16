@@ -1,5 +1,6 @@
 #include "nemo/eval/SourceSession.hpp"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -49,6 +50,23 @@ namespace {
     choice.hints = source.interpretation;
     choice.nodeHintKeys = source.nodeInterpretationKeys;
     return choice;
+}
+
+// The description of a frame that occupies one whole raster (issue #88): a
+// decoded clip frame covers its extent, so its format and data bounds are that
+// raster; a policy-produced cleared frame holds no authored samples at all, so
+// it keeps its source's format while `dataBounds` is empty. One builder, so a
+// cleared frame and a decoded frame can never describe their shared format
+// differently.
+[[nodiscard]] ImageDescription rasterDescription(const Region& format, const Region& dataBounds,
+                                                 const float pixelAspect, const ColorInterpretation color) {
+    return ImageDescription{.format = format,
+                            .dataBounds = dataBounds,
+                            .pixelAspect = pixelAspect,
+                            .channels = {"R", "G", "B", "A"},
+                            .precision = Precision::Float32,
+                            .association = ImageAssociation::Straight,
+                            .color = color};
 }
 
 }  // namespace
@@ -111,17 +129,13 @@ std::shared_ptr<const media::InputColorCache> SourceSession::colorFor(const std:
     return created;
 }
 
-std::shared_ptr<const gpu::Image> SourceSession::transparentBlack(const int width, const int height,
-                                                                  const std::uint64_t timeout_ns) {
-    // A Black policy is real transparent source output, not a substituted
-    // frame: the raster is cleared on the device and retained per geometry, so
-    // repeated black frames neither re-upload host arrays nor re-clear.
-    const auto key = std::make_pair(width, height);
-    if (const auto found = blackFrames_.find(key); found != blackFrames_.end()) {
-        return found->second;
-    }
-    gpu::Image image = allocator_.create_image(static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1,
-                                               VK_FORMAT_R32G32B32A32_SFLOAT,
+std::shared_ptr<const gpu::Image> SourceSession::transparentBlack(const std::uint64_t timeout_ns) {
+    // Empty data needs a valid binding, not a request-sized source raster.
+    // Retain one cleared full-resolution sample; all other coordinates are
+    // transparent outside its coverage.
+    if (blackFrame_)
+        return blackFrame_;
+    gpu::Image image = allocator_.create_image(1, 1, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
                                                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                                2);
@@ -148,9 +162,51 @@ std::shared_ptr<const gpu::Image> SourceSession::transparentBlack(const int widt
     if (!queue.wait(*completion, timeout_ns)) {
         throw gpu::GpuException(gpu::GpuError::SubmissionTimeout, "transparent-black source did not complete");
     }
-    auto shared = std::make_shared<const gpu::Image>(std::move(image));
-    blackFrames_.emplace(key, shared);
-    return shared;
+    blackFrame_ = std::make_shared<const gpu::Image>(std::move(image));
+    return blackFrame_;
+}
+
+ImageDescription SourceSession::describe(const Document& document, const EffectiveSourceRequest& source) {
+    if (source.policyError) {
+        // The shared wording, raised before any pixel work: a request that
+        // cannot produce pixels is never given a geometry to plan with.
+        failRequest(source, nemo::sourcePolicyProblem(source));
+    }
+    const ColorInterpretation color =
+        source.dataBypass() ? ColorInterpretation::Data : ColorInterpretation::SceneLinear;
+    const std::string context = "source '" + source.sourceKey + "'";
+    // A still or image-sequence reference is described from its file header
+    // through the shared media owner, which also decides the geometry a Black
+    // policy frame still inherits. No plane is loaded.
+    if (resolvesToImageData(source.path)) {
+        const std::shared_ptr<const media::InputColorCache> colors = colorFor(document.color.workingSpace);
+        return media::describeSourceImage(*colors, colorChoiceOf(source), source, context);
+    }
+    // Container metadata must not require a usable pixel conversion backend.
+    try {
+        const media::ClipInfo info = media::inspectClipHeader(source.path);
+        const float pixelAspect = validatedPixelAspect(info.pixelAspect, source, context);
+        const Region format{0, 0, std::max(info.width, 0), std::max(info.height, 0)};
+        // A Black policy frame holds no authored samples: its format and pixel
+        // aspect are the container's, and its data bounds are EMPTY, which is
+        // how the contract separates a known-empty image from unavailable
+        // geometry.
+        const Region dataBounds = source.transparentBlack ? Region{} : format;
+        return ImageDescription{.format = format,
+                                .dataBounds = dataBounds,
+                                .pixelAspect = pixelAspect,
+                                .channels = {"R", "G", "B", "A"},
+                                .precision = Precision::Float32,
+                                .association = ImageAssociation::Straight,
+                                .color = color};
+    } catch (const EvaluationException&) {
+        throw;
+    } catch (const std::exception& error) {
+        // No container metadata at all: the source's geometry is unknown, which
+        // is a failure naming the source and its path — never a placeholder
+        // format the plan could mistake for authored geometry.
+        failRequest(source, std::string{"the source's metadata is unavailable: "} + error.what());
+    }
 }
 
 SourceSession::Probe SourceSession::probe(const Document& document, const std::string& key) const {
@@ -196,19 +252,38 @@ SourceSession::DecoderState SourceSession::openState(const Document& document, c
 }
 
 void SourceSession::cachePut(const std::pair<std::string, std::int64_t>& cacheKey,
-                             std::shared_ptr<const gpu::Image> image, float pixelAspect,
-                             const ColorInterpretation color) {
+                             std::shared_ptr<const gpu::Image> image, const float pixelAspect,
+                             const ColorInterpretation color, const ImageDescription& description,
+                             const Region& coverage) {
     while (frames_.size() >= kMaxCachedFrames) {
         const auto evicted = frameOrder_.front();
         frameOrder_.pop_front();
         frames_.erase(evicted);
     }
-    frames_[cacheKey] = {std::move(image), pixelAspect, color};
+    frames_[cacheKey] = {std::move(image), pixelAspect, color, description, coverage};
     frameOrder_.push_back(cacheKey);
 }
 
+std::optional<SourceSession::DecodedFrame>
+SourceSession::cachedLocked(const std::pair<std::string, std::int64_t>& cacheKey, const ImageDescription* required) {
+    const auto found = frames_.find(cacheKey);
+    if (found == frames_.end() || (required != nullptr && !(found->second.description == *required))) {
+        return std::nullopt;
+    }
+    std::erase(frameOrder_, cacheKey);
+    frameOrder_.push_back(cacheKey);
+    return DecodedFrame{.image = found->second.image,
+                        .width = static_cast<int>(found->second.image->extent().width),
+                        .height = static_cast<int>(found->second.image->extent().height),
+                        .frame = cacheKey.second,
+                        .pixelAspect = found->second.pixelAspect,
+                        .color = found->second.color,
+                        .description = found->second.description,
+                        .coverage = found->second.coverage};
+}
+
 SourceSession::DecodedFrame SourceSession::acquire(const Document& document, const EffectiveSourceRequest& source,
-                                                   const EvaluationRequest& request, const std::uint64_t timeout_ns) {
+                                                   const std::uint64_t timeout_ns) {
     if (source.policyError) {
         // One wording for the failure, shared with the CPU reference: the core
         // helper names the source relationship (boundary vs missing member) and
@@ -236,16 +311,30 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
         }
     }
 
+    // A Black policy frame still describes itself: the admitted header's format,
+    // pixel aspect, channels, association and interpretation, with EMPTY data
+    // bounds because a cleared frame authors no samples. The query is
+    // header-only and happens before the decode lock, so a black range neither
+    // decodes nor holds the decode lock while it reads a header. A source whose
+    // metadata cannot be read at all fails by name and path (describe).
+    const std::optional<ImageDescription> blackDescription =
+        source.transparentBlack ? std::optional<ImageDescription>{describe(document, source)} : std::nullopt;
+
     std::lock_guard<std::mutex> lock(mutex_);
-    // Boundary/missing policy outcome: transparent black is real source output
-    // in the requested raster, in the request's own geometry. The cleared image
-    // is retained per geometry, so repeated black frames neither re-upload host
-    // arrays nor re-clear, and no decode is opened.
+    // Empty data remains a connected image with its header's logical format.
+    // The retained cleared sample has full-resolution coverage independent of
+    // preview density; no decoder is opened.
     if (source.transparentBlack) {
-        const int width = std::max(scaledDimension(request.region.width, request.samplingScale), 1);
-        const int height = std::max(scaledDimension(request.region.height, request.samplingScale), 1);
-        auto black = transparentBlack(width, height, timeout_ns);
-        return DecodedFrame{std::move(black), width, height, frame, 1.0F, ColorInterpretation::SceneLinear};
+        auto black = transparentBlack(timeout_ns);
+        const ImageDescription& description = *blackDescription;
+        return DecodedFrame{.image = std::move(black),
+                            .width = 1,
+                            .height = 1,
+                            .frame = frame,
+                            .pixelAspect = description.pixelAspect,
+                            .color = description.color,
+                            .description = description,
+                            .coverage = Region{0, 0, 1, 1}};
     }
 
     // Frame-independent decode identity (core's single owner): every frame of
@@ -255,24 +344,6 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
     appendSourceDecodeIdentity(runtimeKey, source, document.color.workingSpace, colorConfigIdentity());
 
     const std::pair<std::string, std::int64_t> cacheKey{runtimeKey, frame};
-
-    // Cached frame (any representation): the same decode serves every
-    // sibling representation and evaluation re-entry.
-    if (const auto cached = frames_.find(cacheKey); cached != frames_.end()) {
-        for (auto it = frameOrder_.begin(); it != frameOrder_.end(); ++it) {
-            if (*it == cacheKey) {
-                frameOrder_.erase(it);
-                frameOrder_.push_back(cacheKey);
-                break;
-            }
-        }
-        return DecodedFrame{cached->second.image,
-                            static_cast<int>(cached->second.image->extent().width),
-                            static_cast<int>(cached->second.image->extent().height),
-                            frame,
-                            cached->second.pixelAspect,
-                            cached->second.color};
-    }
 
     // Classify the reference once per runtime key (issue #62): a still or
     // image-sequence pattern decodes through the shared image read path, a clip
@@ -289,17 +360,36 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
 
     const std::string context = "source '" + key + "'";
     if (kind == DecodeKind::Image) {
+        // The frame's CURRENT header is queried before any cache lookup: a
+        // rewritten format, data window or pixel aspect at the same path changes
+        // the description, and a raster decoded under the previous header must
+        // never be served beneath it (nor reported with the old geometry). The
+        // query is header-only, so a hit still costs no decode.
+        const media::ImageHeader header = media::inspectImageHeader(media::resolveFramePath(source.path, frame));
+        const ImageDescription current = media::describeImageFrame(header, source);
+        if (auto reuse = cachedLocked(cacheKey, &current)) {
+            return *std::move(reuse);
+        }
+
         // Shared source-fill path for stills/sequences: media::readImageFrame
         // already returns working-space straight-alpha float32 RGBA (or Data for
         // a Raw bypass). Upload it as one device image and leave it in GENERAL —
         // the layout the executor's decoded-frame hand-off assumes
         // (afterExternalWriteBeforeRead in GpuExecutor.cpp); uploadImage leaves
         // it SHADER_READ_ONLY_OPTIMAL.
-        const media::ImageFrame decoded =
-            media::readImageFrame(*color, colorChoiceOf(source), source.path, frame, context);
+        const media::ImageFrame decoded = media::readImageFrame(*color, colorChoiceOf(source), header, context);
         const int width = decoded.image.width();
         const int height = decoded.image.height();
         const float pixelAspect = validatedPixelAspect(decoded.info.pixelAspect, source, context);
+        // The description and coverage come from the same read the raster came
+        // from, so the retained image can never be bound under a geometry or a
+        // meaning its samples do not have.
+        const Region coverage = decoded.info.coverage;
+        if (coverage.width != width || coverage.height != height) {
+            failRequest(source, "decoded raster is " + std::to_string(width) + "x" + std::to_string(height) +
+                                    " but its described coverage is " + std::to_string(coverage.width) + "x" +
+                                    std::to_string(coverage.height));
+        }
         gpu::Image image = allocator_.create_image(
             static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1, VK_FORMAT_R32G32B32A32_SFLOAT,
             // SAMPLED is not used by the executor (it binds this as a storage
@@ -319,8 +409,24 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, timeout_ns);
         std::shared_ptr<const gpu::Image> shared = std::make_shared<gpu::Image>(std::move(image));
         const ColorInterpretation interpretation = decoded.info.color;
-        cachePut(cacheKey, shared, pixelAspect, interpretation);
-        return DecodedFrame{std::move(shared), width, height, frame, pixelAspect, interpretation};
+        const ImageDescription& description = decoded.info.description;
+        cachePut(cacheKey, shared, pixelAspect, interpretation, description, coverage);
+        return DecodedFrame{.image = std::move(shared),
+                            .width = width,
+                            .height = height,
+                            .frame = frame,
+                            .pixelAspect = pixelAspect,
+                            .color = interpretation,
+                            .description = description,
+                            .coverage = coverage};
+    }
+
+    // A clip frame's geometry comes from its open decode owner, not from a
+    // header this session can query cheaply: a container whose geometry changed
+    // in place follows the revision/reload contract, which reopens the decoder,
+    // exactly as its pixel content does.
+    if (auto reuse = cachedLocked(cacheKey, nullptr)) {
+        return *std::move(reuse);
     }
 
     // Open/position a decoder: a request behind the stream position (backwards
@@ -358,13 +464,22 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
         }
         const int width = static_cast<int>(image->extent().width);
         const int height = static_cast<int>(image->extent().height);
+        const Region coverage{0, 0, width, height};
+        const ImageDescription description = rasterDescription(coverage, coverage, pixelAspect, interpretation);
         const std::int64_t decodedFrame = stateIt->second.nextFrame++;
         auto shared = std::shared_ptr<const gpu::Image>(std::move(image));
         if (decodedFrame == frame) {
-            cachePut(cacheKey, shared, pixelAspect, interpretation);
-            return DecodedFrame{std::move(shared), width, height, frame, pixelAspect, interpretation};
+            cachePut(cacheKey, shared, pixelAspect, interpretation, description, coverage);
+            return DecodedFrame{.image = std::move(shared),
+                                .width = width,
+                                .height = height,
+                                .frame = frame,
+                                .pixelAspect = pixelAspect,
+                                .color = interpretation,
+                                .description = description,
+                                .coverage = coverage};
         }
-        cachePut({runtimeKey, decodedFrame}, std::move(shared), pixelAspect, interpretation);
+        cachePut({runtimeKey, decodedFrame}, std::move(shared), pixelAspect, interpretation, description, coverage);
     }
 }
 

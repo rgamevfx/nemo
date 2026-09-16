@@ -6,9 +6,17 @@
 // payload preparation, all assembled through the same production
 // NodeContributions/EffectLibrary builders the built-ins use. It never
 // impersonates Grade and never reaches a private evaluator branch.
+//
+// Issue #88 extension: the same example also declares its own image meaning and
+// its own input demand. An authored integer shift makes it read its input at an
+// absolute image-space offset, so the node describes a data window translated by
+// that shift and declares an input requirement translated the other way — a
+// demand that genuinely differs from the node's own region. Nothing outside this
+// module and its registration entry changes for that.
 
 #pragma once
 
+#include <cstdint>
 #include <string_view>
 
 #include "nemo/core/evaluation/NodeContributions.hpp"
@@ -28,10 +36,18 @@ inline constexpr std::string_view kNodeType{"nemo.test.affine"};
 // rectangle — the declared capability, not a node-name branch, decides.
 inline constexpr std::string_view kWholeFrameNodeType{"nemo.test.affineWholeFrame"};
 
+// Largest authored read offset the example accepts, in full-resolution pixels.
+// The bound keeps the declared demand and the read index inside the executor's
+// integer coordinate range; a larger value is a defined node-identifying error
+// rather than an overflow.
+inline constexpr std::int64_t kMaxAffineShift{1 << 20};
+
 // Implementation version shared by the schema, the CPU adapter, and the
 // native Slang adapter. A changed implementation requires a new version so it
-// cannot serve a stale cached result.
-inline constexpr std::uint64_t kImplementationVersion{1};
+// cannot serve a stale cached result. 2: the example declares its own
+// description and input demand and reads at an absolute image-space offset
+// (issue #88).
+inline constexpr std::uint64_t kImplementationVersion{2};
 
 [[nodiscard]] NodeDescriptor affineDescriptor();
 [[nodiscard]] NodeDescriptor affineWholeFrameDescriptor();

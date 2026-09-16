@@ -123,6 +123,22 @@ bool ViewerRuntime::probe(Document document, std::string source, std::uint64_t i
     return accepted;
 }
 
+bool ViewerRuntime::describe(Document document, EvaluationRequest request, std::uint64_t id,
+                             eval::ViewerDestination destination, std::string colorConfigPath) {
+    bool accepted = false;
+    {
+        std::lock_guard lock(mutex_);
+        if (!stopping_)
+            accepted = scheduler_.describe(std::move(document), std::move(request), id, destination,
+                                           std::chrono::steady_clock::now(), std::move(colorConfigPath));
+        // A description is metadata for the next request, not a result to show:
+        // it never displaces the destination's current frame.
+    }
+    if (accepted)
+        ready_.notify_one();
+    return accepted;
+}
+
 bool ViewerRuntime::requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
                                  eval::ViewerDestination destination, std::string colorConfigPath) {
     bool accepted = false;
@@ -291,6 +307,9 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
             if (pending.kind == eval::ViewerRequestKind::Probe) {
                 publish(SourceProbeResult{session->probeSource(*pending.document, pending.source), pending.id},
                         pending);
+            } else if (pending.kind == eval::ViewerRequestKind::Describe) {
+                publish(ViewerTargetDescription{session->describe(*pending.document, pending.request), pending.id},
+                        pending);
             } else {
                 auto publicationGuard = [this, pending] { return scheduler_.isCacheCurrent(pending); };
                 auto frame = session->render(*pending.document, pending.request, 10'000'000'000ULL, pending.id,
@@ -320,9 +339,9 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
                         auto presentation =
                             gpu::prepareViewerPresentation(*device_, *allocator_, *presentationDevice_, *frame.image,
                                                            frame.layout.color, presentationShader, channel);
-                        auto result = std::make_shared<ViewerResult>(
-                            ViewerResult{std::move(presentation), frame.layout, frame.request, pending.id,
-                                         frame.revision, frame.cacheHit, pending.requestedAt, pending.destination});
+                        auto result = std::make_shared<ViewerResult>(ViewerResult{
+                            std::move(presentation), frame.layout, frame.description, frame.request, pending.id,
+                            frame.revision, frame.cacheHit, pending.requestedAt, pending.destination});
                         publish(std::shared_ptr<const ViewerResult>(std::move(result)), pending);
                     }
                 }

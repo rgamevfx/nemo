@@ -30,6 +30,11 @@ namespace nemo::ui {
 struct ViewerResult {
     gpu::ViewerPresentation presentation;
     ImageLayout frame;
+    // The described output this result was produced from (issue #88): the
+    // panel frames its view and builds its next request from the ACTUAL
+    // authored format, data bounds and pixel aspect, not from a request-global
+    // canvas guess.
+    ImageDescription description;
     EvaluationRequest request;
     std::uint64_t requestId{};
     std::uint64_t revision{};
@@ -43,11 +48,19 @@ struct SourceProbeResult {
     eval::ViewerSession::SourceProbe source;
     std::uint64_t requestId{};
 };
+// Metadata-only answer to a Describe request: the target's authored output
+// description, resolved on the worker through the shared dependency planner
+// (no pixels, no device work, no decoder measurement).
+struct ViewerTargetDescription {
+    ImageDescription description;
+    std::uint64_t requestId{};
+};
 struct ViewerFailure {
     std::string message;
     std::uint64_t requestId{};
 };
-using ViewerWorkResult = std::variant<std::shared_ptr<const ViewerResult>, SourceProbeResult, ViewerFailure>;
+using ViewerWorkResult =
+    std::variant<std::shared_ptr<const ViewerResult>, SourceProbeResult, ViewerTargetDescription, ViewerFailure>;
 
 struct ViewerRuntimeCounts {
     std::uint64_t queued{};
@@ -111,6 +124,12 @@ public:
     bool probe(Document document, std::string source, std::uint64_t id,
                eval::ViewerDestination destination = eval::ViewerDestination::Interactive,
                std::string colorConfigPath = {});
+    // Metadata-only target description (issue #88). Queued through the same
+    // bounded worker admission as a render, so the panel learns the actual
+    // authored format without touching media, the device, or the GUI thread.
+    bool describe(Document document, EvaluationRequest request, std::uint64_t id,
+                  eval::ViewerDestination destination = eval::ViewerDestination::Interactive,
+                  std::string colorConfigPath = {});
     // `first` and `last` are inclusive local-time frames. The range is held
     // as one lazy descriptor per destination and produces cache publications
     // only; it never replaces that destination's interactive viewer result.

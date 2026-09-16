@@ -12,7 +12,10 @@ NodeDescriptor testPatternDescriptor() {
     return NodeDescriptor{.type = "testpattern",
                           .displayName = "Test Pattern",
                           .group = "Generators",
-                          .implementationVersion = 2,
+                          // 3: the raster carries the owning network's described
+                          // canvas format instead of storage defaults
+                          // (issue #88).
+                          .implementationVersion = 3,
                           .inputs = {},
                           .outputs = {{PortKind::Image, "color"}},
                           .parameters = {},
@@ -27,7 +30,7 @@ NodeDescriptor testPatternDescriptor() {
 // and reduced sampling never re-normalize the generator.
 CpuImage executeTestPattern(const CpuNodeContext& context) {
     const EvaluationRequest& request = context.request;
-    CpuImage output(generatorRasterLayout(context));
+    CpuImage output(effectRasterLayout(context));
     const int scale = request.samplingScale;
     const int width = output.width();
     const int height = output.height();

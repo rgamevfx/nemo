@@ -85,9 +85,13 @@ struct ClipInfo {
     int height = 0;
     double frameRate = 0.0;
     int64_t frameCount = -1;   // -1 when the container does not declare it
-    double pixelAspect = 1.0;  // Display width / height of one source pixel.
+    double pixelAspect = 1.0;  // Display width / height; unspecified clip PAR defaults to square.
     FrameCountQuality frameCountQuality{FrameCountQuality::Unknown};
 };
+
+// Container/stream description without opening a decoder, selecting a device,
+// or producing pixels. Pixel-format support is checked only during execution.
+[[nodiscard]] ClipInfo inspectClipHeader(const std::string& path);
 
 // How the clip is being decoded, with the measured reason when the
 // hardware path is not used.

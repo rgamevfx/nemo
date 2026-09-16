@@ -21,6 +21,11 @@ struct ViewerFrame {
     // asynchronous viewer cache share this ownership; no image copy occurs.
     std::shared_ptr<const gpu::Image> image;
     ImageLayout layout;
+    // The described output this frame was produced from (issue #88): its actual
+    // format, data bounds, pixel aspect, channels and interpretation. Framing
+    // consumers read this instead of guessing a global canvas, and because it
+    // travels with the frame no per-frame description round trip is needed.
+    ImageDescription description;
     EvaluationRequest request;
     std::uint64_t revision{};
     std::uint64_t requestId{};
@@ -56,6 +61,16 @@ public:
                                      std::uint64_t timeout_ns = 10'000'000'000ULL, std::uint64_t generation = 0,
                                      ViewerDestination destination = ViewerDestination::Interactive,
                                      CachePublicationGuard publicationGuard = {});
+    // Worker-only metadata query (issue #88): the target's authored output
+    // description — its actual format, data bounds, pixel aspect, channels and
+    // interpretation — resolved through the same shared dependency planner the
+    // render path uses, WITHOUT acquiring a pixel or touching the device.
+    // `request` identifies the target (network, output, local time); its domain
+    // is not consulted, so the caller can ask before it knows the format. Real
+    // media is described from the source session's metadata, never by decoding
+    // a frame to measure it.
+    [[nodiscard]] ImageDescription describe(const Document& document, const EvaluationRequest& request);
+
     // Configures persistent requested-only display cache storage. Setup is
     // worker-side and may allocate media resources; render remains live-first.
     void configureCache(const ViewerCacheOptions& options);

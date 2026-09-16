@@ -46,6 +46,8 @@
 
 namespace nemo {
 
+struct EffectiveSourceRequest;
+
 // Canonical, content-derived identity of one node's reusable result.
 // `hash` is the FNV-1a 64 of `canonical`; equality compares the canonical
 // form, so hash collisions cannot cause wrong reuse.
@@ -68,10 +70,27 @@ struct ResultKey {
 // fallback: a result produced under an unknown configuration is never shared
 // with one produced under a known configuration, and editing a config in place
 // cannot alias a previously cached result.
+//
+// `description` is the described image this key is computed for (issue #88):
+// its logical format and signed data bounds, its pixel aspect, channel naming,
+// precision, alpha association and colour interpretation all participate, so a
+// result can never be served for an image with different meaning. `source` is
+// the node's pre-resolved effective source request, supplied for a source node
+// so the key carries exactly the frame the executor reads instead of resolving
+// that request a second time.
 struct KeyContext {
     std::uint64_t implementationTag{0};
     std::string colorConfigIdentity;
+    const ImageDescription* description{nullptr};
+    const EffectiveSourceRequest* source{nullptr};
 };
+
+// Version of the image/region coordinate contract (issue #88) mixed into every
+// content key. A description states what an image is; this states what the
+// numbers in it mean, so a cached result produced under a different coordinate
+// or window convention can never be reused. Bump it whenever the meaning of a
+// region, a data window, a sampling lattice or a described image changes.
+inline constexpr std::string_view kImageCoordinateContract = "image-space-v1";
 
 // Input-key contribution for a declared-but-absent optional input slot. It is
 // a fixed, executor-independent token that keeps the slot's position in the

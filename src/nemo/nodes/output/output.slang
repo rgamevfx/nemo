@@ -7,7 +7,7 @@
 //   - in_color : image2D input (the composed result, port 0)
 //   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
 // parameters: none
-// bindings (native binding contract v3, see GpuGeometry.slang):
+// bindings (native binding contract v5, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 2 : per-input spatial geometry (the upstream raster origin)
 //   set 1, binding 0 : input image2D (port 0)
@@ -15,8 +15,10 @@
 //   This node declares no payload of its own, so set 0 binding 1 is unused.
 // dependencies:
 //   region: output pixel (x, y) depends only on the input pixel holding the
-//     same full-resolution sample, located through its own raster origin
-//     (region evaluation and wider cache-backed inputs).
+//     same full-resolution sample, located through its own raster origin and
+//     extent (region evaluation, wider cache-backed inputs, signed or
+//     beyond-format origins). A sample the input raster does not hold is
+//     outside its data and reads as transparent black (issue #88).
 //   channels: RGBA uniform.
 //   temporal: none.
 // quality_modes: 1
@@ -26,12 +28,17 @@
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
-    // meta: (full image width, full image height, region.x, region.y)
-    uint4 meta;
+    // meta: (full image width, full image height, region.x, region.y; signed)
+    int4 meta;
     // meta2: raster (image width, image height, samplingScale, 0) — issue #11
     uint4 meta2;
     // misc: (localTime, 0, 0, 0)
     float4 misc;
+    // support: half-open RASTER-INDEX rect (x, y, width, height) of the samples
+    // that ARE this image's data; (-1,-1,-1,-1) means the raster declares no
+    // support (a node-local scratch), a non-positive size means every sample is
+    // transparent black. Samples outside it must be written transparent black.
+    int4 support;
 };
 
 [[vk::binding(0, 1)]]
@@ -46,5 +53,20 @@ void main(uint3 tid : SV_DispatchThreadID)
 {
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    out_color[p] = in_color.Load(int2(p) + inputGeometry[0].regionAndOffset.zw);
+    // The described image's data support (native binding contract v5): a sample
+    // outside it is transparent black, never an upstream value carried there.
+    if (support.z >= 0 && support.w >= 0 &&
+        ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
+         (int)p.y >= support.y + support.w)) {
+        out_color[p] = float4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+    // The upstream result may cover a wider, differently anchored or smaller
+    // rectangle of the same lattice; its own origin and extent place it. A
+    // sample it does not hold is outside its data: transparent black
+    // (issue #88), never an out-of-bounds load.
+    int2 q = int2(p) + inputGeometry[0].regionAndOffset.zw;
+    int2 extent = int2(inputGeometry[0].extent.xy);
+    bool inside = q.x >= 0 && q.y >= 0 && q.x < extent.x && q.y < extent.y;
+    out_color[p] = inside ? in_color.Load(q) : float4(0.0, 0.0, 0.0, 0.0);
 }

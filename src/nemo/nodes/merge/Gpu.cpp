@@ -43,19 +43,20 @@ constexpr const char* kMergeGlslBody = R"GLSL(
 // to a valid dummy descriptor with maskPresent = 0. Every input is read at
 // the pixel holding the same full-resolution sample, located through its own
 // raster origin (region evaluation, wider cache-backed inputs).
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_a;     // port A: background
-layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_b;     // port B: foreground
-layout(rgba32f, set = 1, binding = 2) restrict readonly uniform image2D in_mask;  // optional port 2
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_a;     // port A: background
+layout(set = 1, binding = 1) restrict readonly uniform image2D in_b;     // port B: foreground
+layout(set = 1, binding = 2) restrict readonly uniform image2D in_mask;  // optional port 2
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v5): a sample
+    // The described image's data support (native binding contract v6): a sample
     // outside it is transparent black, never a composite of operands that hold
-    // nothing there.
+    // nothing there, and every plane — auxiliary ones included — is initialized
+    // (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuStore(out_color, ivec2(p), vec4(0.0));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
         return;
     }
     // Each operand is read at the pixel holding the same full-resolution sample,
@@ -68,8 +69,10 @@ void main() {
     ivec2 fgExtent = ivec2(inputGeometry[1].extent.xy);
     bool bgInside = bgPixel.x >= 0 && bgPixel.y >= 0 && bgPixel.x < bgExtent.x && bgPixel.y < bgExtent.y;
     bool fgInside = fgPixel.x >= 0 && fgPixel.y >= 0 && fgPixel.x < fgExtent.x && fgPixel.y < fgExtent.y;
-    vec4 bg = bgInside ? imageLoad(in_a, bgPixel) : vec4(0.0);
-    vec4 fg = fgInside ? imageLoad(in_b, fgPixel) : vec4(0.0);
+    // Port A is the background/base and port B the foreground/source: each is
+    // gathered through the plane roles of its own geometry entry (issue #90).
+    vec4 bg = bgInside ? gpuLoadRgba(in_a, bgPixel, inputGeometry[0].rgba, bgExtent.y) : vec4(0.0);
+    vec4 fg = fgInside ? gpuLoadRgba(in_b, fgPixel, inputGeometry[1].rgba, fgExtent.y) : vec4(0.0);
 
     int operation = int(op.x);
     vec4 composite;
@@ -96,13 +99,19 @@ void main() {
         ivec2 maskExtent = ivec2(inputGeometry[2].extent.xy);
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
-        float selected = maskInside ? clamp(imageLoad(in_mask, maskPixel)[channel], 0.0, 1.0) : 0.0;
+        float selected =
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[2].rgba, maskExtent.y)[channel], 0.0, 1.0)
+                       : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the background, weight 1 the
     // unmasked composite, so Mix 0 or zero coverage returns the background.
     float weight = coverage * mask.z;
-    gpuStore(out_color, ivec2(p), weight <= 0.0 ? bg : (weight >= 1.0 ? composite : mix(bg, composite, weight)));
+    vec4 result = weight <= 0.0 ? bg : (weight >= 1.0 ? composite : mix(bg, composite, weight));
+    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
+    // The background is this node's main input: every plane the composite did
+    // not write keeps its named channel from A at the same coordinate (#90).
+    gpuPreserveAuxLattice(out_color, ivec2(p), int(meta2.y), in_a, bgExtent.y, channels.x);
 }
 )GLSL";
 
@@ -110,7 +119,7 @@ void main() {
     return EffectPassDefinition{
         .id = "merge",
         .shader = "merge/merge",
-        .glsl = nemo::nodes::gpuGlsl(kMergeGlslPayload, kMergeGlslBody, true),
+        .glsl = nemo::nodes::gpuGlsl(kMergeGlslPayload, kMergeGlslBody),
         // Declared port order: A, B, optional mask.
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}, EffectImageRef{EffectImageKind::Input, 1},
                    EffectImageRef{EffectImageKind::Input, 2}},

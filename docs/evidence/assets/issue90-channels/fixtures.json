@@ -1,0 +1,113 @@
+{
+  "source": "https://openexr.com/en/latest/OpenEXRFileLayout.html",
+  "method": "Independent uncompressed scanline FLOAT EXR byte writer using Python struct; no Nemo, OIIO or OpenEXR writer code",
+  "files": [
+    {
+      "file": "docs/evidence/assets/issue90-channels/multilayer-b.exr",
+      "channels": [
+        "A",
+        "B",
+        "G",
+        "R",
+        "beauty.B",
+        "beauty.G",
+        "beauty.R",
+        "depth.Z",
+        "matte.coverage",
+        "motion.u",
+        "motion.v"
+      ],
+      "data_window": [
+        0,
+        0,
+        7,
+        7
+      ],
+      "display_window": [
+        0,
+        0,
+        7,
+        7
+      ],
+      "bytes": 3455
+    },
+    {
+      "file": "docs/evidence/assets/issue90-channels/data-a.exr",
+      "channels": [
+        "A",
+        "depth.Z",
+        "matte.coverage"
+      ],
+      "data_window": [
+        2,
+        2,
+        5,
+        5
+      ],
+      "display_window": [
+        0,
+        0,
+        7,
+        7
+      ],
+      "bytes": 588
+    },
+    {
+      "file": "docs/evidence/assets/issue90-channels/overscan-a.exr",
+      "channels": ["A", "depth.Z", "matte.coverage"],
+      "data_window": [-2, 2, 1, 5],
+      "display_window": [0, 0, 7, 7],
+      "bytes": 588
+    },
+    {
+      "file": "docs/evidence/assets/issue90-channels/alpha-only.exr",
+      "channels": [
+        "A"
+      ],
+      "data_window": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "display_window": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "bytes": 301
+    }
+  ],
+  "values": {
+    "multilayer-b.exr": {
+      "R": 0.25,
+      "G": 0.5,
+      "B": 0.75,
+      "A": 1.0,
+      "beauty.R": 4.0,
+      "beauty.G": -5.0,
+      "beauty.B": 6.0,
+      "depth.Z": "10*x+y",
+      "motion.u": -2.0,
+      "motion.v": 3.0,
+      "matte.coverage": 0.125
+    },
+    "data-a.exr": {
+      "A": 0.625,
+      "matte.coverage": 0.625,
+      "depth.Z": 100.25
+    },
+    "overscan-a.exr": {
+      "A": 0.625,
+      "matte.coverage": 0.625,
+      "depth.Z": 100.25
+    },
+    "alpha-only.exr": {
+      "A": [
+        0.25,
+        0.75
+      ]
+    }
+  }
+}

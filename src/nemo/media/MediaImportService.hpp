@@ -99,7 +99,8 @@ struct MediaImportResult {
     // Actual decoded/stream evidence: the selected video stream, the declared
     // codec profile ("" when undeclared), and the validated plane count
     // (0 when no frame was produced). Stills report the image adapter's
-    // single interleaved RGBA plane as stream 0, plane 1.
+    // single interleaved plane of the file's own named channels as stream 0,
+    // plane 1.
     int streamIndex{-1};
     std::string profile;
     int planeCount{0};

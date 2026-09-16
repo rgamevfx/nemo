@@ -204,13 +204,15 @@ FocusScope {
                 theme: viewerPanel.theme
                 width: 78
                 height: 24
-                model: ["rgb"]
-                // Only the real RGB layer is offered. The depth layer is a
-                // reported capability boundary, not a fabricated option.
+                // The layers the target actually describes, with the root layer
+                // the channel-name convention starts from. A target that carries
+                // no other layer simply offers none: no layer is invented to
+                // fill the menu.
+                model: viewerPanel.controller.layers
                 currentIndex: Math.max(0, model.indexOf(viewerPanel.controller.layer))
                 onActivated: viewerPanel.controller.setLayer(currentText)
                 ToolTip.visible: hovered
-                ToolTip.text: "Depth layer is unavailable in the native viewer."
+                ToolTip.text: viewerPanel.controller.layerReason
                 Accessible.name: "Image layer"
             }
 
@@ -220,11 +222,13 @@ FocusScope {
                 theme: viewerPanel.theme
                 width: 78
                 height: 24
-                model: ["RGBA", "R", "G", "B", "A"]
+                // RGBA is the selected layer's composite; the rest are that
+                // layer's real channel names, in the order the target describes.
+                model: viewerPanel.controller.displayChannels
                 currentIndex: Math.max(0, model.indexOf(viewerPanel.controller.channel))
                 onActivated: viewerPanel.controller.setChannel(currentText)
                 ToolTip.visible: hovered
-                ToolTip.text: "Display channel."
+                ToolTip.text: "Display channel within the selected layer. RGBA is the layer's composite; a single data channel is isolated as itself."
                 Accessible.name: "Display channels"
             }
 

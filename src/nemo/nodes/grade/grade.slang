@@ -7,13 +7,15 @@
 //   - in_main : image2D input (main image, required port 0)
 //   - in_mask : image2D input (optional mask, port 1; bound to the main
 //     image as a valid dummy descriptor with maskPresent=0 when unconnected)
-//   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
+//   - out_color : image2D output (native R32_SFLOAT channel planes, straight
+//     alpha, scene-linear: logical pixel (x, y) of channel plane c at
+//     (x, y + c*logicalHeight), issue #90)
 // parameters:
 //   - blackpoint/whitepoint/lift/gain/multiply/offset/gamma : Color, per
 //     channel; channels: [RGB, RGBA, R, G, B, Alpha, None]; reverse;
 //     clampBlack (default true); clampWhite (default false); plus the common
 //     maskChannel/invertMask/mix controls.
-// bindings (native binding contract v5, see GpuGeometry.slang):
+// bindings (native binding contract v6, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms (meta is signed)
 //   set 0, binding 1 : node-local payload ("nemo.nodes.grade.payload.v1")
 //   set 0, binding 2 : per-input spatial geometry (main, mask)
@@ -59,6 +61,11 @@ cbuffer EffectUniforms {
     // support (a node-local scratch), a non-positive size means every sample is
     // transparent black. Samples outside it must be written transparent black.
     int4 support;
+    // channels: the produced raster's channel planes (issue #90):
+    // (plane count, 0, 0, 0).
+    uint4 channels;
+    // rgba: the produced plane index of each R,G,B,A role; -1 = role absent.
+    int4 rgba;
 };
 
 [[vk::binding(1, 0)]]
@@ -77,12 +84,12 @@ cbuffer GradePayload {
 };
 
 [[vk::binding(0, 1)]]
-RWTexture2D<float4> in_main;
+RWTexture2D<float> in_main;
 [[vk::binding(1, 1)]]
-RWTexture2D<float4> in_mask;
+RWTexture2D<float> in_mask;
 
 [[vk::binding(0, 2)]]
-RWTexture2D<float4> out_color;
+RWTexture2D<float> out_color;
 
 float signedPow(float x, float p)
 {
@@ -120,24 +127,28 @@ void main(uint3 tid : SV_DispatchThreadID)
 {
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    const int planeHeight = int(meta2.y);
 
-    // The described image's data support (native binding contract v5): a sample
-    // outside it is transparent black, never grade(0) fabricated there.
+    // The described image's data support (native binding contract v6): a sample
+    // outside it is transparent black, never grade(0) fabricated there. Every
+    // plane is initialized on that path (issue #90), auxiliary planes included.
     if (support.z >= 0 && support.w >= 0 &&
         ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
          (int)p.y >= support.y + support.w)) {
-        out_color[p] = float4(0.0, 0.0, 0.0, 0.0);
+        gpuZeroPlanes(out_color, int2(p), planeHeight, channels.x);
         return;
     }
 
     // Same-lattice inputs: the pixel holding the same full-resolution sample,
     // located through each input's own raster origin and extent. A sample the
     // input does not hold is outside its data (a smaller or empty data window):
-    // transparent black, never an out-of-bounds load.
+    // transparent black, never an out-of-bounds load. Each image carries its
+    // named channels as vertical planes, so the R/G/B/A roles are gathered
+    // through the pre-resolved indices of its geometry entry (issue #90).
     int2 mainPixel = int2(p) + inputGeometry[0].regionAndOffset.zw;
     int2 mainExtent = int2(inputGeometry[0].extent.xy);
     bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < mainExtent.x && mainPixel.y < mainExtent.y;
-    float4 orig = mainInside ? in_main.Load(mainPixel) : float4(0.0, 0.0, 0.0, 0.0);
+    float4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, mainExtent.y) : float4(0.0, 0.0, 0.0, 0.0);
     float4 processed = gradePixel(orig);
 
     float coverage = 1.0;
@@ -147,11 +158,17 @@ void main(uint3 tid : SV_DispatchThreadID)
         int2 maskExtent = int2(inputGeometry[1].extent.xy);
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
-        float selected = maskInside ? clamp(in_mask.Load(maskPixel)[channel], 0.0, 1.0) : 0.0;
+        float selected =
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[1].rgba, maskExtent.y)[channel], 0.0, 1.0)
+                       : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
     // processed pixel, so no HDR 0*inf cancellation occurs in lerp().
     float weight = coverage * mask.z;
-    out_color[p] = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : lerp(orig, processed, weight));
+    float4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : lerp(orig, processed, weight));
+    gpuStoreRgba(out_color, int2(p), rgba, planeHeight, result);
+    // Every plane this pass's arithmetic did not write keeps its named channel
+    // from the main input at the same coordinate (issue #90).
+    gpuPreserveAuxLattice(out_color, int2(p), planeHeight, in_main, int(mainExtent.y), channels.x);
 }

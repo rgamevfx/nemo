@@ -1,0 +1,304 @@
+Note: Google Test filter = ShuffleSurface.CreatingAnUnwiredOutputIsAtomicAndStartsAtZero:ShuffleSurface.SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen:ShuffleSurface.AlphaOnlyViewingBypassesColorAndCreatedRgbUsesNamedRoles
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from ShuffleSurface
+[ RUN      ] ShuffleSurface.CreatingAnUnwiredOutputIsAtomicAndStartsAtZero
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+[libx264 @ 0x5190007e1380] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x5190007e1380] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x5190007e1380] frame I:1     Avg QP: 0.00  size:   689
+[libx264 @ 0x5190007e1380] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x5190007e1380] final ratefactor: -38.75
+[libx264 @ 0x5190007e1380] 8x8 transform intra:0.0%
+[libx264 @ 0x5190007e1380] coded y,uvDC,uvAC intra: 0.0% 100.0% 0.0%
+[libx264 @ 0x5190007e1380] i16 v,h,dc,p:  0%  0% 100%  0%
+[libx264 @ 0x5190007e1380] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x5190007e1380] kb/s:132.29
+[       OK ] ShuffleSurface.CreatingAnUnwiredOutputIsAtomicAndStartsAtZero (21086 ms)
+[ RUN      ] ShuffleSurface.SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen
+[libx264 @ 0x519000469180] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x519000469180] profile High, level 3.1, 4:2:0, 8-bit
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+[libx264 @ 0x519000469180] frame I:1     Avg QP: 0.00  size:   689
+[libx264 @ 0x519000469180] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x519000469180] final ratefactor: -38.75
+[libx264 @ 0x519000469180] 8x8 transform intra:0.0%
+[libx264 @ 0x519000469180] coded y,uvDC,uvAC intra: 0.0% 100.0% 0.0%
+[libx264 @ 0x519000469180] i16 v,h,dc,p:  0%  0% 100%  0%
+[libx264 @ 0x519000469180] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x519000469180] kb/s:132.29
+[       OK ] ShuffleSurface.SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen (30630 ms)
+[ RUN      ] ShuffleSurface.AlphaOnlyViewingBypassesColorAndCreatedRgbUsesNamedRoles
+[libx264 @ 0x519000758a80] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x519000758a80] profile High, level 3.1, 4:2:0, 8-bit
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+qrc:/qt/qml/Nemo/qml/StudioComboBox.qml:122:13: QML Connections: Detected function "onMutedChanged" in Connections element. This is probably intended to be a signal handler but no signal of the target matches the name.
+[libx264 @ 0x519000758a80] frame I:1     Avg QP: 0.00  size:   689
+[libx264 @ 0x519000758a80] mb I  I16..4: 100.0%  0.0%  0.0%
+[libx264 @ 0x519000758a80] final ratefactor: -38.75
+[libx264 @ 0x519000758a80] 8x8 transform intra:0.0%
+[libx264 @ 0x519000758a80] coded y,uvDC,uvAC intra: 0.0% 100.0% 0.0%
+[libx264 @ 0x519000758a80] i16 v,h,dc,p:  0%  0% 100%  0%
+[libx264 @ 0x519000758a80] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x519000758a80] kb/s:132.29
+[libx264 @ 0x519000097980] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x519000097980] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x519000097980] frame I:2     Avg QP: 1.50  size:   375
+[libx264 @ 0x519000097980] mb I  I16..4: 50.0%  0.0% 50.0%
+[libx264 @ 0x519000097980] final ratefactor: -35.07
+[libx264 @ 0x519000097980] 8x8 transform intra:0.0%
+[libx264 @ 0x519000097980] coded y,uvDC,uvAC intra: 12.5% 0.0% 0.0%
+[libx264 @ 0x519000097980] i16 v,h,dc,p:  0%  0% 100%  0%
+[libx264 @ 0x519000097980] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 75%  0% 25%  0%  0%  0%  0%  0%  0%
+[libx264 @ 0x519000097980] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x519000097980] kb/s:72.00
+[       OK ] ShuffleSurface.AlphaOnlyViewingBypassesColorAndCreatedRgbUsesNamedRoles (30575 ms)
+[----------] 3 tests from ShuffleSurface (82293 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (82293 ms total)
+[  PASSED  ] 3 tests.
+
+=================================================================
+==3550435==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 552 byte(s) in 3 object(s) allocated from:
+    #0 0x7fb4052fe548 in operator new(unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:95
+    #1 0x7fb401294cb7 in QQmlData::createQQmlData(QObjectPrivate*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x294cb7) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #2 0x7fb401258c08 in qmlAttachedPropertiesObject(QObject*, QObject* (*)(QObject*), bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x258c08) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #3 0x7fb3fa706bac in QQuickControl::setAccessibleProperty(char const*, QVariant const&) (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0x106bac) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #4 0x7fb3fa6d9cc0 in QQuickAbstractButton::setCheckable(bool) (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0xd9cc0) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #5 0x7fb3fa7bd8d6  (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0x1bd8d6) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #6 0x7fb40131e4f6 in QQmlType::create(void**, unsigned long) const (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x31e4f6) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #7 0x7fb4012de698 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2de698) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #8 0x7fb4012df2a2 in QQmlObjectCreator::create(int, QObject*, QQmlInstantiationInterrupt*, int) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2df2a2) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #9 0x7fb4012de2fa in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2de2fa) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #10 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #11 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #12 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #13 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #14 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #15 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #16 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #17 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #18 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #19 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #20 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #21 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #22 0x7fb4012df2a2 in QQmlObjectCreator::create(int, QObject*, QQmlInstantiationInterrupt*, int) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2df2a2) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #23 0x7fb4012ba0ba in QQmlIncubatorPrivate::incubate(QQmlInstantiationInterrupt&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ba0ba) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #24 0x7fb4012ba9c7 in QQmlEnginePrivate::incubate(QQmlIncubator&, QQmlRefPointer<QQmlContextData> const&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ba9c7) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #25 0x7fb40127afe1 in QQmlComponent::create(QQmlIncubator&, QQmlContext*, QQmlContext*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x27afe1) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #26 0x7fb402001b89  (/lib/x86_64-linux-gnu/libQt6Quick.so.6+0x201b89) (BuildId: 1a2ef7287440c29c0d97c64a38044e68883be729)
+    #27 0x7fb4012db11e in QQmlObjectCreator::finalize(QQmlInstantiationInterrupt&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2db11e) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #28 0x7fb4012b9fee in QQmlIncubatorPrivate::incubate(QQmlInstantiationInterrupt&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2b9fee) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #29 0x7fb4012ba9c7 in QQmlEnginePrivate::incubate(QQmlIncubator&, QQmlRefPointer<QQmlContextData> const&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ba9c7) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1dc238f in QtWayland::wl_subcompositor::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa138f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1d97094 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x76094) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a7a7 in wl_proxy_marshal_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb7a7) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1d8d06b in QtWaylandClient::QWaylandDisplay::QWaylandDisplay(QtWaylandClient::QWaylandIntegration*) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x6c06b) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1da96b8 in QtWaylandClient::QWaylandIntegration::QWaylandIntegration() (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x886b8) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f6102531  (/usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-generic.so+0x2531) (BuildId: d0965df69ace3c852f1b649b4c38e7137a9d8050)
+    #7 0x7fb401793141 in QGuiApplicationPrivate::createPlatformIntegration() (/lib/x86_64-linux-gnu/libQt6Gui.so.6+0x193141) (BuildId: 500dda7095f45c8cd1ba0bf43fd4bb9448174ad5)
+    #8 0x7fb40179485f in QGuiApplicationPrivate::createEventDispatcher() (/lib/x86_64-linux-gnu/libQt6Gui.so.6+0x19485f) (BuildId: 500dda7095f45c8cd1ba0bf43fd4bb9448174ad5)
+    #9 0x7fb40093c8b5 in QCoreApplicationPrivate::init() (/lib/x86_64-linux-gnu/libQt6Core.so.6+0x13c8b5) (BuildId: 9b85b15d08445ceca32a75ffedf3453d8c6fab47)
+    #10 0x7fb4017948fe in QGuiApplicationPrivate::init() (/lib/x86_64-linux-gnu/libQt6Gui.so.6+0x1948fe) (BuildId: 500dda7095f45c8cd1ba0bf43fd4bb9448174ad5)
+    #11 0x7fb40178fd34 in QGuiApplication::QGuiApplication(int&, char**, int) (/lib/x86_64-linux-gnu/libQt6Gui.so.6+0x18fd34) (BuildId: 500dda7095f45c8cd1ba0bf43fd4bb9448174ad5)
+    #12 0x571b26e4399a in main /home/rgame/dev/Nemo_Dev2/tests/WorkspaceDragTests.cpp:1712
+    #13 0x7fb3ff82a1c9  (/lib/x86_64-linux-gnu/libc.so.6+0x2a1c9) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #14 0x7fb3ff82a28a in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2a28a) (BuildId: 328820b908de8ea1ef79afa8995e302e819163d7)
+    #15 0x571b268e1264 in _start (/home/rgame/dev/Nemo_Dev2/build/asan/tests/nemo_workspace_ui_tests+0x6923264) (BuildId: 7abc8fc89e1e65618aa115aacb45efd0dbc2c6cd)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1dbfbff in QtWayland::wl_compositor::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9ebff) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1d966ec in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x756ec) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1dc20bf in QtWayland::wl_output::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa10bf) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1dae05e in QtWaylandClient::QWaylandScreen::QWaylandScreen(QtWaylandClient::QWaylandDisplay*, int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x8d05e) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1d95e7f in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x74e7f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1dc2fbf in QtWayland::zxdg_output_manager_v1::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa1fbf) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1dadba2 in QtWaylandClient::QWaylandXdgOutputManagerV1::QWaylandXdgOutputManagerV1(QtWaylandClient::QWaylandDisplay*, unsigned int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x8cba2) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1d97610 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x76610) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1dc278f in QtWayland::zwp_primary_selection_device_manager_v1::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa178f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1d97242 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x76242) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1dc002f in QtWayland::wl_shm::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9f02f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1dae6c6 in QtWaylandClient::QWaylandShm::QWaylandShm(QtWaylandClient::QWaylandDisplay*, int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x8d6c6) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1d96bf6 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x75bf6) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1db79bf in QtWayland::zwp_pointer_gestures_v1::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x969bf) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1da8830 in QtWaylandClient::QWaylandPointerGestures::QWaylandPointerGestures(QtWaylandClient::QWaylandDisplay*, unsigned int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x87830) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1d971ad in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x761ad) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1db7eaf in QtWayland::zwp_tablet_manager_v2::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x96eaf) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1dc4af5 in QtWaylandClient::QWaylandTabletManagerV2::QWaylandTabletManagerV2(QtWaylandClient::QWaylandDisplay*, unsigned int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa3af5) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1d95ded in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x74ded) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fe548 in operator new(unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:95
+    #1 0x7fb3f1d9f089  (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x7e089) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #2 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a68e in wl_proxy_marshal_constructor_versioned (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb68e) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1dc1a1f in QtWayland::wl_seat::init(wl_registry*, unsigned int, int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0xa0a1f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3f1da0b50 in QtWaylandClient::QWaylandInputDevice::QWaylandInputDevice(QtWaylandClient::QWaylandDisplay*, int, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x7fb50) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #6 0x7fb3f1da9c19 in QtWaylandClient::QWaylandIntegration::createInputDevice(QtWaylandClient::QWaylandDisplay*, int, unsigned int) const (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x88c19) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #7 0x7fb3f1d96a76 in QtWaylandClient::QWaylandDisplay::registry_global(unsigned int, QString const&, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x75a76) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #8 0x7fb3f1dbe154 in QtWayland::wl_registry::handle_global(void*, wl_registry*, unsigned int, char const*, unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x9d154) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #9 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a7a7 in wl_proxy_marshal_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb7a7) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1d9cd20 in QtWaylandClient::QWaylandInputDevice::seat_capabilities(unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x7bd20) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Direct leak of 96 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb4052fd340 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77
+    #1 0x7fb3f2d396ec  (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa6ec) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #2 0x7fb3f2d398a4 in wl_proxy_marshal_array_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xa8a4) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #3 0x7fb3f2d3a7a7 in wl_proxy_marshal_flags (/lib/x86_64-linux-gnu/libwayland-client.so.0+0xb7a7) (BuildId: 10d25f1460c9fbc5c38093fad3e9d0a47fc87f18)
+    #4 0x7fb3f1d9cd9f in QtWaylandClient::QWaylandInputDevice::seat_capabilities(unsigned int) (/lib/x86_64-linux-gnu/libQt6WaylandClient.so.6+0x7bd9f) (BuildId: a1004954d5cd39403c509a216c3b26b8cd0fa3f1)
+    #5 0x7fb3fc0d8b15  (/lib/x86_64-linux-gnu/libffi.so.8+0x7b15) (BuildId: c9149b6e99105aa4321ddd4a10ee4b90de7b7d49)
+
+Indirect leak of 2304 byte(s) in 3 object(s) allocated from:
+    #0 0x7fb4052fe6c8 in operator new[](unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:98
+    #1 0x7fb401402c09  (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x402c09) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #2 0x7fb4012591d3 in qmlAttachedPropertiesObject(QObject*, QObject* (*)(QObject*), bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2591d3) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #3 0x7fb3fa706bac in QQuickControl::setAccessibleProperty(char const*, QVariant const&) (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0x106bac) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #4 0x7fb3fa6d9cc0 in QQuickAbstractButton::setCheckable(bool) (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0xd9cc0) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #5 0x7fb3fa7bd8d6  (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0x1bd8d6) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #6 0x7fb40131e4f6 in QQmlType::create(void**, unsigned long) const (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x31e4f6) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #7 0x7fb4012de698 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2de698) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #8 0x7fb4012df2a2 in QQmlObjectCreator::create(int, QObject*, QQmlInstantiationInterrupt*, int) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2df2a2) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #9 0x7fb4012de2fa in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2de2fa) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #10 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #11 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #12 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #13 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #14 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #15 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #16 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #17 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #18 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #19 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #20 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #21 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #22 0x7fb4012df2a2 in QQmlObjectCreator::create(int, QObject*, QQmlInstantiationInterrupt*, int) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2df2a2) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #23 0x7fb4012ba0ba in QQmlIncubatorPrivate::incubate(QQmlInstantiationInterrupt&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ba0ba) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #24 0x7fb4012ba9c7 in QQmlEnginePrivate::incubate(QQmlIncubator&, QQmlRefPointer<QQmlContextData> const&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ba9c7) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #25 0x7fb40127afe1 in QQmlComponent::create(QQmlIncubator&, QQmlContext*, QQmlContext*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x27afe1) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #26 0x7fb402001b89  (/lib/x86_64-linux-gnu/libQt6Quick.so.6+0x201b89) (BuildId: 1a2ef7287440c29c0d97c64a38044e68883be729)
+    #27 0x7fb4012db11e in QQmlObjectCreator::finalize(QQmlInstantiationInterrupt&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2db11e) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #28 0x7fb4012b9fee in QQmlIncubatorPrivate::incubate(QQmlInstantiationInterrupt&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2b9fee) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #29 0x7fb4012ba9c7 in QQmlEnginePrivate::incubate(QQmlIncubator&, QQmlRefPointer<QQmlContextData> const&) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ba9c7) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+
+Indirect leak of 456 byte(s) in 3 object(s) allocated from:
+    #0 0x7fb4052fe6c8 in operator new[](unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:98
+    #1 0x7fb401259166 in qmlAttachedPropertiesObject(QObject*, QObject* (*)(QObject*), bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x259166) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #2 0x7fb3fa706bac in QQuickControl::setAccessibleProperty(char const*, QVariant const&) (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0x106bac) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #3 0x7fb3fa6d9cc0 in QQuickAbstractButton::setCheckable(bool) (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0xd9cc0) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #4 0x7fb3fa7bd8d6  (/lib/x86_64-linux-gnu/libQt6QuickTemplates2.so.6+0x1bd8d6) (BuildId: 52376c64155dc8f326751a30312723e0f0a155c4)
+    #5 0x7fb40131e4f6 in QQmlType::create(void**, unsigned long) const (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x31e4f6) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #6 0x7fb4012de698 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2de698) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #7 0x7fb4012df2a2 in QQmlObjectCreator::create(int, QObject*, QQmlInstantiationInterrupt*, int) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2df2a2) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #8 0x7fb4012de2fa in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2de2fa) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #9 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #10 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #11 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #12 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #13 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #14 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #15 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #16 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #17 0x7fb4012e058c in QQmlObjectCreator::setPropertyBinding(QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e058c) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #18 0x7fb4012e2aa5 in QQmlObjectCreator::setupBindings(QFlags<QQmlObjectCreator::BindingMode>) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2e2aa5) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #19 0x7fb4012ead1a in QQmlObjectCreator::populateInstance(int, QObject*, QObject*, QQmlPropertyData const*, QV4::CompiledData::Binding const*) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ead1a) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+    #20 0x7fb4012ddf93 in QQmlObjectCreator::createInstance(int, QObject*, bool) (/lib/x86_64-linux-gnu/libQt6Qml.so.6+0x2ddf93) (BuildId: f6f075b4867a6d099e32cf491a803ac714a1e7f1)
+
+[Artifact storage: ~/.omp/agent/sessions/-dev-Nemo_Dev2/2026-09-16T03-43-58-629Z_01a0a850-6ea5-70f2-bfd9-e27ac9c2f673/1175.bash-original.log (55.4KB). Use artifact://1175:N-M to page, artifact://1175:raw:N-M for verbatim chunks, and the artifact file path for search/copy workflows.]
+
+[Showing lines 1-300 of 388. Use :301 to continue]

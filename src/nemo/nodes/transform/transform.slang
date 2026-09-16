@@ -7,12 +7,14 @@
 //   - in_main : image2D input (main image, required port 0)
 //   - in_mask : image2D input (optional mask, port 1; bound to the main
 //     image as a valid dummy descriptor with maskPresent=0 when unconnected)
-//   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
+//   - out_color : image2D output (native R32_SFLOAT channel planes, straight
+//     alpha, scene-linear: logical pixel (x, y) of channel plane c at
+//     (x, y + c*logicalHeight), issue #90)
 // parameters:
 //   - translateX/translateY (pixels), scale, rotate (degrees, positive
 //     clockwise in the stored raster), filter [Cubic, Linear, Nearest], plus
 //     the common maskChannel/invertMask/mix controls.
-// bindings (native binding contract v5, see GpuGeometry.slang):
+// bindings (native binding contract v6, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.transform.payload.v1")
 //   set 0, binding 2 : per-input spatial geometry (main, mask)
@@ -58,6 +60,11 @@ cbuffer EffectUniforms {
     // support (a node-local scratch), a non-positive size means every sample is
     // transparent black. Samples outside it must be written transparent black.
     int4 support;
+    // channels: the produced raster's channel planes (issue #90):
+    // (plane count, 0, 0, 0).
+    uint4 channels;
+    // rgba: the produced plane index of each R/G/B/A role; -1 = role absent.
+    int4 rgba;
 };
 
 [[vk::binding(1, 0)]]
@@ -71,17 +78,20 @@ cbuffer TransformPayload {
 };
 
 [[vk::binding(0, 1)]]
-RWTexture2D<float4> in_main;
+RWTexture2D<float> in_main;
 [[vk::binding(1, 1)]]
-RWTexture2D<float4> in_mask;
+RWTexture2D<float> in_mask;
 
 [[vk::binding(0, 2)]]
-RWTexture2D<float4> out_color;
+RWTexture2D<float> out_color;
 
+// One alpha-aware premultiplied tap of the resampling input, gathered through
+// the R/G/B/A plane roles its geometry entry resolved (issue #90); `dims.y` is
+// the input's LOGICAL height, which is also its channel plane height.
 float4 premultTexel(int2 q, int2 dims)
 {
     if (q.x < 0 || q.y < 0 || q.x >= dims.x || q.y >= dims.y) { return float4(0.0, 0.0, 0.0, 0.0); }
-    float4 s = in_main.Load(q);
+    float4 s = gpuLoadRgba(in_main, q, inputGeometry[0].rgba, dims.y);
     return float4(s.rgb * s.a, s.a);
 }
 
@@ -92,12 +102,13 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    // The described image's data support (native binding contract v5): a sample
-    // outside the transform's described data window is transparent black.
+    // The described image's data support (native binding contract v6): a sample
+    // outside the transform's described data window is transparent black, and
+    // every plane — auxiliary ones included — is initialized (issue #90).
     if (support.z >= 0 && support.w >= 0 &&
         ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
          (int)p.y >= support.y + support.w)) {
-        out_color[p] = float4(0.0, 0.0, 0.0, 0.0);
+        gpuZeroPlanes(out_color, int2(p), int(meta2.y), channels.x);
         return;
     }
 
@@ -109,7 +120,7 @@ void main(uint3 tid : SV_DispatchThreadID)
     int2 mainPixel = int2(p) + inputGeometry[0].regionAndOffset.zw;
     bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < dims.x && mainPixel.y < dims.y;
 
-    float4 orig = mainInside ? in_main.Load(mainPixel) : float4(0.0, 0.0, 0.0, 0.0);
+    float4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, dims.y) : float4(0.0, 0.0, 0.0, 0.0);
 
     int scale = int(meta2.z);
     float fullWidth = float(meta.x);
@@ -137,7 +148,7 @@ void main(uint3 tid : SV_DispatchThreadID)
                            (fullIn.y - float(inputOrigin.y)) / float(scale));
     if (filterMode == 2) {  // Nearest: bound the raster index; outside is transparent black
         if (raster.x >= 0.0 && raster.x < float(dims.x) && raster.y >= 0.0 && raster.y < float(dims.y)) {
-            processed = in_main.Load(int2(floor(raster)));
+            processed = gpuLoadRgba(in_main, int2(floor(raster)), inputGeometry[0].rgba, dims.y);
         }
     } else if (raster.x > -3.0 && raster.x < float(dims.x) + 3.0 &&
                raster.y > -3.0 && raster.y < float(dims.y) + 3.0) {
@@ -186,11 +197,18 @@ void main(uint3 tid : SV_DispatchThreadID)
         int2 maskExtent = int2(inputGeometry[1].extent.xy);
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
-        float selected = maskInside ? clamp(in_mask.Load(maskPixel)[channel], 0.0, 1.0) : 0.0;
+        float selected =
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[1].rgba, maskExtent.y)[channel], 0.0, 1.0)
+                       : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
     // processed pixel (avoids HDR 0*inf cancellation in lerp()).
     float weight = coverage * mask.z;
-    out_color[p] = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : lerp(orig, processed, weight));
+    float4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : lerp(orig, processed, weight));
+    gpuStoreRgba(out_color, int2(p), rgba, int(meta2.y), result);
+    // Auxiliary channels are preserved where they ARE, not resampled: the aux
+    // helper resolves the source pixel on the sampling lattice, never the
+    // transformed sample this pass computed (issue #90).
+    gpuPreserveAuxLattice(out_color, int2(p), int(meta2.y), in_main, dims.y, channels.x);
 }

@@ -42,12 +42,33 @@ namespace {
 
 }  // namespace
 
+ViewerProjection resolveViewerProjection(const std::vector<std::string>& requested,
+                                         const std::vector<std::string>& channels) {
+    const auto& selected = requested.empty() ? channels : requested;
+    ViewerProjection projection;
+    const auto primary = rgbaChannelIndices(selected);
+    projection.applyViewingTransform =
+        std::all_of(primary.begin(), primary.begin() + 3, [](int role) { return role >= 0; });
+    if (projection.applyViewingTransform) {
+        for (std::size_t role = 0; role < primary.size(); ++role)
+            if (primary[role] >= 0)
+                projection.roles[role] = channelIndex(channels, selected[primary[role]]);
+    } else if (selected.size() == 1) {
+        const auto plane = channelIndex(channels, selected.front());
+        projection.roles = {plane, plane, plane, -1};
+    } else {
+        for (std::size_t slot = 0; slot < selected.size() && slot < projection.roles.size(); ++slot)
+            projection.roles[slot] = channelIndex(channels, selected[slot]);
+    }
+    return projection;
+}
+
 ViewerSession::ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
                              const std::filesystem::path& shaderDirectory, std::string ocioConfigPath)
     : instance_(instance), device_(device), allocator_(allocator), ocioConfigPath_(std::move(ocioConfigPath)),
       replayShader_(shaderDirectory / "mediaConvert.spv"),
       sources_(instance, device, allocator, replayShader_, ocioConfigPath_),
-      effects_(loadSlangEffectLibrary(shaderDirectory)), reuse_(16) {}
+      effects_(loadSlangEffectLibrary(shaderDirectory)), projections_(device, allocator), reuse_(16) {}
 
 ViewerSession::~ViewerSession() = default;
 
@@ -175,9 +196,6 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
         }
     }
 
-    // Identity describes the exact generated program/LUT/uniform snapshot
-    // used below, never newly read config bytes paired with an old program.
-    auto& viewing = viewingStateFor(document.color);
     std::optional<std::string> identity;
     ImageLayout expected;
     expected.width = scaledDimension(request.region.width, request.samplingScale);
@@ -189,6 +207,14 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     // different pixels than the execution produced.
     const std::string colorIdentity = sources_.colorConfigIdentity();
     const RegionPlan plan = planDependencyRegions(document, request, *effects_.contributions(), &sources_);
+    const auto& description =
+        plan.images.nodes
+            .at(EvaluationNodeId{request.network, kInvalidNetworkInstance, request.output, kEvaluationWholeNode})
+            .description;
+    const auto selection = resolveViewerProjection(request.channels, description.channels);
+    ViewingState* viewing = selection.applyViewingTransform ? &viewingStateFor(document.color) : nullptr;
+    const std::string appliedViewing =
+        "named-projection-v2/" + (viewing ? viewing->identity : std::string{"data-passthrough-v1"});
 
     if (cache_) {
         cache_->supersede(revision, generation, destination);
@@ -196,7 +222,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
         // lookup keys the authored target instead of decoding media or guessing
         // a canvas domain.
         const ResultKey key = queryViewerResultKey(document, request, effects_, colorIdentity, &sources_, &plan);
-        identity = cacheIdentity(key, viewing.identity, cache_->optionsForIdentity());
+        identity = cacheIdentity(key, appliedViewing, cache_->optionsForIdentity());
         if (auto hit = cache_->lookup(*identity, expected, timeout_ns)) {
             ViewerFrame frame;
             frame.image = std::move(hit->image);
@@ -221,10 +247,8 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
 
     const GpuNodeImage& composition = *evaluation.images.at(request.output);
     if (composition.layout.color == ColorInterpretation::DisplayReferred) {
-        // The viewing transform is applied exactly once. Scene-linear
-        // composition results and non-color Data both still need it: a Data
-        // source is viewable downstream, but a display-referred buffer already
-        // carries the transform and must never receive it twice.
+        // Display-referred buffers must never receive a second projection and
+        // viewing transform.
         const NodeInstance* node = document.network(request.network).graph().node(request.output);
         throw EvaluationException(describeNode(*node) +
                                       ": produced a display-referred result; the viewing transform is applied "
@@ -232,22 +256,50 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
                                   request.output, node->name);
     }
 
-    if (!viewing.transform)
-        viewing.transform = std::make_unique<gpu::GpuViewingTransform>(device_, allocator_, viewing.program);
-    std::optional<gpu::GpuViewedImage> viewed =
-        viewing.transform->submit(composition.image, composition.layout.color, timeout_ns);
-    if (!viewed)
-        throw gpu::GpuException(gpu::GpuError::InvalidRequest, "viewer transform submission capacity exhausted");
+    // Native viewing (issue #90): the composition is a channel-plane image, so
+    // the requested named channels are projected into the interleaved RGBA32F
+    // presentation the viewing transform, the presentation copy and the viewer
+    // cache all consume — entirely on the device, with no host readback. With
+    // no selection the composition's own RGBA roles are projected (the existing
+    // behaviour); a single named channel is presented as an opaque gray view.
+    // Auxiliary channels are deliberately not part of the display image: only
+    // the identified RGB roles are color-managed.
+    std::optional<ChannelProjection::Submission> projection =
+        projections_.submit(composition.image, selection.roles, static_cast<std::uint32_t>(composition.layout.width),
+                            static_cast<std::uint32_t>(composition.layout.height), timeout_ns);
+    if (!projection)
+        throw gpu::GpuException(gpu::GpuError::InvalidRequest,
+                                "viewer channel projection submission capacity exhausted");
+    auto presentationSource = std::make_shared<gpu::Image>(std::move(projection->image));
 
     auto& queue = device_.submissions(device_.graphics_family());
-    if (!queue.wait(viewed->completion, timeout_ns))
-        throw gpu::GpuException(gpu::GpuError::SubmissionTimeout,
-                                "viewer frame did not complete within " + std::to_string(timeout_ns) + " ns");
-
-    auto image = std::make_shared<gpu::Image>(std::move(viewed->image));
+    std::shared_ptr<const gpu::Image> image;
+    if (!selection.applyViewingTransform) {
+        // No complete primary RGB: preserve data, including alpha-only masks.
+        if (!queue.wait(projection->completion, timeout_ns))
+            throw gpu::GpuException(gpu::GpuError::SubmissionTimeout,
+                                    "viewer channel projection did not complete within " + std::to_string(timeout_ns) +
+                                        " ns");
+        image = std::move(presentationSource);
+    } else {
+        if (!viewing->transform)
+            viewing->transform = std::make_unique<gpu::GpuViewingTransform>(device_, allocator_, viewing->program);
+        std::optional<gpu::GpuViewedImage> viewed =
+            viewing->transform->submit(*presentationSource, composition.layout.color, timeout_ns);
+        if (!viewed)
+            throw gpu::GpuException(gpu::GpuError::InvalidRequest, "viewer transform submission capacity exhausted");
+        if (!queue.wait(viewed->completion, timeout_ns))
+            throw gpu::GpuException(gpu::GpuError::SubmissionTimeout,
+                                    "viewer frame did not complete within " + std::to_string(timeout_ns) + " ns");
+        image = std::make_shared<gpu::Image>(std::move(viewed->image));
+    }
     ViewerFrame frame;
     frame.image = image;
     frame.layout = composition.layout;
+    // The displayed representation is the RGBA projection of the composition's
+    // named channels, so its layout names those four roles — not the
+    // composition's whole named channel list (issue #90).
+    frame.layout.channels = kViewerPresentationChannels;
     frame.layout.color = ColorInterpretation::DisplayReferred;
     // The described output the composition was actually produced from: framing
     // consumers read the real format instead of a global canvas guess.
@@ -261,7 +313,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
         // Chunk grouping is a storage concern, not a synthetic evaluation
         // request. Each frame keeps its full effective identity in the index.
         auto chunkGroupKey =
-            viewing.identity + "/" + std::to_string(frame.layout.width) + "x" + std::to_string(frame.layout.height);
+            appliedViewing + "/" + std::to_string(frame.layout.width) + "x" + std::to_string(frame.layout.height);
         frame.cacheQueued = cache_->enqueue(ViewerCachePublication{.identity = std::move(*identity),
                                                                    .chunkGroupKey = std::move(chunkGroupKey),
                                                                    .localTime = request.localTime,

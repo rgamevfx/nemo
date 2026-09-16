@@ -12,8 +12,9 @@
 //
 // Two decode kinds (issue #62): a clip reference is served by a
 // ClipDecoder, and a still image or image-sequence pattern is served by a
-// validated media::readImageFrame read uploaded as one scene-linear rgba32f
-// device image. The kind is classified from the resolved reference path
+// validated media::readImageFrame read uploaded as one device image in the
+// native channel-plane layout, carrying the file's own named channels
+// (issue #90). The kind is classified from the resolved reference path
 // once per runtime key; both kinds produce the SAME DecodedFrame contract
 // described below.
 //
@@ -60,12 +61,18 @@ namespace nemo::eval {
 
 class SourceSession : public SourceDescriptionProvider {
 public:
-    // One decoded source frame handed to the executor. Scene-linear
+    // One decoded source frame handed to the executor: scene-linear
     // (project working space) or Data for a Raw bypass, full resolution,
-    // rgba32f, association from description, GENERAL layout, GPU-complete.
+    // association from description, GENERAL layout, GPU-complete. Its device
+    // image is always the native channel-plane layout (issue #90): R32_SFLOAT,
+    // extent (coverage.width, coverage.height * description.channels.size()),
+    // plane c of logical pixel (x, y) at (x, y + c*coverage.height), planes in
+    // `description.channels` order. A still/sequence frame carries the file's
+    // own named channels; a clip frame carries R, G, B, A.
     struct DecodedFrame {
         std::shared_ptr<const gpu::Image> image;
-        // Storage extents of the retained raster, exactly `coverage`'s extent.
+        // LOGICAL storage extents of the retained raster, exactly `coverage`'s
+        // extent: the device image's height is this times its plane count.
         int width{0};
         int height{0};
         std::int64_t frame{0};

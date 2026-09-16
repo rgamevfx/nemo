@@ -301,8 +301,8 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
     ASSERT_EQ(reference.frames.size(), 8u);
 
     ASSERT_EQ(frame->extent().width, 64u);
-    ASSERT_EQ(frame->extent().height, 48u);
-    CpuImage hardware(64, 48);
+    ASSERT_EQ(frame->extent().height, 48u * 4u);
+    std::vector<float> hardware(64 * 48 * 4);
     {
         gpu::SubmissionQueue queue(*boot.device, boot.device->graphics_family());
         gpu::imageBarrier(queue, *frame, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
@@ -316,10 +316,11 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
     int maxAt[2] = {0, 0};
     for (int y = 0; y < 48; ++y) {
         for (int x = 0; x < 64; ++x) {
-            const auto a = hardware.pixel(x, y);
             const auto b = expected.pixel(x, y);
-            const double delta =
-                std::max(std::abs(a[0] - b[0]), std::max(std::abs(a[1] - b[1]), std::abs(a[2] - b[2])));
+            double delta = 0.0;
+            for (int channel = 0; channel < 3; ++channel)
+                delta =
+                    std::max(delta, std::abs(static_cast<double>(hardware[(channel * 48 + y) * 64 + x]) - b[channel]));
             maxDelta = std::max(maxDelta, delta);
             if (delta >= maxDelta) {
                 maxAt[0] = x;
@@ -335,7 +336,7 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
     while (auto image = decoder->next(1'000'000'000ULL)) {
         ASSERT_NE(image, nullptr);
         ASSERT_EQ(image->extent().width, 64u);
-        ASSERT_EQ(image->extent().height, 48u);
+        ASSERT_EQ(image->extent().height, 48u * 4u);
         ++decoded;
     }
     EXPECT_EQ(decoded, 8);
@@ -479,14 +480,14 @@ TEST(HwMedia, InteropRetainsDelayedForeignPlanesAndConvertsPixels) {
     foreign.waitValues[0] = 1;
     foreign.waitValues[1] = 1;
 
-    auto output = boot.allocator->create_image(64, 48, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+    auto output = boot.allocator->create_image(64, 48 * 4, 1, VK_FORMAT_R32_SFLOAT,
                                                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 
     std::vector<std::uint32_t> spirv =
         loadSpirvFile(std::filesystem::path(NEMO_SLANG_SPV_DIR_VALUE) / "mediaConvert.spv");
     auto interop = gpu::MediaInterop::create(*boot.device, *boot.allocator, spirv);
     auto& execution = boot.device->submissions(boot.device->graphics_family());
-    const auto completion = interop->submitToRgba32f(foreign, output);
+    const auto completion = interop->submitToChannelPlanes(foreign, output);
     ASSERT_TRUE(completion);
     EXPECT_FALSE(execution.wait(*completion, 1));
     EXPECT_FALSE(execution.poll(*completion));
@@ -505,7 +506,7 @@ TEST(HwMedia, InteropRetainsDelayedForeignPlanesAndConvertsPixels) {
     }
     EXPECT_TRUE(execution.wait(*completion, 5'000'000'000ULL));
     EXPECT_TRUE(weakOwner.expired());
-    CpuImage converted(64, 48);
+    std::vector<float> converted(64 * 48 * 4);
     {
         gpu::SubmissionQueue queue(*boot.device, boot.device->graphics_family());
         gpu::imageBarrier(queue, output, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
@@ -518,10 +519,10 @@ TEST(HwMedia, InteropRetainsDelayedForeignPlanesAndConvertsPixels) {
     // The nonzero transfer selector also catches a mismatched uniform ABI.
     for (int y = 0; y < 48; y += 8) {
         for (int x = 0; x < 64; x += 8) {
-            const auto pixel = converted.pixel(x, y);
             for (int channel = 0; channel < 3; ++channel) {
-                EXPECT_NEAR(pixel[channel], 0.21616043, 0.003);
+                EXPECT_NEAR(converted[(channel * 48 + y) * 64 + x], 0.21616043, 0.003);
             }
+            EXPECT_FLOAT_EQ(converted[(3 * 48 + y) * 64 + x], 1.0F);
         }
     }
     // Device-owned objects must be released before the device itself.

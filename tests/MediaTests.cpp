@@ -486,9 +486,8 @@ TEST(MediaTest, SrgbPngIsLinearizedThroughTheDeclaredTransfer) {
     std::filesystem::remove(path);
 }
 
-// (vi) A single-channel (grayscale) source cannot satisfy the RGB image
-// contract: rejected naming the file, format, and reason.
-TEST(MediaTest, SingleChannelSourceIsRejected) {
+// A grayscale source is uninterpreted named data, not invented RGB.
+TEST(MediaTest, SingleChannelSourcePreservesUninterpretedSamples) {
     const auto path = tempDir() / "gray.png";
     {
         auto output = OIIO::ImageOutput::create(path.string());
@@ -503,15 +502,13 @@ TEST(MediaTest, SingleChannelSourceIsRejected) {
 
     SourceReference reference;
     reference.path = path.string();
-    try {
-        static_cast<void>(readImageFrame(reference, 0, "grayscale source"));
-        FAIL() << "expected the grayscale source to be rejected";
-    } catch (const ImageIoException& error) {
-        const std::string what = error.what();
-        EXPECT_NE(what.find(path.string()), std::string::npos) << what;
-        EXPECT_NE(what.find("png"), std::string::npos) << what;
-        EXPECT_NE(what.find("R/G/B"), std::string::npos) << what;
-    }
+    const auto frame = readImageFrame(reference, 0, "grayscale source");
+    ASSERT_EQ(frame.image.layout().channels, (std::vector<std::string>{"Y"}));
+    EXPECT_EQ(frame.image.layout().color, ColorInterpretation::Data);
+    EXPECT_FLOAT_EQ(frame.image.data()[0], 0.0F);
+    EXPECT_NEAR(frame.image.data()[1], 64.0F / 255.0F, 1e-7F);
+    EXPECT_NEAR(frame.image.data()[2], 128.0F / 255.0F, 1e-7F);
+    EXPECT_FLOAT_EQ(frame.image.data()[3], 1.0F);
     std::filesystem::remove(path);
 }
 

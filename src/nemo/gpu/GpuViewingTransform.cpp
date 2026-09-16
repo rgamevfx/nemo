@@ -7,7 +7,8 @@ namespace nemo::gpu {
 GpuViewingTransform::GpuViewingTransform(gpu::Device& device, gpu::Allocator& allocator,
                                          const media::OcioGpuProgram& program)
     : device_(device), allocator_(allocator), spirv_(gpu::compileGlslToSpirv(program.glsl)),
-      descriptorSet_(program.descriptorSet) {
+      descriptorSet_(program.descriptorSet),
+      channelPlanes_(program.pixelLayout == media::OcioGpuProgram::PixelLayout::ChannelPlanes) {
     luts_.reserve(program.textures.size());
     for (const auto& texture : program.textures) {
         const VkFormat format = texture.channels == 1 ? VK_FORMAT_R32_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -32,6 +33,9 @@ GpuViewingTransform::GpuViewingTransform(gpu::Device& device, gpu::Allocator& al
 
 std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& source, ColorInterpretation sourceColor,
                                                           uint64_t admissionTimeout_ns) const {
+    if (channelPlanes_)
+        throw gpu::GpuException(gpu::GpuError::InvalidRequest, "this OCIO program is a channel-plane program; use "
+                                                               "submitInputTransformPlanesInPlace");
     // Scene-linear composition results and non-color Data both still need their
     // display transform; a display-referred buffer already has it, so applying
     // it again is refused (the transform is applied exactly once).
@@ -94,6 +98,52 @@ std::optional<GpuViewedImage> GpuViewingTransform::submit(const gpu::Image& sour
     if (!completion)
         return std::nullopt;
     return GpuViewedImage{std::move(image), *completion};
+}
+
+std::optional<gpu::SubmissionQueue::Completion>
+GpuViewingTransform::submitInputTransformPlanesInPlace(const gpu::Image& image, uint64_t admission_timeout_ns) const {
+    if (!channelPlanes_)
+        throw gpu::GpuException(gpu::GpuError::InvalidRequest,
+                                "this OCIO program converts interleaved RGBA32F pixels; use submit");
+    const VkExtent3D extent = image.extent();
+    if (image.format() != VK_FORMAT_R32_SFLOAT || image.dimensions() != 2 || extent.width == 0 || extent.height == 0 ||
+        extent.height % 4 != 0)
+        throw gpu::GpuException(gpu::GpuError::InvalidRequest,
+                                "the channel-plane input transform requires a 2D R32_SFLOAT image with four planes "
+                                "(R,G,B,A) of equal height");
+    const std::uint32_t planeHeight = extent.height / 4;
+
+    // The plane facts travel in the program's own PlaneGeometry block (set 1
+    // binding 1): the wrapper is written against exactly this layout, so the
+    // dispatch supplies it rather than assuming a plane count.
+    auto geometry = allocator_.create_buffer(16, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryPreference::HostMapped);
+    const std::uint32_t words[4] = {extent.width, planeHeight, 4, 0};
+    std::memcpy(geometry.mapped(), words, sizeof(words));
+
+    auto bindings = bindings_;
+    bindings.push_back({descriptorSet_ + 1, 0, gpu::DescriptorKind::StorageImage, nullptr, &image});
+    bindings.push_back({descriptorSet_ + 1, 1, gpu::DescriptorKind::UniformBuffer, &geometry});
+    auto pass = gpu::ComputePass::create(device_, spirv_, bindings);
+    auto& queue = device_.submissions(device_.graphics_family());
+    const auto completion = queue.submit(
+        [&](VkCommandBuffer command) {
+            // The frame was written by an earlier submission on this queue (the
+            // media interop conversion or the software upload), so the
+            // dependency is conservative rather than an assumed immediate
+            // producer. The image is read and written in place: every plane is
+            // read and written by the same invocation, and the alpha plane is
+            // never written at all.
+            gpu::recordImageBarrier(command, image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            pass->record(command, (extent.width + 7) / 8, (planeHeight + 7) / 8, 1);
+            gpu::recordImageBarrier(command, image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT);
+        },
+        {pass->retain(), image.retain()}, {}, admission_timeout_ns);
+    return completion;
 }
 
 }  // namespace nemo::gpu

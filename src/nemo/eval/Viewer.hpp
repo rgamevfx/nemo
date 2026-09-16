@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -7,7 +8,9 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
+#include "nemo/eval/ChannelProjection.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
 #include "nemo/eval/SourceSession.hpp"
 #include "nemo/eval/ViewerCache.hpp"
@@ -15,6 +18,23 @@
 #include "nemo/media/ViewingTransform.hpp"
 
 namespace nemo::eval {
+
+// The four roles the displayed representation carries (issue #90): the viewer
+// projects the composition's named channels into exactly these, and any
+// further named channel stays a data channel that no color transform touches.
+inline const std::vector<std::string> kViewerPresentationChannels{"R", "G", "B", "A"};
+
+struct ViewerProjection {
+    std::array<std::int32_t, 4> roles{-1, -1, -1, -1};
+    bool applyViewingTransform{false};
+};
+
+// Resolve storage planes and viewing policy together, before lookup/execution.
+// Complete identified primary RGB uses named roles regardless of storage order.
+// Other selections are data: a single plane is opaque gray; multiple planes
+// retain requested order. Empty demand uses the image's actual channel names.
+[[nodiscard]] ViewerProjection resolveViewerProjection(const std::vector<std::string>& requested,
+                                                       const std::vector<std::string>& channels);
 
 struct ViewerFrame {
     // Immutable, completed display-referred output. Presentation and the
@@ -121,6 +141,7 @@ private:
     std::filesystem::path replayShader_;
     SourceSession sources_;
     EffectLibrary effects_;
+    ChannelProjection projections_;
     ResultCache<GpuNodeImage> reuse_;
     std::map<std::pair<std::string, std::string>, ViewingState> viewing_;
     std::map<ViewerDestination, std::uint64_t> latestRevisionByDestination_;

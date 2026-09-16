@@ -4,19 +4,21 @@
 // name: source
 // version: 3
 // ports:
-//   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
+//   - out_color : image2D output (native R32_SFLOAT channel planes, straight
+//     alpha, scene-linear: logical pixel (x, y) of channel plane c at
+//     (x, y + c*logicalHeight), issue #90)
 // parameters:
 //   - the node's `source` parameter names a Document source reference
 //     (setSourceCommand); the shared runtime resolves the decoded frame and
 //     this node's preparation consumes no values from it.
-// bindings (native binding contract v5, see GpuGeometry.slang):
+// bindings (native binding contract v6, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms (meta is signed)
 //   set 0, binding 2 : per-input spatial geometry (the decoded frame's
 //     coverage: full-resolution origin in regionAndOffset.xy, raster extent in
 //     extent.xy; regionAndOffset.zw is unused because an external frame is not
 //     a lattice sibling of the output raster)
 //   set 1, binding 0 : the decoded full-resolution source frame
-//     (rgba32f storage image, GENERAL, straight alpha) — supplied by the
+//     (native R32_SFLOAT channel planes, GENERAL, straight alpha) — supplied by the
 //     shared source session, not by a graph edge
 //   set 2, binding 0 : output image2D
 //   No node-local payload: the kernel consumes the request and the coverage
@@ -52,13 +54,18 @@ cbuffer EffectUniforms {
     // support (a node-local scratch), a non-positive size means every sample is
     // transparent black. Samples outside it must be written transparent black.
     int4 support;
+    // channels: the produced raster's channel planes (issue #90):
+    // (plane count, 0, 0, 0).
+    uint4 channels;
+    // rgba: the produced plane index of each R/G/B/A role; -1 = role absent.
+    int4 rgba;
 };
 
 [[vk::binding(0, 1)]]
-RWTexture2D<float4> in_source;
+RWTexture2D<float> in_source;
 
 [[vk::binding(0, 2)]]
-RWTexture2D<float4> out_color;
+RWTexture2D<float> out_color;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -67,12 +74,14 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    // The described image's data support (native binding contract v5): a sample
-    // outside this Read's described data window is transparent black.
+    const int planeHeight = int(meta2.y);
+    // The described image's data support (native binding contract v6): a sample
+    // outside this Read's described data window is transparent black, and every
+    // plane is initialized (issue #90).
     if (support.z >= 0 && support.w >= 0 &&
         ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
          (int)p.y >= support.y + support.w)) {
-        out_color[p] = float4(0.0, 0.0, 0.0, 0.0);
+        gpuZeroPlanes(out_color, int2(p), planeHeight, channels.x);
         return;
     }
 
@@ -82,5 +91,14 @@ void main(uint3 tid : SV_DispatchThreadID)
     int2 extent = int2(inputGeometry[0].extent.xy);
     int2 s = full - origin;
     bool covered = s.x >= 0 && s.y >= 0 && s.x < extent.x && s.y < extent.y;
-    out_color[p] = covered ? in_source.Load(s) : float4(0.0, 0.0, 0.0, 0.0);
+    // The decoded frame is a channel-plane image of its own (issue #90) and the
+    // frame's plane c is this result's plane c: the described channel list is
+    // the frame's, in plane order. A plane the frame does not physically carry —
+    // a plane count the description names but the retained frame does not hold —
+    // stays numeric zero, and the frame's plane height is its own logical height.
+    const int framePlanes = int(inputGeometry[0].channels.x);
+    for (int plane = 0; plane < int(channels.x); ++plane) {
+        float value = (plane < framePlanes && covered) ? gpuLoadPlane(in_source, s, plane, extent.y) : 0.0;
+        gpuStorePlane(out_color, int2(p), plane, planeHeight, value);
+    }
 }

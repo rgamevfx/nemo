@@ -402,7 +402,7 @@ void expectImagesClose(const CpuImage& expected, const CpuImage& actual, float t
         for (int x = 0; x < expected.width(); ++x) {
             const auto e = expected.pixel(x, y);
             const auto a = actual.pixel(x, y);
-            for (std::size_t c = 0; c < CpuImage::channelCount(); ++c) {
+            for (std::size_t c = 0; c < e.size(); ++c) {
                 EXPECT_NEAR(a[c], e[c], tolerance) << what << ": pixel (" << x << "," << y << ") channel " << c;
             }
         }
@@ -1145,14 +1145,66 @@ TEST(Viewer, SourceRetentionUnderDelayedCompletion) {
     ASSERT_EQ(release.signal(), VK_SUCCESS);
     ASSERT_TRUE(queue.wait(completion, 5'000'000'000ULL));
     EXPECT_TRUE(sourceAllocation.expired());
-    CpuImage completed(16, 16);
-    gpu::downloadImage(queue, *boot.allocator, output->image, completed.data(), 16 * 16 * 4 * sizeof(float),
-                       5'000'000'000ULL);
+    eval::GpuEvaluation diagnostic;
+    diagnostic.images.emplace(request.output, std::move(output));
+    const CpuImage completed = diagnostic.readBack(request.output, *boot.device, *boot.allocator, 5'000'000'000ULL);
     // Gray 126 -> linear 0.261769, then 25% tint (1,.5,.25) over.
     const auto pixel = completed.pixel(8, 8);
     EXPECT_NEAR(pixel[0], 0.44632675F, 0.003F);
     EXPECT_NEAR(pixel[1], 0.32132675F, 0.003F);
     EXPECT_NEAR(pixel[2], 0.25882675F, 0.003F);
+    EXPECT_FLOAT_EQ(pixel[3], 1.0F);
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Viewer, ScalarProjectionMustCompleteBeforePublication) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    auto& queue = boot.device->submissions(boot.device->graphics_family());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    auto request = requestFor(composition.doc, {0, 0, 64, 48}, 0);
+    request.channels = {"R"};
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    const auto warm = session.render(composition.doc, request);
+    static_cast<void>(readViewerFrame(warm, boot));
+
+    struct Gate {
+        VkDevice device{};
+        VkSemaphore semaphore{};
+        ~Gate() { vkDestroySemaphore(device, semaphore, nullptr); }
+    };
+    auto gate = std::make_shared<Gate>();
+    gate->device = boot.device->handle();
+    VkSemaphoreTypeCreateInfo type{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO, nullptr, VK_SEMAPHORE_TYPE_TIMELINE,
+                                   0};
+    VkSemaphoreCreateInfo create{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &type, 0};
+    ASSERT_EQ(vkCreateSemaphore(gate->device, &create, nullptr, &gate->semaphore), VK_SUCCESS);
+    struct Release {
+        const Gate& gate;
+        ~Release() {
+            VkSemaphoreSignalInfo signal{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, nullptr, gate.semaphore, 1};
+            static_cast<void>(vkSignalSemaphore(gate.device, &signal));
+        }
+    };
+    std::optional<gpu::SubmissionQueue::Completion> blocker;
+    {
+        const Release release{*gate};
+        gpu::SubmissionQueue::TimelineSemaphores dependency;
+        dependency.wait = {gate->semaphore};
+        dependency.waitValues = {1};
+        blocker = queue.submit([](VkCommandBuffer) {}, {gate}, dependency);
+        ASSERT_TRUE(blocker);
+        // Composition is warm; only the new presentation projection is pending.
+        // A final publisher must honor its timeout, not return unfinished pixels.
+        EXPECT_THROW(static_cast<void>(session.render(composition.doc, request, 1'000'000ULL)), gpu::GpuException);
+    }
+    ASSERT_TRUE(queue.wait(*blocker, 5'000'000'000ULL));
+    const auto completed = session.render(composition.doc, request);
+    const auto pixel = readViewerFrame(completed, boot).pixel(8, 8);
+    EXPECT_NEAR(pixel[0], 0.261769F, 0.003F);
+    EXPECT_FLOAT_EQ(pixel[1], pixel[0]);
+    EXPECT_FLOAT_EQ(pixel[2], pixel[0]);
     EXPECT_FLOAT_EQ(pixel[3], 1.0F);
     expectValidationClean(*boot.instance);
 }
@@ -1199,7 +1251,7 @@ TEST(Viewer, StillImageFillMatchesCpuReference) {
     for (int y = 0; y < 4; ++y) {
         for (int x = 0; x < 4; ++x) {
             const std::array<float, 4> expected = stillPatternPixel(x, y);
-            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+            for (std::size_t channel = 0; channel < expected.size(); ++channel) {
                 EXPECT_FLOAT_EQ(cpu.image.pixel(x, y)[channel], expected[channel]) << "CPU (" << x << "," << y << ")";
                 EXPECT_FLOAT_EQ(gpu.pixel(x, y)[channel], expected[channel]) << "GPU (" << x << "," << y << ")";
             }
@@ -1296,7 +1348,7 @@ TEST(Viewer, StillSequenceResolvesFramesThroughTimeMapping) {
         for (int x = 0; x < 2; ++x) {
             const std::array<float, 4> frameZero = stillPatternPixel(x, y);
             const std::array<float, 4> frameOne = stillPatternPixel(x, y, 0.25F);
-            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+            for (std::size_t channel = 0; channel < frameZero.size(); ++channel) {
                 EXPECT_FLOAT_EQ(first.pixel(x, y)[channel], frameZero[channel]) << "frame 0 (" << x << "," << y << ")";
                 EXPECT_FLOAT_EQ(second.pixel(x, y)[channel], frameOne[channel]) << "frame 1 (" << x << "," << y << ")";
             }
@@ -1467,7 +1519,7 @@ TEST(Viewer, StillImageHandoffSurvivesDroppedEvaluation) {
     for (int y = 0; y < 4; ++y) {
         for (int x = 0; x < 4; ++x) {
             const std::array<float, 4> expected = stillPatternPixel(x, y);
-            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+            for (std::size_t channel = 0; channel < expected.size(); ++channel) {
                 EXPECT_FLOAT_EQ(gpu.pixel(x, y)[channel], expected[channel]) << "(" << x << "," << y << ")";
             }
         }

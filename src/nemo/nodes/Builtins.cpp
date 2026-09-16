@@ -10,7 +10,7 @@ namespace {
 // The single explicit list, assembled once from the per-node factories.
 [[nodiscard]] std::vector<NodeContribution> assembleBuiltins() {
     std::vector<NodeContribution> contributions;
-    contributions.reserve(9);
+    contributions.reserve(10);
 #define NEMO_NODE(name) contributions.push_back(nodes::name##Contribution());
 #include "nemo/nodes/BuiltinNodes.inc"
 #undef NEMO_NODE

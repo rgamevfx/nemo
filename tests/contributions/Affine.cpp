@@ -177,7 +177,7 @@ std::vector<InputRequirement> affineInputRequirements(const NodeRegionContext& c
     const AffineShift shift = effectiveShift(context.catalog, context.node, context.effectiveParams);
     const Region& region = context.request.region;
     const Region wanted{region.x - shift.x, region.y - shift.y, region.width, region.height};
-    return {InputRequirement{regionIntersection(wanted, requirementDomain(context, 0, wanted)), "RGBA"}};
+    return {InputRequirement{regionIntersection(wanted, requirementDomain(context, 0, wanted)), {}}};
 }
 
 // The example's declared output description (issue #88): everything is inherited

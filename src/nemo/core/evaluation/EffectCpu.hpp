@@ -12,8 +12,11 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <span>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/Image.hpp"
@@ -175,14 +178,28 @@ struct InputAnchor {
 
 // This node's own raster of an input, copied out of that input's raster (which
 // may be larger). Only used where the output is honestly a window of an input,
-// so the copy is the result rather than a needless intermediate. A sample the
-// input does not hold is transparent black (issue #88): the window may reach
-// past an input whose own data ends earlier.
+// so the copy is the result rather than a needless intermediate. Every stored
+// channel is copied by NAME (issue #90), so an auxiliary or data layer survives
+// delivery instead of being projected away; a produced channel the input does
+// not carry stays zero, and a sample the input does not hold is zero (issue
+// #88: the window may reach past an input whose own data ends earlier).
 [[nodiscard]] inline CpuImage windowOf(const CpuImage& image, const InputAnchor& anchor, ImageLayout layout) {
     CpuImage window(std::move(layout));
+    const std::vector<std::string>& channels = window.layout().channels;
+    std::vector<int> sourceIndex(channels.size(), -1);
+    for (std::size_t index = 0; index < channels.size(); ++index) {
+        sourceIndex[index] = channelIndex(image.layout().channels, channels[index]);
+    }
     for (int y = 0; y < window.height(); ++y) {
         for (int x = 0; x < window.width(); ++x) {
-            window.setPixel(x, y, sampledPixel(image, anchor.offsetX + x, anchor.offsetY + y));
+            for (std::size_t index = 0; index < channels.size(); ++index) {
+                const int source = sourceIndex[index];
+                if (source < 0) {
+                    continue;
+                }
+                window.setChannel(x, y, static_cast<int>(index),
+                                  image.channel(anchor.offsetX + x, anchor.offsetY + y, source));
+            }
         }
     }
     return window;
@@ -288,6 +305,58 @@ straightPixel(const std::array<float, kImageChannels>& premultiplied) {
         }
     }
     return processed;
+}
+
+// Shared auxiliary-channel preservation (issue #90). An ordinary effect
+// addresses its main input's RGBA projection and leaves every other named
+// channel of that input alone; the executor applies this to any contribution
+// that does not own its channel layout, so a mask, normals, motion or data
+// layer survives Read -> effect -> ... untouched, and no effect states a shadow
+// rule of its own.
+//
+// Exactly the produced channels that are NOT an identified primary role and
+// that the main input also carries are copied, at UNCHANGED image coordinates
+// (the two rasters sit on the same sampling lattice, so the input's sample for
+// a produced sample is its anchor offset). A produced auxiliary channel the
+// main input does not name stays as the effect left it (zero for a fresh
+// raster), and no channel is created: the produced raster's own naming decides
+// what exists.
+[[nodiscard]] inline CpuImage preserveAuxiliaryChannels(const CpuNodeContext& context, CpuImage produced) {
+    const CpuImage* main = optionalImageInput(context, 0);
+    if (main == nullptr || produced.channelCount() == 0) {
+        return produced;
+    }
+    const std::vector<std::string>& names = produced.layout().channels;
+    std::vector<int> sourceIndex(names.size(), -1);
+    bool any = false;
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        bool primary = false;
+        for (std::size_t role = 0; role < kImageChannels && !primary; ++role) {
+            primary = channelsDetail::isPrimaryRoleName(names[index], role);
+        }
+        if (primary) {
+            continue;  // the effect's own RGBA math owns this channel
+        }
+        sourceIndex[index] = channelIndex(main->layout().channels, names[index]);
+        any = any || sourceIndex[index] >= 0;
+    }
+    if (!any) {
+        return produced;
+    }
+    const InputAnchor anchor = anchorInput(context, 0, *main);
+    for (int y = 0; y < produced.height(); ++y) {
+        for (int x = 0; x < produced.width(); ++x) {
+            for (std::size_t index = 0; index < names.size(); ++index) {
+                const int source = sourceIndex[index];
+                if (source < 0) {
+                    continue;
+                }
+                produced.setChannel(x, y, static_cast<int>(index),
+                                    main->channel(anchor.offsetX + x, anchor.offsetY + y, source));
+            }
+        }
+    }
+    return produced;
 }
 
 }  // namespace nemo

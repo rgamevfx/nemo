@@ -134,84 +134,134 @@ struct BlurKernel {
     for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
         filtered[channel] = (params.channels & kChannelBits[channel]) != 0;
     }
-    const bool premultiply = filtered[0] && filtered[1] && filtered[2] && filtered[3];
+
+    // Resolve the raster's named channels once (issue #90), outside every pixel
+    // loop: which output channel is which primary role, and where the same
+    // channel lives in the input raster. Channels that are not a primary role
+    // (a mask, normals, any auxiliary layer) are not this effect's business:
+    // they stay zero here and the executor's shared preservation step carries
+    // them from the main input unchanged. An unselected primary role is copied
+    // exactly, which is what RGB/Alpha filtering always promised.
+    CpuImage output(effectRasterLayout(context));
+    const std::size_t channels = output.channelCount();
+    const std::size_t sourceChannels = input.channelCount();
+    std::vector<int> sourceIndex(channels, -1);
+    std::array<int, kImageChannels> roleAt{-1, -1, -1, -1};
+    std::vector<bool> selected(channels, false);
+    for (std::size_t index = 0; index < channels; ++index) {
+        const std::string& name = output.layout().channels[index];
+        sourceIndex[index] = channelIndex(input.layout().channels, name);
+        int role = -1;
+        for (std::size_t candidate = 0; candidate < kImageChannels; ++candidate) {
+            if (channelsDetail::isPrimaryRoleName(name, candidate)) {
+                role = static_cast<int>(candidate);
+                break;
+            }
+        }
+        if (role < 0) {
+            continue;  // auxiliary/data channel: preserved centrally, never filtered
+        }
+        roleAt[static_cast<std::size_t>(role)] = static_cast<int>(index);
+        selected[index] = filtered[static_cast<std::size_t>(role)] && sourceIndex[index] >= 0;
+    }
+    const int alphaSourceIndex = roleAt[3] >= 0 ? sourceIndex[static_cast<std::size_t>(roleAt[3])] : -1;
+    const bool premultiply =
+        roleAt[0] >= 0 && roleAt[1] >= 0 && roleAt[2] >= 0 && roleAt[3] >= 0 &&
+        selected[static_cast<std::size_t>(roleAt[0])] && selected[static_cast<std::size_t>(roleAt[1])] &&
+        selected[static_cast<std::size_t>(roleAt[2])] && selected[static_cast<std::size_t>(roleAt[3])];
 
     // One pass over the node's own raster, reading a source raster that may
     // start elsewhere and be larger (`sourceWidth`/`sourceHeight` describe it,
     // the offsets place this node's origin inside it).
-    const auto filterPass = [&](const float* source, int sourceWidth, int sourceHeight, const InputAnchor& origin,
-                                float* target, int targetHeight, bool alongX, bool premultiplySource) {
+    const auto filterPass = [&](const float* source, std::size_t sourceStride, int sourceWidth, int sourceHeight,
+                                const InputAnchor& origin, float* target, int targetHeight, bool alongX,
+                                bool premultiplySource, const std::vector<int>& sourceOf) {
         for (int y = 0; y < targetHeight; ++y) {
             for (int x = 0; x < outputWidth; ++x) {
                 const std::size_t base = (static_cast<std::size_t>(y) * static_cast<std::size_t>(outputWidth) +
                                           static_cast<std::size_t>(x)) *
-                                         kImageChannels;
+                                         channels;
                 const int column = origin.offsetX + x;
                 const int row = origin.offsetY + y;
-                for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
-                    if (!filtered[channel]) {
-                        target[base + channel] =
-                            source[(static_cast<std::size_t>(row) * static_cast<std::size_t>(sourceWidth) +
-                                    static_cast<std::size_t>(column)) *
-                                       kImageChannels +
-                                   channel];
+                const std::size_t sampleBase = (static_cast<std::size_t>(row) * static_cast<std::size_t>(sourceWidth) +
+                                                static_cast<std::size_t>(column)) *
+                                               sourceStride;
+                for (std::size_t index = 0; index < channels; ++index) {
+                    const int from = sourceOf[index];
+                    if (from < 0) {
+                        target[base + index] = 0.0F;
+                        continue;
+                    }
+                    if (!selected[index]) {
+                        target[base + index] = source[sampleBase + static_cast<std::size_t>(from)];
                         continue;
                     }
                     float sum = 0.0F;
                     for (int tap = -kernel.support; tap <= kernel.support; ++tap) {
                         const int sampleX = alongX ? clampIndex(column + tap, sourceWidth) : column;
                         const int sampleY = alongX ? row : clampIndex(row + tap, sourceHeight);
-                        const std::size_t sampleIndex =
+                        const std::size_t tapBase =
                             (static_cast<std::size_t>(sampleY) * static_cast<std::size_t>(sourceWidth) +
                              static_cast<std::size_t>(sampleX)) *
-                            kImageChannels;
-                        float value = source[sampleIndex + channel];
-                        if (premultiplySource && channel != 3) {
-                            value *= source[sampleIndex + 3];
+                            sourceStride;
+                        float value = source[tapBase + static_cast<std::size_t>(from)];
+                        if (premultiplySource && index != static_cast<std::size_t>(roleAt[3]) &&
+                            alphaSourceIndex >= 0) {
+                            value *= source[tapBase + static_cast<std::size_t>(alphaSourceIndex)];
                         }
                         // effectiveBlur bounds support to [0, 100], so this index is within [0, 200].
                         // NOLINTNEXTLINE(bugprone-misplaced-widening-cast): bounded index
                         sum += kernel.weights[static_cast<std::size_t>(tap + kernel.support)] * value;
                     }
-                    target[base + channel] = sum;
+                    target[base + index] = sum;
                 }
             }
         }
     };
 
-    CpuImage output(effectRasterLayout(context));
     if (width > 1 && height > 1) {
         // The intermediate carries the horizontally filtered rows of the whole
         // input raster, not only this node's rows: the vertical pass reads the
         // real vertical neighbors of the halo instead of collapsing them onto
-        // the output's own extent.
+        // the output's own extent. It is already in THIS raster's channel order,
+        // so the vertical pass indexes it literally.
         std::vector<float> intermediate(
-            static_cast<std::size_t>(outputWidth) * static_cast<std::size_t>(height) * kImageChannels, 0.0F);
-        filterPass(input.data(), width, height, InputAnchor{anchor.offsetX, 0}, intermediate.data(), height, true,
-                   premultiply);
-        filterPass(intermediate.data(), outputWidth, height, InputAnchor{0, anchor.offsetY}, output.data(),
-                   outputHeight, false, false);
+            static_cast<std::size_t>(outputWidth) * static_cast<std::size_t>(height) * channels, 0.0F);
+        std::vector<int> intermediateIndex(channels);
+        for (std::size_t index = 0; index < channels; ++index) {
+            intermediateIndex[index] = static_cast<int>(index);
+        }
+        filterPass(input.data(), sourceChannels, width, height, InputAnchor{anchor.offsetX, 0}, intermediate.data(),
+                   height, true, premultiply, sourceIndex);
+        filterPass(intermediate.data(), channels, outputWidth, height, InputAnchor{0, anchor.offsetY}, output.data(),
+                   outputHeight, false, false, intermediateIndex);
     } else if (height > 1) {
-        filterPass(input.data(), width, height, anchor, output.data(), outputHeight, false, premultiply);
+        filterPass(input.data(), sourceChannels, width, height, anchor, output.data(), outputHeight, false, premultiply,
+                   sourceIndex);
     } else {
-        filterPass(input.data(), width, height, anchor, output.data(), outputHeight, true, premultiply);
+        filterPass(input.data(), sourceChannels, width, height, anchor, output.data(), outputHeight, true, premultiply,
+                   sourceIndex);
     }
 
     if (premultiply) {
         const std::size_t pixels = static_cast<std::size_t>(outputWidth) * static_cast<std::size_t>(outputHeight);
+        const std::size_t red = static_cast<std::size_t>(roleAt[0]);
+        const std::size_t green = static_cast<std::size_t>(roleAt[1]);
+        const std::size_t blue = static_cast<std::size_t>(roleAt[2]);
+        const std::size_t alpha = static_cast<std::size_t>(roleAt[3]);
         float* pointer = output.data();
         for (std::size_t index = 0; index < pixels; ++index) {
-            const float alpha = pointer[3];
-            if (alpha != 0.0F) {
-                pointer[0] /= alpha;
-                pointer[1] /= alpha;
-                pointer[2] /= alpha;
+            const float value = pointer[alpha];
+            if (value != 0.0F) {
+                pointer[red] /= value;
+                pointer[green] /= value;
+                pointer[blue] /= value;
             } else {
-                pointer[0] = 0.0F;
-                pointer[1] = 0.0F;
-                pointer[2] = 0.0F;
+                pointer[red] = 0.0F;
+                pointer[green] = 0.0F;
+                pointer[blue] = 0.0F;
             }
-            pointer += kImageChannels;
+            pointer += channels;
         }
     }
     return output;
@@ -238,6 +288,11 @@ CpuImage executeBlur(const CpuNodeContext& context) {
 // READ demand, never an output bound: Blur describes its output as exactly the
 // description it inherited from its main input, because clamp-to-edge keeps
 // every filtered sample inside the input's own data window.
+//
+// Neither port declares channels (issue #90): a filtering effect reads the
+// channels its own raster names, and the inherited demand is filtered to what
+// each producer really carries, so an alpha-only or multilayer input is never
+// asked for channels it does not have and keeps them through the filter.
 std::vector<InputRequirement> blurInputRequirements(const NodeRegionContext& context) {
     const BlurParameters params = effectiveBlur(context.catalog, context.node, context.effectiveParams);
     const EvaluationRequest& request = context.request;
@@ -246,8 +301,8 @@ std::vector<InputRequirement> blurInputRequirements(const NodeRegionContext& con
     const Region halo{request.region.x - radius, request.region.y - radius, request.region.width + 2 * radius,
                       request.region.height + 2 * radius};
     const Region mask = regionIntersection(request.region, requirementDomain(context, 1, request.region));
-    return {InputRequirement{regionIntersection(halo, requirementDomain(context, 0, halo)), "RGBA"},
-            InputRequirement{mask, "RGBA"}};
+    return {InputRequirement{regionIntersection(halo, requirementDomain(context, 0, halo)), {}},
+            InputRequirement{mask, {}}};
 }
 
 std::optional<std::string> validateBlurParameters(const NodeCatalog& catalog, const NodeInstance& node,

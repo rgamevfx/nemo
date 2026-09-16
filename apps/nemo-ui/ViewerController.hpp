@@ -15,6 +15,11 @@
 #include <QVariantList>
 #include <QVariantMap>
 #include <chrono>
+#include <cstddef>
+#include <limits>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace nemo::ui {
 class ViewerItem;
@@ -85,6 +90,17 @@ class ViewerController final : public QObject {
     Q_PROPERTY(double frameRate READ frameRate NOTIFY frameRateChanged)
     Q_PROPERTY(QString channel READ channel NOTIFY displayChanged)
     Q_PROPERTY(QString layer READ layer NOTIFY displayChanged)
+    // Named channel layers this panel can address, from the target's described
+    // channels (plus the root layer and the current selection). A layer is never
+    // fabricated: before an answer the root layer is the only entry.
+    Q_PROPERTY(QStringList layers READ availableLayers NOTIFY displayChanged)
+    // Display choices of the selected layer: the composite first, then that
+    // layer's real channel names in declared order.
+    Q_PROPERTY(QStringList displayChannels READ availableChannels NOTIFY displayChanged)
+    // Why the current layer addresses no channel of the target, or a plain
+    // statement when it does. A layer the target does not carry is reported,
+    // never silently replaced by another layer.
+    Q_PROPERTY(QString layerReason READ layerReason NOTIFY displayChanged)
     Q_PROPERTY(QString timecode READ timecode NOTIFY frameChanged)
 public:
     explicit ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session);
@@ -244,11 +260,20 @@ public:
     Q_INVOKABLE void setMarkOut();
     Q_INVOKABLE void setMarkInFrame(int frame);
     Q_INVOKABLE void setMarkOutFrame(int frame);
-    // Presentation-only display isolation: "RGBA", "R", "G", "B", "A".
+    // Named display selection (issue #90). The layer picks which named channel
+    // layer this panel evaluates and the channel picks what the presentation
+    // isolates inside it. Both are validated against the target's ACTUAL
+    // described channels; an unavailable name is reported, never substituted.
     Q_INVOKABLE void setChannel(const QString& channel);
-    // "rgb" selects the display-referred composite. "depth" has no runtime
-    // implementation and is reported as unavailable rather than fabricated.
     Q_INVOKABLE void setLayer(const QString& layer);
+    // Asynchronous channel availability of one node's image inputs (issue #90).
+    // The answer comes from the worker-side description planner through the
+    // runtime's bounded admission, so a mapping editor never probes media or
+    // evaluates on the GUI thread, and never invents a channel it cannot
+    // observe. Repeated calls for one identity reuse the retained answer; a
+    // superseded identity replaces the outstanding query instead of queueing
+    // beside it. `nodeChannelsChanged` reports the answer.
+    Q_INVOKABLE QVariantMap nodeInputChannels(const QString& networkId, const QVariant& nodeValue);
     Q_INVOKABLE QString timecodeForFrame(int frame) const;
     Q_INVOKABLE int frameForTimecode(const QString& text) const;
     // Forwards the resolved panel context (PanelContextRouter) into the render
@@ -306,6 +331,9 @@ public:
     [[nodiscard]] double frameRate() const { return frameRate_; }
     [[nodiscard]] QString channel() const { return channel_; }
     [[nodiscard]] QString layer() const { return layer_; }
+    [[nodiscard]] QStringList availableLayers() const;
+    [[nodiscard]] QStringList availableChannels() const;
+    [[nodiscard]] QString layerReason() const;
     [[nodiscard]] QString timecode() const;
     [[nodiscard]] std::shared_ptr<const ViewerResult> presentation() const { return presentation_; }
     // The one retained presentation host shared by every panel; the runtime
@@ -333,6 +361,9 @@ signals:
     void marksChanged();
     void frameRateChanged();
     void displayChanged();
+    // A node's input channel answer advanced (issue #90). Presenters re-query
+    // `nodeInputChannels` instead of caching a list of their own.
+    void nodeChannelsChanged();
     // Qt handed the rendered frame to the window system. This is not a
     // physical scanout timestamp; benchmark reports name that boundary.
     void framePresented(int frame, int width, int height, bool cacheHit, double requestToSwapMs);
@@ -396,6 +427,49 @@ private:
     [[nodiscard]] bool targetDescriptionMatches(NetworkId network, NodeId target, const std::string& sourceKey,
                                                 std::uint64_t revision, std::int64_t localTime) const;
     [[nodiscard]] EvaluationRequest descriptionRequest(NetworkId network, NodeId target) const;
+    // Resolve the named demand and presentation role from the current metadata.
+    // Empty means an unavailable layer and is rejected before submission; color
+    // role isolation remains presentation-only, while scalar data is demanded
+    // by its exact name.
+    [[nodiscard]] std::vector<std::string> resolveChannelRequest();
+    // Real channels of the selected layer, in described order. Empty until the
+    // target's description has been answered: absence is never filled in with a
+    // guessed channel set.
+    [[nodiscard]] QStringList layerChannels() const;
+    // One input port of the queried node. `upstream` is kInvalidNode for a
+    // disconnected port, which is a real state (`A` is optional), not an error.
+    struct ChannelPort {
+        QString name;
+        QString kind;
+        bool image{false};
+        bool optional{false};
+        NodeId upstream{kInvalidNode};
+        bool answered{false};
+        ImageDescription description;
+        QString failure;
+    };
+    struct ChannelQuery {
+        NetworkId network{kInvalidNetwork};
+        NodeId node{kInvalidNode};
+        std::uint64_t revision{};
+        std::int64_t localTime{};
+        std::vector<ChannelPort> ports;
+        // Describes are submitted one port at a time: the runtime keeps one
+        // publication slot per destination, so an outstanding answer is never
+        // overwritten by its own sibling.
+        std::size_t nextPort{};
+        std::size_t pendingPort{std::numeric_limits<std::size_t>::max()};
+        std::uint64_t outstanding{};
+        bool complete{false};
+    };
+    // The destination channel availability queries are published to, allocated
+    // on first use and independent of this panel's render destination so a
+    // description never supersedes a render or another card's answer.
+    [[nodiscard]] std::optional<eval::ViewerDestination> channelQueryDestination();
+    void submitNextChannelQuery();
+    void applyChannelDescription(std::uint64_t requestId, const ImageDescription& description);
+    void applyChannelFailure(std::uint64_t requestId, const QString& message);
+    [[nodiscard]] QVariantMap channelQueryAnswer() const;
     // Forgets the probed media when the request no longer addresses it: a
     // cleared Read, a replaced target, or a target that names no reference.
     void forgetProbedMedia();
@@ -499,11 +573,18 @@ private:
     NodeId targetMediaTarget_{kInvalidNode};
     std::string targetMediaKey_;
     bool targetMediaUnbound_{};
-    // Panel-local display selection. `channel_` is the display name; the
-    // presentation-only isolation travels with each submission.
+    // Panel-local selection. The presentation role is re-resolved from actual
+    // channel metadata before each request, so a changing image cannot retain
+    // obsolete color/scalar interpretation.
     QString channel_{QStringLiteral("RGBA")};
     gpu::ViewerChannel viewerChannel_{gpu::ViewerChannel::RGBA};
-    QString layer_{QStringLiteral("rgb")};
+    QString layer_{QStringLiteral("rgba")};
+    // Channel availability query (issue #90). `channelQuery_` is the memoized
+    // answer for one node/revision/frame; the destination is allocated on first
+    // use so it is never another panel's and never a render's.
+    std::optional<ChannelQuery> channelQuery_;
+    std::optional<eval::ViewerDestination> channelQueryDestination_;
+    std::uint64_t nextChannelRequestId_{0};
     double frameRate_{24.0};
     bool playing_{false};
     bool marksAuthored_{false};

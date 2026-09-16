@@ -277,6 +277,14 @@ void expectRgba(const CpuImage& image, int x, int y, std::array<float, 4> expect
             << "pixel (" << x << "," << y << "), channel " << channel;
 }
 
+void expectStoredChannel(const CpuImage& image, int x, int y, const std::string& name, float expected) {
+    const auto& names = image.layout().channels;
+    const auto found = std::find(names.begin(), names.end(), name);
+    ASSERT_NE(found, names.end()) << name;
+    EXPECT_FLOAT_EQ(image.channel(x, y, static_cast<int>(found - names.begin())), expected)
+        << name << " at raster " << x << "," << y;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -392,6 +400,237 @@ TEST_F(ContributionTest, AffineContributionFlowsThroughProjectSessionAndPersiste
     auto rendered = eval::evaluateGpu(reopened.document(), reopenedRequest, library, *boot.device, *boot.allocator);
     expectPixel(rendered.readBack(reopenedOutput, *boot.device, *boot.allocator), kExpected,
                 "native rendering after reopen");
+    expectValidationClean(*boot.instance);
+}
+
+TEST_F(ContributionTest, AlphaOnlyReadPreservesItsNamedChannelThroughEffects) {
+    const auto path = fs::path{NEMO_CHANNEL_FIXTURE_DIR} / "alpha-only.exr";
+
+    ProjectSession session;
+    const auto network = session.document().rootNetworkId();
+    const auto output = session.document().network(network).defaultOutput();
+    const auto source = createSessionNode(session, "source", "Matte");
+    const auto shuffle = createSessionNode(session, "shuffle", "Alpha Shuffle");
+    const auto grade = createSessionNode(session, "grade", "Grade");
+    SourceReference reference;
+    reference.path = path.string();
+    ASSERT_TRUE(session
+                    .submit(transactionCommand("alpha-only source",
+                                               {setSourceCommand("matte", reference),
+                                                setParamCommand(network, source, "source", std::string{"matte"}),
+                                                setParamCommand(network, shuffle, "outputChannel0", std::string{}),
+                                                setParamCommand(network, shuffle, "outputChannel1", std::string{}),
+                                                setParamCommand(network, shuffle, "outputChannel2", std::string{}),
+                                                connectCommand(network, {source, 0}, {shuffle, 0}),
+                                                connectCommand(network, {shuffle, 0}, {grade, 0}),
+                                                connectCommand(network, {grade, 0}, {output, 0})}),
+                            EditOptions{session.revision(), {}})
+                    .committed);
+    auto request = requestFor(session.document(), output);
+    request.region = {0, 0, 2, 1};
+    media::ImageSourceProvider provider;
+    const auto rendered = evaluateCpu(session.document(), request, nullptr, &provider);
+    ASSERT_EQ(rendered.image.layout().channels.size(), 1U) << "Read must not manufacture RGB for a matte";
+    EXPECT_EQ(rendered.image.layout().channels.front(), "A");
+    EXPECT_EQ(rendered.plan.description.channels.size(), 1U);
+    EXPECT_FLOAT_EQ(rendered.image.data()[0], 0.25F);
+    EXPECT_FLOAT_EQ(rendered.image.data()[1], 0.75F);
+
+    if (slangSpvDir().empty())
+        GTEST_SKIP() << "native Slang unavailable; CPU alpha-only workflow completed";
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    const auto library = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::SourceSession nativeSources(*boot.instance, *boot.device, *boot.allocator,
+                                      slangSpvDir() / "mediaConvert.spv");
+    auto native = eval::evaluateGpu(session.document(), request, library, *boot.device, *boot.allocator,
+                                    10'000'000'000ULL, nullptr, &nativeSources);
+    const auto pixels = native.readBack(output, *boot.device, *boot.allocator);
+    ASSERT_EQ(pixels.layout().channels, (std::vector<std::string>{"A"}));
+    EXPECT_FLOAT_EQ(pixels.data()[0], 0.25F);
+    EXPECT_FLOAT_EQ(pixels.data()[1], 0.75F);
+    expectValidationClean(*boot.instance);
+}
+
+TEST_F(ContributionTest, MultilayerReadPreservesNamedDataThroughGradeAndRegionalReuse) {
+    // Handwritten OpenEXR bytes, independent of Nemo and OIIO's writer.
+    ProjectSession session;
+    const auto network = session.document().rootNetworkId();
+    const auto output = session.document().network(network).defaultOutput();
+    const auto source = createSessionNode(session, "source", "Multilayer");
+    const auto grade = createSessionNode(session, "grade", "Grade");
+    SourceReference reference;
+    reference.path = (fs::path{NEMO_CHANNEL_FIXTURE_DIR} / "multilayer-b.exr").string();
+    ASSERT_TRUE(session
+                    .submit(transactionCommand("multilayer source",
+                                               {setSourceCommand("plate", reference),
+                                                setParamCommand(network, source, "source", std::string{"plate"}),
+                                                setParamCommand(network, source, "inputTransform", ChoiceValue{"raw"}),
+                                                setParamCommand(network, grade, "multiply", ColorValue{{2, 2, 2, 1}}),
+                                                connectCommand(network, {source, 0}, {grade, 0}),
+                                                connectCommand(network, {grade, 0}, {output, 0})}),
+                            EditOptions{session.revision(), {}})
+                    .committed);
+    const std::vector<std::string> names{
+        "A", "B", "G", "R", "beauty.B", "beauty.G", "beauty.R", "depth.Z", "matte.coverage", "motion.u", "motion.v"};
+    const auto expectSamples = [&names](const CpuImage& image, Region region) {
+        ASSERT_EQ(image.width(), region.width);
+        ASSERT_EQ(image.height(), region.height);
+        auto actualNames = image.layout().channels;
+        std::sort(actualNames.begin(), actualNames.end());
+        ASSERT_EQ(actualNames, names) << "no renamed, dropped, or manufactured channels";
+        std::array<std::size_t, 11> indices{};
+        for (std::size_t i = 0; i < names.size(); ++i)
+            indices[i] = std::find(image.layout().channels.begin(), image.layout().channels.end(), names[i]) -
+                         image.layout().channels.begin();
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const std::array<float, 11> expected{
+                    1, 1.5F, 1, 0.5F, 6, -5, 4, static_cast<float>(10 * (region.x + x) + region.y + y), 0.125F, -2, 3};
+                const auto offset = (static_cast<std::size_t>(y) * image.width() + x) * names.size();
+                for (std::size_t i = 0; i < names.size(); ++i)
+                    ASSERT_FLOAT_EQ(image.data()[offset + indices[i]], expected[i])
+                        << names[i] << " at " << region.x + x << "," << region.y + y;
+            }
+        }
+    };
+    auto request = requestFor(session.document(), output);
+    request.region = {0, 0, 8, 8};
+    media::ImageSourceProvider provider;
+    ResultCache<CpuImage> cpuCache;
+    expectSamples(evaluateCpu(session.document(), request, &cpuCache, &provider).image, request.region);
+    request.region = {2, 3, 3, 2};
+    expectSamples(evaluateCpu(session.document(), request, &cpuCache, &provider).image, request.region);
+
+    if (slangSpvDir().empty())
+        GTEST_SKIP() << "native Slang unavailable; CPU multilayer workflow completed";
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    const auto library = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::SourceSession nativeSources(*boot.instance, *boot.device, *boot.allocator,
+                                      slangSpvDir() / "mediaConvert.spv");
+    ResultCache<eval::GpuNodeImage> nativeCache;
+    request.region = {0, 0, 8, 8};
+    auto native = eval::evaluateGpu(session.document(), request, library, *boot.device, *boot.allocator,
+                                    10'000'000'000ULL, &nativeCache, &nativeSources);
+    expectSamples(native.readBack(output, *boot.device, *boot.allocator), request.region);
+    request.region = {2, 3, 3, 2};
+    auto crop = eval::evaluateGpu(session.document(), request, library, *boot.device, *boot.allocator,
+                                  10'000'000'000ULL, &nativeCache, &nativeSources);
+    expectSamples(crop.readBack(output, *boot.device, *boot.allocator), request.region);
+    expectValidationClean(*boot.instance);
+}
+
+TEST_F(ContributionTest, ShuffleFanoutConstantsAndDataKeepTheirOwnCoordinatesThroughTransform) {
+    ProjectSession session;
+    const auto network = session.document().rootNetworkId();
+    const auto output = session.document().network(network).defaultOutput();
+    const auto sourceB = createSessionNode(session, "source", "B");
+    const auto sourceA = createSessionNode(session, "source", "A");
+    const auto shuffle = createSessionNode(session, "shuffle", "Shuffle");
+    const auto grade = createSessionNode(session, "grade", "Grade");
+    const auto transform = createSessionNode(session, "transform", "Transform");
+    SourceReference b;
+    b.path = (fs::path{NEMO_CHANNEL_FIXTURE_DIR} / "multilayer-b.exr").string();
+    SourceReference a;
+    a.path = (fs::path{NEMO_CHANNEL_FIXTURE_DIR} / "overscan-a.exr").string();
+    ASSERT_TRUE(session
+                    .submit(transactionCommand(
+                                "named mapping",
+                                {setSourceCommand("B", b),
+                                 setSourceCommand("A", a),
+                                 setParamCommand(network, sourceB, "source", std::string{"B"}),
+                                 setParamCommand(network, sourceA, "source", std::string{"A"}),
+                                 setParamCommand(network, sourceB, "inputTransform", ChoiceValue{"raw"}),
+                                 setParamCommand(network, shuffle, "sourceKind0", ChoiceValue{"one"}),
+                                 setParamCommand(network, shuffle, "sourceKind2", ChoiceValue{"zero"}),
+                                 setParamCommand(network, shuffle, "input2", ChoiceValue{"A"}),
+                                 setParamCommand(network, shuffle, "sourceKind4", ChoiceValue{"input2"}),
+                                 setParamCommand(network, shuffle, "sourceChannel4", std::string{"depth.Z"}),
+                                 setParamCommand(network, shuffle, "outputChannel4", std::string{"made.depth"}),
+                                 setParamCommand(network, shuffle, "sourceKind5", ChoiceValue{"input2"}),
+                                 setParamCommand(network, shuffle, "sourceChannel5", std::string{"depth.Z"}),
+                                 setParamCommand(network, shuffle, "outputChannel5", std::string{"made.copy"}),
+                                 setParamCommand(network, shuffle, "sourceKind6", ChoiceValue{"one"}),
+                                 setParamCommand(network, shuffle, "outputChannel6", std::string{"made.one"}),
+                                 setParamCommand(network, shuffle, "sourceKind7", ChoiceValue{"input2"}),
+                                 setParamCommand(network, shuffle, "sourceChannel7", std::string{"absent.channel"}),
+                                 setParamCommand(network, shuffle, "outputChannel7", std::string{"made.missing"}),
+                                 setParamCommand(network, grade, "multiply", ColorValue{{2, 2, 2, 1}}),
+                                 setParamCommand(network, transform, "translateX", 1.0),
+                                 setParamCommand(network, transform, "filter", ChoiceValue{"Nearest"}),
+                                 connectCommand(network, {sourceB, 0}, {shuffle, 0}),
+                                 connectCommand(network, {sourceA, 0}, {shuffle, 1}),
+                                 connectCommand(network, {shuffle, 0}, {grade, 0}),
+                                 connectCommand(network, {grade, 0}, {transform, 0}),
+                                 connectCommand(network, {transform, 0}, {output, 0})}),
+                            EditOptions{session.revision(), {}})
+                    .committed);
+    const auto expectSamples = [](const CpuImage& image, Region region) {
+        ASSERT_EQ(image.width(), region.width);
+        ASSERT_EQ(image.height(), region.height);
+        ASSERT_EQ(image.channelCount(), 15U);
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const int fx = region.x + x;
+                const int fy = region.y + y;
+                const bool b = fx >= 0 && fx < 8 && fy >= 0 && fy < 8;
+                const bool shifted = fx >= 1 && fx < 9 && fy >= 0 && fy < 8;
+                const bool a = fx >= -2 && fx < 2 && fy >= 2 && fy < 6;
+                expectStoredChannel(image, x, y, "R", shifted ? 2.0F : 0.0F);
+                expectStoredChannel(image, x, y, "G", shifted ? 1.0F : 0.0F);
+                expectStoredChannel(image, x, y, "B", 0.0F);
+                expectStoredChannel(image, x, y, "A", shifted ? 1.0F : 0.0F);
+                expectStoredChannel(image, x, y, "beauty.R", b ? 4.0F : 0.0F);
+                expectStoredChannel(image, x, y, "beauty.G", b ? -5.0F : 0.0F);
+                expectStoredChannel(image, x, y, "beauty.B", b ? 6.0F : 0.0F);
+                expectStoredChannel(image, x, y, "depth.Z", b ? static_cast<float>(10 * fx + fy) : 0.0F);
+                expectStoredChannel(image, x, y, "motion.u", b ? -2.0F : 0.0F);
+                expectStoredChannel(image, x, y, "motion.v", b ? 3.0F : 0.0F);
+                expectStoredChannel(image, x, y, "matte.coverage", b ? 0.125F : 0.0F);
+                expectStoredChannel(image, x, y, "made.depth", a ? 100.25F : 0.0F);
+                expectStoredChannel(image, x, y, "made.copy", a ? 100.25F : 0.0F);
+                expectStoredChannel(image, x, y, "made.one", b ? 1.0F : 0.0F);
+                expectStoredChannel(image, x, y, "made.missing", 0.0F);
+            }
+        }
+    };
+    auto request = requestFor(session.document(), output);
+    request.region = {-2, 0, 11, 8};
+    media::ImageSourceProvider provider;
+    ResultCache<CpuImage> cpuCache;
+    expectSamples(evaluateCpu(session.document(), request, &cpuCache, &provider).image, request.region);
+    request.region = {6, 2, 3, 2};
+    expectSamples(evaluateCpu(session.document(), request, &cpuCache, &provider).image, request.region);
+    request.channels = {"made.depth"};
+    const auto plan = planDependencyRegions(session.document(), request, *builtinNodeContributions(), &provider);
+    bool foundA = false;
+    for (const auto& [id, node] : plan.images.nodes) {
+        if (node.node.id == sourceA) {
+            foundA = true;
+            EXPECT_EQ(plan.requests.at(id).channels, (std::vector<std::string>{"depth.Z"}))
+                << "destination demands must be translated to available source channels";
+        }
+    }
+    ASSERT_TRUE(foundA);
+
+    if (slangSpvDir().empty())
+        GTEST_SKIP() << "native Slang unavailable; CPU Shuffle workflow completed";
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    const auto library = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::SourceSession nativeSources(*boot.instance, *boot.device, *boot.allocator,
+                                      slangSpvDir() / "mediaConvert.spv");
+    ResultCache<eval::GpuNodeImage> nativeCache;
+    request.channels.clear();
+    request.region = {-2, 0, 11, 8};
+    auto native = eval::evaluateGpu(session.document(), request, library, *boot.device, *boot.allocator,
+                                    10'000'000'000ULL, &nativeCache, &nativeSources);
+    expectSamples(native.readBack(output, *boot.device, *boot.allocator), request.region);
+    request.region = {6, 2, 3, 2};
+    auto crop = eval::evaluateGpu(session.document(), request, library, *boot.device, *boot.allocator,
+                                  10'000'000'000ULL, &nativeCache, &nativeSources);
+    expectSamples(crop.readBack(output, *boot.device, *boot.allocator), request.region);
     expectValidationClean(*boot.instance);
 }
 
@@ -703,7 +942,7 @@ TEST_F(ContributionTest, InvalidDescriptionFailsBeforeAnyPixelBackendIsRequired)
 TEST_F(ContributionTest, InputChannelRequirementsCannotInventProducerChannels) {
     auto declarations = affineContributions();
     declarations.back().inputRequirements = [](const NodeRegionContext& context) {
-        return std::vector<InputRequirement>{{context.request.region, "Z"}};
+        return std::vector<InputRequirement>{{context.request.region, {"Z"}}};
     };
     const auto registry = std::make_shared<const NodeContributions>(std::move(declarations));
     const auto chain = makeAffineChain(registry);
@@ -722,7 +961,7 @@ TEST_F(ContributionTest, InputChannelRequirementsCannotInventProducerChannels) {
 TEST_F(ContributionTest, InputRequirementsCannotReferToUndeclaredPorts) {
     auto declarations = affineContributions();
     declarations.back().inputRequirements = [](const NodeRegionContext& context) {
-        return std::vector<InputRequirement>{{context.request.region, "RGBA"}, {context.request.region, "RGBA"}};
+        return std::vector<InputRequirement>{{context.request.region, {}}, {context.request.region, {}}};
     };
     const auto registry = std::make_shared<const NodeContributions>(std::move(declarations));
     const auto chain = makeAffineChain(registry);

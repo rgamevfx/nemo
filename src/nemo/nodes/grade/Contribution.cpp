@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "nemo/core/evaluation/EffectCpu.hpp"
 #include "nemo/core/evaluation/Params.hpp"
@@ -185,6 +186,26 @@ struct GradeCoefficients {
     }
     const int width = output.width();
     const int inputWidth = input.width();
+    // Resolve the raster's named channels once (issue #90), outside the pixel
+    // loop: which primary role each stored channel plays, and where the same
+    // channel lives in the input raster. A channel that is not a primary role —
+    // a mask, a render pass, any auxiliary layer — is not graded: it stays zero
+    // here and the executor's shared preservation step carries it from the main
+    // input unchanged.
+    const std::size_t channels = output.channelCount();
+    const std::size_t inputChannels = input.channelCount();
+    std::vector<int> roleOf(channels, -1);
+    std::vector<int> sourceIndex(channels, -1);
+    for (std::size_t index = 0; index < channels; ++index) {
+        const std::string& name = output.layout().channels[index];
+        sourceIndex[index] = channelIndex(input.layout().channels, name);
+        for (std::size_t role = 0; role < kImageChannels; ++role) {
+            if (channelsDetail::isPrimaryRoleName(name, role)) {
+                roleOf[index] = static_cast<int>(role);
+                break;
+            }
+        }
+    }
     for (int y = 0; y < output.height(); ++y) {
         // Grade is pointwise, so each output sample reads the input sample at
         // the same absolute coordinates (issue #85): the input raster may start
@@ -192,14 +213,20 @@ struct GradeCoefficients {
         // rectangle), which the anchor places.
         const std::size_t row = static_cast<std::size_t>(anchor.offsetY + y) * static_cast<std::size_t>(inputWidth) +
                                 static_cast<std::size_t>(anchor.offsetX);
-        const float* source = input.data() + row * kImageChannels;
-        float* destination =
-            output.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(width) * kImageChannels;
+        const float* source = input.data() + row * inputChannels;
+        float* destination = output.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(width) * channels;
         for (int x = 0; x < width; ++x) {
-            for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
-                const float value = source[channel];
+            for (std::size_t index = 0; index < channels; ++index) {
+                const int role = roleOf[index];
+                const int from = sourceIndex[index];
+                if (role < 0 || from < 0) {
+                    destination[index] = 0.0F;
+                    continue;
+                }
+                const auto channel = static_cast<std::size_t>(role);
+                const float value = source[static_cast<std::size_t>(from)];
                 if (!coefficients.enabled[channel]) {
-                    destination[channel] = value;
+                    destination[index] = value;
                     continue;
                 }
                 float result;
@@ -216,10 +243,10 @@ struct GradeCoefficients {
                 if (params.clampWhite && result > 1.0F) {
                     result = 1.0F;
                 }
-                destination[channel] = result;
+                destination[index] = result;
             }
-            source += kImageChannels;
-            destination += kImageChannels;
+            source += inputChannels;
+            destination += channels;
         }
     }
     return output;

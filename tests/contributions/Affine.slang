@@ -11,14 +11,14 @@
 // the read agree. This node declares samplingScale {1}, so a full-resolution
 // pixel offset is also a raster sample.
 //
-// bindings (native binding contract v5):
+// bindings (native binding contract v6):
 //   set 0 binding 0 : common request uniforms (meta/meta2/misc; meta is signed)
 //   set 0 binding 1 : this node's own payload ("nemo.test.affine.payload.v2")
 //   set 0 binding 2 : per-input spatial geometry (the input raster's own
 //     full-resolution origin and extent)
 //   set 1 binding 0 : input image, port 0
 //   set 2 binding 0 : node result
-// precision: rgba32f (full float)
+// precision: float32 named-channel planes
 // alpha: straight (non-premultiplied), identical to the CPU adapter.
 
 #include "../../src/nemo/nodes/GpuGeometry.slang"
@@ -36,6 +36,8 @@ cbuffer EffectUniforms {
     // support (a node-local scratch), a non-positive size means every sample is
     // transparent black. Samples outside it must be written transparent black.
     int4 support;
+    uint4 channels;
+    int4 rgba;
 };
 
 [[vk::binding(1, 0)]]
@@ -47,10 +49,10 @@ cbuffer AffinePayload {
 };
 
 [[vk::binding(0, 1)]]
-RWTexture2D<float4> in_image;
+RWTexture2D<float> in_image;
 
 [[vk::binding(0, 2)]]
-RWTexture2D<float4> out_image;
+RWTexture2D<float> out_image;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -59,15 +61,18 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    // The described image's data support (native binding contract v5): a sample
+
+    // The described image's data support (native binding contract v6): a sample
     // outside the example's described data window (the input's, translated by
     // the authored read offset) is transparent black.
     if (support.z >= 0 && support.w >= 0 &&
         ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
          (int)p.y >= support.y + support.w)) {
-        out_image[p] = float4(0.0, 0.0, 0.0, 0.0);
+        for (uint plane = 0; plane < channels.x; ++plane)
+            gpuStorePlane(out_image, int2(p), int(plane), int(meta2.y), 0.0);
         return;
     }
+    gpuPreserveAuxLattice(out_image, int2(p), int(meta2.y), in_image, int(inputGeometry[0].extent.y), channels.x);
 
     int sampling = (int)meta2.z;
     // This output sample's absolute full-resolution coordinate, then the
@@ -84,9 +89,8 @@ void main(uint3 tid : SV_DispatchThreadID)
     bool covered = q.x >= 0 && q.y >= 0 && q.x < extent.x && q.y < extent.y;
     // Outside the producer's data is transparent black: the read is never
     // clamped to a border pixel and never out of bounds.
-    float4 x = covered ? in_image.Load(q) : float4(0.0, 0.0, 0.0, 0.0);
-    out_image[p] = float4(scale.x * x.x + offset.x,
-                          scale.y * x.y + offset.y,
-                          scale.z * x.z + offset.z,
-                          x.w);
+    float4 x = covered ? gpuLoadRgba(in_image, q, inputGeometry[0].rgba, int(extent.y)) : float4(0.0);
+    gpuStoreRgba(out_image, int2(p), rgba, int(meta2.y),
+                 float4(scale.x * x.x + offset.x, scale.y * x.y + offset.y,
+                        scale.z * x.z + offset.z, x.w));
 }

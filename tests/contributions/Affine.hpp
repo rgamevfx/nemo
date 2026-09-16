@@ -46,8 +46,8 @@ inline constexpr std::int64_t kMaxAffineShift{1 << 20};
 // native Slang adapter. A changed implementation requires a new version so it
 // cannot serve a stale cached result. 2: the example declares its own
 // description and input demand and reads at an absolute image-space offset
-// (issue #88).
-inline constexpr std::uint64_t kImplementationVersion{2};
+// (issue #88). 3: named channel storage and native channel-plane bindings.
+inline constexpr std::uint64_t kImplementationVersion{3};
 
 [[nodiscard]] NodeDescriptor affineDescriptor();
 [[nodiscard]] NodeDescriptor affineWholeFrameDescriptor();

@@ -42,13 +42,16 @@ layout(std140, set = 0, binding = 1) uniform TransformPayload {
 )GLSL";
 
 constexpr const char* kTransformGlslBody = R"GLSL(
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_main;
-layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_mask;
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_main;
+layout(set = 1, binding = 1) restrict readonly uniform image2D in_mask;
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 
+// One alpha-aware premultiplied tap of the resampling input, gathered through
+// the R/G/B/A plane roles its geometry entry resolved (issue #90); `dims.y` is
+// the input's LOGICAL height, which is also its channel plane height.
 vec4 premultTexel(ivec2 q, ivec2 dims) {
     if (q.x < 0 || q.y < 0 || q.x >= dims.x || q.y >= dims.y) { return vec4(0.0); }
-    vec4 s = imageLoad(in_main, q);
+    vec4 s = gpuLoadRgba(in_main, q, inputGeometry[0].rgba, dims.y);
     return vec4(s.rgb * s.a, s.a);
 }
 
@@ -63,10 +66,11 @@ void catmullRomWeights(float t, out float w[4]) {
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v5): a sample
-    // outside the transform's described data window is transparent black.
+    // The described image's data support (native binding contract v6): a sample
+    // outside the transform's described data window is transparent black, and
+    // every plane — auxiliary ones included — is initialized (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuStore(out_color, ivec2(p), vec4(0.0));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
         return;
     }
     // The resampled input may cover a different rectangle of the same lattice
@@ -77,7 +81,7 @@ void main() {
     ivec2 dims = ivec2(inputGeometry[0].extent.xy);
     ivec2 mainPixel = ivec2(p) + inputGeometry[0].regionAndOffset.zw;
     bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < dims.x && mainPixel.y < dims.y;
-    vec4 orig = mainInside ? imageLoad(in_main, mainPixel) : vec4(0.0);
+    vec4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, dims.y) : vec4(0.0);
 
     int scale = int(meta2.z);
     float fullWidth = float(meta.x);
@@ -105,7 +109,7 @@ void main() {
                        (fullIn.y - float(inputOrigin.y)) / float(scale));
     if (filterMode == 2) {  // Nearest: bound the raster index; outside is transparent black
         if (raster.x >= 0.0 && raster.x < float(dims.x) && raster.y >= 0.0 && raster.y < float(dims.y)) {
-            processed = imageLoad(in_main, ivec2(floor(raster)));
+            processed = gpuLoadRgba(in_main, ivec2(floor(raster)), inputGeometry[0].rgba, dims.y);
         }
     } else if (raster.x > -3.0 && raster.x < float(dims.x) + 3.0 &&
                raster.y > -3.0 && raster.y < float(dims.y) + 3.0) {
@@ -147,14 +151,20 @@ void main() {
         ivec2 maskExtent = ivec2(inputGeometry[1].extent.xy);
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
-        float selected = maskInside ? clamp(imageLoad(in_mask, maskPixel)[channel], 0.0, 1.0) : 0.0;
+        float selected =
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[1].rgba, maskExtent.y)[channel], 0.0, 1.0)
+                       : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
     // processed pixel (avoids HDR 0*inf cancellation in mix()).
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
-    gpuStore(out_color, ivec2(p), result);
+    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
+    // Auxiliary channels are preserved where they ARE, not resampled: the aux
+    // helper resolves the source pixel on the sampling lattice, never the
+    // transformed sample this pass computed (issue #90).
+    gpuPreserveAuxLattice(out_color, ivec2(p), int(meta2.y), in_main, dims.y, channels.x);
 }
 )GLSL";
 
@@ -162,7 +172,7 @@ void main() {
     return EffectPassDefinition{
         .id = "transform",
         .shader = "transform/transform",
-        .glsl = nemo::nodes::gpuGlsl(kTransformGlslPayload, kTransformGlslBody, true),
+        .glsl = nemo::nodes::gpuGlsl(kTransformGlslPayload, kTransformGlslBody),
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}, EffectImageRef{EffectImageKind::Input, 1}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

@@ -1,8 +1,11 @@
 # 0008 — Explicit built-in node contributions
 
 Date: 2026-09-14
-Status: Proposed — implemented on issue/83-node-contributions; owner review pending
-References: issues #83, #85, #88; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
+Status: Proposed — implemented on issue/83-node-contributions, extended by
+issue #88 (described images, integer `shiftX`/`shiftY` on the test extension)
+and issue #90 (named-channel Shuffle, per-input requirements and viewer
+projection); owner review pending and all prior landing holds still pending.
+References: issues #83, #85, #88, #90; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
 
 ## Decision
 
@@ -47,16 +50,17 @@ new shared capabilities still require a change in their existing owning module.
   support, preserving original support when Mix/masking can retain it; empty
   input remains empty. `supportsRegion=false` expands to that producer's useful
   domain. Executors receive each input's actual coverage and description.
-- Native binding contract v5 separates a 64-byte **pass-raster** coordinate/time
-  request at set 0/binding 0 from the optional node-local aligned payload at
-  binding 1. The request includes signed origin and a data-support rectangle,
-  independent of coverage; final output stores outside support become
-  transparent black. Scratch passes retain their declared working coverage.
-  Image-sampling passes receive 32-byte per-input geometry records at binding 2:
-  origin, raster offset, extent and sampling scale. External decoded images
-  carry their actual signed coverage rather than a resize ratio. Pass inputs
-  use set 1 in declared order; output uses set 2/binding 0 and optional float
-  weights set 3/binding 0. Blur declares horizontal scratch separately.
+- Native binding contract v6 separates a 96-byte **pass-raster** request at
+  set 0/binding 0 from the optional node-local aligned payload at binding 1.
+  The request includes signed origin, data support, plane count and resolved
+  primary RGBA indices. Final output stores outside support become zero;
+  scratch passes retain their declared working coverage.
+  Native composition images use R32_SFLOAT vertical planes: logical `(x,y,c)`
+  is physical `(x,y+c*H)`. Each input has a 64-byte geometry record at binding 2
+  containing its own origin, raster offset, extent, scale, RGBA indices and
+  physical plane count. Binding 3 carries the resolved auxiliary-channel plan.
+  Names are resolved before dispatch, never per pixel. Pass inputs use set 1;
+  output uses set 2/binding 0 and optional float weights set 3/binding 0.
   The executor owns allocations, barriers, submission and retirement, including
   a device-side final crop. No per-node waits or routine intermediate readback.
 - CPU and GPU preparation callbacks may execute concurrently. Captures must be
@@ -78,6 +82,54 @@ new shared capabilities still require a change in their existing owning module.
   history and serialization remain their owners. Runtime registrations are not
   serialized. #88 changes the runtime image-space contract, not built-in node
   identities, inspector ownership or persistent graph state.
+
+## Named-channel contribution (#90)
+
+`ownsChannelLayout` distinguishes a contribution that creates/reorders named
+channels from ordinary RGBA processing. Ordinary effects preserve other primary
+input channels at their original lattice coordinates; their established RGBA
+math is unchanged. This ownership participates in registration identity.
+
+Shuffle is a version-1 built-in using the same contribution and editor registry.
+B (port 0) is required; A (port 1) is optional. Its 30 ordinary parameters are
+`input1/input2` (physical B/A selection), `in1/in2`, `out1/out2`, and eight rows
+of `sourceKindN`, `sourceChannelN`, `outputChannelN`. Source kinds name
+`input1/input2/zero/one`, not physical ports, so group selection and reordering
+retain their routing meaning. The two four-socket output groups do not limit
+the untouched B inventory.
+Reordering uses the shared evaluated-value gesture; it is not a structural
+permutation of animation tracks or exposed-parameter identities. Native proof
+covers static reorder and keyed routing/history/reopen separately.
+
+Explicit output names, including `mask.a`, are preserved. Only authored rows
+create channels; unwired/missing names and disconnected A produce zero.
+Untouched B channels survive; constants cover B's logical format; A is sampled
+at its own absolute coordinates. The editor rejects duplicate output names
+before its atomic command transaction; execution rejects invalid mappings
+before producing pixels.
+The owner approved these policies and the Nuke 17 documentation-only editor
+adaptation; runtime parity with Nuke is not claimed.
+
+The existing allocator charges every physical plane and retained submission.
+Packed height must fit the device's 2D image limit: unsupported dimensions or
+byte budgets fail explicitly, without channel loss or reduced quality. This
+does not introduce tiling or replace #14 accounting.
+
+Viewer projection is device-side and yields the existing RGBA presentation.
+Only a complete identified primary/root RGB set is color-managed, by named
+roles rather than storage order. Other selections bypass OCIO; a single named
+plane, including alpha-only data, is opaque gray, while an ordered selection of
+multiple data planes maps its first up-to-four selected planes positionally
+onto the presentation RGBA and bypasses OCIO the same way; that display mapping
+neither creates nor renames composition channels. Projection policy is part of
+viewer-cache identity. Replay crops use logical per-plane height.
+
+`nemo.shuffle.mapping` is a section editor hosted by the accepted inspector.
+Mapping edits use shared commands/history; routing keys and exposure labels
+live in the existing channel dialog. Unavailable custom editors expose all
+ordinary parameters through the generic fallback. Native evidence and the
+remaining review/landing holds are recorded in
+`docs/evidence/assets/issue90-channels/verification.json`.
 
 ## Verification seam
 

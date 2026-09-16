@@ -302,9 +302,8 @@ std::vector<InputRequirement> transformInputRequirements(const NodeRegionContext
     const Region ownDomain = regionUnion(context.description.format, context.description.dataBounds);
     const Region mainDomain = requirementDomain(context, 0, ownDomain.width > 0 ? ownDomain : request.region);
     const Region maskDomain = requirementDomain(context, 1, request.region);
-    std::vector<InputRequirement> requirements{
-        InputRequirement{regionIntersection(request.region, mainDomain), "RGBA"},
-        InputRequirement{regionIntersection(request.region, maskDomain), "RGBA"}};
+    std::vector<InputRequirement> requirements{InputRequirement{regionIntersection(request.region, mainDomain), {}},
+                                               InputRequirement{regionIntersection(request.region, maskDomain), {}}};
     const float aspect = context.pixelAspect;
     if (!isFinite(aspect) || !(aspect > 0.0F)) {
         failNode(context.node, "transform cannot bound its read without a known main-input pixel aspect (the input "
@@ -363,7 +362,7 @@ std::vector<InputRequirement> transformInputRequirements(const NodeRegionContext
     const Region read =
         representableRegion(context.node, "the transform's inverse-mapped read", std::floor(minX) - margin,
                             std::floor(minY) - margin, std::ceil(maxX) + margin, std::ceil(maxY) + margin);
-    requirements[0] = InputRequirement{regionIntersection(regionUnion(read, request.region), mainDomain), "RGBA"};
+    requirements[0] = InputRequirement{regionIntersection(regionUnion(read, request.region), mainDomain), {}};
     return requirements;
 }
 

@@ -157,7 +157,15 @@ ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
     appendCanonicalField(canonical, "scale", std::to_string(request.samplingScale));
     appendCanonicalField(canonical, "domain",
                          std::to_string(request.imageWidth()) + ',' + std::to_string(request.imageHeight()));
-    appendCanonicalField(canonical, "channels", request.channels);
+    // The demanded channel names enter the identity explicitly and in declared
+    // order (issue #90): an auxiliary demand is never collapsed away, so a
+    // result computed without it can never serve a request that asks for it.
+    // An empty demand is the "every named channel" default and contributes no
+    // name fields, which is distinct from any explicit name.
+    canonical += "channels:";
+    for (const std::string& channel : request.channels) {
+        appendCanonicalField(canonical, "channel", channel);
+    }
     appendCanonicalField(canonical, "quality", qualityName(request.quality));
     appendCanonicalField(canonical, "working", document.color.workingSpace);
     appendCanonicalField(canonical, "tag", std::to_string(context.implementationTag));

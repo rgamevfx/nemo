@@ -282,12 +282,14 @@ evaluateCpu(const Document& document, EvaluationRequest request, ResultCache<Cpu
 void validateRequestDomain(const EvaluationRequest& request);
 
 // Validates a request for any executor (CPU reference and native GPU,
-// issue #8): quality must be Full (spec section 8), channels RGBA, region
+// issue #8): quality must be Full (spec section 8), an explicit channel demand
+// must be part of the node types' declared vocabulary, the region must be
 // within the reference bounds, the output node must exist and be an Output
 // node, and the sampling scale must be declared (spec section 8: nodes
 // declare supported reductions; a request beyond what the scheduled nodes
-// declare is rejected, never approximated). Throws EvaluationException
-// otherwise.
+// declare is rejected, never approximated). An empty channel demand means
+// every channel the requested image names (issue #90) and needs no
+// declaration. Throws EvaluationException otherwise.
 void validateRequest(const Document& document, const EvaluationRequest& request);
 
 // Resolves `node`'s inputs in declared port order against `evaluated` (the

@@ -25,6 +25,7 @@ add_library(nemo_core
     nodes/grade/Contribution.cpp
     nodes/merge/Contribution.cpp
     nodes/output/Contribution.cpp
+    nodes/shuffle/Contribution.cpp
     nodes/source/Contribution.cpp
     nodes/testpattern/Contribution.cpp
     nodes/transform/Contribution.cpp

@@ -80,6 +80,15 @@ struct OcioGpuProgram {
     unsigned descriptorSet{};
     unsigned textureBindingStart{};
 
+    // The pixel interface the emitted wrapper uses, so a consumer binds the
+    // layout the program actually declares (issue #90): the interleaved rgba32f
+    // read/write pixel buffers the viewer and executor path uses, or the native
+    // channel-plane image (one read-write R32_SFLOAT storage image at the
+    // wrapper's image binding plus a PlaneGeometry uniform block holding
+    // (logical width, logical height, plane count, 0)).
+    enum class PixelLayout { Rgba32fBuffers, ChannelPlanes };
+    PixelLayout pixelLayout{PixelLayout::Rgba32fBuffers};
+
     // Result colorspace name the CPU path and GPU program both apply, for
     // diagnostics ("working -> display/view").
     std::string description;
@@ -203,6 +212,14 @@ public:
     // snapshot (no reload, no path lookup).
     [[nodiscard]] OcioGpuProgram inputTransformGpu(const std::string& workingSpace,
                                                    const std::string& inputColorSpace) const;
+    // The same conversion over the native channel-plane layout (issue #90): one
+    // read-write R32_SFLOAT storage image holding the logical raster's channel
+    // planes stacked vertically. The wrapper gathers the primaries, runs the
+    // OCIO transform and scatters the primaries back, leaving alpha and every
+    // auxiliary plane untouched. Consumed by the media source path, whose
+    // decoded frames are plane images.
+    [[nodiscard]] OcioGpuProgram inputTransformPlanesGpu(const std::string& workingSpace,
+                                                         const std::string& inputColorSpace) const;
 
 private:
     friend class OcioInputTransform;
@@ -246,6 +263,12 @@ private:
 // host readback.
 [[nodiscard]] OcioGpuProgram buildInputTransformGpu(const std::string& configPath, const std::string& workingSpace,
                                                     const std::string& inputColorSpace);
+
+// One-shot form of the channel-plane input transform above, for a caller that
+// resolves the configuration once.
+[[nodiscard]] OcioGpuProgram buildInputTransformPlanesGpu(const std::string& configPath,
+                                                          const std::string& workingSpace,
+                                                          const std::string& inputColorSpace);
 
 // Resolves the config path the same way OCIO applications do: an explicit
 // path when given, otherwise the OCIO environment variable. Returns the

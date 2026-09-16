@@ -52,6 +52,13 @@ namespace {
     return choice;
 }
 
+// The channel planes of a decoded clip frame: clip decoding always produces the
+// four contract channels R, G, B, A (alpha opaque), stored as that many
+// R32_SFLOAT planes stacked vertically in one device image (issue #90). The
+// device image's height is therefore this many times the logical frame height,
+// and every logical extent this session reports divides it back out.
+constexpr std::uint32_t kVideoPlanes = kImageChannels;
+
 // The description of a frame that occupies one whole raster (issue #88): a
 // decoded clip frame covers its extent, so its format and data bounds are that
 // raster; a policy-produced cleared frame holds no authored samples at all, so
@@ -131,11 +138,17 @@ std::shared_ptr<const media::InputColorCache> SourceSession::colorFor(const std:
 
 std::shared_ptr<const gpu::Image> SourceSession::transparentBlack(const std::uint64_t timeout_ns) {
     // Empty data needs a valid binding, not a request-sized source raster.
-    // Retain one cleared full-resolution sample; all other coordinates are
-    // transparent outside its coverage.
+    // Retain one cleared sample; all other coordinates are transparent outside
+    // its coverage. It is stored in the native channel-plane layout like every
+    // other decoded frame — one plane per logical channel — so a consumer never
+    // needs a second addressing convention for policy-produced frames. The
+    // plane count is the widest a projection can address; a source with more
+    // declared channels has its extra planes zeroed by the consumer's own
+    // channel mapping, exactly as for any other frame, and a cleared frame is
+    // zero in every channel either way.
     if (blackFrame_)
         return blackFrame_;
-    gpu::Image image = allocator_.create_image(1, 1, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+    gpu::Image image = allocator_.create_image(1, kImageChannels, 1, VK_FORMAT_R32_SFLOAT,
                                                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                                2);
@@ -272,9 +285,13 @@ SourceSession::cachedLocked(const std::pair<std::string, std::int64_t>& cacheKey
     }
     std::erase(frameOrder_, cacheKey);
     frameOrder_.push_back(cacheKey);
+    // The retained raster's LOGICAL extents: its device image is stored in the
+    // plane layout (height times the channel count), while `coverage` is the
+    // geometry consumers sample through, so the cached coverage is the
+    // authority for what this frame's width/height mean.
     return DecodedFrame{.image = found->second.image,
-                        .width = static_cast<int>(found->second.image->extent().width),
-                        .height = static_cast<int>(found->second.image->extent().height),
+                        .width = found->second.coverage.width,
+                        .height = found->second.coverage.height,
                         .frame = cacheKey.second,
                         .pixelAspect = found->second.pixelAspect,
                         .color = found->second.color,
@@ -372,14 +389,17 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
         }
 
         // Shared source-fill path for stills/sequences: media::readImageFrame
-        // already returns working-space straight-alpha float32 RGBA (or Data for
-        // a Raw bypass). Upload it as one device image and leave it in GENERAL —
-        // the layout the executor's decoded-frame hand-off assumes
-        // (afterExternalWriteBeforeRead in GpuExecutor.cpp); uploadImage leaves
-        // it SHADER_READ_ONLY_OPTIMAL.
+        // returns working-space float32 samples (or Data for a Raw bypass) in
+        // the file's OWN named channels. Upload them as one device image in the
+        // native channel-plane layout — channel c of logical pixel (x, y) at
+        // (x, y + c*height) — and leave it in GENERAL, the layout the executor's
+        // decoded-frame hand-off assumes (afterExternalWriteBeforeRead in
+        // GpuExecutor.cpp). No channel is renamed, padded to four or projected
+        // here: the frame keeps exactly the channels its description names.
         const media::ImageFrame decoded = media::readImageFrame(*color, colorChoiceOf(source), header, context);
         const int width = decoded.image.width();
         const int height = decoded.image.height();
+        const int channels = static_cast<int>(decoded.image.channelCount());
         const float pixelAspect = validatedPixelAspect(decoded.info.pixelAspect, source, context);
         // The description and coverage come from the same read the raster came
         // from, so the retained image can never be bound under a geometry or a
@@ -390,23 +410,32 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
                                     " but its described coverage is " + std::to_string(coverage.width) + "x" +
                                     std::to_string(coverage.height));
         }
+        // The plane layout stacks the declared channels vertically, so the
+        // device image's height is the logical height times the channel count.
+        // Refuse a frame that has no samples or whose planes do not fit the
+        // driver's 2D extent limit by naming the frame, instead of letting image
+        // creation or the upload fail opaquely.
+        if (channels <= 0 || width <= 0 || height <= 0) {
+            failRequest(source, "the decoded frame has no samples or declares no channels");
+        }
+        const auto planeHeight = static_cast<std::uint64_t>(height) * static_cast<std::uint64_t>(channels);
+        const std::uint32_t maxExtent = device_.properties().limits.maxImageDimension2D;
+        if (static_cast<std::uint64_t>(width) > maxExtent || planeHeight > maxExtent) {
+            failRequest(source, "the frame's " + std::to_string(width) + "x" + std::to_string(height) +
+                                    " raster with " + std::to_string(channels) + " channels exceeds the device's " +
+                                    std::to_string(maxExtent) +
+                                    "-pixel image extent limit in the native channel-plane layout");
+        }
         gpu::Image image = allocator_.create_image(
-            static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+            static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(planeHeight), 1, VK_FORMAT_R32_SFLOAT,
             // SAMPLED is not used by the executor (it binds this as a storage
-            // image), but uploadImage parks the image in
-            // SHADER_READ_ONLY_OPTIMAL and every transition through that
-            // layout legally requires SAMPLED or INPUT_ATTACHMENT usage.
+            // image), but every transition through a sampled layout legally
+            // requires SAMPLED or INPUT_ATTACHMENT usage.
             VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT,
             2);
-        const std::size_t bytes =
-            static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * kImageChannels * sizeof(float);
-        gpu::uploadImage(device_.submissions(device_.graphics_family()), allocator_, image, decoded.image.data(), bytes,
-                         timeout_ns);
-        gpu::imageBarrier(
-            device_.submissions(device_.graphics_family()), image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT,
-            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, timeout_ns);
+        media::uploadChannelPlanes(device_.submissions(device_.graphics_family()), allocator_, image, decoded.image,
+                                   timeout_ns);
         std::shared_ptr<const gpu::Image> shared = std::make_shared<gpu::Image>(std::move(image));
         const ColorInterpretation interpretation = decoded.info.color;
         const ImageDescription& description = decoded.info.description;
@@ -462,8 +491,15 @@ SourceSession::DecodedFrame SourceSession::acquire(const Document& document, con
                                     "exhausted at frame " +
                                     std::to_string(stateIt->second.nextFrame - 1));
         }
+        const auto planeHeight = image->extent().height;
         const int width = static_cast<int>(image->extent().width);
-        const int height = static_cast<int>(image->extent().height);
+        const int height = static_cast<int>(planeHeight / kVideoPlanes);
+        if (height <= 0 || planeHeight != static_cast<std::uint32_t>(height) * kVideoPlanes) {
+            failRequest(source, "decoded frame image is not a channel-plane frame: its extent is " +
+                                    std::to_string(image->extent().width) + "x" + std::to_string(planeHeight) +
+                                    ", which is not a logical raster with " + std::to_string(kVideoPlanes) +
+                                    " stacked channel planes");
+        }
         const Region coverage{0, 0, width, height};
         const ImageDescription description = rasterDescription(coverage, coverage, pixelAspect, interpretation);
         const std::int64_t decodedFrame = stateIt->second.nextFrame++;

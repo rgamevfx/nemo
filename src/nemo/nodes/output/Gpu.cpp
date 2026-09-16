@@ -15,16 +15,17 @@ namespace nemo::eval::nodes {
 namespace {
 
 constexpr const char* kOutputGlsl = R"GLSL(
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_color;
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_color;
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v5): a sample
-    // outside it is transparent black, never an upstream value carried there.
+    // The described image's data support (native binding contract v6): a sample
+    // outside it is transparent black, never an upstream value carried there,
+    // and every plane — auxiliary ones included — is initialized (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuStore(out_color, ivec2(p), vec4(0.0));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
         return;
     }
     // The upstream result may cover a wider, differently anchored or smaller
@@ -35,7 +36,11 @@ void main() {
     ivec2 q = ivec2(p) + inputGeometry[0].regionAndOffset.zw;
     ivec2 extent = ivec2(inputGeometry[0].extent.xy);
     bool inside = q.x >= 0 && q.y >= 0 && q.x < extent.x && q.y < extent.y;
-    gpuStore(out_color, ivec2(p), inside ? imageLoad(in_color, q) : vec4(0.0));
+    vec4 value = inside ? gpuLoadRgba(in_color, q, inputGeometry[0].rgba, extent.y) : vec4(0.0);
+    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), value);
+    // The adapter carries every described channel, not just the four roles
+    // (issue #90).
+    gpuPreserveAuxLattice(out_color, ivec2(p), int(meta2.y), in_color, extent.y, channels.x);
 }
 )GLSL";
 
@@ -43,7 +48,7 @@ void main() {
     return EffectPassDefinition{
         .id = "output",
         .shader = "output/output",
-        .glsl = nemo::nodes::gpuGlsl({}, kOutputGlsl, true),
+        .glsl = nemo::nodes::gpuGlsl({}, kOutputGlsl),
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

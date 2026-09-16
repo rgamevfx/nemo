@@ -50,8 +50,8 @@ std::unique_ptr<MediaInterop> MediaInterop::create(Device& device, Allocator& al
     return interop;
 }
 
-void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns) {
-    const auto completion = submitToRgba32f(frame, output, timeout_ns);
+void MediaInterop::convertToChannelPlanes(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns) {
+    const auto completion = submitToChannelPlanes(frame, output, timeout_ns);
     if (!completion)
         fail("submission capacity exhausted");
     auto& queue = impl_->device->submissions(impl_->device->graphics_family());
@@ -66,8 +66,8 @@ void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uin
     }
 }
 
-std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(ForeignVideoFrame& frame, Image& output,
-                                                                         uint64_t admissionTimeout_ns) {
+std::optional<SubmissionQueue::Completion> MediaInterop::submitToChannelPlanes(ForeignVideoFrame& frame, Image& output,
+                                                                               uint64_t admissionTimeout_ns) {
     if (!frame.owner)
         fail("foreign frame requires retained ownership");
     const VkDevice vkDevice = impl_->device->handle();
@@ -82,6 +82,17 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(Foreign
     }
     if (frame.width == 0 || frame.height == 0) {
         fail("foreign frame extent must be non-empty");
+    }
+    // The destination is this kernel's fixed output contract: four R,G,B,A
+    // channel planes (issue #90). A different image is refused with the actual
+    // numbers instead of writing planes it cannot hold.
+    const VkExtent3D outputExtent = output.extent();
+    if (output.format() != VK_FORMAT_R32_SFLOAT || output.dimensions() != 2 || outputExtent.width != frame.width ||
+        outputExtent.height != static_cast<uint64_t>(frame.height) * 4u) {
+        fail("destination must be a 2D R32_SFLOAT image of extent (" + std::to_string(frame.width) + ", " +
+             std::to_string(static_cast<uint64_t>(frame.height) * 4u) + ") holding four RGBA channel planes, got " +
+             std::to_string(outputExtent.width) + "x" + std::to_string(outputExtent.height) + " format " +
+             std::to_string(static_cast<int>(output.format())));
     }
     if (frame.planeCount == 0 || frame.planeCount > 2) {
         fail("foreign frame must carry 1..2 planes");

@@ -18,16 +18,22 @@
 
 namespace nemo::nodes {
 
-// Every built-in declares the full-quality RGBA contract at the three sampling
+// Every built-in declares the full-quality contract at the three sampling
 // scales; a Read additionally participates in time. Region support is declared
 // alongside it: every built-in that produces pixels states its spatial
 // dependency rule (NodeContribution::inputRequirements) instead of refusing
 // regions, and keeps the shared "unchanged image properties" description default
 // unless it really changes the image's meaning (issue #88).
+//
+// Channels are a NAMED vocabulary (issue #90): the wildcard says this node
+// carries every named channel the image actually has — an alpha-only matte, a
+// multilayer render, an auxiliary data layer — instead of claiming a fixed
+// four. A built-in that must restrict its vocabulary states the names (or the
+// legacy concatenated single-letter sets, e.g. "RGBA") it really accepts.
 [[nodiscard]] inline NodeCapabilities builtinCapabilities(bool temporal = false) {
     return NodeCapabilities{.samplingScales = {1, 2, 4},
                             .qualityModes = {Quality::Full},
-                            .channels = {"RGBA"},
+                            .channels = {std::string{kAnyChannelCapability}},
                             .supportsRegion = true,
                             .temporal = temporal};
 }

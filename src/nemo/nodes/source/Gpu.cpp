@@ -28,16 +28,18 @@ constexpr const char* kSourceGlsl = R"GLSL(
 // decoded frame's coverage supplies its own origin, so the sample is that
 // coordinate minus the origin. Outside the coverage is transparent black: the
 // media is never stretched to the composition frame.
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_source;
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_source;
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v5): a sample
-    // outside this Read's described data window is transparent black.
+    const int planeHeight = int(meta2.y);
+    // The described image's data support (native binding contract v6): a sample
+    // outside this Read's described data window is transparent black, and every
+    // plane is initialized (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuStore(out_color, ivec2(p), vec4(0.0));
+        gpuZeroPlanes(out_color, ivec2(p), planeHeight);
         return;
     }
     int scale = int(meta2.z);
@@ -46,7 +48,15 @@ void main() {
     ivec2 extent = ivec2(inputGeometry[0].extent.xy);
     ivec2 s = full - origin;
     bool covered = s.x >= 0 && s.y >= 0 && s.x < extent.x && s.y < extent.y;
-    gpuStore(out_color, ivec2(p), covered ? imageLoad(in_source, s) : vec4(0.0));
+    // The decoded frame is a channel-plane image of its own (issue #90) and the
+    // frame's plane c is this result's plane c: the described channel list is
+    // the frame's, in plane order. A plane the frame does not physically carry
+    // stays numeric zero, and the frame's plane height is its logical height.
+    const int framePlanes = int(inputGeometry[0].channels.x);
+    for (int plane = 0; plane < int(channels.x); ++plane) {
+        float value = (plane < framePlanes && covered) ? gpuLoadPlane(in_source, s, plane, extent.y) : 0.0;
+        gpuStorePlane(out_color, ivec2(p), plane, planeHeight, value);
+    }
 }
 )GLSL";
 
@@ -54,7 +64,7 @@ void main() {
     return EffectPassDefinition{
         .id = "source",
         .shader = "source/source",
-        .glsl = nemo::nodes::gpuGlsl({}, kSourceGlsl, true),
+        .glsl = nemo::nodes::gpuGlsl({}, kSourceGlsl),
         // The decoded frame is supplied by the shared source session, not by a
         // graph edge: external reference 0.
         .inputs = {EffectImageRef{EffectImageKind::External, 0}},

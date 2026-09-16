@@ -115,14 +115,19 @@ struct ImageHeader {
 // read values are always converted to the contract's float32.
 enum class OutputPrecision { Half, Float32 };
 
-// A successful read: RGBA float32 pixels in the application image layout,
-// plus everything the contract requires downstream stages to know.
+// A successful read: the file's own named channels as float32 pixels, plus
+// everything the contract requires downstream stages to know.
 struct ImageReadResult {
     // The data raster. It covers exactly the declared data extent: pixel (i, j)
     // holds the sample authored at normalized full-resolution coordinate
-    // (header.windows.dataBounds().x + i, .y + j). Samples the file does not
-    // declare are transparent black, and the display window is deliberately
-    // *not* padded into the raster — framing is the description's job.
+    // (header.windows.dataBounds().x + i, .y + j). Channels are the FILE'S OWN
+    // named channels, in the file's storage order — an alpha-only matte reads
+    // as one channel named A, a Z pass as a data channel, a multilayer render
+    // with every layer it declares. No R/G/B/A is invented and no declared
+    // channel is dropped, so a consumer identifies the channels it means
+    // through the shared channel-index resolution. Samples the file does not
+    // declare are absent, and the display window is deliberately *not* padded
+    // into the raster — framing is the description's job.
     CpuImage image;
     ImageHeader header;
 };
@@ -145,17 +150,19 @@ struct ImageIoException : std::runtime_error {
 
 // Reads one still image (or sequence frame at the resolved path). Throws
 // ImageIoException naming `path` when the file is missing, unreadable, or
-// of an unsupported contract (non-RGBA mappable layout is still readable:
-// missing R/G/B map to 0 and a missing alpha maps to opaque).
+// declares no channels. Every channel the file declares is read verbatim, in
+// the file's order, under its own name: an alpha-only or non-RGB data image is
+// ordinary readable media, and no R/G/B/A is invented for it.
 //
 // No color management is applied (issue #6): values are stored as-is and
 // interpreted scene-linear.
 [[nodiscard]] ImageReadResult readImage(const std::string& path);
 
-// Writes `image` as a simple RGBA still (EXR by extension). Values are
-// stored verbatim with `precision` storage; call sites declare alpha
-// association explicitly because EXR readers will assume premultiplied
-// when an alpha channel is present. Throws ImageIoException naming `path`.
+// Writes `image` as a still (EXR by extension) carrying exactly the image's
+// declared channels, under their own names, with `precision` storage. Values
+// are stored verbatim; call sites declare alpha association explicitly because
+// EXR readers will assume premultiplied when an alpha channel is present.
+// Throws ImageIoException naming `path`.
 void writeImage(const std::string& path, const CpuImage& image, OutputPrecision precision);
 
 }  // namespace nemo::media

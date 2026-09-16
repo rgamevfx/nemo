@@ -95,8 +95,11 @@ void imageBarrier(SubmissionQueue& queue, const Image& image, VkImageLayout oldL
 void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& image, void* data, std::size_t bytes,
                    uint64_t timeout_ns);
 
-// Crops codec padding from a completed GENERAL RGBA32F image on-device.
-// Source and result remain GENERAL; all copy resources survive completion.
-[[nodiscard]] Image cropRgba32fImage(SubmissionQueue& queue, Allocator& allocator, const Image& source, uint32_t width,
-                                     uint32_t height, uint64_t timeout_ns);
+// Crops codec padding from a completed GENERAL native channel-plane image
+// on-device (issue #90): R32_SFLOAT 2D, `channels` planes of `sourceHeight`
+// rows each, logical pixel (x, y) of plane c at (x, y + c*sourceHeight). The
+// result is `width` x `channels * height` and stays GENERAL; all copy resources
+// survive completion.
+[[nodiscard]] Image cropChannelPlaneImage(SubmissionQueue& queue, Allocator& allocator, const Image& source,
+                                          uint32_t width, uint32_t height, uint32_t channels, uint64_t timeout_ns);
 }  // namespace nemo::gpu

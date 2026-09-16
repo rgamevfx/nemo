@@ -643,15 +643,28 @@ void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& im
     std::memcpy(data, staging.mapped(), bytes);
 }
 
-Image cropRgba32fImage(SubmissionQueue& queue, Allocator& allocator, const Image& source, uint32_t width,
-                       uint32_t height, uint64_t timeout_ns) {
-    if (source.format() != VK_FORMAT_R32G32B32A32_SFLOAT || source.dimensions() != 2 || width == 0 || height == 0 ||
-        width > source.extent().width || height > source.extent().height)
-        throw GpuException(GpuError::InvalidRequest, "RGBA32F crop is outside the source image");
-    auto cropped = allocator.create_image(width, height, 1, source.format(),
+Image cropChannelPlaneImage(SubmissionQueue& queue, Allocator& allocator, const Image& source, uint32_t width,
+                            uint32_t height, uint32_t channels, uint64_t timeout_ns) {
+    const VkExtent3D sourceExtent = source.extent();
+    if (source.format() != VK_FORMAT_R32_SFLOAT || source.dimensions() != 2 || width == 0 || height == 0 ||
+        channels == 0 || width > sourceExtent.width || sourceExtent.height % channels != 0 ||
+        static_cast<std::uint64_t>(height) * channels > sourceExtent.height)
+        throw GpuException(GpuError::InvalidRequest, "channel-plane crop is outside the source image");
+    auto cropped = allocator.create_image(width, height * channels, 1, source.format(),
                                           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                               VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                           2);
+    const auto sourceHeight = sourceExtent.height / channels;
+    // Plane offsets use each image's logical height, not its packed extent.
+    std::vector<VkImageCopy> copies(channels);
+    for (uint32_t plane = 0; plane < channels; ++plane) {
+        VkImageCopy& copy = copies[plane];
+        copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        copy.dstSubresource = copy.srcSubresource;
+        copy.srcOffset = VkOffset3D{0, static_cast<std::int32_t>(plane * sourceHeight), 0};
+        copy.dstOffset = VkOffset3D{0, static_cast<std::int32_t>(plane * height), 0};
+        copy.extent = {width, height, 1};
+    }
     submitAndWaitRetained(
         queue,
         [&](VkCommandBuffer command) {
@@ -661,12 +674,9 @@ Image cropRgba32fImage(SubmissionQueue& queue, Allocator& allocator, const Image
             recordImageBarrier(command, cropped, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT,
                                VK_ACCESS_TRANSFER_WRITE_BIT);
-            VkImageCopy copy{};
-            copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            copy.dstSubresource = copy.srcSubresource;
-            copy.extent = {width, height, 1};
             vkCmdCopyImage(command, source.handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cropped.handle(),
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<std::uint32_t>(copies.size()),
+                           copies.data());
             recordImageBarrier(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
                                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
                                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT);
@@ -674,7 +684,7 @@ Image cropRgba32fImage(SubmissionQueue& queue, Allocator& allocator, const Image
                                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
                                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT);
         },
-        {source.retain(), cropped.retain()}, timeout_ns, "cropRgba32fImage");
+        {source.retain(), cropped.retain()}, timeout_ns, "cropChannelPlaneImage");
     return cropped;
 }
 

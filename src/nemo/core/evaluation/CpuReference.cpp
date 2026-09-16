@@ -34,7 +34,13 @@ void hashLayout(std::uint64_t& hash, const ImageLayout& layout) {
     hashBytes(hash, &layout.width, sizeof(layout.width));
     hashBytes(hash, &layout.height, sizeof(layout.height));
     hashBytes(hash, &layout.pixelAspect, sizeof(layout.pixelAspect));
+    // Channel count, then each name length-prefixed: named channels (issue #90)
+    // must not alias a different set by mere concatenation.
+    const auto channelCount = static_cast<std::uint64_t>(layout.channels.size());
+    hashBytes(hash, &channelCount, sizeof(channelCount));
     for (const auto& channel : layout.channels) {
+        const auto size = static_cast<std::uint64_t>(channel.size());
+        hashBytes(hash, &size, sizeof(size));
         hashBytes(hash, channel.data(), channel.size());
     }
     const auto precision = static_cast<std::uint8_t>(layout.precision);
@@ -49,7 +55,7 @@ std::uint64_t cpuImageHash(const CpuImage& image) {
     std::uint64_t hash = 0xcbf29ce484222325;
     hashLayout(hash, image.layout());
     const std::size_t pixelCount = static_cast<std::size_t>(image.width()) * static_cast<std::size_t>(image.height());
-    hashBytes(hash, image.data(), pixelCount * CpuImage::channelCount() * sizeof(float));
+    hashBytes(hash, image.data(), pixelCount * image.channelCount() * sizeof(float));
     return hash;
 }
 
@@ -295,40 +301,96 @@ void validateDescription(const NodeInstance& node, const ImageDescription& descr
     };
     validateBounds(description.format, "format");
     validateBounds(description.dataBounds, "data bounds");
+    if (description.channels.empty()) {
+        failNode(node, "node description declares no image channels");
+    }
+    std::set<std::string> names;
     for (const std::string& channel : description.channels) {
         if (channel.empty()) {
             failNode(node, "node description declares an unnamed image channel");
         }
+        // A stored image names each channel once: a duplicate would make the
+        // named reads, the demand and the storage order ambiguous.
+        if (!names.insert(channel).second) {
+            failNode(node, "node description declares channel '" + channel + "' more than once");
+        }
     }
 }
 
-// The channels a node's declared capabilities can produce: the demand must be
-// covered by one declared channel set, so a node declaring RGBA answers an RGBA
-// or RGB demand but not a channel set it never claimed to carry.
-[[nodiscard]] bool capabilitiesCoverChannels(const std::vector<std::string>& declared, const std::string& demand) {
-    for (const std::string& supported : declared) {
-        if (std::all_of(demand.begin(), demand.end(),
-                        [&supported](char channel) { return supported.find(channel) != std::string::npos; })) {
+// Channel-vocabulary coverage (issue #90): a declared capability admits a
+// demanded channel name when the declaration carries every named channel
+// (an empty list or the "*" wildcard), names it exactly, or — for a legacy
+// concatenated single-character set such as "RGBA" — contains that channel as
+// one of its letters. Anything else is genuinely undeclared: an auxiliary
+// channel an image carries is never demanded from a node whose vocabulary
+// excludes it, so this stays a real declaration check rather than a passing
+// formality.
+[[nodiscard]] bool capabilitiesCoverChannels(const std::vector<std::string>& declared,
+                                             const std::vector<std::string>& demand) {
+    if (declared.empty()) {
+        return true;
+    }
+    const auto entryCovers = [](const std::string& entry, const std::string& name) {
+        if (std::string_view{entry} == kAnyChannelCapability) {
             return true;
         }
-    }
-    return false;
+        if (entry == name) {
+            return true;
+        }
+        if (name.size() != 1) {
+            return false;
+        }
+        return std::any_of(entry.begin(), entry.end(), [&name](char value) {
+            return channelsDetail::lowerAscii(value) == channelsDetail::lowerAscii(name.front());
+        });
+    };
+    return std::all_of(demand.begin(), demand.end(), [&declared, &entryCovers](const std::string& name) {
+        return std::any_of(declared.begin(), declared.end(),
+                           [&entryCovers, &name](const std::string& entry) { return entryCovers(entry, name); });
+    });
 }
 
-// Union of two channel demands in the canonical RGBA order, preserving any
-// channel name outside that vocabulary in the order it was demanded.
-[[nodiscard]] std::string unionChannels(const std::string& left, const std::string& right) {
-    std::string result;
-    for (const char channel : std::string_view{"RGBA"}) {
-        if (left.find(channel) != std::string::npos || right.find(channel) != std::string::npos) {
-            result.push_back(channel);
+// Union of two channel demands, preserving the order each name was first
+// demanded in. Names are never reordered or collapsed: an auxiliary demand
+// keeps its identity through the whole plan (issue #90).
+[[nodiscard]] std::vector<std::string> unionChannels(const std::vector<std::string>& left,
+                                                     const std::vector<std::string>& right) {
+    std::vector<std::string> result = left;
+    for (const std::string& name : right) {
+        if (std::find(result.begin(), result.end(), name) == result.end()) {
+            result.push_back(name);
         }
     }
-    for (const std::string* source : {&left, &right}) {
-        for (const char channel : *source) {
-            if (result.find(channel) == std::string::npos) {
-                result.push_back(channel);
-            }
+    return result;
+}
+
+// Channel names rendered for a diagnostic message, in the order they were
+// demanded. Names are quoted so an empty or whitespace name is visible.
+[[nodiscard]] std::string channelListText(const std::vector<std::string>& channels) {
+    std::string text;
+    for (const std::string& name : channels) {
+        if (!text.empty()) {
+            text += ", ";
+        }
+        text += "'" + name + "'";
+    }
+    return text;
+}
+
+// The demand placed on a producer's inherited (non-explicit) channel demand:
+// the names the producer's described image actually carries. An inherited
+// demand says "whatever this node needs"; a name the producer does not hold is
+// served as zero by the frozen zero-fill policy and must not be demanded as if
+// it existed. An EXPLICIT contribution requirement is not filtered — that is a
+// declaration and an unsupported name is a real error, reported against the
+// producer that the check runs on.
+[[nodiscard]] std::vector<std::string> inheritedChannels(const std::vector<std::string>& demanded,
+                                                         const ImageDescription& producer) {
+    std::vector<std::string> result;
+    result.reserve(demanded.size());
+    for (const std::string& name : demanded) {
+        if (hasChannel(producer.channels, name)) {
+            result.push_back(name);
         }
     }
     return result;
@@ -401,12 +463,13 @@ void enforceDataWindow(CpuImage& image, const EvaluationRequest& request, const 
     }
     // Clear only the four bands outside the window: the common case (a raster
     // inside its own data window) costs four comparisons, and a padded raster
-    // pays for the padding it actually has rather than for a full scan.
-    const std::array<float, kImageChannels> transparent{0.0F, 0.0F, 0.0F, 0.0F};
-    const auto clear = [&image, &transparent](int yBegin, int yEnd, int xBegin, int xEnd) {
+    // pays for the padding it actually has rather than for a full scan. The
+    // clear covers EVERY stored channel (issue #90): an auxiliary or data
+    // channel outside the window is exactly as transparent as RGB(A).
+    const auto clear = [&image](int yBegin, int yEnd, int xBegin, int xEnd) {
         for (int y = std::max(0, yBegin); y < std::min(image.height(), yEnd); ++y) {
             for (int x = std::max(0, xBegin); x < std::min(image.width(), xEnd); ++x) {
-                image.setPixel(x, y, transparent);
+                image.clearPixel(x, y);
             }
         }
     };
@@ -524,10 +587,19 @@ RegionPlan planDependencyRegions(const Document& document, const EvaluationReque
     // visited after every consumer has contributed its demand (the order is
     // dependency-first, hence its reverse is consumer-first).
     std::map<EvaluationNodeId, Region> producerDemand;
-    std::map<EvaluationNodeId, std::string> channelDemand;
+    std::map<EvaluationNodeId, std::vector<std::string>> channelDemand;
     const EvaluationNodeId& targetId = plan.images.order.back().id;
     producerDemand.emplace(targetId, plan.request.region);
-    channelDemand.emplace(targetId, plan.request.channels);
+    // An empty request demand means every channel the requested image names
+    // (issue #90), so the target's own described channels become the explicit
+    // demand every key and per-node request carries. An explicit request names
+    // channels exactly and is validated against the target's description below.
+    std::vector<std::string> targetChannels = plan.request.channels;
+    if (targetChannels.empty()) {
+        targetChannels = target.channels;
+        plan.request.channels = targetChannels;
+    }
+    channelDemand.emplace(targetId, std::move(targetChannels));
 
     for (auto entry = plan.images.order.rbegin(); entry != plan.images.order.rend(); ++entry) {
         const ExpandedNode& expanded = *entry;
@@ -555,20 +627,25 @@ RegionPlan planDependencyRegions(const Document& document, const EvaluationReque
         nodeRequest.channels = channelDemand.at(expanded.id);
         validateRequestDomain(nodeRequest);
         if (contribution != nullptr) {
-            const std::string& demandedChannels = nodeRequest.channels;
+            // The demand this node received must be a name set its described
+            // image really carries. An inherited demand is already filtered to
+            // the producer's channels, so this fires exactly where a
+            // declaration was dishonest: an explicit requirement naming a
+            // channel its producer cannot carry, or an explicit request for a
+            // channel the target's described image does not hold. Both are real
+            // errors, reported against this node before any pixel work; a
+            // channel a *source* merely lacks is not one of them — the frozen
+            // zero-fill policy serves that as zero.
             const bool carried =
-                std::all_of(demandedChannels.begin(), demandedChannels.end(), [&description](char channel) {
-                    return std::any_of(
-                        description.channels.begin(), description.channels.end(),
-                        [channel](const std::string& name) { return name.size() == 1 && name.front() == channel; });
-                });
+                std::all_of(nodeRequest.channels.begin(), nodeRequest.channels.end(),
+                            [&description](const std::string& name) { return hasChannel(description.channels, name); });
             if (!carried) {
-                failNode(node, "the requested channels '" + demandedChannels +
+                failNode(node, "the requested channels '" + channelListText(nodeRequest.channels) +
                                    "' are not part of this node's described image channels");
             }
-            if (!capabilitiesCoverChannels(contribution->descriptor.capabilities.channels, demandedChannels)) {
-                failNode(node, "the requested channels '" + demandedChannels + "' are not declared by node type '" +
-                                   node.type + "'");
+            if (!capabilitiesCoverChannels(contribution->descriptor.capabilities.channels, nodeRequest.channels)) {
+                failNode(node, "the requested channels '" + channelListText(nodeRequest.channels) +
+                                   "' are not declared by node type '" + node.type + "'");
             }
         }
         plan.requests[expanded.id] = nodeRequest;
@@ -604,21 +681,26 @@ RegionPlan planDependencyRegions(const Document& document, const EvaluationReque
             const EvaluationNodeId& producer = expanded.inputs[port];
             if (producer.node == kInvalidNode)
                 continue;  // absent optional slot: no source, no demand
-            // A port the rule does not cover (or covers with an empty region and
-            // no channels) inherits this node's own coverage and channels.
+            // A port the rule does not cover (or covers with an empty region)
+            // inherits this node's own coverage. Its channels inherit too, but
+            // filtered to what the producer really carries: that default is a
+            // hint, not a declaration, and the zero-fill policy serves the rest.
+            // An explicit requirement's channels are the contribution's own
+            // declaration and travel unfiltered, so a name the producer cannot
+            // carry fails there instead of silently becoming nothing.
+            const ImageDescription& producerDescription = plan.images.nodes.at(producer).description;
             Region read = coverage;
-            std::string channels = nodeRequest.channels;
+            const bool explicitChannels = port < requirements.size() && !requirements[port].channels.empty();
+            std::vector<std::string> channels = explicitChannels
+                                                    ? requirements[port].channels
+                                                    : inheritedChannels(nodeRequest.channels, producerDescription);
             if (port < requirements.size()) {
                 const InputRequirement& requirement = requirements[port];
                 if (requirement.region.width > 0 && requirement.region.height > 0) {
                     read = requirement.region;
                 }
-                if (!requirement.channels.empty()) {
-                    channels = requirement.channels;
-                }
             }
-            const Region projected =
-                plannedCoverage(read, scale, describedDomain(plan.images.nodes.at(producer).description));
+            const Region projected = plannedCoverage(read, scale, describedDomain(producerDescription));
             const auto found = producerDemand.find(producer);
             if (found == producerDemand.end()) {
                 producerDemand.emplace(producer, projected);
@@ -627,7 +709,7 @@ RegionPlan planDependencyRegions(const Document& document, const EvaluationReque
             }
             const auto demandedChannels = channelDemand.find(producer);
             if (demandedChannels == channelDemand.end()) {
-                channelDemand.emplace(producer, channels);
+                channelDemand.emplace(producer, std::move(channels));
             } else {
                 demandedChannels->second = unionChannels(demandedChannels->second, channels);
             }
@@ -807,9 +889,12 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
             failNode(node, std::string("quality '") + qualityName(request.quality) +
                                "' is not declared by node type '" + node.type + "'");
         }
-        if (std::find(capabilities.channels.begin(), capabilities.channels.end(), request.channels) ==
-            capabilities.channels.end()) {
-            failNode(node, "channels '" + request.channels + "' are not declared by node type '" + node.type + "'");
+        // An empty demand means every channel the image names, which is
+        // admissible by definition (issue #90); an explicit demand must be part
+        // of the node type's declared channel vocabulary.
+        if (!request.channels.empty() && !capabilitiesCoverChannels(capabilities.channels, request.channels)) {
+            failNode(node, "channels '" + channelListText(request.channels) + "' are not declared by node type '" +
+                               node.type + "'");
         }
         if (std::find(capabilities.samplingScales.begin(), capabilities.samplingScales.end(), request.samplingScale) ==
             capabilities.samplingScales.end()) {
@@ -829,9 +914,9 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
                                   "' is not implemented by this executor (spec section 8: reduced quality must "
                                   "not substitute for full quality)");
     }
-    if (request.channels != "RGBA") {
-        throw EvaluationException("channels '" + request.channels + "' are not implemented (supported: RGBA)");
-    }
+    // The reference executor serves any named channel set: a raster carries
+    // exactly the channels its description names (issue #90), so a named demand
+    // is a request for names — never a request this executor cannot honour.
 }
 
 std::vector<NodeId> resolveStepInputs(const Document& document, NetworkId network, const NodeInstance& node,
@@ -1072,6 +1157,15 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                                    : contribution->cpuUnavailableReason);
             } else {
                 auto fresh = std::make_shared<CpuImage>(contribution->cpu->execute(context));
+                // Shared auxiliary preservation (issue #90): an ordinary effect
+                // addresses its main input's RGBA projection and inherits the
+                // meaning of everything else, so the named channels it does not
+                // address are carried over unchanged. A node that owns its
+                // channel layout (Shuffle) states every channel itself and is
+                // never overlaid.
+                if (!contribution->ownsChannelLayout) {
+                    *fresh = preserveAuxiliaryChannels(context, std::move(*fresh));
+                }
                 // The one central support guard: whatever a node's own pixel
                 // math produced, the raster agrees with the description it
                 // declared (transparent black outside the data window).

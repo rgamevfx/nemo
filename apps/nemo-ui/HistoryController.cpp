@@ -191,6 +191,12 @@ bool HistoryController::redo() {
     return invoke(true);
 }
 bool HistoryController::eventFilter(QObject* watched, QEvent* event) {
+    // QWindow emits teardown events after its QQuickWindow lifetime has ended.
+    // Only input events belong to history; do not downcast unrelated receivers.
+    const auto type = event->type();
+    if (type != QEvent::MouseButtonPress && type != QEvent::MouseButtonRelease && type != QEvent::ShortcutOverride &&
+        type != QEvent::KeyPress)
+        return false;
     auto* window = qobject_cast<QQuickWindow*>(watched);
     if (!registered(window) || !window->isActive())
         return false;

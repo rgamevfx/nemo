@@ -298,6 +298,16 @@ protected:
 
         projectFile_ = std::make_unique<nemo::ui::ProjectFileController>(*session_, *workspace_, *router_, *chooser_);
         editors_ = std::make_unique<nemo::ui::ParameterEditorRegistry>();
+        for (const auto& contribution : nemo::builtinNodeContributions()->entries()) {
+            for (const auto& editor : contribution.editors) {
+                QStringList consumes;
+                for (const auto& key : editor.consumes)
+                    consumes.push_back(QString::fromStdString(key));
+                ASSERT_TRUE(editors_->registerEditor(QString::fromStdString(editor.id),
+                                                     QUrl(QString::fromStdString(editor.source)), consumes,
+                                                     QString::fromStdString(editor.presentation)));
+            }
+        }
 
         engine_ = std::make_unique<QQmlApplicationEngine>();
         warnings_ = std::make_unique<QSignalSpy>(engine_.get(), &QQmlEngine::warnings);
@@ -485,11 +495,12 @@ protected:
         QGuiApplication::sendEvent(window_, &event);
     }
 
-    void drag(const QPoint& from, const QPoint& to, Qt::MouseButton button = Qt::LeftButton, int steps = 8) {
-        QTest::mousePress(window_, button, Qt::NoModifier, from);
+    void drag(const QPoint& from, const QPoint& to, Qt::MouseButton button = Qt::LeftButton, int steps = 8,
+              Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+        QTest::mousePress(window_, button, modifiers, from);
         for (int step = 1; step <= steps; ++step)
-            QTest::mouseMove(window_, from + (to - from) * step / steps, 2);
-        QTest::mouseRelease(window_, button, Qt::NoModifier, to);
+            QTest::mouseEvent(QTest::MouseMove, window_, Qt::NoButton, modifiers, from + (to - from) * step / steps, 2);
+        QTest::mouseRelease(window_, button, modifiers, to);
         QTest::qWait(30);
     }
 
@@ -536,7 +547,7 @@ protected:
 
     // Picks a preset from the shared combo's own popup, by the real input path:
     // click the control to open its menu, then click the entry it shows.
-    void pickZoomPreset(QQuickItem* control, int index) {
+    void pickPreset(QQuickItem* control, int index) {
         // The arrow beside the value is the preset menu's target on a typeable
         // control; the body of the control belongs to the field.
         const QPoint arrow = control->mapToScene(QPointF(control->width() - 12, control->height() / 2)).toPoint();
@@ -1306,7 +1317,7 @@ TEST_F(ReadViewerSurface, ViewerZoomControlStatesAndAcceptsAnyScale) {
     // A preset from the control's own menu re-fits the image, and the fitted
     // view is the accepted one: the media keeps its 6 px margin, the whole image
     // is requested, and the sampling stays full.
-    pickZoomPreset(control, 0);
+    pickPreset(control, 0);
     QTest::qWait(80);
     EXPECT_EQ(statedZoom(), QStringLiteral("Fit"));
     EXPECT_NEAR(sampleView().scale(), fittedScale, 0.01);
@@ -1451,6 +1462,682 @@ TEST_F(ReadViewerSurface, ForceFullFrameCoversTheWholeDomainAndKeepsTheView) {
     EXPECT_NEAR(controller_->pan().x(), regionalPan.x(), 0.5);
     EXPECT_NEAR(controller_->pan().y(), regionalPan.y(), 0.5);
     EXPECT_EQ(warnings_->count(), 0);
+}
+
+class ShuffleSurface : public ReadViewerSurface {
+protected:
+    QString shuffle_;
+
+    ShuffleSurface() {
+        prepareWorkspaceDocument = [] {
+            const auto leaf = [](const QString& id, const QString& type) {
+                const QJsonObject state = type == QStringLiteral("parameters")
+                                              ? QJsonObject{{QStringLiteral("columns"), false}}
+                                              : QJsonObject{{QStringLiteral("viewerIndex"), 0}};
+                const QJsonObject panel{{QStringLiteral("id"), id},
+                                        {QStringLiteral("type"), type},
+                                        {QStringLiteral("group"), QStringLiteral("A")},
+                                        {QStringLiteral("state"), state}};
+                return QJsonObject{{QStringLiteral("id"), id + QStringLiteral("-leaf")},
+                                   {QStringLiteral("kind"), QStringLiteral("tabs")},
+                                   {QStringLiteral("active"), id},
+                                   {QStringLiteral("panels"), QJsonArray{panel}}};
+            };
+            const auto split = [](const QString& id, const QString& orientation, double ratio, const QJsonObject& first,
+                                  const QJsonObject& second) {
+                return QJsonObject{{QStringLiteral("id"), id},
+                                   {QStringLiteral("kind"), QStringLiteral("split")},
+                                   {QStringLiteral("orientation"), orientation},
+                                   {QStringLiteral("ratio"), ratio},
+                                   {QStringLiteral("children"), QJsonArray{first, second}}};
+            };
+            const auto left = split(QStringLiteral("left"), QStringLiteral("vertical"), 0.6,
+                                    leaf(QStringLiteral("panel-a"), QStringLiteral("viewer")),
+                                    leaf(QStringLiteral("graph"), QStringLiteral("nodegraph")));
+            const QJsonObject layout{
+                {QStringLiteral("version"), 1},
+                {QStringLiteral("root"), split(QStringLiteral("root"), QStringLiteral("horizontal"), 0.58, left,
+                                               leaf(QStringLiteral("parameters"), QStringLiteral("parameters")))}};
+            return QJsonObject{{QStringLiteral("version"), 2},
+                               {QStringLiteral("activeWorkspaceId"), QStringLiteral("workspace-1")},
+                               {QStringLiteral("workspaces"),
+                                QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("workspace-1")},
+                                                       {QStringLiteral("name"), QStringLiteral("Shuffle")},
+                                                       {QStringLiteral("layout"), layout}}}}};
+        };
+    }
+
+    void SetUp() override {
+        ReadViewerSurface::SetUp();
+        if (HasFatalFailure() || IsSkipped())
+            return;
+        const auto scope = rootNetwork();
+        const auto b =
+            facade_->createGraphNode(scope, QStringLiteral("source"), QStringLiteral("B"), -180, -120, {}, {});
+        const auto a =
+            facade_->createGraphNode(scope, QStringLiteral("source"), QStringLiteral("A"), 120, -120, {}, {});
+        shuffle_ = facade_->createGraphNode(scope, QStringLiteral("shuffle"), QStringLiteral("Shuffle"), 0, 60, {}, {});
+        const auto viewer =
+            facade_->createGraphNode(scope, QStringLiteral("viewer"), QStringLiteral("Viewer"), 0, 160, {}, {});
+        ASSERT_FALSE(shuffle_.isEmpty());
+        const auto network = session_->document().rootNetworkId();
+        const auto fixtures = std::filesystem::path(NEMO_UI_QML_DIR).parent_path().parent_path().parent_path() /
+                              "docs/evidence/assets/issue90-channels";
+        nemo::SourceReference base;
+        base.path = (fixtures / "multilayer-b.exr").string();
+        nemo::SourceReference second;
+        second.path = (fixtures / "data-a.exr").string();
+        ASSERT_TRUE(
+            session_
+                ->submit(
+                    nemo::transactionCommand(
+                        "Shuffle sources",
+                        {nemo::setSourceCommand("B", base), nemo::setSourceCommand("A", second),
+                         nemo::setParamCommand(network, b.toULongLong(), "source", std::string{"B"}),
+                         nemo::setParamCommand(network, a.toULongLong(), "source", std::string{"A"}),
+                         nemo::setParamCommand(network, b.toULongLong(), "inputTransform", nemo::ChoiceValue{"raw"}),
+                         nemo::connectCommand(network, {b.toULongLong(), 0}, {shuffle_.toULongLong(), 0}),
+                         nemo::connectCommand(network, {a.toULongLong(), 0}, {shuffle_.toULongLong(), 1}),
+                         nemo::connectCommand(network, {shuffle_.toULongLong(), 0}, {viewer.toULongLong(), 0}),
+                         nemo::connectCommand(network, {shuffle_.toULongLong(), 0},
+                                              {session_->document().network(network).defaultOutput(), 0})}),
+                    nemo::EditOptions{session_->revision(), {}})
+                .committed);
+        QTest::qWait(50);
+        auto* frameAll = visualByName(window_->contentItem(), QStringLiteral("graphFrameAll"));
+        ASSERT_NE(frameAll, nullptr);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(frameAll));
+        QTest::qWait(100);
+        ASSERT_TRUE(router_->requestInspector(QStringLiteral("A"), scope, shuffle_));
+        ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleEditor")) != nullptr; }, 10000));
+        ASSERT_TRUE(waitFor(
+            [&] {
+                auto* socket = item(QStringLiteral("shuffleInSocket_0_0"));
+                return socket && socket->property("socketChannel").toString() == QStringLiteral("R");
+            },
+            10000));
+        QTest::qWait(50);
+    }
+
+    QQuickItem* item(const QString& name) {
+        return visualByName(window_->contentItem(), name + QStringLiteral("_") + shuffle_);
+    }
+
+    static QPoint center(QQuickItem* item) {
+        return item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+    }
+
+    std::string mappedSource(int row) {
+        return std::get<std::string>(session_
+                                         ->queryValues(session_->document().rootNetworkId(), shuffle_.toULongLong(),
+                                                       "sourceChannel" + std::to_string(row))
+                                         .front()
+                                         .value);
+    }
+
+    QQuickItem* namedInputSocket(int group, const QString& channel) {
+        for (int slot = 0;; ++slot) {
+            auto* socket = item(QStringLiteral("shuffleInSocket_%1_%2").arg(group).arg(slot));
+            if (!socket || socket->property("socketChannel").toString() == channel)
+                return socket;
+        }
+    }
+
+    void typeField(QQuickItem* field, std::string_view text) {
+        ASSERT_NE(field, nullptr);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(field));
+        QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+        for (const char character : text)
+            QTest::keyClick(window_, character);
+        QTest::keyClick(window_, Qt::Key_Return);
+        QTest::qWait(50);
+    }
+};
+
+TEST_F(ShuffleSurface, NativeSocketDragCancellationAndHistory) {
+    const bool mounted = waitFor([&] { return item(QStringLiteral("shuffleEditor")) != nullptr; }, 10000);
+    if (!mounted)
+        capture(QStringLiteral("shuffle-editor-unavailable"), {}, false, true);
+    ASSERT_TRUE(mounted);
+    ASSERT_TRUE(waitFor(
+        [&] {
+            auto* socket = item(QStringLiteral("shuffleInSocket_0_0"));
+            return socket && socket->property("socketChannel").toString() == QStringLiteral("R");
+        },
+        10000));
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; }, 10000))
+        << controller_->error().toStdString();
+    capture(QStringLiteral("shuffle-initial"), {}, false, true);
+    auto* input = item(QStringLiteral("shuffleInSocket_0_0"));
+    auto* output = item(QStringLiteral("shuffleOutSocket_1"));
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(output, nullptr);
+    const auto before = session_->revision();
+    const QPoint from = center(input);
+    const QPoint to = center(output);
+    QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, from);
+    QTest::mouseMove(window_, to, 30);
+    QTest::qWait(50);
+    capture(QStringLiteral("shuffle-preview"), {}, true, true);
+    QTest::keyClick(window_, Qt::Key_Escape);
+    QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, to);
+    QTest::qWait(50);
+    EXPECT_EQ(session_->revision(), before);
+    EXPECT_EQ(mappedSource(1), "G");
+
+    input = item(QStringLiteral("shuffleInSocket_0_0"));
+    output = item(QStringLiteral("shuffleOutSocket_1"));
+    ASSERT_NE(input, nullptr);
+    ASSERT_NE(output, nullptr);
+    drag(center(input), center(output));
+    ASSERT_EQ(mappedSource(1), "R");
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    EXPECT_EQ(mappedSource(1), "G");
+    ASSERT_TRUE(session_->redo(nemo::EditOptions{session_->revision(), {}}).committed);
+    EXPECT_EQ(mappedSource(1), "R");
+    QTest::qWait(100);
+    auto* blue = item(QStringLiteral("shuffleInSocket_0_2"));
+    auto* alpha = item(QStringLiteral("shuffleOutSocket_3"));
+    ASSERT_NE(blue, nullptr);
+    ASSERT_NE(alpha, nullptr);
+    drag(center(blue), center(alpha));
+    ASSERT_EQ(mappedSource(3), "B") << "socket routing must survive inspector reconstruction";
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    EXPECT_EQ(mappedSource(3), "A");
+    QTest::qWait(100);
+    capture(QStringLiteral("shuffle-connected"), {}, false, true);
+    const auto saved = session_->prepareSave(directory_.filePath(QStringLiteral("shuffle.nemo")).toStdString());
+    const auto written = nemo::ProjectFile::writeAtomic(saved);
+    ASSERT_TRUE(written.ok) << written.error.message;
+    auto loaded = nemo::ProjectFile::read(saved.target);
+    ASSERT_TRUE(loaded.ok) << loaded.error.message;
+    ASSERT_TRUE(session_->open(std::move(loaded)).replaced);
+    EXPECT_EQ(mappedSource(1), "R");
+}
+
+TEST_F(ShuffleSurface, CreatingAnUnwiredOutputIsAtomicAndStartsAtZero) {
+    const auto type = [&](std::string_view text) {
+        for (const char character : text)
+            QTest::keyClick(window_, character);
+    };
+    auto* name = item(QStringLiteral("shuffleName_4"));
+    ASSERT_NE(name, nullptr);
+    const auto before = session_->revision();
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(name));
+    ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleNewChannel"))->isVisible(); }, 10000));
+    auto* layer = item(QStringLiteral("shuffleNewLayer"));
+    auto* channel = item(QStringLiteral("shuffleNewChannelField"));
+    ASSERT_NE(layer, nullptr);
+    ASSERT_NE(channel, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(layer));
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    type("custom");
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(channel));
+    type("mask");
+    QTest::keyClick(window_, Qt::Key_Escape);
+    EXPECT_EQ(session_->revision(), before);
+    EXPECT_TRUE(
+        std::get<std::string>(
+            session_->queryValues(session_->document().rootNetworkId(), shuffle_.toULongLong(), "outputChannel4")
+                .front()
+                .value)
+            .empty());
+    name = item(QStringLiteral("shuffleName_4"));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(name));
+    layer = item(QStringLiteral("shuffleNewLayer"));
+    channel = item(QStringLiteral("shuffleNewChannelField"));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(layer));
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    type("rgba");
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(channel));
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    type("R");
+    auto* confirm = item(QStringLiteral("shuffleNewConfirm"));
+    ASSERT_NE(confirm, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(confirm));
+    EXPECT_EQ(session_->revision(), before);
+    ASSERT_TRUE(item(QStringLiteral("shuffleNewChannel"))->isVisible());
+    EXPECT_FALSE(item(QStringLiteral("shuffleEditor"))->property("gestureProblem").toString().isEmpty());
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(layer));
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    type("mask");
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(channel));
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    type("a");
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(confirm));
+    ASSERT_TRUE(waitFor([&] { return !item(QStringLiteral("shuffleNewChannel"))->isVisible(); }, 2000))
+        << item(QStringLiteral("shuffleEditor"))->property("gestureProblem").toString().toStdString();
+    const auto value = [&](const std::string& key) {
+        return session_->queryValues(session_->document().rootNetworkId(), shuffle_.toULongLong(), key).front().value;
+    };
+    EXPECT_EQ(std::get<std::string>(value("outputChannel4")), "mask.a");
+    EXPECT_EQ(std::get<nemo::ChoiceValue>(value("sourceKind4")).value, "zero");
+    capture(QStringLiteral("shuffle-created-zero"), {}, false, true);
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    EXPECT_TRUE(
+        std::get<std::string>(
+            session_->queryValues(session_->document().rootNetworkId(), shuffle_.toULongLong(), "outputChannel4")
+                .front()
+                .value)
+            .empty());
+}
+
+TEST_F(ShuffleSurface, InspectorColumnSwitchRetainsTheOpenMapping) {
+    for (int change = 0; change < 2; ++change) {
+        auto* columns = visualByName(window_->contentItem(), QStringLiteral("columnToggle"));
+        ASSERT_NE(columns, nullptr);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(columns));
+        QTest::qWait(100);
+        ASSERT_NE(item(QStringLiteral("shuffleEditor")), nullptr);
+    }
+    auto* green = item(QStringLiteral("shuffleInSocket_0_1"));
+    auto* blue = item(QStringLiteral("shuffleOutSocket_2"));
+    ASSERT_NE(green, nullptr);
+    ASSERT_NE(blue, nullptr);
+    drag(center(green), center(blue));
+    EXPECT_EQ(mappedSource(2), "G");
+    capture(QStringLiteral("shuffle-columns-retained"), {}, false, true);
+}
+
+TEST_F(ShuffleSurface, NamedDataLayerDoesNotSubstitutePixelsWhenItDisappears) {
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; }, 10000));
+    const int matte = controller_->availableLayers().indexOf(QStringLiteral("matte"));
+    ASSERT_GE(matte, 0);
+    auto* selector = visualByName(window_->contentItem(), QStringLiteral("viewerLayer_") + panel_);
+    ASSERT_NE(selector, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(selector));
+    QTest::keyClick(window_, Qt::Key_Home);
+    for (int index = 0; index < matte; ++index)
+        QTest::keyClick(window_, Qt::Key_Down);
+    QTest::keyClick(window_, Qt::Key_Return);
+    ASSERT_TRUE(waitFor(
+        [&] {
+            return controller_->layer() == QStringLiteral("matte") && controller_->presentation() &&
+                   controller_->presentation()->request.channels == std::vector<std::string>{"matte.coverage"};
+        },
+        10000))
+        << controller_->error().toStdString();
+    EXPECT_GT(countPixelsNear(grabPanel(), {32, 32, 32}, 2), 300)
+        << "the data plane is opaque gray, not an OCIO-transformed color";
+    capture(QStringLiteral("shuffle-matte-layer"), {}, false, true);
+
+    const auto original = session_->document().sources.at("B");
+    auto alphaOnly = original;
+    alphaOnly.path = (std::filesystem::path(original.path).parent_path() / "alpha-only.exr").string();
+    ASSERT_TRUE(session_->submit(nemo::setSourceCommand("B", alphaOnly), nemo::EditOptions{session_->revision(), {}})
+                    .committed);
+    ASSERT_TRUE(waitFor([&] { return !controller_->presentation() && !controller_->error().isEmpty(); }, 10000))
+        << "an unavailable selected layer must not fall back to every channel; " << controller_->status().toStdString();
+    EXPECT_EQ(controller_->layer(), QStringLiteral("matte"));
+    capture(QStringLiteral("shuffle-missing-viewer-layer"), {}, false, true);
+    ASSERT_TRUE(
+        session_->submit(nemo::setSourceCommand("B", original), nemo::EditOptions{session_->revision(), {}}).committed);
+    ASSERT_TRUE(waitFor(
+        [&] {
+            return controller_->presentation() &&
+                   controller_->presentation()->request.channels == std::vector<std::string>{"matte.coverage"};
+        },
+        10000))
+        << controller_->error().toStdString();
+    EXPECT_EQ(controller_->layer(), QStringLiteral("matte"));
+    EXPECT_GT(countPixelsNear(grabPanel(), {32, 32, 32}, 2), 300);
+}
+
+TEST_F(ShuffleSurface, ModifierRoutingUsesConsecutiveSourcesAndExactNamesAcrossGroups) {
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; }, 10000));
+    const auto beforeInvalidDrop = session_->revision();
+    drag(center(namedInputSocket(0, QStringLiteral("R"))), center(item(QStringLiteral("shuffleOutSocket_4"))),
+         Qt::LeftButton, 8, Qt::AltModifier);
+    EXPECT_EQ(session_->revision(), beforeInvalidDrop);
+    EXPECT_EQ(mappedSource(1), "G");
+    const auto previewFrom = center(namedInputSocket(0, QStringLiteral("G")));
+    const auto previewTo = center(item(QStringLiteral("shuffleOutSocket_2")));
+    QTest::mousePress(window_, Qt::LeftButton, Qt::ControlModifier, previewFrom);
+    QTest::mouseEvent(QTest::MouseMove, window_, Qt::NoButton, Qt::ControlModifier, previewTo, 30);
+    QTest::qWait(50);
+    capture(QStringLiteral("shuffle-consecutive-preview"), {}, true, true);
+    QTest::keyClick(window_, Qt::Key_Escape);
+    QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, previewTo);
+    EXPECT_EQ(session_->revision(), beforeInvalidDrop);
+    drag(center(namedInputSocket(0, QStringLiteral("G"))), center(item(QStringLiteral("shuffleOutSocket_2"))),
+         Qt::LeftButton, 8, Qt::ControlModifier);
+    EXPECT_EQ(mappedSource(2), "G");
+    EXPECT_EQ(mappedSource(3), "B");
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    QTest::qWait(50);
+    drag(center(namedInputSocket(0, QStringLiteral("A"))), center(item(QStringLiteral("shuffleOutSocket_2"))),
+         Qt::LeftButton, 8, Qt::ControlModifier | Qt::ShiftModifier);
+    EXPECT_EQ(mappedSource(0), "G");
+    EXPECT_EQ(mappedSource(1), "B");
+    EXPECT_EQ(mappedSource(2), "A");
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    QTest::qWait(50);
+    drag(center(namedInputSocket(0, QStringLiteral("R"))), center(item(QStringLiteral("shuffleOutSocket_1"))),
+         Qt::LeftButton, 8, Qt::AltModifier);
+    for (int row = 0; row < 4; ++row)
+        EXPECT_EQ(mappedSource(row), "R");
+    QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier, center(namedInputSocket(0, QStringLiteral("B"))));
+    QTest::qWait(50);
+    EXPECT_EQ(mappedSource(2), "B");
+    EXPECT_EQ(mappedSource(1), "R");
+    drag(center(item(QStringLiteral("shuffleOutSocket_3"))), center(namedInputSocket(0, QStringLiteral("G"))));
+    EXPECT_EQ(mappedSource(3), "G");
+
+    const auto network = session_->document().rootNetworkId();
+    const auto node = shuffle_.toULongLong();
+    ASSERT_TRUE(session_
+                    ->submit(nemo::transactionCommand(
+                                 "Named output",
+                                 {nemo::setParamCommand(network, node, "outputChannel4", std::string{"beauty.R"}),
+                                  nemo::setParamCommand(network, node, "sourceKind4", nemo::ChoiceValue{"zero"}),
+                                  nemo::setParamCommand(network, node, "out2", std::string{"beauty"})}),
+                             nemo::EditOptions{session_->revision(), {}})
+                    .committed);
+    QTest::qWait(50);
+    auto* layer = item(QStringLiteral("shuffleInLayer_1"));
+    ASSERT_NE(layer, nullptr);
+    typeField(visualByName(window_->contentItem(), layer->objectName() + QStringLiteral("Field")), "beauty");
+    ASSERT_TRUE(waitFor([&] { return namedInputSocket(1, QStringLiteral("beauty.R")) != nullptr; }, 10000));
+    QTest::mouseDClick(window_, Qt::LeftButton, Qt::ControlModifier,
+                       center(namedInputSocket(1, QStringLiteral("beauty.R"))));
+    QTest::qWait(50);
+    EXPECT_EQ(mappedSource(4), "beauty.R");
+    EXPECT_EQ(mappedSource(0), "R") << "full-name matching must not target a different layer's R";
+    capture(QStringLiteral("shuffle-modifier-routing"), {}, false, true);
+    for (const auto& [button, kind] : {std::pair{"shuffleOne_0", "one"}, std::pair{"shuffleZero_0", "zero"}}) {
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::ControlModifier, center(item(QString::fromLatin1(button))));
+        QTest::qWait(50);
+        for (int row = 0; row < 5; ++row)
+            EXPECT_EQ(std::get<nemo::ChoiceValue>(
+                          session_->queryValues(network, node, "sourceKind" + std::to_string(row)).front().value)
+                          .value,
+                      kind);
+    }
+    drag(center(item(QStringLiteral("shuffleGroupHandle_0_input"))),
+         center(item(QStringLiteral("shuffleGroupHandle_0_output"))));
+    const std::array<std::string, 4> rgba{"R", "G", "B", "A"};
+    for (int row = 0; row < 4; ++row)
+        EXPECT_EQ(mappedSource(row), rgba[row]);
+    drag(center(item(QStringLiteral("shuffleGroupHandle_1_output"))),
+         center(namedInputSocket(1, QStringLiteral("beauty.R"))));
+    EXPECT_EQ(std::get<nemo::ChoiceValue>(session_->queryValues(network, node, "sourceKind4").front().value).value,
+              "input2");
+    drag(center(item(QStringLiteral("shuffleGroupHandle_1_output"))),
+         center(item(QStringLiteral("shuffleGroupHandle_0_output"))));
+    EXPECT_EQ(std::get<std::string>(session_->queryValues(network, node, "outputChannel0").front().value), "beauty.R");
+    EXPECT_EQ(std::get<std::string>(session_->queryValues(network, node, "outputChannel4").front().value), "R");
+    EXPECT_EQ(std::get<nemo::ChoiceValue>(session_->queryValues(network, node, "sourceKind0").front().value).value,
+              "input2");
+    capture(QStringLiteral("shuffle-output-reordered"), {}, false, true);
+}
+
+TEST_F(ShuffleSurface, CrossGroupWiresFollowTheirSelectorThroughReorderAndDisconnection) {
+    const auto network = session_->document().rootNetworkId();
+    const auto node = shuffle_.toULongLong();
+    ASSERT_TRUE(session_
+                    ->submit(nemo::transactionCommand(
+                                 "Named data output",
+                                 {nemo::setParamCommand(network, node, "outputChannel0", std::string{"picked.mask"}),
+                                  nemo::setParamCommand(network, node, "out1", std::string{"picked"})}),
+                             nemo::EditOptions{session_->revision(), {}})
+                    .committed);
+    ASSERT_TRUE(waitFor([&] { return controller_->availableLayers().contains(QStringLiteral("picked")); }, 10000));
+    pickPreset(visualByName(window_->contentItem(), QStringLiteral("viewerLayer_") + panel_),
+               controller_->availableLayers().indexOf(QStringLiteral("picked")));
+    pickPreset(item(QStringLiteral("shuffleInputChoice_1")), 1);
+    auto* layer = item(QStringLiteral("shuffleInLayer_1"));
+    typeField(visualByName(window_->contentItem(), layer->objectName() + QStringLiteral("Field")), "matte");
+    ASSERT_TRUE(waitFor([&] { return namedInputSocket(1, QStringLiteral("matte.coverage")) != nullptr; }, 10000));
+    auto previous = controller_->presentation();
+    const auto waitGray = [&](int gray) {
+        const bool ready = waitFor(
+            [&] {
+                if (!controller_->presentation() || controller_->presentation() == previous)
+                    return false;
+                const auto image = grabImageArea();
+                const auto point = displayedRect().center().toPoint();
+                if (!image.rect().contains(point))
+                    return false;
+                const auto pixel = image.pixelColor(point);
+                return std::abs(pixel.red() - gray) <= 2 && std::abs(pixel.green() - gray) <= 2 &&
+                       std::abs(pixel.blue() - gray) <= 2;
+            },
+            10000);
+        previous = controller_->presentation();
+        return ready;
+    };
+    drag(center(namedInputSocket(1, QStringLiteral("matte.coverage"))),
+         center(item(QStringLiteral("shuffleOutSocket_0"))));
+    ASSERT_TRUE(waitGray(159)) << controller_->error().toStdString();
+    pickPreset(item(QStringLiteral("shuffleInputChoice_1")), 0);
+    ASSERT_TRUE(waitGray(32)) << "a cross-group wire must follow its own input selector";
+    drag(center(item(QStringLiteral("shuffleGroupHandle_1_input"))),
+         center(item(QStringLiteral("shuffleGroupHandle_0_input"))));
+    ASSERT_TRUE(waitGray(32)) << "input-side reordering must preserve pixels";
+    EXPECT_EQ(std::get<std::string>(session_->queryValues(network, node, "outputChannel0").front().value),
+              "picked.mask");
+    EXPECT_EQ(std::get<nemo::ChoiceValue>(session_->queryValues(network, node, "sourceKind0").front().value).value,
+              "input1");
+    layer = item(QStringLiteral("shuffleInLayer_1"));
+    typeField(visualByName(window_->contentItem(), layer->objectName() + QStringLiteral("Field")), "matte");
+    ASSERT_TRUE(waitGray(32));
+    pickPreset(item(QStringLiteral("shuffleInputChoice_1")), 1);
+    ASSERT_TRUE(waitGray(32)) << "duplicate source names must not move a wire to the other group";
+    pickPreset(item(QStringLiteral("shuffleInputChoice_0")), 1);
+    ASSERT_TRUE(waitGray(159));
+    capture(QStringLiteral("shuffle-cross-group-reordered"), {}, false, true);
+
+    const auto incoming = session_->queryEdges(network, node);
+    const auto second = std::find_if(incoming.begin(), incoming.end(), [&](const auto& result) {
+        return result.edge.to.node == node && result.edge.to.port == 1;
+    });
+    ASSERT_NE(second, incoming.end());
+    const auto edge = second->edge;
+    ASSERT_TRUE(session_->submit(nemo::disconnectCommand(network, edge.id), nemo::EditOptions{session_->revision(), {}})
+                    .committed);
+    ASSERT_TRUE(waitGray(0)) << "an optional disconnected A is zero at the same absolute image position";
+    ASSERT_TRUE(waitFor(
+        [&] {
+            auto* marker = item(QStringLiteral("shuffleMissing_0"));
+            return marker && marker->isVisible();
+        },
+        10000));
+    capture(QStringLiteral("shuffle-disconnected-a"), {}, false, true);
+    ASSERT_TRUE(
+        session_->submit(nemo::connectCommand(network, edge.from, edge.to), nemo::EditOptions{session_->revision(), {}})
+            .committed);
+    ASSERT_TRUE(waitGray(159));
+    const auto primary = std::find_if(incoming.begin(), incoming.end(), [&](const auto& result) {
+        return result.edge.to.node == node && result.edge.to.port == 0;
+    });
+    ASSERT_NE(primary, incoming.end());
+    ASSERT_TRUE(
+        session_
+            ->submit(nemo::disconnectCommand(network, primary->edge.id), nemo::EditOptions{session_->revision(), {}})
+            .committed);
+    ASSERT_TRUE(waitFor([&] { return !controller_->error().isEmpty(); }, 10000));
+    EXPECT_TRUE(controller_->property("outdated").toBool());
+    EXPECT_TRUE(controller_->error().contains(QStringLiteral("B"))) << controller_->error().toStdString();
+    capture(QStringLiteral("shuffle-required-b"), {}, false, true);
+}
+
+TEST_F(ShuffleSurface, SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen) {
+    auto* editor = item(QStringLiteral("shuffleEditor"));
+    auto* inspector = qobject_cast<ViewerController*>(editor->property("controller").value<QObject*>());
+    ASSERT_NE(inspector, nullptr);
+    inspector->setFrame(1);
+    const auto openDialog = [&] {
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(item(QStringLiteral("shuffleName_0"))));
+        ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleRoutingKey_sourceChannel0")) != nullptr; }, 2000));
+        QTest::qWait(50);
+    };
+    openDialog();
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier,
+                      center(item(QStringLiteral("shuffleRoutingKey_sourceChannel0"))));
+    ASSERT_TRUE(waitFor(
+        [&] {
+            auto* key = item(QStringLiteral("shuffleRoutingKey_sourceChannel0"));
+            return key && key->property("keyStatus").toString() == QStringLiteral("key");
+        },
+        2000));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(item(QStringLiteral("shuffleNewCancel"))));
+    inspector->setFrame(11);
+    QTest::qWait(50);
+    drag(center(namedInputSocket(0, QStringLiteral("G"))), center(item(QStringLiteral("shuffleOutSocket_0"))));
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    ASSERT_TRUE(session_->redo(nemo::EditOptions{session_->revision(), {}}).committed);
+    inspector->setFrame(6);
+    QTest::qWait(50);
+    openDialog();
+    EXPECT_EQ(item(QStringLiteral("shuffleRoutingValue_sourceChannel0"))->property("text").toString(),
+              QStringLiteral("R"));
+    EXPECT_EQ(item(QStringLiteral("shuffleRoutingKey_sourceChannel0"))->property("keyStatus").toString(),
+              QStringLiteral("animated"));
+    capture(QStringLiteral("shuffle-held-routing-key"), {}, false, true);
+    const auto saved =
+        session_->prepareSave(directory_.filePath(QStringLiteral("animated-shuffle.nemo")).toStdString());
+    const auto written = nemo::ProjectFile::writeAtomic(saved);
+    ASSERT_TRUE(written.ok) << written.error.message;
+    auto loaded = nemo::ProjectFile::read(saved.target);
+    ASSERT_TRUE(loaded.ok) << loaded.error.message;
+    ASSERT_TRUE(session_->open(std::move(loaded)).replaced);
+    ASSERT_TRUE(router_->requestInspector(QStringLiteral("A"), rootNetwork(), shuffle_));
+    ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleEditor")) != nullptr; }, 10000));
+    inspector = qobject_cast<ViewerController*>(
+        item(QStringLiteral("shuffleEditor"))->property("controller").value<QObject*>());
+    ASSERT_NE(inspector, nullptr);
+    inspector->setFrame(11);
+    QTest::qWait(50);
+    openDialog();
+    EXPECT_EQ(item(QStringLiteral("shuffleRoutingValue_sourceChannel0"))->property("text").toString(),
+              QStringLiteral("G"));
+    EXPECT_EQ(item(QStringLiteral("shuffleRoutingKey_sourceChannel0"))->property("keyStatus").toString(),
+              QStringLiteral("key"));
+}
+
+TEST_F(ShuffleSurface, MissingCustomEditorKeepsGenericMappingEditableAndRecovers) {
+    const QString id = QStringLiteral("nemo.shuffle.mapping");
+    const auto registered = editors_->editor(id);
+    ASSERT_TRUE(editors_->unregisterEditor(id));
+    ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleEditor")) == nullptr; }, 2000));
+    auto* source =
+        visualByName(window_->contentItem(), QStringLiteral("string_") + shuffle_ + QStringLiteral("_sourceChannel0"));
+    ASSERT_NE(source, nullptr);
+    typeField(source, "G");
+    EXPECT_EQ(mappedSource(0), "G");
+    ASSERT_TRUE(editors_->registerEditor(id, registered.value(QStringLiteral("source")).toUrl(),
+                                         registered.value(QStringLiteral("consumes")).toStringList(),
+                                         registered.value(QStringLiteral("presentation")).toString()));
+    ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleEditor")) != nullptr; }, 2000));
+    QTest::qWait(50);
+    drag(center(namedInputSocket(0, QStringLiteral("B"))), center(item(QStringLiteral("shuffleOutSocket_0"))));
+    EXPECT_EQ(mappedSource(0), "B");
+    capture(QStringLiteral("shuffle-editor-recovered"), {}, false, true);
+}
+
+TEST_F(ShuffleSurface, LayerMenusKeepAuthoredReadoutsWhileDescriptionsChange) {
+    const auto field = [&](const QString& selector) {
+        return visualByName(window_->contentItem(), item(selector)->objectName() + QStringLiteral("Field"));
+    };
+    EXPECT_EQ(field(QStringLiteral("shuffleInLayer_0"))->property("text").toString(), QStringLiteral("rgba"));
+    EXPECT_EQ(field(QStringLiteral("shuffleOutLayer_0"))->property("text").toString(), QStringLiteral("rgba"));
+    pickPreset(item(QStringLiteral("shuffleInputChoice_1")), 1);
+    typeField(field(QStringLiteral("shuffleInLayer_1")), "matte");
+    EXPECT_EQ(field(QStringLiteral("shuffleInLayer_1"))->property("text").toString(), QStringLiteral("matte"));
+    pickPreset(item(QStringLiteral("shuffleInputChoice_1")), 0);
+    EXPECT_EQ(field(QStringLiteral("shuffleInLayer_1"))->property("text").toString(), QStringLiteral("matte"));
+}
+
+TEST_F(ShuffleSurface, OutputLayerMenuUsesRealChannelsAndOpensTheSharedNewDialog) {
+    auto* selector = item(QStringLiteral("shuffleOutLayer_1"));
+    int option = -1;
+    ASSERT_TRUE(waitFor(
+        [&] {
+            return QMetaObject::invokeMethod(selector, "find", Q_RETURN_ARG(int, option),
+                                             Q_ARG(QString, QStringLiteral("matte"))) &&
+                   option >= 0;
+        },
+        10000));
+    pickPreset(selector, option);
+    const auto value = [&](const std::string& key) {
+        return session_->queryValues(session_->document().rootNetworkId(), shuffle_.toULongLong(), key).front().value;
+    };
+    EXPECT_EQ(std::get<std::string>(value("outputChannel4")), "matte.coverage");
+    EXPECT_EQ(std::get<nemo::ChoiceValue>(value("sourceKind4")).value, "zero");
+    for (int row = 5; row < 8; ++row)
+        EXPECT_TRUE(std::get<std::string>(value("outputChannel" + std::to_string(row))).empty());
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    QTest::qWait(50);
+    selector = item(QStringLiteral("shuffleOutLayer_1"));
+    ASSERT_TRUE(
+        QMetaObject::invokeMethod(selector, "find", Q_RETURN_ARG(int, option), Q_ARG(QString, QStringLiteral("new"))));
+    ASSERT_GE(option, 0);
+    const auto before = session_->revision();
+    pickPreset(selector, option);
+    ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("shuffleNewChannel"))->isVisible(); }, 2000));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(item(QStringLiteral("shuffleNewCancel"))));
+    EXPECT_EQ(session_->revision(), before);
+    EXPECT_TRUE(std::get<std::string>(value("outputChannel4")).empty());
+    selector = item(QStringLiteral("shuffleOutLayer_1"));
+    EXPECT_EQ(visualByName(window_->contentItem(), selector->objectName() + QStringLiteral("Field"))
+                  ->property("text")
+                  .toString(),
+              QStringLiteral("none"));
+}
+
+TEST_F(ShuffleSurface, AlphaOnlyViewingBypassesColorAndCreatedRgbUsesNamedRoles) {
+    const auto network = session_->document().rootNetworkId();
+    const auto node = shuffle_.toULongLong();
+    auto source = session_->document().sources.at("B");
+    source.path = (std::filesystem::path(source.path).parent_path() / "alpha-only.exr").string();
+    ASSERT_TRUE(
+        session_
+            ->submit(nemo::transactionCommand("Alpha-only mapping",
+                                              {nemo::setSourceCommand("B", source),
+                                               nemo::setParamCommand(network, node, "outputChannel0", std::string{}),
+                                               nemo::setParamCommand(network, node, "outputChannel1", std::string{}),
+                                               nemo::setParamCommand(network, node, "outputChannel2", std::string{})}),
+                     nemo::EditOptions{session_->revision(), {}})
+            .committed);
+    ASSERT_TRUE(waitForRequest([](const auto& request) { return request.channels == std::vector<std::string>{"A"}; }));
+    const auto expectMaskValues = [&] {
+        const auto image = grabImageArea();
+        const auto rect = displayedRect();
+        for (const auto& [fraction, expected] : {std::pair{0.125, 64}, std::pair{0.875, 191}}) {
+            const auto pixel =
+                image.pixelColor(QPointF(rect.left() + rect.width() * fraction, rect.center().y()).toPoint());
+            EXPECT_NEAR(pixel.red(), expected, 2);
+            EXPECT_NEAR(pixel.green(), expected, 2);
+            EXPECT_NEAR(pixel.blue(), expected, 2);
+        }
+    };
+    expectMaskValues();
+    pickPreset(visualByName(window_->contentItem(), QStringLiteral("viewerChannel_") + panel_),
+               controller_->availableChannels().indexOf(QStringLiteral("A")));
+    QTest::qWait(200);
+    expectMaskValues();
+    capture(QStringLiteral("shuffle-alpha-only-view"), {}, false, true);
+
+    // Explicitly create RGB after the existing A plane: storage is A,R,G,B,
+    // but the displayed color roles must be found by name, not by that order.
+    ASSERT_TRUE(session_
+                    ->submit(nemo::transactionCommand(
+                                 "Create missing RGB outputs",
+                                 {nemo::setParamCommand(network, node, "outputChannel0", std::string{"R"}),
+                                  nemo::setParamCommand(network, node, "outputChannel1", std::string{"G"}),
+                                  nemo::setParamCommand(network, node, "outputChannel2", std::string{"B"})}),
+                             nemo::EditOptions{session_->revision(), {}})
+                    .committed);
+    ASSERT_TRUE(waitFor([&] { return controller_->availableChannels().contains(QStringLiteral("R")); }, 10000));
+    pickPreset(visualByName(window_->contentItem(), QStringLiteral("viewerChannel_") + panel_),
+               controller_->availableChannels().indexOf(QStringLiteral("R")));
+    ASSERT_TRUE(waitForRequest(
+        [](const auto& request) { return request.channels == std::vector<std::string>{"A", "R", "G", "B"}; }));
+    const auto image = grabImageArea();
+    const auto pixel = image.pixelColor(displayedRect().center().toPoint());
+    EXPECT_NEAR(pixel.red(), 0, 2);
+    EXPECT_NEAR(pixel.green(), 0, 2);
+    EXPECT_NEAR(pixel.blue(), 0, 2);
 }
 
 // Issue #85: the coverage switch belongs to one panel. Two viewers of the same

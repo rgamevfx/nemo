@@ -187,11 +187,16 @@ struct MetadataResolution {
 [[nodiscard]] ResolvedInputColor resolveImpl(const SourceColorPolicy& policy, const InputColorChoice& choice,
                                              const EncodedColorFacts& facts, const std::string& path,
                                              const std::string& context, const ConfigLookup& lookup) {
-    const ParsedEncodedHints hints =
-        parseEncodedHints(choice, facts.clip ? HintScope::Clip : HintScope::Image, path, context);
-
     ResolvedInputColor resolved;
     resolved.workingSpace = policy.workingSpace;
+    if (!facts.hasPrimaryRgb) {
+        resolved.kind = InputTransformKind::Raw;
+        resolved.origin = InputTransformOrigin::Raw;
+        return resolved;
+    }
+
+    const ParsedEncodedHints hints =
+        parseEncodedHints(choice, facts.clip ? HintScope::Clip : HintScope::Image, path, context);
     resolved.alpha = resolveAlpha(choice.alpha, facts);
 
     switch (choice.mode) {
@@ -280,21 +285,26 @@ struct MetadataResolution {
 // association is a property of the encoded samples, so dividing after the
 // transfer would scale the wrong quantity. A zero-alpha pixel becomes a
 // deterministic zero RGB rather than a division blow-up or hidden colour.
-void unassociateEncoded(CpuImage& image) {
+//
+// The identified root RGB and alpha indices are resolved once by the caller:
+// this walks pixels only, never names. Without an identified alpha there is no
+// association to undo.
+void unassociateEncoded(CpuImage& image, const std::array<int, 4>& indices) {
+    if (indices[3] < 0) {
+        return;
+    }
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x) {
-            std::array<float, kImageChannels> pixel = image.pixel(x, y);
-            const float alpha = pixel[3];
-            if (alpha > 0.0F) {
-                pixel[0] /= alpha;
-                pixel[1] /= alpha;
-                pixel[2] /= alpha;
-            } else {
-                pixel[0] = 0.0F;
-                pixel[1] = 0.0F;
-                pixel[2] = 0.0F;
+            const float alpha = image.channel(x, y, indices[3]);
+            for (int channel = 0; channel < 3; ++channel) {
+                float value = image.channel(x, y, indices[channel]);
+                if (alpha > 0.0F) {
+                    value /= alpha;
+                } else {
+                    value = 0.0F;
+                }
+                image.setChannel(x, y, indices[channel], value);
             }
-            image.setPixel(x, y, pixel);
         }
     }
 }
@@ -586,10 +596,19 @@ void InputColorCache::apply(CpuImage& image, const ResolvedInputColor& resolved)
     if (resolved.raw()) {
         return;
     }
+    // Only an identified complete root RGB set is colour. An image without one
+    // (an alpha-only matte, a Z pass) carries no colour channels: nothing is
+    // converted and nothing is unassociated, so every declared channel survives
+    // bitwise. The indices are resolved once, outside the pixel loops, and
+    // never re-derived per sample.
+    const std::array<int, 4> indices = image.rgbaIndices();
+    if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0) {
+        return;
+    }
     const bool premultiplied = resolved.alpha == ResolvedAlpha::Premultiplied;
     if (resolved.ocio()) {
         if (premultiplied) {
-            unassociateEncoded(image);
+            unassociateEncoded(image, indices);
         }
         // The retained processor is looked up under the cache's own lock; the
         // returned object stays alive for the whole conversion because a
@@ -603,25 +622,15 @@ void InputColorCache::apply(CpuImage& image, const ResolvedInputColor& resolved)
         transform->apply(image);
         return;
     }
+    if (premultiplied) {
+        unassociateEncoded(image, indices);
+    }
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x) {
-            std::array<float, kImageChannels> pixel = image.pixel(x, y);
-            if (premultiplied) {
-                const float alpha = pixel[3];
-                if (alpha > 0.0F) {
-                    pixel[0] /= alpha;
-                    pixel[1] /= alpha;
-                    pixel[2] /= alpha;
-                } else {
-                    pixel[0] = 0.0F;
-                    pixel[1] = 0.0F;
-                    pixel[2] = 0.0F;
-                }
+            for (int channel = 0; channel < 3; ++channel) {
+                const int index = indices[channel];
+                image.setChannel(x, y, index, imageTransferToLinear(image.channel(x, y, index), resolved.transfer));
             }
-            pixel[0] = imageTransferToLinear(pixel[0], resolved.transfer);
-            pixel[1] = imageTransferToLinear(pixel[1], resolved.transfer);
-            pixel[2] = imageTransferToLinear(pixel[2], resolved.transfer);
-            image.setPixel(x, y, pixel);
         }
     }
 }

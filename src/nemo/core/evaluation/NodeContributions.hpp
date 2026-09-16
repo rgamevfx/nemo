@@ -79,13 +79,19 @@ struct CpuNodeContext {
 
 // One declared input port's demand (issue #88): the full-resolution signed
 // region this node's description or pixel implementation reads from that port,
-// and the channels it requires there. A port outside the returned vector, an
-// entry whose region is empty, or an entry with no channels inherits the node's
-// own request region and channels (the pointwise default), so a contribution
-// states only what is different about its inputs.
+// and the channels it requires there (issue #90). A port outside the returned
+// vector, or an entry whose region is empty, inherits the node's own request
+// region. EMPTY channels mean "every channel the node's own demand names" (the
+// inherited default), never "no channels"; an explicit list names channels
+// exactly, and because it is a declaration it must be honest: a name the
+// producer's described image does not carry is a declaration error against that
+// producer. A node whose own policy tolerates a channel its input lacks states
+// only the names that really exist (or leaves the port inherited, which is
+// intersected with the producer's described channels). A contribution states
+// only what is different about its inputs.
 struct InputRequirement {
     Region region;
-    std::string channels{"RGBA"};
+    std::vector<std::string> channels{};
 };
 
 // One node's region context (issue #85): the resolved state the node's
@@ -162,6 +168,14 @@ struct NodeContribution {
     std::optional<CpuImplementation> cpu;
     std::string cpuUnavailableReason;
     bool nativeGpu{true};
+    // True when the node's own pixel implementation decides EVERY channel of the
+    // image it produces, so the executors must not preserve the main input's
+    // auxiliary channels over it (issue #90). An ordinary effect addresses its
+    // main input's RGBA projection and inherits the rest, which is exactly what
+    // the shared preservation rule copies; a node that remaps or creates
+    // channels — Shuffle — owns its output layout and declares true. This is
+    // behavioral registration identity and participates in the fingerprint.
+    bool ownsChannelLayout{false};
     // Applies the node's typed parameter interpretation for an authoring
     // gesture without evaluating the graph. Empty for nodes whose parameters
     // carry no interpretation of their own.

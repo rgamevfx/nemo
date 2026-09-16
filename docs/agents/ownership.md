@@ -177,6 +177,9 @@ Desktop and CLI use these builders, not private inventories. See
    `inputRequirements` and read through supplied coverage geometry. Pointwise
    inputs default to output demand. Effective parameters are immutable and
    already resolved. Whole-frame-only declarations escalate inside Evaluation.
+   A channel-creating contribution declares `ownsChannelLayout`; Shuffle is the
+   example. Ordinary RGBA effects preserve the inherited auxiliary inventory.
+   Names are resolved outside pixel loops; see ADR-0008 for the plane contract.
 2. Add `Gpu.cpp` with versioned `GpuImplementation`, independent GLSL pixels,
    node-local payload preparation and local pass definitions; keep independent
    Slang kernels beside it. `eval/GpuContribution.hpp` defines the supported
@@ -271,8 +274,11 @@ Read declares `nemo.read.source`
 (section — the Read control presents file/summary/timing/color itself),
 Grade declares `nemo.channels.rgb` (`ChannelEditor.qml`, linked RGB with an
 expandable labelled R/G/B view and a separate Alpha for Primary/Range
-coefficients), and Merge declares `nemo.merge.operation`
-(`MergeOperationEditor.qml`, the operation menu plus the Swap A/B action).
+coefficients), Merge declares `nemo.merge.operation`
+(`MergeOperationEditor.qml`, the operation menu plus the Swap A/B action), and
+Shuffle declares `nemo.shuffle.mapping` (`ShuffleEditor.qml`, the full-width
+two-input socket mapper). Shuffle's routing key/exposure cells reuse the shared
+controls inside its channel dialog; generic fallback retains all 30 parameters.
 Linking or collapsing is presentation state: it never
 equalizes stored values, Alpha is never edited by a linked RGB change, and
 changing editor presentation never changes the effect's execution parameters.

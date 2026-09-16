@@ -189,6 +189,7 @@ void validateDeclaration(const NodeContribution& contribution,
         hashMixWord(hash, contribution.descriptor.implementationVersion);
         hashMixWord(hash, static_cast<std::uint64_t>(contribution.role));
         hashMixWord(hash, contribution.nativeGpu ? 1U : 0U);
+        hashMixWord(hash, contribution.ownsChannelLayout ? 1U : 0U);
         hashMixWord(hash, contribution.cpu ? 1U : 0U);
         if (contribution.cpu)
             hashMixWord(hash, contribution.cpu->version);

@@ -5,11 +5,14 @@
 // this owner performs allocation, barriers, recording and submission.
 //
 // Bindings: set 0/0 common request; set 0/1 optional node-local payload;
+// set 0/2 per-input geometry; set 0/3 channel plan;
 // set 1/n pass inputs; set 2/0 result; set 3/0 optional float weights.
-// Intermediates remain RGBA32F device images in GENERAL layout. Submission
-// retention covers registrations and all resources until actual completion,
-// including cancellation/timeouts. Device initialization and execution run
-// on workers, never the UI event thread. readBack is diagnostic-only.
+// Native images are R32_SFLOAT 2D channel planes (issue #90): logical W×H with
+// plane c at (x, y + c*H), so one GENERAL-layout device image carries every
+// named channel. Submission retention covers registrations and all resources
+// until actual completion, including cancellation/timeouts. Device
+// initialization and execution run on workers, never the UI event thread.
+// readBack is diagnostic-only.
 
 #include <cstdint>
 #include <filesystem>
@@ -120,7 +123,10 @@ private:
 // One executed step's device-resident result. Shared ownership: a cache
 // entry (issue #9) and a returned evaluation can hold the same image.
 struct GpuNodeImage {
-    gpu::Image image;  // RGBA32F, representation-sized, GENERAL layout invariant
+    // R32_SFLOAT channel planes (issue #90): extent (logical width,
+    // logical height * channelCount), GENERAL layout invariant. `layout` keeps
+    // the LOGICAL width/height and the image's named channels.
+    gpu::Image image;
     ImageLayout layout;
 };
 

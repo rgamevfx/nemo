@@ -164,9 +164,20 @@ struct PreviewSize {
     return {std::clamp(width, 1, maxWidth), std::clamp(height, 1, maxHeight)};
 }
 
+// Copies every stored channel of one pixel between rasters that share a channel
+// contract: framing and downsampling move samples, they never rename, project or
+// drop a named channel. The indices are the stored ones, so no per-pixel name is
+// ever looked up.
+void copyChannels(const CpuImage& source, int sx, int sy, CpuImage& target, int tx, int ty) {
+    const int channels = static_cast<int>(source.channelCount());
+    for (int channel = 0; channel < channels; ++channel) {
+        target.setChannel(tx, ty, channel, source.channel(sx, sy, channel));
+    }
+}
+
 // Frames a decoded data raster back into its declared format for display
 // (issue #88): the read returns the data extent alone, so a preview must place
-// it at its own signed origin inside the frame's format, with transparent black
+// it at its own signed origin inside the frame's format, with the raster default
 // where the source declares no samples. Nothing is stretched — a source whose
 // data extends past its format keeps its authored framing, and data outside the
 // format is cropped exactly as the display would crop it.
@@ -188,7 +199,7 @@ struct PreviewSize {
             if (targetX < 0 || targetX >= layout.width) {
                 continue;
             }
-            framed.setPixel(targetX, targetY, raster.pixel(x, y));
+            copyChannels(raster, x, y, framed, targetX, targetY);
         }
     }
     return framed;
@@ -218,18 +229,44 @@ struct PreviewSize {
             const int sourceX = static_cast<int>(std::clamp(((static_cast<std::int64_t>(x) * 2 + 1) * source.width()) /
                                                                 (2 * static_cast<std::int64_t>(width)),
                                                             kMinIndex, static_cast<std::int64_t>(source.width() - 1)));
-            output.setPixel(x, y, source.pixel(sourceX, sourceY));
+            copyChannels(source, sourceX, sourceY, output, x, y);
         }
     }
     return output;
 }
 
-// Display-referred preview through the project's viewing transform. A
-// requested thumbnail that cannot be resolved is reported, not substituted
-// with an untransformed or synthetic image.
+// Project without changing named source storage. Scalar data is opaque gray;
+// other images retain the shared missing-role projection.
+[[nodiscard]] CpuImage displayProjection(const CpuImage& image) {
+    ImageLayout layout = image.layout();
+    // Only the presentation owns these manufactured RGBA roles.
+    layout.channels = {"R", "G", "B", "A"};
+    CpuImage projected(layout);
+    const bool scalarData = !hasPrimaryRgb(image.layout().channels) && image.channelCount() == 1;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (scalarData) {
+                const float value = image.channel(x, y, 0);
+                projected.setPixel(x, y, {value, value, value, 1.0F});
+                continue;
+            }
+            projected.setPixel(x, y, image.pixel(x, y));
+        }
+    }
+    return projected;
+}
+
+// Resolve color/data treatment before projection replaces the source names.
+// Both paths produce a final display-referred presentation.
 [[nodiscard]] bool toDisplayReferred(CpuImage& image, const MediaImportRequest& request, MediaImportResult& result) {
     try {
-        applyViewingTransformCpu(image, request.colorConfig, request.colorPolicy);
+        const bool managed = hasPrimaryRgb(image.layout().channels);
+        CpuImage projected = displayProjection(image);
+        if (managed)
+            applyViewingTransformCpu(projected, request.colorConfig, request.colorPolicy);
+        else
+            projected.setColorInterpretation(ColorInterpretation::DisplayReferred);
+        image = std::move(projected);
         return true;
     } catch (const std::exception& error) {
         result.fallbackReason += "; thumbnail unavailable: ";
@@ -300,8 +337,8 @@ void importStill(const MediaImportRequest& request, const std::string& framePath
     result.pixelAspect = info.pixelAspect;
     result.pixelFormat = info.nativePrecision;
     result.bitDepth = bitDepthFromPrecision(info.nativePrecision);
-    // The image adapter's read is one interleaved RGBA plane from a single
-    // image; there is no container stream or codec profile.
+    // The image adapter's read is one interleaved plane whose channels are the
+    // file's own named channels; there is no container stream or codec profile.
     result.streamIndex = 0;
     result.planeCount = 1;
     result.fallbackReason = "software: still/sequence read on the CPU reference path (OpenImageIO)";

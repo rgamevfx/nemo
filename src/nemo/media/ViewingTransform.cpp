@@ -217,6 +217,43 @@ void fillUniformBuffer(OCIO::GpuShaderDesc& desc, std::vector<std::byte>& buffer
     return glsl;
 }
 
+// Compute wrapper for the native channel-plane layout (issue #90): ONE
+// read-write R32_SFLOAT storage image holds the logical raster's channel planes
+// stacked vertically, so logical pixel (x, y) of channel c is texel
+// (x, y + c*H). The wrapper gathers the primaries for the OCIO transform,
+// scatters the converted primaries back, and leaves alpha and every further
+// plane — auxiliary data channels — exactly as they were. Geometry is passed as
+// a uniform because the plane image's extent is the PHYSICAL extent (W, C*H);
+// the logical height is what the plane addressing needs.
+[[nodiscard]] std::string wrapChannelPlanesEntry(const std::string& ocioText, const std::string& functionName) {
+    std::string glsl;
+    glsl += "#version 450\n";
+    glsl += "layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;\n";
+    glsl += makeComputeCompatible(ocioText);
+    glsl += "\nlayout(set = 1, binding = 0) uniform image2D planeImage;\n";
+    glsl += "layout(std140, set = 1, binding = 1) uniform PlaneGeometry { uvec4 geom; };\n";
+    glsl += "void main()\n{\n";
+    glsl += "    ivec2 p = ivec2(gl_GlobalInvocationID.xy);\n";
+    glsl += "    int h = int(geom.y);\n";
+    glsl += "    if (p.x >= int(geom.x) || p.y >= h) return;\n";
+    glsl += "    ivec2 q = ivec2(p.x, p.y);\n";
+    glsl += "    vec4 inColor = vec4(imageLoad(planeImage, q).x,\n";
+    glsl += "                        imageLoad(planeImage, ivec2(q.x, q.y + h)).x,\n";
+    glsl += "                        imageLoad(planeImage, ivec2(q.x, q.y + 2 * h)).x,\n";
+    glsl += "                        imageLoad(planeImage, ivec2(q.x, q.y + 3 * h)).x);\n";
+    glsl += "    vec4 outColor = " + functionName + "(inColor);\n";
+    glsl += "    imageStore(planeImage, q, vec4(outColor.r));\n";
+    glsl += "    imageStore(planeImage, ivec2(q.x, q.y + h), vec4(outColor.g));\n";
+    glsl += "    imageStore(planeImage, ivec2(q.x, q.y + 2 * h), vec4(outColor.b));\n";
+    glsl += "}\n";
+    return glsl;
+}
+
+// Which pixel wrapper the OCIO program is emitted with: the interleaved
+// rgba32f pixel buffers of the viewer/executor path, or the native
+// channel-plane image of the media input transform (issue #90).
+enum class WrapperLayout { PixelBuffers, ChannelPlanes };
+
 [[nodiscard]] std::vector<float> expandRgbLut(const float* values, std::size_t texels) {
     // OCIO stores RGB triplets, but RGB32F images are not sampleable on
     // common desktop drivers. The generated shader reads only .rgb.
@@ -232,7 +269,8 @@ void fillUniformBuffer(OCIO::GpuShaderDesc& desc, std::vector<std::byte>& buffer
 }
 
 [[nodiscard]] OcioGpuProgram buildProgram(const std::string& configPath, const OCIO::ConstProcessorRcPtr& processor,
-                                          const std::string& description, const std::string& functionName) {
+                                          const std::string& description, const std::string& functionName,
+                                          const WrapperLayout wrapper = WrapperLayout::PixelBuffers) {
     const OCIO::ConstGPUProcessorRcPtr gpu = processor->getOptimizedGPUProcessor(OCIO::OPTIMIZATION_DEFAULT);
 
     OCIO::GpuShaderDescRcPtr desc = OCIO::GpuShaderDesc::CreateShaderDesc();
@@ -298,7 +336,11 @@ void fillUniformBuffer(OCIO::GpuShaderDesc& desc, std::vector<std::byte>& buffer
         program.textures.push_back(std::move(texture));
     }
 
-    program.glsl = wrapComputeEntry(desc->getShaderText(), desc->getFunctionName());
+    program.glsl = wrapper == WrapperLayout::ChannelPlanes
+                       ? wrapChannelPlanesEntry(desc->getShaderText(), desc->getFunctionName())
+                       : wrapComputeEntry(desc->getShaderText(), desc->getFunctionName());
+    program.pixelLayout = wrapper == WrapperLayout::ChannelPlanes ? OcioGpuProgram::PixelLayout::ChannelPlanes
+                                                                  : OcioGpuProgram::PixelLayout::Rgba32fBuffers;
     program.description = description;
     return program;
 }
@@ -593,6 +635,17 @@ OcioGpuProgram OcioConfigSnapshot::inputTransformGpu(const std::string& workingS
                         "input '" + inputColorSpace + "' -> working '" + workingSpace + "'", "OCIOInput");
 }
 
+OcioGpuProgram OcioConfigSnapshot::inputTransformPlanesGpu(const std::string& workingSpace,
+                                                           const std::string& inputColorSpace) const {
+    requireSceneLinearRec709Impl(impl_->config, impl_->reference, workingSpace,
+                                 "input transform '" + inputColorSpace + "'");
+    const OCIO::ConstProcessorRcPtr processor =
+        buildInputProcessorImpl(impl_->config, impl_->reference, workingSpace, inputColorSpace);
+    return buildProgram(impl_->reference, processor,
+                        "input '" + inputColorSpace + "' -> working '" + workingSpace + "' over channel planes",
+                        "OCIOInput", WrapperLayout::ChannelPlanes);
+}
+
 // The free functions are one-shot wrappers: the same code path through a single
 // snapshot, for callers that resolve a configuration once (tests, tooling, the
 // inspector's enumeration query).
@@ -667,13 +720,25 @@ void OcioInputTransform::apply(CpuImage& image) const {
     if (image.width() <= 0 || image.height() <= 0) {
         return;
     }
-    // RGB only: three channels with a 4-float pixel stride leave every alpha
-    // byte exactly as the decoder produced it. An RGBA descriptor would push
-    // alpha through OCIO's op chain, which perturbs even a pass-through at the
-    // 1e-6 level — the internal straight-alpha contract is exact.
-    const OCIO::PackedImageDesc desc(image.data(), image.width(), image.height(), 3, OCIO::BIT_DEPTH_F32, sizeof(float),
-                                     static_cast<ptrdiff_t>(4 * sizeof(float)),
-                                     static_cast<ptrdiff_t>(4 * sizeof(float)) * image.width());
+    // Only the identified root RGB channels are colour. The processor reads and
+    // writes exactly those three planes and every other declared channel —
+    // alpha, an auxiliary pass — is left bit-for-bit as the decoder produced
+    // it: an RGBA descriptor would push alpha through OCIO's op chain, which
+    // perturbs even a pass-through at the 1e-6 level, and a fixed three-channel
+    // packed descriptor would convert whatever channels happen to sit first.
+    // The planes are addressed through the raster's own channel stride, so a
+    // multi-channel interleaved image needs no repacking, no allocation and no
+    // per-pixel name lookup. Alpha is deliberately not described: the internal
+    // straight-alpha contract is exact.
+    const std::array<int, 4> indices = image.rgbaIndices();
+    if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0) {
+        return;  // no complete root RGB: this image carries no colour to convert
+    }
+    float* base = image.data();
+    const auto channelStride = static_cast<std::ptrdiff_t>(image.channelCount() * sizeof(float));
+    const auto rowStride = channelStride * image.width();
+    const OCIO::PlanarImageDesc desc(base + indices[0], base + indices[1], base + indices[2], nullptr, image.width(),
+                                     image.height(), OCIO::BIT_DEPTH_F32, channelStride, rowStride);
     impl_->cpu->apply(desc);
     image.setColorInterpretation(ColorInterpretation::SceneLinear);
 }
@@ -689,6 +754,12 @@ OcioGpuProgram buildInputTransformGpu(const std::string& configPath, const std::
                                       const std::string& inputColorSpace) {
     const OcioConfigSnapshot snapshot(configPath);
     return snapshot.inputTransformGpu(workingSpace, inputColorSpace);
+}
+
+OcioGpuProgram buildInputTransformPlanesGpu(const std::string& configPath, const std::string& workingSpace,
+                                            const std::string& inputColorSpace) {
+    const OcioConfigSnapshot snapshot(configPath);
+    return snapshot.inputTransformPlanesGpu(workingSpace, inputColorSpace);
 }
 
 }  // namespace nemo::media

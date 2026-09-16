@@ -1,0 +1,321 @@
+{
+  "issue": 90,
+  "baseline": "670697d0a4cfe1133155a234bd8438f4be79a5c0",
+  "branch": "issue/85-region-evaluation",
+  "status": "implementation and two-axis review complete with documented gate exceptions; not landed",
+  "reference": {
+    "authority": "Nuke 17.0 documentation only; no Nuke runtime parity claim",
+    "controls": "https://learn.foundry.com/nuke/17.0/content/reference_guide/channel_nodes/shuffle.html",
+    "gestures": "https://learn.foundry.com/nuke/17.0/content/comp_environment/channels/swapping_channels.html",
+    "channel_creation": "https://learn.foundry.com/nuke/17.0/content/comp_environment/channels/creating_channels.html",
+    "layout": "https://learn.foundry.com/nuke/17.0/content/resources/images/ug_images/swapping_channels.png",
+    "documented_defaults": {
+      "primary_input": "B",
+      "secondary_input": "A",
+      "input_groups": [
+        {
+          "input": "B",
+          "layer": "rgba"
+        },
+        {
+          "input": "B",
+          "layer": "none"
+        }
+      ],
+      "output_groups": [
+        "rgba",
+        "none"
+      ]
+    }
+  },
+  "owner_approvals": {
+    "local_prerequisite": "Consume local #88 while preserving all review/landing holds",
+    "tracker": "Claim/update #90 and concise #24 progress only; no closure/push/merge",
+    "missing_policy": "Owner selected Zero-fill after explanation",
+    "editor": "Owner selected Approve described editor",
+    "record": "https://github.com/rgamevfx/nemo/issues/90#issuecomment-5691773389",
+    "amendments": [
+      "https://github.com/rgamevfx/nemo/issues/90#issuecomment-5692521101",
+      "https://github.com/rgamevfx/nemo/issues/90#issuecomment-5692675760",
+      "https://github.com/rgamevfx/nemo/issues/90#issuecomment-5693048270",
+      "https://github.com/rgamevfx/nemo/issues/90#issuecomment-5693747185"
+    ]
+  },
+  "nemo_policy": {
+    "untouched": "Preserve B channels",
+    "explicit_unmapped": "Zero",
+    "missing_channel_or_A": "Zero with visible missing-source state",
+    "missing_B": "Required-input error",
+    "new_outputs": "Only authored mappings create channels",
+    "constants": "Zero/one over B format",
+    "A_geometry": "Keep source coordinates; do not stretch",
+    "media": "Preserve names and values without manufactured named RGB/alpha",
+    "color": "Only identified complete primary RGB is managed; auxiliary/data values bypass conversion",
+    "protected_effects": "Existing RGBA arithmetic and controls unchanged; unselected auxiliary channels preserved",
+    "source_groups": "input1/input2 select physical B/A; sourceKind rows refer to those groups",
+    "explicit_names": "Preserve exact names including mask.a; approved deviation from Nuke reservations"
+  },
+  "prototype_mapping": {
+    "archive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+    "inspector_entries": [
+      "workflow-session.json:/verified[1]",
+      "workflow-session.json:/verified[2]",
+      "workflow-session.json:/verified[3]",
+      "workflow-session.json:/behavior[1]",
+      "workflow-session.json:/behavior[2]",
+      "workflow-session.json:/behavior[3]"
+    ],
+    "inspector_handlers": [
+      "ParametersPanel.qml:openInspector",
+      "ParametersPanel.qml:oldestUnpinned/enforceLimit",
+      "ParametersPanel.qml:setPinned",
+      "ParametersPanel.qml:columnEntries",
+      "ParametersPanel.qml:scrollToTop",
+      "ParametersPanel.qml:restoreState/saveState"
+    ],
+    "viewer_entry": "viewer-session.json:/verified[11]",
+    "viewer_handlers": [
+      "ViewerPanel.qml:displayControlsComponent layerMenu/channelMenu onActivated",
+      "ViewerPanel.qml:selectedLayer/channel/channelColor"
+    ],
+    "supersession": "#60 group routing replaces old inspector activation; #84/#85 pan/zoom/coverage remain unchanged"
+  },
+  "red_regression": {
+    "build": "cmake --build --preset debug --target nemo_contribution_tests",
+    "build_exit": 0,
+    "command": "build/debug/tests/nemo_contribution_tests --gtest_filter=ContributionTest.AlphaOnlyReadPreservesItsNamedChannelThroughEffects",
+    "exit": 1,
+    "failure": "node 'Matte' (id 2, type 'source'): source provider failed for 'matte' at frame 0: image: .../matte.exr: no R/G/B channels in openexr file: 1 channels",
+    "fixture": "Independent OIIO-written two-pixel float EXR; channel A only; values 0.25 and 0.75; public ProjectSession Read -> Grade -> Output"
+  },
+  "native_tool_limitations": [
+    "orca-ide skills get computer-use --json: command not found; no alternative Orca executable attempted",
+    "Built-in computer capabilities: Wayland capture unavailable, AX granted, input available; existing actual native Qt application harness remains the capture/input path"
+  ],
+  "schema_changes": [
+    "ImageDescription/ImageLayout/request channel inventories are dynamic named layouts",
+    "native binding v6: 96-byte request, 64-byte input geometry, R32_SFLOAT vertical planes and resolved channel plans",
+    "image-space-v2 reuse identity; named-projection-v2 viewer identity",
+    "new built-in shuffle version 1 with thirty ordinary parameters; sourceKind refers to input1/input2/zero/one",
+    "EncodedColorFacts carries complete-primary-RGB metadata; InputColor owns automatic data bypass",
+    "ChannelProjection returns image plus completion; final publishers wait without adding intermediate waits"
+  ],
+  "independent_fixtures": "fixtures.json: handwritten uncompressed FLOAT EXRs, independent of production image writing",
+  "native_interactions": {
+    "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=ShuffleSurface.*:ReadViewerSurface.ViewerZoomControlStatesAndAcceptsAnyScale:ReadViewerSurface.ViewerWheelZoomIsContinuousAnchoredAndReversible:ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations",
+    "passed": 14,
+    "seconds": 37.34,
+    "environment": {
+      "NEMO_TEST_NATIVE_UI": "1",
+      "NEMO_TEST_VIEWER_WINDOW": "1",
+      "NEMO74_EVIDENCE_DIR": "docs/evidence/assets/issue90-channels/native",
+      "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json"
+    },
+    "surface": "Real Main.qml, QQuickWindow, ProjectSession, production runtime/registry/editor; native Qt pointer/keyboard input and window captures",
+    "checks": [
+      "socket drag, Escape cancellation, invalid disabled-row drop, undo/redo, save/reopen",
+      "Ctrl consecutive lower, Ctrl+Shift higher, Alt fanout, constants, group connection and reverse drag",
+      "exact names across groups; input/output reorder; selector changes preserve wire ownership",
+      "optional A zero/reconnect; required B keeps explicitly outdated last-good frame",
+      "atomic output creation starts at zero; existing B layer uses its actual channels; shared new dialog",
+      "shared source-channel hold keys through history/reopen; generic fallback remains editable and custom editor recovers",
+      "one/two-column retention; asynchronous combo metadata preserves authored readouts",
+      "named-data viewing; missing selected layer is explicit, never replaced by all channels",
+      "alpha-only 0.25/0.75 remains opaque gray without OCIO; created RGB projects by names in A,R,G,B storage order",
+      "protected Viewer zoom, anchored wheel zoom and independent panel destinations"
+    ]
+  },
+  "replay_crop": {
+    "command": "build/debug/tests/nemo_viewer_tests --gtest_filter=ViewerCache.OddSizedRegionsReplayAtTheirExactRequestedExtent",
+    "passed": 1,
+    "seconds": 5.36,
+    "proof": "31x21 replay cache hit matches independently read original within 0.035; Vulkan validation clean"
+  },
+  "resource_accounting": {
+    "program": "throwaway public-command/native-allocator smoke (removed after verification)",
+    "graph": "ConstColor -> Shuffle -> Output; 256x256; 4 versus 12 channels; Slang native execution",
+    "budget_bytes": 5242880,
+    "rgba_charged_bytes": 3145728,
+    "named_rejection": "output image allocation failed: image request of 3145728 bytes plus 4194976 already charged exceeds the 5242880 byte allocation budget",
+    "charged_after_each_release": 0,
+    "validation_warnings": 0,
+    "device_max_image_dimension_2d": 32768,
+    "limitation": "logical height times plane count must fit the device 2D limit; fails explicitly, no silent channel drop or downscale"
+  },
+  "debug_build": {
+    "command": "cmake --build --preset debug --parallel 2",
+    "result": "passed; existing third-party minizip mktemp linker warning"
+  },
+  "release_build": {
+    "command": "cmake --build --preset release --parallel 2",
+    "result": "passed (493.14 seconds); updated regression targets rebuilt separately"
+  },
+  "full_suite": {
+    "command": "ctest --preset debug --parallel 2",
+    "runs": 1,
+    "total": 751,
+    "initial_passed": 714,
+    "initial_failed": 8,
+    "skipped_native_opt_in": 29,
+    "seconds": 108.39,
+    "affected_failure_followup": {
+      "passed": 7,
+      "seconds": 4.55,
+      "names": [
+        "HwMedia.CodecSweepSingleChunkHasNoBoundaryAndFailuresHaveNoMeasurements",
+        "HwMedia.CodecSweepConcurrentRunsPreserveIndependentChunks",
+        "MediaDecode.SweepFrameLimitAcceptsCleanEofWithoutContainerFrameCount",
+        "MediaEncode.SweepFrameLimitDoesNotRejectShortDeclaredSources",
+        "Effect.WrongBindingsAndAlphaFailComparison",
+        "Effect.SwappedMergePortsFailEveryOperation",
+        "Viewer.SourceRetentionUnderDelayedCompletion"
+      ],
+      "repairs": [
+        "Mutation shader fixtures use the current formatless image binding; retained-image diagnostic uses shared planar readback",
+        "CodecSweep.cpp.o had zero Ninja dependencies and an old 176-byte CpuImage DWARF definition. It alone was retired and rebuilt; four sweep failures then passed with no media source change"
+      ]
+    },
+    "remaining_known_failure": {
+      "name": "Viewer.InterpretationMapIsParsedStrictly",
+      "reason": "source interpretation has unknown field 'colorimetry'",
+      "policy": "pre-existing unrelated failure retained; not rerun separately"
+    }
+  },
+  "holds": [
+    "No push, merge or issue closure",
+    "Local #88 consumption does not accept or land #88/#85",
+    "All #75/#83\u201386/native visual/review/landing holds remain",
+    "No Nuke runtime parity, Windows verification, hosted CI or #14 milestone completion claimed"
+  ],
+  "production_correctness": "Independent named media values, CPU/native regional workflows, allocation refusal/release, reuse identity, shared commands/history/persistence and final GPU publication are exercised. Original 19 backend sanitizer checks and final 22 focused checks pass. Native original 18 and final 3 behavior scenarios pass under ASan/UBSan with no further UB after the history lifetime repair; native LSan and debug AT-SPI exceptions remain open.",
+  "prototype_conformance": "Protected #25 entries/archived handlers are mapped above. Actual native captures exercise accepted inspector placement/columns, group routing and Viewer controls. Shuffle follows owner-approved Nuke 17 documentation adaptation, not pixel/runtime parity with Nuke. Human native acceptance holds remain.",
+  "sanitizers": {
+    "build": "cmake --build --preset asan --parallel 2",
+    "build_seconds": 657.6,
+    "backend_focused": {
+      "passed": 19,
+      "seconds": 66.0,
+      "ASAN_OPTIONS": "detect_leaks=1",
+      "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+      "LSAN_OPTIONS": "existing tests/lsan_suppressions.txt, unchanged"
+    },
+    "native_initial_red": "UBSan: HistoryController::eventFilter downcast after QQuickWindow derived lifetime ended during QML teardown; input-event ownership guard added; 18-case native followup has no further UB (LSan exception below).",
+    "native_followup": {
+      "command": "build/asan/tests/nemo_workspace_ui_tests --gtest_filter=ShuffleSurface.*:HistorySurface.*",
+      "functional_passed": 18,
+      "seconds": 107.68,
+      "undefined_behavior_after_repair": 0,
+      "exit": 1,
+      "leak_bytes": 77296,
+      "leak_allocations": 344,
+      "allocation_stacks": "Qt QML accessibility attached properties and QtWayland/libwayland; application frame is QGuiApplication construction",
+      "limitation": "Leak check is not green. No new suppressions, disabled checks, or claim of resolved dependency leaks."
+    }
+  },
+  "production_startup": {
+    "ordinary": "isolated config/cache; real Untitled \u2014 Nemo window; native Alt+F4 close exited 0",
+    "accessibility": "Debug AT-SPI tree traversal exits 139, including after the history lifetime repair. Instrumented ASan traversal succeeds (57 nodes). Cause unresolved; no debugger adapter, gdb, or coredumpctl available. Native feature proof uses the real Qt application harness after these tool failures.",
+    "asan_standalone_exit": "LSan reports 1264 bytes / 14 allocations in QtWayland/libwayland shutdown. Existing dbus suppressions unchanged; no new suppression."
+  },
+  "review": {
+    "baseline": "670697d0a4cfe1133155a234bd8438f4be79a5c0",
+    "standards": {
+      "remaining_hard_issues": 0,
+      "resolved": [
+        "Shared ParametersPanel keyframe seam restored",
+        "InputColor owns data resolution through decoded channel facts",
+        "ADR contribution-validation scope and review status corrected",
+        "Final data/replay publication observes GPU projection completion"
+      ],
+      "nonblocking_suggestions": "No new abstraction introduced for copy-loop similarity, GPU payload layouts, cross-language channel-name helpers, or independent CPU/native reference logic."
+    },
+    "spec": {
+      "remaining_actual_violations": 0,
+      "resolved": [
+        "Scalar data thumbnails are opaque gray and bypass OCIO based on original source channels",
+        "Multi-plane viewer projection policy documented",
+        "Misattributed PNG and obsolete RED editor captures removed"
+      ],
+      "dispositions": [
+        "Typed new remains an exact authored name; menu New is an action",
+        "Unavailable selected-layer refusal is distinct from required-B outdated-last-good retention",
+        "Coverage alone does not require field/hash plumbing tests"
+      ],
+      "intentional_unchanged": "Multi-channel data thumbnails retain existing missing-role preview; only scalar data gets opaque-gray projection. Viewer multi-plane selections retain ordered positional projection. Both bypass OCIO; source channel storage is unchanged."
+    },
+    "scope": "Two independent read-only reviews, then finding-specific re-review of final worktree; main agent owns executable verification. Static group reorder and keyed routing were exercised separately; no whole-animation-track or exposure-identity permutation is claimed."
+  },
+  "review_regressions": {
+    "red": [
+      {
+        "command": "build/debug/tests/nemo_viewer_tests --gtest_filter=Viewer.ScalarProjectionMustCompleteBeforePublication",
+        "exit": 1,
+        "failure": "Published frame while graphics queue blocked; full source extent avoids unrelated evaluator crop wait"
+      },
+      {
+        "command": "build/debug/tests/nemo_hwmedia_tests --gtest_filter=MediaImport.AlphaOnlyExrDataIsOpaqueGrayWithoutViewingTransform",
+        "exit": 1,
+        "failure": "Restored pre-fix projection/viewing functions produce black RGB with 0.25/0.75 opacity, not opaque data gray"
+      }
+    ],
+    "evidence_cleanup": [
+      "Removed native/png-through-read.png and native/environment-png-through-read.json (outside attributed filter)",
+      "Removed native/shuffle-editor-unavailable.png and native/environment-shuffle-editor-unavailable.json (obsolete RED capture); retained recovered editor proof"
+    ],
+    "debug_build": {
+      "command": "cmake --build --preset debug --parallel 2",
+      "exit": 0,
+      "seconds": 245.42
+    },
+    "debug_focused": {
+      "command": "ctest --preset debug --parallel 2 -R '^(Viewer\\.(ScalarProjection|SourceRetention)|ViewerCache\\.OddSizedRegions|MediaImport\\.|InputColor\\.(Multilayer|DataOnly))'",
+      "passed": 22,
+      "failed": 0,
+      "seconds": 6.97
+    },
+    "native_focused": {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=ShuffleSurface.CreatingAnUnwiredOutputIsAtomicAndStartsAtZero:ShuffleSurface.SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen:ShuffleSurface.AlphaOnlyViewingBypassesColorAndCreatedRgbUsesNamedRoles",
+      "passed": 3,
+      "seconds": 13.67,
+      "visual_confirmation": [
+        "native/shuffle-held-routing-key.png",
+        "native/shuffle-alpha-only-view.png"
+      ],
+      "observable_contracts": [
+        "Duplicate output rejected with unchanged revision; subsequent exact mask.a creation succeeds atomically",
+        "Shared source-channel hold key survives history and reopen",
+        "Alpha-only data remains gray; named RGB projection remains correct"
+      ]
+    },
+    "release_build": {
+      "command": "cmake --build --preset release --parallel 2",
+      "exit": 0,
+      "seconds": 326.69
+    },
+    "asan_build": {
+      "command": "cmake --build --preset asan --parallel 2 --target nemo_viewer_tests nemo_hwmedia_tests nemo_color_tests nemo_workspace_ui_tests",
+      "exit": 0,
+      "seconds": 305.54
+    },
+    "asan_focused": {
+      "command": "ctest --preset asan --parallel 2 -R '^(Viewer\\.(ScalarProjection|SourceRetention)|ViewerCache\\.OddSizedRegions|MediaImport\\.|InputColor\\.(Multilayer|DataOnly))'",
+      "passed": 22,
+      "failed": 0,
+      "seconds": 29.48,
+      "ASAN_OPTIONS": "detect_leaks=1",
+      "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+      "LSAN_OPTIONS": "existing tests/lsan_suppressions.txt, unchanged"
+    },
+    "native_asan_focused": {
+      "command": "build/asan/tests/nemo_workspace_ui_tests --gtest_filter=ShuffleSurface.CreatingAnUnwiredOutputIsAtomicAndStartsAtZero:ShuffleSurface.SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen:ShuffleSurface.AlphaOnlyViewingBypassesColorAndCreatedRgbUsesNamedRoles",
+      "functional_passed": 3,
+      "seconds": 83.73,
+      "undefined_behavior": 0,
+      "exit": 1,
+      "leak_bytes": 4720,
+      "leak_allocations": 29,
+      "log": "native-review-sanitizer.log",
+      "limitation": "LeakSanitizer remains non-green; reported allocation stacks are Qt QML accessibility and QtWayland. Existing suppression file unchanged; no checks disabled."
+    }
+  }
+}

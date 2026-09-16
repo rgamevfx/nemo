@@ -64,16 +64,18 @@ void requireFrameInRange(const SourceReference& reference, const std::int64_t fr
 
 // The one description builder for still/sequence frames (issue #88): the
 // declared format at origin 0, the signed data bounds, the declared pixel
-// aspect, the read's logical RGBA channels, the contract's float32 precision,
-// the association the produced samples carry, and their interpretation. A
-// description is always derived from header facts, never by decoding.
+// aspect, the frame's own named channels — exactly what the read produces, so
+// a description and its samples can never disagree about the channel contract —
+// the contract's float32 precision, the association the produced samples carry,
+// and their interpretation. A description is always derived from header facts,
+// never by decoding.
 [[nodiscard]] ImageDescription imageDescription(const ImageHeader& header, const ColorInterpretation color,
                                                 const ImageAssociation association, const Region& dataBounds) {
     return ImageDescription{
         .format = header.windows.format(),
         .dataBounds = dataBounds,
         .pixelAspect = header.pixelAspect,
-        .channels = {"R", "G", "B", "A"},
+        .channels = header.channelNames,
         .precision = Precision::Float32,
         .association = association,
         .color = color,
@@ -92,9 +94,20 @@ void requireFrameInRange(const SourceReference& reference, const std::int64_t fr
                : ImageAssociation::Straight;
 }
 
+// Whether one frame read bypasses the input color transform: an authored
+// Raw/Data choice, or an image whose channels identify no root RGB at all. The
+// second case is the channel contract's own consequence — an alpha-only matte
+// or a Z pass has no colour to interpret, so its read needs no colour metadata
+// and nothing may be converted. One owner, so a description, a probe and the
+// read agree by construction.
+[[nodiscard]] bool bypassesColor(const ImageHeader& header, const bool raw) {
+    return raw || !hasPrimaryRgb(header.channelNames);
+}
+
 // The file's own declaration, in the input-color layer's vocabulary.
 [[nodiscard]] EncodedColorFacts headerFacts(const ImageHeader& header) {
     EncodedColorFacts facts;
+    facts.hasPrimaryRgb = hasPrimaryRgb(header.channelNames);
     facts.declaredColorSpace = header.declaredColorSpace;
     facts.chromaticities = header.chromaticities;
     facts.formatName = header.formatName;
@@ -117,6 +130,13 @@ auto translated(const std::string& path, Function&& fn) -> decltype(fn()) {
     } catch (const OcioException& error) {
         failColor(path, error.what());
     }
+}
+
+// Probe and pixel reads share the input-color owner's resolution.
+[[nodiscard]] ResolvedInputColor resolvedInputColor(const InputColorCache& color, const InputColorChoice& choice,
+                                                    const ImageHeader& header, const std::string& context) {
+    const EncodedColorFacts facts = headerFacts(header);
+    return translated(header.path, [&] { return color.resolve(choice, facts, header.path, context); });
 }
 
 [[nodiscard]] ImageFrameInfo frameInfo(const ImageHeader& header, const ResolvedInputColor& resolved) {
@@ -197,9 +217,7 @@ bool isImagePath(const std::string& path) {
 ImageFrameInfo probeImageFrame(const InputColorCache& color, const InputColorChoice& choice, const std::string& path,
                                const std::string& context) {
     const ImageHeader header = inspectImageHeader(path);
-    const EncodedColorFacts facts = headerFacts(header);
-    const ResolvedInputColor resolved =
-        translated(path, [&] { return color.resolve(choice, facts, header.path, context); });
+    const ResolvedInputColor resolved = resolvedInputColor(color, choice, header, context);
     ImageFrameInfo info = frameInfo(header, resolved);
     info.sequence = hasPattern(path);
     return info;
@@ -227,9 +245,13 @@ ImageFrameInfo probeImageFrame(const SourceReference& reference, const std::stri
 }
 
 ImageDescription describeImageFrame(const ImageHeader& header, const EffectiveSourceRequest& source) {
-    const bool raw = source.dataBypass();
-    return imageDescription(header, raw ? ColorInterpretation::Data : ColorInterpretation::SceneLinear,
-                            producedAssociation(header, raw), header.windows.dataBounds());
+    // An authored Raw/Data bypass, or an image that identifies no root RGB at
+    // all: either way the samples are data, so the description says Data and
+    // its association follows the bypass rule. Anything else is working-space
+    // scene-linear, exactly as the read will produce it.
+    const bool data = bypassesColor(header, source.dataBypass());
+    return imageDescription(header, data ? ColorInterpretation::Data : ColorInterpretation::SceneLinear,
+                            producedAssociation(header, data), header.windows.dataBounds());
 }
 
 ImageFrame readImageFrame(const InputColorCache& color, const InputColorChoice& choice, const ImageHeader& header,
@@ -237,20 +259,30 @@ ImageFrame readImageFrame(const InputColorCache& color, const InputColorChoice& 
     // The declared interpretation is validated from the header before any plane
     // is touched, matching the clip path's discipline: an ambiguous or
     // unsupported declaration is rejected before the pixels are pulled into
-    // memory, not after.
-    const EncodedColorFacts facts = headerFacts(header);
-    const ResolvedInputColor resolved =
-        translated(header.path, [&] { return color.resolve(choice, facts, header.path, context); });
+    // memory, not after. An image with no identified root RGB has no colour
+    // declaration to validate: it resolves as the data it is.
+    const ResolvedInputColor resolved = resolvedInputColor(color, choice, header, context);
 
     ImageReadResult read = readImage(header.path);
     CpuImage image = std::move(read.image);
+    // The description the caller already holds must describe the samples that
+    // were actually read: the raster carries the channels the read found, and a
+    // file rewritten between the header inspection and the read would otherwise
+    // be described — and cached — under a channel contract it does not have.
+    if (read.header.channelNames != header.channelNames) {
+        fail(header.path, "the file's channels changed between the header inspection and the read (" +
+                              std::to_string(header.channelNames.size()) + " described, " +
+                              std::to_string(read.header.channelNames.size()) +
+                              " read); the frame cannot be described honestly");
+    }
     if (resolved.raw()) {
         // Raw/Data: the samples are the encoded values exactly as stored, and
         // their association is left alone.
         image.setColorInterpretation(ColorInterpretation::Data);
     } else {
         // Encoded-domain unassociation, then the resolved transfer/gamut
-        // conversion, applied exactly once.
+        // conversion of the identified root RGB, applied exactly once. Every
+        // auxiliary/non-RGB channel bypasses the transform bit-for-bit.
         translated(header.path, [&] {
             color.apply(image, resolved);
             return 0;
@@ -348,8 +380,7 @@ ImageDescription describeSourceImage(const InputColorCache& color, const InputCo
         throw EvaluationException("source '" + source.sourceKey + "' (" + source.path +
                                   "): " + sourcePolicyProblem(source));
     }
-    const ColorInterpretation colorInterpretation =
-        source.dataBypass() ? ColorInterpretation::Data : ColorInterpretation::SceneLinear;
+    const bool data = source.dataBypass();
     if (source.transparentBlack) {
         // A Black policy produces a cleared raster, so the requested frame is
         // deliberately not opened. The source's authored geometry is still real
@@ -364,12 +395,15 @@ ImageDescription describeSourceImage(const InputColorCache& color, const InputCo
         for (const std::int64_t candidate : admittedFrames(source)) {
             try {
                 const ImageHeader header = inspectImageHeader(resolveFramePath(source.path, candidate));
-                // The association follows the same rule an ordinary read of this
-                // header produces (Straight for a managed read, the declared one
-                // for a Raw bypass), so a boundary or missing-frame policy can
-                // never flip the metadata of the frame it replaces.
-                return imageDescription(header, colorInterpretation, producedAssociation(header, source.dataBypass()),
-                                        Region{});
+                // The association and the interpretation follow the same rule an
+                // ordinary read of this header produces (Straight/Data for a
+                // managed read, the declared association for a Raw or channel-less
+                // bypass), so a boundary or missing-frame policy can never flip the
+                // metadata of the frame it replaces.
+                const bool frameData = bypassesColor(header, data);
+                return imageDescription(header,
+                                        frameData ? ColorInterpretation::Data : ColorInterpretation::SceneLinear,
+                                        producedAssociation(header, frameData), Region{});
             } catch (const ImageIoException&) {
                 continue;  // this candidate cannot describe the source; try the next admitted frame
             }
@@ -406,11 +440,12 @@ CpuImage ImageSourceProvider::frame(const Document& document, const EffectiveSou
                           "frame is opened");
     }
     if (source.transparentBlack) {
-        ImageLayout layout;
-        layout.width = width;
-        layout.height = height;
-        // The buffer default is zero everywhere: transparent black, alpha 0.
-        return CpuImage(layout);
+        // A cleared frame keeps the source's declared channel contract — the same
+        // header-only description every consumer plans against — and its samples
+        // are the raster default: zero in every declared channel. A 0 sentinel
+        // would fabricate a channel list the source does not have, and alpha 0
+        // is what makes the cleared frame transparent in an RGBA projection.
+        return CpuImage(imageLayoutOf(describe(document, source), width, height));
     }
 
     const std::shared_ptr<const InputColorCache> color = colorFor(document.color.workingSpace);
@@ -437,20 +472,21 @@ CpuImage ImageSourceProvider::frame(const Document& document, const EffectiveSou
                               std::to_string(coverage.height));
     }
 
-    ImageLayout layout;
-    layout.width = width;
-    layout.height = height;
-    layout.pixelAspect = decoded.info.pixelAspect;
-    layout.color = decoded.info.color;
-    CpuImage out(layout);
+    // The filled raster adopts the decoded image's own channel contract: the
+    // source's declared channels, its pixel aspect and its interpretation. A
+    // fill never renames channels or projects them into RGBA — that projection
+    // is the consumer's explicit choice.
+    CpuImage out(imageLayoutOf(decoded.info.description, width, height));
+    const int channels = static_cast<int>(decoded.image.channelCount());
 
     // Source-fill contract: raster pixel (x, y) reads the source sample authored
     // at full-resolution coordinate (region.x + x*scale, region.y + y*scale),
     // through the source raster's own origin (`coverage`). There is deliberately
     // no fill-ratio resize: a source whose geometry differs from the
     // composition's canvas is read at its authored coordinates rather than
-    // stretched, and everything outside its data raster stays transparent black
-    // (the raster buffer default).
+    // stretched, and everything outside its data raster stays at the raster's
+    // default (zero in every channel; the executor's support masking is what
+    // makes absent samples transparent for a projection that has alpha).
     for (int y = 0; y < height; ++y) {
         const int sy =
             static_cast<int>(static_cast<std::int64_t>(request.region.y) + static_cast<std::int64_t>(y) * scale) -
@@ -465,7 +501,11 @@ CpuImage ImageSourceProvider::frame(const Document& document, const EffectiveSou
             if (sx < 0 || sx >= sourceWidth) {
                 continue;
             }
-            out.setPixel(x, y, decoded.image.pixel(sx, sy));
+            // Channel-by-channel by stored index: no per-pixel name lookup and
+            // no auxiliary channel silently dropped.
+            for (int channel = 0; channel < channels; ++channel) {
+                out.setChannel(x, y, channel, decoded.image.channel(sx, sy, channel));
+            }
         }
     }
     return out;

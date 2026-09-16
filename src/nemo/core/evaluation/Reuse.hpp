@@ -90,7 +90,10 @@ struct KeyContext {
 // numbers in it mean, so a cached result produced under a different coordinate
 // or window convention can never be reused. Bump it whenever the meaning of a
 // region, a data window, a sampling lattice or a described image changes.
-inline constexpr std::string_view kImageCoordinateContract = "image-space-v1";
+// v2 (issue #90): channel naming is a named set, not a four-letter string —
+// an alpha-only or multilayer image and a request's channel demand carry
+// different identity than the fixed four-channel form.
+inline constexpr std::string_view kImageCoordinateContract = "image-space-v2";
 
 // Input-key contribution for a declared-but-absent optional input slot. It is
 // a fixed, executor-independent token that keeps the slot's position in the

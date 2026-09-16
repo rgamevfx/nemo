@@ -3,6 +3,7 @@
 # nemo::gpu primitives. Core stays GPU-free; this module is the optional
 # native path, built only when the GPU module is available.
 add_library(nemo_eval
+    ChannelProjection.cpp
     GpuExecutor.cpp
     EffectLibrary.cpp
     ../nodes/blur/Gpu.cpp
@@ -10,6 +11,7 @@ add_library(nemo_eval
     ../nodes/grade/Gpu.cpp
     ../nodes/merge/Gpu.cpp
     ../nodes/output/Gpu.cpp
+    ../nodes/shuffle/Gpu.cpp
     ../nodes/source/Gpu.cpp
     ../nodes/testpattern/Gpu.cpp
     ../nodes/transform/Gpu.cpp

@@ -293,7 +293,6 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
     request.fullHeight = options.height;
     request.samplingScale = options.scale;
     request.quality = nemo::Quality::Full;
-    request.channels = "RGBA";
     return request;
 }
 

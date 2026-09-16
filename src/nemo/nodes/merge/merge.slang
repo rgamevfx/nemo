@@ -9,7 +9,9 @@
 //   - in_mask : image2D input, optional port 2 (mask; absent binds a valid
 //     dummy descriptor and reports maskPresent = 0, never a manufactured
 //     source)
-//   - out_color : image2D output (float4 RGBA, straight alpha, scene-linear)
+//   - out_color : image2D output (native R32_SFLOAT channel planes, straight
+//     alpha, scene-linear: logical pixel (x, y) of channel plane c at
+//     (x, y + c*logicalHeight), issue #90)
 // parameters:
 //   - operation = "over" | "plus" | "multiply" | "screen" | "difference"
 //     (over is the default; an unknown value is rejected by the schema and
@@ -17,7 +19,7 @@
 //     op.x: 0 Over, 1 Plus, 2 Multiply, 3 Screen, 4 Difference.
 //   - mask = (maskChannel, invertMask, mix, maskPresent), the shared effect
 //     mask word.
-// bindings (native binding contract v5, see GpuGeometry.slang):
+// bindings (native binding contract v6, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.merge.payload.v1")
 //   set 0, binding 2 : per-input spatial geometry (A, B, mask)
@@ -61,6 +63,11 @@ cbuffer EffectUniforms {
     // support (a node-local scratch), a non-positive size means every sample is
     // transparent black. Samples outside it must be written transparent black.
     int4 support;
+    // channels: the produced raster's channel planes (issue #90):
+    // (plane count, 0, 0, 0).
+    uint4 channels;
+    // rgba: the produced plane index of each R/G/B/A role; -1 = role absent.
+    int4 rgba;
 };
 
 [[vk::binding(1, 0)]]
@@ -72,16 +79,16 @@ cbuffer MergePayload {
 };
 
 [[vk::binding(0, 1)]]
-RWTexture2D<float4> in_a;
+RWTexture2D<float> in_a;
 [[vk::binding(1, 1)]]
-RWTexture2D<float4> in_b;
+RWTexture2D<float> in_b;
 // Optional mask slot (port 2). An absent mask binds a valid dummy
-// descriptor with maskPresent = 0, so the Load is always in bounds.
+// descriptor with maskPresent = 0, so the read is always in bounds.
 [[vk::binding(2, 1)]]
-RWTexture2D<float4> in_mask;
+RWTexture2D<float> in_mask;
 
 [[vk::binding(0, 2)]]
-RWTexture2D<float4> out_color;
+RWTexture2D<float> out_color;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -90,13 +97,14 @@ void main(uint3 tid : SV_DispatchThreadID)
     uint2 p = tid.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
-    // The described image's data support (native binding contract v5): a sample
+    // The described image's data support (native binding contract v6): a sample
     // outside it is transparent black, never a composite of operands that hold
-    // nothing there.
+    // nothing there, and every plane — auxiliary ones included — is initialized
+    // (issue #90).
     if (support.z >= 0 && support.w >= 0 &&
         ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
          (int)p.y >= support.y + support.w)) {
-        out_color[p] = float4(0.0, 0.0, 0.0, 0.0);
+        gpuZeroPlanes(out_color, int2(p), int(meta2.y), channels.x);
         return;
     }
 
@@ -112,8 +120,12 @@ void main(uint3 tid : SV_DispatchThreadID)
     bool aInside = aPixel.x >= 0 && aPixel.y >= 0 && aPixel.x < aExtent.x && aPixel.y < aExtent.y;
     bool bInside = bPixel.x >= 0 && bPixel.y >= 0 && bPixel.x < bExtent.x && bPixel.y < bExtent.y;
 
-    float4 bg = aInside ? in_a.Load(aPixel) : float4(0.0, 0.0, 0.0, 0.0);  // port A: background (base)
-    float4 fg = bInside ? in_b.Load(bPixel) : float4(0.0, 0.0, 0.0, 0.0);  // port B: foreground (source)
+    // Port A is the background/base and port B the foreground/source: each is
+    // gathered through the plane roles of its own geometry entry (issue #90).
+    float4 bg = aInside ? gpuLoadRgba(in_a, aPixel, inputGeometry[0].rgba, aExtent.y)
+                        : float4(0.0, 0.0, 0.0, 0.0);
+    float4 fg = bInside ? gpuLoadRgba(in_b, bPixel, inputGeometry[1].rgba, bExtent.y)
+                        : float4(0.0, 0.0, 0.0, 0.0);
 
     int operation = int(op.x);
     float4 composite;
@@ -141,11 +153,17 @@ void main(uint3 tid : SV_DispatchThreadID)
         int2 maskExtent = int2(inputGeometry[2].extent.xy);
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
-        float selected = maskInside ? clamp(in_mask.Load(maskPixel)[channel], 0.0, 1.0) : 0.0;
+        float selected =
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[2].rgba, maskExtent.y)[channel], 0.0, 1.0)
+                       : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the background, weight 1 the
     // unmasked composite, so Mix 0 or zero coverage returns the background.
     float weight = coverage * mask.z;
-    out_color[p] = weight <= 0.0 ? bg : (weight >= 1.0 ? composite : lerp(bg, composite, weight));
+    float4 result = weight <= 0.0 ? bg : (weight >= 1.0 ? composite : lerp(bg, composite, weight));
+    gpuStoreRgba(out_color, int2(p), rgba, int(meta2.y), result);
+    // The background is this node's main input: every plane the composite did
+    // not write keeps its named channel from A at the same coordinate (#90).
+    gpuPreserveAuxLattice(out_color, int2(p), int(meta2.y), in_a, aExtent.y, channels.x);
 }

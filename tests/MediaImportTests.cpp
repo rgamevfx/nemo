@@ -388,6 +388,42 @@ TEST(MediaImport, AnamorphicPreviewKeepsDisplayedAspect) {
     EXPECT_FLOAT_EQ(result.thumbnail->layout().pixelAspect, 1.0F);  // square-pixel preview
 }
 
+// The nonidentity viewing matrix must not change scalar data; alpha is the
+// displayed gray value, not presentation opacity.
+TEST(MediaImport, AlphaOnlyExrDataIsOpaqueGrayWithoutViewingTransform) {
+    const auto path = importDir() / "alpha-only.exr";
+    ImageLayout layout;
+    layout.width = 2;
+    layout.height = 1;
+    layout.channels = {"A"};
+    CpuImage image(layout);
+    image.setChannel(0, 0, 0, 0.25F);
+    image.setChannel(1, 0, 0, 0.75F);
+    writeImage(path.string(), image, OutputPrecision::Float32);
+
+    const MediaImportResult result = inspectMediaSource(makeRequest("matte", path.string(), 81, 16, 12));
+
+    EXPECT_TRUE(result.error.empty()) << result.error;
+    EXPECT_EQ(result.probe.status, MediaProbeStatus::Ready);
+    // The source really is one data channel: the color roles the preview shows
+    // are the projection's, not the file's.
+    EXPECT_EQ(result.probe.channels, "A");
+    ASSERT_NE(result.thumbnail, nullptr);
+    // The preview IS the presentation, so it is display-referred even though no
+    // transform produced it.
+    EXPECT_EQ(result.thumbnail->layout().color, ColorInterpretation::DisplayReferred);
+    const auto low = result.thumbnail->pixel(0, 0);
+    EXPECT_FLOAT_EQ(low[0], 0.25F);
+    EXPECT_FLOAT_EQ(low[1], 0.25F);
+    EXPECT_FLOAT_EQ(low[2], 0.25F);
+    EXPECT_FLOAT_EQ(low[3], 1.0F);  // opaque, never the data-only transparent default
+    const auto high = result.thumbnail->pixel(result.thumbnail->width() - 1, 0);
+    EXPECT_FLOAT_EQ(high[0], 0.75F);
+    EXPECT_FLOAT_EQ(high[1], 0.75F);
+    EXPECT_FLOAT_EQ(high[2], 0.75F);
+    EXPECT_FLOAT_EQ(high[3], 1.0F);
+}
+
 // A missing file is offline data, not an exception: the diagnostic names the
 // path and no preview is fabricated.
 TEST(MediaImport, MissingSourceIsOfflineWithPathDiagnostic) {

@@ -712,6 +712,14 @@ constexpr float kRgbAccuracyTolerance = 1e-4F;
     return source;
 }
 
+// The independently handcrafted channel fixtures (issue #90): FLOAT EXR bytes
+// written without Nemo, OIIO or the OpenEXR writer, so every value asserted
+// against them below comes from the published fixture bytes rather than from
+// anything Nemo read or produced.
+[[nodiscard]] std::string channelFixture(const char* name) {
+    return (std::filesystem::path{NEMO_CHANNEL_FIXTURE_DIR} / name).string();
+}
+
 // Rewrites the fixture config at the SAME path with a different gamma and an
 // extra comment line, so both the content and the file size change (the
 // freshness stamp is then guaranteed to move on any filesystem).
@@ -1042,6 +1050,150 @@ TEST(InputColor, AlphaIsNormalizedInTheEncodedDomainAndRawStaysUntouched) {
         EXPECT_FLOAT_EQ(pixel[1], 0.5F);
         EXPECT_FLOAT_EQ(pixel[2], 0.75F);
         EXPECT_FLOAT_EQ(pixel[3], 0.5F);  // premultiplied association left alone
+    }
+}
+
+// The color-policy boundary over the INDEPENDENT multilayer fixture (issue #90
+// stories 7/9): only an identified complete root RGB set is colour. The
+// auxiliary planes are named `beauty.R`/`beauty.G`/`beauty.B` precisely so a
+// leaf-name match cannot pass for the root set, and their values are the HDR
+// 4 / negative -5 / 6 that a colour transform would destroy (a negative sample
+// has no real power, so a converted plane cannot come back equal). The
+// expectation is the published gamma-2.2 oracle computed here, not a Nemo
+// read; the same source read as Raw proves the interpretation moves the
+// primaries and nothing else. The fixture's root alpha is exactly 1, so the
+// encoded-domain unassociation the read performs on the root RGB is an
+// identity and the converted primaries are the pure oracle.
+TEST(InputColor, MultilayerColorPolicyConvertsOnlyRootPrimaryRgb) {
+    const auto configPath = writeColorConfig();
+    const InputColorCache color(SourceColorPolicy{configPath.string(), "working_rec709"});
+    const std::string path = channelFixture("multilayer-b.exr");
+
+    InputColorChoice choice;
+    choice.mode = nemo::InputTransformMode::Explicit;
+    choice.inputColorSpace = "rec709_texture";
+    const ImageFrame converted = nemo::media::readImageFrame(color, choice, path, 0, "multilayer color policy");
+
+    EXPECT_EQ(converted.info.inputColor.kind, InputTransformKind::OcioColorspace);
+    EXPECT_EQ(converted.info.inputColor.colorSpace, "rec709_texture");
+    EXPECT_EQ(converted.info.color, ColorInterpretation::SceneLinear);
+    EXPECT_EQ(converted.image.layout().color, ColorInterpretation::SceneLinear);
+    ASSERT_EQ(converted.info.coverage, (Region{0, 0, 8, 8}));
+
+    // The fixture's published channel set, compared SORTED: no channel is
+    // renamed, dropped or manufactured, and every lookup below is exact-name,
+    // never the storage order OIIO happens to report.
+    std::vector<std::string> actualNames = converted.image.layout().channels;
+    std::sort(actualNames.begin(), actualNames.end());
+    EXPECT_EQ(actualNames, (std::vector<std::string>{"A", "B", "G", "R", "beauty.B", "beauty.G", "beauty.R", "depth.Z",
+                                                     "matte.coverage", "motion.u", "motion.v"}));
+
+    const std::vector<std::string>& names = converted.image.layout().channels;
+    const int rootR = nemo::channelIndex(names, "R");
+    const int rootG = nemo::channelIndex(names, "G");
+    const int rootB = nemo::channelIndex(names, "B");
+    const int alpha = nemo::channelIndex(names, "A");
+    const int beautyR = nemo::channelIndex(names, "beauty.R");
+    const int beautyG = nemo::channelIndex(names, "beauty.G");
+    const int beautyB = nemo::channelIndex(names, "beauty.B");
+    const int depthZ = nemo::channelIndex(names, "depth.Z");
+    const int matte = nemo::channelIndex(names, "matte.coverage");
+    const int motionU = nemo::channelIndex(names, "motion.u");
+    const int motionV = nemo::channelIndex(names, "motion.v");
+    for (const int index : {rootR, rootG, rootB, alpha, beautyR, beautyG, beautyB, depthZ, matte, motionU, motionV}) {
+        ASSERT_GE(index, 0) << "every published channel must survive the read";
+    }
+
+    InputColorChoice rawChoice;
+    rawChoice.mode = nemo::InputTransformMode::Raw;
+    const ImageFrame raw = nemo::media::readImageFrame(color, rawChoice, path, 0, "multilayer raw");
+    EXPECT_EQ(raw.info.inputColor.kind, InputTransformKind::Raw);
+    EXPECT_EQ(raw.info.color, ColorInterpretation::Data);
+    EXPECT_EQ(raw.image.layout().channels, names) << "Raw changes the interpretation, never the channels";
+
+    for (int y = 0; y < converted.image.height(); ++y) {
+        for (int x = 0; x < converted.image.width(); ++x) {
+            const int absoluteX = converted.info.coverage.x + x;
+            const int absoluteY = converted.info.coverage.y + y;
+            const std::string at = " at " + std::to_string(absoluteX) + "," + std::to_string(absoluteY);
+            // Only the identified root primaries are colour: each moves by the
+            // published rec709_texture -> working_rec709 oracle.
+            EXPECT_NEAR(converted.image.channel(x, y, rootR), std::pow(0.25, 2.2), kRgbAccuracyTolerance) << at;
+            EXPECT_NEAR(converted.image.channel(x, y, rootG), std::pow(0.5, 2.2), kRgbAccuracyTolerance) << at;
+            EXPECT_NEAR(converted.image.channel(x, y, rootB), std::pow(0.75, 2.2), kRgbAccuracyTolerance) << at;
+            // Alpha and every auxiliary plane are data: exact, never converted.
+            EXPECT_FLOAT_EQ(converted.image.channel(x, y, alpha), 1.0F) << at;
+            EXPECT_FLOAT_EQ(converted.image.channel(x, y, beautyR), 4.0F) << at;
+            EXPECT_FLOAT_EQ(converted.image.channel(x, y, beautyG), -5.0F) << at;
+            EXPECT_FLOAT_EQ(converted.image.channel(x, y, beautyB), 6.0F) << at;
+            EXPECT_FLOAT_EQ(converted.image.channel(x, y, depthZ), static_cast<float>(10 * absoluteX + absoluteY))
+                << at;
+            EXPECT_FLOAT_EQ(converted.image.channel(x, y, matte), 0.125F) << at;
+            EXPECT_FLOAT_EQ(converted.image.channel(x, y, motionU), -2.0F) << at;
+            EXPECT_FLOAT_EQ(converted.image.channel(x, y, motionV), 3.0F) << at;
+
+            // Raw keeps the stored samples, so the chosen interpretation moved
+            // the primaries and left every data plane bit-identical.
+            EXPECT_FLOAT_EQ(raw.image.channel(x, y, rootR), 0.25F) << at;
+            EXPECT_FLOAT_EQ(raw.image.channel(x, y, rootG), 0.5F) << at;
+            EXPECT_FLOAT_EQ(raw.image.channel(x, y, rootB), 0.75F) << at;
+            EXPECT_NE(converted.image.channel(x, y, rootR), raw.image.channel(x, y, rootR)) << at;
+            for (const int plane : {alpha, beautyR, beautyG, beautyB, depthZ, matte, motionU, motionV}) {
+                EXPECT_FLOAT_EQ(converted.image.channel(x, y, plane), raw.image.channel(x, y, plane)) << at;
+            }
+        }
+    }
+}
+
+// The other half of the same boundary: an image whose channels identify no
+// complete root RGB set carries no colour, so Auto resolves it as DATA with no
+// colour-space guess and no configuration rule consulted — this policy HAS a
+// space to offer (its Default rule), and must not use it. Asserted at the
+// colour-policy seam itself; the end-to-end alpha-only workflow through
+// effects is covered in ContributionTests, so this adds no duplicate of it.
+TEST(InputColor, DataOnlyAndAlphaOnlySourcesBypassTheColorPolicy) {
+    const auto configPath = writeColorConfig();
+    const InputColorCache color(SourceColorPolicy{configPath.string(), "working_rec709"});
+
+    {
+        const ImageFrame frame =
+            nemo::media::readImageFrame(color, InputColorChoice{}, channelFixture("alpha-only.exr"), 0, "alpha-only");
+        EXPECT_EQ(frame.info.inputColor.kind, InputTransformKind::Raw);
+        EXPECT_EQ(frame.info.inputColor.origin, InputTransformOrigin::Raw);
+        EXPECT_EQ(frame.info.color, ColorInterpretation::Data);
+        EXPECT_EQ(frame.image.layout().color, ColorInterpretation::Data);
+        EXPECT_EQ(frame.image.layout().channels, (std::vector<std::string>{"A"}));
+        ASSERT_EQ(frame.info.coverage, (Region{0, 0, 2, 1}));
+        const int alpha = nemo::channelIndex(frame.image.layout().channels, "A");
+        ASSERT_GE(alpha, 0);
+        EXPECT_FLOAT_EQ(frame.image.channel(0, 0, alpha), 0.25F);
+        EXPECT_FLOAT_EQ(frame.image.channel(1, 0, alpha), 0.75F);
+    }
+    {
+        // The authored data bounds are the raster, and every sample is the
+        // published one: nothing interpreted, nothing invented, no RGB.
+        const ImageFrame frame =
+            nemo::media::readImageFrame(color, InputColorChoice{}, channelFixture("data-a.exr"), 0, "data-only");
+        EXPECT_EQ(frame.info.inputColor.kind, InputTransformKind::Raw);
+        EXPECT_EQ(frame.info.inputColor.origin, InputTransformOrigin::Raw);
+        EXPECT_EQ(frame.info.color, ColorInterpretation::Data);
+        std::vector<std::string> names = frame.image.layout().channels;
+        std::sort(names.begin(), names.end());
+        EXPECT_EQ(names, (std::vector<std::string>{"A", "depth.Z", "matte.coverage"}));
+        ASSERT_EQ(frame.info.coverage, (Region{2, 2, 4, 4}));
+        const int alpha = nemo::channelIndex(frame.image.layout().channels, "A");
+        const int depthZ = nemo::channelIndex(frame.image.layout().channels, "depth.Z");
+        const int matte = nemo::channelIndex(frame.image.layout().channels, "matte.coverage");
+        ASSERT_GE(alpha, 0);
+        ASSERT_GE(depthZ, 0);
+        ASSERT_GE(matte, 0);
+        for (int y = 0; y < frame.image.height(); ++y) {
+            for (int x = 0; x < frame.image.width(); ++x) {
+                EXPECT_FLOAT_EQ(frame.image.channel(x, y, alpha), 0.625F);
+                EXPECT_FLOAT_EQ(frame.image.channel(x, y, depthZ), 100.25F);
+                EXPECT_FLOAT_EQ(frame.image.channel(x, y, matte), 0.625F);
+            }
+        }
     }
 }
 

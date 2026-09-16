@@ -28,18 +28,21 @@ layout(std140, set = 0, binding = 1) uniform ConstcolorPayload {
 )GLSL";
 
 constexpr const char* kConstcolorGlslBody = R"GLSL(
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v5): a sample
-    // outside it is transparent black, never the authored color computed there.
+    // The described image's data support (native binding contract v6): a sample
+    // outside it is transparent black, never the authored color computed there,
+    // and every plane — auxiliary ones included — is initialized (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuStore(out_color, ivec2(p), vec4(0.0));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
         return;
     }
-    gpuStore(out_color, ivec2(p), color);
+    // A generator writes the roles its described raster carries; a role the
+    // raster does not store is dropped rather than manufactured (issue #90).
+    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), color);
 }
 )GLSL";
 
@@ -47,7 +50,7 @@ void main() {
     return EffectPassDefinition{
         .id = "constcolor",
         .shader = "constcolor/constcolor",
-        .glsl = nemo::nodes::gpuGlsl(kConstcolorGlslPayload, kConstcolorGlslBody, false),
+        .glsl = nemo::nodes::gpuGlsl(kConstcolorGlslPayload, kConstcolorGlslBody),
         .inputs = {},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

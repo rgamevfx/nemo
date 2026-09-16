@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "nemo/core/document/Ids.hpp"
 
@@ -146,7 +147,14 @@ struct EvaluationRequest {
     NodeId output{kInvalidNode};
     std::int64_t localTime{0};
     Region region;
-    std::string channels{"RGBA"};
+    // The named channels this request wants (issue #90). EMPTY means every
+    // channel the requested image names — the default, and never "no channels";
+    // an explicit list names channels exactly (no patterns, no renaming), and
+    // planning re-bases an empty demand onto the described target's channels so
+    // every key and per-node request carries real names. A named channel the
+    // image does not carry is not an invented channel: it is transparent black
+    // (zero) data, matching the frozen zero-fill policy.
+    std::vector<std::string> channels{};
     Quality quality{Quality::Full};
     int samplingScale{1};
     // Full-resolution image domain, independent of ROI and sampling scale.

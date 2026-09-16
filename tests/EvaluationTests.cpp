@@ -583,7 +583,7 @@ TEST(EvaluationTest, RequestValidationRejectsUnsupportedChannelsAndQuality) {
     connect(rootGraph(document), "plate", "out");
 
     EvaluationRequest channels = fullFrameRequest(document, 0);
-    channels.channels = "depth";
+    channels.channels = {"depth"};
     EXPECT_THROW(static_cast<void>(evaluateCpu(document, channels)), EvaluationException);
 
     EvaluationRequest quality = fullFrameRequest(document, 0);
@@ -621,6 +621,7 @@ TEST(RequestValidation, EnforcesEachDependencyCapabilityWithNodeContext) {
 
     EvaluationRequest rgba;
     rgba.region = {0, 0, 2, 2};
+    rgba.channels = {"R", "G", "B", "A"};
     check(NodeCapabilities{.samplingScales = {1}, .qualityModes = {Quality::Full}, .channels = {"Y"}}, rgba,
           "channels");
     EvaluationRequest quality;

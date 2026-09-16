@@ -35,7 +35,10 @@
 //     `decision().reason` states exactly why (no silent substitution).
 //
 // Production consumption of decoded frames is the returned device-resident
-// Image; there is no routine readback.
+// Image; there is no routine readback. Every decoded frame — whichever path
+// produced it — is stored in the native channel-plane layout (issue #90):
+// R32_SFLOAT, extent (logical width, 4*logical height), plane c of logical
+// pixel (x, y) at (x, y + c*H), left in GENERAL.
 //
 // All AV*/FFmpeg types stay in the .cpp — the public surface is the
 // application image contract only (Media module boundary rule).
@@ -92,6 +95,19 @@ struct ClipInfo {
 // Container/stream description without opening a decoder, selecting a device,
 // or producing pixels. Pixel-format support is checked only during execution.
 [[nodiscard]] ClipInfo inspectClipHeader(const std::string& path);
+
+// Uploads one decoded interleaved raster into the native channel-plane image
+// layout (issue #90): a logical `raster.width()` x `raster.height()` image with
+// C declared channels is ONE R32_SFLOAT 2D image of extent (width, C*height),
+// where channel c of logical pixel (x, y) lives at (x, y + c*height). The
+// interleaved samples are transposed directly into the single staging buffer,
+// then copied contiguously; no extra raster or per-sample name lookup is needed.
+// The image is left in GENERAL, the
+// layout every decoded-frame consumer binds. `image` must already be an
+// R32_SFLOAT 2D allocation of exactly that extent; a mismatch is refused rather
+// than uploaded through a wrong stride. Synchronous; throws GpuException.
+void uploadChannelPlanes(gpu::SubmissionQueue& queue, gpu::Allocator& allocator, const gpu::Image& image,
+                         const CpuImage& raster, uint64_t timeout_ns);
 
 // How the clip is being decoded, with the measured reason when the
 // hardware path is not used.
@@ -189,8 +205,11 @@ public:
     // produced frame path, including any FFmpeg hardware fallback.
     [[nodiscard]] const DecodeDecision& decision() const;
 
-    // Decodes the next frame and returns its device-resident rgba32f image.
-    // Source mode is scene-linear; openViewer() mode is display-referred.
+    // Decodes the next frame and returns its device-resident image in the
+    // native channel-plane layout: R32_SFLOAT, extent (logical width,
+    // 4*logical height), plane c of logical pixel (x, y) at (x, y + c*H), left
+    // in GENERAL. Source mode is scene-linear; openViewer() mode is
+    // display-referred.
     [[nodiscard]] std::unique_ptr<gpu::Image> next(uint64_t timeout_ns);
     [[nodiscard]] std::unique_ptr<gpu::Image> nextViewer(uint64_t timeout_ns);
 

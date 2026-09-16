@@ -51,9 +51,9 @@ layout(std140, set = 0, binding = 1) uniform GradePayload {
 )GLSL";
 
 constexpr const char* kGradeGlslBody = R"GLSL(
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_main;
-layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_mask;
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_main;
+layout(set = 1, binding = 1) restrict readonly uniform image2D in_mask;
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 
 // signedPow(0, p) = 0 and sign(x)*pow(abs(x), p): the explicit
 // negative/HDR extension, not a claim of bitwise Nuke parity.
@@ -93,20 +93,23 @@ vec4 gradePixel(vec4 x) {
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v5): a sample
-    // outside it is transparent black, never grade(0) fabricated there.
+    // The described image's data support (native binding contract v6): a sample
+    // outside it is transparent black, never grade(0) fabricated there, and
+    // every plane — auxiliary ones included — is initialized (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuStore(out_color, ivec2(p), vec4(0.0));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
         return;
     }
     // Same-lattice inputs: the pixel with the same full-resolution sample,
     // located through each input's own raster origin and extent. A sample the
     // input does not hold is outside its data (a smaller or empty data window):
-    // transparent black, never an out-of-bounds load.
+    // transparent black, never an out-of-bounds load. Each image carries its
+    // named channels as vertical planes, so the R/G/B/A roles are gathered
+    // through the pre-resolved indices of its geometry entry (issue #90).
     ivec2 mainPixel = ivec2(p) + inputGeometry[0].regionAndOffset.zw;
     ivec2 mainExtent = ivec2(inputGeometry[0].extent.xy);
     bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < mainExtent.x && mainPixel.y < mainExtent.y;
-    vec4 orig = mainInside ? imageLoad(in_main, mainPixel) : vec4(0.0);
+    vec4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, mainExtent.y) : vec4(0.0);
     vec4 processed = gradePixel(orig);
     float coverage = 1.0;
     int channel = int(mask.x);
@@ -115,14 +118,20 @@ void main() {
         ivec2 maskExtent = ivec2(inputGeometry[1].extent.xy);
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
-        float selected = maskInside ? clamp(imageLoad(in_mask, maskPixel)[channel], 0.0, 1.0) : 0.0;
+        float selected =
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[1].rgba, maskExtent.y)[channel], 0.0, 1.0)
+                       : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
     // processed pixel, so no HDR 0*inf cancellation occurs in mix().
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
-    gpuStore(out_color, ivec2(p), result);
+    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
+    // Every plane this pass's arithmetic did not write keeps its named channel
+    // from the main input at the same coordinate (issue #90): a Grade of the
+    // RGB roles never drops an auxiliary channel.
+    gpuPreserveAuxLattice(out_color, ivec2(p), int(meta2.y), in_main, mainExtent.y, channels.x);
 }
 )GLSL";
 
@@ -130,7 +139,7 @@ void main() {
     return EffectPassDefinition{
         .id = "grade",
         .shader = "grade/grade",
-        .glsl = nemo::nodes::gpuGlsl(kGradeGlslPayload, kGradeGlslBody, true),
+        .glsl = nemo::nodes::gpuGlsl(kGradeGlslPayload, kGradeGlslBody),
         .inputs = {EffectImageRef{EffectImageKind::Input, 0}, EffectImageRef{EffectImageKind::Input, 1}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

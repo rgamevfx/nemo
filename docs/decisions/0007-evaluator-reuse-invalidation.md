@@ -695,10 +695,11 @@ CPU/native paths consume that same state. A viewer render shares one
 match the document snapshot/revision, registration snapshot and full demand.
 An inconsistent supplied plan is rejected, never silently substituted.
 
-Content keys include every description field and `image-space-v1`; coverage
-remains a separate representation key. Compatible larger rasters can serve
-smaller requests without recomputation, but changed format, bounds, PAR,
-interpretation or implementation cannot reuse incompatible representations.
+Content keys include every description field and `image-space-v2` (#90);
+channel names/order and requested channel demand distinguish representations.
+Coverage remains a separate representation key. Compatible larger rasters can
+serve smaller requests without recomputation, but changed format, bounds, PAR,
+channels, interpretation or implementation cannot reuse incompatible results.
 The source frame owner validates image-header descriptions before decoded-frame
 reuse; container/pixel content changes retain the existing revision/reload
 contract. This adds no tiling framework, memory-budget system or CPU fallback.
@@ -708,3 +709,20 @@ windowed EXR, before/after public CLI output and verification results are retain
 in `docs/evidence/assets/issue88-images/verification.json`. Production numerical
 correctness and protected #25 viewer interaction conformance remain separate
 gates. The #96 review hold and downstream channel/alpha tasks remain unchanged.
+
+Issue #90 carries the described names through media, CPU storage and native
+planes rather than projecting sources prematurely to RGBA. Empty request
+channels mean all described channels; empty per-input requirements inherit
+the conservative demand. Only a *contributed* per-input requirement is a
+declaration: when a node contribution's own `inputRequirements` names channels
+explicitly they travel unfiltered, and a name its producer's described image
+cannot carry is rejected before execution. Inherited demand is a filtered hint
+instead, served by the frozen zero-fill policy. Routing-alias steps forward
+demands rather than validating contributed requirements.
+Shuffle derives its input demand from the resolved mappings, including fanout
+and zero-fill policies. The viewer resolves selected names and color/data
+interpretation from the current description, including after source changes;
+it never substitutes a missing selected layer.
+See ADR-0008 for native representation and projection policy. Evidence lives
+in `docs/evidence/assets/issue90-channels/verification.json`; upstream review
+holds remain unchanged.

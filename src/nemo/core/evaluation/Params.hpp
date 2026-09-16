@@ -108,6 +108,19 @@ struct EffectMaskParameters {
     return choice->value;
 }
 
+// A free-text parameter (a name, a selector, a path fragment). The value is
+// returned verbatim: this seam never trims, normalizes or renames authored
+// text, and an authored name is an exact identifier wherever it is consumed.
+[[nodiscard]] inline std::string effectiveText(const NodeCatalog& catalog, const NodeInstance& node,
+                                               const ParameterValues& effectiveParams, const char* key) {
+    const auto& value = effectiveParameter(catalog, node, effectiveParams, key);
+    const auto* text = std::get_if<std::string>(&value);
+    if (text == nullptr) {
+        failNode(node, std::string("parameter '") + key + "' must be text, got '" + parameterValueText(value) + "'");
+    }
+    return *text;
+}
+
 [[nodiscard]] inline EffectMaskParameters effectiveEffectMask(const NodeCatalog& catalog, const NodeInstance& node,
                                                               const ParameterValues& effectiveParams) {
     EffectMaskParameters mask;

@@ -95,6 +95,8 @@ struct SourceColorPolicy {
 // What the source media ITSELF declared. An empty/unset member means the media
 // declared nothing — the resolver never invents a value for it.
 struct EncodedColorFacts {
+    // Readers identify complete primary/root RGB; other named planes are data.
+    bool hasPrimaryRgb{true};
     // Still/sequence facts.
     std::string declaredColorSpace;     // OpenImageIO `oiio:ColorSpace`, e.g. "srgb_rec709_scene"
     std::vector<float> chromaticities;  // declared chromaticities (8 values) or empty

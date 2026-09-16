@@ -24,20 +24,19 @@ ComboBox {
     // so a gesture-driven change (a wheel, a preset) is stated immediately. The
     // field is the control's stated value: a stated scale that matches no preset
     // has no preset index to report.
-    onReadoutChanged: {
-        if (typing)
+    function syncReadout() {
+        if (!typeable || typing)
             return;
-        editText = readout;
-        // The preset the control reports is the preset it is actually at; a
-        // stated scale that matches none leaves no preset selected.
         var preset = model && model.indexOf ? model.indexOf(readout) : -1;
         if (currentIndex !== preset)
             currentIndex = preset;
+        editText = readout;
     }
-    onTypingChanged: {
-        if (!typing)
-            editText = readout;
-    }
+    onReadoutChanged: syncReadout()
+    // Qt resets the current item when an asynchronous preset model changes.
+    // Restore the authored readout after that reset, without interrupting typing.
+    onModelChanged: if (typeable) Qt.callLater(syncReadout)
+    onTypingChanged: if (!typing) syncReadout()
 
     // Commits the text the artist stated, before the control returns to its
     // live value (or the commit would carry the value it replaces).

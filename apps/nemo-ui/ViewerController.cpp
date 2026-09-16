@@ -62,6 +62,25 @@ const char* portKindName(nemo::PortKind kind) {
     return "image";
 }
 
+// The layer name the display selectors state (issue #90). The channel-name
+// convention itself is core's (`nemo::channelLayer`/`channelLeaf`): a stored
+// name's layer is the prefix before its last dot and a root channel has none.
+// Root channels are addressed by the schema's default layer name — the same
+// spelling the Shuffle parameters default to — so a file writing "R" and a file
+// writing "rgba.R" are both addressed as layer "rgba" without renaming either.
+constexpr char kRootLayerName[] = "rgba";
+
+QString displayLayerName(const std::string& channel) {
+    const auto layer = nemo::channelLayer(channel);
+    return layer.empty() ? QString::fromLatin1(kRootLayerName) : QString::fromStdString(std::string{layer});
+}
+
+// True when `name` is a root-spelled channel of the nominated layer: the exact
+// membership test both the viewer selectors and the Shuffle groups use.
+bool channelInLayer(const std::string& channel, const QString& layer) {
+    return displayLayerName(channel) == layer;
+}
+
 QVariant parameterValueVariant(const nemo::ParameterValue& value) {
     return std::visit(
         [](const auto& current) -> QVariant {
@@ -3431,6 +3450,17 @@ void ViewerController::openSource(const QString& path) {
 }
 
 void ViewerController::receive() {
+    // Channel-availability answers (issue #90) publish to this controller's own
+    // query destination, so they are drained even when no render destination is
+    // held. They are routed by request id and never touch render state.
+    if (channelQueryDestination_) {
+        if (auto answer = runtime_->takeResult(*channelQueryDestination_)) {
+            if (auto* described = std::get_if<ViewerTargetDescription>(&*answer))
+                applyChannelDescription(described->requestId, described->description);
+            else if (auto* failure = std::get_if<ViewerFailure>(&*answer))
+                applyChannelFailure(failure->requestId, QString::fromStdString(failure->message));
+        }
+    }
     // Without a destination the controller never submitted work: consuming a
     // result here would steal the destination owner's publication.
     if (!destination_)
@@ -3454,6 +3484,11 @@ void ViewerController::receive() {
             targetDescription_->description = described->description;
             targetDescription_->answered = true;
         }
+        // The described channels are what the layer and channel selectors offer
+        // (issue #90), so the menus are re-stated with the answer; a selection
+        // this target does not carry is reported by `layerReason` rather than
+        // repointed to a layer that exists.
+        emit displayChanged();
         pending_ = false;
         refreshRequest();
     } else if (auto* probe = std::get_if<SourceProbeResult>(&*result)) {
@@ -3673,6 +3708,19 @@ void ViewerController::refreshRequest() {
             pollScheduler();
             return;
         }
+        auto channels = resolveChannelRequest();
+        if (channels.empty() || std::any_of(channels.begin(), channels.end(), [&](const auto& channel) {
+                return !hasChannel(targetDescription_->description.channels, channel);
+            })) {
+            const bool hadPresentation = static_cast<bool>(presentation_);
+            invalidateRequest();
+            presentation_.reset();
+            fail(channels.empty() ? layerReason()
+                                  : QStringLiteral("Channel '%1' is unavailable in layer '%2'").arg(channel_, layer_));
+            if (hadPresentation)
+                emit frameArrived();
+            return;
+        }
         const auto source = document.sources.find(sourceKey);
         bool mediaReady = false;
         if (source == document.sources.end()) {
@@ -3744,6 +3792,13 @@ void ViewerController::refreshRequest() {
         request.fullWidth = width;
         request.fullHeight = height;
         request.region = {0, 0, width, height};
+        // The selected layer's real channel names (issue #90), or empty for
+        // "every channel the target names": the delivered raster carries the
+        // whole resolved description either way, so this states which layer the
+        // panel is looking at rather than a pixel-work optimization. The
+        // presentation-only role isolation is deliberately NOT part of the
+        // request, so isolating a channel never changes the evaluated frame.
+        request.channels = std::move(channels);
         nemo::validateRequestDomain(request);
         request.samplingScale =
             policy_.resolve(mode, width, height, pixelAspect_, viewport_.width(), viewport_.height(), zoom_);
@@ -3985,49 +4040,362 @@ void ViewerController::setMarkOutFrame(int frame) {
     if (frame_ > outFrame_)
         setFrame(outFrame_);
 }
+QStringList ViewerController::layerChannels() const {
+    QStringList result;
+    // The target's described channels are the only authority (issue #90): an
+    // unanswered or empty description names no channel, and the conventional
+    // RGBA spelling is never manufactured for it.
+    if (!targetDescription_ || !targetDescription_->answered)
+        return result;
+    for (const auto& channel : targetDescription_->description.channels) {
+        if (channelInLayer(channel, layer_))
+            result.push_back(QString::fromStdString(channel));
+    }
+    return result;
+}
+
+std::vector<std::string> ViewerController::resolveChannelRequest() {
+    const QStringList channels = layerChannels();
+    std::vector<std::string> names;
+    names.reserve(static_cast<std::size_t>(channels.size()));
+    for (const auto& channel : channels)
+        names.push_back(channel.toStdString());
+    viewerChannel_ = gpu::ViewerChannel::RGBA;
+    if (names.empty() || channel_ == QStringLiteral("RGBA"))
+        return names;
+    const std::string selected = channel_.toStdString();
+    if (channels.contains(channel_) && eval::resolveViewerProjection({}, names).applyViewingTransform) {
+        static constexpr std::array<gpu::ViewerChannel, 4> kRoles{gpu::ViewerChannel::Red, gpu::ViewerChannel::Green,
+                                                                  gpu::ViewerChannel::Blue, gpu::ViewerChannel::Alpha};
+        const auto roles = rgbaChannelIndices({&selected, 1});
+        for (std::size_t role = 0; role < roles.size(); ++role) {
+            if (roles[role] >= 0) {
+                viewerChannel_ = kRoles[role];
+                return names;
+            }
+        }
+    }
+    return {selected};
+}
+
+QStringList ViewerController::availableLayers() const {
+    QStringList layers;
+    const auto append = [&layers](const QString& name) {
+        if (!name.isEmpty() && !layers.contains(name))
+            layers.push_back(name);
+    };
+    append(QString::fromLatin1(kRootLayerName));
+    if (targetDescription_ && targetDescription_->answered) {
+        for (const auto& channel : targetDescription_->description.channels)
+            append(displayLayerName(channel));
+    }
+    // A selection made for another target stays stated (and reported as naming
+    // nothing here) instead of being silently repointed to a layer that exists.
+    append(layer_);
+    return layers;
+}
+
+QStringList ViewerController::availableChannels() const {
+    QStringList result{QStringLiteral("RGBA")};
+    result += layerChannels();
+    if (!channel_.isEmpty() && channel_ != QStringLiteral("RGBA") && !result.contains(channel_))
+        result.push_back(channel_);
+    return result;
+}
+
+QString ViewerController::layerReason() const {
+    if (!targetDescription_ || !targetDescription_->answered)
+        return QStringLiteral("Waiting for the target's described channels");
+    if (!layerChannels().isEmpty())
+        return QStringLiteral("Named channel layer to evaluate");
+    QStringList names;
+    for (const auto& channel : targetDescription_->description.channels) {
+        const QString name = displayLayerName(channel);
+        if (!names.contains(name))
+            names.push_back(name);
+    }
+    if (names.isEmpty())
+        return QStringLiteral("This target names no channel");
+    // The selection is kept and stated; no layer is silently substituted for it.
+    return QStringLiteral("Layer '%1' is unavailable in this target. Available: %2")
+        .arg(layer_, names.join(QStringLiteral(", ")));
+}
+
 void ViewerController::setChannel(const QString& channel) {
-    // Case-insensitive display names; values are the presentation-only gpu
-    // isolation applied in the presentation copy.
-    const auto name = channel.trimmed().toUpper();
-    gpu::ViewerChannel selection = gpu::ViewerChannel::RGBA;
-    if (name == QStringLiteral("RGBA"))
-        selection = gpu::ViewerChannel::RGBA;
-    else if (name == QStringLiteral("R"))
-        selection = gpu::ViewerChannel::Red;
-    else if (name == QStringLiteral("G"))
-        selection = gpu::ViewerChannel::Green;
-    else if (name == QStringLiteral("B"))
-        selection = gpu::ViewerChannel::Blue;
-    else if (name == QStringLiteral("A"))
-        selection = gpu::ViewerChannel::Alpha;
-    else {
-        fail(QStringLiteral("unknown viewer display channel '%1'").arg(channel));
+    auto name = channel.trimmed();
+    if (name.isEmpty()) {
+        fail(QStringLiteral("viewer display channel is empty"));
         return;
     }
-    if (name == channel_)
+    if (name.compare(QStringLiteral("RGBA"), Qt::CaseInsensitive) == 0) {
+        name = QStringLiteral("RGBA");
+    } else {
+        const QStringList channels = layerChannels();
+        const std::string text = name.toStdString();
+        const auto roles = rgbaChannelIndices({&text, 1});
+        const bool conventional = std::any_of(roles.begin(), roles.end(), [](int role) { return role >= 0; });
+        if (!channels.contains(name) && (!channels.isEmpty() || !conventional)) {
+            fail(QStringLiteral("Display channel '%1' is not a channel of layer '%2'").arg(name, layer_));
+            return;
+        }
+    }
+    if (channel_ == name)
         return;
     channel_ = name;
-    viewerChannel_ = selection;
     emit displayChanged();
-    // Channel isolation is presentation-only: the evaluated request is
-    // byte-identical, so the identity early-return in refreshRequest would skip
-    // the resubmit that re-runs the presentation copy. Forget it deliberately.
+    // Even a presentation-only role change must resubmit the presentation copy.
     lastRequest_.reset();
     refreshRequest();
 }
 void ViewerController::setLayer(const QString& layer) {
-    const auto name = layer.trimmed().toLower();
-    if (name == layer_)
-        return;
-    if (name == QStringLiteral("depth")) {
-        // The runtime presents the display-referred composite only. Reporting
-        // the selection as unavailable is honest; applying it is not.
-        status_ = QStringLiteral("Display layer 'depth' is unavailable: the viewer presents the display-referred "
-                                 "RGB composite");
-        emit statusChanged();
+    const auto name = layer.trimmed();
+    if (name.isEmpty()) {
+        fail(QStringLiteral("viewer display layer is empty"));
         return;
     }
-    fail(QStringLiteral("unknown viewer display layer '%1'").arg(layer));
+    // Only a layer the target actually carries (or the root layer the image
+    // contract starts from) is addressable: an absent layer is reported, and no
+    // substitute layer is displayed in its place.
+    if (!availableLayers().contains(name)) {
+        fail(QStringLiteral("Unknown viewer display layer '%1'").arg(layer));
+        return;
+    }
+    if (name == layer_)
+        return;
+    layer_ = name;
+    // The channel selection is re-validated against the new layer: a channel
+    // that layer does not carry is dropped back to its composite and the
+    // dropped selection is stated, never silently retargeted to another name.
+    if (channel_ != QStringLiteral("RGBA") && !layerChannels().contains(channel_)) {
+        const QString previous = channel_;
+        channel_ = QStringLiteral("RGBA");
+        viewerChannel_ = gpu::ViewerChannel::RGBA;
+        status_ =
+            QStringLiteral("Display channel '%1' is not in layer '%2'; showing the composite").arg(previous, layer_);
+        emit statusChanged();
+    }
+    emit displayChanged();
+    // The request names the layer's channels, so this is an evaluated change:
+    // forgetting the last request is what makes the layer take effect.
+    lastRequest_.reset();
+    refreshRequest();
+}
+
+std::optional<eval::ViewerDestination> ViewerController::channelQueryDestination() {
+    if (!channelQueryDestination_) {
+        // A dedicated bounded destination: the runtime keeps ONE publication
+        // slot per destination, so a description query that shared this panel's
+        // render destination (or another card's) could supersede real work.
+        // Exhaustion is reported by the answer instead of aliasing a slot.
+        channelQueryDestination_ = runtime_->allocateDestination(QStringLiteral("channel-availability"));
+    }
+    return channelQueryDestination_;
+}
+
+void ViewerController::submitNextChannelQuery() {
+    if (!channelQuery_)
+        return;
+    auto& query = *channelQuery_;
+    while (query.nextPort < query.ports.size()) {
+        auto& port = query.ports[query.nextPort];
+        if (port.answered) {
+            ++query.nextPort;
+            continue;
+        }
+        const auto destination = channelQueryDestination();
+        if (!destination) {
+            port.answered = true;
+            port.failure = QStringLiteral("Channel availability is unavailable: every viewer destination is in use");
+            ++query.nextPort;
+            continue;
+        }
+        // The upstream node's own output description is the image arriving at
+        // this port: it names every channel that port carries, whether or not
+        // this node's demand would use them. Metadata only — no pixels, no
+        // device work and no decoder measurement on the caller's thread.
+        EvaluationRequest request;
+        request.network = query.network;
+        request.output = port.upstream;
+        request.localTime = query.localTime;
+        request.region = {0, 0, 1, 1};
+        request.fullWidth = 1;
+        request.fullHeight = 1;
+        const auto id = ++nextChannelRequestId_;
+        if (!runtime_->describe(session_.snapshot(), request, id, *destination, session_.colorConfigPath())) {
+            port.answered = true;
+            port.failure = QStringLiteral("Channel availability description admission was rejected");
+            ++query.nextPort;
+            continue;
+        }
+        query.pendingPort = query.nextPort;
+        query.outstanding = id;
+        return;
+    }
+    query.pendingPort = std::numeric_limits<std::size_t>::max();
+    query.outstanding = 0;
+    query.complete = true;
+}
+
+void ViewerController::applyChannelDescription(std::uint64_t requestId, const ImageDescription& description) {
+    if (!channelQuery_ || channelQuery_->outstanding != requestId)
+        return;
+    auto& query = *channelQuery_;
+    query.outstanding = 0;
+    if (query.pendingPort < query.ports.size()) {
+        auto& port = query.ports[query.pendingPort];
+        port.description = description;
+        port.answered = true;
+        query.nextPort = query.pendingPort + 1;
+    }
+    query.pendingPort = std::numeric_limits<std::size_t>::max();
+    submitNextChannelQuery();
+    emit nodeChannelsChanged();
+}
+
+void ViewerController::applyChannelFailure(std::uint64_t requestId, const QString& message) {
+    if (!channelQuery_ || channelQuery_->outstanding != requestId)
+        return;
+    // One port that cannot be described is reported as that port's state: the
+    // sibling ports still answer, so a presenter is never left without the
+    // channels it CAN observe.
+    auto& query = *channelQuery_;
+    query.outstanding = 0;
+    if (query.pendingPort < query.ports.size()) {
+        auto& port = query.ports[query.pendingPort];
+        port.answered = true;
+        port.failure = message;
+        query.nextPort = query.pendingPort + 1;
+    }
+    query.pendingPort = std::numeric_limits<std::size_t>::max();
+    submitNextChannelQuery();
+    emit nodeChannelsChanged();
+}
+
+QVariantMap ViewerController::channelQueryAnswer() const {
+    QVariantMap answer{{QStringLiteral("available"), channelQuery_.has_value()},
+                       {QStringLiteral("pending"), channelQuery_ && !channelQuery_->complete},
+                       {QStringLiteral("reason"),
+                        channelQuery_ ? QString{} : QStringLiteral("channel availability has not been queried")},
+                       {QStringLiteral("ports"), QVariantList{}}};
+    if (!channelQuery_)
+        return answer;
+    QVariantList ports;
+    ports.reserve(static_cast<qsizetype>(channelQuery_->ports.size()));
+    for (std::size_t index = 0; index < channelQuery_->ports.size(); ++index) {
+        const auto& port = channelQuery_->ports[index];
+        QStringList channels;
+        QVariantList layers;
+        for (const auto& channel : port.description.channels) {
+            const QString name = QString::fromStdString(channel);
+            channels.push_back(name);
+            // Grouped by the shared layer convention so a presenter shows the
+            // described layers instead of re-deriving them from the names.
+            const QString layer = displayLayerName(channel);
+            auto entry = std::find_if(layers.begin(), layers.end(), [&layer](const QVariant& candidate) {
+                return candidate.toMap().value(QStringLiteral("name")).toString() == layer;
+            });
+            if (entry == layers.end()) {
+                QStringList grouped{name};
+                layers.push_back(QVariantMap{{QStringLiteral("name"), layer}, {QStringLiteral("channels"), grouped}});
+                continue;
+            }
+            QVariantMap grouped = entry->toMap();
+            QStringList list = grouped.value(QStringLiteral("channels")).toStringList();
+            list.push_back(name);
+            grouped.insert(QStringLiteral("channels"), list);
+            *entry = grouped;
+        }
+        const QString state = !port.image                     ? QStringLiteral("other")
+                              : port.upstream == kInvalidNode ? QStringLiteral("disconnected")
+                              : !port.answered                ? QStringLiteral("pending")
+                              : port.failure.isEmpty()        ? QStringLiteral("ready")
+                                                              : QStringLiteral("unavailable");
+        ports.push_back(QVariantMap{{QStringLiteral("index"), static_cast<int>(index)},
+                                    {QStringLiteral("name"), port.name},
+                                    {QStringLiteral("kind"), port.kind},
+                                    {QStringLiteral("image"), port.image},
+                                    {QStringLiteral("optional"), port.optional},
+                                    {QStringLiteral("connected"), port.upstream != kInvalidNode},
+                                    {QStringLiteral("state"), state},
+                                    {QStringLiteral("channels"), channels},
+                                    {QStringLiteral("layers"), layers},
+                                    {QStringLiteral("reason"), port.failure}});
+    }
+    answer.insert(QStringLiteral("ports"), ports);
+    return answer;
+}
+
+QVariantMap ViewerController::nodeInputChannels(const QString& networkValue, const QVariant& nodeValue) {
+    const auto unavailable = [](const QString& reason) {
+        return QVariantMap{{QStringLiteral("available"), false},
+                           {QStringLiteral("pending"), false},
+                           {QStringLiteral("reason"), reason},
+                           {QStringLiteral("ports"), QVariantList{}}};
+    };
+    const auto network = networkIdentity(networkValue);
+    const auto node = graphIdentity(nodeValue);
+    if (!network || !node)
+        return unavailable(QStringLiteral("channel availability requires a valid node"));
+    try {
+        const auto& graph = session_.document().network(*network).graph();
+        const auto* instance = graph.node(static_cast<NodeId>(*node));
+        const auto* descriptor = instance ? graph.descriptor(instance->type) : nullptr;
+        if (!instance || !descriptor)
+            return unavailable(QStringLiteral("channel availability target does not exist"));
+        std::vector<ChannelPort> ports;
+        ports.reserve(descriptor->inputs.size());
+        for (const auto& input : descriptor->inputs) {
+            ChannelPort port;
+            port.name = QString::fromStdString(input.name);
+            port.kind = QString::fromLatin1(portKindName(input.kind));
+            port.image = input.kind == nemo::PortKind::Image;
+            port.optional = input.optional;
+            // A port that carries no image, and a disconnected port, have no
+            // image description to wait for: they state themselves as answered
+            // so the query never asks the worker about a nonexistent upstream.
+            port.answered = !port.image;
+            ports.push_back(std::move(port));
+        }
+        for (const auto& edge : graph.edges()) {
+            if (edge.to.node != static_cast<NodeId>(*node) || edge.to.port >= ports.size())
+                continue;
+            if (!ports[edge.to.port].image)
+                continue;
+            ports[edge.to.port].upstream = edge.from.node;
+        }
+        const auto revision = session_.document().stateRevision();
+        for (auto& port : ports) {
+            if (port.image && port.upstream == kInvalidNode)
+                port.answered = true;  // a disconnected input has no upstream to describe
+        }
+        bool sameQuery = channelQuery_ && channelQuery_->network == *network &&
+                         channelQuery_->node == static_cast<NodeId>(*node) && channelQuery_->revision == revision &&
+                         channelQuery_->localTime == frame_ && channelQuery_->ports.size() == ports.size();
+        for (std::size_t index = 0; sameQuery && index < ports.size(); ++index) {
+            sameQuery = channelQuery_->ports[index].name == ports[index].name &&
+                        channelQuery_->ports[index].upstream == ports[index].upstream;
+        }
+        if (!sameQuery) {
+            // A superseded identity replaces its query: an answer for another
+            // node, revision or frame can never be published as this one's, and
+            // the abandoned request is cancelled instead of queueing beside it.
+            if (channelQuery_ && channelQuery_->outstanding != 0 && channelQueryDestination_)
+                runtime_->cancel(channelQuery_->outstanding, *channelQueryDestination_);
+            ChannelQuery query;
+            query.network = *network;
+            query.node = static_cast<NodeId>(*node);
+            query.revision = revision;
+            query.localTime = frame_;
+            query.ports = std::move(ports);
+            channelQuery_ = std::move(query);
+            // submitNextChannelQuery never notifies: this call runs inside the
+            // caller's binding, and a signal here would re-enter it.
+            submitNextChannelQuery();
+        }
+        return channelQueryAnswer();
+    } catch (const std::exception& error) {
+        return unavailable(QString::fromUtf8(error.what()));
+    }
 }
 QString ViewerController::timecode() const {
     return timecodeForFrame(frame_);

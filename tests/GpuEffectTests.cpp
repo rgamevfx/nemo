@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -42,6 +43,7 @@
 #include "nemo/gpu/Submit.hpp"
 #include "nemo/media/ImageIO.hpp"
 #include "nemo/media/ImageSource.hpp"
+#include "nemo/nodes/GpuCommon.hpp"
 
 using namespace nemo;
 
@@ -194,7 +196,7 @@ void expectImagesClose(const CpuImage& expected, const CpuImage& actual, float t
         for (int x = 0; x < expected.width(); ++x) {
             const auto e = expected.pixel(x, y);
             const auto a = actual.pixel(x, y);
-            for (std::size_t c = 0; c < CpuImage::channelCount(); ++c) {
+            for (std::size_t c = 0; c < e.size(); ++c) {
                 EXPECT_NEAR(a[c], e[c], tolerance) << what << ": pixel (" << x << "," << y << ") channel " << c;
             }
         }
@@ -241,7 +243,7 @@ TEST(Effect, ConstcolorIsBitExact) {
         for (int x = 0; x < std::min(a.width(), b.width()); ++x) {
             const auto pa = a.pixel(x, y);
             const auto pb = b.pixel(x, y);
-            for (std::size_t c = 0; c < CpuImage::channelCount(); ++c) {
+            for (std::size_t c = 0; c < pa.size(); ++c) {
                 diff = std::max(diff, std::fabs(pa[c] - pb[c]));
             }
         }
@@ -333,51 +335,45 @@ namespace {
                                     [](const auto& entry) { return entry.node.descriptor.type == "merge"; });
     // Independent deliberately wrong pixels still use the public declaration
     // seam, before the immutable snapshot is assembled.
-    merge->gpu->passes[0].glsl = std::string(R"GLSL(
-#version 450
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-layout(std140, set = 0, binding = 0) uniform Request {
-    uvec4 meta;
-    uvec4 meta2;
-    vec4 misc;
-};
+    merge->gpu->passes[0].glsl = nemo::nodes::gpuGlsl(R"GLSL(
 layout(std140, set = 0, binding = 1) uniform MergePayload {
     vec4 mask;
     vec4 op;
 };
-)GLSL") + mergeBody;
+)GLSL",
+                                                      mergeBody);
     return eval::EffectLibrary(std::move(contributions), eval::EffectBackend::Glsl);
 }
 
 constexpr const char* kSwappedPortsMerge = R"GLSL(
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_a;
-layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_b;
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_a;
+layout(set = 1, binding = 1) restrict readonly uniform image2D in_b;
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
-    if (p.x >= meta.x || p.y >= meta.y) { return; }
-    vec4 bg = imageLoad(in_b, ivec2(p));  // WRONG: ports swapped
-    vec4 fg = imageLoad(in_a, ivec2(p));
+    if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    vec4 bg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y));  // WRONG: ports swapped
+    vec4 fg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y));
     vec4 result;
     result.xyz = fg.a * fg.xyz + (1.0 - fg.a) * bg.xyz;
     result.w = fg.a + (1.0 - fg.a) * bg.a;
-    imageStore(out_color, ivec2(p), result);
+    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
 }
 )GLSL";
 
 constexpr const char* kPremultipliedMerge = R"GLSL(
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_a;
-layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_b;
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_a;
+layout(set = 1, binding = 1) restrict readonly uniform image2D in_b;
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
-    if (p.x >= meta.x || p.y >= meta.y) { return; }
-    vec4 bg = imageLoad(in_a, ivec2(p));
-    vec4 fg = imageLoad(in_b, ivec2(p));  // WRONG: premultiplied over
+    if (p.x >= meta2.x || p.y >= meta2.y) { return; }
+    vec4 bg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y));
+    vec4 fg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y));  // WRONG: premultiplied over
     vec4 result;
     result.xyz = fg.xyz + (1.0 - fg.a) * bg.xyz;
     result.w = fg.a + (1.0 - fg.a) * bg.a;
-    imageStore(out_color, ivec2(p), result);
+    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
 }
 )GLSL";
 
@@ -446,14 +442,14 @@ struct MergeOracle {
 // tolerance for EVERY operation, so role preservation is enforced by
 // comparison rather than assumed.
 constexpr const char* kSwappedOperationsMerge = R"GLSL(
-layout(rgba32f, set = 1, binding = 0) restrict readonly uniform image2D in_a;
-layout(rgba32f, set = 1, binding = 1) restrict readonly uniform image2D in_b;
-layout(rgba32f, set = 2, binding = 0) restrict writeonly uniform image2D out_color;
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_a;
+layout(set = 1, binding = 1) restrict readonly uniform image2D in_b;
+layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    vec4 bg = imageLoad(in_b, ivec2(p));  // WRONG: A/B roles exchanged
-    vec4 fg = imageLoad(in_a, ivec2(p));
+    vec4 bg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y));  // WRONG: A/B roles exchanged
+    vec4 fg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y));
     int operation = int(op.x);
     vec4 composite;
     if (operation == 0) {
@@ -467,7 +463,7 @@ void main() {
         composite.xyz = bg.xyz + fg.a * (target - bg.xyz);
     }
     composite.w = fg.a + (1.0 - fg.a) * bg.a;
-    imageStore(out_color, ivec2(p), composite);
+    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), composite);
 }
 )GLSL";
 
@@ -1015,7 +1011,7 @@ void expectRegionMatchesFullFrame(const CpuImage& regionImage, const CpuImage& f
         for (int x = 0; x < region.width; ++x) {
             const auto expected = fullImage.pixel(region.x + x, region.y + y);
             const auto actual = regionImage.pixel(x, y);
-            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+            for (std::size_t channel = 0; channel < expected.size(); ++channel) {
                 EXPECT_NEAR(actual[channel], expected[channel], tolerance)
                     << what << ": region pixel (" << x << "," << y << ") channel " << channel;
             }
@@ -1405,7 +1401,7 @@ TEST(Effect, SourceRegionRequestFillsFullResolutionCoordinates) {
     for (int y = 0; y < region.height; ++y) {
         for (int x = 0; x < region.width; ++x) {
             const std::array<float, 4> expected = stillPatternPixel(region.x + x, region.y + y);
-            for (std::size_t channel = 0; channel < CpuImage::channelCount(); ++channel) {
+            for (std::size_t channel = 0; channel < expected.size(); ++channel) {
                 EXPECT_FLOAT_EQ(regionImage.pixel(x, y)[channel], expected[channel])
                     << "region pixel (" << x << "," << y << ") channel " << channel;
             }
@@ -1419,5 +1415,233 @@ TEST(Effect, SourceRegionRequestFillsFullResolutionCoordinates) {
     const CpuEvaluation cpu = evaluateCpu(doc, regionRequest, nullptr, &provider);
     ASSERT_EQ(cpu.image.width(), region.width);
     expectImagesClose(cpu.image, regionImage, 1e-6F, "source region cpu vs slang");
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #90: named auxiliary planes through the native effects. The
+// handcrafted multilayer fixture (docs/evidence/assets/issue90-channels) is the
+// independent oracle: authored root RGBA 0.25/0.5/0.75/1, beauty.R/G/B 4/-5/6,
+// depth.Z = 10*x+y, matte.coverage 0.125, motion.u/v -2/3, over an 8x8
+// whole-frame data window. Both fixtures are real media served through the same
+// source/session seam as the region test above, and every named value is
+// asserted against those authored formulas through exact name lookup (never
+// OIIO's channel ordering) rather than against another implementation.
+//
+// Merge takes its meaning and its preserved auxiliary planes from its main
+// input — the composite's background, the primary "B" pipe of the referenced
+// vocabulary. This fixture is wired there and the data-only fixture
+// (A, depth.Z, matte.coverage; data window (2,2)-(5,5), so 100.25/0.625 inside
+// it and transparent black outside) is wired to the foreground. Its smaller
+// inventory, its missing primary RGB, and its colliding depth.Z/matte.coverage
+// values are the negative controls: an implementation that took the
+// foreground's values, its names, or an invented projection would fail every
+// assertion below.
+//
+// Blur then re-uses the same composite as the separable filter's main input, so
+// one region-limited request exercises the scratch pass, the final pass and the
+// executor's shared preservation at once. The scratch covers exactly the
+// request's columns and the input's rows, so a wrong scratch origin moves every
+// auxiliary value; the depth ramp makes that a hard failure rather than a
+// tolerance question.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr int kChannelFixtureWidth = 8;
+constexpr int kChannelFixtureHeight = 8;
+
+// The multilayer fixture's exact inventory (name lookup, never storage order).
+const std::vector<std::string> kMultilayerChannels{
+    "A", "B", "G", "R", "beauty.B", "beauty.G", "beauty.R", "depth.Z", "matte.coverage", "motion.u", "motion.v"};
+
+// Stored plane index of one exactly named channel, resolved once outside any
+// pixel loop (issue #90). A missing name fails here instead of reading a value
+// the fixture never authored.
+[[nodiscard]] int namedChannel(const CpuImage& image, std::string_view name) {
+    const int index = channelIndex(image.layout().channels, name);
+    EXPECT_GE(index, 0) << "image does not carry channel '" << name << "'";
+    return index;
+}
+
+// The produced image names exactly the primary input's channels: none dropped,
+// renamed, or manufactured from the other input's names.
+void expectMultilayerInventory(const CpuImage& image, const char* what) {
+    std::vector<std::string> names = image.layout().channels;
+    std::vector<std::string> expected = kMultilayerChannels;
+    std::sort(names.begin(), names.end());
+    std::sort(expected.begin(), expected.end());
+    EXPECT_EQ(names, expected) << what << ": no dropped, renamed or manufactured named channels";
+}
+
+// The authored auxiliary formulas at ABSOLUTE image coordinates (the fixture's
+// data window is the whole frame, so every sample is authored data and an exact
+// pass-through is exact). Reaching this through a blurred, shifted or
+// foreground-sourced value fails far outside float equality.
+void expectMultilayerAuxiliaryPlanes(const CpuImage& image, Region region, const char* what) {
+    const int beautyR = namedChannel(image, "beauty.R");
+    const int beautyG = namedChannel(image, "beauty.G");
+    const int beautyB = namedChannel(image, "beauty.B");
+    const int depthZ = namedChannel(image, "depth.Z");
+    const int matteCoverage = namedChannel(image, "matte.coverage");
+    const int motionU = namedChannel(image, "motion.u");
+    const int motionV = namedChannel(image, "motion.v");
+    ASSERT_EQ(image.width(), region.width) << what;
+    ASSERT_EQ(image.height(), region.height) << what;
+    for (int y = 0; y < region.height; ++y) {
+        for (int x = 0; x < region.width; ++x) {
+            const int imageX = region.x + x;
+            const int imageY = region.y + y;
+            const std::string at = std::string{what} + " at " + std::to_string(imageX) + "," + std::to_string(imageY);
+            EXPECT_FLOAT_EQ(image.channel(x, y, beautyR), 4.0F) << "beauty.R " << at;
+            EXPECT_FLOAT_EQ(image.channel(x, y, beautyG), -5.0F) << "beauty.G " << at;
+            EXPECT_FLOAT_EQ(image.channel(x, y, beautyB), 6.0F) << "beauty.B " << at;
+            EXPECT_FLOAT_EQ(image.channel(x, y, motionU), -2.0F) << "motion.u " << at;
+            EXPECT_FLOAT_EQ(image.channel(x, y, motionV), 3.0F) << "motion.v " << at;
+            EXPECT_FLOAT_EQ(image.channel(x, y, matteCoverage), 0.125F) << "matte.coverage " << at;
+            EXPECT_FLOAT_EQ(image.channel(x, y, depthZ), static_cast<float>(10 * imageX + imageY)) << "depth.Z " << at;
+        }
+    }
+}
+
+// Independent oracle for the composite's RGBA projection. The background is the
+// multilayer root RGBA (1.0 alpha) and the foreground is the data-only fixture:
+// no primary RGB (its roles read 0, never an invented projection), stored alpha
+// 0.625 inside its (2,2)-(5,5) data window and transparent black outside it
+// (issue #88). Out.rgb = fg.a*fg.rgb + (1-fg.a)*bg.rgb, out.a = fg.a + (1-fg.a)*bg.a.
+[[nodiscard]] std::array<float, 4> mergeOverOracle(int x, int y) {
+    constexpr std::array<float, 4> kBackground{0.25F, 0.5F, 0.75F, 1.0F};
+    const bool foregroundHoldsData = x >= 2 && x <= 5 && y >= 2 && y <= 5;
+    const float foregroundAlpha = foregroundHoldsData ? 0.625F : 0.0F;
+    return {(1.0F - foregroundAlpha) * kBackground[0], (1.0F - foregroundAlpha) * kBackground[1],
+            (1.0F - foregroundAlpha) * kBackground[2], foregroundAlpha + (1.0F - foregroundAlpha) * kBackground[3]};
+}
+
+// The node identities of the two-source graph: the two real fixtures, their
+// Merge and (optionally) the separable Blur over the composite.
+struct NamedChannelGraph {
+    NodeId merge = kInvalidNode;
+    NodeId blur = kInvalidNode;
+    NodeId output = kInvalidNode;
+};
+
+[[nodiscard]] NamedChannelGraph buildNamedChannelGraph(Document& doc, bool withBlur) {
+    NamedChannelGraph graph;
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+    doc.name = withBlur ? "named-channel-blur" : "named-channel-merge";
+    CommandStack stack(doc);
+    stack.push(setSourceCommand(
+        "primary", SourceReference{(std::filesystem::path{NEMO_CHANNEL_FIXTURE_DIR} / "multilayer-b.exr").string()}));
+    stack.push(setSourceCommand(
+        "secondary", SourceReference{(std::filesystem::path{NEMO_CHANNEL_FIXTURE_DIR} / "data-a.exr").string()}));
+    const NodeId primary = rootGraph(doc).addNode("source", "primary");
+    rootGraph(doc).setParam(primary, "source", std::string{"primary"});
+    rootGraph(doc).setParam(primary, "inputTransform", ChoiceValue{"raw"});
+    const NodeId secondary = rootGraph(doc).addNode("source", "secondary");
+    rootGraph(doc).setParam(secondary, "source", std::string{"secondary"});
+    rootGraph(doc).setParam(secondary, "inputTransform", ChoiceValue{"raw"});
+    graph.merge = rootGraph(doc).addNode("merge", "merge");
+    graph.output = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({primary, 0}, {graph.merge, 0});
+    (void)rootGraph(doc).connect({secondary, 0}, {graph.merge, 1});
+    NodeId tail = graph.merge;
+    if (withBlur) {
+        graph.blur = rootGraph(doc).addNode("blur", "blur");
+        rootGraph(doc).setParam(graph.blur, "size", 4.0);
+        rootGraph(doc).setParam(graph.blur, "channels", ChoiceValue{"RGBA"});
+        (void)rootGraph(doc).connect({graph.merge, 0}, {graph.blur, 0});
+        tail = graph.blur;
+    }
+    (void)rootGraph(doc).connect({tail, 0}, {graph.output, 0});
+    return graph;
+}
+
+}  // namespace
+
+TEST(Effect, MergePreservesPrimaryNamedAuxiliaryChannels) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    Document doc;
+    const NamedChannelGraph graph = buildNamedChannelGraph(doc, /*withBlur=*/false);
+    // The region spans both sides of the foreground's (2,2)-(5,5) data window, so
+    // the composite, the preserved coordinates and the foreground's colliding
+    // values share one read-back.
+    const Region region{2, 3, 5, 4};
+    const EvaluationRequest request = roiRequestFor(doc, region, kChannelFixtureWidth, kChannelFixtureHeight, 0);
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    eval::GpuEvaluation native =
+        evaluateGpu(doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr, &sources);
+    const CpuImage image = native.readBack(graph.output, *boot.device, *boot.allocator);
+
+    expectMultilayerInventory(image, "merge output");
+    expectMultilayerAuxiliaryPlanes(image, region, "merge output");
+    for (int y = 0; y < region.height; ++y) {
+        for (int x = 0; x < region.width; ++x) {
+            const std::array<float, 4> expected = mergeOverOracle(region.x + x, region.y + y);
+            for (std::size_t channel = 0; channel < expected.size(); ++channel) {
+                EXPECT_NEAR(image.pixel(x, y)[channel], expected[channel], kMergeTolerance)
+                    << "merge pixel (" << region.x + x << "," << region.y + y << ") channel " << channel;
+            }
+        }
+    }
+
+    media::ImageSourceProvider provider;
+    const CpuEvaluation cpu = evaluateCpu(doc, request, nullptr, &provider);
+    expectImagesClose(cpu.image, image, kMergeTolerance, "merge composite cpu vs slang");
+    // The CPU reference resolves the same authored formulas through its own
+    // preservation rule, so neither executor's meaning is assumed from the other.
+    expectMultilayerInventory(cpu.image, "merge cpu output");
+    expectMultilayerAuxiliaryPlanes(cpu.image, region, "merge cpu output");
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, SeparableBlurScratchPreservesNamedAuxiliaryChannelsWhileRgbaFilters) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    Document doc;
+    const NamedChannelGraph graph = buildNamedChannelGraph(doc, /*withBlur=*/true);
+    // The same region as the merge case: a real ROI (the scratch pass covers
+    // these columns and the input's rows, never the whole frame), inside the
+    // filter's support of the image border so a blurred depth ramp cannot land
+    // on the authored values.
+    const Region region{2, 3, 5, 4};
+    const EvaluationRequest request = roiRequestFor(doc, region, kChannelFixtureWidth, kChannelFixtureHeight, 0);
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    eval::GpuEvaluation native =
+        evaluateGpu(doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr, &sources);
+    const CpuImage image = native.readBack(graph.output, *boot.device, *boot.allocator);
+
+    media::ImageSourceProvider provider;
+    const CpuImage cpuImage = evaluateCpu(doc, request, nullptr, &provider).image;
+
+    // The separable filter's scratch pass covers the request's columns and the
+    // input's rows only, so a wrong scratch origin moves every auxiliary value:
+    // the depth ramp turns that into a hard failure. The planes must not be
+    // filtered either — clamp-to-edge would pull the ramp at this region's
+    // borders — and the foreground's colliding values must not appear.
+    expectMultilayerInventory(image, "blur output");
+    expectMultilayerAuxiliaryPlanes(image, region, "blur output");
+
+    // The composited RGBA still runs the declared effect math: the native filter
+    // agrees with the CPU reference to the blur's declared tolerance.
+    expectImagesClose(cpuImage, image, kBlurTolerance34, "blur cpu vs slang");
+    // ... and that comparison is discriminating rather than a shared no-op: the
+    // foreground's data window gives the composited RGB a step the filter must
+    // smooth, so the filtered result leaves the unfiltered composite far beyond
+    // that tolerance.
+    float smoothed = 0.0F;
+    for (int y = 0; y < region.height; ++y) {
+        for (int x = 0; x < region.width; ++x) {
+            smoothed =
+                std::max(smoothed, std::fabs(cpuImage.pixel(x, y)[0] - mergeOverOracle(region.x + x, region.y + y)[0]));
+        }
+    }
+    EXPECT_GT(smoothed, 10.0F * kBlurTolerance34) << "the native blur must really filter the composited RGBA";
     expectValidationClean(*boot.instance);
 }

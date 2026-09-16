@@ -5,12 +5,12 @@
 //
 // Converts one decoded NV12 frame (Vulkan video decode output, two planes:
 // Y plane 8-bit, interleaved CbCr plane 8-bit) into the application image
-// contract: an R32_SFLOAT native channel-plane image (issue #90) of extent
-// (width, 4*height) holding the R, G, B and A planes of the frame, straight
-// alpha, scene-linear linear-light values (spec section 10.4). The frame is
-// decoded into Vulkan-resident images on the application device; this kernel
-// keeps the pixels on device — decode to contract conversion never touches the
-// CPU.
+// contract: the native packed-image representation of a four-channel frame
+// (issue #98), i.e. an RGBA32F image of logical extent (width, height) holding
+// the R, G, B and A components of each pixel, straight alpha, scene-linear
+// light values (spec section 10.4). The frame is decoded into Vulkan-resident
+// images on the application device; this kernel keeps the pixels on device —
+// decode to contract conversion never touches the CPU.
 //
 // Color (issue #21): the conversion is declared in two steps, because
 // matrix/range expansion alone yields NONLINEAR R′G′B′, never
@@ -30,15 +30,16 @@
 //                      param0 = (transfer, range, matrix, 0)
 //   set 1, binding 0 : Y plane  (sampler2D, R8)
 //   set 1, binding 1 : UV plane (sampler2D, R8G8)
-//   set 2, binding 0 : out_planes RWTexture2D<float> (R32_SFLOAT storage image
-//                      of extent (width, 4*height); plane c starts at row
-//                      c*height)
+//   set 2, binding 0 : out_color RWTexture2D<float4> (packed RGBA32F storage
+//                      image of extent (width, height); the formatless
+//                      destination the shared packed-channel store addresses,
+//                      written as one vector per logical pixel)
 // dependencies:
 //   region: output pixel depends on its own chroma sample (no neighborhood).
-//   channels: R,G,B written; the A plane is opaque 1.0 (video has no alpha).
+//   channels: R,G,B written; A is opaque 1.0 (video has no alpha).
 //   temporal: none.
 // quality_modes: 1
-// precision: r32f planes (full float)
+// precision: packed rgba32f (four components per texel)
 
 [[vk::binding(0, 0)]]
 cbuffer EffectUniforms {
@@ -58,7 +59,7 @@ Sampler2D luma;
 Sampler2D chroma;
 
 [[vk::binding(0, 2)]]
-RWTexture2D<float> out_planes;
+RWTexture2D<float4> out_color;
 
 // Y′CbCr → nonlinear R′G′B′ by the declared range and matrix.
 float3 ycbcrToRgbPrime(float y, float u, float v, uint range, uint matrix)
@@ -117,16 +118,9 @@ void main(uint3 tid : SV_DispatchThreadID)
     float3 linear = float3(transferToLinear(prime.r, uint(param0.x)),
                            transferToLinear(prime.g, uint(param0.x)),
                            transferToLinear(prime.b, uint(param0.x)));
-    // Native channel planes (issue #90): the destination is an R32_SFLOAT image
-    // of extent (width, 4*height) whose plane c starts at device row c*height,
-    // so the four RGBA planes of this frame are written at (x, y + c*meta.y).
-    // Only the store layout changed with the contract; every sample value is
-    // exactly what the previous RGBA32F write produced, alpha included.
-    const int planeHeight = int(meta.y);
-    const int column = int(p.x);
-    const int row = int(p.y);
-    out_planes[uint2(column, row)] = linear.r;
-    out_planes[uint2(column, row + planeHeight)] = linear.g;
-    out_planes[uint2(column, row + 2 * planeHeight)] = linear.b;
-    out_planes[uint2(column, row + 3 * planeHeight)] = 1.0;
+    // The four-channel native representation is one packed RGBA texel per
+    // logical pixel (issue #98), so the frame is written as one vector store —
+    // the same store the pre-#90 RGBA contract used, at the same logical
+    // coordinate. Values are bit-identical to the earlier RGBA32F write.
+    out_color[p] = float4(linear, 1.0);
 }

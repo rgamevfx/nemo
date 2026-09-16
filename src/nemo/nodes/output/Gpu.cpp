@@ -21,11 +21,12 @@ layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v6): a sample
+    // The described image's data support (native binding contract v7): a sample
     // outside it is transparent black, never an upstream value carried there,
-    // and every plane — auxiliary ones included — is initialized (issue #90).
+    // and every stored channel — auxiliary ones included — is initialized (issue
+    // #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y), channels.y, channels.x);
         return;
     }
     // The upstream result may cover a wider, differently anchored or smaller
@@ -36,11 +37,12 @@ void main() {
     ivec2 q = ivec2(p) + inputGeometry[0].regionAndOffset.zw;
     ivec2 extent = ivec2(inputGeometry[0].extent.xy);
     bool inside = q.x >= 0 && q.y >= 0 && q.x < extent.x && q.y < extent.y;
-    vec4 value = inside ? gpuLoadRgba(in_color, q, inputGeometry[0].rgba, extent.y) : vec4(0.0);
-    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), value);
+    vec4 value = inside ? gpuLoadRgba(in_color, q, inputGeometry[0].rgba, extent.y,
+                                      inputGeometry[0].channels.y) : vec4(0.0);
     // The adapter carries every described channel, not just the four roles
     // (issue #90).
-    gpuPreserveAuxLattice(out_color, ivec2(p), int(meta2.y), in_color, extent.y, channels.x);
+    gpuStorePixel(out_color, ivec2(p), int(meta2.y), channels.x, channels.y, channels.z, rgba, value, in_color,
+                  extent.y, inputGeometry[0].channels.y);
 }
 )GLSL";
 

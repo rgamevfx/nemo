@@ -62,23 +62,18 @@ const char* portKindName(nemo::PortKind kind) {
     return "image";
 }
 
-// The layer name the display selectors state (issue #90). The channel-name
-// convention itself is core's (`nemo::channelLayer`/`channelLeaf`): a stored
-// name's layer is the prefix before its last dot and a root channel has none.
-// Root channels are addressed by the schema's default layer name — the same
-// spelling the Shuffle parameters default to — so a file writing "R" and a file
-// writing "rgba.R" are both addressed as layer "rgba" without renaming either.
-constexpr char kRootLayerName[] = "rgba";
-
-QString displayLayerName(const std::string& channel) {
-    const auto layer = nemo::channelLayer(channel);
-    return layer.empty() ? QString::fromLatin1(kRootLayerName) : QString::fromStdString(std::string{layer});
+// The layer name the display selectors state (issues #90, #98). The convention
+// itself is shared with the worker that resolves a view (`eval::viewLayerName`):
+// a stored name's layer is the prefix before its last dot and a root channel is
+// addressed by the schema's default layer name — the same spelling the Shuffle
+// parameters default to — so a file writing "R" and a file writing "rgba.R" are
+// both addressed as layer "rgba" without renaming either.
+QString rootLayerName() {
+    return QString::fromStdString(std::string{eval::kViewRootLayerName});
 }
 
-// True when `name` is a root-spelled channel of the nominated layer: the exact
-// membership test both the viewer selectors and the Shuffle groups use.
-bool channelInLayer(const std::string& channel, const QString& layer) {
-    return displayLayerName(channel) == layer;
+QString displayLayerName(const std::string& channel) {
+    return QString::fromStdString(eval::viewLayerName(channel));
 }
 
 QVariant parameterValueVariant(const nemo::ParameterValue& value) {
@@ -1532,6 +1527,13 @@ void ViewerController::refreshViewerTarget() {
         return;
     viewerTargetNode_ = target;
     viewerTargetName_ = name;
+    // The described channels of the frame on screen belong to the PREVIOUS
+    // target: the selectors state nothing until the new target's own frame
+    // arrives, instead of publishing another target's channels (issue #98).
+    if (targetDescription_) {
+        targetDescription_.reset();
+        emit displayChanged();
+    }
     emit viewerTargetChanged();
 }
 
@@ -1569,6 +1571,23 @@ void ViewerController::setViewerContext(const QString& role, const QString& targ
 }
 
 void ViewerController::refreshContextTarget() {
+    // The described channels of the frame on screen belong to the target that
+    // produced them: a routed target change states nothing until the new
+    // target's own frame arrives, while a clock tick in the same context keeps
+    // the description it already has (issue #98, no stale publication).
+    const ContextRole previousRole = contextRole_;
+    const NodeId previousTarget = contextTargetNode_;
+    const std::string previousSourceKey = contextSourceKey_;
+    resolveContextTarget();
+    if (previousRole == contextRole_ && previousTarget == contextTargetNode_ && previousSourceKey == contextSourceKey_)
+        return;
+    if (targetDescription_) {
+        targetDescription_.reset();
+        emit displayChanged();
+    }
+}
+
+void ViewerController::resolveContextTarget() {
     contextTargetNode_ = kInvalidNode;
     contextUnavailable_.clear();
     contextSourceKey_.clear();
@@ -1759,7 +1778,7 @@ void ViewerController::documentChanged() {
 }
 
 void ViewerController::invalidateRequest() {
-    lastRequest_.reset();
+    lastIntent_.reset();
     pending_ = false;
     outstandingRequest_ = 0;
     outdated_ = static_cast<bool>(presentation_);
@@ -3397,8 +3416,11 @@ void ViewerController::requestRange(int first, int last) {
         fail(QStringLiteral("cache range requires a viewer destination"));
         return;
     }
-    if (!lastRequest_) {
-        fail(QStringLiteral("cache range requires a current viewer request"));
+    // The range addresses the same coverage, sampling scale and channels the
+    // displayed frame was resolved with: the worker stated that request against
+    // this view, so the range needs no demand of its own.
+    if (!presentation_) {
+        fail(QStringLiteral("cache range requires a displayed viewer frame"));
         return;
     }
     if (frameCount_ > 0) {
@@ -3413,8 +3435,8 @@ void ViewerController::requestRange(int first, int last) {
     emit schedulerChanged();
     // Range work is represented as one lazy range per destination, so a panel
     // range must not collide with the global Cache stream.
-    if (!runtime_->requestRange(session_.snapshot(), *lastRequest_, first, last, rangeGeneration_, *destination_,
-                                session_.colorConfigPath())) {
+    if (!runtime_->requestRange(session_.snapshot(), presentation_->request, first, last, rangeGeneration_,
+                                *destination_, session_.colorConfigPath())) {
         status_ = QStringLiteral("Cache range admission rejected; see scheduler drop count");
         emit statusChanged();
         pollScheduler();
@@ -3470,24 +3492,63 @@ void ViewerController::receive() {
         return;
     pollScheduler();
     if (auto* failure = std::get_if<ViewerFailure>(&*result)) {
-        if (failure->requestId == generation_ || failure->requestId == 0)
-            fail(QString::fromStdString(failure->message));
+        if (failure->requestId != generation_ && failure->requestId != 0)
+            return;
+        outstandingRequest_ = 0;
+        fail(QString::fromStdString(failure->message));
+    } else if (auto* unavailable = std::get_if<ViewerUnavailableView>(&*result)) {
+        // The same freshness guard as a frame: this answer belongs to the
+        // request this panel still owns and to the snapshot it was rendered
+        // from, so a refusal cannot publish metadata from a superseded view.
+        if (unavailable->requestId != generation_ || unavailable->revision != submittedRevision_)
+            return;
+        outstandingRequest_ = 0;
+        // The view addresses nothing the CURRENT frame carries (an unavailable
+        // layer or channel). The answer carries the description that refused
+        // it, so the panel adopts this frame's channels before it states the
+        // reason: the selectors offer a layer this frame really has — a
+        // sequence or source whose channels changed is recoverable by selecting
+        // one — while the frame on screen, which this selection does not
+        // produce, is dropped.
+        const bool descriptionChanged =
+            !targetDescription_ || !(targetDescription_->description == unavailable->description);
+        targetDescription_ = TargetDescription{unavailable->target, unavailable->localTime, unavailable->revision, true,
+                                               unavailable->description};
+        const auto aspect = static_cast<double>(unavailable->description.pixelAspect);
+        if (pixelAspect_ != aspect) {
+            pixelAspect_ = aspect;
+            emit sourceChanged();
+        }
+        if (descriptionChanged)
+            emit displayChanged();
+        const bool hadPresentation = static_cast<bool>(presentation_);
+        // The submitted-view identity is forgotten, so the next refresh retries
+        // the view instead of skipping it as already answered.
+        invalidateRequest();
+        presentation_.reset();
+        fail(QString::fromStdString(unavailable->message));
+        if (hadPresentation)
+            emit frameArrived();
+        return;
     } else if (auto* described = std::get_if<ViewerTargetDescription>(&*result)) {
-        // The worker resolved the target's authored description (issue #88):
-        // the memo becomes answered and the request is re-resolved against the
-        // actual format. The identity was recorded when the request was issued,
-        // so an answer can never frame a different target or revision.
+        // A metadata-only answer for a panel that has no viewport to resolve:
+        // the memo becomes answered and the refresh continues — which renders
+        // the view if a viewport appeared meanwhile, and states no question at
+        // all if it has not.
         if (described->requestId != generation_)
             return;
         outstandingRequest_ = 0;
-        if (targetDescription_) {
+        if (targetDescription_ && targetDescription_->target == renderTargetNode()) {
             targetDescription_->description = described->description;
             targetDescription_->answered = true;
         }
+        const auto aspect = static_cast<double>(described->description.pixelAspect);
+        if (pixelAspect_ != aspect) {
+            pixelAspect_ = aspect;
+            emit sourceChanged();
+        }
         // The described channels are what the layer and channel selectors offer
-        // (issue #90), so the menus are re-stated with the answer; a selection
-        // this target does not carry is reported by `layerReason` rather than
-        // repointed to a layer that exists.
+        // (issue #90), so the menus are re-stated with the answer.
         emit displayChanged();
         pending_ = false;
         refreshRequest();
@@ -3538,20 +3599,27 @@ void ViewerController::receive() {
         if (frame->requestId != generation_ || frame->revision != submittedRevision_)
             return;
         outstandingRequest_ = 0;
-        // The delivered frame carries the exact description it was produced
-        // from. Recording it (with the local time it was rendered for) makes
-        // the memo answer for that frame, so returning to a frame reuses the
-        // geometry that frame actually had instead of a neighbouring frame's.
-        if (targetDescription_ && targetDescription_->target == frame->request.output &&
-            !(targetDescription_->description == frame->description)) {
-            targetDescription_->description = frame->description;
-            targetDescription_->localTime = frame->request.localTime;
-        }
+        // The delivered frame states the description it was actually produced
+        // from (issue #98): the layer and channel selectors, the layer reason
+        // and the display fallback read this memo, so the panel offers exactly
+        // the channels of the frame on screen. Resolution itself happened on
+        // the worker, against this same description.
+        const bool descriptionChanged = !targetDescription_ || !(targetDescription_->description == frame->description);
+        targetDescription_ = TargetDescription{frame->request.output, frame->request.localTime, frame->revision, true,
+                                               frame->description};
         presentation_ = std::move(frame);
         pending_ = false;
         outdated_ = false;
         effectiveScale_ = presentation_->request.samplingScale;
+        const auto aspect = static_cast<double>(presentation_->description.pixelAspect);
+        if (pixelAspect_ != aspect) {
+            pixelAspect_ = aspect;
+            emit sourceChanged();
+        }
         error_.clear();
+        // The status line states what is on screen for evidence and for the
+        // panel's own states; it is never presented over the media while a
+        // request is in flight.
         status_ = QStringLiteral("Displayed %1x%2, 1:%3, frame %4; %5; %6")
                       .arg(presentation_->frame.width)
                       .arg(presentation_->frame.height)
@@ -3560,6 +3628,8 @@ void ViewerController::receive() {
                       .arg(presentation_->cacheHit ? QStringLiteral("compressed cache") : QStringLiteral("live render"))
                       .arg(sourceDescription_);
         emit effectiveScaleChanged();
+        if (descriptionChanged)
+            emit displayChanged();
         emit frameArrived();
         emit statusChanged();
         // Playback advances on the displayed frame, never on a timer tick: the
@@ -3618,7 +3688,7 @@ void ViewerController::refreshRequest() {
             const bool hadPresentation = static_cast<bool>(presentation_);
             forgetProbedMedia();
             presentation_.reset();
-            lastRequest_.reset();
+            lastIntent_.reset();
             pending_ = false;
             outstandingRequest_ = 0;
             outdated_ = false;
@@ -3661,7 +3731,7 @@ void ViewerController::refreshRequest() {
         if (target == kInvalidNode) {
             const bool hadPresentation = static_cast<bool>(presentation_);
             presentation_.reset();
-            lastRequest_.reset();
+            lastIntent_.reset();
             pending_ = false;
             outstandingRequest_ = 0;
             outdated_ = false;
@@ -3671,58 +3741,11 @@ void ViewerController::refreshRequest() {
                 emit frameArrived();
             return;
         }
-        // The target's ACTUAL described output arrives from the worker before
-        // any request is built (issue #88): framing reads the authored format
-        // stated for THIS frame's local time — geometry and format may be
-        // animated — instead of a request-global canvas or a GUI-thread media
-        // probe. The answer is memoized for exactly one target identity and
-        // local time, so a zoom or pan in the same frame costs no round trip
-        // while a frame change asks again for its own description.
-        const bool sameDescription = targetDescriptionMatches(targetNetwork, target, sourceKey, revision, frame_);
-        // Viewport/density changes do not change authored metadata. Keep its
-        // admitted query; its answer will render the latest view state.
-        if (sameDescription && !targetDescription_->answered && outstandingRequest_ != 0)
-            return;
-        if (!sameDescription || !targetDescription_->answered) {
-            const bool hadPresentation = static_cast<bool>(presentation_);
-            TargetDescription pending;
-            pending.network = targetNetwork;
-            pending.target = target;
-            pending.sourceKey = sourceKey;
-            pending.revision = revision;
-            pending.localTime = frame_;
-            targetDescription_ = std::move(pending);
-            pending_ = true;
-            outdated_ = hadPresentation;
-            generation_ = ++nextRequestId_;
-            submittedRevision_ = revision;
-            status_ = QStringLiteral("Describing %1")
-                          .arg(viewerTargetName_.isEmpty() ? QStringLiteral("viewer target") : viewerTargetName_);
-            emit statusChanged();
-            outstandingRequest_ = runtime_->describe(document, descriptionRequest(targetNetwork, target), generation_,
-                                                     *destination_, session_.colorConfigPath())
-                                      ? generation_
-                                      : 0;
-            if (outstandingRequest_ == 0)
-                fail(QStringLiteral("Viewer target description admission rejected"));
-            pollScheduler();
-            return;
-        }
-        auto channels = resolveChannelRequest();
-        if (channels.empty() || std::any_of(channels.begin(), channels.end(), [&](const auto& channel) {
-                return !hasChannel(targetDescription_->description.channels, channel);
-            })) {
-            const bool hadPresentation = static_cast<bool>(presentation_);
-            invalidateRequest();
-            presentation_.reset();
-            fail(channels.empty() ? layerReason()
-                                  : QStringLiteral("Channel '%1' is unavailable in layer '%2'").arg(channel_, layer_));
-            if (hadPresentation)
-                emit frameArrived();
-            return;
-        }
+        // The panel's media probe is a lifecycle step, not a per-frame one: it
+        // learns the source's length and decode selection once per reference.
+        // The render's own geometry comes from the frame's described output, so
+        // this is deliberately not a second framing source.
         const auto source = document.sources.find(sourceKey);
-        bool mediaReady = false;
         if (source == document.sources.end()) {
             if (!sourceSize_.isEmpty() || !probedSource_.path.empty())
                 forgetProbedMedia();
@@ -3730,9 +3753,10 @@ void ViewerController::refreshRequest() {
             const auto& reference = source->second;
             // The key is part of the probed identity: two keys can name the
             // same path and revision, and a retargeted Read must re-probe.
-            mediaReady = !sourceSize_.isEmpty() && probeSourceKey_ == sourceKey &&
-                         reference.path == probedSource_.path && reference.revision == probedSource_.revision &&
-                         reference.interpretation == probedSource_.interpretation;
+            const bool mediaReady = !sourceSize_.isEmpty() && probeSourceKey_ == sourceKey &&
+                                    reference.path == probedSource_.path &&
+                                    reference.revision == probedSource_.revision &&
+                                    reference.interpretation == probedSource_.interpretation;
             if (!mediaReady) {
                 // Probe and interactive render share one scheduler slot, so a
                 // probe in flight must be the only queued work. The render
@@ -3740,7 +3764,7 @@ void ViewerController::refreshRequest() {
                 sourceSize_ = {};
                 frameCount_ = -1;
                 pending_ = true;
-                status_ = QStringLiteral("Probing %1").arg(QString::fromStdString(reference.path));
+                status_.clear();
                 emit sourceChanged();
                 emit statusChanged();
                 generation_ = ++nextRequestId_;
@@ -3754,88 +3778,77 @@ void ViewerController::refreshRequest() {
                 return;
             }
         }
-        if (viewport_.isEmpty())
-            return;
-        // Framing is the described output's: the actual authored format and
-        // pixel aspect of what this target produces, never the request-global
-        // canvas and never the media probe's size.
-        const auto framing = targetFraming();
-        if (!framing) {
-            // The target's description carries no image format. Nothing is
-            // inferred for it — no canvas stands in for source geometry that
-            // could not be described. A previously displayed frame stays (it is
-            // marked outdated) so the panel does not blank out mid-edit.
-            const bool hadPresentation = static_cast<bool>(presentation_);
-            pending_ = false;
-            outstandingRequest_ = 0;
-            outdated_ = hadPresentation;
-            error_ = QStringLiteral("Viewer target '%1' has no described image format")
-                         .arg(viewerTargetName_.isEmpty() ? QStringLiteral("target") : viewerTargetName_);
-            status_ = error_;
+        // A panel with no measured viewport has no view to resolve, so it is a
+        // metadata-only consumer (a routed canvas, a panel that is not laid out
+        // yet): what it needs is the current frame's described format, and that
+        // is exactly the worker's description answer — no pixels, no device
+        // work, no view. Once a viewport exists the same panel renders through
+        // one view intent. The answer is memoized per target/time/revision, so
+        // a repeated refresh states no new question.
+        if (viewport_.isEmpty()) {
+            if (targetDescriptionAnswers(target, revision, frame_) || outstandingRequest_ != 0)
+                return;
+            pending_ = true;
+            status_.clear();
+            generation_ = ++nextRequestId_;
+            submittedRevision_ = revision;
+            targetDescription_ = TargetDescription{target, frame_, revision, false, {}};
             emit statusChanged();
+            outstandingRequest_ = runtime_->describe(document, descriptionRequest(targetNetwork, target), generation_,
+                                                     *destination_, session_.colorConfigPath())
+                                      ? generation_
+                                      : 0;
+            // A rejected admission leaves nothing outstanding, so a later
+            // refresh submits again instead of waiting for an answer that was
+            // never queued.
+            if (outstandingRequest_ == 0)
+                pending_ = false;
+            pollScheduler();
             return;
         }
-        const int width = framing->width;
-        const int height = framing->height;
-        if (pixelAspect_ != framing->pixelAspect) {
-            pixelAspect_ = framing->pixelAspect;
-            emit sourceChanged();
-        }
-        const auto mode = mode_ == "full"      ? ViewerResolution::Full
-                          : mode_ == "half"    ? ViewerResolution::Half
-                          : mode_ == "quarter" ? ViewerResolution::Quarter
-                                               : ViewerResolution::Auto;
-        EvaluationRequest request;
-        request.network = targetNetwork;
-        request.output = target;
-        request.localTime = frame_;
-        request.fullWidth = width;
-        request.fullHeight = height;
-        request.region = {0, 0, width, height};
-        // The selected layer's real channel names (issue #90), or empty for
-        // "every channel the target names": the delivered raster carries the
-        // whole resolved description either way, so this states which layer the
-        // panel is looking at rather than a pixel-work optimization. The
-        // presentation-only role isolation is deliberately NOT part of the
-        // request, so isolating a channel never changes the evaluated frame.
-        request.channels = std::move(channels);
-        nemo::validateRequestDomain(request);
-        request.samplingScale =
-            policy_.resolve(mode, width, height, pixelAspect_, viewport_.width(), viewport_.height(), zoom_);
-        // Coverage of the request. Whole-frame mode deliberately ignores the
-        // visible region: the request then names the same domain at every pan
-        // and zoom, which is what a caller that wants one coverage-independent
-        // result asks for. The sampling mode and the view the request was
-        // computed from are retained either way.
-        Region coverage;
-        if (forceFullFrame_) {
-            coverage = {0, 0, width, height};
-        } else {
-            const auto fit = aspectFit(width, height, pixelAspect_, viewport_.width(), viewport_.height());
-            const double sx = fit.width / width * zoom_;
-            const double sy = fit.height / height * zoom_;
-            const double visibleWidth = std::min<double>(width, viewport_.width() / sx);
-            const double visibleHeight = std::min<double>(height, viewport_.height() / sy);
-            const double centerX = std::clamp(width / 2.0 + pan_.x(), visibleWidth / 2.0, width - visibleWidth / 2.0);
-            const double centerY =
-                std::clamp(height / 2.0 + pan_.y(), visibleHeight / 2.0, height - visibleHeight / 2.0);
-            const int x = std::max(0, static_cast<int>(std::floor(centerX - visibleWidth / 2)));
-            const int y = std::max(0, static_cast<int>(std::floor(centerY - visibleHeight / 2)));
-            const int right = std::min(width, static_cast<int>(std::ceil(centerX + visibleWidth / 2)));
-            const int bottom = std::min(height, static_cast<int>(std::ceil(centerY + visibleHeight / 2)));
-            coverage = {x, y, right - x, bottom - y};
-        }
-        request.region = coverage;
-        // One canonical coverage reaches the executor, the cache and the panel:
-        // the region is rounded out to the image-space sampling lattice and
-        // never shrinks, so a region a cached frame carries always contains the
-        // raster this request asks for. Full-domain coverage is already on the
-        // lattice, so the sampling mode keeps naming exactly what it named.
-        request = nemo::canonicalizeRequest(request);
-        if (lastRequest_ && *lastRequest_ == request && lastRevision_ == revision)
+        // A metadata-only answer for exactly this target, frame and revision is
+        // already in flight: this view IS the one it answers, so the render
+        // waits for it (the answer resumes the refresh) instead of replacing a
+        // queued descriptor on the way — no work is discarded, and the panel
+        // renders immediately after the metadata it asked for.
+        if (outstandingRequest_ != 0 && targetDescription_ && !targetDescription_->answered &&
+            targetDescription_->target == target && targetDescription_->localTime == frame_ &&
+            targetDescription_->revision == revision)
             return;
-        lastRequest_ = request;
+        // One immutable view intent is the whole statement this panel makes
+        // (issue #98). The worker resolves it against the CURRENT frame's
+        // described image — the authored format for exactly this local time,
+        // the addressed layer/channel and the demand this view produces — and
+        // executes that same resolved plan, so no description round trip stands
+        // between a frame and its render and the panel never frames a view with
+        // a neighbouring frame's guess.
+        eval::ViewIntent intent;
+        intent.network = targetNetwork;
+        intent.target = target;
+        intent.localTime = frame_;
+        intent.mode = mode_ == "full"      ? ViewerResolution::Full
+                      : mode_ == "half"    ? ViewerResolution::Half
+                      : mode_ == "quarter" ? ViewerResolution::Quarter
+                                           : ViewerResolution::Auto;
+        intent.forceFullFrame = forceFullFrame_;
+        intent.zoom = zoom_;
+        intent.panX = pan_.x();
+        intent.panY = pan_.y();
+        intent.viewportWidth = viewport_.width();
+        intent.viewportHeight = viewport_.height();
+        intent.layer = layer_.toStdString();
+        intent.channel = channel_.toStdString();
+        // The identity this panel compares is the AUTHORED one: a request-owned
+        // media node is allocated fresh for each submission, while the routed
+        // source key and the view are what the panel actually asked for.
+        if (privateMediaSource)
+            intent.target = kInvalidNode;
+        if (lastIntent_ && *lastIntent_ == intent && lastRevision_ == revision)
+            return;
+        lastIntent_ = intent;
         lastRevision_ = revision;
+        if (privateMediaSource)
+            intent.target = target;
         const auto id = generation_ = ++nextRequestId_;
         // A published result carries the revision of the snapshot it was
         // rendered from, so remember exactly what was submitted.
@@ -3844,20 +3857,23 @@ void ViewerController::refreshRequest() {
         // free to try again instead of waiting for a result that was never
         // queued; pollScheduler() retries the rejected request.
         outstandingRequest_ =
-            runtime_->submit(document, request, id, *destination_, viewerChannel_, session_.colorConfigPath()) ? id : 0;
+            runtime_->submit(document, std::move(intent), id, *destination_, session_.colorConfigPath()) ? id : 0;
         if (outstandingRequest_ == 0)
             pending_ = true;
         outdated_ = static_cast<bool>(presentation_);
         error_.clear();
-        status_ = presentation_ ? QStringLiteral("Pending 1:%1; previous frame is outdated").arg(request.samplingScale)
-                                : QStringLiteral("Rendering 1:%1").arg(request.samplingScale);
+        // No transient progress text: a normal render states nothing over the
+        // media it is preparing (the owner-requested removal of the flashing
+        // node-name/progress overlay). Actionable states — an unbound Read, a
+        // missing target, a failed request, an unavailable layer — are
+        // published by their own branches above and by fail().
+        status_.clear();
         emit statusChanged();
         pollScheduler();
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
 }
-
 QRectF ViewerController::presentedRegion() const {
     if (!presentation_)
         return {};
@@ -3884,25 +3900,18 @@ std::optional<ViewerController::Framing> ViewerController::targetFraming() const
     if (!targetDescription_ || !targetDescription_->answered)
         return std::nullopt;
     const ImageDescription& described = targetDescription_->description;
-    // Only a format the TARGET's own description states frames the view. A
-    // description that carries no geometry (a Read whose header/media could not
-    // be described, a black-policy source) is NOT turned into an inferred
-    // canvas: the panel reports the failure and keeps whatever frame it already
-    // displayed, so no fabricated source geometry is ever presented as the
-    // target's format.
+    // Only a format the described frame states frames the view. A description
+    // that carries no geometry is NOT turned into an inferred canvas: the panel
+    // reports the failure and keeps whatever frame it already displayed, so no
+    // fabricated source geometry is ever presented as the target's format.
     if (hasNoImageFormat(described))
         return std::nullopt;
     return Framing{described.format.width, described.format.height, static_cast<double>(described.pixelAspect)};
 }
 
-bool ViewerController::targetDescriptionMatches(NetworkId network, NodeId target, const std::string& sourceKey,
-                                                std::uint64_t revision, std::int64_t localTime) const {
-    // Pending and answered descriptions share the same authored identity.
-    // A view change can reuse pending work, but time/target/revision changes
-    // must obtain a new description.
-    return targetDescription_ && targetDescription_->network == network && targetDescription_->target == target &&
-           targetDescription_->sourceKey == sourceKey && targetDescription_->revision == revision &&
-           targetDescription_->localTime == localTime;
+bool ViewerController::targetDescriptionAnswers(NodeId target, std::uint64_t revision, std::int64_t localTime) const {
+    return targetDescription_ && targetDescription_->answered && targetDescription_->target == target &&
+           targetDescription_->revision == revision && targetDescription_->localTime == localTime;
 }
 
 EvaluationRequest ViewerController::descriptionRequest(NetworkId network, NodeId target) const {
@@ -4042,40 +4051,14 @@ void ViewerController::setMarkOutFrame(int frame) {
 }
 QStringList ViewerController::layerChannels() const {
     QStringList result;
-    // The target's described channels are the only authority (issue #90): an
-    // unanswered or empty description names no channel, and the conventional
-    // RGBA spelling is never manufactured for it.
+    // The described image's channels are the only authority (issue #90): before
+    // an answer names them nothing does, and the conventional RGBA spelling is
+    // never manufactured for it.
     if (!targetDescription_ || !targetDescription_->answered)
         return result;
-    for (const auto& channel : targetDescription_->description.channels) {
-        if (channelInLayer(channel, layer_))
-            result.push_back(QString::fromStdString(channel));
-    }
+    for (const auto& channel : eval::viewLayerChannels(targetDescription_->description, layer_.toStdString()))
+        result.push_back(QString::fromStdString(channel));
     return result;
-}
-
-std::vector<std::string> ViewerController::resolveChannelRequest() {
-    const QStringList channels = layerChannels();
-    std::vector<std::string> names;
-    names.reserve(static_cast<std::size_t>(channels.size()));
-    for (const auto& channel : channels)
-        names.push_back(channel.toStdString());
-    viewerChannel_ = gpu::ViewerChannel::RGBA;
-    if (names.empty() || channel_ == QStringLiteral("RGBA"))
-        return names;
-    const std::string selected = channel_.toStdString();
-    if (channels.contains(channel_) && eval::resolveViewerProjection({}, names).applyViewingTransform) {
-        static constexpr std::array<gpu::ViewerChannel, 4> kRoles{gpu::ViewerChannel::Red, gpu::ViewerChannel::Green,
-                                                                  gpu::ViewerChannel::Blue, gpu::ViewerChannel::Alpha};
-        const auto roles = rgbaChannelIndices({&selected, 1});
-        for (std::size_t role = 0; role < roles.size(); ++role) {
-            if (roles[role] >= 0) {
-                viewerChannel_ = kRoles[role];
-                return names;
-            }
-        }
-    }
-    return {selected};
 }
 
 QStringList ViewerController::availableLayers() const {
@@ -4084,10 +4067,10 @@ QStringList ViewerController::availableLayers() const {
         if (!name.isEmpty() && !layers.contains(name))
             layers.push_back(name);
     };
-    append(QString::fromLatin1(kRootLayerName));
+    append(rootLayerName());
     if (targetDescription_ && targetDescription_->answered) {
-        for (const auto& channel : targetDescription_->description.channels)
-            append(displayLayerName(channel));
+        for (const auto& described : eval::viewDescribedLayers(targetDescription_->description))
+            append(QString::fromStdString(described));
     }
     // A selection made for another target stays stated (and reported as naming
     // nothing here) instead of being silently repointed to a layer that exists.
@@ -4104,21 +4087,11 @@ QStringList ViewerController::availableChannels() const {
 }
 
 QString ViewerController::layerReason() const {
+    // The one reason the worker also reports when a view addresses no channel
+    // (issue #98), computed from the described image this panel has.
     if (!targetDescription_ || !targetDescription_->answered)
         return QStringLiteral("Waiting for the target's described channels");
-    if (!layerChannels().isEmpty())
-        return QStringLiteral("Named channel layer to evaluate");
-    QStringList names;
-    for (const auto& channel : targetDescription_->description.channels) {
-        const QString name = displayLayerName(channel);
-        if (!names.contains(name))
-            names.push_back(name);
-    }
-    if (names.isEmpty())
-        return QStringLiteral("This target names no channel");
-    // The selection is kept and stated; no layer is silently substituted for it.
-    return QStringLiteral("Layer '%1' is unavailable in this target. Available: %2")
-        .arg(layer_, names.join(QStringLiteral(", ")));
+    return QString::fromStdString(eval::viewLayerReason(targetDescription_->description, layer_.toStdString()));
 }
 
 void ViewerController::setChannel(const QString& channel) {
@@ -4143,8 +4116,9 @@ void ViewerController::setChannel(const QString& channel) {
         return;
     channel_ = name;
     emit displayChanged();
-    // Even a presentation-only role change must resubmit the presentation copy.
-    lastRequest_.reset();
+    // Even a presentation-only role change resubmits: the isolation the view
+    // states is applied to the presentation copy of the next frame.
+    lastIntent_.reset();
     refreshRequest();
 }
 void ViewerController::setLayer(const QString& layer) {
@@ -4169,15 +4143,14 @@ void ViewerController::setLayer(const QString& layer) {
     if (channel_ != QStringLiteral("RGBA") && !layerChannels().contains(channel_)) {
         const QString previous = channel_;
         channel_ = QStringLiteral("RGBA");
-        viewerChannel_ = gpu::ViewerChannel::RGBA;
         status_ =
             QStringLiteral("Display channel '%1' is not in layer '%2'; showing the composite").arg(previous, layer_);
         emit statusChanged();
     }
     emit displayChanged();
-    // The request names the layer's channels, so this is an evaluated change:
-    // forgetting the last request is what makes the layer take effect.
-    lastRequest_.reset();
+    // The request names the layer, so this is an evaluated change: forgetting
+    // the last submitted view is what makes the layer take effect.
+    lastIntent_.reset();
     refreshRequest();
 }
 
@@ -4466,9 +4439,9 @@ bool ViewerController::advancePlayback() {
     const int next = frame_ >= outFrame_ ? inFrame_ : frame_ + 1;
     if (next == frame_) {
         // A one-frame loop re-requests the frame already displayed. The
-        // identical-request guard would skip that submission and stall the
-        // loop, so it is cleared for this advance only.
-        lastRequest_.reset();
+        // identical-view guard would skip that submission and stall the loop,
+        // so it is cleared for this advance only.
+        lastIntent_.reset();
     }
     setFrame(next);
     if (outstandingRequest_ == 0) {

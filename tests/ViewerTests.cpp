@@ -1261,6 +1261,51 @@ TEST(Viewer, StillImageFillMatchesCpuReference) {
     expectValidationClean(*boot.instance);
 }
 
+TEST(Viewer, FourNamedDataChannelsPreserveRequestedOrder) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const ImageScratchDir scratch;
+    ImageLayout layout;
+    layout.width = 4;
+    layout.height = 3;
+    layout.channels = {"depth.Z", "motion.u", "motion.v", "mask.coverage"};
+    layout.color = ColorInterpretation::Data;
+    CpuImage source(layout);
+    for (int y = 0; y < layout.height; ++y) {
+        for (int x = 0; x < layout.width; ++x) {
+            source.setChannel(x, y, 0, static_cast<float>(10 * x + y + 3));
+            source.setChannel(x, y, 1, 0.25F * static_cast<float>(x));
+            source.setChannel(x, y, 2, -0.5F * static_cast<float>(y));
+            source.setChannel(x, y, 3, 0.25F);
+        }
+    }
+    const std::string path = scratch.file("four-data-channels.exr");
+    media::writeImage(path, source, media::OutputPrecision::Float32);
+    auto composition = makeSourceComposition("plate", SourceReference{path}, false);
+    auto& graph = rootGraph(composition.doc);
+    graph.setParam(graph.nodeByName("plate")->id, "inputTransform", ChoiceValue{"raw"});
+    auto request = stillRequest(composition.doc, {0, 0, 4, 3}, 4, 3, 0);
+    request.channels = {"motion.v", "depth.Z", "mask.coverage", "motion.u"};
+    eval::ViewerFrame frame;
+    {
+        eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+        frame = session.render(composition.doc, request);
+    }
+    const auto pixels = readViewerFrame(frame, boot);
+    ASSERT_EQ(pixels.width(), 4);
+    ASSERT_EQ(pixels.height(), 3);
+    for (int y = 0; y < pixels.height(); ++y) {
+        for (int x = 0; x < pixels.width(); ++x) {
+            const auto pixel = pixels.pixel(x, y);
+            EXPECT_FLOAT_EQ(pixel[0], -0.5F * static_cast<float>(y));
+            EXPECT_FLOAT_EQ(pixel[1], static_cast<float>(10 * x + y + 3));
+            EXPECT_FLOAT_EQ(pixel[2], 0.25F);
+            EXPECT_FLOAT_EQ(pixel[3], 0.25F * static_cast<float>(x));
+        }
+    }
+    expectValidationClean(*boot.instance);
+}
+
 // (b) samplingScale halves the raster; each reduced pixel is the nearest
 // source pixel the source-fill contract maps it to, and CPU and GPU agree.
 TEST(Viewer, StillImageSamplingScaleNearestSourcePixel) {

@@ -40,25 +40,19 @@ void ViewerRuntime::bootstrap(const std::vector<std::string>& extensions, const 
     worker_ = std::thread([this, shaders] { run(shaders); });
 }
 
-bool ViewerRuntime::submit(Document document, EvaluationRequest request, std::uint64_t id,
-                           eval::ViewerDestination destination, gpu::ViewerChannel channel,
-                           std::string colorConfigPath) {
+bool ViewerRuntime::submit(Document document, eval::ViewIntent intent, std::uint64_t id,
+                           eval::ViewerDestination destination, std::string colorConfigPath) {
     bool accepted = false;
     {
         std::lock_guard lock(mutex_);
         if (!stopping_)
-            accepted = scheduler_.submit(std::move(document), std::move(request), id, destination,
+            accepted = scheduler_.submit(std::move(document), std::move(intent), id, destination,
                                          std::chrono::steady_clock::now(), std::move(colorConfigPath));
         // A fresh submission replaces the destination's old mailbox result. A
         // cache-range submission uses its own destination and must not erase
         // what that destination currently shows.
-        if (accepted) {
+        if (accepted)
             results_.erase(destination);
-            // The channel is presentation-only: record it beside the request
-            // so the worker prepares exactly this destination's display
-            // selection, never another panel's.
-            channel_[destination] = channel;
-        }
     }
     if (accepted)
         ready_.notify_one();
@@ -95,7 +89,6 @@ bool ViewerRuntime::retireDestination(eval::ViewerDestination destination) {
         return false;
     panelDestinations_.erase(allocated);
     results_.erase(destination);
-    channel_.erase(destination);
     // Scheduler state goes immediately: an in-flight request for the retired
     // destination is rejected at publication instead of reaching the mailbox.
     scheduler_.retireDestination(destination);
@@ -281,9 +274,12 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
             // never on the caller's thread.
             session->refreshColorConfig();
         }
-        // A retired destination's session freshness is erased before any
-        // later work runs, so its in-flight request can never be published as
-        // current. With no session yet there is nothing to forget.
+        // A retired destination's session freshness and Auto resolution state
+        // are erased before any later work runs, so its in-flight request can
+        // never be published as current. With no session yet there is nothing
+        // to forget.
+        for (const auto destination : retired)
+            resolution_.erase(destination);
         if (session) {
             for (const auto destination : retired)
                 session->retireDestination(destination);
@@ -308,12 +304,27 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
                 publish(SourceProbeResult{session->probeSource(*pending.document, pending.source), pending.id},
                         pending);
             } else if (pending.kind == eval::ViewerRequestKind::Describe) {
-                publish(ViewerTargetDescription{session->describe(*pending.document, pending.request), pending.id},
+                publish(ViewerTargetDescription{session->describe(*pending.document, pending.request()), pending.id},
                         pending);
             } else {
                 auto publicationGuard = [this, pending] { return scheduler_.isCacheCurrent(pending); };
-                auto frame = session->render(*pending.document, pending.request, 10'000'000'000ULL, pending.id,
-                                             pending.destination, std::move(publicationGuard));
+                eval::ViewerFrame frame;
+                if (pending.kind == eval::ViewerRequestKind::CacheRange) {
+                    // Cache frames are a concrete, coverage-stating request that
+                    // never replaces the interactive view, so they are rendered
+                    // as such (issue #98 keeps the distinct headless contract).
+                    frame = session->render(*pending.document, pending.request(), 10'000'000'000ULL, pending.id,
+                                            pending.destination, std::move(publicationGuard));
+                } else {
+                    // ONE worker job resolves the view against the current
+                    // frame's described image, states the demand from it and
+                    // executes the plan it resolved (issue #98). The Auto
+                    // hysteresis state is this destination's own, retained
+                    // across frames.
+                    frame = session->render(*pending.document, pending.intent(), resolution_[pending.destination],
+                                            10'000'000'000ULL, pending.id, pending.destination,
+                                            std::move(publicationGuard));
+                }
                 if (pending.kind == eval::ViewerRequestKind::CacheRange) {
                     finishRange(pending, frame.cacheHit || frame.cacheQueued);
                 } else {
@@ -327,18 +338,12 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
                     if (current) {
                         if (presentationShader.empty())
                             presentationShader = gpu::loadSpirv(shaders / "viewerPresentation.spv");
-                        // The latest selection recorded for this destination,
-                        // never another panel's: the isolation is applied in
-                        // the presentation copy only.
-                        gpu::ViewerChannel channel = gpu::ViewerChannel::RGBA;
-                        {
-                            std::lock_guard lock(mutex_);
-                            if (const auto selected = channel_.find(pending.destination); selected != channel_.end())
-                                channel = selected->second;
-                        }
-                        auto presentation =
-                            gpu::prepareViewerPresentation(*device_, *allocator_, *presentationDevice_, *frame.image,
-                                                           frame.layout.color, presentationShader, channel);
+                        // The isolation the frame's own view asked for: applied
+                        // in the presentation copy only, never in evaluation or
+                        // the cache, and never taken from another destination.
+                        auto presentation = gpu::prepareViewerPresentation(
+                            *device_, *allocator_, *presentationDevice_, *frame.image, frame.layout.color,
+                            presentationShader, frame.presentationChannel);
                         auto result = std::make_shared<ViewerResult>(ViewerResult{
                             std::move(presentation), frame.layout, frame.description, frame.request, pending.id,
                             frame.revision, frame.cacheHit, pending.requestedAt, pending.destination});
@@ -346,11 +351,29 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
                     }
                 }
             }
+        } catch (const eval::ViewUnavailable& error) {
+            // The view addresses nothing the current frame carries: it has no
+            // frame to publish, so the panel must not keep presenting an image
+            // this selection does not produce — and the description that
+            // refused it travels with the answer, so the selectors offer the
+            // channels this frame really carries.
+            if (pending.kind == eval::ViewerRequestKind::CacheRange) {
+                if (scheduler_.complete(pending, false))
+                    emit rangeFailed(QStringLiteral("Cache frame %1: %2")
+                                         .arg(std::get<EvaluationRequest>(pending.demand).localTime)
+                                         .arg(QString::fromUtf8(error.what())),
+                                     pending.id);
+            } else {
+                const auto& intent = pending.intent();
+                publish(ViewerUnavailableView{error.what(), pending.id, intent.target, intent.localTime,
+                                              pending.document->stateRevision(), error.description},
+                        pending);
+            }
         } catch (const std::exception& error) {
             if (pending.kind == eval::ViewerRequestKind::CacheRange) {
                 if (scheduler_.complete(pending, false))
                     emit rangeFailed(QStringLiteral("Cache frame %1: %2")
-                                         .arg(pending.request.localTime)
+                                         .arg(std::get<EvaluationRequest>(pending.demand).localTime)
                                          .arg(QString::fromUtf8(error.what())),
                                      pending.id);
             } else {

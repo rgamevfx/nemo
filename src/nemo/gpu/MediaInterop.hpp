@@ -110,25 +110,25 @@ public:
     MediaInterop(const MediaInterop&) = delete;
     MediaInterop& operator=(const MediaInterop&) = delete;
 
-    // Converts one foreign NV12 frame into `output` (issue #90): an R32_SFLOAT
-    // 2D channel-plane image of extent (frame width, 4 * frame height) holding
-    // the frame's R, G, B and A planes, GENERAL layout maintained. A destination
-    // that is not exactly that is refused naming the mismatch; the plane count
-    // is never inferred from an unrelated format. Uses the frame's declared
-    // color interpretation. Synchronous. Establishes the producer→conversion
-    // dependency with in-queue timeline waits, signals the producer
-    // semaphores back at waitValue+1, and updates `frame` (waitValues,
+    // Converts one foreign NV12 frame into `output` (issue #98): an RGBA32F 2D
+    // image of exactly (frame width, frame height) — the native packed
+    // representation of a four-channel frame — GENERAL layout maintained. A
+    // destination that is not exactly that is refused naming the mismatch; the
+    // component count is never inferred from an unrelated format. Uses the
+    // frame's declared color interpretation. Synchronous. Establishes the
+    // producer→conversion dependency with in-queue timeline waits, signals the
+    // producer semaphores back at waitValue+1, and updates `frame` (waitValues,
     // queueFamilies, accesses) so the producer can reuse the planes.
     // Throws GpuException naming the failure.
-    void convertToChannelPlanes(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns);
+    void convertToRgba32f(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns);
     // Asynchronous equivalent. Requires frame.owner. Returns nullopt on
     // capacity exhaustion without modifying producer state. On success,
     // producer waitValues advance immediately; producer reuse must wait on
     // those timeline values. Dropping the completion never frees live work.
     // A positive admission timeout opts synchronous workers into bounded
     // waiting for queue capacity, without waiting for GPU execution here.
-    [[nodiscard]] std::optional<SubmissionQueue::Completion>
-    submitToChannelPlanes(ForeignVideoFrame& frame, Image& output, uint64_t admissionTimeout_ns = 0);
+    [[nodiscard]] std::optional<SubmissionQueue::Completion> submitToRgba32f(ForeignVideoFrame& frame, Image& output,
+                                                                             uint64_t admissionTimeout_ns = 0);
 
 private:
     struct Impl;

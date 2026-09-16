@@ -980,9 +980,14 @@ TEST_F(ContributionTest, PreparedNativePlanCannotCrossRequestOrDocumentState) {
                                       slangSrcDir());
     auto chain = makeAffineChain(library.contributions());
     const auto request = requestFor(chain.document, chain.output);
-    const auto plan = planDependencyRegions(chain.document, request, *library.contributions());
+    const auto described = describeDependencies(chain.document, request, *library.contributions());
+    const auto plan = planResolvedRegions(chain.document, request, *library.contributions(), described);
     EXPECT_EQ(eval::queryViewerResultKey(chain.document, request, library, {}, nullptr, &plan),
               eval::queryViewerResultKey(chain.document, request, library));
+    auto anotherFrame = request;
+    ++anotherFrame.localTime;
+    EXPECT_THROW(planResolvedRegions(chain.document, anotherFrame, *library.contributions(), described),
+                 EvaluationException);
     auto anotherRegion = request;
     anotherRegion.region.x = 1;
     EXPECT_THROW(eval::queryViewerResultKey(chain.document, anotherRegion, library, {}, nullptr, &plan),
@@ -990,6 +995,8 @@ TEST_F(ContributionTest, PreparedNativePlanCannotCrossRequestOrDocumentState) {
     CommandStack history(chain.document);
     history.push(setParamCommand(chain.document.rootNetworkId(), chain.affine, "shiftX", std::int64_t{1}));
     EXPECT_THROW(eval::queryViewerResultKey(chain.document, request, library, {}, nullptr, &plan), EvaluationException);
+    EXPECT_THROW(planResolvedRegions(chain.document, request, *library.contributions(), described),
+                 EvaluationException);
 }
 
 // ---------------------------------------------------------------------------

@@ -102,11 +102,21 @@ they are not clipped to the logical format. Samples outside described data are
 transparent black, while overscan data outside the format remains accessible.
 Dependency planning requests each input's necessary coverage; whole-frame
 implementations expand internally. Regional consumers receive their normalized
-rectangle. Header-only target descriptions run on the existing viewer worker,
-memoized by target, document revision and local time; they determine framing
-without changing Fit, pan/zoom or resolution controls. Unknown metadata reports
-an error, not a fabricated canvas. See ADR-0007 for semantic/spatial reuse and
-ADR-0008 for contribution and native pass geometry.
+rectangle.
+
+Issue #98 submits one Qt-free `ViewIntent` per interactive frame. The existing
+worker resolves that frame's description, selected channels, ROI and density,
+then renders from the same description plan; no Describe→GUI→Render round trip
+is required. The returned frame carries its resolved description and request,
+guarded by destination/request/revision identity. A refused layer still returns
+the current description so the selectors can recover by choosing an available
+layer. Resolution hysteresis is worker-owned per destination and retired with it.
+Independent inspector queries and viewport-less metadata consumers retain
+header-only Describe; they do not restore the per-frame render dependency.
+Fit, pan/zoom and resolution controls remain unchanged. Unknown metadata reports
+an error, not a fabricated canvas. Ordinary in-flight work shows no progress
+overlay; meaningful errors, empty and unavailable states remain visible.
+See ADR-0007 for semantic/spatial reuse and ADR-0008 for native geometry/storage.
 
 The viewer's icon-only **Force full-frame rendering** switch overrides coverage,
 not Auto/Full/Half/Quarter density, zoom or pan. Its state belongs to each viewer

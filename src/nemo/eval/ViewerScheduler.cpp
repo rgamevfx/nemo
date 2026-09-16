@@ -77,11 +77,10 @@ bool ViewerScheduler::enqueueInteractive(ViewerScheduledRequest work) {
     return true;
 }
 
-bool ViewerScheduler::submit(Document document, EvaluationRequest request, std::uint64_t id,
-                             ViewerDestination destination, std::chrono::steady_clock::time_point requestedAt,
-                             std::string colorConfigPath) {
+bool ViewerScheduler::submit(Document document, ViewIntent intent, std::uint64_t id, ViewerDestination destination,
+                             std::chrono::steady_clock::time_point requestedAt, std::string colorConfigPath) {
     return enqueueInteractive({.document = std::make_shared<const Document>(std::move(document)),
-                               .request = std::move(request),
+                               .demand = std::move(intent),
                                .source = {},
                                .id = id,
                                .kind = ViewerRequestKind::Render,
@@ -93,7 +92,7 @@ bool ViewerScheduler::submit(Document document, EvaluationRequest request, std::
 bool ViewerScheduler::probe(Document document, std::string source, std::uint64_t id, ViewerDestination destination,
                             std::chrono::steady_clock::time_point requestedAt, std::string colorConfigPath) {
     return enqueueInteractive({.document = std::make_shared<const Document>(std::move(document)),
-                               .request = {},
+                               .demand = EvaluationRequest{},
                                .source = std::move(source),
                                .id = id,
                                .kind = ViewerRequestKind::Probe,
@@ -106,7 +105,7 @@ bool ViewerScheduler::describe(Document document, EvaluationRequest request, std
                                ViewerDestination destination, std::chrono::steady_clock::time_point requestedAt,
                                std::string colorConfigPath) {
     return enqueueInteractive({.document = std::make_shared<const Document>(std::move(document)),
-                               .request = std::move(request),
+                               .demand = std::move(request),
                                .source = {},
                                .id = id,
                                .kind = ViewerRequestKind::Describe,
@@ -138,16 +137,16 @@ bool ViewerScheduler::requestRange(Document document, EvaluationRequest request,
         return true;
     });
     dropRangeLocked(destination);
-    ranges_.insert_or_assign(destination, Range{{std::move(snapshot),
-                                                 std::move(request),
-                                                 {},
-                                                 id,
-                                                 token,
-                                                 revision,
-                                                 ViewerRequestKind::CacheRange,
-                                                 destination,
-                                                 requestedAt,
-                                                 std::move(colorConfigPath)},
+    ranges_.insert_or_assign(destination, Range{{.document = std::move(snapshot),
+                                                 .demand = std::move(request),
+                                                 .source = {},
+                                                 .id = id,
+                                                 .token = token,
+                                                 .revision = revision,
+                                                 .kind = ViewerRequestKind::CacheRange,
+                                                 .destination = destination,
+                                                 .requestedAt = requestedAt,
+                                                 .colorConfigPath = std::move(colorConfigPath)},
                                                 first,
                                                 last});
     return true;
@@ -166,7 +165,7 @@ std::optional<ViewerScheduledRequest> ViewerScheduler::take() {
     auto found = ranges_.begin();
     auto& range = found->second;
     auto result = range.work;
-    result.request.localTime = range.next;
+    std::get<EvaluationRequest>(result.demand).localTime = range.next;
     if (range.next == range.last) {
         ranges_.erase(found);
     } else {

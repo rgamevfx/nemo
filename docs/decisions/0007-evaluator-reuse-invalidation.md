@@ -711,8 +711,9 @@ correctness and protected #25 viewer interaction conformance remain separate
 gates. The #96 review hold and downstream channel/alpha tasks remain unchanged.
 
 Issue #90 carries the described names through media, CPU storage and native
-planes rather than projecting sources prematurely to RGBA. Empty request
-channels mean all described channels; empty per-input requirements inherit
+images rather than projecting sources prematurely to RGBA. Issue #98 uses
+packed storage for four channels and scalar planes otherwise (ADR-0008).
+Empty request channels mean all described channels; empty per-input requirements inherit
 the conservative demand. Only a *contributed* per-input requirement is a
 declaration: when a node contribution's own `inputRequirements` names channels
 explicitly they travel unfiltered, and a name its producer's described image
@@ -726,3 +727,11 @@ it never substitutes a missing selected layer.
 See ADR-0008 for native representation and projection policy. Evidence lives
 in `docs/evidence/assets/issue90-channels/verification.json`; upstream review
 holds remain unchanged.
+
+Issue #98 lets `planResolvedRegions` consume an existing `ImageDescriptionPlan`.
+The plan identifies its document snapshot/revision, contribution snapshot and
+target/time query; a mismatched origin is refused. `ViewerSession` resolves the
+current frame's description, layer selection, ROI and density on the worker,
+then uses the same plan for keys and execution. This removes duplicate
+description work without treating animated/sequence-dependent descriptions as
+time-invariant. Each destination retains its own resolution hysteresis.

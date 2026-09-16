@@ -95,11 +95,16 @@ void imageBarrier(SubmissionQueue& queue, const Image& image, VkImageLayout oldL
 void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& image, void* data, std::size_t bytes,
                    uint64_t timeout_ns);
 
-// Crops codec padding from a completed GENERAL native channel-plane image
-// on-device (issue #90): R32_SFLOAT 2D, `channels` planes of `sourceHeight`
-// rows each, logical pixel (x, y) of plane c at (x, y + c*sourceHeight). The
-// result is `width` x `channels * height` and stays GENERAL; all copy resources
-// survive completion.
-[[nodiscard]] Image cropChannelPlaneImage(SubmissionQueue& queue, Allocator& allocator, const Image& source,
-                                          uint32_t width, uint32_t height, uint32_t channels, uint64_t timeout_ns);
+// Crops codec padding from a completed GENERAL native image on-device (issue
+// #98), keeping the source's own representation: a packed RGBA32F source
+// (four components per texel at (W, H)) yields a `width` x `height` RGBA32F
+// image, and a scalar-plane R32_SFLOAT source (`channels` planes of H rows
+// each, logical pixel (x, y) of plane c at (x, y + c*H)) yields `width` x
+// (`channels` * `height`). The result stays GENERAL; all copy resources survive
+// completion. The representation is read from the source's ACTUAL format via
+// nativeChannelComponents, never guessed, and a source that is not a native
+// image, or whose stored channels/extent do not hold the requested crop, is
+// refused rather than copied through a wrong stride.
+[[nodiscard]] Image cropNativeImage(SubmissionQueue& queue, Allocator& allocator, const Image& source, uint32_t width,
+                                    uint32_t height, uint32_t channels, uint64_t timeout_ns);
 }  // namespace nemo::gpu

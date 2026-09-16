@@ -81,13 +81,13 @@ struct OcioGpuProgram {
     unsigned textureBindingStart{};
 
     // The pixel interface the emitted wrapper uses, so a consumer binds the
-    // layout the program actually declares (issue #90): the interleaved rgba32f
-    // read/write pixel buffers the viewer and executor path uses, or the native
-    // channel-plane image (one read-write R32_SFLOAT storage image at the
-    // wrapper's image binding plus a PlaneGeometry uniform block holding
-    // (logical width, logical height, plane count, 0)).
-    enum class PixelLayout { Rgba32fBuffers, ChannelPlanes };
-    PixelLayout pixelLayout{PixelLayout::Rgba32fBuffers};
+    // surface the program actually declares (issues #90, #98): the interleaved
+    // rgba32f read/write pixel buffers the viewer path owns, or the native
+    // packed four-channel image a media frame already is (one read-write
+    // rgba32f storage image at the wrapper's binding, transformed in place —
+    // no staging buffer, no copy, no second image).
+    enum class PixelInterface { Rgba32fBuffers, PackedImage };
+    PixelInterface pixelInterface{PixelInterface::Rgba32fBuffers};
 
     // Result colorspace name the CPU path and GPU program both apply, for
     // diagnostics ("working -> display/view").
@@ -208,18 +208,20 @@ public:
     // Retained encoded->working conversion for one input space of this snapshot.
     [[nodiscard]] std::shared_ptr<const OcioInputTransform> inputTransform(const std::string& workingSpace,
                                                                            const std::string& inputColorSpace) const;
+    // GPU-native description of the same conversion over the native packed
+    // four-channel image itself (issue #98): one read-write rgba32f storage
+    // image holding the logical raster, converted IN PLACE so a media frame
+    // needs no staging copy and no second image. The wrapper reads the packed
+    // texel, converts its primaries and stores them back with the texel's own
+    // alpha. This is the program a decoded media frame drives; the buffer
+    // variant stays the viewer/general surface.
+    [[nodiscard]] OcioGpuProgram inputTransformImageGpu(const std::string& workingSpace,
+                                                        const std::string& inputColorSpace) const;
     // GPU-native description of the same conversion, extracted from this
-    // snapshot (no reload, no path lookup).
+    // snapshot (no reload, no path lookup). The emitted wrapper reads and
+    // writes one RGBA32F pixel buffer.
     [[nodiscard]] OcioGpuProgram inputTransformGpu(const std::string& workingSpace,
                                                    const std::string& inputColorSpace) const;
-    // The same conversion over the native channel-plane layout (issue #90): one
-    // read-write R32_SFLOAT storage image holding the logical raster's channel
-    // planes stacked vertically. The wrapper gathers the primaries, runs the
-    // OCIO transform and scatters the primaries back, leaving alpha and every
-    // auxiliary plane untouched. Consumed by the media source path, whose
-    // decoded frames are plane images.
-    [[nodiscard]] OcioGpuProgram inputTransformPlanesGpu(const std::string& workingSpace,
-                                                         const std::string& inputColorSpace) const;
 
 private:
     friend class OcioInputTransform;
@@ -260,15 +262,13 @@ private:
 // GPU-native input transform for the same conversion, consumed by the
 // retained OCIO executor (gpu::GpuViewingTransform) with a scene-linear
 // output: hardware-decoded frames are converted on the device without any
-// host readback.
+// host readback. The buffer variant reads and writes one RGBA32F pixel buffer
+// (the viewer/general surface); the image variant converts the native packed
+// four-channel image a decoded frame already is, in place (issue #98).
 [[nodiscard]] OcioGpuProgram buildInputTransformGpu(const std::string& configPath, const std::string& workingSpace,
                                                     const std::string& inputColorSpace);
-
-// One-shot form of the channel-plane input transform above, for a caller that
-// resolves the configuration once.
-[[nodiscard]] OcioGpuProgram buildInputTransformPlanesGpu(const std::string& configPath,
-                                                          const std::string& workingSpace,
-                                                          const std::string& inputColorSpace);
+[[nodiscard]] OcioGpuProgram buildInputTransformImageGpu(const std::string& configPath, const std::string& workingSpace,
+                                                         const std::string& inputColorSpace);
 
 // Resolves the config path the same way OCIO applications do: an explicit
 // path when given, otherwise the OCIO environment variable. Returns the

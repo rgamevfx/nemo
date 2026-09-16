@@ -8,10 +8,10 @@
 //   - in_main : image2D input (original main image, for the mask/mix blend)
 //   - in_mask : image2D input (optional mask; bound to the main image as a
 //     valid dummy descriptor with maskPresent=0 when unconnected)
-//   - out_color : image2D output (native R32_SFLOAT channel planes, straight
-//     alpha, scene-linear: logical pixel (x, y) of channel plane c at
-//     (x, y + c*logicalHeight), issue #90)
-// bindings (native binding contract v6, see GpuGeometry.slang):
+//   - out_color : image2D output (native channel image, issue #98: packed
+//     RGBA32F at the logical raster for four stored channels, otherwise
+//     R32_SFLOAT scalar planes at W*(H*C); straight alpha, scene-linear)
+// bindings (native binding contract v7, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms (this pass's coverage)
 //   set 0, binding 1 : node-local payload ("nemo.nodes.blur.payload.v1")
 //   set 0, binding 2 : per-input spatial geometry (scratch, main, mask)
@@ -54,10 +54,13 @@ cbuffer EffectUniforms {
     // support (a node-local scratch), a non-positive size means every sample is
     // transparent black. Samples outside it must be written transparent black.
     int4 support;
-    // channels: the produced raster's channel planes (issue #90):
-    // (plane count, 0, 0, 0).
+    // channels: the produced raster's channel facts (issues #90, #98):
+    // (stored channel count, components per texel — 4 = packed four-channel
+    // RGBA32F at the logical raster, 1 = R32_SFLOAT scalar planes — whether the
+    // channel plan fills any stored channel, 0).
     uint4 channels;
-    // rgba: the produced plane index of each R/G/B/A role; -1 = role absent.
+    // rgba: the produced STORED channel of each R/G/B/A role; -1 = role absent.
+    // The four stored channels of a packed image are NOT assumed to be R/G/B/A.
     int4 rgba;
 };
 
@@ -73,14 +76,14 @@ cbuffer BlurPayload {
 // final pass both reads the original for the mask/mix blend and preserves the
 // named channels this pass does not filter from it (issue #90).
 [[vk::binding(0, 1)]]
-RWTexture2D<float> in_main;
+RWTexture2D<float4> in_main;
 [[vk::binding(1, 1)]]
-RWTexture2D<float> in_scratch;
+RWTexture2D<float4> in_scratch;
 [[vk::binding(2, 1)]]
-RWTexture2D<float> in_mask;
+RWTexture2D<float4> in_mask;
 
 [[vk::binding(0, 2)]]
-RWTexture2D<float> out_color;
+RWTexture2D<float4> out_color;
 
 // Normalized Gaussian weights precomputed once per Blur preparation (index
 // i+support); the kernel never evaluates exp() per output pixel.
@@ -95,14 +98,14 @@ void main(uint3 tid : SV_DispatchThreadID)
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
 
     const int planeHeight = int(meta2.y);
-    // The described image's data support (native binding contract v6): a sample
-    // outside it is transparent black, and every plane — auxiliary ones
-    // included — is initialized (issue #90). This is the pass that writes the
+    // The described image's data support (native binding contract v7): a sample
+    // outside it is transparent black, and every stored channel —
+    // auxiliary ones included — is initialized (issue #90). This is the pass that writes the
     // node result; the horizontal pass writes a scratch and declares no support.
     if (support.z >= 0 && support.w >= 0 &&
         ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
          (int)p.y >= support.y + support.w)) {
-        gpuZeroPlanes(out_color, int2(p), planeHeight, channels.x);
+        gpuZeroPlanes(out_color, int2(p), planeHeight, channels.y, channels.x);
         return;
     }
 
@@ -118,7 +121,8 @@ void main(uint3 tid : SV_DispatchThreadID)
     bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < mainExtent.x && mainPixel.y < mainExtent.y;
     int2 scratchOffset = inputGeometry[1].regionAndOffset.zw;
     int2 scratchExtent = int2(inputGeometry[1].extent.xy);
-    float4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, mainExtent.y)
+    float4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, mainExtent.y,
+                                           inputGeometry[0].channels.y)
                              : float4(0.0, 0.0, 0.0, 0.0);
     float4 processed;
     if (blur.x <= 0.0) {
@@ -133,7 +137,8 @@ void main(uint3 tid : SV_DispatchThreadID)
             float w = blurWeights[i + taps];
             int2 tap = int2(clamp(int(p.x) + scratchOffset.x, 0, scratchExtent.x - 1),
                             clamp(int(p.y) + i + scratchOffset.y, 0, scratchExtent.y - 1));
-            acc += w * gpuLoadRgba(in_scratch, tap, inputGeometry[1].rgba, scratchExtent.y);
+            acc += w * gpuLoadRgba(in_scratch, tap, inputGeometry[1].rgba, scratchExtent.y,
+                                   inputGeometry[1].channels.y);
         }
 
         if (mode == 15) {  // RGBA: unpremultiply once at the final output
@@ -153,7 +158,8 @@ void main(uint3 tid : SV_DispatchThreadID)
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
         float selected =
-            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[2].rgba, maskExtent.y)[channel], 0.0, 1.0)
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[2].rgba, maskExtent.y,
+                                           inputGeometry[2].channels.y)[channel], 0.0, 1.0)
                        : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
@@ -161,8 +167,8 @@ void main(uint3 tid : SV_DispatchThreadID)
     // processed pixel (avoids HDR 0*inf cancellation in lerp()).
     float weight = coverage * mask.z;
     float4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : lerp(orig, processed, weight));
-    gpuStoreRgba(out_color, int2(p), rgba, planeHeight, result);
-    // Every plane the blur did not filter keeps its named channel from the
+    // Every stored channel the blur did not filter keeps its named channel from the
     // original main image at the same coordinate (issue #90).
-    gpuPreserveAuxLattice(out_color, int2(p), planeHeight, in_main, mainExtent.y, channels.x);
+    gpuStorePixel(out_color, int2(p), planeHeight, channels.x, channels.y, channels.z, rgba, result, in_main,
+                  mainExtent.y, inputGeometry[0].channels.y);
 }

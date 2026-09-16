@@ -59,8 +59,24 @@ struct ViewerFailure {
     std::string message;
     std::uint64_t requestId{};
 };
-using ViewerWorkResult =
-    std::variant<std::shared_ptr<const ViewerResult>, SourceProbeResult, ViewerTargetDescription, ViewerFailure>;
+// A view the current frame cannot answer (issue #98): the layer or channel it
+// addresses is not part of what this frame's described image carries. The
+// answer still carries the description that refused it, with the identity it
+// belongs to, so the panel adopts the CURRENT frame's channels and states the
+// reason from ONE worker job — no retry and no second request. A sequence or
+// source whose frame changes its channels therefore updates the layer and
+// channel selectors even while the current selection is refused, and the artist
+// can select a layer this frame really carries.
+struct ViewerUnavailableView {
+    std::string message;
+    std::uint64_t requestId{};
+    NodeId target{kInvalidNode};
+    std::int64_t localTime{};
+    std::uint64_t revision{};
+    ImageDescription description;
+};
+using ViewerWorkResult = std::variant<std::shared_ptr<const ViewerResult>, SourceProbeResult, ViewerTargetDescription,
+                                      ViewerUnavailableView, ViewerFailure>;
 
 struct ViewerRuntimeCounts {
     std::uint64_t queued{};
@@ -110,8 +126,12 @@ public:
     // An unallocated destination — including the reserved ids — is refused.
     bool retireDestination(eval::ViewerDestination destination);
 
-    bool submit(Document document, EvaluationRequest request, std::uint64_t id, eval::ViewerDestination destination,
-                gpu::ViewerChannel channel = gpu::ViewerChannel::RGBA, std::string colorConfigPath = {});
+    // Submits one immutable view intent (issue #98): the worker resolves it
+    // against the current frame's described image and executes it in one
+    // request. The presentation isolation the view stated travels back with
+    // the frame, so nothing about it is recorded per destination here.
+    bool submit(Document document, eval::ViewIntent intent, std::uint64_t id, eval::ViewerDestination destination,
+                std::string colorConfigPath = {});
 
     // Queues a color-configuration refresh for the active worker session. The
     // runtime owns the session on its worker thread, so this is fire-and-forget
@@ -203,9 +223,12 @@ private:
     // Panel-instance allocation table, keyed by panel identity so a panel
     // keeps one destination for as long as it lives.
     std::map<QString, eval::ViewerDestination> panelDestinations_;
-    // Presentation-only display selection per destination, written by submit
-    // and read by the worker when it prepares that destination's presentation.
-    std::map<eval::ViewerDestination, gpu::ViewerChannel> channel_;
+    // Worker-only Auto resolution state per destination (issue #98): the
+    // hysteresis that keeps a steady view from oscillating between sampling
+    // representations lives with the worker that resolves the demand, and is
+    // retained per destination for as long as the destination is allocated.
+    // Only the worker thread touches it.
+    std::map<eval::ViewerDestination, ViewerResolutionPolicy> resolution_;
     // Destinations retired by the GUI but not yet applied to the worker-owned
     // session. Drained before any later work for that destination executes.
     std::vector<eval::ViewerDestination> retireQueue_;

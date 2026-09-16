@@ -7,9 +7,13 @@
 // Bindings: set 0/0 common request; set 0/1 optional node-local payload;
 // set 0/2 per-input geometry; set 0/3 channel plan;
 // set 1/n pass inputs; set 2/0 result; set 3/0 optional float weights.
-// Native images are R32_SFLOAT 2D channel planes (issue #90): logical W×H with
-// plane c at (x, y + c*H), so one GENERAL-layout device image carries every
-// named channel. Submission retention covers registrations and all resources
+// Native images are the shared channel image layout (issues #90, #98): four
+// stored channels in ONE packed VK_FORMAT_R32G32B32A32_SFLOAT image at the
+// logical W×H, any other count as VK_FORMAT_R32_SFLOAT scalar planes at
+// W×(H*C). Stored order is the description's channel order in both, and a
+// kernel reads the R/G/B/A roles from the resolved channel words rather than
+// assuming them, so one GENERAL-layout device image carries every named channel.
+// Submission retention covers registrations and all resources
 // until actual completion, including cancellation/timeouts. Device
 // initialization and execution run on workers, never the UI event thread.
 // readBack is diagnostic-only.
@@ -123,9 +127,12 @@ private:
 // One executed step's device-resident result. Shared ownership: a cache
 // entry (issue #9) and a returned evaluation can hold the same image.
 struct GpuNodeImage {
-    // R32_SFLOAT channel planes (issue #90): extent (logical width,
-    // logical height * channelCount), GENERAL layout invariant. `layout` keeps
-    // the LOGICAL width/height and the image's named channels.
+    // The shared channel image layout (issues #90, #98): packed
+    // VK_FORMAT_R32G32B32A32_SFLOAT at the logical extent for four stored
+    // channels, otherwise VK_FORMAT_R32_SFLOAT with one plane per channel at
+    // (logical width, logical height * channelCount); GENERAL layout invariant.
+    // `layout` keeps the LOGICAL width/height and the image's named channels,
+    // whose order is the stored channel order in either representation.
     gpu::Image image;
     ImageLayout layout;
 };

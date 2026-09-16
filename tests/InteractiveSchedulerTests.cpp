@@ -22,10 +22,14 @@ EvaluationRequest scopedRequest() {
     return request;
 }
 
+ViewIntent scopedIntent() {
+    return ViewIntent{.network = NetworkId{1}};
+}
+
 TEST(Interactive, FullQueueReportsBackpressureWithoutDroppingAnotherViewer) {
     ViewerScheduler scheduler(1);
-    ASSERT_TRUE(scheduler.submit({}, scopedRequest(), 1));
-    EXPECT_FALSE(scheduler.submit({}, scopedRequest(), 1, static_cast<ViewerDestination>(2)));
+    ASSERT_TRUE(scheduler.submit({}, scopedIntent(), 1));
+    EXPECT_FALSE(scheduler.submit({}, scopedIntent(), 1, static_cast<ViewerDestination>(2)));
     EXPECT_EQ(scheduler.counts().queued, 1u);
     EXPECT_EQ(scheduler.counts().dropped, 1u);
     const auto accepted = scheduler.take();
@@ -36,10 +40,10 @@ TEST(Interactive, FullQueueReportsBackpressureWithoutDroppingAnotherViewer) {
 
 TEST(Interactive, CacheHistorySurvivesScrubButCancellationCannotBeResurrected) {
     ViewerScheduler scheduler;
-    ASSERT_TRUE(scheduler.submit({}, scopedRequest(), 1));
+    ASSERT_TRUE(scheduler.submit({}, scopedIntent(), 1));
     const auto first = scheduler.take();
     ASSERT_TRUE(first);
-    EvaluationRequest next;
+    ViewIntent next;
     next.network = NetworkId{1};
     next.localTime = 1;
     ASSERT_TRUE(scheduler.submit({}, next, 2));
@@ -51,7 +55,7 @@ TEST(Interactive, CacheHistorySurvivesScrubButCancellationCannotBeResurrected) {
     ASSERT_TRUE(newer);
     EXPECT_TRUE(scheduler.isCacheCurrent(*newer));
     scheduler.cancel(3);
-    ASSERT_TRUE(scheduler.submit({}, scopedRequest(), 3));
+    ASSERT_TRUE(scheduler.submit({}, scopedIntent(), 3));
     EXPECT_FALSE(scheduler.isCacheCurrent(*first));
     const auto resumed = scheduler.take();
     ASSERT_TRUE(resumed);
@@ -64,18 +68,18 @@ TEST(Interactive, CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken) {
     EvaluationRequest request;
     request.network = document.rootNetworkId();
     ASSERT_TRUE(scheduler.requestRange(document, request, 10, 12, 1));
-    request.localTime = 42;
-    ASSERT_TRUE(scheduler.submit(document, request, 1));
+    ViewIntent intent{.network = document.rootNetworkId(), .localTime = 42};
+    ASSERT_TRUE(scheduler.submit(document, intent, 1));
     const auto interactive = scheduler.take();
     ASSERT_TRUE(interactive);
     EXPECT_EQ(interactive->kind, ViewerRequestKind::Render);
-    EXPECT_EQ(interactive->request.localTime, 42);
+    EXPECT_EQ(interactive->intent().localTime, 42);
     EXPECT_TRUE(scheduler.complete(*interactive, true));
     for (const int frame : {10, 11, 12}) {
         const auto cached = scheduler.take();
         ASSERT_TRUE(cached);
         EXPECT_EQ(cached->kind, ViewerRequestKind::CacheRange);
-        EXPECT_EQ(cached->request.localTime, frame);
+        EXPECT_EQ(cached->request().localTime, frame);
         EXPECT_TRUE(scheduler.complete(*cached, true));
     }
     EXPECT_FALSE(scheduler.take());
@@ -87,7 +91,7 @@ TEST(Interactive, SupersedingOneViewerPreservesOtherDestinationAndSnapshot) {
     CommandStack commands(document);
     const NodeId color = rootGraph(document).addNode("constcolor", "color");
     commands.push(setParamCommand(document.rootNetworkId(), color, "color", ColorValue{{0.1F, 0.2F, 0.3F, 1.0F}}));
-    EvaluationRequest request;
+    ViewIntent request;
     request.network = document.rootNetworkId();
     const auto otherViewer = static_cast<ViewerDestination>(2);
     ASSERT_TRUE(scheduler.submit(document, request, 1));
@@ -125,7 +129,7 @@ TEST(Interactive, CancellationRejectsInflightAndSupersededBacklogIsCounted) {
     EXPECT_FALSE(scheduler.complete(*inflight, true));
     EXPECT_FALSE(scheduler.take());
     EXPECT_EQ(scheduler.counts().dropped, 1000001u);
-    ASSERT_TRUE(scheduler.submit(document, request, 4));
+    ASSERT_TRUE(scheduler.submit(document, ViewIntent{.network = request.network}, 4));
     const auto resumed = scheduler.take();
     ASSERT_TRUE(resumed);
     EXPECT_TRUE(scheduler.complete(*resumed, true));
@@ -137,7 +141,7 @@ TEST(Interactive, RangeAtLastRepresentableFrameTerminatesWithoutWrapping) {
     ASSERT_TRUE(scheduler.requestRange({}, scopedRequest(), last, last, 1));
     const auto frame = scheduler.take();
     ASSERT_TRUE(frame);
-    EXPECT_EQ(frame->request.localTime, last);
+    EXPECT_EQ(frame->request().localTime, last);
     EXPECT_TRUE(scheduler.complete(*frame, true));
     EXPECT_FALSE(scheduler.take());
     EXPECT_EQ(scheduler.counts().queued, 0u);
@@ -187,7 +191,7 @@ TEST(Interactive, CancelledSubmissionRetainsResourcesUntilActualGpuCompletion) {
     create.pNext = &type;
     gpu::checkVulkan(vkCreateSemaphore(device->handle(), &create, nullptr, &gate.semaphore), "interactive gate");
     ViewerScheduler scheduler;
-    ASSERT_TRUE(scheduler.submit({}, scopedRequest(), 1));
+    ASSERT_TRUE(scheduler.submit({}, scopedIntent(), 1));
     const auto request = scheduler.take();
     ASSERT_TRUE(request);
     auto retained = std::make_shared<int>(42);
@@ -212,7 +216,7 @@ TEST(Interactive, CancelledSubmissionRetainsResourcesUntilActualGpuCompletion) {
 TEST(Interactive, DestinationScopedCancelDropsOnlyThatDestinationsWork) {
     ViewerScheduler scheduler(2);
     Document document;
-    EvaluationRequest request;
+    ViewIntent request;
     request.network = document.rootNetworkId();
     const auto other = static_cast<ViewerDestination>(2);
     ASSERT_TRUE(scheduler.submit(document, request, 1));
@@ -251,7 +255,7 @@ TEST(Interactive, DestinationScopedCancelDropsOnlyThatDestinationsWork) {
 TEST(Interactive, RetireDestinationDropsQueuedWorkAndRejectsInflight) {
     ViewerScheduler scheduler(3);
     Document document;
-    EvaluationRequest request;
+    ViewIntent request;
     request.network = document.rootNetworkId();
     const auto retired = static_cast<ViewerDestination>(2);
     const auto kept = static_cast<ViewerDestination>(3);
@@ -259,7 +263,7 @@ TEST(Interactive, RetireDestinationDropsQueuedWorkAndRejectsInflight) {
     const auto inflight = scheduler.take();
     ASSERT_TRUE(inflight);
     ASSERT_TRUE(scheduler.submit(document, request, 2, retired));
-    ASSERT_TRUE(scheduler.requestRange(document, request, 10, 12, 3, retired));
+    ASSERT_TRUE(scheduler.requestRange(document, EvaluationRequest{.network = request.network}, 10, 12, 3, retired));
     ASSERT_TRUE(scheduler.submit(document, request, 5, kept));
     EXPECT_EQ(scheduler.counts(retired).dropped, 1u);
     EXPECT_EQ(scheduler.counts(retired).queued, 3u);
@@ -285,12 +289,12 @@ TEST(Interactive, RetireDestinationDropsQueuedWorkAndRejectsInflight) {
 TEST(Interactive, CountsAreScopedPerDestinationAndGlobalStillAggregates) {
     ViewerScheduler scheduler(4);
     Document document;
-    EvaluationRequest request;
+    ViewIntent request;
     request.network = document.rootNetworkId();
     const auto second = static_cast<ViewerDestination>(2);
     const auto third = static_cast<ViewerDestination>(3);
     ASSERT_TRUE(scheduler.submit(document, request, 1));
-    ASSERT_TRUE(scheduler.requestRange(document, request, 0, 3, 1, second));
+    ASSERT_TRUE(scheduler.requestRange(document, EvaluationRequest{.network = request.network}, 0, 3, 1, second));
     ASSERT_TRUE(scheduler.submit(document, request, 1, third));
     EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).queued, 1u);
     EXPECT_EQ(scheduler.counts(second).queued, 4u);

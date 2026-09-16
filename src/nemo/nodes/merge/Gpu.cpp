@@ -51,12 +51,13 @@ layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v6): a sample
+    // The described image's data support (native binding contract v7): a sample
     // outside it is transparent black, never a composite of operands that hold
-    // nothing there, and every plane — auxiliary ones included — is initialized
+    // nothing there, and every stored channel — auxiliary ones included — is
+    // initialized
     // (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y), channels.y, channels.x);
         return;
     }
     // Each operand is read at the pixel holding the same full-resolution sample,
@@ -71,8 +72,10 @@ void main() {
     bool fgInside = fgPixel.x >= 0 && fgPixel.y >= 0 && fgPixel.x < fgExtent.x && fgPixel.y < fgExtent.y;
     // Port A is the background/base and port B the foreground/source: each is
     // gathered through the plane roles of its own geometry entry (issue #90).
-    vec4 bg = bgInside ? gpuLoadRgba(in_a, bgPixel, inputGeometry[0].rgba, bgExtent.y) : vec4(0.0);
-    vec4 fg = fgInside ? gpuLoadRgba(in_b, fgPixel, inputGeometry[1].rgba, fgExtent.y) : vec4(0.0);
+    vec4 bg = bgInside ? gpuLoadRgba(in_a, bgPixel, inputGeometry[0].rgba, bgExtent.y,
+                                     inputGeometry[0].channels.y) : vec4(0.0);
+    vec4 fg = fgInside ? gpuLoadRgba(in_b, fgPixel, inputGeometry[1].rgba, fgExtent.y,
+                                     inputGeometry[1].channels.y) : vec4(0.0);
 
     int operation = int(op.x);
     vec4 composite;
@@ -100,7 +103,8 @@ void main() {
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
         float selected =
-            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[2].rgba, maskExtent.y)[channel], 0.0, 1.0)
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[2].rgba, maskExtent.y,
+                                           inputGeometry[2].channels.y)[channel], 0.0, 1.0)
                        : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
@@ -108,10 +112,10 @@ void main() {
     // unmasked composite, so Mix 0 or zero coverage returns the background.
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? bg : (weight >= 1.0 ? composite : mix(bg, composite, weight));
-    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
-    // The background is this node's main input: every plane the composite did
+    // The background is this node's main input: every stored channel the composite did
     // not write keeps its named channel from A at the same coordinate (#90).
-    gpuPreserveAuxLattice(out_color, ivec2(p), int(meta2.y), in_a, bgExtent.y, channels.x);
+    gpuStorePixel(out_color, ivec2(p), int(meta2.y), channels.x, channels.y, channels.z, rgba, result, in_a,
+                  bgExtent.y, inputGeometry[0].channels.y);
 }
 )GLSL";
 

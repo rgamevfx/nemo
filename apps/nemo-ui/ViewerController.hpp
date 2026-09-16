@@ -38,6 +38,11 @@ class ViewerController final : public QObject {
     Q_PROPERTY(QSizeF sourceSize READ sourceSize NOTIFY sourceChanged)
     Q_PROPERTY(double pixelAspect READ pixelAspect NOTIFY sourceChanged)
     Q_PROPERTY(int frameCount READ frameCount NOTIFY sourceChanged)
+    // Actionable viewer state, never progress: the guidance for an empty or
+    // unavailable target, a failure, or a cancelled/queued command. A normal
+    // render states no text (issue #98) — the owner-approved removal of the
+    // transient progress/node-name flash — so a pending frame leaves this
+    // empty while the retained frame stays on screen.
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     Q_PROPERTY(QString error READ error NOTIFY statusChanged)
     Q_PROPERTY(QString renderState READ renderState NOTIFY statusChanged)
@@ -384,6 +389,9 @@ private:
     // Re-resolves contextRole_/contextTarget_ against the live document and
     // records the reason a routed target has no render target.
     void refreshContextTarget();
+    // The routed target resolution itself: the described-channel memo is
+    // invalidated by refreshContextTarget only when the resolved target moved.
+    void resolveContextTarget();
     [[nodiscard]] NetworkId renderTargetNetwork(const Document& document) const;
     [[nodiscard]] NodeId renderTargetNode() const;
     [[nodiscard]] QString unavailableStatus() const;
@@ -397,22 +405,20 @@ private:
     [[nodiscard]] int frameDomainEnd() const;
     void buildGraph(const SourceReference& reference);
     void refreshRequest();
-    // The target's authored output description, resolved on the worker through
-    // the shared dependency planner (issue #88): no pixels, no device work and
-    // no GUI-thread media access. The answer is memoized for exactly one
-    // target/revision identity AT ONE LOCAL TIME: geometry and format may be
-    // animated (an animated generator format, an image sequence whose frames
-    // declare different windows), so a description answered for another frame
-    // must never frame this one. A stale answer cannot become current either:
-    // the worker reply is matched against the request that is still outstanding,
-    // and the recorded local time is part of the identity, not just a field.
+    // The described output of the frame this panel last presented (issue #98):
+    // its actual format, pixel aspect and channels. A view is resolved on the
+    // worker against the CURRENT frame, so this memo is presentation state —
+    // what the layer and channel selectors address, and the display fallback
+    // before the first frame arrives — never an input to a request.
+    //
+    // A panel with no measured viewport has no view to resolve, so it is a
+    // metadata-only consumer: the same memo is filled by the worker's
+    // description answer (`answered` false while that answer is in flight), and
+    // nothing is rendered for a view that does not exist.
     struct TargetDescription {
-        NetworkId network{kInvalidNetwork};
         NodeId target{kInvalidNode};
-        std::string sourceKey;
-        std::uint64_t revision{};
         std::int64_t localTime{};
-        // False while the worker's answer for this identity is still in flight.
+        std::uint64_t revision{};
         bool answered{false};
         ImageDescription description;
     };
@@ -421,19 +427,18 @@ private:
         int height{};
         double pixelAspect{1.0};
     };
-    // Framing comes only from the target's resolved image description.
-    // Unknown metadata stays unavailable; a known-empty image retains its format.
+    // Framing comes only from the frame's resolved image description. Unknown
+    // metadata stays unavailable; a known-empty image retains its format.
     [[nodiscard]] std::optional<Framing> targetFraming() const;
-    [[nodiscard]] bool targetDescriptionMatches(NetworkId network, NodeId target, const std::string& sourceKey,
-                                                std::uint64_t revision, std::int64_t localTime) const;
+    // True when the memo ANSWERS for exactly this target, local time and
+    // revision: a delivered frame, or the worker's metadata-only description
+    // for a panel that has no viewport to resolve.
+    [[nodiscard]] bool targetDescriptionAnswers(NodeId target, std::uint64_t revision, std::int64_t localTime) const;
+    // The metadata-only query for one target at the current frame: the smallest
+    // valid domain that identifies it, used when there is no view to resolve.
     [[nodiscard]] EvaluationRequest descriptionRequest(NetworkId network, NodeId target) const;
-    // Resolve the named demand and presentation role from the current metadata.
-    // Empty means an unavailable layer and is rejected before submission; color
-    // role isolation remains presentation-only, while scalar data is demanded
-    // by its exact name.
-    [[nodiscard]] std::vector<std::string> resolveChannelRequest();
-    // Real channels of the selected layer, in described order. Empty until the
-    // target's description has been answered: absence is never filled in with a
+    // Real channels of the selected layer, in described order. Empty until a
+    // frame has stated its description: absence is never filled in with a
     // guessed channel set.
     [[nodiscard]] QStringList layerChannels() const;
     // One input port of the queried node. `upstream` is kInvalidNode for a
@@ -513,15 +518,16 @@ private:
     // rejects superseded probes; the key is carried so the accepted result
     // publishes exactly the reference that was probed.
     std::string probeSourceKey_{"src"};
-    // Target description in effect (issue #88). It frames the next request and
-    // is the answer the worker returned for exactly the identity it stores.
+    // Description of the frame in effect (issue #98): the actual authored
+    // format the last presented frame was produced from. The worker resolves
+    // views against the current frame, so this memo serves the selectors and
+    // the display fallback only.
     std::optional<TargetDescription> targetDescription_;
     // Revision of the exact snapshot handed to the last submission. A result
     // carries that snapshot's revision, which is the authored revision except
     // when the media role added its request-owned node.
     std::uint64_t submittedRevision_{};
     SourceReference probedSource_;
-    ViewerResolutionPolicy policy_;
     QSizeF sourceSize_;
     QSizeF viewport_;
     double pixelAspect_{1.0};
@@ -558,8 +564,14 @@ private:
     std::uint64_t rangeGeneration_{};
     QString rangeError_;
     ViewerRuntimeCounts schedulerCounts_;
+    // The authored revision of the last submitted view intent, and the intent
+    // itself as submitted — with a request-owned media target normalized to
+    // "none", because that node is allocated fresh per submission while the
+    // routed source key and the view are what the panel asked for. Together
+    // they are the "this exact view is already submitted or displayed" test
+    // that keeps a steady frame at one worker request.
     std::uint64_t lastRevision_{};
-    std::optional<EvaluationRequest> lastRequest_;
+    std::optional<eval::ViewIntent> lastIntent_;
     std::shared_ptr<const ViewerResult> presentation_;
     // True when the attached target is a media source node that names no
     // reference: an explicit empty viewer rather than a stale frame or the
@@ -573,11 +585,11 @@ private:
     NodeId targetMediaTarget_{kInvalidNode};
     std::string targetMediaKey_;
     bool targetMediaUnbound_{};
-    // Panel-local selection. The presentation role is re-resolved from actual
-    // channel metadata before each request, so a changing image cannot retain
-    // obsolete color/scalar interpretation.
+    // Panel-local selection. The layer and channel are resolved against the
+    // described image on the worker (issue #98), which also derives the
+    // presentation-only isolation, so a changing image can never retain
+    // obsolete color/scalar interpretation here.
     QString channel_{QStringLiteral("RGBA")};
-    gpu::ViewerChannel viewerChannel_{gpu::ViewerChannel::RGBA};
     QString layer_{QStringLiteral("rgba")};
     // Channel availability query (issue #90). `channelQuery_` is the memoized
     // answer for one node/revision/frame; the destination is allocated on first

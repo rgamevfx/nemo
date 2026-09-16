@@ -1,0 +1,452 @@
+{
+  "issue": 98,
+  "baseline": "1fe3aa4",
+  "branch": "issue/85-region-evaluation",
+  "status": "Implemented and locally verified; not landed. All prior review/landing holds remain.",
+  "authority": {
+    "request": "Remove the transient node-status message and implement the diagnosed viewer/GPU/upload repairs.",
+    "pre_edit_contract": "https://github.com/rgamevfx/nemo/issues/98#issuecomment-5695428263",
+    "classes": {
+      "status_overlay": "Owner-approved UI change",
+      "scheduling_storage_upload": "System extension of existing owners"
+    },
+    "prototype_reference": "docs/evidence/issue25-prototype-acceptance-v1.md; archived viewer-session.json"
+  },
+  "changes": [
+    "One worker-owned ViewIntent resolves the current description, demand, keys and execution; independent metadata-only consumers retain Describe.",
+    "Native binding v7: four stored channels use packed RGBA32F; other counts retain scalar planes. Names/order and auxiliary values are preserved.",
+    "Canonical RGBA avoids dynamic shader component indexing. Identity viewer/replay images are retained without projection.",
+    "Software/still RGBA uploads copy directly to staging; hardware decode remains device-resident. Input OCIO stays in-place.",
+    "Normal in-flight viewer diagnostics are empty; real unavailable/error states and recovery remain."
+  ],
+  "compatibility": {
+    "internal_cpp_api_changes": [
+      "ViewIntent render/scheduler path",
+      "planResolvedRegions and description-plan origin checks",
+      "uploadNativeImage, cropNativeImage, MediaInterop RGBA32F entry points",
+      "Packed-image input OCIO program interface"
+    ],
+    "native_binding": "nemo.native.bindings.v7",
+    "persistent_schema_changes": false,
+    "new_dependencies": false,
+    "new_nodes": false,
+    "numerical_baseline_changes": false
+  },
+  "checks": {
+    "debug_build": "Passed: cmake --build --preset debug -j 3",
+    "release_build": "Passed: cmake --build --preset release -j 3",
+    "full_debug_suite": "Run once (762 cases then). All repair failures were fixed and rerun; one pre-existing Viewer.InterpretationMapIsParsedStrictly failure remains (obsolete colorimetry fixture field). The invalid standalone single-frame playback fixture was removed; its one-request/no-overlay assertions extend the existing mixed-media native playback test. No claim that the full suite is green.",
+    "final_gpu_and_contributions": {
+      "command": "ctest --preset debug -j 2 -R '^(Effect\\.|ContributionTest\\.|Viewer.FourNamedDataChannelsPreserveRequestedOrder$)'",
+      "passed": 47,
+      "failed": 0
+    },
+    "asan_ubsan": {
+      "passed": 14,
+      "failed": 0,
+      "scope": "Packed upload/crop/input OCIO, prepared-plan origin, retained image/source lifetime, scalar publication completion, four named data channels, destination supersession/cancellation, viewport-less metadata and current-frame view resolution. Existing LSAN preset suppressions only; no new suppression."
+    },
+    "native_ui": {
+      "passed": [
+        "ReadViewerSurface.MixedMediaSourcesKeepMainInputFormatWithoutStretching",
+        "ShuffleSurface.RefusedViewPublishesTheCurrentFramesChannelsAndRecoversBySelection",
+        "ReadViewerSurface.ViewerDragPanKeepsTheZoomAndTheDocument"
+      ],
+      "first_case_extended": "Checks exactly one completed worker request and an empty real viewerDiagnostic while a new frame is in flight."
+    },
+    "spirv_validation": {
+      "command": "spirv-val --target-env vulkan1.2 <each release SPIR-V module>",
+      "passed": 14,
+      "failed": 0
+    },
+    "integration_defects_fixed": [
+      "Materialize a Slang image load before dynamic component indexing to avoid invalid vector OpImageTexelPointer.",
+      "Size packed diagnostic readback for all stored samples; download packed pixels directly.",
+      "Preserve opaque default alpha for a projected RGB/scalar view without stored alpha.",
+      "Retain viewport-less header description and mark unavailable-view metadata as answered."
+    ]
+  },
+  "native_evidence": {
+    "captures": [
+      "viewer-playback.png",
+      "unavailable-layer.png",
+      "recovered-layer.png"
+    ],
+    "private_workload_capture_local_only": "build/perf-investigation/native98/playback-no-progress-overlay.png",
+    "actual_diagnostic_samples": 271,
+    "nonempty_diagnostic_samples": 0
+  },
+  "performance": {
+    "environment": "NVIDIA GTX 1070, native Linux Qt/Vulkan; validation disabled only for timing. User app/desktop left open. GPU probes serialized with flock.",
+    "workload": "Preserved Read1 -> Blur1(size 1) -> Viewer1; 1920x1080 H.264, 650 frames, source 25fps. Copied project has only its presentation envelope removed, avoiding a restore prompt; evaluation content unchanged. Auto delivers 960x540, Full 1920x1080.",
+    "baseline_binary": "Preserved 1fe3aa4 release objects/headers/shaders; not a reconstructed pre-#90 whole-app baseline.",
+    "observation": "Six-second processes. End-to-end latency is playhead change to the observed framePresented signal, paired by frame and stopped at the summary. Raw render-request latency has a changed starting boundary and is not compared.",
+    "playback": [
+      {
+        "label": "final-before-auto-1000",
+        "revision": "before",
+        "resolution": "auto",
+        "rate": 1000,
+        "live_frames": 421,
+        "replay_frames": 0,
+        "raster": [
+          [
+            960,
+            540
+          ]
+        ],
+        "live_latency_ms": {
+          "samples": 421,
+          "p50": 16.988542000000052,
+          "p95": 21.57126900000003,
+          "max": 41.894090000000006
+        },
+        "replay_latency_ms": {},
+        "live_interval_ms": {
+          "samples": 420,
+          "p50": 13.236282999999958,
+          "p95": 17.574803999999858,
+          "max": 38.39642600000002
+        },
+        "replay_interval_ms": {},
+        "presented_fps": 75.02328868115771,
+        "worker_requests_per_presentation": 2.002375296912114
+      },
+      {
+        "label": "final-before-full-24",
+        "revision": "before",
+        "resolution": "full",
+        "rate": 24,
+        "live_frames": 136,
+        "replay_frames": 0,
+        "raster": [
+          [
+            1920,
+            1080
+          ]
+        ],
+        "live_latency_ms": {
+          "samples": 135,
+          "p50": 24.912963999999647,
+          "p95": 46.49230099999977,
+          "max": 56.95152800000051
+        },
+        "replay_latency_ms": {},
+        "live_interval_ms": {
+          "samples": 135,
+          "p50": 41.80450400000018,
+          "p95": 57.506459999999606,
+          "max": 74.4636300000002
+        },
+        "replay_interval_ms": {},
+        "presented_fps": 23.86056457313447,
+        "worker_requests_per_presentation": 1.9926470588235294
+      },
+      {
+        "label": "final-before-full-1000",
+        "revision": "before",
+        "resolution": "full",
+        "rate": 1000,
+        "live_frames": 263,
+        "replay_frames": 0,
+        "raster": [
+          [
+            1920,
+            1080
+          ]
+        ],
+        "live_latency_ms": {
+          "samples": 262,
+          "p50": 23.453206000000137,
+          "p95": 35.03272000000004,
+          "max": 50.92535399999997
+        },
+        "replay_latency_ms": {},
+        "live_interval_ms": {
+          "samples": 262,
+          "p50": 20.20655399999987,
+          "p95": 29.549018000000046,
+          "max": 46.289944000000105
+        },
+        "replay_interval_ms": {},
+        "presented_fps": 46.0918099344631,
+        "worker_requests_per_presentation": 2
+      },
+      {
+        "label": "final-before-replay",
+        "revision": "before",
+        "resolution": "full",
+        "rate": 1000,
+        "live_frames": 3,
+        "replay_frames": 136,
+        "raster": [
+          [
+            1920,
+            1080
+          ]
+        ],
+        "live_latency_ms": {
+          "samples": 3,
+          "p50": 62.90513899999996,
+          "p95": 62.90513899999996,
+          "max": 83.18688199999997
+        },
+        "replay_latency_ms": {
+          "samples": 135,
+          "p50": 44.27337700000044,
+          "p95": 53.43327599999998,
+          "max": 76.05447200000003
+        },
+        "live_interval_ms": {
+          "samples": 2,
+          "p50": 35.85466199999996,
+          "p95": 35.85466199999996,
+          "max": 59.94167200000004
+        },
+        "replay_interval_ms": {
+          "samples": 134,
+          "p50": 41.30547799999931,
+          "p95": 48.87469400000009,
+          "max": 61.63492599999995
+        },
+        "presented_fps": 24.388930126963057,
+        "worker_requests_per_presentation": 2
+      },
+      {
+        "label": "final-after-auto-1000",
+        "revision": "after",
+        "resolution": "auto",
+        "rate": 1000,
+        "live_frames": 553,
+        "replay_frames": 0,
+        "raster": [
+          [
+            960,
+            540
+          ]
+        ],
+        "live_latency_ms": {
+          "samples": 553,
+          "p50": 14.481776000000536,
+          "p95": 19.0301579999998,
+          "max": 40.166157
+        },
+        "replay_latency_ms": {},
+        "live_interval_ms": {
+          "samples": 552,
+          "p50": 9.558050000000094,
+          "p95": 13.825079999999957,
+          "max": 32.719182000000046
+        },
+        "replay_interval_ms": {},
+        "presented_fps": 96.96113498427803,
+        "worker_requests_per_presentation": 1.0018083182640145
+      },
+      {
+        "label": "final-after-full-24",
+        "revision": "after",
+        "resolution": "full",
+        "rate": 24,
+        "live_frames": 136,
+        "replay_frames": 0,
+        "raster": [
+          [
+            1920,
+            1080
+          ]
+        ],
+        "live_latency_ms": {
+          "samples": 135,
+          "p50": 22.550372000000152,
+          "p95": 37.612301,
+          "max": 61.31514100000004
+        },
+        "replay_latency_ms": {},
+        "live_interval_ms": {
+          "samples": 135,
+          "p50": 42.03748799999994,
+          "p95": 51.46474399999988,
+          "max": 85.39854400000058
+        },
+        "replay_interval_ms": {},
+        "presented_fps": 23.857728956512567,
+        "worker_requests_per_presentation": 1.0073529411764706
+      },
+      {
+        "label": "final-after-full-1000",
+        "revision": "after",
+        "resolution": "full",
+        "rate": 1000,
+        "live_frames": 315,
+        "replay_frames": 0,
+        "raster": [
+          [
+            1920,
+            1080
+          ]
+        ],
+        "live_latency_ms": {
+          "samples": 314,
+          "p50": 22.240637999999308,
+          "p95": 39.20304099999976,
+          "max": 59.96693600000026
+        },
+        "replay_latency_ms": {},
+        "live_interval_ms": {
+          "samples": 314,
+          "p50": 16.330965999999535,
+          "p95": 29.972279999999955,
+          "max": 44.754972000000066
+        },
+        "replay_interval_ms": {},
+        "presented_fps": 55.262806054871625,
+        "worker_requests_per_presentation": 1
+      },
+      {
+        "label": "final-after-replay",
+        "revision": "after",
+        "resolution": "full",
+        "rate": 1000,
+        "live_frames": 9,
+        "replay_frames": 141,
+        "raster": [
+          [
+            1920,
+            1080
+          ]
+        ],
+        "live_latency_ms": {
+          "samples": 9,
+          "p50": 38.98811499999999,
+          "p95": 74.02743700000008,
+          "max": 96.1312079999999
+        },
+        "replay_latency_ms": {
+          "samples": 140,
+          "p50": 48.80478200000016,
+          "p95": 57.37725300000011,
+          "max": 92.98275299999989
+        },
+        "live_interval_ms": {
+          "samples": 8,
+          "p50": 28.529577000000018,
+          "p95": 37.287113999999974,
+          "max": 67.71052300000008
+        },
+        "replay_interval_ms": {
+          "samples": 139,
+          "p50": 38.40827400000035,
+          "p95": 45.07935899999984,
+          "max": 55.53410199999985
+        },
+        "presented_fps": 26.322136387275798,
+        "worker_requests_per_presentation": 1
+      }
+    ],
+    "gpu_chains": [
+      {
+        "revision": "before",
+        "chain": "blur1:blur=size:1",
+        "exit": 0,
+        "stdout": "# chain_probe resolution=1920x1080 frames=120 submit_frames=200\n# device: NVIDIA GeForce GTX 1070 validation_enabled=0\n# effect_library_load_ms 0.676917\nscenario blur1 phase=warm steps=3 planned_px=6220800 resident_rgba_bytes=99532800 cold_ms=19.1131 warm_mean_ms=4.82478 warm_min_ms=3.67266 warm_p50_ms=4.64283 warm_max_ms=8.54058 submit_mean_ms=0 submit_min_ms=0 submit_p50_ms=0 gpu_exec_ms=185.526 gpu_timed=121 submissions=121 waits=121 pipeline_creations=4 cpu_submit_ms=8.49935 cpu_wait_ms=334.988 frames_timed=121\n",
+        "stderr": ""
+      },
+      {
+        "revision": "before",
+        "chain": "blur20:blur=size:20",
+        "exit": 0,
+        "stdout": "# chain_probe resolution=1920x1080 frames=120 submit_frames=200\n# device: NVIDIA GeForce GTX 1070 validation_enabled=0\n# effect_library_load_ms 0.766816\nscenario blur20 phase=warm steps=3 planned_px=6220800 resident_rgba_bytes=99532800 cold_ms=20.4592 warm_mean_ms=9.25915 warm_min_ms=7.272 warm_p50_ms=8.63294 warm_max_ms=18.0403 submit_mean_ms=0 submit_min_ms=0 submit_p50_ms=0 gpu_exec_ms=618.502 gpu_timed=121 submissions=121 waits=121 pipeline_creations=4 cpu_submit_ms=18.3847 cpu_wait_ms=668.387 frames_timed=121\n",
+        "stderr": ""
+      },
+      {
+        "revision": "after",
+        "chain": "blur1:blur=size:1",
+        "exit": 0,
+        "stdout": "# chain_probe resolution=1920x1080 frames=120 submit_frames=200\n# device: NVIDIA GeForce GTX 1070 validation_enabled=0\n# effect_library_load_ms 0.810234\nscenario blur1 phase=warm steps=3 planned_px=6220800 resident_rgba_bytes=99532800 cold_ms=157.407 warm_mean_ms=4.33672 warm_min_ms=3.31204 warm_p50_ms=4.33864 warm_max_ms=4.98641 submit_mean_ms=0 submit_min_ms=0 submit_p50_ms=0 gpu_exec_ms=166.626 gpu_timed=121 submissions=121 waits=121 pipeline_creations=4 cpu_submit_ms=8.02807 cpu_wait_ms=286.498 frames_timed=121\n",
+        "stderr": ""
+      },
+      {
+        "revision": "after",
+        "chain": "blur20:blur=size:20",
+        "exit": 0,
+        "stdout": "# chain_probe resolution=1920x1080 frames=120 submit_frames=200\n# device: NVIDIA GeForce GTX 1070 validation_enabled=0\n# effect_library_load_ms 0.885674\nscenario blur20 phase=warm steps=3 planned_px=6220800 resident_rgba_bytes=99532800 cold_ms=19.8207 warm_mean_ms=7.15842 warm_min_ms=5.95995 warm_p50_ms=6.59871 warm_max_ms=43.57 submit_mean_ms=0 submit_min_ms=0 submit_p50_ms=0 gpu_exec_ms=444.242 gpu_timed=121 submissions=121 waits=121 pipeline_creations=4 cpu_submit_ms=11.4513 cpu_wait_ms=523.287 frames_timed=121\n",
+        "stderr": ""
+      }
+    ],
+    "upload_release": {
+      "bytes_per_upload": 33177600,
+      "device": "NVIDIA GeForce GTX 1070",
+      "direction": "host -> device",
+      "height": 1080,
+      "pre90_interleaved_sequence": {
+        "cold_ms": 48.150052,
+        "max_ms": 12.13739,
+        "mean_ms": 10.078150840000001,
+        "min_ms": 8.531264,
+        "p50_ms": 10.141124,
+        "p95_ms": 12.036134,
+        "samples": 50
+      },
+      "repaired_native_packed": {
+        "cold_ms": 9.110195,
+        "max_ms": 11.17378,
+        "mean_ms": 9.394521419999998,
+        "min_ms": 8.256161,
+        "p50_ms": 9.396191,
+        "p95_ms": 10.923425,
+        "samples": 50
+      },
+      "scope": "device-image allocation + staging allocation/fill + transfer + completion; excludes decode/color conversion; alternating order",
+      "validation": false,
+      "width": 1920
+    },
+    "upload_debug": {
+      "bytes_per_upload": 33177600,
+      "device": "NVIDIA GeForce GTX 1070",
+      "direction": "host -> device",
+      "height": 1080,
+      "pre90_interleaved_sequence": {
+        "cold_ms": 50.45316,
+        "max_ms": 10.738282,
+        "mean_ms": 9.266609420000002,
+        "min_ms": 8.634446,
+        "p50_ms": 9.159064,
+        "p95_ms": 10.422275,
+        "samples": 50
+      },
+      "repaired_native_packed": {
+        "cold_ms": 8.904707,
+        "max_ms": 9.841951,
+        "mean_ms": 8.71220714,
+        "min_ms": 8.211532,
+        "p50_ms": 8.67703,
+        "p95_ms": 9.740926,
+        "samples": 50
+      },
+      "scope": "device-image allocation + staging allocation/fill + transfer + completion; excludes decode/color conversion; alternating order",
+      "validation": false,
+      "width": 1920
+    },
+    "prior_planar_upload_p50_ms": {
+      "release": 11.057011,
+      "debug": 22.147877
+    },
+    "hardware_decode": {
+      "actual_hardware": true,
+      "device_resident": true,
+      "physical_extent": [
+        1920,
+        1080
+      ],
+      "format": "VK_FORMAT_R32G32B32A32_SFLOAT",
+      "readback": false
+    }
+  },
+  "limitations": [
+    "Earlier native observer timings had a capture-lifetime bug and are superseded. Intermediate corrected runs still showed a project-presentation prompt; final-* runs use the unobstructed surface.",
+    "All native observers required the existing teardown watchdog after measurement; this is not graceful-shutdown evidence.",
+    "Shared-GPU timings are noisy. Warm replay was exercised, but its latency did not improve consistently; do not claim universal p95 or replay-latency gains.",
+    "No hosted CI, Windows run, push, merge, or issue closure.",
+    "Unrelated user workflow/autosave/backup files and root comp.spv are excluded."
+  ]
+}

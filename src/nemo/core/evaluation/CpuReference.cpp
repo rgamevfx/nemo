@@ -484,6 +484,13 @@ void enforceDataWindow(CpuImage& image, const EvaluationRequest& request, const 
 ImageDescriptionPlan describeDependencies(const Document& document, const EvaluationRequest& request,
                                           const NodeContributions& contributions, SourceDescriptionProvider* sources) {
     ImageDescriptionPlan plan;
+    // Origin identity (issue #98): what this plan's descriptions are resolved
+    // from, so a caller that hands the plan back to planResolvedRegions can be
+    // verified instead of trusted.
+    plan.document = &document;
+    plan.documentRevision = document.stateRevision();
+    plan.contributions = &contributions;
+    plan.query = request;
     plan.order = expandDependencies(document, request.network, request.output);
     if (plan.order.empty()) {
         throw EvaluationException("evaluation plan has no scheduled nodes");
@@ -558,10 +565,31 @@ ImageDescriptionPlan describeDependencies(const Document& document, const Evalua
     return plan;
 }
 
-RegionPlan planDependencyRegions(const Document& document, const EvaluationRequest& request,
-                                 const NodeContributions& contributions, SourceDescriptionProvider* sources) {
+RegionPlan planResolvedRegions(const Document& document, const EvaluationRequest& request,
+                               const NodeContributions& contributions, ImageDescriptionPlan described) {
+    // A supplied description plan is trusted only when it provably describes
+    // THIS call's target and time: the same document snapshot, the same
+    // registration, and the network/output/local time it identified. A
+    // mismatch is refused, never silently re-planned — a caller that hands over
+    // a description and a demand that disagree has a bug, and resolving a
+    // second authored state would hide it while making the caller's key and the
+    // executed pixels describe different things.
+    const auto refuse = [](const std::string& detail) {
+        throw EvaluationException("supplied image description plan does not describe this request: " + detail);
+    };
+    if (described.document != &document)
+        refuse("it was described from a different document object");
+    if (described.documentRevision != document.stateRevision())
+        refuse("the document changed since it was described (revision " + std::to_string(described.documentRevision) +
+               " vs " + std::to_string(document.stateRevision()) + ")");
+    if (described.contributions != &contributions)
+        refuse("it was described with a different node registration");
+    if (described.query.network != request.network || described.query.output != request.output ||
+        described.query.localTime != request.localTime)
+        refuse("it describes another target or local time");
+
     RegionPlan plan;
-    plan.images = describeDependencies(document, request, contributions, sources);
+    plan.images = std::move(described);
 
     // The described target defines the request's logical format, so the caller's
     // demand is re-based on it: a caller asks for a region and the graph says
@@ -716,6 +744,12 @@ RegionPlan planDependencyRegions(const Document& document, const EvaluationReque
         }
     }
     return plan;
+}
+
+RegionPlan planDependencyRegions(const Document& document, const EvaluationRequest& request,
+                                 const NodeContributions& contributions, SourceDescriptionProvider* sources) {
+    return planResolvedRegions(document, request, contributions,
+                               describeDependencies(document, request, contributions, sources));
 }
 
 // Collects the required dependency set of `output` (spec section 10.3:

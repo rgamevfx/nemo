@@ -12,6 +12,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include "nemo/gpu/ChannelImage.hpp"
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/GpuViewingTransform.hpp"
@@ -123,10 +124,13 @@ constexpr FormatSpec kSupportedFormats[] = {
 constexpr const char* kSupportedFormatNames =
     "yuv420p, yuvj420p, nv12, yuv444p, yuvj444p, yuv420p10le, yuv444p10le, gray8, gray10le, gray16le";
 
-// Channels of one decoded clip frame: the contract's R, G, B and A, stored as
-// that many R32_SFLOAT channel planes stacked vertically in one device image
-// (issue #90). Video carries no alpha, so its alpha plane stays exactly 1.0.
-constexpr std::uint32_t kDecodedPlanes = kImageChannels;
+// Channels of one decoded clip frame: the contract's R, G, B and A, which the
+// shared native layout stores as the four components of one packed RGBA32F
+// texel per logical pixel (issue #98). Video carries no alpha, so its alpha
+// component stays exactly 1.0. The count is what both decode paths and
+// `convertDecodedFrame` produce; the packed device extent is the logical
+// raster, which `nativeChannelHeight` computes.
+constexpr std::uint32_t kDecodedChannels = kImageChannels;
 
 [[nodiscard]] const FormatSpec* findFormatSpec(AVPixelFormat format) {
     for (const FormatSpec& spec : kSupportedFormats) {
@@ -753,35 +757,46 @@ ClipInfo inspectClipHeader(const std::string& path) {
     return PreparedDecoder(path, {}, false).metadata(path);
 }
 
-void uploadChannelPlanes(gpu::SubmissionQueue& queue, gpu::Allocator& allocator, const gpu::Image& image,
-                         const CpuImage& raster, const uint64_t timeout_ns) {
+void uploadNativeImage(gpu::SubmissionQueue& queue, gpu::Allocator& allocator, const gpu::Image& image,
+                       const CpuImage& raster, const uint64_t timeout_ns) {
     const std::size_t channels = raster.channelCount();
     const auto width = static_cast<std::uint32_t>(std::max(raster.width(), 0));
     const auto height = static_cast<std::uint32_t>(std::max(raster.height(), 0));
     if (width == 0 || height == 0 || channels == 0) {
-        throw gpu::GpuException(gpu::GpuError::InvalidRequest, "channel-plane upload: the raster has no samples");
+        throw gpu::GpuException(gpu::GpuError::InvalidRequest, "native image upload: the raster has no samples");
     }
     // Refuse a mismatched target instead of uploading through a wrong stride:
-    // the plane contract is the image's shape, and a caller that allocated a
-    // different one would otherwise bind garbage.
+    // the native layout of this raster's channel count is the image's shape, and
+    // a caller that allocated a different one would otherwise bind garbage.
+    const auto storedCount = static_cast<std::uint32_t>(channels);
     const VkExtent3D extent = image.extent();
-    if (image.format() != VK_FORMAT_R32_SFLOAT || image.dimensions() != 2 || extent.width != width ||
-        extent.height % height != 0 || extent.height / height != channels) {
+    const std::uint64_t nativeHeight = gpu::nativeChannelHeight(height, storedCount);
+    if (image.format() != gpu::nativeChannelFormat(storedCount) || image.dimensions() != 2 || extent.width != width ||
+        extent.height != nativeHeight) {
         throw gpu::GpuException(gpu::GpuError::InvalidRequest,
-                                "channel-plane upload: the target image is not an R32_SFLOAT 2D image of extent "
-                                "(width, channels*height)");
+                                "native image upload: the target image is not the " + std::to_string(storedCount) +
+                                    "-channel layout of extent (" + std::to_string(width) + ", " +
+                                    std::to_string(nativeHeight) + ")");
     }
     const std::size_t pixels = static_cast<std::size_t>(width) * height;
     const std::size_t bytes = pixels * channels * sizeof(float);
     gpu::Buffer staging = allocator.create_buffer(static_cast<VkDeviceSize>(bytes), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                                   gpu::MemoryPreference::HostMapped);
-    // Vulkan copy regions have a row pitch, not an interleaved pixel stride.
-    // Transpose directly into the one required staging allocation.
-    auto* destination = static_cast<float*>(staging.mapped());
-    const float* source = raster.data();
-    for (std::size_t pixel = 0; pixel < pixels; ++pixel)
-        for (std::size_t channel = 0; channel < channels; ++channel)
-            destination[channel * pixels + pixel] = *source++;
+    if (storedCount == 4) {
+        // Four stored channels ARE the packed texel: the raster's own bytes are
+        // already in wire order, so the staging fill is one contiguous copy with
+        // no transpose and no per-sample work.
+        std::memcpy(staging.mapped(), raster.data(), bytes);
+    } else {
+        // The scalar-plane layout stacks channels vertically, so the interleaved
+        // samples are transposed directly into the one required staging
+        // allocation: Vulkan copy regions have a row pitch, not a pixel stride.
+        auto* destination = static_cast<float*>(staging.mapped());
+        const float* source = raster.data();
+        for (std::size_t pixel = 0; pixel < pixels; ++pixel)
+            for (std::size_t channel = 0; channel < channels; ++channel)
+                destination[channel * pixels + pixel] = *source++;
+    }
 
     const VkBuffer stagingBuffer = staging.handle();
     const VkImage imageHandle = image.handle();
@@ -801,10 +816,10 @@ void uploadChannelPlanes(gpu::SubmissionQueue& queue, gpu::Allocator& allocator,
         },
         {staging.retain(), image.retain()}, {}, timeout_ns);
     if (!completion) {
-        throw gpu::GpuException(gpu::GpuError::SubmissionTimeout, "channel-plane upload submission capacity exhausted");
+        throw gpu::GpuException(gpu::GpuError::SubmissionTimeout, "native image upload submission capacity exhausted");
     }
     if (!queue.wait(*completion, timeout_ns)) {
-        throw gpu::GpuException(gpu::GpuError::SubmissionTimeout, "channel-plane upload did not complete");
+        throw gpu::GpuException(gpu::GpuError::SubmissionTimeout, "native image upload did not complete");
     }
 }
 
@@ -976,18 +991,15 @@ std::unique_ptr<ClipDecoder> ClipDecoder::openInternal(gpu::Instance& instance, 
     if (d.hwDevice != nullptr && d.rgb.ocio()) {
         // Retained OCIO GPU input-transform pass for the hardware path: the
         // Y'CbCr matrix/range decode stays in mediaConvert and the RGB
-        // transfer/gamut conversion runs here, on device, with no host
-        // readback. Built once per decoder from the resolved input space. The
-        // program is the CHANNEL-PLANE variant, because a decoded frame is a
-        // plane image: it converts the RGB planes in place and leaves alpha and
-        // every auxiliary plane untouched. Extracted from the decoder's own
-        // retained snapshot: no second load of the config path, so the program
-        // always matches the identity and the CPU processors of this
-        // generation.
+        // transfer/gamut conversion runs IN PLACE over the decoded frame's own
+        // packed four-channel image, with no staging copy, no second image and
+        // no host readback. Extracted from the decoder's own retained snapshot:
+        // no second load of the config path, so the program always matches the
+        // identity and the CPU processors of this generation.
         d.inputTransform = std::make_unique<gpu::GpuViewingTransform>(
             device, allocator,
-            d.colorInput.cache->snapshot().inputTransformPlanesGpu(d.colorInput.cache->policy().workingSpace,
-                                                                   d.rgb.colorSpace));
+            d.colorInput.cache->snapshot().inputTransformImageGpu(d.colorInput.cache->policy().workingSpace,
+                                                                  d.rgb.colorSpace));
     }
 
     if (d.hwDevice != nullptr) {
@@ -1224,13 +1236,15 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
         foreign.width = static_cast<uint32_t>(frame.frame->width);
         foreign.height = static_cast<uint32_t>(frame.frame->height);
 
-        // The decoded frame is stored in the native channel-plane layout: the
-        // four contract channels of a logical W x H frame occupy one
-        // R32_SFLOAT image of extent (W, 4H), plane c at (x, y + c*H).
-        auto output = std::make_unique<gpu::Image>(
-            impl.allocator->create_image(foreign.width, foreign.height * kDecodedPlanes, 1, VK_FORMAT_R32_SFLOAT,
-                                         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 2));
-        const auto completion = impl.interop->submitToChannelPlanes(foreign, *output, timeout_ns);
+        // The decoded frame is stored in the shared native layout: four
+        // channels are one packed RGBA32F texel per logical pixel (issue #98),
+        // so the device extent is the frame's own W×H and the decode→contract
+        // conversion stays entirely on device.
+        auto output = std::make_unique<gpu::Image>(impl.allocator->create_image(
+            foreign.width, static_cast<std::uint32_t>(gpu::nativeChannelHeight(foreign.height, kDecodedChannels)), 1,
+            gpu::nativeChannelFormat(kDecodedChannels), VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            2));
+        const auto completion = impl.interop->submitToRgba32f(foreign, *output, timeout_ns);
         if (!completion)
             fail(impl.info.path, "vulkan", "GPU submission capacity exhausted");
 
@@ -1252,12 +1266,12 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
 
         impl.framesDecodedHardware++;
         if (impl.inputTransform != nullptr) {
-            // Retained OCIO pass on the device over the plane image: encoded
-            // R'G'B' planes in, working-space scene-linear planes out, applied
-            // in place so the decoded frame keeps its identity and its
-            // auxiliary planes. No host readback and no per-frame compilation.
+            // Retained OCIO pass IN PLACE over the decoded frame's own packed
+            // four-channel buffer: one float4 load/store per pixel, no staging
+            // copy, no buffer and no second image per frame. No host readback
+            // and no per-frame compilation; alpha is stored back unchanged.
             const std::optional<gpu::SubmissionQueue::Completion> converted =
-                impl.inputTransform->submitInputTransformPlanesInPlace(*output, timeout_ns);
+                impl.inputTransform->submitInputTransformInPlace(*output, timeout_ns);
             if (!converted)
                 failStatus(impl.info.path, "GPU input transform submission capacity exhausted");
             if (!submissions.wait(*converted, timeout_ns))
@@ -1279,22 +1293,25 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
     // Measured software path (chosen explicitly at open time when the
     // device has no usable Vulkan video configuration): the actual frame is
     // validated and converted per its DECLARED interpretation to the
-    // scene-linear contract, then uploaded to device residency in the native
-    // channel-plane layout, exactly as the hardware path produces it — one
-    // addressing convention for decoded frames whatever decoded them. The
-    // upload is the capability-dependent transfer cost this path carries.
+    // scene-linear contract, then uploaded to device residency in the shared
+    // native layout, exactly as the hardware path produces it — one addressing
+    // convention for decoded frames whatever decoded them. Four channels are a
+    // contiguous staging copy in the raster's own byte order; the upload is the
+    // capability-dependent transfer cost this path carries.
     const CpuImage pixels = convertDecodedFrame(frame.frame, impl.color, impl.info.path,
                                                 /*linearize=*/!impl.viewerReplay, 0, 0, nullptr, nullptr,
                                                 impl.viewerReplay ? nullptr : &impl.rgb);
+    const auto channels = static_cast<std::uint32_t>(pixels.channelCount());
     auto output = std::make_unique<gpu::Image>(impl.allocator->create_image(
-        static_cast<uint32_t>(frame.frame->width),
-        static_cast<uint32_t>(frame.frame->height) * static_cast<uint32_t>(kDecodedPlanes), 1, VK_FORMAT_R32_SFLOAT,
+        static_cast<std::uint32_t>(frame.frame->width),
+        static_cast<std::uint32_t>(gpu::nativeChannelHeight(static_cast<std::uint32_t>(frame.frame->height), channels)),
+        1, gpu::nativeChannelFormat(channels),
         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
             VK_IMAGE_USAGE_SAMPLED_BIT,
         2));
     // Leaves the image in GENERAL, the layout the interop conversion and every
     // decoded-frame consumer bind.
-    uploadChannelPlanes(*impl.queue, *impl.allocator, *output, pixels, timeout_ns);
+    uploadNativeImage(*impl.queue, *impl.allocator, *output, pixels, timeout_ns);
     return output;
 }
 

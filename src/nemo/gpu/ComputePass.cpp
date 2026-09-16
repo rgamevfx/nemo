@@ -1,5 +1,7 @@
 #include "nemo/gpu/ComputePass.hpp"
 
+#include "nemo/gpu/ChannelImage.hpp"
+
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -643,27 +645,61 @@ void downloadImage(SubmissionQueue& queue, Allocator& allocator, const Image& im
     std::memcpy(data, staging.mapped(), bytes);
 }
 
-Image cropChannelPlaneImage(SubmissionQueue& queue, Allocator& allocator, const Image& source, uint32_t width,
-                            uint32_t height, uint32_t channels, uint64_t timeout_ns) {
+Image cropNativeImage(SubmissionQueue& queue, Allocator& allocator, const Image& source, uint32_t width,
+                      uint32_t height, uint32_t channels, uint64_t timeout_ns) {
     const VkExtent3D sourceExtent = source.extent();
-    if (source.format() != VK_FORMAT_R32_SFLOAT || source.dimensions() != 2 || width == 0 || height == 0 ||
-        channels == 0 || width > sourceExtent.width || sourceExtent.height % channels != 0 ||
-        static_cast<std::uint64_t>(height) * channels > sourceExtent.height)
-        throw GpuException(GpuError::InvalidRequest, "channel-plane crop is outside the source image");
-    auto cropped = allocator.create_image(width, height * channels, 1, source.format(),
+    if (source.dimensions() != 2 || width == 0 || height == 0 || channels == 0 || width > sourceExtent.width) {
+        throw GpuException(GpuError::InvalidRequest, "native image crop is outside the source image");
+    }
+    // The source must be the native representation OF THAT CHANNEL COUNT (issue
+    // #98), never a guess: four stored channels are the packed four-component
+    // image, every other count is one scalar plane per channel. A source whose
+    // real format contradicts the count would otherwise be read plane by plane
+    // out of an allocation that does not hold them.
+    if (source.format() != nativeChannelFormat(channels)) {
+        throw GpuException(GpuError::InvalidRequest,
+                           "the source is not the native " + std::to_string(channels) + "-channel layout");
+    }
+    const bool packed = nativeChannelComponents(source.format()) > 1;
+    // The source holds `channels` planes of equal height — the packed texel, or
+    // one scalar plane per stored channel — with the codec's padding rows beyond
+    // the logical `height`.
+    std::uint64_t sourceRows = sourceExtent.height;
+    if (!packed) {
+        if (sourceExtent.height % channels != 0) {
+            throw GpuException(GpuError::InvalidRequest,
+                               "scalar-plane image crop does not match the source's channel planes");
+        }
+        sourceRows = sourceExtent.height / channels;
+    }
+    if (height > sourceRows) {
+        throw GpuException(GpuError::InvalidRequest, "native image crop is outside the source image");
+    }
+    // The destination keeps the source's representation with the logical
+    // extent: packed stays W×H, planes stay W×(H*C).
+    const std::uint32_t destinationHeight = static_cast<std::uint32_t>(nativeChannelHeight(height, channels));
+    auto cropped = allocator.create_image(width, destinationHeight, 1, source.format(),
                                           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                               VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                           2);
-    const auto sourceHeight = sourceExtent.height / channels;
-    // Plane offsets use each image's logical height, not its packed extent.
-    std::vector<VkImageCopy> copies(channels);
-    for (uint32_t plane = 0; plane < channels; ++plane) {
-        VkImageCopy& copy = copies[plane];
+    // Plane offsets use the SOURCE plane height, not the cropped one: the
+    // padding is in the rows of each plane. The packed image needs a single
+    // region at the origin.
+    std::vector<VkImageCopy> copies(packed ? 1 : channels);
+    if (packed) {
+        VkImageCopy& copy = copies.front();
         copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         copy.dstSubresource = copy.srcSubresource;
-        copy.srcOffset = VkOffset3D{0, static_cast<std::int32_t>(plane * sourceHeight), 0};
-        copy.dstOffset = VkOffset3D{0, static_cast<std::int32_t>(plane * height), 0};
         copy.extent = {width, height, 1};
+    } else {
+        for (uint32_t plane = 0; plane < channels; ++plane) {
+            VkImageCopy& copy = copies[plane];
+            copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            copy.dstSubresource = copy.srcSubresource;
+            copy.srcOffset = VkOffset3D{0, static_cast<std::int32_t>(plane * sourceRows), 0};
+            copy.dstOffset = VkOffset3D{0, static_cast<std::int32_t>(plane * height), 0};
+            copy.extent = {width, height, 1};
+        }
     }
     submitAndWaitRetained(
         queue,
@@ -684,7 +720,7 @@ Image cropChannelPlaneImage(SubmissionQueue& queue, Allocator& allocator, const 
                                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
                                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT);
         },
-        {source.retain(), cropped.retain()}, timeout_ns, "cropChannelPlaneImage");
+        {source.retain(), cropped.retain()}, timeout_ns, "cropNativeImage");
     return cropped;
 }
 

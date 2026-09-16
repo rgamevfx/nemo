@@ -70,11 +70,12 @@ void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
     const int planeHeight = int(meta2.y);
-    // The described result's data support (native binding contract v6). Shuffle
-    // produces every plane itself, so the outside-support branch zeroes them
+    // The described result's data support (native binding contract v7). Shuffle
+    // produces every stored channel itself, so the outside-support branch zeroes
+    // them
     // explicitly instead of relying on a channel plan (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuZeroPlanes(out_color, ivec2(p), planeHeight);
+        gpuZeroPlanes(out_color, ivec2(p), planeHeight, channels.y, channels.x);
         return;
     }
 
@@ -91,14 +92,20 @@ void main() {
         secondPixel.x >= 0 && secondPixel.y >= 0 && secondPixel.x < secondExtent.x && secondPixel.y < secondExtent.y;
 
     // Untouched B: the result carries B's channels first, in B's own order, so
-    // a plane B physically holds and no row replaces keeps B's value at
-    // unchanged coordinates. Bounding by the bound image's plane count (not by
-    // the description) keeps a cleared frame's absent planes at numeric zero.
+    // a stored channel B physically holds and no row replaces keeps B's value at
+    // unchanged coordinates. Bounding by the bound image's stored channel count
+    // (not by the description) keeps a cleared frame's absent channels at
+    // numeric zero.
     const int basePlanes = int(inputGeometry[0].channels.x);
     const int untouched = int(channels.x) < basePlanes ? int(channels.x) : basePlanes;
+    // The produced pixel: one register for a packed raster, one plane store per
+    // channel for a scalar one (issues #90, #98).
+    vec4 pixel = vec4(0.0);
     for (int plane = 0; plane < untouched; ++plane) {
-        float value = baseInside ? gpuLoadPlane(in_base, basePixel, plane, baseExtent.y) : 0.0;
-        gpuStorePlane(out_color, ivec2(p), plane, planeHeight, value);
+        float value = baseInside ? gpuLoadChannel(in_base, basePixel, plane, baseExtent.y,
+                                                  inputGeometry[0].channels.y)
+                                 : 0.0;
+        gpuPixelChannel(pixel, out_color, ivec2(p), planeHeight, channels.y, plane, value);
     }
 
     // The constants cover the base image's FORMAT, in full-resolution
@@ -115,17 +122,24 @@ void main() {
         if (outputPlane < 0 || outputPlane >= int(channels.x)) { continue; }
         float value = 0.0;
         if (entry.x == 0) {  // input B: the exact named channel, or zero when absent
-            value = (entry.y >= 0 && baseInside) ? gpuLoadPlane(in_base, basePixel, entry.y, baseExtent.y) : 0.0;
+            value = (entry.y >= 0 && baseInside)
+                        ? gpuLoadChannel(in_base, basePixel, entry.y, baseExtent.y, inputGeometry[0].channels.y)
+                        : 0.0;
         } else if (entry.x == 1) {  // input A at its own coordinates, or zero
             value =
-                (entry.y >= 0 && secondInside) ? gpuLoadPlane(in_second, secondPixel, entry.y, secondExtent.y) : 0.0;
+                (entry.y >= 0 && secondInside)
+                    ? gpuLoadChannel(in_second, secondPixel, entry.y, secondExtent.y,
+                                     inputGeometry[1].channels.y)
+                    : 0.0;
         } else if (entry.x == 3) {  // constant one, defined on the base format
             value = insideFormat ? 1.0 : 0.0;
         }
         // kind 2 (constant zero) needs no read and writes numeric zero.
-        gpuStorePlane(out_color, ivec2(p), outputPlane, planeHeight, value);
+        gpuPixelChannel(pixel, out_color, ivec2(p), planeHeight, channels.y, outputPlane, value);
     }
+    gpuPixelStore(out_color, ivec2(p), channels.y, pixel);
 }
+
 )GLSL";
 
 [[nodiscard]] EffectPassDefinition shufflePass() {

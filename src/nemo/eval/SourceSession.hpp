@@ -13,8 +13,8 @@
 // Two decode kinds (issue #62): a clip reference is served by a
 // ClipDecoder, and a still image or image-sequence pattern is served by a
 // validated media::readImageFrame read uploaded as one device image in the
-// native channel-plane layout, carrying the file's own named channels
-// (issue #90). The kind is classified from the resolved reference path
+// shared native layout, carrying the file's own named channels (issue #98).
+// The kind is classified from the resolved reference path
 // once per runtime key; both kinds produce the SAME DecodedFrame contract
 // described below.
 //
@@ -64,11 +64,13 @@ public:
     // One decoded source frame handed to the executor: scene-linear
     // (project working space) or Data for a Raw bypass, full resolution,
     // association from description, GENERAL layout, GPU-complete. Its device
-    // image is always the native channel-plane layout (issue #90): R32_SFLOAT,
-    // extent (coverage.width, coverage.height * description.channels.size()),
-    // plane c of logical pixel (x, y) at (x, y + c*coverage.height), planes in
-    // `description.channels` order. A still/sequence frame carries the file's
-    // own named channels; a clip frame carries R, G, B, A.
+    // image is always the shared native layout of its own stored channel count
+    // (issue #98): four channels are a packed RGBA32F image at the coverage
+    // extent, one texel per logical pixel; any other count is an R32_SFLOAT
+    // image of extent (coverage.width, coverage.height * description.channels
+    // .size()), plane c of logical pixel (x, y) at (x, y + c*coverage.height).
+    // Channels stay in `description.channels` order. A still/sequence frame
+    // carries the file's own named channels; a clip frame carries R, G, B, A.
     struct DecodedFrame {
         std::shared_ptr<const gpu::Image> image;
         // LOGICAL storage extents of the retained raster, exactly `coverage`'s
@@ -190,8 +192,10 @@ private:
     // Requires colorMutex_.
     [[nodiscard]] std::shared_ptr<const media::OcioConfigSnapshot> snapshotLocked() const;
 
-    // One cleared full-resolution sample, retained under mutex_.
-    [[nodiscard]] std::shared_ptr<const gpu::Image> transparentBlack(std::uint64_t timeout_ns);
+    // One cleared full-resolution sample in the native layout of a description
+    // with `channels` stored channels (packed RGBA32F for four, scalar planes
+    // otherwise), retained under mutex_ and cached per count.
+    [[nodiscard]] std::shared_ptr<const gpu::Image> transparentBlack(std::uint32_t channels, std::uint64_t timeout_ns);
 
     // Inserts a decoded frame into the bounded least-recently-used cache.
     // target frame shares ownership with the returned DecodedFrame. The
@@ -238,7 +242,10 @@ private:
     mutable std::map<std::string, std::shared_ptr<const media::InputColorCache>> colors_;
     mutable bool identityResolved_{false};
     mutable std::string identity_;
-    std::shared_ptr<const gpu::Image> blackFrame_;
+    // Cleared samples by stored channel count: the native layout of a frame
+    // depends on that count, so one cleared image cannot stand for every
+    // description (issue #98).
+    std::map<std::uint32_t, std::shared_ptr<const gpu::Image>> blackFrames_;
 
     // Bounded runtime state. kMaxDecoders bounds open decoder contexts
     // (decode queues and NVDEC surfaces are the expensive resource);

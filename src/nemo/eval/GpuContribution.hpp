@@ -23,12 +23,11 @@ namespace nemo::eval {
 // survive a semantic change to the interface the kernels were compiled
 // against. Node-local payload layouts are versioned separately by their own
 // declaring node.
-inline constexpr std::string_view kEffectBindingContractVersion = "nemo.native.bindings.v6";
+inline constexpr std::string_view kEffectBindingContractVersion = "nemo.native.bindings.v7";
 
-// Internal binding contract v6 (issues #88, #90). Only coordinate/time facts and
-// the resolved named-channel projection are
-// common to effects. Node-local payloads have their own layout at set 0,
-// binding 1.
+// Internal binding contract v7 (issues #88, #90, #98). Only coordinate/time facts
+// and the resolved named-channel projection are common to effects. Node-local
+// payloads have their own layout at set 0, binding 1.
 //
 // The common request describes the raster THIS PASS produces, so a pass whose
 // output is a node-local scratch image (a separable filter's intermediate)
@@ -66,22 +65,38 @@ struct EffectRequestUniforms {
     // support: coverage stays what the request asked for and the guard only
     // decides which of its samples carry data.
     std::int32_t support[4]{};
-    // channels (issue #90, native channel planes): (the produced raster's
-    // CHANNEL PLANE count, 0, 0, 0). A native image is an R32_SFLOAT 2D image
-    // whose logical pixel `(x,y)` and channel `c` live at `(x, y + c*H)`, H
-    // being the raster's LOGICAL height (`meta2.y` for the produced raster) —
-    // so one image holds every named channel as a vertical plane and dispatch
-    // extents stay the logical raster. `channels.x` is the number of entries in
-    // the set 0 binding 3 channel plan.
+    // channels (issues #90, #98, native channel images): (the produced raster's
+    // STORED channel count, its components per texel, whether the channel plan
+    // fills any stored channel, 0). A native image carries every stored channel
+    // in stored order and never drops or pads one; its representation follows
+    // from the stored count alone:
+    //
+    //   components 4   one packed VK_FORMAT_R32G32B32A32_SFLOAT image at the
+    //                  LOGICAL extent W×H, whose texel (x, y) holds stored
+    //                  channels 0..3 of logical pixel (x, y) in its R,G,B,A
+    //                  components, so a whole pixel is one vector load or store.
+    //   components 1   VK_FORMAT_R32_SFLOAT scalar planes at W×(H*C), stored
+    //                  channel c of logical pixel (x, y) at (x, y + c*H), so
+    //                  one-, two- and three-channel data is never expanded.
+    //
+    // `channels.y` is the produced raster's ACTUAL storage, so a kernel picks its
+    // access shape from the binding rather than from a compiled-in assumption.
+    // `channels.z` is 0 exactly when the pass's own RGBA math produces every
+    // stored channel, which is when the channel plan has nothing to fill and the
+    // kernel never reads it. `channels.x` is the number of entries in the set 0
+    // binding 3 channel plan.
     std::uint32_t channels[4]{};
-    // rgba (issue #90): the produced raster's plane index for the R, G, B and A
-    // projection roles, resolved once by the executor from the described
-    // channel names (`nemo::rgbaChannelIndices`); -1 means the role is absent
-    // from the image. A kernel writes ONLY the roles that exist, so no named
-    // RGB or alpha is ever manufactured, and reads a missing role as 0.0 (R/G/B)
-    // or, for A, as 1.0 when the image carries at least one RGB role and 0.0
-    // when it carries none — the same projection the CPU reference's
-    // `CpuImage::pixel` applies.
+    // rgba (issues #90, #98): the produced raster's STORED channel index for the
+    // R, G, B and A projection roles, resolved once by the executor from the
+    // described channel names (`nemo::rgbaChannelIndices`); -1 means the role is
+    // absent from the image. The four stored channels of a packed image are NOT
+    // assumed to be R,G,B,A — this word is the only authority on the roles, so
+    // an arbitrary four-channel image (any names, any order) reads and writes
+    // correctly. A kernel writes ONLY the roles that exist, so no named RGB or
+    // alpha is ever manufactured, and reads a missing role as 0.0 (R/G/B) or,
+    // for A, as 1.0 when the image carries at least one RGB role and 0.0 when it
+    // carries none — the same projection the CPU reference's `CpuImage::pixel`
+    // applies.
     std::int32_t rgba[4]{-1, -1, -1, -1};
 };
 static_assert(sizeof(EffectRequestUniforms) == 96);
@@ -104,36 +119,43 @@ static_assert(sizeof(EffectRequestUniforms) == 96);
 // returns transparent black when that index lies outside the extent; it never
 // rescales by a fill ratio.
 //
-// `extent.xy` is the input raster's LOGICAL size (issue #90): an image stored
-// as channel planes is `(extent.x, extent.y * channels.x)` texels on the
-// device, and its plane `c` starts at device row `c * extent.y`.
+// `extent.xy` is the input raster's LOGICAL size (issues #90, #98): an image
+// stored as channel planes is `(extent.x, extent.y * channelCount)` texels on
+// the device, and its stored channel c starts at device row `c * extent.y`; a
+// packed four-channel image is exactly `(extent.x, extent.y)` texels, its four
+// stored channels sharing each texel.
 struct EffectInputGeometry {
     std::int32_t regionAndOffset[4]{};
     std::uint32_t extent[4]{};
-    // The input image's plane index for the R, G, B and A roles, resolved from
-    // its described channel names; -1 = the role is absent (issue #90).
+    // The input image's STORED channel index for the R, G, B and A roles,
+    // resolved from its described channel names; -1 = the role is absent (issues
+    // #90, #98).
     std::int32_t rgba[4]{-1, -1, -1, -1};
-    // The input image's DEVICE channel plane count: its physical height divided
-    // by its logical height. For every executor-owned raster that is exactly its
-    // described channel count; a decoded frame may carry fewer planes than its
+    // The input image's ACTUAL storage: its stored channel count and its
+    // components per texel (4 = packed four-channel, 1 = scalar channel planes),
+    // both derived from the image's real format, never guessed from a
+    // description. A decoded frame may carry fewer stored channels than its
     // description names (a retained policy-cleared sample), so a kernel that
-    // addresses planes 1:1 bounds itself by this word, never by the description.
+    // addresses channels 1:1 bounds itself by this word — and reads its access
+    // shape from it — rather than by the description.
     std::uint32_t channels[4]{};
 };
 static_assert(sizeof(EffectInputGeometry) == 64);
 
-// Set 0, binding 3: the pass output's channel plan, one entry per produced
-// plane in plane order (issue #90). A kernel's RGBA math writes the plane roles
-// the request's `rgba` word names; every OTHER plane of the produced raster is
-// filled from this plan by the shared `gpuPreserveAux` helper, so named
-// channels a pass does not select survive at unchanged coordinates instead of
-// being dropped or left undefined. The executor resolves the plan once, from
-// the described channel names, before any dispatch.
+// Set 0, binding 3: the pass output's channel plan, one entry per STORED channel
+// in stored order (issues #90, #98). A kernel's RGBA math writes the stored
+// channels the request's `rgba` word names; every OTHER stored channel of the
+// produced raster is filled from this plan by the shared `gpuStorePixel` helper,
+// so named channels a pass does not select survive at unchanged coordinates
+// instead of being dropped or left undefined. The executor resolves the plan
+// once, from the described channel names, before any dispatch, and the request's
+// `channels.z` says whether it fills anything at all — a pass whose raster holds
+// only its own roles never reads this buffer.
 struct EffectChannelPlanEntry {
-    // >= 0: copy this plane of the pass's set-1 binding 0 image at the same
-    // lattice coordinates.
-    // -1: the pass's own kernel produces this plane (nothing to preserve).
-    // -2: the plane has no source in the bound image and is numeric zero.
+    // >= 0: copy this stored channel of the pass's set-1 binding 0 image at the
+    // same lattice coordinates.
+    // -1: the pass's own kernel produces this channel (nothing to preserve).
+    // -2: the channel has no source in the bound image and is numeric zero.
     std::int32_t sourcePlane{-1};
     std::int32_t reserved{};
 };

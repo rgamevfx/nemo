@@ -36,9 +36,11 @@
 //
 // Production consumption of decoded frames is the returned device-resident
 // Image; there is no routine readback. Every decoded frame — whichever path
-// produced it — is stored in the native channel-plane layout (issue #90):
-// R32_SFLOAT, extent (logical width, 4*logical height), plane c of logical
-// pixel (x, y) at (x, y + c*H), left in GENERAL.
+// produced it — is stored in the shared native layout of its four channels
+// (issue #98): a packed RGBA32F image of extent (logical width, logical
+// height) whose texel (x, y) holds the frame's R, G, B and A, left in GENERAL.
+// The four components are one packed vector per pixel, exactly as for any
+// other four-channel native image.
 //
 // All AV*/FFmpeg types stay in the .cpp — the public surface is the
 // application image contract only (Media module boundary rule).
@@ -96,18 +98,21 @@ struct ClipInfo {
 // or producing pixels. Pixel-format support is checked only during execution.
 [[nodiscard]] ClipInfo inspectClipHeader(const std::string& path);
 
-// Uploads one decoded interleaved raster into the native channel-plane image
-// layout (issue #90): a logical `raster.width()` x `raster.height()` image with
-// C declared channels is ONE R32_SFLOAT 2D image of extent (width, C*height),
-// where channel c of logical pixel (x, y) lives at (x, y + c*height). The
-// interleaved samples are transposed directly into the single staging buffer,
-// then copied contiguously; no extra raster or per-sample name lookup is needed.
-// The image is left in GENERAL, the
-// layout every decoded-frame consumer binds. `image` must already be an
-// R32_SFLOAT 2D allocation of exactly that extent; a mismatch is refused rather
-// than uploaded through a wrong stride. Synchronous; throws GpuException.
-void uploadChannelPlanes(gpu::SubmissionQueue& queue, gpu::Allocator& allocator, const gpu::Image& image,
-                         const CpuImage& raster, uint64_t timeout_ns);
+// Uploads one decoded interleaved raster into the shared native image layout
+// (issue #98). Four stored channels occupy the packed RGBA32F image of exactly
+// `raster.width()` x `raster.height()`: the interleaved samples are copied
+// contiguously, so the upload is one mapped staging fill and the byte count is
+// the raster's own. Any other channel count keeps the scalar-plane layout: one
+// R32_SFLOAT 2D image of extent (width, channelCount * height), where channel c
+// of logical pixel (x, y) lives at (x, y + c*height), transposed into the same
+// single staging buffer. Channel names and their order are never rewritten:
+// the stored order is the raster's own. The image is left in GENERAL, the
+// layout every decoded-frame consumer binds. `image` must already be the
+// raster's native layout — `nativeChannelFormat`/`nativeChannelHeight` of its
+// actual channel count — and a mismatch is refused rather than uploaded
+// through a wrong stride. Synchronous; throws GpuException.
+void uploadNativeImage(gpu::SubmissionQueue& queue, gpu::Allocator& allocator, const gpu::Image& image,
+                       const CpuImage& raster, uint64_t timeout_ns);
 
 // How the clip is being decoded, with the measured reason when the
 // hardware path is not used.
@@ -206,9 +211,9 @@ public:
     [[nodiscard]] const DecodeDecision& decision() const;
 
     // Decodes the next frame and returns its device-resident image in the
-    // native channel-plane layout: R32_SFLOAT, extent (logical width,
-    // 4*logical height), plane c of logical pixel (x, y) at (x, y + c*H), left
-    // in GENERAL. Source mode is scene-linear; openViewer() mode is
+    // shared native layout: the packed RGBA32F image of extent (logical width,
+    // logical height) holding the frame's R, G, B and A components, left in
+    // GENERAL. Source mode is scene-linear; openViewer() mode is
     // display-referred.
     [[nodiscard]] std::unique_ptr<gpu::Image> next(uint64_t timeout_ns);
     [[nodiscard]] std::unique_ptr<gpu::Image> nextViewer(uint64_t timeout_ns);

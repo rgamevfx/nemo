@@ -352,12 +352,14 @@ layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    vec4 bg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y));  // WRONG: ports swapped
-    vec4 fg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y));
+    vec4 bg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y),
+                          inputGeometry[1].channels.y);  // WRONG: ports swapped
+    vec4 fg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y),
+                          inputGeometry[0].channels.y);
     vec4 result;
     result.xyz = fg.a * fg.xyz + (1.0 - fg.a) * bg.xyz;
     result.w = fg.a + (1.0 - fg.a) * bg.a;
-    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
+    gpuStoreRgba(out_color, ivec2(p), int(meta2.y), channels.y, rgba, result);
 }
 )GLSL";
 
@@ -368,12 +370,14 @@ layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    vec4 bg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y));
-    vec4 fg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y));  // WRONG: premultiplied over
+    vec4 bg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y),
+                          inputGeometry[0].channels.y);
+    vec4 fg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y),
+                          inputGeometry[1].channels.y);  // WRONG: premultiplied over
     vec4 result;
     result.xyz = fg.xyz + (1.0 - fg.a) * bg.xyz;
     result.w = fg.a + (1.0 - fg.a) * bg.a;
-    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
+    gpuStoreRgba(out_color, ivec2(p), int(meta2.y), channels.y, rgba, result);
 }
 )GLSL";
 
@@ -448,8 +452,10 @@ layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    vec4 bg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y));  // WRONG: A/B roles exchanged
-    vec4 fg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y));
+    vec4 bg = gpuLoadRgba(in_b, ivec2(p), inputGeometry[1].rgba, int(inputGeometry[1].extent.y),
+                          inputGeometry[1].channels.y);  // WRONG: A/B roles exchanged
+    vec4 fg = gpuLoadRgba(in_a, ivec2(p), inputGeometry[0].rgba, int(inputGeometry[0].extent.y),
+                          inputGeometry[0].channels.y);
     int operation = int(op.x);
     vec4 composite;
     if (operation == 0) {
@@ -463,7 +469,7 @@ void main() {
         composite.xyz = bg.xyz + fg.a * (target - bg.xyz);
     }
     composite.w = fg.a + (1.0 - fg.a) * bg.a;
-    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), composite);
+    gpuStoreRgba(out_color, ivec2(p), int(meta2.y), channels.y, rgba, composite);
 }
 )GLSL";
 
@@ -1643,5 +1649,231 @@ TEST(Effect, SeparableBlurScratchPreservesNamedAuxiliaryChannelsWhileRgbaFilters
         }
     }
     EXPECT_GT(smoothed, 10.0F * kBlurTolerance34) << "the native blur must really filter the composited RGBA";
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #98: packed four-channel storage. A native image whose description
+// carries exactly four stored channels is ONE packed four-component image at
+// the LOGICAL raster, whatever those channels are called and wherever they sit
+// in storage; the SAME data with a fifth channel stays scalar planes. The
+// authored fixture is the oracle: every value is asserted through exact
+// channel-name lookup, never through a storage index, so an implementation that
+// took component 0 for R from the count alone fails here — and the four- and
+// five-channel runs must agree channel for channel, because the representation
+// follows the stored channel COUNT and nothing else.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr int kPackedWidth = 12;
+constexpr int kPackedHeight = 9;
+
+// The authored four-channel fixture, stored in a deliberately noncanonical
+// order: the identified roles resolve to R=2, G=1, B=0, A=3. Every sample is an
+// exact power of two, so the only inexactness a comparison can see is the
+// effect's own arithmetic.
+const std::vector<std::string> kPackedChannels{"B", "G", "R", "A"};
+constexpr std::array<float, 4> kPackedValues{6.0F, 4.0F, 2.0F, 0.25F};
+constexpr float kPackedAuxiliary = 7.0F;
+
+[[nodiscard]] CpuImage packedStill(bool withAuxiliaryChannel) {
+    ImageLayout layout;
+    layout.width = kPackedWidth;
+    layout.height = kPackedHeight;
+    layout.channels = kPackedChannels;
+    if (withAuxiliaryChannel) {
+        layout.channels.push_back("depth.Z");
+    }
+    CpuImage image(layout);
+    for (int y = 0; y < kPackedHeight; ++y) {
+        for (int x = 0; x < kPackedWidth; ++x) {
+            for (std::size_t channel = 0; channel < kPackedValues.size(); ++channel) {
+                image.setChannel(x, y, static_cast<int>(channel), kPackedValues[channel]);
+            }
+            if (withAuxiliaryChannel) {
+                image.setChannel(x, y, static_cast<int>(kPackedValues.size()), kPackedAuxiliary);
+            }
+        }
+    }
+    return image;
+}
+
+// The channel inventory as a set of names: nothing dropped, renamed or
+// manufactured by either representation.
+void expectChannelInventory(const CpuImage& image, std::vector<std::string> expected, const char* what) {
+    std::vector<std::string> names = image.layout().channels;
+    std::sort(names.begin(), names.end());
+    std::sort(expected.begin(), expected.end());
+    EXPECT_EQ(names, expected) << what << ": no dropped, renamed or manufactured channels";
+}
+
+[[nodiscard]] float namedValue(const CpuImage& image, std::string_view name, int x, int y) {
+    const int index = channelIndex(image.layout().channels, name);
+    EXPECT_GE(index, 0) << "image does not carry channel '" << name << "'";
+    return index >= 0 ? image.channel(x, y, index) : 0.0F;
+}
+
+// source -> effect -> output over one authored still, through the same source
+// session seam every real-media graph uses.
+[[nodiscard]] Document packedEffectGraph(const std::string& stillPath, const char* type,
+                                         const ParameterValues& params) {
+    Document doc;
+    rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+    doc.name = std::string{"packed-"} + type;
+    CommandStack stack(doc);
+    stack.push(setSourceCommand("plate", SourceReference{stillPath}));
+    const NodeId plate = rootGraph(doc).addNode("source", "plate");
+    rootGraph(doc).setParam(plate, "source", std::string{"plate"});
+    rootGraph(doc).setParam(plate, "inputTransform", ChoiceValue{"raw"});
+    const NodeId effect = rootGraph(doc).addNode(type, "effect");
+    for (const auto& [key, value] : params) {
+        rootGraph(doc).setParam(effect, key, value);
+    }
+    const NodeId output = rootGraph(doc).addNode("output", "result");
+    (void)rootGraph(doc).connect({plate, 0}, {effect, 0});
+    (void)rootGraph(doc).connect({effect, 0}, {output, 0});
+    return doc;
+}
+
+}  // namespace
+
+TEST(Effect, PackedFourChannelStorageFollowsTheStoredChannelCount) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const StillScratchDir scratch;
+    const std::string packedPath = scratch.file("packed-four.exr");
+    const std::string planarPath = scratch.file("planar-five.exr");
+    media::writeImage(packedPath, packedStill(false), media::OutputPrecision::Float32);
+    media::writeImage(planarPath, packedStill(true), media::OutputPrecision::Float32);
+
+    // An RGB-only grade at an exact weight: the identified RGB roles must be
+    // read and written through their resolved channels, while alpha — and the
+    // fifth channel of the other fixture — keep their authored samples.
+    const ParameterValues params{{"multiply", ColorValue{{2.0F, 2.0F, 2.0F, 1.0F}}},
+                                 {"channels", ChoiceValue{"RGB"}},
+                                 {"mix", 0.5}};
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+
+    struct Run {
+        CpuImage native;
+        CpuImage reference;
+    };
+    const auto evaluate = [&](const std::string& stillPath) {
+        Document doc = packedEffectGraph(stillPath, "grade", params);
+        const EvaluationRequest request = requestFor(doc, Region{0, 0, kPackedWidth, kPackedHeight}, 0);
+        eval::GpuEvaluation gpu =
+            evaluateGpu(doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr, &sources);
+        media::ImageSourceProvider provider;
+        return Run{gpu.readBack(request.output, *boot.device, *boot.allocator),
+                   evaluateCpu(doc, request, nullptr, &provider).image};
+    };
+    const Run packed = evaluate(packedPath);
+    const Run planar = evaluate(planarPath);
+
+    // Four stored channels stay four, named and ordered as the media authored
+    // them; a fifth channel stores the same four as scalar planes and keeps the
+    // auxiliary one.
+    expectChannelInventory(packed.native, kPackedChannels, "packed four-channel result");
+    std::vector<std::string> planarExpected = kPackedChannels;
+    planarExpected.push_back("depth.Z");
+    expectChannelInventory(planar.native, planarExpected, "five-channel result");
+
+    // The graded roles resolve through the channel names, not through storage
+    // position: R=1.5*2, G=1.5*4, B=1.5*6, alpha untouched, depth.Z untouched.
+    const std::vector<std::pair<std::string, float>> authored{{"B", kPackedValues[0]},
+                                                              {"G", kPackedValues[1]},
+                                                              {"R", kPackedValues[2]},
+                                                              {"A", kPackedValues[3]}};
+    for (int y = 0; y < kPackedHeight; ++y) {
+        for (int x = 0; x < kPackedWidth; ++x) {
+            const std::string at = " at " + std::to_string(x) + "," + std::to_string(y);
+            for (const auto& [name, value] : authored) {
+                const bool graded = name != "A";
+                const float wanted = graded ? 1.5F * value : value;
+                const float tolerance = graded ? kGradeTolerance34 : 0.0F;
+                EXPECT_NEAR(namedValue(packed.native, name, x, y), wanted, tolerance) << "packed " << name << at;
+                EXPECT_NEAR(namedValue(planar.native, name, x, y), wanted, tolerance)
+                    << "scalar-plane " << name << at << " disagrees with the packed run";
+            }
+            EXPECT_FLOAT_EQ(namedValue(planar.native, "depth.Z", x, y), kPackedAuxiliary)
+                << "the unselected auxiliary channel" << at;
+        }
+    }
+    // Both front ends and the CPU reference agree on either storage.
+    expectImagesClose(packed.reference, packed.native, kGradeTolerance34, "packed four-channel cpu vs slang");
+    expectImagesClose(planar.reference, planar.native, kGradeTolerance34, "five-channel cpu vs slang");
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, PackedFourChannelBlurRegionMatchesFullFrameAndCpuReference) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    const StillScratchDir scratch;
+    const std::string packedPath = scratch.file("packed-four.exr");
+    media::writeImage(packedPath, packedStill(false), media::OutputPrecision::Float32);
+
+    // The separable filter runs its scratch pass over the node's own four
+    // channels, so the intermediate is packed as well, and the executor's crop
+    // copies one packed region.
+    const ParameterValues params{{"size", 3.0}, {"channels", ChoiceValue{"RGBA"}}};
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::SourceSession sources(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    Document doc = packedEffectGraph(packedPath, "blur", params);
+
+    const Region region{3, 2, 6, 5};
+    // The ROI and the whole frame describe the same image: the same explicit
+    // full-resolution domain, so the comparison below is about the rectangle only.
+    const EvaluationRequest request = roiRequestFor(doc, region, kPackedWidth, kPackedHeight, 0);
+    const EvaluationRequest fullRequest =
+        roiRequestFor(doc, Region{0, 0, kPackedWidth, kPackedHeight}, kPackedWidth, kPackedHeight, 0);
+    eval::GpuEvaluation regionEval =
+        evaluateGpu(doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr, &sources);
+    const CpuImage regionImage = regionEval.readBack(request.output, *boot.device, *boot.allocator);
+    const CpuImage fullImage =
+        evaluateGpu(doc, fullRequest, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, nullptr, &sources)
+            .readBack(fullRequest.output, *boot.device, *boot.allocator);
+
+    expectChannelInventory(regionImage, kPackedChannels, "packed blur region");
+    expectRegionMatchesFullFrame(regionImage, fullImage, region, kBlurTolerance34, "packed blur region vs full frame");
+    // The fixture is constant, so the filtered result is that same constant: the
+    // authored values are an oracle the scratch pass, the tap loop and the crop
+    // must all preserve.
+    const std::vector<std::pair<std::string, float>> authored{{"B", kPackedValues[0]},
+                                                              {"G", kPackedValues[1]},
+                                                              {"R", kPackedValues[2]},
+                                                              {"A", kPackedValues[3]}};
+    for (int y = 0; y < region.height; ++y) {
+        for (int x = 0; x < region.width; ++x) {
+            for (const auto& [name, value] : authored) {
+                EXPECT_NEAR(namedValue(regionImage, name, x, y), value, kBlurTolerance34)
+                    << "packed blur " << name << " at " << x << "," << y;
+            }
+        }
+    }
+    media::ImageSourceProvider provider;
+    expectImagesClose(evaluateCpu(doc, request, nullptr, &provider).image, regionImage, kBlurTolerance34,
+                      "packed blur region cpu vs slang");
+
+    // Reuse: the padded backing rendered for one rectangle serves an overlapping
+    // one in place, with the packed crop still delivering the caller's own
+    // rectangle.
+    ResultCache<eval::GpuNodeImage> warm;
+    const Region second{4, 3, 4, 4};
+    const EvaluationRequest secondRequest = roiRequestFor(doc, second, kPackedWidth, kPackedHeight, 0);
+    eval::GpuEvaluation firstEval =
+        evaluateGpu(doc, secondRequest, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &warm, &sources);
+    static_cast<void>(firstEval);
+    const CacheCounts afterFirst = warm.counts();
+    eval::GpuEvaluation reusedEval =
+        evaluateGpu(doc, request, slang, *boot.device, *boot.allocator, 10'000'000'000ULL, &warm, &sources);
+    const CacheCounts afterReused = warm.counts();
+    const CpuImage reusedImage = reusedEval.readBack(request.output, *boot.device, *boot.allocator);
+    EXPECT_GT(afterReused.hits, afterFirst.hits);
+    EXPECT_EQ(afterReused.misses, afterFirst.misses) << "an overlapping packed rectangle must not recompute";
+    expectImagesClose(regionImage, reusedImage, 1e-6F, "packed blur reused region");
     expectValidationClean(*boot.instance);
 }

@@ -33,16 +33,17 @@ layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v6): a sample
+    // The described image's data support (native binding contract v7): a sample
     // outside it is transparent black, never the authored color computed there,
-    // and every plane — auxiliary ones included — is initialized (issue #90).
+    // and every stored channel — auxiliary ones included — is initialized (issue
+    // #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y), channels.y, channels.x);
         return;
     }
     // A generator writes the roles its described raster carries; a role the
     // raster does not store is dropped rather than manufactured (issue #90).
-    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), color);
+    gpuStoreRgba(out_color, ivec2(p), int(meta2.y), channels.y, rgba, color);
 }
 )GLSL";
 

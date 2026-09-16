@@ -115,6 +115,21 @@ struct ResolvedImageNode {
 struct ImageDescriptionPlan {
     std::vector<ExpandedNode> order;
     std::map<EvaluationNodeId, ResolvedImageNode> nodes;
+    // Origin identity of this plan (issue #98): the immutable state it resolved
+    // its descriptions from. A caller that resolves a target's description
+    // before it can state a demand (the viewer's view intent) hands the plan
+    // back to `planResolvedRegions`, which verifies these fields, so a
+    // description resolved for another snapshot, registration, target or local
+    // time is refused instead of being consumed as if it described this call.
+    //
+    // `query` is the request that identified the described target: only its
+    // network, output and local time are part of the identity — describing a
+    // graph never defines coverage, so region, sampling scale and channels are
+    // deliberately not part of it.
+    const Document* document{};
+    std::uint64_t documentRevision{};
+    const NodeContributions* contributions{};
+    EvaluationRequest query;
 };
 
 // The regional schedule of one request (issue #88): the resolved description
@@ -189,6 +204,21 @@ struct RegionPlan {
 [[nodiscard]] RegionPlan planDependencyRegions(const Document& document, const EvaluationRequest& request,
                                                const NodeContributions& contributions,
                                                SourceDescriptionProvider* sources = nullptr);
+
+// Plans coverage for an ALREADY-described dependency set (issue #98). A caller
+// that must learn the target's authored format before it can state its own
+// demand — the viewer resolves an immutable view intent against the current
+// frame — resolves that description once with `describeDependencies` and hands
+// it here, so the coverage, the per-node requests and the key all consume the
+// SAME resolved authored state instead of resolving it a second time.
+//
+// `described` is adopted, never re-derived, and is verified against its own
+// recorded origin identity: the document object, the authored revision, the
+// registration and the described target/time must all be exactly this call's,
+// and a plan that does not provably describe this request is refused with
+// EvaluationException rather than silently re-planned.
+[[nodiscard]] RegionPlan planResolvedRegions(const Document& document, const EvaluationRequest& request,
+                                             const NodeContributions& contributions, ImageDescriptionPlan described);
 
 // Expands a scoped request into one dependency-first plan. Network instances
 // are represented by alias steps whose source is the selected formal output;

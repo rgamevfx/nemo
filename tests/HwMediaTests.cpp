@@ -27,8 +27,10 @@ extern "C" {
 }
 
 #include "nemo/gpu/Allocator.hpp"
+#include "nemo/gpu/ChannelImage.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Device.hpp"
+#include "nemo/gpu/Error.hpp"
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/Probe.hpp"
@@ -300,8 +302,12 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
     const SoftwareClip reference = decodeClipSoftware(clipPath.string());
     ASSERT_EQ(reference.frames.size(), 8u);
 
+    // The shared native layout of a four-channel frame is packed: one RGBA32F
+    // texel per logical pixel, so the device extent is the frame's own 64x48
+    // (issue #98) and the readback is 64*48 interleaved RGBA floats.
+    EXPECT_EQ(frame->format(), gpu::nativeChannelFormat(4));
     ASSERT_EQ(frame->extent().width, 64u);
-    ASSERT_EQ(frame->extent().height, 48u * 4u);
+    ASSERT_EQ(frame->extent().height, 48u);
     std::vector<float> hardware(64 * 48 * 4);
     {
         gpu::SubmissionQueue queue(*boot.device, boot.device->graphics_family());
@@ -319,8 +325,9 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
             const auto b = expected.pixel(x, y);
             double delta = 0.0;
             for (int channel = 0; channel < 3; ++channel)
-                delta =
-                    std::max(delta, std::abs(static_cast<double>(hardware[(channel * 48 + y) * 64 + x]) - b[channel]));
+                delta = std::max(delta, std::abs(static_cast<double>(
+                                                     hardware[(static_cast<std::size_t>(y) * 64 + x) * 4 + channel]) -
+                                                 b[channel]));
             maxDelta = std::max(maxDelta, delta);
             if (delta >= maxDelta) {
                 maxAt[0] = x;
@@ -336,7 +343,7 @@ TEST(HwMedia, DecodeInteropProducesContractImages) {
     while (auto image = decoder->next(1'000'000'000ULL)) {
         ASSERT_NE(image, nullptr);
         ASSERT_EQ(image->extent().width, 64u);
-        ASSERT_EQ(image->extent().height, 48u * 4u);
+        ASSERT_EQ(image->extent().height, 48u);
         ++decoded;
     }
     EXPECT_EQ(decoded, 8);
@@ -480,14 +487,16 @@ TEST(HwMedia, InteropRetainsDelayedForeignPlanesAndConvertsPixels) {
     foreign.waitValues[0] = 1;
     foreign.waitValues[1] = 1;
 
-    auto output = boot.allocator->create_image(64, 48 * 4, 1, VK_FORMAT_R32_SFLOAT,
+    // The kernel's destination contract is the packed four-channel image: one
+    // RGBA32F texel per logical pixel at the frame's own 64x48 (issue #98).
+    auto output = boot.allocator->create_image(64, 48, 1, gpu::nativeChannelFormat(4),
                                                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 
     std::vector<std::uint32_t> spirv =
         loadSpirvFile(std::filesystem::path(NEMO_SLANG_SPV_DIR_VALUE) / "mediaConvert.spv");
     auto interop = gpu::MediaInterop::create(*boot.device, *boot.allocator, spirv);
     auto& execution = boot.device->submissions(boot.device->graphics_family());
-    const auto completion = interop->submitToChannelPlanes(foreign, output);
+    const auto completion = interop->submitToRgba32f(foreign, output);
     ASSERT_TRUE(completion);
     EXPECT_FALSE(execution.wait(*completion, 1));
     EXPECT_FALSE(execution.poll(*completion));
@@ -519,10 +528,11 @@ TEST(HwMedia, InteropRetainsDelayedForeignPlanesAndConvertsPixels) {
     // The nonzero transfer selector also catches a mismatched uniform ABI.
     for (int y = 0; y < 48; y += 8) {
         for (int x = 0; x < 64; x += 8) {
+            const auto texel = (static_cast<std::size_t>(y) * 64 + x) * 4;
             for (int channel = 0; channel < 3; ++channel) {
-                EXPECT_NEAR(converted[(channel * 48 + y) * 64 + x], 0.21616043, 0.003);
+                EXPECT_NEAR(converted[texel + channel], 0.21616043, 0.003);
             }
-            EXPECT_FLOAT_EQ(converted[(3 * 48 + y) * 64 + x], 1.0F);
+            EXPECT_FLOAT_EQ(converted[texel + 3], 1.0F);
         }
     }
     // Device-owned objects must be released before the device itself.
@@ -530,6 +540,168 @@ TEST(HwMedia, InteropRetainsDelayedForeignPlanesAndConvertsPixels) {
     yImage = gpu::Image{};
     uvImage = gpu::Image{};
     output = gpu::Image{};
+    EXPECT_EQ(boot.allocator->charged_bytes(), 0u);
+    boot.allocator.reset();
+    boot.device.reset();
+    expectValidationClean(*boot.instance);
+    boot.instance.reset();
+}
+
+// The shared native upload (issue #98), measured on the device: four stored
+// channels keep the raster's OWN byte order in one contiguous staging copy, and
+// any other count is uploaded as scalar planes with every channel preserved. The
+// device bytes are compared against the uploaded raster, so a transpose, a
+// reorder, a padding to four or a dropped channel fails here.
+TEST(HwMedia, NativeImageUploadPreservesStoredChannels) {
+    auto boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+
+    constexpr int kWidth = 2;
+    constexpr int kHeight = 2;
+    constexpr std::uint64_t kTimeout = 10'000'000'000ULL;
+    const auto usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                       VK_IMAGE_USAGE_SAMPLED_BIT;
+    auto& queue = boot.device->submissions(boot.device->graphics_family());
+
+    // Four stored channels in a NONCANONICAL order: the packed image holds the
+    // raster's own order, and nothing here assumes R, G, B, A.
+    CpuImage four(ImageLayout{.width = kWidth, .height = kHeight, .channels = {"B", "G", "R", "A"}});
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            for (int channel = 0; channel < 4; ++channel) {
+                four.setChannel(x, y, channel, static_cast<float>(1 + channel * 10 + x + y * kWidth));
+            }
+        }
+    }
+    gpu::Image packed =
+        boot.allocator->create_image(kWidth, static_cast<std::uint32_t>(gpu::nativeChannelHeight(kHeight, 4)), 1,
+                                     gpu::nativeChannelFormat(4), usage, 2);
+    ASSERT_EQ(packed.extent().height, static_cast<std::uint64_t>(kHeight));
+    uploadNativeImage(queue, *boot.allocator, packed, four, kTimeout);
+    std::vector<float> packedBytes(static_cast<std::size_t>(kWidth) * kHeight * 4);
+    gpu::downloadImage(queue, *boot.allocator, packed, packedBytes.data(), packedBytes.size() * sizeof(float),
+                       kTimeout);
+    // Contiguous copy of the raster's own bytes: same order, no transpose.
+    EXPECT_EQ(std::memcmp(packedBytes.data(), four.data(), packedBytes.size() * sizeof(float)), 0);
+
+    // Three stored channels keep the scalar-plane layout, one plane per channel
+    // at the logical height, none expanded into a fourth channel.
+    CpuImage three(ImageLayout{.width = kWidth, .height = kHeight, .channels = {"R", "G", "B"}});
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            for (int channel = 0; channel < 3; ++channel) {
+                three.setChannel(x, y, channel, static_cast<float>(100 + channel * 10 + x + y * kWidth));
+            }
+        }
+    }
+    gpu::Image planes =
+        boot.allocator->create_image(kWidth, static_cast<std::uint32_t>(gpu::nativeChannelHeight(kHeight, 3)), 1,
+                                     gpu::nativeChannelFormat(3), usage, 2);
+    ASSERT_EQ(planes.extent().height, static_cast<std::uint64_t>(kHeight) * 3);
+    uploadNativeImage(queue, *boot.allocator, planes, three, kTimeout);
+    std::vector<float> planeBytes(static_cast<std::size_t>(kWidth) * kHeight * 3);
+    gpu::downloadImage(queue, *boot.allocator, planes, planeBytes.data(), planeBytes.size() * sizeof(float), kTimeout);
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            for (int channel = 0; channel < 3; ++channel) {
+                const auto offset = (static_cast<std::size_t>(channel) * kHeight + y) * kWidth + x;
+                EXPECT_FLOAT_EQ(planeBytes[offset], three.channel(x, y, channel));
+            }
+        }
+    }
+
+    // A target that is not this raster's native layout is refused instead of
+    // being uploaded through a wrong stride.
+    EXPECT_THROW(uploadNativeImage(queue, *boot.allocator, planes, four, kTimeout), gpu::GpuException);
+
+    packed = gpu::Image{};
+    planes = gpu::Image{};
+    EXPECT_EQ(boot.allocator->charged_bytes(), 0u);
+    boot.allocator.reset();
+    boot.device.reset();
+    expectValidationClean(*boot.instance);
+    boot.instance.reset();
+}
+
+// Cropping codec padding keeps the native representation (issue #98): a packed
+// RGBA32F source crops to the packed image of the logical extent, a scalar-plane
+// source crops plane by plane, and a crop that does not match the source's
+// actual format or stored channel count is refused. Reading the device bytes
+// back catches a crop that mixed the two representations or took the wrong rows.
+TEST(HwMedia, NativeImageCropPreservesRepresentation) {
+    auto boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+
+    constexpr std::uint64_t kTimeout = 10'000'000'000ULL;
+    const auto usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                       VK_IMAGE_USAGE_SAMPLED_BIT;
+    auto& queue = boot.device->submissions(boot.device->graphics_family());
+
+    // Packed: four stored channels at 4x2, cropped to the top-left 3x1.
+    CpuImage four(ImageLayout{.width = 4, .height = 2, .channels = {"R", "G", "B", "A"}});
+    for (int y = 0; y < 2; ++y) {
+        for (int x = 0; x < 4; ++x) {
+            for (int channel = 0; channel < 4; ++channel) {
+                four.setChannel(x, y, channel, static_cast<float>(1 + channel * 10 + x + y * 4));
+            }
+        }
+    }
+    gpu::Image packed = boot.allocator->create_image(4, 2, 1, gpu::nativeChannelFormat(4), usage, 2);
+    uploadNativeImage(queue, *boot.allocator, packed, four, kTimeout);
+    gpu::Image packedCropped = gpu::cropNativeImage(queue, *boot.allocator, packed, 3, 1, 4, kTimeout);
+    EXPECT_EQ(packedCropped.format(), gpu::nativeChannelFormat(4));
+    ASSERT_EQ(packedCropped.extent().width, 3u);
+    ASSERT_EQ(packedCropped.extent().height, 1u);
+    std::vector<float> packedBytes(3 * 1 * 4);
+    gpu::downloadImage(queue, *boot.allocator, packedCropped, packedBytes.data(), packedBytes.size() * sizeof(float),
+                       kTimeout);
+    for (int x = 0; x < 3; ++x) {
+        for (int channel = 0; channel < 4; ++channel) {
+            EXPECT_FLOAT_EQ(packedBytes[(static_cast<std::size_t>(x) * 4) + channel], four.channel(x, 0, channel));
+        }
+    }
+
+    // Scalar planes: two stored channels at 3x2 (one plane per channel), cropped
+    // to 2x1 — the result stays two planes of one row each.
+    CpuImage two(ImageLayout{.width = 3, .height = 2, .channels = {"R", "G"}});
+    for (int y = 0; y < 2; ++y) {
+        for (int x = 0; x < 3; ++x) {
+            for (int channel = 0; channel < 2; ++channel) {
+                two.setChannel(x, y, channel, static_cast<float>(50 + channel * 10 + x + y * 3));
+            }
+        }
+    }
+    gpu::Image planes = boot.allocator->create_image(3, static_cast<std::uint32_t>(gpu::nativeChannelHeight(2, 2)), 1,
+                                                     gpu::nativeChannelFormat(2), usage, 2);
+    uploadNativeImage(queue, *boot.allocator, planes, two, kTimeout);
+    gpu::Image planesCropped = gpu::cropNativeImage(queue, *boot.allocator, planes, 2, 1, 2, kTimeout);
+    EXPECT_EQ(planesCropped.format(), gpu::nativeChannelFormat(2));
+    ASSERT_EQ(planesCropped.extent().width, 2u);
+    ASSERT_EQ(planesCropped.extent().height, 2u);
+    std::vector<float> planeBytes(2 * 1 * 2);
+    gpu::downloadImage(queue, *boot.allocator, planesCropped, planeBytes.data(), planeBytes.size() * sizeof(float),
+                       kTimeout);
+    for (int channel = 0; channel < 2; ++channel) {
+        for (int x = 0; x < 2; ++x) {
+            const auto offset = (static_cast<std::size_t>(channel) * 1) * 2 + x;
+            EXPECT_FLOAT_EQ(planeBytes[offset], two.channel(x, 0, channel));
+        }
+    }
+
+    // A crop whose channel count does not match the source's actual
+    // representation is refused, never copied through the wrong addressing.
+    EXPECT_THROW(gpu::cropNativeImage(queue, *boot.allocator, packed, 3, 1, 1, kTimeout), gpu::GpuException);
+    EXPECT_THROW(gpu::cropNativeImage(queue, *boot.allocator, planes, 2, 1, 3, kTimeout), gpu::GpuException);
+    // Four channels must be the PACKED image: a scalar-plane allocation read as
+    // four channels would copy planes out of its bounds.
+    gpu::Image planesNotPacked = boot.allocator->create_image(3, 4, 1, gpu::nativeChannelFormat(3), usage, 2);
+    EXPECT_THROW(gpu::cropNativeImage(queue, *boot.allocator, planesNotPacked, 3, 1, 4, kTimeout), gpu::GpuException);
+
+    packed = gpu::Image{};
+    packedCropped = gpu::Image{};
+    planes = gpu::Image{};
+    planesCropped = gpu::Image{};
+    planesNotPacked = gpu::Image{};
     EXPECT_EQ(boot.allocator->charged_bytes(), 0u);
     boot.allocator.reset();
     boot.device.reset();

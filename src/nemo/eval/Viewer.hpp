@@ -7,12 +7,14 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "nemo/eval/ChannelProjection.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
 #include "nemo/eval/SourceSession.hpp"
+#include "nemo/eval/ViewIntent.hpp"
 #include "nemo/eval/ViewerCache.hpp"
 #include "nemo/gpu/GpuViewingTransform.hpp"
 #include "nemo/media/ViewingTransform.hpp"
@@ -52,6 +54,11 @@ struct ViewerFrame {
     bool cacheHit{false};
     // Accepted for asynchronous encoding, not proof of a persisted chunk.
     bool cacheQueued{false};
+    // The presentation-only display isolation the view asked for (issue #98):
+    // RGBA keeps the whole premultiplied presentation, while a single
+    // identified primary channel of a color-managed layer is isolated in the
+    // presentation copy. It never changes the evaluated frame.
+    gpu::ViewerChannel presentationChannel{gpu::ViewerChannel::RGBA};
 };
 
 // Worker-confined orchestration over the shared native dependency plan:
@@ -79,6 +86,27 @@ public:
     // direct callers' revision/generation freshness contract.
     [[nodiscard]] ViewerFrame render(const Document& document, const EvaluationRequest& request,
                                      std::uint64_t timeout_ns = 10'000'000'000ULL, std::uint64_t generation = 0,
+                                     ViewerDestination destination = ViewerDestination::Interactive,
+                                     CachePublicationGuard publicationGuard = {});
+    // The viewer's own entry point (issue #98): ONE worker job resolves the
+    // immutable view intent against the current frame's described image — the
+    // authored format for exactly its local time, the addressed layer/channel
+    // and the demand this view produces — then keys and executes the SAME
+    // resolved plan, and returns the frame with the description it was actually
+    // produced from. The panel therefore needs no description round trip to
+    // state a demand, and a steady frame costs one completed worker request.
+    //
+    // `resolution` is this destination's Auto hysteresis state. The worker
+    // retains it for the destination's lifetime, so a steady view does not
+    // oscillate between representations and a neighbouring frame cannot
+    // re-resolve it; the frame's request states the effective sampling scale
+    // the panel presents. An unavailable layer or channel throws
+    // ViewUnavailable, which states that this view has nothing to present and
+    // carries the description that refused it, so the caller can adopt the
+    // current frame's channels in the same job instead of retrying.
+    [[nodiscard]] ViewerFrame render(const Document& document, const ViewIntent& intent,
+                                     ViewerResolutionPolicy& resolution, std::uint64_t timeout_ns = 10'000'000'000ULL,
+                                     std::uint64_t generation = 0,
                                      ViewerDestination destination = ViewerDestination::Interactive,
                                      CachePublicationGuard publicationGuard = {});
     // Worker-only metadata query (issue #88): the target's authored output
@@ -131,6 +159,17 @@ private:
         std::string identity;
         std::unique_ptr<gpu::GpuViewingTransform> transform;
     };
+    // The shared execution body of both render entry points: validates the
+    // concrete request, plans (or adopts) exactly one region plan, keys it,
+    // executes it and turns the result into the displayed representation.
+    // `described` is the description plan the view-intent path already resolved
+    // for this document, target and local time; the concrete-request path
+    // leaves it empty and is planned here.
+    [[nodiscard]] ViewerFrame renderResolved(const Document& document, const EvaluationRequest& request,
+                                             std::optional<ImageDescriptionPlan> described, std::uint64_t timeout_ns,
+                                             std::uint64_t generation, ViewerDestination destination,
+                                             CachePublicationGuard publicationGuard,
+                                             gpu::ViewerChannel presentationChannel);
     [[nodiscard]] ViewingState& viewingStateFor(const ColorPolicy& policy);
     // freshnessMutex_ is held by callers.
     std::uint64_t& generationForLocked(ViewerDestination destination);

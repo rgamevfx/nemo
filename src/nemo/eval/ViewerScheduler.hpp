@@ -7,6 +7,7 @@
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/Request.hpp"
+#include "nemo/eval/ViewIntent.hpp"
 #include "nemo/eval/ViewerDestination.hpp"
 
 #include <chrono>
@@ -18,6 +19,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <variant>
 
 namespace nemo::eval {
 
@@ -27,18 +29,28 @@ enum class ViewerRequestKind : std::uint8_t {
     CacheRange,
     // Metadata-only description of one target (issue #88): the worker resolves
     // the target's authored output description through the shared dependency
-    // planner, without acquiring a pixel. The viewer needs the actual format
-    // before it can build a render request, so this travels through the same
-    // bounded admission, coalescing and cancellation as every other request.
+    // planner, without acquiring a pixel. A caller that must learn one node's
+    // authored channels before it can offer them — the mapping inspector's
+    // availability query — needs this as an independent answer, so it travels
+    // through the same bounded admission, coalescing and cancellation as every
+    // other request. A viewer frame does NOT use it: a render resolves its own
+    // current-frame description (issue #98).
     Describe,
 };
+
+// What one scheduled unit asks for. A render states an immutable VIEW INTENT
+// that the worker resolves against the current frame's described image; a
+// metadata or cache unit states the concrete request it addresses. The
+// scheduler never interprets the demand — it only carries it to the worker
+// under the request's identity, priority and cancellation policy.
+using ViewerDemand = std::variant<EvaluationRequest, ViewIntent>;
 
 struct ViewerScheduledRequest {
     // The document is immutable for the entire request. Range frames share
     // one snapshot instead of copying/allocating a request for every frame at
     // admission time.
     std::shared_ptr<const Document> document;
-    EvaluationRequest request;
+    ViewerDemand demand;
     std::string source;  // non-empty only for Probe
     std::uint64_t id{};
     std::uint64_t token{};  // unique scheduler identity, distinct from id
@@ -51,6 +63,12 @@ struct ViewerScheduledRequest {
     // document so a project's authored config replaces the worker session
     // without touching process-global environment state.
     std::string colorConfigPath;
+
+    // The view a render resolves. Only a Render unit holds an intent.
+    [[nodiscard]] const ViewIntent& intent() const { return std::get<ViewIntent>(demand); }
+    // The concrete request a Describe/CacheRange unit addresses. Empty for a
+    // Probe, which names its media source instead.
+    [[nodiscard]] const EvaluationRequest& request() const { return std::get<EvaluationRequest>(demand); }
 };
 
 struct ViewerSchedulerCounts {
@@ -77,8 +95,11 @@ public:
     // All methods are thread-safe. Submission methods take ownership of the
     // input document and capture an immutable snapshot before returning.
     // New work supersedes queued work for its destination; in-flight work is
-    // retained by the evaluator/GPU and is rejected at publication.
-    bool submit(Document document, EvaluationRequest request, std::uint64_t id,
+    // retained by the evaluator/GPU and is rejected at publication. A render
+    // states an immutable view intent (issue #98) — the worker resolves it
+    // against the current frame's described image — so the panel never needs a
+    // separate description round trip to state a demand.
+    bool submit(Document document, ViewIntent intent, std::uint64_t id,
                 ViewerDestination destination = ViewerDestination::Interactive,
                 std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),
                 std::string colorConfigPath = {});

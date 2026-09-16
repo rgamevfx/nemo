@@ -19,13 +19,13 @@
 //     String (empty disables the row).
 //   - defaults: rows 0..3 are B's R,G,B,A mapped onto R,G,B,A; rows 4..7 write
 //     nothing.
-// bindings (native binding contract v6, see GpuGeometry.slang):
+// bindings (native binding contract v7, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.shuffle.payload.v1"):
 //     eight resolved rows (kind, source plane, output plane, 0) + the base
 //     format the constants cover
 //   set 0, binding 2 : per-input spatial geometry (base, second)
-//   set 0, binding 3 : channel plan (unused here: this node produces every plane)
+//   set 0, binding 3 : channel plan (unused here: this node produces every stored channel)
 //   set 1, binding 0 = base (B), binding 1 = second (A)
 //   set 2, binding 0 : output image2D
 // dependencies:
@@ -62,10 +62,12 @@ cbuffer EffectUniforms {
     // support (a node-local scratch), a non-positive size means every sample is
     // transparent black. Samples outside it must be written transparent black.
     int4 support;
-    // channels: the produced raster's channel planes (issue #90):
-    // (plane count, 0, 0, 0).
+    // channels: the produced raster's channel facts (issues #90, #98):
+    // (stored channel count, components per texel — 4 = packed four-channel
+    // RGBA32F at the logical raster, 1 = R32_SFLOAT scalar planes — whether the
+    // channel plan fills any stored channel, 0).
     uint4 channels;
-    // rgba: the produced plane index of each R,G,B,A role; -1 = role absent.
+    // rgba: the produced STORED channel of each R,G,B,A role; -1 = role absent.
     // Unused here: this node addresses the result's planes directly through its
     // resolved mapping rows.
     int4 rgba;
@@ -82,12 +84,12 @@ cbuffer ShufflePayload {
 };
 
 [[vk::binding(0, 1)]]
-RWTexture2D<float> in_base;
+RWTexture2D<float4> in_base;
 [[vk::binding(1, 1)]]
-RWTexture2D<float> in_second;
+RWTexture2D<float4> in_second;
 
 [[vk::binding(0, 2)]]
-RWTexture2D<float> out_color;
+RWTexture2D<float4> out_color;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -97,13 +99,13 @@ void main(uint3 tid : SV_DispatchThreadID)
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
     const int planeHeight = int(meta2.y);
 
-    // The described result's data support (native binding contract v6). This
-    // node produces every plane itself, so the outside-support branch zeroes
+    // The described result's data support (native binding contract v7). This
+    // node produces every stored channel itself, so the outside-support branch zeroes
     // them explicitly (issue #90).
     if (support.z >= 0 && support.w >= 0 &&
         ((int)p.x < support.x || (int)p.y < support.y || (int)p.x >= support.x + support.z ||
          (int)p.y >= support.y + support.w)) {
-        gpuZeroPlanes(out_color, int2(p), planeHeight, channels.x);
+        gpuZeroPlanes(out_color, int2(p), planeHeight, channels.y, channels.x);
         return;
     }
 
@@ -120,13 +122,18 @@ void main(uint3 tid : SV_DispatchThreadID)
 
     // Untouched B: the result carries B's channels first, in B's own order, so a
     // plane B physically holds and no row replaces keeps B's value at unchanged
-    // coordinates. Bounding by the BOUND image's plane count (never by the
+    // coordinates. Bounding by the BOUND image's stored channel count (never by the
     // description) keeps a cleared frame's absent planes at numeric zero.
     const int basePlanes = int(inputGeometry[0].channels.x);
     const int untouched = int(channels.x) < basePlanes ? int(channels.x) : basePlanes;
+    // The produced pixel: one register for a packed raster, one plane store per
+    // channel for a scalar one (issues #90, #98).
+    float4 pixel = float4(0.0, 0.0, 0.0, 0.0);
     for (int plane = 0; plane < untouched; ++plane) {
-        float value = baseInside ? gpuLoadPlane(in_base, basePixel, plane, baseExtent.y) : 0.0;
-        gpuStorePlane(out_color, int2(p), plane, planeHeight, value);
+        float value = baseInside ? gpuLoadChannel(in_base, basePixel, plane, baseExtent.y,
+                                                  inputGeometry[0].channels.y)
+                                 : 0.0;
+        gpuPixelChannel(pixel, out_color, int2(p), planeHeight, channels.y, plane, value);
     }
 
     // The constants cover the base image's FORMAT, in full-resolution
@@ -143,14 +150,20 @@ void main(uint3 tid : SV_DispatchThreadID)
         if (outputPlane < 0 || outputPlane >= int(channels.x)) { continue; }
         float value = 0.0;
         if (entry.x == 0) {  // input B: the exact named channel, or zero when absent
-            value = (entry.y >= 0 && baseInside) ? gpuLoadPlane(in_base, basePixel, entry.y, baseExtent.y) : 0.0;
+            value = (entry.y >= 0 && baseInside)
+                        ? gpuLoadChannel(in_base, basePixel, entry.y, baseExtent.y, inputGeometry[0].channels.y)
+                        : 0.0;
         } else if (entry.x == 1) {  // input A at its own coordinates, or zero
-            value = (entry.y >= 0 && secondInside) ? gpuLoadPlane(in_second, secondPixel, entry.y, secondExtent.y)
+            value = (entry.y >= 0 && secondInside)
+                        ? gpuLoadChannel(in_second, secondPixel, entry.y, secondExtent.y,
+                                         inputGeometry[1].channels.y)
                                                    : 0.0;
         } else if (entry.x == 3) {  // constant one, defined on the base format
             value = insideFormat ? 1.0 : 0.0;
         }
         // kind 2 (constant zero) needs no read and writes numeric zero.
-        gpuStorePlane(out_color, int2(p), outputPlane, planeHeight, value);
+        gpuPixelChannel(pixel, out_color, int2(p), planeHeight, channels.y, outputPlane, value);
     }
+    gpuPixelStore(out_color, int2(p), channels.y, pixel);
 }
+

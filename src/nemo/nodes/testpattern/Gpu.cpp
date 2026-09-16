@@ -22,11 +22,11 @@ layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v6): a sample
+    // The described image's data support (native binding contract v7): a sample
     // outside it is transparent black, never an extrapolated pattern, and every
     // plane — auxiliary ones included — is initialized (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y), channels.y, channels.x);
         return;
     }
     // Full-resolution coordinate frame (issue #11): the reduced raster
@@ -42,7 +42,7 @@ void main() {
     int barWidth = max(2, fullWidth / 16);
     int barPos = (int(misc.x) * (fullWidth / 8)) % (fullWidth + barWidth);
     bool inBar = fullX >= barPos && fullX < barPos + barWidth;
-    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), vec4(u, v, inBar ? 1.0 : 0.0, 1.0));
+    gpuStoreRgba(out_color, ivec2(p), int(meta2.y), channels.y, rgba, vec4(u, v, inBar ? 1.0 : 0.0, 1.0));
 }
 )GLSL";
 

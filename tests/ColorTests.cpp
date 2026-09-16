@@ -30,6 +30,7 @@
 #include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/evaluation/SourceRequest.hpp"
 #include "nemo/gpu/Allocator.hpp"
+#include "nemo/gpu/ChannelImage.hpp"
 #include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Device.hpp"
@@ -230,6 +231,44 @@ void expectValidationClean(gpu::Instance& instance) {
 
     std::vector<float> result(pixels.size());
     gpu::downloadImage(queue, *boot.allocator, viewed->image, result.data(), byteSize, timeout_ns);
+    return result;
+}
+
+// Runs the packed-image OCIO program exactly as the media decoder drives it
+// (issue #98): the pixels become one native packed four-channel image, the
+// transform converts that image IN PLACE (no staging buffer, no second image)
+// and the converted pixels are read back through the declared diagnostic
+// download. Returns the transformed pixels.
+[[nodiscard]] std::vector<float> runGpuImageProgram(const Bootstrap& boot, const media::OcioGpuProgram& program,
+                                                    const std::vector<float>& pixels,
+                                                    uint64_t timeout_ns = 5'000'000'000ULL) {
+    const std::size_t pixelCount = pixels.size() / 4;
+    const VkDeviceSize byteSize = static_cast<VkDeviceSize>(pixels.size() * sizeof(float));
+    const uint32_t width = 2;
+    const uint32_t height = static_cast<uint32_t>(pixelCount / width);
+    EXPECT_EQ(static_cast<std::size_t>(width) * height, pixelCount);
+
+    gpu::SubmissionQueue& queue = boot.device->submissions(boot.device->graphics_family());
+
+    gpu::Image image = boot.allocator->create_image(width, height, 1, gpu::nativeChannelFormat(4),
+                                                    VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                                        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    gpu::uploadImage(queue, *boot.allocator, image, pixels.data(), byteSize, timeout_ns);
+    gpu::imageBarrier(queue, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                      VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, timeout_ns);
+
+    gpu::GpuViewingTransform transform(*boot.device, *boot.allocator, program);
+    const std::optional<gpu::SubmissionQueue::Completion> converted =
+        transform.submitInputTransformInPlace(image, timeout_ns);
+    EXPECT_TRUE(converted.has_value());
+    if (!converted.has_value()) {
+        return {};
+    }
+    EXPECT_TRUE(queue.wait(*converted, timeout_ns));
+
+    std::vector<float> result(pixels.size());
+    gpu::downloadImage(queue, *boot.allocator, image, result.data(), byteSize, timeout_ns);
     return result;
 }
 
@@ -1399,6 +1438,54 @@ TEST(InputColor, GpuInputTransformMatchesCpuReference) {
             EXPECT_NEAR(actual[1], expected[1], 1e-4F) << "pixel (" << x << "," << y << ") G";
             EXPECT_NEAR(actual[2], expected[2], 1e-4F) << "pixel (" << x << "," << y << ") B";
             EXPECT_FLOAT_EQ(actual[3], expected[3]) << "pixel (" << x << "," << y << ") A";
+        }
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// The surface the media decoder actually drives (issue #98): the same input
+// conversion over the native packed four-channel image, applied IN PLACE. The
+// RGB result must match the CPU reference and the texel's OWN alpha must come
+// back untouched — the kernel stores `inColor.a`, never the transform's.
+TEST(InputColor, GpuInputTransformInPlaceOverPackedImageMatchesCpuReference) {
+    const std::string pinned{nemo::kBuiltinColorConfigUri};
+    const nemo::media::OcioGpuProgram program =
+        nemo::media::buildInputTransformImageGpu(pinned, "Linear Rec.709 (sRGB)", "sRGB Encoded Rec.709 (sRGB)");
+    EXPECT_NE(program.description.find("packed four-channel image"), std::string::npos);
+
+    // Deliberately non-trivial alphas: 1.0 would hide a dropped or rewritten
+    // alpha component.
+    std::vector<float> input = sample2x2Flat();
+    for (std::size_t index = 3; index < input.size(); index += 4) {
+        input[index] = 0.25F + static_cast<float>(index);
+    }
+    const int height = static_cast<int>(input.size() / 4 / 2);
+    CpuImage uploaded(2, height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            const auto* pixel = &input[(static_cast<std::size_t>(y) * 2 + x) * 4];
+            uploaded.setPixel(x, y, {pixel[0], pixel[1], pixel[2], pixel[3]});
+        }
+    }
+    CpuImage cpuImage = uploaded;
+    const nemo::media::OcioInputTransform transform(pinned, "Linear Rec.709 (sRGB)", "sRGB Encoded Rec.709 (sRGB)");
+    transform.apply(cpuImage);
+
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    const std::vector<float> gpuPixels = runGpuImageProgram(boot, program, input);
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            const auto expected = cpuImage.pixel(x, y);
+            const auto asUploaded = uploaded.pixel(x, y);
+            const float* actual = &gpuPixels[(static_cast<std::size_t>(y) * 2 + x) * 4];
+            // Same measured OCIO 2.5.2 CPU-vs-GPU divergence as the buffer entry
+            // point (2.408e-5 per channel), with headroom.
+            EXPECT_NEAR(actual[0], expected[0], 1e-4F) << "pixel (" << x << "," << y << ") R";
+            EXPECT_NEAR(actual[1], expected[1], 1e-4F) << "pixel (" << x << "," << y << ") G";
+            EXPECT_NEAR(actual[2], expected[2], 1e-4F) << "pixel (" << x << "," << y << ") B";
+            EXPECT_FLOAT_EQ(actual[3], asUploaded[3]) << "pixel (" << x << "," << y << ") A";
         }
     }
     expectValidationClean(*boot.instance);

@@ -3,6 +3,7 @@
 #include "nemo/core/evaluation/Params.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include "nemo/eval/SourceSession.hpp"
+#include "nemo/gpu/ChannelImage.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Error.hpp"
 #include <algorithm>
@@ -62,38 +63,62 @@ struct RasterGeometry {
                           scaledDimension(request.region.height, scale), scale};
 }
 
-// One raster's storage: an R32_SFLOAT 2D image holding every named channel as
-// a vertical plane (issue #90). Logical pixel (x, y) and channel c live at
-// (x, y + c*logicalHeight), so the device extent is (width, height * planeCount)
-// while dispatch and every coordinate in the request stay logical. The image
-// stays in GENERAL for its whole life (spec section 10.4). Transfer usages exist
-// because the returned output is cropped out of a padded backing on the device,
-// in the same submission as the passes that produced it.
+// One raster's storage in the shared native channel image layout (issues #90,
+// #98): four stored channels become ONE packed VK_FORMAT_R32G32B32A32_SFLOAT
+// image at the LOGICAL
+// extent W×H, whose texel (x, y) holds stored channels 0..3 of logical pixel
+// (x, y) in its R,G,B,A components; every other count stays VK_FORMAT_R32_SFLOAT
+// with one
+// scalar plane per channel at W×(H*C), stored channel c of logical pixel (x, y)
+// at (x, y + c*H). Dispatch extent and every coordinate in the request stay
+// LOGICAL in both representations. The image stays in GENERAL for its whole
+// life (spec section 10.4). Transfer usages exist because the returned output is
+// cropped out of a padded backing on the device, in the same submission as the
+// passes that produced it.
 [[nodiscard]] gpu::Image createEffectImage(gpu::Allocator& allocator, const RasterGeometry& raster,
-                                           std::size_t planeCount) {
+                                           std::size_t channelCount) {
+    const auto stored = static_cast<std::uint32_t>(channelCount);
+    const auto height =
+        static_cast<std::uint32_t>(gpu::nativeChannelHeight(static_cast<std::uint32_t>(raster.height), stored));
     return allocator.create_image(
-        static_cast<std::uint32_t>(raster.width), static_cast<std::uint32_t>(raster.height * planeCount), 1,
-        VK_FORMAT_R32_SFLOAT,
+        static_cast<std::uint32_t>(raster.width), height, 1, gpu::nativeChannelFormat(stored),
         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 2);
 }
 
-// Refuse a channel-plane raster the device cannot represent, naming the node and
-// the actual numbers (issue #90): a described image is never silently degraded,
-// truncated or resampled to fit. `planeCount` is at least one for every
+// Refuse a raster the device cannot represent, naming the node and the actual
+// numbers (issues #90, #98): a described image is never silently degraded,
+// truncated or resampled to fit. `channelCount` is at least one for every
 // admissible description (a description always names its channels).
 void validateRasterDimensions(const NodeInstance& node, const EffectProgram& program, const RasterGeometry& raster,
-                              std::size_t planeCount, uint32_t maxDimension) {
-    if (raster.width <= 0 || raster.height <= 0 || planeCount == 0)
+                              std::size_t channelCount, uint32_t maxDimension) {
+    if (raster.width <= 0 || raster.height <= 0 || channelCount == 0)
         failEffect(node, program,
                    "described raster is empty (" + std::to_string(raster.width) + "x" + std::to_string(raster.height) +
-                       " with " + std::to_string(planeCount) + " channel planes)");
-    const auto rows = static_cast<std::uint64_t>(static_cast<std::uint32_t>(raster.height)) * planeCount;
+                       " with " + std::to_string(channelCount) + " stored channels)");
+    const auto rows =
+        gpu::nativeChannelHeight(static_cast<std::uint32_t>(raster.height), static_cast<std::uint32_t>(channelCount));
     if (static_cast<std::uint64_t>(raster.width) > maxDimension || rows > maxDimension)
         failEffect(node, program,
-                   "channel-plane raster " + std::to_string(raster.width) + "x" + std::to_string(raster.height) + " (" +
-                       std::to_string(planeCount) + " planes -> " + std::to_string(raster.width) + "x" +
-                       std::to_string(rows) + " device texels) exceeds the device's 2D image limit " +
+                   "native channel raster " + std::to_string(raster.width) + "x" + std::to_string(raster.height) +
+                       " (" + std::to_string(channelCount) + " stored channels -> " + std::to_string(raster.width) +
+                       "x" + std::to_string(rows) + " device texels) exceeds the device's 2D image limit " +
                        std::to_string(maxDimension));
+}
+
+// The ACTUAL storage of one bound image, read from the image itself (issue #98):
+// four components per texel is the packed four-channel representation, one is
+// the scalar channel plane representation. Any other format is not a native
+// channel image, and is refused here instead of being read as if it were.
+[[nodiscard]] std::uint32_t boundComponents(const NodeInstance& node, const EffectProgram& program,
+                                            const gpu::Image& image) {
+    const std::uint32_t components = gpu::nativeChannelComponents(image.format());
+    if (components == 0 || image.dimensions() != 2)
+        failEffect(node, program,
+                   "bound input image is not a 2D native channel image (packed VK_FORMAT_R32G32B32A32_SFLOAT or "
+                   "VK_FORMAT_R32_SFLOAT planes): format " +
+                       std::to_string(static_cast<int>(image.format())) + " with " +
+                       std::to_string(image.dimensions()) + " dimensions");
+    return components;
 }
 
 // Barrier for an image whose producing submission is already COMPLETE but
@@ -121,10 +146,11 @@ void afterWriteBeforeRead(VkCommandBuffer command, const gpu::Image& image) {
 // backing may be a padded miss raster or a wider rectangle served by the
 // cache, and may have been written by any earlier submission, so this uses the
 // conservative ALL_COMMANDS write dependency rather than assuming the producer
-// is the pass recorded just before it. A native raster is a channel-plane image
-// (issue #90), so the crop is one copy region per plane: plane c of the
-// destination starts at device row c*`destinationPlaneHeight` and is copied
-// from plane c of the source at the same crop offset.
+// is the pass recorded just before it. Source and destination are the same
+// raster's storage at two rectangles, so they share one representation (issues
+// #90, #98): a packed four-channel raster copies in ONE region, whose four
+// channels travel together in each texel, and a scalar raster copies one region
+// per channel plane.
 void recordRegionCopy(VkCommandBuffer command, const gpu::Image& source, const gpu::Image& destination,
                       std::uint32_t sourceX, std::uint32_t sourceY, std::uint32_t planes,
                       std::uint32_t sourcePlaneHeight, std::uint32_t destinationPlaneHeight, std::uint32_t width,
@@ -135,14 +161,16 @@ void recordRegionCopy(VkCommandBuffer command, const gpu::Image& source, const g
     gpu::recordImageBarrier(command, destination, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT,
                             VK_ACCESS_TRANSFER_WRITE_BIT);
-    std::vector<VkImageCopy> copies(planes);
-    for (std::uint32_t plane = 0; plane < planes; ++plane) {
-        VkImageCopy& copy = copies[plane];
+    const bool packed = gpu::nativeChannelComponents(source.format()) == 4;
+    const std::uint32_t regions = packed ? 1u : planes;
+    std::vector<VkImageCopy> copies(regions);
+    for (std::uint32_t region = 0; region < regions; ++region) {
+        VkImageCopy& copy = copies[region];
         copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         copy.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         copy.srcOffset = VkOffset3D{static_cast<std::int32_t>(sourceX),
-                                    static_cast<std::int32_t>(sourceY + plane * sourcePlaneHeight), 0};
-        copy.dstOffset = VkOffset3D{0, static_cast<std::int32_t>(plane * destinationPlaneHeight), 0};
+                                    static_cast<std::int32_t>(sourceY + region * sourcePlaneHeight), 0};
+        copy.dstOffset = VkOffset3D{0, static_cast<std::int32_t>(region * destinationPlaneHeight), 0};
         copy.extent = VkExtent3D{width, height, 1};
     }
     vkCmdCopyImage(command, source.handle(), VK_IMAGE_LAYOUT_GENERAL, destination.handle(), VK_IMAGE_LAYOUT_GENERAL,
@@ -186,11 +214,15 @@ void recordRegionCopy(VkCommandBuffer command, const gpu::Image& source, const g
 // origins are signed (issue #88): a described output's coverage may extend
 // outside `[0, format)`. `support` is the data rectangle of the produced raster:
 // the node's own declared support for the pass that writes the node output, or
-// "no support" for a node-local scratch raster. `planeCount`/`rgba` are the
-// same raster's channel-plane facts (issue #90), resolved here from the
-// described channel names so no kernel ever looks a name up per pixel.
+// "no support" for a node-local scratch raster. `channelCount`/`components`/
+// `planChannels`/`rgba` are the same raster's channel facts (issues #90, #98),
+// resolved here from the described channel names and the executor's channel plan
+// so no kernel ever looks a name up per pixel: the stored channel count, the
+// components per texel its storage carries, whether the plan fills any stored
+// channel, and the stored channel of each R/G/B/A role.
 EffectRequestUniforms requestUniforms(const EvaluationRequest& request, const std::array<std::int32_t, 4>& support,
-                                      std::uint32_t planeCount, const std::array<int, 4>& rgbaRoles) {
+                                      std::uint32_t channelCount, std::uint32_t components, std::uint32_t planChannels,
+                                      const std::array<int, 4>& rgbaRoles) {
     EffectRequestUniforms result;
     const int scale = request.samplingScale;
     result.meta[0] = static_cast<std::int32_t>(request.imageWidth());
@@ -202,20 +234,25 @@ EffectRequestUniforms requestUniforms(const EvaluationRequest& request, const st
     result.meta2[2] = static_cast<std::uint32_t>(scale);
     result.misc[0] = static_cast<float>(request.localTime);
     std::copy(support.begin(), support.end(), result.support);
-    result.channels[0] = planeCount;
+    result.channels[0] = channelCount;
+    result.channels[1] = components;
+    result.channels[2] = planChannels;
     std::copy(rgbaRoles.begin(), rgbaRoles.end(), result.rgba);
     return result;
 }
 
 // A pass input as it is actually bound: the image, the raster it covers,
 // whether it is addressed by absolute full-resolution coordinates instead of by
-// a lattice-relative offset (the External decoded frame, issue #88), and the
-// named channels those plane indices refer to (issue #90).
+// a lattice-relative offset (the External decoded frame, issue #88), the named
+// channels those channel indices refer to (issue #90), and the ACTUAL components
+// per texel its storage carries (issue #98) — read from the image's own format,
+// never guessed from its description.
 struct BoundInput {
     const gpu::Image* image{};
     RasterGeometry raster;
     bool fullResolution{false};
     std::span<const std::string> channels;
+    std::uint32_t components{1};
 };
 
 // Set 0 binding 2 content for one pass: one entry per set-1 binding, in
@@ -263,12 +300,16 @@ struct BoundInput {
             geometry.extent[2] = static_cast<std::uint32_t>(input.raster.scale);
             geometry.extent[3] = 1u;
         }
-        // The input's own channel facts, resolved once (issue #90): which plane
-        // holds each R/G/B/A role, and how many planes it carries. A device
-        // image holds `extent.x` x `extent.y * channels.x` texels.
+        // The input's own channel facts, resolved once (issues #90, #98): which
+        // stored channel holds each R/G/B/A role, how many channels the image
+        // actually stores, and the components per texel its storage carries. The
+        // kernel picks its access shape from that word and never from the
+        // description, so a decoded frame whose stored channels differ from its
+        // described names is read correctly.
         const std::array<int, 4> roles = rgbaChannelIndices(input.channels);
         std::copy(roles.begin(), roles.end(), geometry.rgba);
         geometry.channels[0] = static_cast<std::uint32_t>(input.channels.size());
+        geometry.channels[1] = input.components;
         block.push_back(geometry);
     }
     if (block.empty())
@@ -486,25 +527,34 @@ CpuImage GpuEvaluation::readBack(NodeId node, gpu::Device& device, gpu::Allocato
     const GpuNodeImage& resident = *it->second;
     const auto width = static_cast<std::size_t>(resident.layout.width);
     const auto height = static_cast<std::size_t>(resident.layout.height);
-    const std::size_t planes = resident.layout.channels.size();
-    CpuImage image(resident.layout);
-    // The device raster is the channel-plane image (issue #90): plane c occupies
-    // device rows [c*height, (c+1)*height), so the download is interleaved here,
-    // by channel index, into the reference image's own channel order. No role is
-    // projected or invented: this is the exact stored value of every named
-    // channel.
-    const std::size_t bytes = width * height * planes * sizeof(float);
-    std::vector<float> planesData(width * height * planes);
-    {
-        auto& queue = device.submissions(device.graphics_family());
-        gpu::downloadImage(queue, allocator, resident.image, planesData.data(), bytes, timeout_ns);
+    const std::size_t stored = resident.layout.channels.size();
+    const std::uint32_t components = gpu::nativeChannelComponents(resident.image.format());
+    if (components == 0 || stored == 0) {
+        throw EvaluationException("node " + std::to_string(node) +
+                                  " does not hold a native channel image (packed "
+                                  "VK_FORMAT_R32G32B32A32_SFLOAT or VK_FORMAT_R32_SFLOAT planes)");
     }
-    for (std::size_t plane = 0; plane < planes; ++plane) {
-        const float* source = planesData.data() + plane * width * height;
-        for (std::size_t y = 0; y < height; ++y) {
-            for (std::size_t x = 0; x < width; ++x) {
-                image.setChannel(static_cast<int>(x), static_cast<int>(y), static_cast<int>(plane),
-                                 source[y * width + x]);
+    CpuImage image(resident.layout);
+    // The device image is the native channel image (issues #90, #98): a packed
+    // four-channel texel holds its channels together, a scalar raster holds one
+    // channel per plane row. The download interleaves them here, by channel
+    // index, into the reference image's own channel order. No role is projected
+    // or invented: this is the exact stored value of every named channel.
+    const std::size_t samples = width * height * stored;
+    const std::size_t bytes = samples * sizeof(float);
+    auto& queue = device.submissions(device.graphics_family());
+    if (components == 4) {
+        gpu::downloadImage(queue, allocator, resident.image, image.data(), bytes, timeout_ns);
+    } else {
+        std::vector<float> pixels(samples);
+        gpu::downloadImage(queue, allocator, resident.image, pixels.data(), bytes, timeout_ns);
+        for (std::size_t channel = 0; channel < stored; ++channel) {
+            for (std::size_t y = 0; y < height; ++y) {
+                for (std::size_t x = 0; x < width; ++x) {
+                    const std::size_t index = channel * width * height + y * width + x;
+                    image.setChannel(static_cast<int>(x), static_cast<int>(y), static_cast<int>(channel),
+                                     pixels[index]);
+                }
             }
         }
     }
@@ -748,11 +798,13 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         // e.g. for a description with an empty format).
         const ImageDescription& description = planNode.description;
         const float pixelAspect = description.pixelAspect;
-        // The node's described channels, resolved once (issue #90): the output
-        // raster's plane count and the plane index of each R/G/B/A role. The
-        // roles are what the node's own arithmetic reads and writes; every other
-        // plane is preserved by the executor's channel plan.
-        const auto outputPlaneCount = static_cast<std::uint32_t>(description.channels.size());
+        // The node's described channels, resolved once (issues #90, #98): the
+        // output raster's stored channel count, the components per texel its
+        // storage carries, and the stored channel of each R/G/B/A role. The roles
+        // are what the node's own arithmetic reads and writes; every other
+        // channel is preserved by the executor's channel plan.
+        const auto outputChannelCount = static_cast<std::uint32_t>(description.channels.size());
+        const auto outputComponents = gpu::nativeChannelComponents(gpu::nativeChannelFormat(outputChannelCount));
         const std::array<int, 4> outputRoles = rgbaChannelIndices(description.channels);
 
         // External media is acquired HERE, after the shared plan described the
@@ -799,25 +851,31 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                 failEffect(*effectiveNode, program,
                            "the source session returned a decoded frame with no named channels");
             const std::uint64_t frameRows = decoded.image != nullptr ? decoded.image->extent().height : 0;
-            if (decoded.image == nullptr || decoded.image->format() != VK_FORMAT_R32_SFLOAT ||
-                decoded.image->dimensions() != 2 ||
-                decoded.image->extent().width != static_cast<std::uint64_t>(decoded.coverage.width) ||
-                frameRows % static_cast<std::uint64_t>(decoded.coverage.height) != 0 ||
-                frameRows / static_cast<std::uint64_t>(decoded.coverage.height) == 0)
+            const std::uint32_t frameComponents =
+                decoded.image != nullptr ? gpu::nativeChannelComponents(decoded.image->format()) : 0;
+            const bool wholePlanes = frameComponents == 4
+                                         ? frameRows == static_cast<std::uint64_t>(decoded.coverage.height)
+                                         : frameRows % static_cast<std::uint64_t>(decoded.coverage.height) == 0 &&
+                                               frameRows / static_cast<std::uint64_t>(decoded.coverage.height) != 0;
+            if (decoded.image == nullptr || frameComponents == 0 || decoded.image->dimensions() != 2 ||
+                decoded.image->extent().width != static_cast<std::uint64_t>(decoded.coverage.width) || !wholePlanes)
                 failEffect(*effectiveNode, program,
-                           "the decoded frame is not an R32_SFLOAT channel-plane image of " +
+                           "the decoded frame is not a native channel image of " +
                                std::to_string(decoded.coverage.width) + "x" + std::to_string(decoded.coverage.height) +
-                               " with whole channel planes");
-            // The frame's plane count is its PHYSICAL height divided by its
-            // logical height (issue #90), never the described channel count: a
-            // policy-cleared frame is one retained transparent sample whose
-            // description still names the whole source. Truncating the names to
-            // the planes that actually exist keeps every resolved index a real
-            // plane, so a name only the description carries reads as zero.
-            const auto sourceFramePlanes =
-                static_cast<std::size_t>(frameRows / static_cast<std::uint64_t>(decoded.coverage.height));
+                               ": expected 2D VK_FORMAT_R32G32B32A32_SFLOAT packed at the logical raster for four "
+                               "stored channels, or VK_FORMAT_R32_SFLOAT with whole channel planes");
+            // The frame's stored channel count is read from the IMAGE, never from
+            // the description (issue #98): four components are four stored
+            // channels in one texel, otherwise the physical height divided by the
+            // logical height counts the scalar planes. A policy-cleared frame is
+            // one retained transparent sample whose description still names the
+            // whole source; truncating the names to the channels that actually
+            // exist keeps every resolved index a real channel, so a name only the
+            // description carries reads as zero.
+            const auto sourceFrameStored =
+                frameComponents == 4 ? std::size_t{4} : static_cast<std::size_t>(frameRows / decoded.coverage.height);
             sourceFrameChannels = decoded.description.channels;
-            sourceFrameChannels.resize(std::min(sourceFrameChannels.size(), sourceFramePlanes));
+            sourceFrameChannels.resize(std::min(sourceFrameChannels.size(), sourceFrameStored));
             sourceFrame = std::move(decoded.image);
             sourceRaster = RasterGeometry{decoded.coverage.x, decoded.coverage.y, decoded.coverage.width,
                                           decoded.coverage.height, 1};
@@ -851,10 +909,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
         nodeLayout.color = description.color;
         auto resident = std::make_shared<GpuNodeImage>();
         resident->layout = nodeLayout;
-        validateRasterDimensions(*effectiveNode, program, nodeRaster, outputPlaneCount,
+        validateRasterDimensions(*effectiveNode, program, nodeRaster, outputChannelCount,
                                  device.properties().limits.maxImageDimension2D);
         try {
-            resident->image = createEffectImage(allocator, nodeRaster, outputPlaneCount);
+            resident->image = createEffectImage(allocator, nodeRaster, outputChannelCount);
         } catch (const gpu::GpuException& error) {
             failEffect(*effectiveNode, program, std::string("output image allocation failed: ") + error.what());
         }
@@ -891,10 +949,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                     // A scratch raster carries the node's own channel planes: the
                     // pass that reads it is the same node, sampling the same
                     // named channels.
-                    validateRasterDimensions(*effectiveNode, passProgram, passRaster, outputPlaneCount,
+                    validateRasterDimensions(*effectiveNode, passProgram, passRaster, outputChannelCount,
                                              device.properties().limits.maxImageDimension2D);
                     auto image =
-                        std::make_shared<gpu::Image>(createEffectImage(allocator, passRaster, outputPlaneCount));
+                        std::make_shared<gpu::Image>(createEffectImage(allocator, passRaster, outputChannelCount));
                     result = image.get();
                     dispatch.scratch.emplace(definition.output.index, std::move(image));
                 }
@@ -906,14 +964,6 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                 const std::array<std::int32_t, 4> support = definition.output.kind == EffectImageKind::Output
                                                                 ? rasterSupport(passRequest, description.dataBounds)
                                                                 : std::array<std::int32_t, 4>{-1, -1, -1, -1};
-                const auto uniforms = requestUniforms(passRequest, support, outputPlaneCount, outputRoles);
-                gpu::Buffer requestBuffer = allocator.create_buffer(
-                    sizeof(uniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, gpu::MemoryPreference::HostMapped);
-                std::memcpy(requestBuffer.mapped(), &uniforms, sizeof(uniforms));
-                std::vector<ComputeBinding> bindings{
-                    {0, 0, DescriptorKind::UniformBuffer, &requestBuffer, nullptr, false}};
-                if (implementation.payloadSize != 0)
-                    bindings.push_back({0, 1, DescriptorKind::UniformBuffer, &payloadBuffer, nullptr, false});
                 std::vector<BoundInput> bound;
                 std::vector<const gpu::Image*> reads;
                 bound.reserve(definition.inputs.size());
@@ -976,7 +1026,8 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                                    "local pass '" + definition.id + "' requires unavailable image binding " +
                                        std::to_string(binding));
                     }
-                    bound.push_back(BoundInput{image, raster, fullResolution, channels});
+                    bound.push_back(BoundInput{image, raster, fullResolution, channels,
+                                               boundComponents(*effectiveNode, passProgram, *image)});
                     if (reference.kind != EffectImageKind::External &&
                         std::find(reads.begin(), reads.end(), image) == reads.end())
                         reads.push_back(image);
@@ -992,11 +1043,11 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                 gpu::Buffer geometryBuffer = allocator.create_buffer(geometryBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                                      gpu::MemoryPreference::HostMapped);
                 std::memcpy(geometryBuffer.mapped(), block.data(), geometryBytes);
-                bindings.push_back({0, 2, DescriptorKind::StorageBuffer, &geometryBuffer, nullptr, false});
                 // The produced raster's channel plan, resolved from the named
-                // channels of this pass's binding-0 image (issues #90): every
-                // plane the pass's RGBA math does not write is preserved from
-                // the same-named channel at unchanged coordinates, or zeroed.
+                // channels of this pass's binding-0 image (issues #90, #98):
+                // every channel the pass's RGBA math does not write is preserved
+                // from the same-named channel at unchanged coordinates, or
+                // zeroed.
                 const std::span<const std::string> planSource =
                     bound.empty() ? std::span<const std::string>{} : bound.front().channels;
                 const auto plan = channelPlanFor(*effectiveNode, passProgram, description.channels, outputRoles,
@@ -1013,6 +1064,25 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                     planEntries[i] = EffectChannelPlanEntry{};  // -1: produced by this pass's own math
                 if (!plan.empty())
                     std::memcpy(planBuffer.mapped(), plan.data(), planBytes);
+                // The request is built once the plan is known (issue #98): its
+                // `channels.z` tells the kernel whether the plan fills ANY
+                // stored channel, so a pass whose own RGBA math produces every
+                // one of them never reads the plan buffer at all, and its
+                // `channels.y` is the components per texel the produced raster's
+                // storage carries.
+                const bool planFills = std::any_of(plan.begin(), plan.end(), [](const EffectChannelPlanEntry& entry) {
+                    return entry.sourcePlane != -1;
+                });
+                const auto uniforms = requestUniforms(passRequest, support, outputChannelCount, outputComponents,
+                                                      planFills ? 1u : 0u, outputRoles);
+                gpu::Buffer requestBuffer = allocator.create_buffer(
+                    sizeof(uniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, gpu::MemoryPreference::HostMapped);
+                std::memcpy(requestBuffer.mapped(), &uniforms, sizeof(uniforms));
+                std::vector<ComputeBinding> bindings{
+                    {0, 0, DescriptorKind::UniformBuffer, &requestBuffer, nullptr, false}};
+                if (implementation.payloadSize != 0)
+                    bindings.push_back({0, 1, DescriptorKind::UniformBuffer, &payloadBuffer, nullptr, false});
+                bindings.push_back({0, 2, DescriptorKind::StorageBuffer, &geometryBuffer, nullptr, false});
                 bindings.push_back({0, 3, DescriptorKind::StorageBuffer, &planBuffer, nullptr, false});
                 if (definition.weights)
                     bindings.push_back({3, 0, DescriptorKind::StorageBuffer, &weightBuffer, nullptr, false});

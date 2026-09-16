@@ -1,4 +1,5 @@
 #include "nemo/gpu/MediaInterop.hpp"
+#include "nemo/gpu/ChannelImage.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 
 #include <cstddef>
@@ -11,6 +12,9 @@
 namespace nemo::gpu {
 
 namespace {
+
+// One native packed texel holds the four stored channels of a logical pixel.
+constexpr std::uint32_t kPackedChannels = 4;
 
 [[noreturn]] void fail(const std::string& what, const std::string& detail = {}) {
     throw GpuException(GpuError::VulkanError, "media interop: " + what + (detail.empty() ? "" : ": " + detail));
@@ -50,8 +54,8 @@ std::unique_ptr<MediaInterop> MediaInterop::create(Device& device, Allocator& al
     return interop;
 }
 
-void MediaInterop::convertToChannelPlanes(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns) {
-    const auto completion = submitToChannelPlanes(frame, output, timeout_ns);
+void MediaInterop::convertToRgba32f(ForeignVideoFrame& frame, Image& output, uint64_t timeout_ns) {
+    const auto completion = submitToRgba32f(frame, output, timeout_ns);
     if (!completion)
         fail("submission capacity exhausted");
     auto& queue = impl_->device->submissions(impl_->device->graphics_family());
@@ -66,8 +70,8 @@ void MediaInterop::convertToChannelPlanes(ForeignVideoFrame& frame, Image& outpu
     }
 }
 
-std::optional<SubmissionQueue::Completion> MediaInterop::submitToChannelPlanes(ForeignVideoFrame& frame, Image& output,
-                                                                               uint64_t admissionTimeout_ns) {
+std::optional<SubmissionQueue::Completion> MediaInterop::submitToRgba32f(ForeignVideoFrame& frame, Image& output,
+                                                                         uint64_t admissionTimeout_ns) {
     if (!frame.owner)
         fail("foreign frame requires retained ownership");
     const VkDevice vkDevice = impl_->device->handle();
@@ -83,14 +87,14 @@ std::optional<SubmissionQueue::Completion> MediaInterop::submitToChannelPlanes(F
     if (frame.width == 0 || frame.height == 0) {
         fail("foreign frame extent must be non-empty");
     }
-    // The destination is this kernel's fixed output contract: four R,G,B,A
-    // channel planes (issue #90). A different image is refused with the actual
-    // numbers instead of writing planes it cannot hold.
+    // The destination is this kernel's fixed output contract: the native packed
+    // image of a four-channel frame (issue #98). A different image is refused
+    // with the actual numbers instead of writing components it cannot hold.
     const VkExtent3D outputExtent = output.extent();
-    if (output.format() != VK_FORMAT_R32_SFLOAT || output.dimensions() != 2 || outputExtent.width != frame.width ||
-        outputExtent.height != static_cast<uint64_t>(frame.height) * 4u) {
-        fail("destination must be a 2D R32_SFLOAT image of extent (" + std::to_string(frame.width) + ", " +
-             std::to_string(static_cast<uint64_t>(frame.height) * 4u) + ") holding four RGBA channel planes, got " +
+    if (output.format() != nativeChannelFormat(kPackedChannels) || output.dimensions() != 2 ||
+        outputExtent.width != frame.width || outputExtent.height != frame.height) {
+        fail("destination must be the native packed four-channel image of extent (" + std::to_string(frame.width) +
+             ", " + std::to_string(frame.height) + ") holding one RGBA texel per pixel, got " +
              std::to_string(outputExtent.width) + "x" + std::to_string(outputExtent.height) + " format " +
              std::to_string(static_cast<int>(output.format())));
     }

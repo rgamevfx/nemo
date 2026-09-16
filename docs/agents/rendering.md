@@ -175,14 +175,17 @@ Independent analytic fixtures, not agreement between implementations, remain
 the correctness oracle (ADR-0004, Fidelity below). Change the independent
 implementations together when a numerical contract changes.
 
-The internal native binding contract is version 6
-([ADR-0008](../decisions/0008-built-in-node-contributions.md#boundaries)):
-R32_SFLOAT vertical channel planes, resolved role indices and auxiliary plans.
-Use each image's logical plane height for sampling/copying, not packed height.
+The internal native binding contract is version 7
+([ADR-0008](../decisions/0008-built-in-node-contributions.md#boundaries)).
+Use `gpu/ChannelImage.hpp` for physical storage: four stored channels are packed
+RGBA32F; other counts are scalar R32_SFLOAT planes. Names/order remain intact.
+Input geometry carries the actual format's components and resolved role indices;
+canonical RGBA uses direct vector loads/stores, while reordered and auxiliary
+channels use the general path. Scalar copies use logical plane height.
 Only complete primary/root RGB receives color conversion; alpha-only and
-auxiliary data bypass it. Viewer projection is the RGBA presentation boundary,
-not a reason to discard named composition channels. Shuffle contributes through
-the same owners; its exact mapping and failure policies are in ADR-0008.
+auxiliary data bypass it. Identity packed viewer/replay images are retained
+directly; other views use device-side projection. Shuffle uses these same
+owners and the exact mapping/failure policies in ADR-0008.
 `GpuPreparation` supplies owned payload/weight values, local passes and
 per-scratch coverage. Image-sampling kernels address signed producer coverage,
 not the output raster's dimensions; final writes respect described data support.

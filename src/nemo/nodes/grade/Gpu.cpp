@@ -93,11 +93,11 @@ vec4 gradePixel(vec4 x) {
 void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
-    // The described image's data support (native binding contract v6): a sample
+    // The described image's data support (native binding contract v7): a sample
     // outside it is transparent black, never grade(0) fabricated there, and
-    // every plane — auxiliary ones included — is initialized (issue #90).
+    // every stored channel — auxiliary ones included — is initialized (issue #90).
     if (!gpuHasData(ivec2(p))) {
-        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y));
+        gpuZeroPlanes(out_color, ivec2(p), int(meta2.y), channels.y, channels.x);
         return;
     }
     // Same-lattice inputs: the pixel with the same full-resolution sample,
@@ -109,7 +109,8 @@ void main() {
     ivec2 mainPixel = ivec2(p) + inputGeometry[0].regionAndOffset.zw;
     ivec2 mainExtent = ivec2(inputGeometry[0].extent.xy);
     bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < mainExtent.x && mainPixel.y < mainExtent.y;
-    vec4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, mainExtent.y) : vec4(0.0);
+    vec4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, mainExtent.y,
+                                         inputGeometry[0].channels.y) : vec4(0.0);
     vec4 processed = gradePixel(orig);
     float coverage = 1.0;
     int channel = int(mask.x);
@@ -119,7 +120,8 @@ void main() {
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
         float selected =
-            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[1].rgba, maskExtent.y)[channel], 0.0, 1.0)
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[1].rgba, maskExtent.y,
+                                           inputGeometry[1].channels.y)[channel], 0.0, 1.0)
                        : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
@@ -127,11 +129,11 @@ void main() {
     // processed pixel, so no HDR 0*inf cancellation occurs in mix().
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
-    gpuStoreRgba(out_color, ivec2(p), rgba, int(meta2.y), result);
-    // Every plane this pass's arithmetic did not write keeps its named channel
+    // Every stored channel this pass's arithmetic did not write keeps its named channel
     // from the main input at the same coordinate (issue #90): a Grade of the
     // RGB roles never drops an auxiliary channel.
-    gpuPreserveAuxLattice(out_color, ivec2(p), int(meta2.y), in_main, mainExtent.y, channels.x);
+    gpuStorePixel(out_color, ivec2(p), int(meta2.y), channels.x, channels.y, channels.z, rgba, result, in_main,
+                  mainExtent.y, inputGeometry[0].channels.y);
 }
 )GLSL";
 

@@ -76,7 +76,7 @@ void main() {
     ivec2 mainOffset = inputGeometry[0].regionAndOffset.zw;
     ivec2 mainExtent = ivec2(inputGeometry[0].extent.xy);
     if (mainExtent.x <= 0 || mainExtent.y <= 0) {
-        gpuZeroPlanes(out_color, ivec2(p), planeHeight);
+        gpuZeroPlanes(out_color, ivec2(p), planeHeight, channels.y, channels.x);
         return;
     }
     int lastX = mainExtent.x - 1;
@@ -84,35 +84,36 @@ void main() {
     ivec2 center = ivec2(p) + mainOffset;
     if (blur.x <= 0.0) {  // exact identity: the whole RGBA projection of the center sample
         vec4 centered = gpuLoadRgba(in_main, ivec2(clamp(center.x, 0, lastX), clamp(center.y, 0, lastY)),
-                                    inputGeometry[0].rgba, mainExtent.y);
-        gpuStoreRgba(out_color, ivec2(p), rgba, planeHeight, centered);
-        gpuPreserveAuxLattice(out_color, ivec2(p), planeHeight, in_main, mainExtent.y, channels.x);
+                                    inputGeometry[0].rgba, mainExtent.y, inputGeometry[0].channels.y);
+        gpuStorePixel(out_color, ivec2(p), planeHeight, channels.x, channels.y, channels.z, rgba, centered, in_main,
+                      mainExtent.y, inputGeometry[0].channels.y);
         return;
     }
     // Raster support in samples per axis; named `taps` so the local never
-    // shadows the request's `support` word (native binding contract v5).
+    // shadows the request's `support` word (native binding contract v7).
     int taps = int(blur.z);
     vec4 acc = vec4(0.0);
     for (int i = -taps; i <= taps; ++i) {
         float w = weights[i + taps];
-        vec4 s = gpuLoadRgba(in_main, ivec2(clamp(int(p.x) + i + mainOffset.x, 0, lastX),
+        vec4 s = gpuLoadRgba(in_main,
+                             ivec2(clamp(int(p.x) + i + mainOffset.x, 0, lastX),
                                             clamp(int(p.y) + mainOffset.y, 0, lastY)),
-                             inputGeometry[0].rgba, mainExtent.y);
+                             inputGeometry[0].rgba, mainExtent.y, inputGeometry[0].channels.y);
         if ((mode & 8) != 0) { s.rgb *= s.a; }  // RGBA: premultiply before filtering
         acc += w * s;
     }
     vec4 centerPixel = gpuLoadRgba(in_main, ivec2(clamp(center.x, 0, lastX), clamp(center.y, 0, lastY)),
-                                   inputGeometry[0].rgba, mainExtent.y);
+                                   inputGeometry[0].rgba, mainExtent.y, inputGeometry[0].channels.y);
     if (mode == 7) {        // RGB: filter RGB, preserve original alpha
         acc.a = centerPixel.a;
     } else if (mode == 8) { // Alpha: filter alpha, preserve original RGB
         acc.rgb = centerPixel.rgb;
     }
-    gpuStoreRgba(out_color, ivec2(p), rgba, planeHeight, acc);
     // The intermediate carries the node's named channels too, so the vertical
     // pass's own preservation reads an unchanged auxiliary value at the same
     // coordinate (issue #90).
-    gpuPreserveAuxLattice(out_color, ivec2(p), planeHeight, in_main, mainExtent.y, channels.x);
+    gpuStorePixel(out_color, ivec2(p), planeHeight, channels.x, channels.y, channels.z, rgba, acc, in_main,
+                  mainExtent.y, inputGeometry[0].channels.y);
 }
 )GLSL";
 
@@ -135,12 +136,12 @@ void main() {
     uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= meta2.x || p.y >= meta2.y) { return; }
     const int planeHeight = int(meta2.y);
-    // The described image's data support (native binding contract v6): a sample
-    // outside it is transparent black, and every plane — auxiliary ones
-    // included — is initialized (issue #90). This is the pass that writes the
+    // The described image's data support (native binding contract v7): a sample
+    // outside it is transparent black, and every stored channel —
+    // auxiliary ones included — is initialized (issue #90). This is the pass that writes the
     // node result; the horizontal pass writes a scratch and declares no support.
     if (!gpuHasData(ivec2(p))) {
-        gpuZeroPlanes(out_color, ivec2(p), planeHeight);
+        gpuZeroPlanes(out_color, ivec2(p), planeHeight, channels.y, channels.x);
         return;
     }
     int mode = int(blur.y);
@@ -155,7 +156,8 @@ void main() {
     bool mainInside = mainPixel.x >= 0 && mainPixel.y >= 0 && mainPixel.x < mainExtent.x && mainPixel.y < mainExtent.y;
     ivec2 scratchOffset = inputGeometry[1].regionAndOffset.zw;
     ivec2 scratchExtent = ivec2(inputGeometry[1].extent.xy);
-    vec4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, mainExtent.y) : vec4(0.0);
+    vec4 orig = mainInside ? gpuLoadRgba(in_main, mainPixel, inputGeometry[0].rgba, mainExtent.y,
+                                         inputGeometry[0].channels.y) : vec4(0.0);
     vec4 processed;
     if (blur.x <= 0.0) {  // exact identity (both passes are identity)
         processed = orig;
@@ -168,7 +170,8 @@ void main() {
             float w = weights[i + taps];
             ivec2 tap = ivec2(clamp(int(p.x) + scratchOffset.x, 0, scratchExtent.x - 1),
                               clamp(int(p.y) + i + scratchOffset.y, 0, scratchExtent.y - 1));
-            acc += w * gpuLoadRgba(in_scratch, tap, inputGeometry[1].rgba, scratchExtent.y);
+            acc += w * gpuLoadRgba(in_scratch, tap, inputGeometry[1].rgba, scratchExtent.y,
+                                   inputGeometry[1].channels.y);
         }
         if (mode == 15) {       // RGBA: unpremultiply once at the final output
             processed.a = acc.a;
@@ -189,7 +192,8 @@ void main() {
         bool maskInside =
             maskPixel.x >= 0 && maskPixel.y >= 0 && maskPixel.x < maskExtent.x && maskPixel.y < maskExtent.y;
         float selected =
-            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[2].rgba, maskExtent.y)[channel], 0.0, 1.0)
+            maskInside ? clamp(gpuLoadRgba(in_mask, maskPixel, inputGeometry[2].rgba, maskExtent.y,
+                                           inputGeometry[2].channels.y)[channel], 0.0, 1.0)
                        : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
@@ -197,10 +201,10 @@ void main() {
     // processed pixel (avoids HDR 0*inf cancellation in mix()).
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
-    gpuStoreRgba(out_color, ivec2(p), rgba, planeHeight, result);
-    // Every plane the blur did not filter keeps its named channel from the
+    // Every stored channel the blur did not filter keeps its named channel from the
     // original main image at the same coordinate (issue #90).
-    gpuPreserveAuxLattice(out_color, ivec2(p), planeHeight, in_main, mainExtent.y, channels.x);
+    gpuStorePixel(out_color, ivec2(p), planeHeight, channels.x, channels.y, channels.z, rgba, result, in_main,
+                  mainExtent.y, inputGeometry[0].channels.y);
 }
 )GLSL";
 

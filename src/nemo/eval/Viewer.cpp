@@ -84,14 +84,16 @@ ImageDescription ViewerSession::describe(const Document& document, const Evaluat
     // Description is domain-independent: the target's authored format must not
     // depend on how much of it a panel happens to be looking at, so the plan is
     // taken from a minimal valid request that identifies the target and time.
+    // Describing a graph never defines coverage, so the resolution stops at the
+    // described dependency set: no region planning and no pixel work.
     EvaluationRequest query = request;
     query.region = Region{0, 0, 1, 1};
     query.fullWidth = 1;
     query.fullHeight = 1;
     validateRequestDomain(query);
-    const RegionPlan plan = planDependencyRegions(document, query, *effects_.contributions(), &sources_);
+    const ImageDescriptionPlan plan = describeDependencies(document, query, *effects_.contributions(), &sources_);
     const EvaluationNodeId outputKey{query.network, kInvalidNetworkInstance, query.output, kEvaluationWholeNode};
-    return plan.images.nodes.at(outputKey).description;
+    return plan.nodes.at(outputKey).description;
 }
 
 ViewerSession::SourceProbe ViewerSession::probeSource(const Document& document, const std::string& sourceKey) const {
@@ -176,9 +178,131 @@ ViewerSession::ViewingState& ViewerSession::viewingStateFor(const ColorPolicy& p
     return viewing_.emplace(key, ViewingState{std::move(program), std::move(identity), {}}).first->second;
 }
 
-ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequest& inputRequest,
-                                  std::uint64_t timeout_ns, std::uint64_t generation, ViewerDestination destination,
+ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription& description,
+                               ViewerResolutionPolicy& resolution) {
+    ResolvedView view;
+    EvaluationRequest& request = view.request;
+    request.network = intent.network;
+    request.output = intent.target;
+    request.localTime = intent.localTime;
+    // The domain is the described image's own logical format: the demand is
+    // stated against the frame's ACTUAL geometry, never a request-global canvas
+    // and never a substituted size.
+    const int width = description.format.width;
+    const int height = description.format.height;
+    request.fullWidth = width;
+    request.fullHeight = height;
+    request.region = Region{0, 0, width, height};
+
+    // The addressed layer's real channel names of THIS frame's described image
+    // are the demand itself, so the request owns them once and every later
+    // check reads the same list. A layer the frame does not carry, or a channel
+    // the layer does not name, is reported with its reason; nothing is
+    // substituted for it.
+    request.channels.clear();
+    for (const auto& channel : description.channels) {
+        if (channelInViewLayer(channel, intent.layer))
+            request.channels.push_back(channel);
+    }
+    if (request.channels.empty())
+        throw ViewUnavailable(viewLayerReason(description, intent.layer), description);
+    const std::string& selected = intent.channel;
+    if (selected != kViewCompositeChannel && !hasChannel(request.channels, selected))
+        throw ViewUnavailable(viewChannelUnavailable(selected, intent.layer), description);
+
+    // One identified primary channel of a color-managed layer is isolated in the
+    // presentation copy only: the evaluated frame still carries every channel of
+    // the layer, so isolating a channel never changes what the graph produced. A
+    // data channel is demanded by its exact name instead.
+    if (selected != kViewCompositeChannel) {
+        bool isolated = false;
+        if (resolveViewerProjection({}, request.channels).applyViewingTransform) {
+            const std::array<int, 4> roles = rgbaChannelIndices(std::span<const std::string>(&selected, 1));
+            for (std::size_t role = 0; role < roles.size(); ++role) {
+                if (roles[role] >= 0) {
+                    // ViewerChannel: RGBA = 0, then R, G, B, A in role order.
+                    view.presentationChannel = static_cast<gpu::ViewerChannel>(role + 1);
+                    isolated = true;
+                    break;
+                }
+            }
+        }
+        if (!isolated)
+            request.channels.assign(1, selected);
+    }
+
+    const double pixelAspect = description.pixelAspect > 0.0F ? static_cast<double>(description.pixelAspect) : 1.0;
+    request.samplingScale = resolution.resolve(intent.mode, width, height, pixelAspect, intent.viewportWidth,
+                                               intent.viewportHeight, intent.zoom);
+    // Coverage: whole-frame mode names the same domain at every pan and zoom,
+    // otherwise the region this view actually shows. Sampling density and the
+    // display transform are retained either way; a viewport the panel has not
+    // measured yet simply covers the frame.
+    const ViewerFit fit = aspectFit(width, height, pixelAspect, intent.viewportWidth, intent.viewportHeight);
+    const double zoom = intent.zoom > 0.0 ? intent.zoom : 1.0;
+    if (intent.forceFullFrame || !(fit.width > 0.0) || !(fit.height > 0.0)) {
+        request.region = Region{0, 0, width, height};
+    } else {
+        const double sx = fit.width / width * zoom;
+        const double sy = fit.height / height * zoom;
+        const double visibleWidth = std::min<double>(width, intent.viewportWidth / sx);
+        const double visibleHeight = std::min<double>(height, intent.viewportHeight / sy);
+        const double centerX = std::clamp(width / 2.0 + intent.panX, visibleWidth / 2.0, width - visibleWidth / 2.0);
+        const double centerY =
+            std::clamp(height / 2.0 + intent.panY, visibleHeight / 2.0, height - visibleHeight / 2.0);
+        const int x = std::max(0, static_cast<int>(std::floor(centerX - visibleWidth / 2)));
+        const int y = std::max(0, static_cast<int>(std::floor(centerY - visibleHeight / 2)));
+        const int right = std::min(width, static_cast<int>(std::ceil(centerX + visibleWidth / 2)));
+        const int bottom = std::min(height, static_cast<int>(std::ceil(centerY + visibleHeight / 2)));
+        request.region = Region{x, y, right - x, bottom - y};
+    }
+    // One canonical coverage reaches the executor, the cache and the panel: the
+    // region is rounded out to the image-space sampling lattice and never
+    // shrinks, so a region a cached frame carries always contains the raster
+    // this request asks for.
+    view.request = canonicalizeRequest(view.request);
+    validateRequestDomain(view.request);
+    return view;
+}
+
+ViewerFrame ViewerSession::render(const Document& document, const ViewIntent& intent,
+                                  ViewerResolutionPolicy& resolution, std::uint64_t timeout_ns,
+                                  std::uint64_t generation, ViewerDestination destination,
                                   CachePublicationGuard publicationGuard) {
+    // Description first, on the same worker job: a minimal request that
+    // identifies the target and its local time describes the CURRENT frame's
+    // authored output without acquiring a pixel or touching the device, so
+    // animated geometry, sequence headers and format changes are resolved for
+    // exactly the frame this demand belongs to.
+    EvaluationRequest query;
+    query.network = intent.network;
+    query.output = intent.target;
+    query.localTime = intent.localTime;
+    query.region = Region{0, 0, 1, 1};
+    query.fullWidth = 1;
+    query.fullHeight = 1;
+    validateRequestDomain(query);
+    const EvaluationNodeId outputKey{query.network, kInvalidNetworkInstance, query.output, kEvaluationWholeNode};
+    ImageDescriptionPlan described = describeDependencies(document, query, *effects_.contributions(), &sources_);
+    const ResolvedView view = resolveViewIntent(intent, described.nodes.at(outputKey).description, resolution);
+    // The description this demand was stated against is the plan the key and the
+    // execution consume, so one worker job resolves the authored state once.
+    return renderResolved(document, view.request, std::move(described), timeout_ns, generation, destination,
+                          std::move(publicationGuard), view.presentationChannel);
+}
+
+ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequest& request, std::uint64_t timeout_ns,
+                                  std::uint64_t generation, ViewerDestination destination,
+                                  CachePublicationGuard publicationGuard) {
+    return renderResolved(document, request, std::nullopt, timeout_ns, generation, destination,
+                          std::move(publicationGuard), gpu::ViewerChannel::RGBA);
+}
+
+ViewerFrame ViewerSession::renderResolved(const Document& document, const EvaluationRequest& inputRequest,
+                                          std::optional<ImageDescriptionPlan> described, std::uint64_t timeout_ns,
+                                          std::uint64_t generation, ViewerDestination destination,
+                                          CachePublicationGuard publicationGuard,
+                                          gpu::ViewerChannel presentationChannel) {
     // Worker-only contract; validate here so a malformed request fails on
     // the caller's thread with a precise reason before any GPU work.
     validateRequest(document, inputRequest);
@@ -204,9 +328,14 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     // ONE resolved plan per render (issue #88): the cache key and the execution
     // consume the same resolved nodes, descriptions and source requests, so a
     // media header or authored-state change can never make the key describe
-    // different pixels than the execution produced.
+    // different pixels than the execution produced. When the caller already
+    // resolved this target's description for this frame — the view intent does,
+    // to state its demand against the actual format — that plan is adopted
+    // instead, so the authored state is resolved exactly once per frame.
     const std::string colorIdentity = sources_.colorConfigIdentity();
-    const RegionPlan plan = planDependencyRegions(document, request, *effects_.contributions(), &sources_);
+    const RegionPlan plan =
+        described ? planResolvedRegions(document, request, *effects_.contributions(), std::move(*described))
+                  : planDependencyRegions(document, request, *effects_.contributions(), &sources_);
     const auto& description =
         plan.images.nodes
             .at(EvaluationNodeId{request.network, kInvalidNetworkInstance, request.output, kEvaluationWholeNode})
@@ -235,6 +364,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
             frame.revision = revision;
             frame.requestId = requestId;
             frame.cacheHit = true;
+            frame.presentationChannel = presentationChannel;
             return frame;
         }
     }
@@ -245,8 +375,23 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     const auto evaluation = evaluateGpu(document, request, effects_, device_, allocator_, timeout_ns, &reuse_,
                                         &sources_, colorIdentity, &plan);
 
-    const GpuNodeImage& composition = *evaluation.images.at(request.output);
-    if (composition.layout.color == ColorInterpretation::DisplayReferred) {
+    // Native viewing (issue #90): the composition carries its named channels in
+    // the shared native layout, so the requested channels are gathered into the
+    // interleaved RGBA32F presentation the viewing transform, the presentation
+    // copy and the viewer cache all consume — entirely on the device, with no
+    // host readback. With no selection the composition's projected roles are
+    // used (the existing behaviour); a single named channel is presented as an
+    // opaque gray view. Auxiliary channels are deliberately not part of the
+    // display image: only the identified RGB roles are color-managed.
+    //
+    // A composition that ALREADY is that image — a packed four-channel raster
+    // whose selected roles are its storage order at the exact logical extent —
+    // needs no projection at all (issue #98): the frame retains the SAME
+    // allocation through shared ownership of the evaluation's GpuNodeImage,
+    // with no second image, no dispatch and no submission. Every other
+    // selection, and any scalar-plane raster, still projects.
+    const auto composition = evaluation.images.at(request.output);
+    if (composition->layout.color == ColorInterpretation::DisplayReferred) {
         // Display-referred buffers must never receive a second projection and
         // viewing transform.
         const NodeInstance* node = document.network(request.network).graph().node(request.output);
@@ -255,28 +400,33 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
                                       "exactly once and a second application is refused",
                                   request.output, node->name);
     }
-
-    // Native viewing (issue #90): the composition is a channel-plane image, so
-    // the requested named channels are projected into the interleaved RGBA32F
-    // presentation the viewing transform, the presentation copy and the viewer
-    // cache all consume — entirely on the device, with no host readback. With
-    // no selection the composition's own RGBA roles are projected (the existing
-    // behaviour); a single named channel is presented as an opaque gray view.
-    // Auxiliary channels are deliberately not part of the display image: only
-    // the identified RGB roles are color-managed.
-    std::optional<ChannelProjection::Submission> projection =
-        projections_.submit(composition.image, selection.roles, static_cast<std::uint32_t>(composition.layout.width),
-                            static_cast<std::uint32_t>(composition.layout.height), timeout_ns);
-    if (!projection)
-        throw gpu::GpuException(gpu::GpuError::InvalidRequest,
-                                "viewer channel projection submission capacity exhausted");
-    auto presentationSource = std::make_shared<gpu::Image>(std::move(projection->image));
-
     auto& queue = device_.submissions(device_.graphics_family());
+    std::optional<gpu::SubmissionQueue::Completion> pendingCompletion;
+    std::shared_ptr<const gpu::Image> presentationSource;
+    if (ChannelProjection::isIdentity(composition->image, selection.roles,
+                                      static_cast<std::uint32_t>(composition->layout.width),
+                                      static_cast<std::uint32_t>(composition->layout.height))) {
+        presentationSource = std::shared_ptr<const gpu::Image>(composition, &composition->image);
+    } else {
+        std::optional<ChannelProjection::Submission> projection = projections_.submit(
+            composition->image, selection.roles, static_cast<std::uint32_t>(composition->layout.width),
+            static_cast<std::uint32_t>(composition->layout.height), timeout_ns);
+        if (!projection)
+            throw gpu::GpuException(gpu::GpuError::InvalidRequest,
+                                    "viewer channel projection submission capacity exhausted");
+        presentationSource = std::make_shared<gpu::Image>(std::move(projection->image));
+        pendingCompletion = projection->completion;
+    }
+
     std::shared_ptr<const gpu::Image> image;
     if (!selection.applyViewingTransform) {
         // No complete primary RGB: preserve data, including alpha-only masks.
-        if (!queue.wait(projection->completion, timeout_ns))
+        // The retained image is the projection's output, or — with nothing to
+        // project — the composition itself, which the evaluation's own
+        // completion covers; a completed evaluation is idempotent to wait for.
+        const std::optional<gpu::SubmissionQueue::Completion> completion =
+            pendingCompletion ? pendingCompletion : evaluation.completion;
+        if (completion && !queue.wait(*completion, timeout_ns))
             throw gpu::GpuException(gpu::GpuError::SubmissionTimeout,
                                     "viewer channel projection did not complete within " + std::to_string(timeout_ns) +
                                         " ns");
@@ -285,7 +435,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
         if (!viewing->transform)
             viewing->transform = std::make_unique<gpu::GpuViewingTransform>(device_, allocator_, viewing->program);
         std::optional<gpu::GpuViewedImage> viewed =
-            viewing->transform->submit(*presentationSource, composition.layout.color, timeout_ns);
+            viewing->transform->submit(*presentationSource, composition->layout.color, timeout_ns);
         if (!viewed)
             throw gpu::GpuException(gpu::GpuError::InvalidRequest, "viewer transform submission capacity exhausted");
         if (!queue.wait(viewed->completion, timeout_ns))
@@ -295,7 +445,7 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     }
     ViewerFrame frame;
     frame.image = image;
-    frame.layout = composition.layout;
+    frame.layout = composition->layout;
     // The displayed representation is the RGBA projection of the composition's
     // named channels, so its layout names those four roles — not the
     // composition's whole named channel list (issue #90).
@@ -308,6 +458,10 @@ ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequ
     frame.revision = revision;
     frame.requestId = requestId;
     frame.cacheHit = false;
+    // The display isolation the view asked for travels with the frame, so the
+    // presentation is prepared from what this destination's view stated and
+    // never from another panel's selection.
+    frame.presentationChannel = presentationChannel;
 
     if (identity && (!publicationGuard || publicationGuard())) {
         // Chunk grouping is a storage concern, not a synthetic evaluation

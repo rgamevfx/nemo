@@ -150,16 +150,18 @@ FocusScope {
                                         : targetAvailable && targetId.length > 0
                                           ? targetId
                                           : viewerRole === "timeline" ? "No timeline target" : "No media source"
-    // Actionable viewer state: the controller's own status/error, never a
-    // silently blank image area. A successfully displayed frame clears it; a
-    // pending or failed request keeps the previous frame visible beside its
-    // message rather than reporting nothing.
+    // Actionable viewer state only: the controller's own error, or the guidance
+    // for a state that has nothing to present (an unbound Read, a missing or
+    // unavailable target). A normal render states NO text over the media — the
+    // owner-approved removal of the transient progress/node-name flash (issue
+    // #98) — and a failed or pending request that retains a frame reports its
+    // message beside the media instead of covering it.
     readonly property string viewerDiagnostic: {
         var error = String(controller.error || "")
         if (error.length > 0)
             return error
         var state = String(controller.renderState || "")
-        if (state === "pending" || state === "empty" || state === "unavailable")
+        if (state === "empty" || state === "unavailable")
             return String(controller.status || "")
         if (!targetAvailable)
             return targetName

@@ -32,7 +32,7 @@
 #include <vulkan/vulkan.h>
 
 #include "nemo/core/Hashing.hpp"
-#include "nemo/eval/ChannelProjection.hpp"
+#include "nemo/gpu/ChannelImage.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Error.hpp"
 #include "nemo/media/VideoDecode.hpp"
@@ -200,9 +200,6 @@ struct ViewerCache::Impl {
     gpu::Device& device;
     gpu::Allocator& allocator;
     std::filesystem::path convertSpirv;
-    // Replayed chunks decode into native channel-plane frames (issue #90); this
-    // becomes the displayed RGBA32F representation.
-    ChannelProjection projection;
     mutable std::mutex mutex;
     std::condition_variable wake;
     std::condition_variable idle;
@@ -231,8 +228,7 @@ struct ViewerCache::Impl {
     int writerLockFd{-1};
     Impl(gpu::Instance& instanceRef, gpu::Device& deviceRef, gpu::Allocator& allocatorRef,
          const std::filesystem::path& convertSpirvPath)
-        : instance(instanceRef), device(deviceRef), allocator(allocatorRef), convertSpirv(convertSpirvPath),
-          projection(deviceRef, allocatorRef) {}
+        : instance(instanceRef), device(deviceRef), allocator(allocatorRef), convertSpirv(convertSpirvPath) {}
 
     [[nodiscard]] std::optional<ViewerCacheResult> lookup(const std::string& identity, const ImageLayout& expected,
                                                           std::uint64_t timeout_ns);
@@ -1106,34 +1102,31 @@ std::optional<ViewerCacheResult> ViewerCache::Impl::lookup(const std::string& id
                 cursor = ReplayCursor{std::move(decoder), chunk, expected, offset + 1};
             }
         }
-        // A replayed chunk is a native channel-plane frame (issue #90): four
-        // R,G,B,A planes at (x, y + c*H), so its device extent is the coded
-        // rectangle with four planes of rows. The displayed representation is
-        // the interleaved RGBA32F image the presentation and encode paths
-        // consume, produced on the device with no host readback.
-        constexpr std::uint32_t kReplayPlanes = 4;
+        // A replayed chunk is a decoded four-channel frame in the shared native
+        // layout (issue #98): packed RGBA32F at the coded rectangle, one texel
+        // per logical pixel. That packed image IS the displayed representation
+        // the presentation and encode paths consume, so an identity replay (the
+        // chunk's own R,G,B,A at the requested extent) retains the decoded
+        // allocation directly — one shared owner, no projection dispatch and no
+        // pixel copy. Only codec padding is cropped, on device, and the source
+        // image is never modified by the crop.
+        constexpr std::uint32_t kReplayChannels = 4;
         const auto extent = decodedImage->extent();
         const auto codedWidth = (static_cast<std::uint32_t>(expected.width) + 1U) & ~1U;
         const auto codedHeight = (static_cast<std::uint32_t>(expected.height) + 1U) & ~1U;
-        if (extent.width != codedWidth || extent.height != codedHeight * kReplayPlanes)
+        if (extent.width != codedWidth || extent.height != codedHeight)
             throw media::MediaDecodeError(path.string(), "viewer chunk",
                                           "coded dimensions do not match the cache index");
+        if (decodedImage->dimensions() != 2 || gpu::nativeChannelComponents(decodedImage->format()) != kReplayChannels)
+            throw media::MediaDecodeError(path.string(), "viewer chunk",
+                                          "replayed frame is not the packed four-channel native image");
         if (extent.width != static_cast<std::uint32_t>(expected.width) ||
-            extent.height != static_cast<std::uint32_t>(expected.height) * kReplayPlanes)
+            extent.height != static_cast<std::uint32_t>(expected.height))
             *decodedImage =
-                gpu::cropChannelPlaneImage(device.submissions(device.graphics_family()), allocator, *decodedImage,
-                                           expected.width, expected.height, kReplayPlanes, timeout_ns);
-        std::optional<ChannelProjection::Submission> projected =
-            projection.submit(*decodedImage, {0, 1, 2, 3}, static_cast<std::uint32_t>(expected.width),
-                              static_cast<std::uint32_t>(expected.height), timeout_ns);
-        if (!projected)
-            throw gpu::GpuException(gpu::GpuError::InvalidRequest,
-                                    "viewer cache replay projection submission capacity exhausted");
-        if (!device.submissions(device.graphics_family()).wait(projected->completion, timeout_ns))
-            throw gpu::GpuException(gpu::GpuError::SubmissionTimeout,
-                                    "viewer cache replay projection did not complete within " +
-                                        std::to_string(timeout_ns) + " ns");
-        auto image = std::make_shared<gpu::Image>(std::move(projected->image));
+                gpu::cropNativeImage(device.submissions(device.graphics_family()), allocator, *decodedImage,
+                                     static_cast<std::uint32_t>(expected.width),
+                                     static_cast<std::uint32_t>(expected.height), kReplayChannels, timeout_ns);
+        auto image = std::make_shared<gpu::Image>(std::move(*decodedImage));
         std::vector<Cleanup> cleanup;
         {
             std::lock_guard lock(mutex);

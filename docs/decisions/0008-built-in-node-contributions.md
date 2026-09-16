@@ -4,8 +4,9 @@ Date: 2026-09-14
 Status: Proposed — implemented on issue/83-node-contributions, extended by
 issue #88 (described images, integer `shiftX`/`shiftY` on the test extension)
 and issue #90 (named-channel Shuffle, per-input requirements and viewer
-projection); owner review pending and all prior landing holds still pending.
-References: issues #83, #85, #88, #90; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
+projection), then #98 (native storage and viewer scheduling repairs);
+owner review pending and all prior landing holds still pending.
+References: issues #83, #85, #88, #90, #98; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
 
 ## Decision
 
@@ -50,15 +51,21 @@ new shared capabilities still require a change in their existing owning module.
   support, preserving original support when Mix/masking can retain it; empty
   input remains empty. `supportsRegion=false` expands to that producer's useful
   domain. Executors receive each input's actual coverage and description.
-- Native binding contract v6 separates a 96-byte **pass-raster** request at
+- Native binding contract v7 separates a 96-byte **pass-raster** request at
   set 0/binding 0 from the optional node-local aligned payload at binding 1.
-  The request includes signed origin, data support, plane count and resolved
-  primary RGBA indices. Final output stores outside support become zero;
-  scratch passes retain their declared working coverage.
-  Native composition images use R32_SFLOAT vertical planes: logical `(x,y,c)`
-  is physical `(x,y+c*H)`. Each input has a 64-byte geometry record at binding 2
-  containing its own origin, raster offset, extent, scale, RGBA indices and
-  physical plane count. Binding 3 carries the resolved auxiliary-channel plan.
+  The request includes signed origin, data support, stored channel count,
+  components per texel, a planned-fill flag and resolved primary RGBA indices.
+  Final output stores outside support become zero; scratch passes retain their
+  declared working coverage.
+  `gpu/ChannelImage.hpp` defines native storage: exactly four stored channels
+  use RGBA32F at `W × H`; other counts use R32_SFLOAT at `W × (H × C)`.
+  Count chooses storage, not channel names or interpretation. Each input has a
+  64-byte geometry record at binding 2 carrying its own origin, raster offset,
+  extent, scale, RGBA indices, actual channel count and components per texel.
+  Binding 3 carries the resolved auxiliary-channel plan. The planned-fill flag
+  is boolean, not a channel-count-limited bitmask. Canonical packed RGBA loads
+  and stores avoid dynamic component indexing; reordered/data channels retain
+  the general path.
   Names are resolved before dispatch, never per pixel. Pass inputs use set 1;
   output uses set 2/binding 0 and optional float weights set 3/binding 0.
   The executor owns allocations, barriers, submission and retirement, including
@@ -110,19 +117,30 @@ before producing pixels.
 The owner approved these policies and the Nuke 17 documentation-only editor
 adaptation; runtime parity with Nuke is not claimed.
 
-The existing allocator charges every physical plane and retained submission.
-Packed height must fit the device's 2D image limit: unsupported dimensions or
-byte budgets fail explicitly, without channel loss or reduced quality. This
-does not introduce tiling or replace #14 accounting.
+The existing allocator charges the complete native image and retained
+submissions. Physical dimensions must fit the device's 2D image limit:
+unsupported dimensions or byte budgets fail explicitly, without channel loss or
+reduced quality. This does not introduce tiling or replace #14 accounting.
 
-Viewer projection is device-side and yields the existing RGBA presentation.
+Viewer projection yields the existing RGBA presentation. A packed image with
+identity RGBA roles and matching raster extent is retained directly; other
+selections use the device-side projection. The retained image and completion
+identity survive the evaluation/session that produced them.
 Only a complete identified primary/root RGB set is color-managed, by named
 roles rather than storage order. Other selections bypass OCIO; a single named
 plane, including alpha-only data, is opaque gray, while an ordered selection of
 multiple data planes maps its first up-to-four selected planes positionally
 onto the presentation RGBA and bypasses OCIO the same way; that display mapping
 neither creates nor renames composition channels. Projection policy is part of
-viewer-cache identity. Replay crops use logical per-plane height.
+viewer-cache identity. Decoded replay is already packed RGBA and is retained
+directly, with a device-side crop only for codec padding. `cropNativeImage`
+copies a packed region once or each scalar plane using its logical height.
+
+Still/software RGBA upload copies interleaved values directly into staging;
+other channel counts transpose without padding or loss. Hardware decode converts
+directly to packed RGBA32F. Source OCIO transforms that image in place, without
+introducing image/buffer copies; source-linear and display-referred replay
+remain separate contracts.
 
 `nemo.shuffle.mapping` is a section editor hosted by the accepted inspector.
 Mapping edits use shared commands/history. Output channel creation belongs to
@@ -134,6 +152,10 @@ Unavailable custom editors expose all ordinary parameters through the generic
 fallback. Native evidence and the
 remaining review/landing holds are recorded in
 `docs/evidence/assets/issue90-channels/verification.json`.
+
+Issue #98's repair checks, native captures, matched playback/upload/kernel
+measurements and remaining limitations are recorded in
+`docs/evidence/assets/issue98-viewer-performance/verification.json`.
 
 ## Verification seam
 

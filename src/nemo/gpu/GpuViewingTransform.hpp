@@ -24,10 +24,11 @@ struct GpuViewedImage {
 // caller's, and a display-referred input is always refused (never viewed
 // twice).
 //
-// The program's `pixelLayout` selects which entry point is legal (issue #90):
-// an Rgba32fBuffers program drives `submit`, and a ChannelPlanes program drives
-// `submitInputTransformPlanesInPlace`. Using the wrong one for a program is
-// refused, never silently reinterpreted.
+// The program's `pixelInterface` selects which entry point is legal (issues
+// #90, #98): a buffer program drives `submit`, and a packed-image program
+// drives `submitInputTransformInPlace`, which converts the native packed
+// four-channel image a decoded media frame already is. Using the wrong entry
+// point for a program is refused, never silently reinterpreted.
 class GpuViewingTransform {
 public:
     GpuViewingTransform(const GpuViewingTransform&) = delete;
@@ -41,19 +42,19 @@ public:
     // Source interpretation is mandatory: viewed/cache-replay images must
     // never enter this transform a second time.
     [[nodiscard]] std::optional<GpuViewedImage> submit(const gpu::Image& source, ColorInterpretation sourceColor,
-                                                       uint64_t admissionTimeout_ns = 0) const;
+                                                       uint64_t admission_timeout_ns = 0) const;
 
-    // In-place OCIO input-to-working transform over a native channel-plane image
-    // (issue #90): an R32_SFLOAT 2D image with exactly four planes R,G,B,A at
-    // (x, y + c*H) — the decoded-frame contract — where the RGB planes are
-    // converted and the alpha plane (and any further plane) is left untouched.
+    // In-place OCIO input-to-working transform over the native packed
+    // four-channel image itself (issues #90, #98): a 2D RGBA32F image holding
+    // the logical raster, one texel per pixel, which the kernel reads and
+    // writes once — no staging buffer, no copy and no second image per frame.
     // One invocation per logical pixel; nothing is read back. Returns the
-    // recorded completion so the caller can wait exactly as it waits for its own
-    // decode, or nothing when the queue reports admission backpressure. Throws
-    // GpuException for a source that is not a four-plane R32_SFLOAT 2D image or
-    // for a display-referred source.
+    // recorded completion so the caller can wait exactly as it waits for its
+    // own decode, or nothing when the queue reports admission backpressure.
+    // Throws GpuException for a source that is not the packed four-channel
+    // native image or for a program that is not the image variant.
     [[nodiscard]] std::optional<gpu::SubmissionQueue::Completion>
-    submitInputTransformPlanesInPlace(const gpu::Image& image, uint64_t admission_timeout_ns = 0) const;
+    submitInputTransformInPlace(const gpu::Image& image, uint64_t admission_timeout_ns = 0) const;
 
 private:
     gpu::Device& device_;
@@ -63,10 +64,10 @@ private:
     std::vector<gpu::Image> luts_;
     std::vector<gpu::ComputeBinding> bindings_;
     std::uint32_t descriptorSet_;
-    // True when the retained program is a ChannelPlanes program (issue #90);
-    // recorded from `OcioGpuProgram::pixelLayout` at construction so this
-    // header needs no media type.
-    bool channelPlanes_{false};
+    // True when the retained program declares the packed-image interface
+    // (recorded from `OcioGpuProgram::pixelInterface` at construction, so this
+    // header needs no media type).
+    bool packedImageInterface_{false};
 };
 
 }  // namespace nemo::gpu

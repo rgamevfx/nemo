@@ -26,7 +26,9 @@
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Serialization.hpp"
+#include "nemo/core/evaluation/ViewerResolution.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
+#include "nemo/eval/ViewIntent.hpp"
 #include "nemo/media/ImageIO.hpp"
 #include "nemo/media/ImageSource.hpp"
 #include "nemo/media/MediaImportService.hpp"
@@ -613,6 +615,110 @@ protected:
     }
 };
 
+// The viewer's demand resolution is one Qt-free contract shared by the panel
+// and the worker (issue #98): a view states the target, the time and the
+// display demand, and the CURRENT frame's described image supplies the domain,
+// the layer/channels and the pixel aspect. This runs headless in every gate —
+// the geometry, coverage and layer arithmetic is what the native surface
+// presents, and getting it wrong is what a stale or frame-blind description
+// would break.
+TEST(ViewerViewIntent, ResolvesTheDescribedFrameLayerAndCoverage) {
+    const nemo::ImageDescription rgba{.format = {0, 0, 96, 64},
+                                      .dataBounds = {0, 0, 96, 64},
+                                      .pixelAspect = 1.0F,
+                                      .channels = {"R", "G", "B", "A"}};
+    nemo::eval::ViewIntent intent;
+    intent.network = nemo::NetworkId{7};
+    intent.target = nemo::NodeId{11};
+    intent.localTime = 3;
+    intent.viewportWidth = 200.0;
+    intent.viewportHeight = 200.0;
+    nemo::ViewerResolutionPolicy resolution;
+
+    const auto whole = nemo::eval::resolveViewIntent(intent, rgba, resolution);
+    // The demand is stated against the DESCRIBED frame: its own format is the
+    // domain and the view is what the coverage covers — no caller canvas.
+    EXPECT_EQ(whole.request.fullWidth, 96);
+    EXPECT_EQ(whole.request.fullHeight, 64);
+    EXPECT_EQ(whole.request.region, (nemo::Region{0, 0, 96, 64}));
+    EXPECT_EQ(whole.request.samplingScale, 1);
+    // The addressed layer's real channel names, and the composite's isolation
+    // stays the untouched presentation.
+    EXPECT_EQ(whole.request.channels, (std::vector<std::string>{"R", "G", "B", "A"}));
+    EXPECT_EQ(whole.presentationChannel, nemo::gpu::ViewerChannel::RGBA);
+
+    // A zoomed view covers the region it actually shows, inside the unchanged
+    // described domain, and a pan moves that region without changing the scale.
+    auto zoomed = intent;
+    zoomed.zoom = 2.0;
+    const auto close = nemo::eval::resolveViewIntent(zoomed, rgba, resolution);
+    EXPECT_EQ(close.request.samplingScale, 1);
+    EXPECT_EQ(close.request.region, (nemo::Region{24, 8, 48, 48}));
+    zoomed.panX = 20.0;
+    const auto panned = nemo::eval::resolveViewIntent(zoomed, rgba, resolution);
+    EXPECT_EQ(panned.request.region, (nemo::Region{44, 8, 48, 48}));
+    // Whole-frame coverage is a coverage statement: the same sampling density
+    // and view, the whole described domain.
+    auto full = zoomed;
+    full.forceFullFrame = true;
+    const auto covered = nemo::eval::resolveViewIntent(full, rgba, resolution);
+    EXPECT_EQ(covered.request.region, (nemo::Region{0, 0, 96, 64}));
+    EXPECT_EQ(covered.request.samplingScale, panned.request.samplingScale);
+
+    // An explicitly selected primary channel remains part of the evaluated
+    // frame (the whole layer is demanded) and only isolates the presentation.
+    auto isolated = intent;
+    isolated.channel = "G";
+    const auto green = nemo::eval::resolveViewIntent(isolated, rgba, resolution);
+    EXPECT_EQ(green.request.channels, (std::vector<std::string>{"R", "G", "B", "A"}));
+    EXPECT_EQ(green.presentationChannel, nemo::gpu::ViewerChannel::Green);
+
+    // A data layer is addressed by its own real names: a selected channel is
+    // demanded by its exact name, and no channel of another layer is pulled in.
+    const nemo::ImageDescription layered{.format = {0, 0, 32, 16},
+                                         .dataBounds = {0, 0, 32, 16},
+                                         .pixelAspect = 1.0F,
+                                         .channels = {"R", "G", "B", "A", "luma.x", "matte.coverage"}};
+    auto dataLayer = intent;
+    dataLayer.layer = "luma";
+    const auto layerComposite = nemo::eval::resolveViewIntent(dataLayer, layered, resolution);
+    EXPECT_EQ(layerComposite.request.channels, (std::vector<std::string>{"luma.x"}));
+    EXPECT_EQ(layerComposite.request.fullWidth, 32);
+    dataLayer.channel = "luma.x";
+    const auto single = nemo::eval::resolveViewIntent(dataLayer, layered, resolution);
+    EXPECT_EQ(single.request.channels, (std::vector<std::string>{"luma.x"}));
+    // A layer and a channel the described frame does not carry are REFUSED with
+    // the reason, never repointed to a channel that exists.
+    auto missingLayer = intent;
+    missingLayer.layer = "depth";
+    EXPECT_THROW(static_cast<void>(nemo::eval::resolveViewIntent(missingLayer, layered, resolution)),
+                 nemo::eval::ViewUnavailable);
+    auto missingChannel = intent;
+    missingChannel.layer = "luma";
+    missingChannel.channel = "G";
+    EXPECT_THROW(static_cast<void>(nemo::eval::resolveViewIntent(missingChannel, layered, resolution)),
+                 nemo::eval::ViewUnavailable);
+
+    // The panel's Auto hysteresis state is the caller's and is consumed by this
+    // resolution: a view that reduced to a quarter stays reduced across the
+    // band instead of oscillating, which only holds while one policy object
+    // carries the state between calls.
+    nemo::ViewerResolutionPolicy autoResolution;
+    auto small = intent;
+    small.viewportWidth = 12.0;
+    small.viewportHeight = 8.0;
+    EXPECT_EQ(nemo::eval::resolveViewIntent(small, rgba, autoResolution).request.samplingScale, 4);
+    auto slightlyLarger = small;
+    slightlyLarger.viewportWidth = 24.0;
+    slightlyLarger.viewportHeight = 16.0;
+    EXPECT_EQ(nemo::eval::resolveViewIntent(slightlyLarger, rgba, autoResolution).request.samplingScale, 4)
+        << "the retained Auto level must cover the switching band";
+    // An explicit mode overrides the retained level at the same view.
+    auto explicitHalf = slightlyLarger;
+    explicitHalf.mode = nemo::ViewerResolution::Half;
+    EXPECT_EQ(nemo::eval::resolveViewIntent(explicitHalf, rgba, autoResolution).request.samplingScale, 2);
+}
+
 TEST_F(ReadViewerSurface, PngSelectedInReadAppearsInItsAttachedViewer) {
     const auto png = writePng(directory_.path().toStdString(), "figure", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
 
@@ -909,10 +1015,25 @@ TEST_F(ReadViewerSurface, MixedMediaSourcesKeepMainInputFormatWithoutStretching)
     QTest::qWait(100);
     capture(QStringLiteral("issue88-mixed-playback"));
 
+    // A steady frame resolves and renders in one worker request; the real
+    // panel shows no transient progress overlay while that request is in flight.
+    const auto nextFrame = pausedFrame + 1;
+    auto* panelRoot = panelRootFor(window_->contentItem(), panel_);
+    ASSERT_NE(panelRoot, nullptr);
+    const qulonglong before = controller_->completed();
+    controller_->setFrame(nextFrame);
+    const QVariant diagnostic = panelRoot->property("viewerDiagnostic");
+    ASSERT_TRUE(diagnostic.isValid());
+    EXPECT_TRUE(diagnostic.toString().isEmpty()) << diagnostic.toString().toStdString();
+    ASSERT_TRUE(waitForRequest([&](const nemo::EvaluationRequest& request) { return request.localTime == nextFrame; },
+                               {}, 10000))
+        << controller_->error().toStdString();
+    EXPECT_EQ(controller_->completed() - before, 1u);
+    EXPECT_EQ(controller_->presentation()->description.format.width, 96);
+    EXPECT_EQ(controller_->presentation()->description.format.height, 64);
+
     // Cache-range admission may supersede metadata work; the real panel must
     // still repaint a later view refresh rather than waiting indefinitely.
-    const auto nextFrame = pausedFrame + 1;
-    controller_->setFrame(nextFrame);
     controller_->requestRange(0, 0);
     controller_->setResolutionMode(QStringLiteral("half"));
     controller_->setResolutionMode(QStringLiteral("quarter"));
@@ -1812,6 +1933,58 @@ TEST_F(ShuffleSurface, NamedDataLayerDoesNotSubstitutePixelsWhenItDisappears) {
         << controller_->error().toStdString();
     EXPECT_EQ(controller_->layer(), QStringLiteral("matte"));
     EXPECT_GT(countPixelsNear(grabPanel(), {32, 32, 32}, 2), 300);
+}
+
+TEST_F(ShuffleSurface, RefusedViewPublishesTheCurrentFramesChannelsAndRecoversBySelection) {
+    ASSERT_TRUE(waitFor([&] { return controller_->presentation() != nullptr; }, 10000));
+    ASSERT_GE(controller_->availableLayers().indexOf(QStringLiteral("matte")), 0);
+    controller_->setLayer(QStringLiteral("matte"));
+    ASSERT_TRUE(waitFor(
+        [&] {
+            return controller_->layer() == QStringLiteral("matte") && controller_->presentation() &&
+                   controller_->presentation()->request.channels == std::vector<std::string>{"matte.coverage"};
+        },
+        10000))
+        << controller_->error().toStdString();
+
+    // One edit changes what the frame carries: the selected layer disappears
+    // (the alpha-only source has no matte) while a layer this frame DOES carry
+    // appears (the authored depth.z output).
+    const auto network = session_->document().rootNetworkId();
+    const auto node = shuffle_.toULongLong();
+    auto alphaOnly = session_->document().sources.at("B");
+    alphaOnly.path = (std::filesystem::path(alphaOnly.path).parent_path() / "alpha-only.exr").string();
+    ASSERT_TRUE(session_
+                    ->submit(nemo::transactionCommand(
+                                 "Channels change",
+                                 {nemo::setSourceCommand("B", alphaOnly),
+                                  nemo::setParamCommand(network, node, "outputChannel4", std::string{"depth.z"}),
+                                  nemo::setParamCommand(network, node, "sourceKind4", nemo::ChoiceValue{"zero"})}),
+                             nemo::EditOptions{session_->revision(), {}})
+                    .committed);
+    ASSERT_TRUE(waitFor([&] { return !controller_->presentation() && !controller_->error().isEmpty(); }, 10000))
+        << "an unavailable selected layer must not fall back to every channel; " << controller_->status().toStdString();
+    EXPECT_EQ(controller_->layer(), QStringLiteral("matte"));
+
+    // The refusal still states what the frame it refused really carries: the
+    // selectors offer this frame's layers, so a channel change is recoverable
+    // by choosing one instead of being stuck on the previous frame's channels.
+    EXPECT_GE(controller_->availableLayers().indexOf(QStringLiteral("depth")), 0)
+        << "the refused view must publish the current frame's described channels";
+    capture(QStringLiteral("shuffle-unavailable-layer-current-channels"), {}, false, true);
+
+    // Recovery through selection: the layer this frame carries presents again.
+    controller_->setLayer(QStringLiteral("depth"));
+    ASSERT_TRUE(waitFor(
+        [&] {
+            return controller_->presentation() &&
+                   controller_->presentation()->request.channels == std::vector<std::string>{"depth.z"};
+        },
+        10000))
+        << controller_->error().toStdString() << " status=" << controller_->status().toStdString();
+    EXPECT_TRUE(controller_->error().isEmpty());
+    EXPECT_EQ(controller_->layer(), QStringLiteral("depth"));
+    capture(QStringLiteral("shuffle-depth-layer-recovered"), {}, false, true);
 }
 
 TEST_F(ShuffleSurface, ModifierRoutingUsesConsecutiveSourcesAndExactNamesAcrossGroups) {

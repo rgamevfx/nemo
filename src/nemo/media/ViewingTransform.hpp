@@ -39,6 +39,14 @@ struct OcioException : std::runtime_error {
 // Which transform of the policy to resolve.
 enum class TransformKind { Viewer, Delivery };
 
+// Which export-side color transform a delivery applies on top of the working
+// space (issue #94). See the "Export color" section below.
+enum class ExportTransformKind {
+    None,         // no color transform: the samples are handed over verbatim
+    ColorSpace,   // `name` is a config color space: working space -> that space
+    DisplayView,  // `name` is "display/view" (or a bare display/view name)
+};
+
 // A resolved, executable viewing transform.
 //
 // The GLSL text is OCIO's generated Vulkan-GLSL program, adapted for compute
@@ -172,6 +180,7 @@ void requireSceneLinearRec709(const std::string& configPath, const std::string& 
                               const std::string& context);
 
 class OcioInputTransform;
+class OcioOutputTransform;
 
 // An immutable, retained OCIO configuration snapshot: ONE load per generation,
 // reused for the content identity, the working-target validation, the file-rule
@@ -195,9 +204,14 @@ public:
     // Content identity of THIS snapshot: reference + Config::getCacheID of the
     // loaded bytes and the current context.
     [[nodiscard]] const std::string& identity() const noexcept;
-    // Every active color space, ordered by name: the searchable Input Transform
-    // list of this snapshot.
+    // Every ACTIVE color space, ordered by name: the searchable Input Transform
+    // list of this snapshot. (The same list is the export color-space list: one
+    // config owns one set of spaces.)
     [[nodiscard]] std::vector<std::string> colorSpaces() const;
+    // Every "display/view" pair this snapshot's config registers, ordered by
+    // name: the delivery export view list, again straight from the config's own
+    // registration (a display or view added to the config needs no code change).
+    [[nodiscard]] std::vector<std::string> displayViews() const;
     // Validates that `workingSpace` really is scene-linear Rec.709 in THIS
     // snapshot (by measurement, see the free function below).
     void requireSceneLinearRec709(const std::string& workingSpace, const std::string& context) const;
@@ -222,9 +236,17 @@ public:
     // writes one RGBA32F pixel buffer.
     [[nodiscard]] OcioGpuProgram inputTransformGpu(const std::string& workingSpace,
                                                    const std::string& inputColorSpace) const;
+    // Retained export conversion of one delivery (see OcioOutputTransform): the
+    // base transform resolved against THIS snapshot's config plus the optional
+    // LUT applied after it. Both processors outlive the call, so a frame range
+    // never resolves color per frame.
+    [[nodiscard]] std::shared_ptr<const OcioOutputTransform> outputTransform(std::string workingSpace,
+                                                                             ExportTransformKind kind, std::string name,
+                                                                             std::string lutFile = {}) const;
 
 private:
     friend class OcioInputTransform;
+    friend class OcioOutputTransform;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
@@ -269,6 +291,66 @@ private:
                                                     const std::string& inputColorSpace);
 [[nodiscard]] OcioGpuProgram buildInputTransformImageGpu(const std::string& configPath, const std::string& workingSpace,
                                                          const std::string& inputColorSpace);
+
+// ---------------------------------------------------------------------------
+// Export color: working space -> a delivery color space, view, or LUT (#94)
+// ---------------------------------------------------------------------------
+//
+// A delivery's output color is one of: the values verbatim (no transform), the
+// project's own delivery transform, a named color space of the config, or a
+// named display/view. All three transforming choices are the SAME OCIO
+// machinery as the viewing transform, resolved against the same retained
+// snapshot — there is no second config loader, no second interpretation of the
+// policy, and no per-frame resolution. A file LUT is an additional OCIO file
+// transform applied AFTER the chosen base, to the image's primary RGB only.
+
+// Retained export conversion of one delivery: the base transform above,
+// followed by an optional LUT file. Both processors are built once from the
+// snapshot's config, so a range of frames resolves the export color exactly
+// once and never re-opens the configuration; the LUT's place in the chain is
+// this owner's decision, not a caller's.
+class OcioOutputTransform {
+public:
+    // `name` is the color space (ColorSpace) or the "display/view" name
+    // (DisplayView); it is unused for None. `lutFile` is an OCIO-readable
+    // transform file (LUT/CDL by its registered format) applied after the base
+    // when non-empty.
+    OcioOutputTransform(const OcioConfigSnapshot& snapshot, std::string workingSpace, ExportTransformKind kind,
+                        std::string name, std::string lutFile = {});
+    ~OcioOutputTransform();
+    OcioOutputTransform(OcioOutputTransform&&) noexcept;
+    OcioOutputTransform& operator=(OcioOutputTransform&&) noexcept;
+    OcioOutputTransform(const OcioOutputTransform&) = delete;
+    OcioOutputTransform& operator=(const OcioOutputTransform&) = delete;
+
+    // Applies the base transform and then the LUT, in place, to the image's
+    // identified primary RGB channels only: alpha and every auxiliary channel
+    // stay bit-for-bit as they were, exactly like the input transform. A None
+    // base with no LUT touches nothing. The image's color interpretation
+    // follows the destination the config itself declares (a data destination is
+    // Data, a linear destination stays scene-linear, an encoded destination is
+    // DisplayReferred, and a display/view is always DisplayReferred).
+    void apply(CpuImage& image) const;
+
+    // "working 'x' -> colorspace 'y'" (+ " then LUT 'z'"), for diagnostics.
+    [[nodiscard]] const std::string& description() const noexcept;
+    // Config snapshot identity + resolved base + LUT + both processor cache
+    // ids: the exact content identity of this conversion.
+    [[nodiscard]] const std::string& identity() const noexcept;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+// True when OCIO's own file-format registry can read `path` as a transform
+// file. The answer comes from the library's registered readers, never from a
+// hardcoded extension list of this module's own.
+[[nodiscard]] bool isSupportedTransformFile(const std::string& path);
+
+// The registered transform-file extensions as one human-readable list, for a
+// refusal that states what is supported.
+[[nodiscard]] std::string supportedTransformFileExtensions();
 
 // Resolves the config path the same way OCIO applications do: an explicit
 // path when given, otherwise the OCIO environment variable. Returns the

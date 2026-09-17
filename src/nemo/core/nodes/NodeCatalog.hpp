@@ -128,6 +128,14 @@ struct NodeDescriptor {
     std::string displayName;
     std::string group;
     bool isOutput{false};
+    // The schema projection of NodeRole::Delivery (issue #94, story 72): a sink
+    // whose image is a legal evaluation target although the node declares no
+    // output ports, because it is not a producer feeding the graph — it is the
+    // point an explicit delivery job aims at. It is NOT the network's result:
+    // `isOutput` alone selects that, and the two flags are mutually exclusive
+    // in a registered contribution. Kept here so request validation reads the
+    // document's own schema instead of consulting a registration.
+    bool isDeliverySink{false};
     std::uint64_t implementationVersion{1};
     std::vector<PortSpec> inputs;
     std::vector<PortSpec> outputs;

@@ -1,23 +1,35 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <unistd.h>
+
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Graph.hpp"
 #include "nemo/core/document/ParameterValueJson.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/EffectCpu.hpp"
+#include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
+#include "nemo/core/session/ProjectSession.hpp"
 
 using namespace nemo;
 namespace {
+namespace fs = std::filesystem;
+
 Graph& rootGraph(Document& document) {
     return document.network(document.rootNetworkId()).graph();
 }
@@ -356,4 +368,169 @@ TEST(CatalogTest, PresentationMetadataRejectsInvalidDeclarations) {
     EXPECT_THROW(rootGraph(document).setParam(node, "value", ParameterValue{0.0}), GraphException);
     EXPECT_NO_THROW(rootGraph(document).setParam(node, "value", ParameterValue{2.5}));
     EXPECT_EQ(rootGraph(document).node(node)->params.at("value"), ParameterValue{2.5});
+}
+
+// ---------------------------------------------------------------------------
+// Write: the delivery sink (issue #94, stories 72-73).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+NodeDescriptor deliveryFixtureDescriptor(bool isDeliverySink) {
+    NodeDescriptor descriptor = fixtureDescriptor();
+    descriptor.type = "fixture.delivery";
+    descriptor.displayName = "Delivery Fixture";
+    descriptor.outputs.clear();
+    descriptor.isDeliverySink = isDeliverySink;
+    return descriptor;
+}
+
+[[nodiscard]] NodeContribution deliveryFixtureContribution(bool isDeliverySink, NodeRole role) {
+    NodeContribution contribution;
+    contribution.descriptor = deliveryFixtureDescriptor(isDeliverySink);
+    contribution.role = role;
+    contribution.cpu =
+        CpuImplementation{contribution.descriptor.implementationVersion, [](const CpuNodeContext& context) {
+                              return requiredImageInput(context, 0, "fixture delivery needs an input");
+                          }};
+    return contribution;
+}
+
+// A network whose only sink is the Write node: the default Output node is
+// removed before the session owns the document, so `plate -> write` is the
+// whole graph and the delivery request is the only thing aimed at it.
+struct WriteChain {
+    WriteChain() : session(withoutDefaultOutput()) {}
+
+    static Document withoutDefaultOutput() {
+        Document document;
+        rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
+        return document;
+    }
+
+    ProjectSession session;
+};
+
+[[nodiscard]] EditResult submit(ProjectSession& session, Command command) {
+    EditResult result = session.submit(std::move(command), EditOptions{session.revision(), {}});
+    EXPECT_FALSE(result.error.has_value()) << (result.error ? result.error->message : std::string{});
+    return result;
+}
+
+[[nodiscard]] const PlanStep* stepFor(const EvaluationPlan& plan, const std::string& name) {
+    for (const PlanStep& step : plan.steps) {
+        if (step.name == name)
+            return &step;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+TEST(CatalogTest, DeliveryRoleAndDeliverySinkFlagMustAgree) {
+    const auto expectRejected = [](NodeContribution contribution, const char* relationship) {
+        std::shared_ptr<const NodeContributions> candidate;
+        try {
+            candidate =
+                std::make_shared<const NodeContributions>(std::vector<NodeContribution>{std::move(contribution)});
+            ADD_FAILURE() << "an inconsistent delivery declaration was published";
+        } catch (const std::invalid_argument& error) {
+            EXPECT_NE(std::string(error.what()).find("fixture.delivery"), std::string::npos) << error.what();
+            EXPECT_NE(std::string(error.what()).find(relationship), std::string::npos) << error.what();
+        }
+        EXPECT_EQ(candidate, nullptr);
+    };
+
+    // A delivery sink role whose schema does not declare the sink...
+    expectRejected(deliveryFixtureContribution(false, NodeRole::Delivery), "delivery-sink");
+    // ...and a schema that declares a sink no role implements.
+    expectRejected(deliveryFixtureContribution(true, NodeRole::Image), "delivery-sink");
+
+    // The matching pair is accepted, so the check is consistency, not refusal.
+    EXPECT_NO_THROW(static_cast<void>(
+        NodeContributions(std::vector<NodeContribution>{deliveryFixtureContribution(true, NodeRole::Delivery)})));
+}
+
+TEST(CatalogTest, WriteEvaluationDeliversItsInputWithoutTouchingDisk) {
+    std::error_code error;
+    const fs::path dir =
+        fs::temp_directory_path(error) / ("nemo-write-" + std::to_string(static_cast<long>(::getpid())));
+    fs::remove_all(dir, error);
+    ASSERT_TRUE(fs::create_directories(dir, error) || !error);
+    struct Cleanup {
+        fs::path dir;
+        ~Cleanup() {
+            std::error_code ignored;
+            fs::remove_all(dir, ignored);
+        }
+    } cleanup{dir};
+
+    WriteChain chain;
+    ProjectSession& session = chain.session;
+    const NetworkId network = session.document().rootNetworkId();
+    submit(session, setNetworkFormatCommand(network, ImageFormat{8, 4, 1.0F}));
+    submit(session, addNodeCommand(network, "testpattern", "plate"));
+    submit(session, addNodeCommand(network, "write", "delivery"));
+    const Graph& graph = rootGraph(session.document());
+    const NodeId plate = graph.nodeByName("plate")->id;
+    const NodeId write = graph.nodeByName("delivery")->id;
+    submit(session, connectCommand(network, PortRef{plate, 0}, PortRef{write, 0}));
+    const fs::path file = dir / "render.exr";
+    submit(session, setParamCommand(network, write, "file", ParameterValue{file.string()}));
+
+    EvaluationRequest request;
+    request.network = network;
+    request.output = write;
+    request.region = {0, 0, 8, 4};
+    const CpuEvaluation delivered = evaluateCpu(session.document(), request);
+
+    // The delivery request is an ordinary evaluation: the same plate is
+    // scheduled, and the delivered image is the plate's image unchanged.
+    EvaluationRequest upstream = request;
+    upstream.output = plate;
+    const CpuEvaluation source = evaluateCpu(session.document(), upstream);
+    ASSERT_EQ(delivered.plan.steps.size(), 2u);
+    const PlanStep* plateStep = stepFor(delivered.plan, "plate");
+    const PlanStep* deliveryStep = stepFor(delivered.plan, "delivery");
+    ASSERT_NE(plateStep, nullptr);
+    ASSERT_NE(deliveryStep, nullptr);
+    ASSERT_EQ(source.image.width(), delivered.image.width());
+    ASSERT_EQ(source.image.height(), delivered.image.height());
+    for (int y = 0; y < source.image.height(); ++y) {
+        for (int x = 0; x < source.image.width(); ++x) {
+            EXPECT_EQ(delivered.image.pixel(x, y), source.image.pixel(x, y)) << "pixel (" << x << "," << y << ")";
+        }
+    }
+    EXPECT_EQ(delivered.plan.result.contentHash, source.plan.result.contentHash);
+    EXPECT_EQ(deliveryStep->produced.contentHash, plateStep->produced.contentHash);
+    EXPECT_EQ(deliveryStep->inputs, (std::vector<NodeId>{plate}));
+
+    // Story 73: evaluating a Write node never writes anything — no output file,
+    // no temporary file, nothing at all in the authored directory.
+    EXPECT_FALSE(fs::exists(file));
+    EXPECT_TRUE(fs::is_empty(dir, error));
+    // The authored request itself is document state and is left alone.
+    EXPECT_EQ(session.document().network(network).graph().node(write)->params.at("file"),
+              ParameterValue{file.string()});
+}
+
+TEST(CatalogTest, WriteSinkNeverBecomesTheNetworkResult) {
+    Document document;
+    const NodeId write = rootGraph(document).addNode("write", "delivery");
+    // The network's result is defined by an Output node alone, so a delivery
+    // sink can neither be selected as the default output...
+    EXPECT_THROW(document.network(document.rootNetworkId()).setDefaultOutput(write), GraphException);
+
+    // ...nor satisfy a network-result evaluation. With the default Output node
+    // gone and a connected Write node present, the result is still missing.
+    rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
+    rootGraph(document).addNode("testpattern", "plate");
+    const NodeId plate = rootGraph(document).nodeByName("plate")->id;
+    static_cast<void>(rootGraph(document).connect(PortRef{plate, 0}, PortRef{write, 0}));
+    try {
+        static_cast<void>(resolveOutput(document, document.rootNetworkId()));
+        FAIL() << "expected EvaluationException";
+    } catch (const EvaluationException& failure) {
+        EXPECT_NE(std::string(failure.what()).find("no Output node"), std::string::npos);
+    }
 }

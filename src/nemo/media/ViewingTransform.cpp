@@ -540,6 +540,156 @@ void requireSceneLinearRec709Impl(const OCIO::ConstConfigRcPtr& config, const st
     return ConfigFileRule{true, colorSpace, defaultRule};
 }
 
+// Applies one CPU processor to an image's identified primary RGB channels, in
+// place. Only the identified root RGB channels are colour. The processor reads
+// and writes exactly those three planes and every other declared channel —
+// alpha, an auxiliary pass — is left bit-for-bit as the decoder produced it: an
+// RGBA descriptor would push alpha through OCIO's op chain, which perturbs even
+// a pass-through at the 1e-6 level, and a fixed three-channel packed descriptor
+// would convert whatever channels happen to sit first. The planes are addressed
+// through the raster's own channel stride, so a multi-channel interleaved image
+// needs no repacking, no allocation and no per-pixel name lookup. Alpha is
+// deliberately not described: the internal straight-alpha contract is exact.
+// One implementation for every colour processor this module applies (input,
+// export base, LUT), so no caller can convert a different set of channels.
+// Returns false when there was nothing to convert (an empty raster or an image
+// that identifies no complete RGB): a caller then states no new interpretation.
+[[nodiscard]] bool applyRgbProcessor(const OCIO::ConstCPUProcessorRcPtr& cpu, CpuImage& image) {
+    if (image.width() <= 0 || image.height() <= 0) {
+        return false;
+    }
+    const std::array<int, 4> indices = image.rgbaIndices();
+    if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0) {
+        return false;  // no complete root RGB: this image carries no colour to convert
+    }
+    float* base = image.data();
+    const auto channelStride = static_cast<std::ptrdiff_t>(image.channelCount() * sizeof(float));
+    const auto rowStride = channelStride * image.width();
+    const OCIO::PlanarImageDesc desc(base + indices[0], base + indices[1], base + indices[2], nullptr, image.width(),
+                                     image.height(), OCIO::BIT_DEPTH_F32, channelStride, rowStride);
+    cpu->apply(desc);
+    return true;
+}
+
+// The transform-file extensions this OCIO build registers, lowercase,
+// deduplicated and ordered: the answer comes from the library's own readers
+// (`FileTransform`'s registry), so a format the library can read is never
+// refused by a list this module keeps, and a format it cannot read is never
+// claimed.
+[[nodiscard]] std::vector<std::string> transformFileExtensions() {
+    std::vector<std::string> extensions;
+    for (int i = 0; i < OCIO::FileTransform::GetNumFormats(); ++i) {
+        const char* extension = OCIO::FileTransform::GetFormatExtensionByIndex(i);
+        if (extension == nullptr || extension[0] == '\0') {
+            continue;
+        }
+        std::string lower{extension};
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+        if (std::find(extensions.begin(), extensions.end(), lower) == extensions.end()) {
+            extensions.push_back(std::move(lower));
+        }
+    }
+    std::sort(extensions.begin(), extensions.end());
+    return extensions;
+}
+
+[[nodiscard]] bool isSupportedTransformFileImpl(const std::string& path) {
+    std::string extension = std::filesystem::path(path).extension().string();
+    if (!extension.empty() && extension.front() == '.') {
+        extension.erase(extension.begin());
+    }
+    if (extension.empty()) {
+        return false;
+    }
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    const std::vector<std::string> supported = transformFileExtensions();
+    return std::find(supported.begin(), supported.end(), extension) != supported.end();
+}
+
+// The base processor of one export: either working -> a named color space of
+// the config, or working -> a display/view. Both are the config's own
+// processors; a missing name is reported with the name and the reference, never
+// silently ignored.
+[[nodiscard]] OCIO::ConstProcessorRcPtr
+buildExportProcessorImpl(const OCIO::ConstConfigRcPtr& config, const std::string& reference,
+                         const std::string& workingSpace, const ExportTransformKind kind, const std::string& name) {
+    if (config->getColorSpace(workingSpace.c_str()) == nullptr) {
+        fail(reference, "working space '" + workingSpace + "' is not a colorspace in this config");
+    }
+    if (kind == ExportTransformKind::ColorSpace) {
+        if (config->getColorSpace(name.c_str()) == nullptr) {
+            fail(reference, "output color space '" + name + "' is not a colorspace in this config");
+        }
+        try {
+            return config->getProcessor(workingSpace.c_str(), name.c_str());
+        } catch (const OCIO::Exception& e) {
+            fail(reference,
+                 "cannot build export transform '" + workingSpace + "' -> color space '" + name + "': " + e.what());
+        } catch (const std::exception& e) {
+            fail(reference,
+                 "cannot build export transform '" + workingSpace + "' -> color space '" + name + "': " + e.what());
+        }
+    }
+    // Display/view: resolved by the SAME name resolution the viewing transform
+    // uses, so a delivery view and a viewer view name the same thing, and the
+    // failure messages come from that one owner.
+    const auto [display, view] = resolveNames(config, reference, workingSpace, name, TransformKind::Delivery);
+    return buildProcessor(config, reference, workingSpace, display, view);
+}
+
+// The retained processor of one LUT file, built through the SAME config context
+// (format resolution and context variables come from the loaded config). The
+// file is named in every failure: an unreadable or unrecognized LUT is a
+// setting error, never a silent identity.
+[[nodiscard]] OCIO::ConstProcessorRcPtr
+buildLutProcessorImpl(const OCIO::ConstConfigRcPtr& config, const std::string& reference, const std::string& lutFile) {
+    if (!std::filesystem::is_regular_file(lutFile)) {
+        fail(reference, "LUT file '" + lutFile + "' does not exist or is not a regular file");
+    }
+    if (!isSupportedTransformFileImpl(lutFile)) {
+        fail(reference, "LUT file '" + lutFile + "' has no registered OCIO reader for its extension (supported: " +
+                            supportedTransformFileExtensions() + ")");
+    }
+    try {
+        OCIO::FileTransformRcPtr transform = OCIO::FileTransform::Create();
+        transform->setSrc(lutFile.c_str());
+        transform->setInterpolation(OCIO::INTERP_BEST);
+        return config->getProcessor(transform);
+    } catch (const OCIO::Exception& e) {
+        fail(reference, "cannot build LUT transform '" + lutFile + "': " + e.what());
+    } catch (const std::exception& e) {
+        fail(reference, "cannot build LUT transform '" + lutFile + "': " + e.what());
+    }
+}
+
+// The interpretation the config itself declares for an export destination: a
+// data space is Data, a space whose declared encoding is linear stays
+// scene-linear, any other named encoding is an encoded (display-referred)
+// destination. An undeclared encoding makes no claim, so the image keeps the
+// interpretation it had. The display/view case is not asked: a view is
+// display-referred by definition, exactly as the viewing-transform path
+// already states.
+[[nodiscard]] ColorInterpretation exportInterpretation(const OCIO::ConstConfigRcPtr& config, const std::string& name,
+                                                       const ColorInterpretation unchanged) {
+    const OCIO::ConstColorSpaceRcPtr space = config->getColorSpace(name.c_str());
+    if (space == nullptr) {
+        return unchanged;
+    }
+    const std::string encoding = space->getEncoding() != nullptr ? space->getEncoding() : "";
+    if (encoding == "data") {
+        return ColorInterpretation::Data;
+    }
+    if (encoding.rfind("scene-linear", 0) == 0 || encoding.rfind("display-linear", 0) == 0) {
+        return ColorInterpretation::SceneLinear;
+    }
+    if (encoding.empty()) {
+        return unchanged;
+    }
+    return ColorInterpretation::DisplayReferred;
+}
+
 [[nodiscard]] OCIO::ConstProcessorRcPtr buildInputProcessorImpl(const OCIO::ConstConfigRcPtr& config,
                                                                 const std::string& reference,
                                                                 const std::string& workingSpace,
@@ -705,30 +855,12 @@ OcioInputTransform::OcioInputTransform(OcioInputTransform&&) noexcept = default;
 OcioInputTransform& OcioInputTransform::operator=(OcioInputTransform&&) noexcept = default;
 
 void OcioInputTransform::apply(CpuImage& image) const {
-    if (image.width() <= 0 || image.height() <= 0) {
-        return;
+    // One implementation of "convert exactly the primary RGB planes" for every
+    // colour processor in this module (input, export base, LUT): see
+    // applyRgbProcessor. Alpha and auxiliary channels are never part of it.
+    if (applyRgbProcessor(impl_->cpu, image)) {
+        image.setColorInterpretation(ColorInterpretation::SceneLinear);
     }
-    // Only the identified root RGB channels are colour. The processor reads and
-    // writes exactly those three planes and every other declared channel —
-    // alpha, an auxiliary pass — is left bit-for-bit as the decoder produced
-    // it: an RGBA descriptor would push alpha through OCIO's op chain, which
-    // perturbs even a pass-through at the 1e-6 level, and a fixed three-channel
-    // packed descriptor would convert whatever channels happen to sit first.
-    // The planes are addressed through the raster's own channel stride, so a
-    // multi-channel interleaved image needs no repacking, no allocation and no
-    // per-pixel name lookup. Alpha is deliberately not described: the internal
-    // straight-alpha contract is exact.
-    const std::array<int, 4> indices = image.rgbaIndices();
-    if (indices[0] < 0 || indices[1] < 0 || indices[2] < 0) {
-        return;  // no complete root RGB: this image carries no colour to convert
-    }
-    float* base = image.data();
-    const auto channelStride = static_cast<std::ptrdiff_t>(image.channelCount() * sizeof(float));
-    const auto rowStride = channelStride * image.width();
-    const OCIO::PlanarImageDesc desc(base + indices[0], base + indices[1], base + indices[2], nullptr, image.width(),
-                                     image.height(), OCIO::BIT_DEPTH_F32, channelStride, rowStride);
-    impl_->cpu->apply(desc);
-    image.setColorInterpretation(ColorInterpretation::SceneLinear);
 }
 
 const std::string& OcioInputTransform::inputColorSpace() const noexcept {
@@ -748,6 +880,145 @@ OcioGpuProgram buildInputTransformGpu(const std::string& configPath, const std::
                                       const std::string& inputColorSpace) {
     const OcioConfigSnapshot snapshot(configPath);
     return snapshot.inputTransformGpu(workingSpace, inputColorSpace);
+}
+
+// ---------------------------------------------------------------------------
+// Export color (issue #94)
+// ---------------------------------------------------------------------------
+
+std::vector<std::string> OcioConfigSnapshot::displayViews() const {
+    std::vector<std::string> names;
+    const OCIO::ConstConfigRcPtr& config = impl_->config;
+    for (int display = 0; display < config->getNumDisplays(); ++display) {
+        const char* displayName = config->getDisplay(display);
+        if (displayName == nullptr || displayName[0] == '\0') {
+            continue;
+        }
+        const int views = config->getNumViews(displayName);
+        for (int view = 0; view < views; ++view) {
+            const char* viewName = config->getView(displayName, view);
+            if (viewName == nullptr || viewName[0] == '\0') {
+                continue;
+            }
+            names.emplace_back(std::string{displayName} + "/" + viewName);
+        }
+    }
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
+}
+
+std::shared_ptr<const OcioOutputTransform> OcioConfigSnapshot::outputTransform(std::string workingSpace,
+                                                                               const ExportTransformKind kind,
+                                                                               std::string name,
+                                                                               std::string lutFile) const {
+    return std::make_shared<const OcioOutputTransform>(*this, std::move(workingSpace), kind, std::move(name),
+                                                       std::move(lutFile));
+}
+
+struct OcioOutputTransform::Impl {
+    std::string description;
+    std::string identity;
+    // Keep the configuration every processor was built from alive for their
+    // whole life, exactly like the retained input transform.
+    OCIO::ConstConfigRcPtr config;
+    OCIO::ConstCPUProcessorRcPtr base;
+    OCIO::ConstCPUProcessorRcPtr lut;
+    // The interpretation the destination declares, applied only when a base
+    // transform really ran.
+    ColorInterpretation interpretation{ColorInterpretation::SceneLinear};
+    bool transforms{false};
+};
+
+OcioOutputTransform::OcioOutputTransform(const OcioConfigSnapshot& snapshot, std::string workingSpace,
+                                         const ExportTransformKind kind, std::string name, std::string lutFile)
+    : impl_(std::make_unique<Impl>()) {
+    impl_->config = snapshot.impl_->config;
+    const std::string& reference = snapshot.impl_->reference;
+    std::string identity = snapshot.identity() + "|output";
+
+    impl_->interpretation = ColorInterpretation::SceneLinear;
+    if (kind == ExportTransformKind::None) {
+        if (!name.empty()) {
+            fail(reference, "export transform name '" + name + "' was given for a delivery that applies no transform");
+        }
+        impl_->description = "no export color transform (raw values)";
+    } else {
+        if (name.empty()) {
+            fail(reference, kind == ExportTransformKind::ColorSpace ? "no output color space was chosen"
+                                                                    : "no output display/view was chosen");
+        }
+        const OCIO::ConstProcessorRcPtr processor =
+            buildExportProcessorImpl(impl_->config, reference, workingSpace, kind, name);
+        impl_->base = processor->getDefaultCPUProcessor();
+        impl_->transforms = true;
+        identity += std::string{"|base:"} + processor->getCacheID();
+        if (kind == ExportTransformKind::ColorSpace) {
+            impl_->description = "working '" + workingSpace + "' -> color space '" + name + "'";
+            impl_->interpretation = exportInterpretation(impl_->config, name, ColorInterpretation::SceneLinear);
+        } else {
+            impl_->description = "working '" + workingSpace + "' -> view '" + name + "'";
+            // A display/view transform is display-referred by construction, the
+            // same claim the viewing-transform path already makes.
+            impl_->interpretation = ColorInterpretation::DisplayReferred;
+        }
+    }
+    if (!lutFile.empty()) {
+        const OCIO::ConstProcessorRcPtr lut = buildLutProcessorImpl(impl_->config, reference, lutFile);
+        impl_->lut = lut->getDefaultCPUProcessor();
+        impl_->transforms = true;
+        identity += "|lut:" + lutFile + ":" + lut->getCacheID();
+        impl_->description += " then LUT '" + lutFile + "'";
+    }
+    impl_->identity = std::move(identity);
+}
+
+OcioOutputTransform::~OcioOutputTransform() = default;
+OcioOutputTransform::OcioOutputTransform(OcioOutputTransform&&) noexcept = default;
+OcioOutputTransform& OcioOutputTransform::operator=(OcioOutputTransform&&) noexcept = default;
+
+void OcioOutputTransform::apply(CpuImage& image) const {
+    if (!impl_->transforms) {
+        return;  // raw: not one sample, not even the interpretation, is touched
+    }
+    bool converted = false;
+    if (impl_->base != nullptr) {
+        converted = applyRgbProcessor(impl_->base, image);
+    }
+    if (impl_->lut != nullptr) {
+        // The LUT runs AFTER the base, on the same primary RGB planes and
+        // nothing else: alpha and auxiliary channels are bit-preserved, and an
+        // image whose RGB the base already converted cannot be converted under
+        // a different interpretation in between.
+        converted = applyRgbProcessor(impl_->lut, image) || converted;
+    }
+    if (converted) {
+        image.setColorInterpretation(impl_->interpretation);
+    }
+}
+
+const std::string& OcioOutputTransform::description() const noexcept {
+    return impl_->description;
+}
+
+const std::string& OcioOutputTransform::identity() const noexcept {
+    return impl_->identity;
+}
+
+bool isSupportedTransformFile(const std::string& path) {
+    return isSupportedTransformFileImpl(path);
+}
+
+std::string supportedTransformFileExtensions() {
+    const std::vector<std::string> extensions = transformFileExtensions();
+    std::string list;
+    for (const std::string& extension : extensions) {
+        if (!list.empty()) {
+            list += ", ";
+        }
+        list += extension;
+    }
+    return list;
 }
 
 }  // namespace nemo::media

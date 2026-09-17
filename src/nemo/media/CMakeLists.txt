@@ -11,6 +11,7 @@ find_package(OpenImageIO CONFIG REQUIRED)
 find_package(OpenColorIO CONFIG REQUIRED)
 
 add_library(nemo_media
+    DeliveryOutput.cpp
     ImageIO.cpp
     ImageSource.cpp
     InputColor.cpp

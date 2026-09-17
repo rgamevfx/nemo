@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ViewerItem.hpp"
+#include "nemo/eval/DeliveryJob.hpp"
 #include "nemo/eval/Viewer.hpp"
 #include "nemo/eval/ViewerCache.hpp"
 #include "nemo/eval/ViewerScheduler.hpp"
@@ -171,6 +172,14 @@ public:
     // Call before Qt window destruction; quiesce follows Qt teardown.
     void stopWorker();
     void quiesceForTeardown();
+    // The ONE native delivery job seam this application owns (issue #94). The
+    // queue borrows this runtime's own Instance/Device/Allocator and the same
+    // compiled shader directory the viewer renders with, so a delivery evaluates
+    // through the same native path at full quality and never creates a second
+    // device, allocator, renderer or decoder. bootstrap() initializes it, and
+    // teardown stops it before those native objects are destroyed.
+    [[nodiscard]] eval::DeliveryQueue& deliveryQueue();
+
     [[nodiscard]] gpu::Device& presentationDevice() const { return *presentationDevice_; }
     [[nodiscard]] bool presentationFilterLinear() const { return filterLinear_; }
     // Shared presentation host owned by the runtime for its whole lifetime, so
@@ -204,6 +213,11 @@ private:
     std::unique_ptr<gpu::Device> presentationDevice_;
     std::unique_ptr<gpu::Device> device_;
     std::unique_ptr<gpu::Allocator> allocator_;
+    // The application's explicit delivery jobs (issue #94). Declared after the
+    // native owners so it is destroyed before them, and stopped explicitly in
+    // quiesceForTeardown too: a delivery's own worker and its retained
+    // submissions never outlive the device they borrow.
+    std::unique_ptr<eval::DeliveryQueue> delivery_;
     QVulkanInstance qtInstance_;
     bool filterLinear_{};
 

@@ -1,3 +1,4 @@
+#include "DeliveryController.hpp"
 #include "HistoryController.hpp"
 #include "MediaLibraryModel.hpp"
 #include "NativeFileChooser.hpp"
@@ -244,6 +245,10 @@ int main(int argc, char* argv[]) {
     // workflows share the one native chooser, so the application can never have
     // two platform dialogs outstanding.
     nemo::ui::ProjectFileController projectFile(projectSession, workspace, panelContextRouter, nativeFileChooser);
+    // Delivery borrows the runtime's shared native job owner. Each submission
+    // captures the current project config; no decoder/device lives in the UI
+    // adapter and accepted exports remain independent of later project edits.
+    nemo::ui::DeliveryController delivery(projectSession, runtime.deliveryQueue());
     int result = 0;
     {
         QQmlApplicationEngine engine;
@@ -260,6 +265,7 @@ int main(int argc, char* argv[]) {
         engine.rootContext()->setContextProperty(QStringLiteral("parameterEditors"), &parameterEditors);
         engine.rootContext()->setContextProperty(QStringLiteral("readSourceController"), &readSource);
         engine.rootContext()->setContextProperty(QStringLiteral("mediaLibrary"), &mediaLibrary);
+        engine.rootContext()->setContextProperty(QStringLiteral("deliveryController"), &delivery);
         // The same contribution list supplies schema, execution and optional
         // editor metadata. The existing presentation host still owns controls,
         // consumed rows, unavailable-editor fallback and their lifetimes.

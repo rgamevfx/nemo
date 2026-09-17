@@ -918,8 +918,17 @@ void validateRequest(const Document& document, const EvaluationRequest& request)
     const auto* outputSchema = graph.descriptor(output->type);
     // Processors with declared image outputs are valid evaluation targets too:
     // the interactive viewer renders the attached upstream node directly.
-    if (outputSchema == nullptr || (!outputSchema->isOutput && outputSchema->outputs.empty())) {
-        failNode(*output, "evaluation request must target an Output node or a node type with declared outputs");
+    //
+    // A delivery sink is a legal target for that same reason, but its port list
+    // cannot say so: it declares NO output ports, because it is the point an
+    // explicit delivery job aims at rather than a producer feeding the graph.
+    // Its schema states the fact instead (issue #94, story 72). It is still not
+    // the network's result — `resolveOutput` only ever selects an Output node —
+    // and the display-only Viewer role stays rejected here.
+    if (outputSchema == nullptr ||
+        (!outputSchema->isOutput && outputSchema->outputs.empty() && !outputSchema->isDeliverySink)) {
+        failNode(*output, "evaluation request must target an Output node, a delivery node or a node type with "
+                          "declared outputs");
     }
 
     // A request is valid only when every expanded dependency advertises the
@@ -1032,7 +1041,10 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
             continue;
         const NodeInstance& node = regionPlan.images.nodes.at(expandedNode.id).node;
         const NodeContribution* contribution = contributions->find(node.type);
-        const bool producesPixels = contribution->role == NodeRole::Image || contribution->role == NodeRole::Source;
+        // Delivery is a pixel role too (issue #94): it must report a missing
+        // CPU adapter instead of reaching an absent callback.
+        const bool producesPixels = contribution->role == NodeRole::Image || contribution->role == NodeRole::Source ||
+                                    contribution->role == NodeRole::Delivery;
         if (producesPixels && !contribution->cpu) {
             // A GPU-only (or otherwise unavailable) contribution is honest
             // about it: report the node and its reason instead of inventing

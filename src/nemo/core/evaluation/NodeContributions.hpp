@@ -46,7 +46,14 @@ struct EffectiveSourceRequest;
 // Output is the network's delivery sink; the Viewer is display-only. Roles are
 // shared executor behavior, so adding an ordinary effect never needs a new
 // node-type branch in an executor.
-enum class NodeRole { Image, Source, Output, Viewer };
+//
+// A Delivery node (issue #94, stories 72-73) is an explicit delivery sink as
+// well, but a different one from the network's Output: it branches from any
+// compatible point of the graph instead of defining the network's result, and
+// it carries real pixels instead of being display-only like the Viewer. Its
+// authored settings describe a delivery REQUEST that an explicit delivery job
+// executes later; evaluating the node itself never performs file I/O.
+enum class NodeRole { Image, Source, Output, Viewer, Delivery };
 
 // One node's resolved evaluation context. `inputs` is declared-port aligned and
 // holds null for an absent optional slot; the adapter never allocates a
@@ -255,10 +262,10 @@ public:
     // identifying the node when the node's persistent type is not part of this
     // registration, or when the catalog's typed schema for that type differs
     // from the registered descriptor in identity-relevant fields (persistent
-    // type, implementation version, isOutput, ports, parameters and their
-    // defaults/bounds/choices/nonzero flags, capabilities). Display names,
-    // grouping, labels, sections, rows, soft ranges, steps, decimals and editor
-    // metadata are presentation and never participate.
+    // type, implementation version, isOutput, isDeliverySink, ports, parameters
+    // and their defaults/bounds/choices/nonzero flags, capabilities). Display
+    // names, grouping, labels, sections, rows, soft ranges, steps, decimals and
+    // editor metadata are presentation and never participate.
     //
     // Backend availability is deliberately separate: a GPU-only contribution
     // may carry no CPU adapter, and the CPU executor reports that honestly from

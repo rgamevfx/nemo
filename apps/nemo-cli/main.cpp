@@ -4,6 +4,10 @@
 //   nemo-cli evaluate <project.json> --out f.ppm [--frame N] [--width W --height H]
 //           [--output NAME] [--network-id ID]
 //   nemo-cli render <project.json> --out f.ppm [--frame N] [--width W --height H]
+//   nemo-cli deliver <project.nemo> --write <node> [--format exr|mov|mp4]
+//           [--profile 422|4444|4444xq] [--fps N] [--bitrate-kbps N]
+//           [--color-mode raw|project|colorspace|display] [--output-transform NAME]
+//           [--lut FILE] [--out PATH] [--first N --last N] [--preflight]
 //
 // `evaluate` walks the selected document network topologically and renders its
 // Output node from the CPU reference inventory (issue #1). When omitted,
@@ -12,6 +16,12 @@
 // PPM bytes are the scene-linear reference values clamped to [0, 1] -- no
 // viewing transform is applied (spec section 8). `render` is the older
 // single-node pattern writer kept for the CI smoke test.
+//
+// `deliver` (issue #94) consumes the same native eval::DeliveryQueue as the
+// desktop. It preserves source decode selection and evaluates the frozen
+// document at full quality; output color and encoding are export-only.
+// `--preflight` reports the output plan without writing. A job that does not
+// finalize every requested frame/container exits with status 1.
 #include "ProjectSessionCommand.hpp"
 #include "ViewerCacheCommand.hpp"
 #include <algorithm>
@@ -22,6 +32,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -37,6 +48,7 @@
 #include "nemo/media/Probe.hpp"
 #include "nemo/media/VideoDecode.hpp"
 #ifdef NEMO_BUILD_GPU
+#include "nemo/eval/DeliveryJob.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
 #include "nemo/eval/SourceSession.hpp"
 #include "nemo/gpu/Allocator.hpp"
@@ -81,6 +93,12 @@ int printUsage() {
                  "[--width W] [--height H] [--output NAME] [--network-id ID]\n"
                  "  nemo-cli render <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H]\n"
+                 "  nemo-cli deliver <project.nemo> --write <node> [--network-id ID] [--frame N]\n"
+                 "          [--out PATH] [--format exr|mov|mp4] [--overwrite]\n"
+                 "          [--precision half|float] [--compression zip|piz|rle|none|dwaa]\n"
+                 "          [--profile 422|4444|4444xq] [--fps N] [--bitrate-kbps N]\n"
+                 "          [--color-mode raw|project|colorspace|display] [--output-transform NAME] [--lut FILE]\n"
+                 "          [--first N] [--last N] [--offset N] [--shaders DIR] [--preflight]\n"
                  "  nemo-cli project-session <project.json>  JSON-lines edit/query session\n"
                  "  nemo-cli probe-media [project.json]      hardware codec capability report\n"
                  "  nemo-cli codec-sweep <tagged-viewer-clip> [--codecs a,b] [--chunks a,b] [--max-frames N]\n"
@@ -296,6 +314,254 @@ int commandEvaluate(const std::vector<std::string>& args) {
     }
     std::cout << report.dump(2) << '\n';
     return report["ok"].get<bool>() ? 0 : 1;
+}
+
+#ifdef NEMO_BUILD_GPU
+// UI and CLI report the settings frozen by the same delivery owner (issue #94).
+[[nodiscard]] nlohmann::json deliverySettingsToJson(const nemo::eval::DeliverySettings& settings) {
+    const auto& output = settings.output;
+    return {{"file", settings.file},
+            {"fileType", output.fileType},
+            {"createDirectories", settings.createDirectories},
+            {"overwrite", settings.overwrite},
+            {"frameFirst", settings.frameFirst},
+            {"frameLast", settings.frameLast},
+            {"frameOffset", settings.frameOffset},
+            {"precision", output.precision == nemo::media::OutputPrecision::Half ? "half" : "float"},
+            {"compression", output.compression},
+            {"profile", output.profile},
+            {"frameRate", output.frameRate},
+            {"bitrateKbps", output.bitrateKbps},
+            {"colorMode", output.colorMode},
+            {"outputTransform", output.outputTransform},
+            {"lutFile", output.lutFile}};
+}
+
+[[nodiscard]] nlohmann::json deliveryFramesToJson(const std::vector<nemo::eval::DeliveryFrame>& frames) {
+    nlohmann::json result = nlohmann::json::array();
+    for (const auto& frame : frames)
+        result.push_back(
+            {{"documentFrame", frame.documentFrame}, {"fileFrame", frame.fileFrame}, {"path", frame.path}});
+    return result;
+}
+
+[[nodiscard]] nlohmann::json deliveryFileToJson(const nemo::eval::DeliveryFileResult& file) {
+    return {{"documentFrame", file.documentFrame},
+            {"fileFrame", file.fileFrame},
+            {"path", file.path},
+            {"written", file.written},
+            {"error", file.error}};
+}
+#endif
+
+int commandDeliver(const std::vector<std::string>& args) {
+#ifndef NEMO_BUILD_GPU
+    (void)args;
+    std::cerr << "deliver requires the native GPU evaluation build; no CPU export fallback is used\n";
+    return 2;
+#else
+    if (args.empty())
+        return printUsage();
+    struct Request {
+        std::string node;
+        nemo::NetworkId network{nemo::kInvalidNetwork};
+        std::int64_t frame{0};
+        std::optional<std::string> out, format, precision, compression, profile, colorMode, outputTransform, lut;
+        std::optional<std::int64_t> first, last, offset;
+        std::optional<double> frameRate;
+        std::optional<int> bitrateKbps;
+        std::string shaders;
+        bool overwrite{false};
+        bool preflight{false};
+    } request;
+    try {
+        const auto integer = [](const std::string& text, const std::string& option) {
+            std::int64_t value = 0;
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+            if (error != std::errc{} || end != text.data() + text.size())
+                throw std::invalid_argument(option + ": expected an integer, got '" + text + "'");
+            return value;
+        };
+        for (std::size_t i = 1; i < args.size(); ++i) {
+            const std::string& flag = args[i];
+            if (flag == "--overwrite") {
+                request.overwrite = true;
+                continue;
+            }
+            if (flag == "--preflight") {
+                request.preflight = true;
+                continue;
+            }
+            if (i + 1 >= args.size())
+                throw std::invalid_argument("missing value for " + flag);
+            const std::string& value = args[++i];
+            if (flag == "--write")
+                request.node = value;
+            else if (flag == "--network-id")
+                request.network = parseNetworkId(value);
+            else if (flag == "--frame")
+                request.frame = integer(value, flag);
+            else if (flag == "--out")
+                request.out = value;
+            else if (flag == "--format")
+                request.format = value;
+            else if (flag == "--precision") {
+                if (value != "half" && value != "float")
+                    throw std::invalid_argument("--precision requires half or float");
+                request.precision = value;
+            } else if (flag == "--compression")
+                request.compression = value;
+            else if (flag == "--profile")
+                request.profile = value;
+            else if (flag == "--color-mode")
+                request.colorMode = value;
+            else if (flag == "--output-transform")
+                request.outputTransform = value;
+            else if (flag == "--lut")
+                request.lut = value;
+            else if (flag == "--first")
+                request.first = integer(value, flag);
+            else if (flag == "--last")
+                request.last = integer(value, flag);
+            else if (flag == "--offset")
+                request.offset = integer(value, flag);
+            else if (flag == "--shaders")
+                request.shaders = value;
+            else if (flag == "--fps") {
+                double fps = 0;
+                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), fps);
+                if (error != std::errc{} || end != value.data() + value.size() || !std::isfinite(fps) || fps <= 0)
+                    throw std::invalid_argument("--fps requires a finite positive frame rate");
+                request.frameRate = fps;
+            } else if (flag == "--bitrate-kbps") {
+                const auto bitrate = integer(value, flag);
+                if (bitrate <= 0 || bitrate > std::numeric_limits<int>::max())
+                    throw std::invalid_argument("--bitrate-kbps is outside the supported positive integer range");
+                request.bitrateKbps = static_cast<int>(bitrate);
+            } else
+                throw std::invalid_argument("unknown flag " + flag);
+        }
+        if (request.node.empty())
+            throw std::invalid_argument("deliver requires --write <node>");
+    } catch (const std::exception& error) {
+        std::cerr << "deliver: " << error.what() << '\n';
+        return 2;
+    }
+#ifdef NEMO_SLANG_SPV_DIR
+    if (request.shaders.empty())
+        request.shaders = NEMO_SLANG_SPV_DIR;
+#endif
+    nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
+    try {
+        const auto loaded = readProject(args.front(), report);
+        if (loaded.ok) {
+            const auto network =
+                request.network == nemo::kInvalidNetwork ? loaded.document.rootNetworkId() : request.network;
+            const auto* write = loaded.document.network(network).graph().nodeByName(request.node);
+            if (!write)
+                throw std::invalid_argument("network " + std::to_string(network) + " has no Write node named '" +
+                                            request.node + "'");
+            auto settings = nemo::eval::deliverySettings(loaded.document, network, write->id, request.frame);
+            if (request.out)
+                settings.file = *request.out;
+            if (request.overwrite)
+                settings.overwrite = true;
+            auto& output = settings.output;
+            if (request.format)
+                output.fileType = *request.format;
+            if (request.precision)
+                output.precision = *request.precision == "half" ? nemo::media::OutputPrecision::Half
+                                                                : nemo::media::OutputPrecision::Float32;
+            if (request.compression)
+                output.compression = *request.compression;
+            if (request.profile)
+                output.profile = *request.profile;
+            if (request.frameRate)
+                output.frameRate = *request.frameRate;
+            if (request.bitrateKbps)
+                output.bitrateKbps = *request.bitrateKbps;
+            if (request.colorMode)
+                output.colorMode = *request.colorMode;
+            if (request.outputTransform)
+                output.outputTransform = *request.outputTransform;
+            if (request.lut)
+                output.lutFile = *request.lut;
+            if (request.first)
+                settings.frameFirst = *request.first;
+            if (request.last)
+                settings.frameLast = *request.last;
+            if (request.offset)
+                settings.frameOffset = *request.offset;
+            if (request.shaders.empty())
+                throw std::invalid_argument("deliver needs compiled Slang shaders; pass --shaders DIR");
+
+            // The headless counterpart of the desktop's injected native owners.
+            // Delivery borrows them; it never constructs a private device.
+            auto instance = nemo::gpu::Instance::create({.validation = true});
+            auto device = nemo::gpu::Device::create(*instance);
+            auto allocator = nemo::gpu::Allocator::create(*instance, *device, {.max_device_bytes = 2ULL << 30});
+            nemo::eval::DeliveryQueue queue(*instance, *device, *allocator, request.shaders);
+            if (request.preflight) {
+                const auto plan =
+                    queue.plan(loaded.document, network, write->id, settings, request.frame, loaded.colorConfigPath);
+                auto planJson = deliverySettingsToJson(plan.settings);
+                planJson["frames"] = deliveryFramesToJson(plan.frames);
+                planJson["collisions"] = plan.collisions;
+                planJson["problem"] = plan.problem;
+                planJson["width"] = plan.width;
+                planJson["height"] = plan.height;
+                planJson["channels"] = plan.channels;
+                report["plan"] = std::move(planJson);
+                report["ok"] = plan.ok();
+                if (!plan.problem.empty())
+                    report["errors"].push_back(plan.problem);
+                if (!plan.settings.overwrite)
+                    for (const auto& collision : plan.collisions)
+                        report["errors"].push_back("refusing to overwrite '" + collision +
+                                                   "' (--overwrite authorizes it)");
+            } else {
+                const auto id =
+                    queue.submit(loaded.document, network, write->id, settings, request.frame, loaded.colorConfigPath);
+                queue.waitForIdle();
+                const auto job = queue.status(id);
+                auto jobJson = deliverySettingsToJson(job.settings);
+                jobJson["id"] = job.id;
+                jobJson["state"] = nemo::eval::deliveryStateName(job.state);
+                jobJson["network"] = job.network;
+                jobJson["node"] = job.node;
+                jobJson["nodeName"] = job.nodeName;
+                jobJson["totalFrames"] = job.totalFrames;
+                jobJson["writtenFrames"] = job.writtenFrames;
+                jobJson["failedFrames"] = job.failedFrames;
+                jobJson["progress"] = job.progress();
+                jobJson["width"] = job.width;
+                jobJson["height"] = job.height;
+                jobJson["channels"] = job.channels;
+                jobJson["fullQuality"] = job.fullQuality;
+                jobJson["execution"] = "native";
+                jobJson["nativeStaging"] = job.nativeStaging;
+                jobJson["stagingBytes"] = job.stagingBytes;
+                jobJson["movie"] = job.movie;
+                jobJson["error"] = job.error;
+                auto files = nlohmann::json::array();
+                for (const auto& file : job.files)
+                    files.push_back(deliveryFileToJson(file));
+                jobJson["files"] = std::move(files);
+                report["job"] = std::move(jobJson);
+                report["ok"] = job.state == nemo::eval::DeliveryState::Completed;
+                if (!job.error.empty())
+                    report["errors"].push_back(job.error);
+                for (const auto& file : job.files)
+                    if (!file.written && !file.error.empty())
+                        report["errors"].push_back(file.error);
+            }
+        }
+    } catch (const std::exception& error) {
+        report["errors"].push_back(std::string("deliver: ") + error.what());
+    }
+    std::cout << report.dump(2) << '\n';
+    return report["ok"].get<bool>() ? 0 : 1;
+#endif
 }
 
 // Image source probe: reports the image contract for one still or sequence
@@ -616,6 +882,9 @@ int main(int argc, char** argv) {
     }
     if (command == "evaluate") {
         return commandEvaluate(args);
+    }
+    if (command == "deliver") {
+        return commandDeliver(args);
     }
 #ifdef NEMO_BUILD_GPU
     if (command == "evaluate-gpu") {

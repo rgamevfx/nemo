@@ -1,0 +1,1007 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+// Write delivery editor (issue #94), hosted by the generic inspector through
+// ParameterEditorRegistry id "nemo.write.delivery" with presentation "section".
+// The host mounts it on the `file` row and consumes the Write node's other
+// delivery settings.
+//
+// The authored state stays the typed node parameters: every field is read
+// through the shared inspector query (frame-evaluated) and written through the
+// shared panel gesture, so a typed value, an arrow-key step and a scrub are all
+// exactly one validated undo entry with the existing key-at-frame semantics.
+// Nothing here is a second settings model: the rows are presentation groupings
+// (file / frames / format / output color / directory flags) over the SAME
+// parameters the schema declares, which is why the panel offers no flat list of
+// them.
+//
+// The format row states exactly what the AUTHORED format consumes — EXR
+// precision and compression, MOV profile and frame rate, MP4 bitrate and frame
+// rate — and the color rows state the output color mode, the transform that
+// mode selects (discovered by the delivery adapter from the active project
+// config) and the optional LUT path. A hidden setting is not an authored one:
+// the value travels to the seam unchanged when its format returns.
+//
+// Delivery itself is not authored state. "Deliver" submits the node's resolved
+// settings to the ONE delivery-job seam (issue #94 stories 74-86) as an
+// external side effect: it never enters document history, so undo can never
+// claim to reverse an export (story 86). Ordinary playback through a Write node
+// writes nothing at all (story 73) — this editor is the only path that can
+// create files, and only when the artist presses Deliver. Submitting performs
+// no filesystem preflight: the seam's own worker resolves and refuses the
+// request before touching a file, and that refusal arrives as the job's own
+// failure naming the offending path.
+ColumnLayout {
+    id: writeEditor
+
+    // Host-injected contract (ParametersPanel). A bare host may load this
+    // editor without a controller or a delivery seam; every control then states
+    // that it cannot act instead of pretending.
+    property var theme: null
+    property string networkId: ""
+    property string instanceId: ""
+    property string nodeId: ""
+    property string parameterKey: "file"
+    property var parameter
+    property var controller
+    property var panel
+
+    readonly property color textColor: writeEditor.theme ? writeEditor.theme.text : "#dce0e6"
+    readonly property color mutedColor: writeEditor.theme ? writeEditor.theme.muted : "#979ea8"
+    readonly property color borderColor: writeEditor.theme ? writeEditor.theme.border : "#30343a"
+    readonly property color fieldColor: writeEditor.theme ? writeEditor.theme.field : "#24272c"
+    readonly property color panelColor: writeEditor.theme ? writeEditor.theme.panel : "#1e2023"
+    readonly property color raisedColor: writeEditor.theme ? writeEditor.theme.raised : "#282c31"
+    readonly property color hoverColor: writeEditor.theme ? writeEditor.theme.hover : "#343940"
+    readonly property color accentColor: writeEditor.theme ? writeEditor.theme.accent : "#3485f6"
+    readonly property color disabledColor: writeEditor.theme ? writeEditor.theme.disabled : "#5f6670"
+    readonly property color errorColor: writeEditor.theme ? writeEditor.theme.errorText : "#f0d0d0"
+    readonly property int smallRadiusValue: writeEditor.theme ? writeEditor.theme.smallRadius : 4
+    readonly property int fontSizeValue: writeEditor.theme ? writeEditor.theme.fontSize : 11
+    readonly property int smallFontSize: Math.max(9, writeEditor.fontSizeValue - 1)
+    readonly property int labelWidth: 52
+
+    // The delivery seam installed by main.cpp. It is a context property, so a
+    // bare editor host (a UI test or a preview) simply has none.
+    readonly property var delivery: (typeof deliveryController !== "undefined" && deliveryController !== null) ? deliveryController : null
+    readonly property bool canDeliver: writeEditor.delivery !== null && writeEditor.panel !== null && writeEditor.controller !== null
+
+    // --- authored format and output color -----------------------------------
+    // The file type and color mode as the inspector resolves them at the current
+    // frame (the same values the seam will read). Each flag below only decides
+    // WHICH control is presented; no path, extension or transform is ever
+    // rewritten from them, so a format/extension mismatch reaches the seam
+    // verbatim and is refused there with a message naming the file.
+    readonly property string outputFileType: {
+        var type = writeEditor.textValue("fileType");
+        return type.length > 0 ? type : "exr";
+    }
+    readonly property bool exrFormat: writeEditor.outputFileType === "exr"
+    readonly property bool movFormat: writeEditor.outputFileType === "mov"
+    readonly property bool mp4Format: writeEditor.outputFileType === "mp4"
+    readonly property bool movieFormat: writeEditor.movFormat || writeEditor.mp4Format
+    // The setting the leading format label exposes/keys first, so the group
+    // label always belongs to a control that is really on screen.
+    readonly property string formatLeadKey: writeEditor.exrFormat ? "precision" : (writeEditor.movFormat ? "profile" : "bitrateKbps")
+    readonly property string outputColorMode: {
+        var mode = writeEditor.textValue("colorMode");
+        return mode.length > 0 ? mode : "raw";
+    }
+    // Only `colorspace` and `display` name an explicit transform: `raw` writes
+    // the working pixels and `project` resolves the project's own delivery
+    // transform, so neither has an entry to choose.
+    readonly property bool transformSelectable: writeEditor.outputColorMode === "colorspace" || writeEditor.outputColorMode === "display"
+    // The placeholder states what the authored format expects; it never edits the
+    // authored path.
+    readonly property string fileHint: writeEditor.exrFormat ? "/renders/shot.####.exr" : (writeEditor.movFormat ? "/renders/shot.mov" : "/renders/shot.mp4")
+
+    // One compact capability statement for the AUTHORED format: a movie is
+    // video-only and only ProRes 4444/4444 XQ keep alpha. It is stated as a
+    // tooltip, never as an audio control, and it never bakes a viewer transform
+    // into the delivered pixels.
+    function capabilityHint() {
+        if (writeEditor.mp4Format)
+            return "H.264 MP4 is video-only: no alpha is written.";
+        if (writeEditor.movFormat)
+            return writeEditor.textValue("profile") === "422" ? "ProRes 422 is video-only: no alpha is written." : "ProRes 4444/4444 XQ retain alpha.";
+        return "OpenEXR writes every delivered channel, alpha included.";
+    }
+
+    // The entries the delivery adapter discovered for the CURRENT mode in the
+    // active project config (one cached discovery per generation/config/mode).
+    property var transformEntries: []
+    property string transformProblem: ""
+
+    objectName: "writeDeliveryEditor_" + writeEditor.nodeId
+    Layout.fillWidth: true
+    spacing: 3
+
+    // --- query coordinates -------------------------------------------------
+    // The inspector query addresses the real node that owns the parameters (a
+    // definition network for an occurrence exposure); gestures stay on the host
+    // row, so an edit can never leave its own scope.
+    readonly property string queryNetwork: writeEditor.parameter && writeEditor.parameter.targetNetwork !== undefined ? String(writeEditor.parameter.targetNetwork) : writeEditor.networkId
+    readonly property string queryNode: writeEditor.parameter && writeEditor.parameter.targetNode !== undefined ? String(writeEditor.parameter.targetNode) : writeEditor.nodeId
+    readonly property int revision: writeEditor.panel ? Number(writeEditor.panel.revision) : 0
+    readonly property int frame: writeEditor.controller ? Number(writeEditor.controller.frame) : 0
+    readonly property int dragThreshold: writeEditor.controller ? Number(writeEditor.controller.dragDistance) : 4
+
+    // --- model -------------------------------------------------------------
+    // Key -> the shared inspector row for that parameter. Re-queried whenever
+    // the panel revision or the frame advances, so keyed settings state the
+    // value at the current frame and a keyed edit is visible immediately.
+    property var paramRows: ({})
+    onRevisionChanged: writeEditor.refresh()
+    onFrameChanged: writeEditor.refresh()
+    onNodeIdChanged: writeEditor.refresh()
+    onQueryNetworkChanged: writeEditor.refresh()
+    onQueryNodeChanged: writeEditor.refresh()
+    onControllerChanged: writeEditor.refresh()
+    onPanelChanged: writeEditor.refresh()
+    Component.onCompleted: writeEditor.refresh()
+
+    function refresh() {
+        var next = ({});
+        if (writeEditor.controller && writeEditor.queryNetwork.length > 0 && writeEditor.queryNode.length > 0) {
+            var inspector = writeEditor.controller.parameterInspector(writeEditor.queryNetwork, writeEditor.queryNode);
+            if (inspector && inspector.available === true) {
+                var sections = inspector.sections || [];
+                for (var i = 0; i < sections.length; ++i) {
+                    var parameters = sections[i].parameters || [];
+                    for (var j = 0; j < parameters.length; ++j) {
+                        var entry = parameters[j];
+                        if (entry && entry.key !== undefined)
+                            next[String(entry.key)] = entry;
+                    }
+                }
+            }
+        }
+        writeEditor.paramRows = next;
+        writeEditor.refreshTransform();
+    }
+
+    // The transform entries for the CURRENT mode, discovered by the delivery
+    // adapter from the ACTIVE project config (the adapter caches one discovery
+    // per project generation/config/mode, so an inspector revision never opens a
+    // config). Entries and a discovery failure are both stated locally: an empty
+    // list for a mode that needs one is shown with its reason, never silently.
+    function refreshTransform() {
+        var entries = [];
+        var problem = "";
+        if (writeEditor.delivery && writeEditor.transformSelectable) {
+            var discovered = writeEditor.delivery.transformChoices(writeEditor.outputColorMode);
+            if (discovered) {
+                entries = discovered.choices !== undefined && discovered.choices !== null ? discovered.choices : [];
+                problem = discovered.error !== undefined && discovered.error !== null ? String(discovered.error) : "";
+            } else {
+                problem = "The delivery adapter cannot enumerate this config's transforms.";
+            }
+        }
+        var changed = entries.length !== writeEditor.transformEntries.length;
+        for (var i = 0; !changed && i < entries.length; ++i)
+            changed = String(entries[i]) !== String(writeEditor.transformEntries[i]);
+        if (changed)
+            writeEditor.transformEntries = entries;
+        if (problem !== writeEditor.transformProblem)
+            writeEditor.transformProblem = problem;
+    }
+
+    function paramRow(key) {
+        var entry = writeEditor.paramRows[key];
+        return entry !== undefined ? entry : null;
+    }
+
+    function numberValue(key) {
+        var entry = writeEditor.paramRow(key);
+        if (!entry || entry.value === undefined || entry.value === null || entry.value.length !== undefined)
+            return 0;
+        return Number(entry.value);
+    }
+
+    function textValue(key) {
+        var entry = writeEditor.paramRow(key);
+        if (!entry || entry.value === undefined || entry.value === null)
+            return "";
+        return String(entry.value);
+    }
+
+    function boolValue(key) {
+        var entry = writeEditor.paramRow(key);
+        return entry !== undefined && entry !== null && entry.value === true;
+    }
+
+    function integerParameter(key) {
+        var entry = writeEditor.paramRow(key);
+        return entry !== null && String(entry.type) === "integer";
+    }
+
+    function stepOf(key) {
+        var entry = writeEditor.paramRow(key);
+        if (entry === null)
+            return 1;
+        // A declared step wins (the shared numeric control scrubs by it); an
+        // integer without one steps by 1 and any other number by 0.01.
+        return entry.step !== undefined ? Number(entry.step) : (writeEditor.integerParameter(key) ? 1 : 0.01);
+    }
+
+    function valueTextOf(key) {
+        var entry = writeEditor.paramRow(key);
+        return entry !== null && entry.valueText !== undefined ? String(entry.valueText) : "";
+    }
+
+    function choiceIndex(key) {
+        var entry = writeEditor.paramRow(key);
+        if (entry === null || !entry.choices)
+            return 0;
+        var index = entry.choices.indexOf(entry.value);
+        return index < 0 ? 0 : index;
+    }
+
+    function choicesOf(key) {
+        var entry = writeEditor.paramRow(key);
+        return entry !== null && entry.choices ? entry.choices : [];
+    }
+
+    function ownsKey(key) {
+        return writeEditor.paramRows[key] !== undefined;
+    }
+
+    function rowFor(key) {
+        return {
+            "networkId": writeEditor.networkId,
+            "nodeId": writeEditor.nodeId,
+            "parameterKey": key,
+            "parameter": writeEditor.paramRow(key),
+            "label": writeEditor.labelFor(key)
+        };
+    }
+
+    function labelFor(key) {
+        if (key === "file")
+            return "File";
+        if (key === "fileType")
+            return "File Type";
+        if (key === "createDirectories")
+            return "Create Directories";
+        if (key === "overwrite")
+            return "Overwrite Files";
+        if (key === "frameFirst")
+            return "First";
+        if (key === "frameLast")
+            return "Last";
+        if (key === "frameOffset")
+            return "File Offset";
+        if (key === "precision")
+            return "Precision";
+        if (key === "compression")
+            return "Compression";
+        if (key === "profile")
+            return "Profile";
+        if (key === "frameRate")
+            return "Frame Rate";
+        if (key === "bitrateKbps")
+            return "Bitrate (kbps)";
+        if (key === "colorMode")
+            return "Color Mode";
+        if (key === "outputTransform")
+            return "Output Transform";
+        if (key === "lutFile")
+            return "LUT";
+        return key;
+    }
+
+    // A cell's tooltip: its own label, plus the authored format's capability
+    // where the choice itself carries it (the file type, and the MOV profile).
+    function cellHint(key) {
+        var label = writeEditor.labelFor(key);
+        return key === "fileType" || key === "profile" ? label + " — " + writeEditor.capabilityHint() : label;
+    }
+
+    // --- shared key and exposure affordances --------------------------------
+    // A consumed parameter has no generic row left, so the editor states those
+    // same cells itself through the SAME shared owners: the label cell carries
+    // the exposure drag and the Alt-click keying gesture, and the key cell owns
+    // Set/Update/Remove Key and Show in Animation. No key state, command or
+    // exposure rule lives here.
+    readonly property var cellTheme: ({
+            "text": writeEditor.textColor,
+            "muted": writeEditor.mutedColor,
+            "accent": writeEditor.accentColor,
+            "border": writeEditor.borderColor,
+            "hover": writeEditor.hoverColor,
+            "field": writeEditor.fieldColor,
+            "panel": writeEditor.panelColor,
+            "raised": writeEditor.raisedColor,
+            "disabled": writeEditor.disabledColor,
+            "errorText": writeEditor.errorColor,
+            "smallRadius": writeEditor.smallRadiusValue,
+            "fontSize": writeEditor.fontSizeValue
+        })
+
+    function keyStatusOf(key) {
+        writeEditor.revision;
+        writeEditor.frame;
+        if (!writeEditor.panel || key.length === 0)
+            return "none";
+        return String(writeEditor.panel.parameterKeyStatusFor(writeEditor.networkId, writeEditor.nodeId, key));
+    }
+
+    function keyAtFrame(key) {
+        if (!writeEditor.panel || key.length === 0)
+            return false;
+        return writeEditor.panel.keyParameterAtFrame(writeEditor.networkId, writeEditor.nodeId, key);
+    }
+
+    function removeKeyAtFrame(key) {
+        if (!writeEditor.panel || key.length === 0)
+            return false;
+        return writeEditor.panel.removeParameterKeyAtFrame(writeEditor.networkId, writeEditor.nodeId, key);
+    }
+
+    function revealInAnimation(key) {
+        if (!writeEditor.panel || !writeEditor.panel.revealInAnimation)
+            return;
+        writeEditor.panel.revealInAnimation(writeEditor.networkId, writeEditor.nodeId, key);
+    }
+
+    function revealAvailable() {
+        return writeEditor.panel && writeEditor.panel.groupHasAnimationPanel ? writeEditor.panel.groupHasAnimationPanel() : false;
+    }
+
+    // --- the shared gestures -----------------------------------------------
+    function commitValue(key, value) {
+        if (!writeEditor.panel)
+            return false;
+        return writeEditor.panel.gestureSingle(writeEditor.rowFor(key), value);
+    }
+
+    function commitText(key, text) {
+        if (!writeEditor.panel)
+            return false;
+        return writeEditor.panel.gestureText(writeEditor.rowFor(key), text);
+    }
+
+    function rejectText(key, text) {
+        if (!writeEditor.panel)
+            return;
+        writeEditor.panel.rejectText(writeEditor.rowFor(key), text);
+    }
+
+    function beginScrub(key) {
+        if (!writeEditor.panel)
+            return;
+        writeEditor.panel.beginScrub(writeEditor.rowFor(key));
+    }
+
+    function updateScrub(key, value) {
+        if (!writeEditor.panel)
+            return false;
+        return writeEditor.panel.updateScrub(value);
+    }
+
+    function finishScrub() {
+        return writeEditor.panel ? writeEditor.panel.finishScrub() : false;
+    }
+
+    function cancelScrub() {
+        return writeEditor.panel ? writeEditor.panel.cancelScrub() : false;
+    }
+
+    // The most recent rejected edit attributed to one of the consumed keys. The
+    // message comes from the controller/catalog; this editor never re-validates.
+    readonly property string gestureProblem: writeEditor.panel && writeEditor.ownsKey(String(writeEditor.panel.gestureErrorKey)) ? String(writeEditor.panel.gestureError) : ""
+
+    // --- delivery job state -------------------------------------------------
+    // The seam republishes every accepted job; `jobs` is a binding dependency so
+    // the strip below re-evaluates whenever progress or a result arrives. Jobs
+    // are newest first, so the node's most recent job is the first match.
+    readonly property var jobs: writeEditor.delivery ? writeEditor.delivery.jobs : []
+    readonly property var job: {
+        var list = writeEditor.jobs || [];
+        for (var i = 0; i < list.length; ++i) {
+            var entry = list[i];
+            if (String(entry.network) === writeEditor.networkId && String(entry.node) === writeEditor.nodeId)
+                return entry;
+        }
+        return null;
+    }
+    readonly property string jobState: writeEditor.job ? String(writeEditor.job.state) : ""
+    readonly property bool jobActive: writeEditor.jobState === "queued" || writeEditor.jobState === "running"
+    readonly property string seamError: writeEditor.delivery ? String(writeEditor.delivery.error) : ""
+
+    // The seam's own last refusal (a submission, cancellation or forget it could
+    // not answer). The editor raises none of its own: a request the seam refuses
+    // before any write arrives as the JOB's own failure below, naming the
+    // offending path, so nothing here repeats a preflight the seam owns.
+    readonly property string problemText: writeEditor.seamError
+
+    function frameCount() {
+        var first = writeEditor.numberValue("frameFirst");
+        var last = writeEditor.numberValue("frameLast");
+        return last >= first ? Math.round(last - first + 1) : 0;
+    }
+
+    function submit() {
+        if (!writeEditor.canDeliver)
+            return;
+        // Submission states the request and nothing else (issue #94). The
+        // authoritative preflight — settings, destination collisions, the
+        // raster's own description — runs on the seam's worker before the first
+        // byte is touched, so a refusal is reported as the job's own failure
+        // with the offending path instead of a probe this panel would have to
+        // repeat on every keystroke. The job accepted here freezes what it
+        // resolved, so a later edit cannot change the frames it delivers.
+        writeEditor.delivery.submit(writeEditor.networkId, writeEditor.nodeId, writeEditor.frame);
+    }
+
+    // What the last job delivers: its format, the MOV profile where the format
+    // has one, and the output color when a transform ran. Compact by
+    // construction (the row elides) and it states only what the seam reported.
+    function deliverySummary() {
+        var job = writeEditor.job;
+        if (job === null)
+            return "";
+        var parts = [];
+        var type = job.fileType !== undefined ? String(job.fileType) : "";
+        if (type === "mov" && job.profile !== undefined && String(job.profile).length > 0)
+            parts.push("MOV ProRes " + String(job.profile).toUpperCase());
+        else if (type.length > 0)
+            parts.push(type.toUpperCase());
+        var color = job.colorMode !== undefined ? String(job.colorMode) : "";
+        if (color.length > 0 && color !== "raw")
+            parts.push(color);
+        return parts.join(" · ");
+    }
+
+    function statusText() {
+        writeEditor.revision;
+        var job = writeEditor.job;
+        if (job === null)
+            return writeEditor.paramRow("file") === null ? "" : String(writeEditor.frameCount()) + (writeEditor.frameCount() === 1 ? " frame" : " frames");
+        var state = String(job.state);
+        var total = Number(job.totalFrames);
+        var summary = writeEditor.deliverySummary();
+        var format = summary.length > 0 ? " · " + summary : "";
+        if (state === "queued")
+            return "queued · " + total + (total === 1 ? " frame" : " frames") + format;
+        if (state === "running")
+            return "delivering " + Number(job.writtenFrames) + "/" + total + format;
+        if (state === "completed")
+            return "delivered " + Number(job.writtenFrames) + (total === 1 ? " frame" : " frames") + format;
+        if (state === "cancelled")
+            return "cancelled · " + Number(job.writtenFrames) + "/" + total + " written" + format;
+        var failed = Number(job.failedFrames);
+        return "failed · " + Number(job.writtenFrames) + " written, " + failed + (failed === 1 ? " frame" : " frames") + " failed" + format;
+    }
+
+    // The first concrete failure the job reported, so a partial delivery always
+    // names one real file instead of only a count (story 82).
+    function failureText() {
+        var job = writeEditor.job;
+        if (job === null)
+            return "";
+        if (job.error !== undefined && String(job.error).length > 0)
+            return String(job.error);
+        var files = job.files || [];
+        for (var i = 0; i < files.length; ++i) {
+            if (files[i].written !== true && String(files[i].error).length > 0)
+                return String(files[i].error);
+        }
+        return "";
+    }
+
+    // --- components ---------------------------------------------------------
+    component Caption: ExposureLabel {
+        id: caption
+        required property string editKey
+        theme: writeEditor.theme
+        networkId: writeEditor.networkId
+        instanceId: writeEditor.instanceId
+        nodeId: writeEditor.nodeId
+        parameterKey: editKey
+        frame: writeEditor.frame
+        keyStatus: writeEditor.keyStatusOf(editKey)
+        implicitWidth: metrics.advanceWidth
+        implicitHeight: 23
+        onKeyRequested: writeEditor.keyAtFrame(editKey)
+        TextMetrics {
+            id: metrics
+            text: caption.labelText
+            font.pixelSize: writeEditor.fontSizeValue
+        }
+        KeyIndicator {
+            id: keyActions
+            visible: false
+            theme: writeEditor.cellTheme
+            networkId: writeEditor.networkId
+            nodeId: writeEditor.nodeId
+            parameterKey: caption.editKey
+            parameterLabel: writeEditor.labelFor(caption.editKey)
+            keyStatus: caption.keyStatus
+            frame: writeEditor.frame
+            revealAvailable: writeEditor.revealAvailable()
+            onKeyRequested: writeEditor.keyAtFrame(caption.editKey)
+            onRemoveKeyRequested: writeEditor.removeKeyAtFrame(caption.editKey)
+            onRevealRequested: writeEditor.revealInAnimation(caption.editKey)
+        }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.RightButton
+            onClicked: keyActions.openMenu(caption)
+        }
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            visible: caption.keyStatus !== "none"
+            color: caption.keyStatus === "key" ? writeEditor.accentColor : writeEditor.mutedColor
+        }
+    }
+
+    component Action: Button {
+        id: action
+        implicitHeight: 23
+        padding: 4
+        contentItem: Text {
+            text: action.text
+            color: action.enabled ? writeEditor.textColor : writeEditor.disabledColor
+            font.pixelSize: writeEditor.fontSizeValue
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+        background: Rectangle {
+            color: action.down ? writeEditor.raisedColor : action.hovered ? writeEditor.hoverColor : writeEditor.fieldColor
+            border.color: writeEditor.borderColor
+            radius: writeEditor.smallRadiusValue
+        }
+    }
+
+    // One integer setting in the compact reference style: the shared label cell
+    // (exposure/key affordances) beside the shared numeric field.
+    component NumberCell: RowLayout {
+        id: numberCell
+        required property string cellKey
+        required property string caption
+        Layout.fillWidth: true
+        spacing: 3
+        Caption {
+            editKey: numberCell.cellKey
+            labelText: numberCell.caption
+        }
+        NumericField {
+            objectName: "writeNumber_" + writeEditor.nodeId + "_" + numberCell.cellKey
+            theme: writeEditor.theme
+            value: writeEditor.numberValue(numberCell.cellKey)
+            text: writeEditor.valueTextOf(numberCell.cellKey)
+            hasMinimum: false
+            hasMaximum: false
+            hasSoftMinimum: false
+            hasSoftMaximum: false
+            step: writeEditor.stepOf(numberCell.cellKey)
+            integer: writeEditor.integerParameter(numberCell.cellKey)
+            label: writeEditor.labelFor(numberCell.cellKey)
+            errorText: writeEditor.panel && String(writeEditor.panel.gestureErrorKey) === numberCell.cellKey ? String(writeEditor.panel.gestureError) : ""
+            dragThreshold: writeEditor.dragThreshold
+            fieldWidth: 54
+            Layout.fillWidth: true
+            Layout.minimumWidth: 38
+            enabled: writeEditor.controller !== null && writeEditor.paramRow(numberCell.cellKey) !== null
+            gestureLive: writeEditor.panel ? writeEditor.panel.activeToken.length > 0 : false
+            onTextCommitted: function(text) { writeEditor.commitText(numberCell.cellKey, text); }
+            onTextRejected: function(text) { writeEditor.rejectText(numberCell.cellKey, text); }
+            onStepped: function(value) { writeEditor.commitValue(numberCell.cellKey, value); }
+            onScrubStarted: writeEditor.beginScrub(numberCell.cellKey)
+            onScrubbed: function(value) { writeEditor.updateScrub(numberCell.cellKey, value); }
+            onScrubFinished: writeEditor.finishScrub()
+            onScrubCancelled: writeEditor.cancelScrub()
+            onKeyRequested: writeEditor.keyAtFrame(numberCell.cellKey)
+        }
+    }
+
+    // One choice setting, using the shared combo box the generic rows use.
+    component ChoiceCell: StudioComboBox {
+        id: choiceCell
+        required property string cellKey
+        // The panel revision this cell's selection was read at: assigning
+        // `currentIndex` in syncSelection replaces its binding, so the shared
+        // deferred readout pattern restores it whenever the authored value can
+        // have changed (and after Qt resets a changed model).
+        property int revision: writeEditor.revision
+        theme: writeEditor.theme
+        objectName: "writeChoice_" + writeEditor.nodeId + "_" + choiceCell.cellKey
+        implicitHeight: 23
+        Layout.fillWidth: true
+        enabled: writeEditor.paramRow(choiceCell.cellKey) !== null
+        model: writeEditor.choicesOf(choiceCell.cellKey)
+        currentIndex: writeEditor.choiceIndex(choiceCell.cellKey)
+        Accessible.name: writeEditor.labelFor(choiceCell.cellKey)
+        function syncSelection() {
+            currentIndex = Qt.binding(function() { return writeEditor.choiceIndex(choiceCell.cellKey); });
+        }
+        onRevisionChanged: syncSelection()
+        // Qt resets the selection after assigning a changed model.
+        onModelChanged: Qt.callLater(syncSelection)
+        onActivated: writeEditor.commitValue(choiceCell.cellKey, String(currentText))
+        ToolTip.visible: hovered
+        ToolTip.text: writeEditor.cellHint(choiceCell.cellKey)
+    }
+
+    // One flag setting with the shared label cell and the compact check box.
+    component Flag: CheckBox {
+        id: flag
+        required property string cellKey
+        required property string caption
+        objectName: "writeFlag_" + writeEditor.nodeId + "_" + flag.cellKey
+        checked: writeEditor.boolValue(flag.cellKey)
+        enabled: writeEditor.paramRow(flag.cellKey) !== null
+        implicitWidth: flagLabel.implicitWidth + 16
+        implicitHeight: 23
+        padding: 0
+        leftPadding: 16
+        Accessible.name: flag.caption
+        onToggled: {
+            writeEditor.commitValue(flag.cellKey, checked);
+            checked = Qt.binding(function() { return writeEditor.boolValue(flag.cellKey); });
+        }
+        contentItem: Caption {
+            id: flagLabel
+            editKey: flag.cellKey
+            labelText: flag.caption
+            MouseArea {
+                anchors.fill: parent
+                onPressed: function(mouse) { mouse.accepted = mouse.modifiers === Qt.NoModifier; }
+                onClicked: writeEditor.commitValue(flag.cellKey, !flag.checked)
+            }
+        }
+        indicator: Rectangle {
+            width: 12
+            height: 12
+            y: (flag.height - height) / 2
+            radius: 2
+            color: flag.checked ? writeEditor.accentColor : writeEditor.fieldColor
+            border.color: flag.activeFocus ? writeEditor.accentColor : writeEditor.borderColor
+            Text {
+                anchors.centerIn: parent
+                text: flag.checked ? "\u00d7" : ""
+                color: writeEditor.textColor
+                font.pixelSize: 13
+            }
+        }
+        background: Rectangle {
+            color: flag.hovered ? writeEditor.hoverColor : "transparent"
+            radius: 2
+        }
+    }
+
+    // The output transform: the shared TYPEABLE combo the Shuffle and Viewer
+    // layers use, stating the active config's own entries beside the authored
+    // value. A value the current config does not enumerate keeps its
+    // exact text and stays committable, so a project switch never rewrites an
+    // authored transform. Selection and typed text both go through the shared
+    // gesture, which owns validation and the undo entry.
+    component TransformCell: StudioComboBox {
+        id: transformCell
+        required property string cellKey
+        property int revision: writeEditor.revision
+        theme: writeEditor.theme
+        objectName: "writeTransform_" + writeEditor.nodeId
+        typeable: true
+        readout: writeEditor.textValue(transformCell.cellKey)
+        model: writeEditor.transformEntries
+        implicitHeight: 23
+        Layout.fillWidth: true
+        enabled: writeEditor.paramRow(transformCell.cellKey) !== null
+        Accessible.name: writeEditor.labelFor(transformCell.cellKey)
+        // The panel revision is the authored-value watermark: re-state the
+        // readout when it moves, exactly as the entry cells do.
+        onRevisionChanged: syncReadout()
+        onActivated: writeEditor.commitValue(transformCell.cellKey, String(currentText))
+        onTextAccepted: function(text) { writeEditor.commitValue(transformCell.cellKey, text); }
+        ToolTip.visible: hovered
+        ToolTip.text: writeEditor.transformProblem.length > 0 ? writeEditor.transformProblem : writeEditor.labelFor(transformCell.cellKey) + " — applied to the delivered pixels before the LUT; color mode raw applies no transform at all."
+    }
+
+    // --- file ---------------------------------------------------------------
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 4
+        Caption {
+            editKey: "file"
+            labelText: "file"
+            Layout.preferredWidth: writeEditor.labelWidth
+        }
+        TextField {
+            id: fileField
+            objectName: "writeFile_" + writeEditor.nodeId
+            property int revision: writeEditor.revision
+            text: writeEditor.textValue("file")
+            enabled: writeEditor.panel !== null
+            Layout.fillWidth: true
+            Layout.minimumWidth: 90
+            implicitHeight: 23
+            font.pixelSize: writeEditor.fontSizeValue
+            color: writeEditor.textColor
+            selectByMouse: true
+            placeholderText: writeEditor.fileHint
+            Accessible.name: "Output file path"
+            ToolTip.visible: hovered && !activeFocus
+            ToolTip.text: writeEditor.exrFormat ? "Output path or sequence pattern: each '#' is one zero-padded frame digit" : "One movie path: the whole frame range becomes this single file"
+            onEditingFinished: writeEditor.commitValue("file", String(text))
+            Keys.onEscapePressed: function(event) {
+                event.accepted = true;
+                fileField.text = writeEditor.textValue("file");
+            }
+            onRevisionChanged: {
+                if (!activeFocus)
+                    fileField.text = writeEditor.textValue("file");
+            }
+            background: Rectangle {
+                color: writeEditor.fieldColor
+                border.color: fileField.activeFocus ? writeEditor.accentColor : writeEditor.borderColor
+                radius: writeEditor.smallRadiusValue
+            }
+        }
+        ChoiceCell {
+            cellKey: "fileType"
+            Layout.fillWidth: false
+            Layout.preferredWidth: 72
+        }
+    }
+
+    // --- frames -------------------------------------------------------------
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 4
+        Caption {
+            editKey: "frameFirst"
+            labelText: "frames"
+            Layout.preferredWidth: writeEditor.labelWidth
+        }
+        NumberCell {
+            cellKey: "frameFirst"
+            caption: "first"
+        }
+        NumberCell {
+            cellKey: "frameLast"
+            caption: "last"
+        }
+        NumberCell {
+            cellKey: "frameOffset"
+            caption: "off"
+            visible: writeEditor.exrFormat
+        }
+    }
+
+    // --- format -------------------------------------------------------------
+    // ONE row for the authored format's own settings: EXR precision and
+    // compression, MOV profile and frame rate, MP4 bitrate and frame rate. A
+    // control whose format is not authored is absent rather than disabled with a
+    // stale value, and the group label keys/exposes the first control that IS
+    // present.
+    RowLayout {
+        id: formatRow
+        Layout.fillWidth: true
+        spacing: 4
+        Caption {
+            editKey: writeEditor.formatLeadKey
+            labelText: "format"
+            Layout.preferredWidth: writeEditor.labelWidth
+        }
+        ChoiceCell {
+            cellKey: "precision"
+            visible: writeEditor.exrFormat
+            Layout.fillWidth: true
+            Layout.minimumWidth: 60
+        }
+        ChoiceCell {
+            cellKey: "compression"
+            visible: writeEditor.exrFormat
+            Layout.fillWidth: true
+            Layout.minimumWidth: 60
+        }
+        ChoiceCell {
+            cellKey: "profile"
+            visible: writeEditor.movFormat
+            Layout.fillWidth: true
+            Layout.minimumWidth: 60
+        }
+        NumberCell {
+            cellKey: "frameRate"
+            caption: "fps"
+            visible: writeEditor.movieFormat
+        }
+        NumberCell {
+            cellKey: "bitrateKbps"
+            caption: "kbps"
+            visible: writeEditor.mp4Format
+        }
+    }
+
+    // --- output color -------------------------------------------------------
+    // The output color mode and the transform that mode selects, on one compact
+    // row. The entry list is the ACTIVE project config's own enumeration (the
+    // delivery adapter discovers it once per generation/config/mode) and the
+    // authored value is stated verbatim even when the current config does not
+    // enumerate it, so switching projects never rewrites a setting. A mode with
+    // no explicit choice disables the entry cell instead of pretending to offer
+    // one.
+    RowLayout {
+        id: colorRow
+        Layout.fillWidth: true
+        spacing: 4
+        Caption {
+            editKey: "colorMode"
+            labelText: "color"
+            Layout.preferredWidth: writeEditor.labelWidth
+        }
+        ChoiceCell {
+            cellKey: "colorMode"
+            Layout.fillWidth: true
+            Layout.minimumWidth: 70
+        }
+        TransformCell {
+            cellKey: "outputTransform"
+            Layout.minimumWidth: 70
+            enabled: writeEditor.transformSelectable && writeEditor.paramRow("outputTransform") !== null
+        }
+    }
+
+    // A discovery failure for the transform entry list is stated locally, never
+    // swallowed: an empty list under a mode that needs one must say why.
+    Text {
+        objectName: "writeTransformProblem_" + writeEditor.nodeId
+        visible: writeEditor.transformProblem.length > 0
+        Layout.fillWidth: true
+        Layout.leftMargin: writeEditor.labelWidth + 5
+        text: writeEditor.transformProblem
+        color: writeEditor.errorColor
+        font.pixelSize: writeEditor.smallFontSize
+        wrapMode: Text.WordWrap
+        Accessible.name: writeEditor.transformProblem
+    }
+
+    // The optional LUT is applied after the base transform, to primary RGB only.
+    // It is a path the artist states (or pastes); the seam validates and loads it
+    // when the job runs, never here.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 4
+        Caption {
+            editKey: "lutFile"
+            labelText: "lut"
+            Layout.preferredWidth: writeEditor.labelWidth
+        }
+        TextField {
+            id: lutField
+            objectName: "writeLut_" + writeEditor.nodeId
+            property int revision: writeEditor.revision
+            text: writeEditor.textValue("lutFile")
+            enabled: writeEditor.panel !== null
+            Layout.fillWidth: true
+            Layout.minimumWidth: 90
+            implicitHeight: 23
+            font.pixelSize: writeEditor.fontSizeValue
+            color: writeEditor.textColor
+            selectByMouse: true
+            placeholderText: "Optional .cube LUT"
+            Accessible.name: "LUT file"
+            ToolTip.visible: hovered && !activeFocus
+            ToolTip.text: "Optional .cube LUT applied after the selected output transform, to primary RGB only. Color mode raw writes the working pixels unchanged: no base conversion runs at all."
+            onEditingFinished: writeEditor.commitValue("lutFile", String(text))
+            Keys.onEscapePressed: function(event) {
+                event.accepted = true;
+                lutField.text = writeEditor.textValue("lutFile");
+            }
+            onRevisionChanged: {
+                if (!activeFocus)
+                    lutField.text = writeEditor.textValue("lutFile");
+            }
+            background: Rectangle {
+                color: writeEditor.fieldColor
+                border.color: lutField.activeFocus ? writeEditor.accentColor : writeEditor.borderColor
+                radius: writeEditor.smallRadiusValue
+            }
+        }
+    }
+
+    // --- file behavior flags ------------------------------------------------
+    Flow {
+        Layout.fillWidth: true
+        Layout.leftMargin: writeEditor.labelWidth + 5
+        spacing: 7
+        Flag {
+            cellKey: "createDirectories"
+            caption: "create dirs"
+        }
+        Flag {
+            cellKey: "overwrite"
+            caption: "overwrite"
+        }
+    }
+
+    // --- explicit delivery --------------------------------------------------
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: 2
+        spacing: 5
+        Action {
+            id: deliverAction
+            objectName: "writeDeliver_" + writeEditor.nodeId
+            text: writeEditor.jobActive ? "Delivering" : "Deliver"
+            enabled: writeEditor.canDeliver && !writeEditor.jobActive && writeEditor.textValue("file").length > 0
+            onClicked: writeEditor.submit()
+            ToolTip.visible: hovered
+            ToolTip.text: writeEditor.canDeliver ? "Render this node's frames through the delivery job seam. Undo cannot reverse it." : "The delivery seam is unavailable in this host"
+            Layout.preferredWidth: 74
+        }
+        Action {
+            id: cancelAction
+            objectName: "writeCancel_" + writeEditor.nodeId
+            visible: writeEditor.jobActive
+            text: "Cancel"
+            onClicked: {
+                if (writeEditor.job)
+                    writeEditor.delivery.cancel(Number(writeEditor.job.id));
+            }
+            Layout.preferredWidth: 62
+        }
+        Text {
+            objectName: "writeStatus_" + writeEditor.nodeId
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            text: writeEditor.statusText()
+            color: writeEditor.jobActive ? writeEditor.textColor : writeEditor.mutedColor
+            font.pixelSize: writeEditor.fontSizeValue
+            elide: Text.ElideRight
+            Accessible.name: text
+        }
+        Action {
+            objectName: "writeClear_" + writeEditor.nodeId
+            visible: writeEditor.job !== null && !writeEditor.jobActive
+            text: "\u00d7"
+            Accessible.name: "Clear the delivery result"
+            onClicked: {
+                if (writeEditor.job)
+                    writeEditor.delivery.forget(Number(writeEditor.job.id));
+            }
+            Layout.preferredWidth: 22
+        }
+    }
+
+    Text {
+        objectName: "writeProblem_" + writeEditor.nodeId
+        visible: writeEditor.problemText.length > 0
+        Layout.fillWidth: true
+        text: writeEditor.problemText
+        color: writeEditor.errorColor
+        font.pixelSize: writeEditor.smallFontSize
+        wrapMode: Text.WordWrap
+        Accessible.name: writeEditor.problemText
+    }
+
+    Text {
+        objectName: "writeFailure_" + writeEditor.nodeId
+        visible: writeEditor.failureText().length > 0
+        Layout.fillWidth: true
+        text: writeEditor.failureText()
+        color: writeEditor.errorColor
+        font.pixelSize: writeEditor.smallFontSize
+        elide: Text.ElideRight
+        Accessible.name: writeEditor.failureText()
+    }
+
+    Text {
+        objectName: "writeEditorError_" + writeEditor.nodeId
+        visible: writeEditor.gestureProblem.length > 0
+        Layout.fillWidth: true
+        text: writeEditor.gestureProblem
+        color: writeEditor.errorColor
+        font.pixelSize: writeEditor.smallFontSize
+        elide: Text.ElideRight
+        wrapMode: Text.WordWrap
+        Accessible.name: writeEditor.gestureProblem
+    }
+}

@@ -23,6 +23,7 @@ if(NEMO_BUILD_UI)
     # re-lists these sources.
     add_library(nemo_ui_shared STATIC
         HistoryController.cpp HistoryController.hpp
+        DeliveryController.cpp DeliveryController.hpp
         PanelContextRouter.cpp PanelContextRouter.hpp
         AnimationViewModel.cpp AnimationViewModel.hpp
         MediaLibraryModel.cpp MediaLibraryModel.hpp
@@ -69,6 +70,7 @@ if(NEMO_BUILD_UI)
                   qml/RotoEditor.qml qml/RotoOverlay.qml
                   qml/KeyIndicator.qml qml/ExposureLabel.qml
                   qml/HistoryMenu.qml qml/HistoryMenuItem.qml
+                  qml/WriteDeliveryEditor.qml
     )
 
     # The application keeps its own entry point and loads the module's compiled

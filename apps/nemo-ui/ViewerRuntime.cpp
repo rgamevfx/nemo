@@ -34,6 +34,11 @@ void ViewerRuntime::bootstrap(const std::vector<std::string>& extensions, const 
     // Initial admission cap, not the user-configurable accounting/eviction
     // policy owned by #14. Zero means no allocation, not unlimited memory.
     allocator_ = gpu::Allocator::create(*instance_, *device_, {.max_device_bytes = 2ULL << 30});
+    // ONE delivery queue for the whole application, borrowing the native owners
+    // and the compiled shader directory the viewer already uses (issue #94). It
+    // starts its own worker and resolves its effects lazily, so bootstrap stays
+    // a device-creation step.
+    delivery_ = std::make_unique<eval::DeliveryQueue>(*instance_, *device_, *allocator_, shaders);
     VkFormatProperties format{};
     vkGetPhysicalDeviceFormatProperties(device_->physical(), VK_FORMAT_R8G8B8A8_UNORM, &format);
     filterLinear_ = (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
@@ -449,6 +454,12 @@ void ViewerRuntime::flushValidation() {
             std::cerr << "vulkan: " << message.text << '\n';
 }
 
+eval::DeliveryQueue& ViewerRuntime::deliveryQueue() {
+    if (!delivery_)
+        throw std::runtime_error("viewer runtime delivery queue is unavailable before bootstrap");
+    return *delivery_;
+}
+
 void ViewerRuntime::stopWorker() {
     {
         std::lock_guard lock(mutex_);
@@ -462,6 +473,10 @@ void ViewerRuntime::stopWorker() {
 }
 
 void ViewerRuntime::quiesceForTeardown() {
+    // Delivery first: its worker joins, its in-flight submissions are waited on
+    // and its retained staging is released while the device still exists. Only
+    // then are the viewer worker and the devices torn down.
+    delivery_.reset();
     stopWorker();
     // Shutdown only: both execution and Qt's render loop must be stopped.
     // Qt's ordinary device-wide waits never touch the execution device.

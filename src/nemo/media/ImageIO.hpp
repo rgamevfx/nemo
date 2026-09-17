@@ -24,6 +24,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "nemo/core/evaluation/Image.hpp"
@@ -164,5 +165,50 @@ struct ImageIoException : std::runtime_error {
 // EXR readers will assume premultiplied when an alpha channel is present.
 // Throws ImageIoException naming `path`.
 void writeImage(const std::string& path, const CpuImage& image, OutputPrecision precision);
+
+// Delivery write settings (issue #94). `compression` is the encoder's own
+// attribute name for EXR ("zip", "piz", "rle", "none" or "dwaa"; empty keeps the
+// format default), and `windowX`/`windowY` are the raster's data-window origin
+// — the signed coordinate of the raster's first sample, so an off-format or
+// negative data window is written where the description says it is instead of
+// being moved to the origin. A reader returns exactly that window back.
+//
+// `dwaa` is LOSSY: DWA quantizes RGB at the encoder's default level, so it is
+// never a lossless round-trip and never evidence of pixel fidelity. Every other
+// name in the inventory stores the samples verbatim.
+//
+// `formatX`/`formatY`/`formatWidth`/`formatHeight` are the image FORMAT (the
+// display window) stored in the file's own full_* fields; a non-positive width
+// or height keeps the raster's extent framed at the logical origin, which is
+// what every caller that says nothing about its format means. `pixelAspect` 0
+// keeps the raster's own declared aspect. Stating both windows explicitly is
+// what lets a delivery write the authored framing instead of the raster
+// extent — the reader's own normalization (`ImageWindows`) then returns the
+// data window at the offset it was written with.
+struct ImageWriteOptions {
+    OutputPrecision precision{OutputPrecision::Half};
+    std::string compression;
+    int windowX{0};
+    int windowY{0};
+    int formatX{0};
+    int formatY{0};
+    int formatWidth{0};
+    int formatHeight{0};
+    float pixelAspect{0.0F};
+};
+
+// True when `compression` is one of the EXR compressions this adapter writes
+// (the delivery-level inventory is closed on purpose: a name that is not in it
+// is reported, never silently replaced by the encoder's default).
+[[nodiscard]] bool isSupportedExrCompression(std::string_view compression);
+
+// The same inventory as one human-readable list, so a refusal states exactly
+// what is supported.
+[[nodiscard]] std::string supportedExrCompressions();
+
+// The same still write with explicit delivery-level storage settings. Throws
+// ImageIoException naming `path`; an unsupported compression is reported with
+// the offending name rather than silently falling back to the default.
+void writeImage(const std::string& path, const CpuImage& image, const ImageWriteOptions& options);
 
 }  // namespace nemo::media

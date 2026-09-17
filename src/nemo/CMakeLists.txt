@@ -35,6 +35,7 @@ add_library(nemo_core
     nodes/testpattern/Contribution.cpp
     nodes/transform/Contribution.cpp
     nodes/viewer/Contribution.cpp
+    nodes/write/Contribution.cpp
 )
 add_library(nemo::core ALIAS nemo_core)
 
@@ -60,6 +61,10 @@ if(NEMO_BUILD_GPU)
         gpu/GpuViewingTransform.cpp
         gpu/ViewerPresentation.cpp
         gpu/Error.cpp
+        # Final production export staging (issue #94 story 84 under #97): the
+        # one device-to-host transfer a delivered frame takes, charged through
+        # the shared allocator and retained by the device submission queue.
+        gpu/ExportStaging.cpp
         gpu/MediaInterop.cpp
         gpu/Instance.cpp
         gpu/Device.cpp

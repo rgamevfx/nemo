@@ -25,6 +25,7 @@ nemo_add_slang_shaders(nemo_shaders ALL
         ../../nodes/crop/crop.slang
         ../../nodes/reformat/reformat.slang
         ../../nodes/roto/roto.slang
+        ../../nodes/write/write.slang
     # Every node effect includes the shared per-input geometry block (issue
     # #85); the compiled SPIR-V must be rebuilt when that contract changes.
     DEPENDS

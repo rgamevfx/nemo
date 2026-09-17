@@ -12,6 +12,7 @@
 // It runs only on a real windowing platform with the Vulkan scene graph:
 // NEMO_TEST_NATIVE_UI=1 NEMO_TEST_VIEWER_WINDOW=1 (same gate as issue #47/#74).
 
+#include "DeliveryController.hpp"
 #include "HistoryController.hpp"
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
@@ -30,11 +31,14 @@
 #include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 #include "nemo/gpu/Error.hpp"
+#include "nemo/media/ImageIO.hpp"
 
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
+#include <QJSValue>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -147,6 +151,11 @@ protected:
     std::unique_ptr<nemo::ui::NativeFileChooser> chooser_;
     std::unique_ptr<nemo::ui::ProjectFileController> projectFile_;
     std::unique_ptr<nemo::ui::ParameterEditorRegistry> editors_;
+    // The Write regression borrows the runtime's ONE delivery queue (issue #94):
+    // the application composes the same pair, and the adapter owns presentation
+    // state only. Constructed only by that scenario, retained until after QML
+    // teardown.
+    std::unique_ptr<nemo::ui::DeliveryController> delivery_;
     std::unique_ptr<QQmlApplicationEngine> engine_;
     std::unique_ptr<QSignalSpy> warnings_;
     QQuickWindow* window_{};
@@ -295,6 +304,7 @@ protected:
             runtime_->stopWorker();
         warnings_.reset();
         engine_.reset();
+        delivery_.reset();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         if (runtime_)
             runtime_->quiesceForTeardown();
@@ -1215,6 +1225,348 @@ TEST_F(CropReformatSurface, Issue92ReformatFormatEditorAppliesPresetsByValue) {
     EXPECT_TRUE(std::get<bool>(
         session_->queryValues(networkIdentity(network_), nodeIdentity(reformatId), "clamp").front().value));
     capture(QStringLiteral("issue92-reformat-narrow"));
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// Issue #94: a registered section can fail to load while its generic anchor
+// remains visible. Exercise the real inspector and the real Deliver action
+// through the runtime's ONE delivery queue — the application's own composition —
+// not a standalone editor or a controller-only echo.
+TEST_F(CropReformatSurface, Issue94WriteInspectorEditsAndDeliversExplicitly) {
+    // The panel borrows the queue the runtime owns: one delivery worker on the
+    // application's device and allocator, stopped before they are torn down.
+    delivery_ = std::make_unique<nemo::ui::DeliveryController>(*session_, runtime_->deliveryQueue());
+    engine_->rootContext()->setContextProperty(QStringLiteral("deliveryController"), delivery_.get());
+    const QString write =
+        controller_->createGraphNode(network_, QStringLiteral("write"), QStringLiteral("Write1"), 180.0, 90.0, {}, {});
+    ASSERT_FALSE(write.isEmpty());
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(network_, plateId_, 0, write, 0));
+    controller_->setNodeParameter(write, QStringLiteral("precision"), QStringLiteral("float"));
+    controller_->setNodeParameter(write, QStringLiteral("compression"), QStringLiteral("dwaa"));
+    inspect(write);
+    ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("writeDeliveryEditor_") + write) != nullptr; }, 2000))
+        << "Write's registered section must render, not leave an empty File row";
+
+    // One combo's current entries. A model assigned from QML crosses back as a
+    // string list, a variant list or a JS sequence depending on how the binding
+    // was made, so all three forms are read the same way.
+    const auto modelEntries = [](QQuickItem* box) {
+        QStringList entries;
+        const QVariant model = box->property("model");
+        if (model.canConvert<QStringList>())
+            entries = model.toStringList();
+        if (entries.isEmpty() && model.canConvert<QVariantList>()) {
+            const QVariantList list = model.toList();
+            for (const QVariant& value : list)
+                entries.push_back(value.toString());
+        }
+        if (entries.isEmpty() && model.canConvert<QJSValue>()) {
+            const QJSValue sequence = model.value<QJSValue>();
+            if (sequence.isArray()) {
+                const int length = sequence.property(QStringLiteral("length")).toInt();
+                for (int index = 0; index < length; ++index)
+                    entries.push_back(sequence.property(index).toString());
+            }
+        }
+        return entries;
+    };
+    // Selects one entry of a shared combo through its real popup, the same way
+    // the native controls are driven elsewhere: the arrow beside a typeable
+    // combo's value is the menu's target (its body belongs to the field), a
+    // plain combo opens from anywhere, and the click lands on the popup's own
+    // delegate for that entry.
+    const auto chooseEntry = [&](QQuickItem* box, const QString& entry) {
+        ASSERT_NE(box, nullptr);
+        const bool typeable = box->property("editable").toBool();
+        const QPointF local = typeable ? QPointF(box->width() - 12.0, box->height() / 2.0)
+                                       : QPointF(box->width() / 2.0, box->height() / 2.0);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, box->mapToScene(local).toPoint());
+        QTest::qWait(80);
+        const int index = modelEntries(box).indexOf(entry);
+        ASSERT_GE(index, 0) << entry.toStdString();
+        auto* popup = box->property("popup").value<QObject*>();
+        ASSERT_NE(popup, nullptr);
+        auto* list = popup->property("contentItem").value<QQuickItem*>();
+        ASSERT_NE(list, nullptr) << "the combo's menu must show its entries";
+        QQuickItem* delegate = nullptr;
+        ASSERT_TRUE(
+            QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem*, delegate), Q_ARG(int, index)));
+        ASSERT_NE(delegate, nullptr) << "the menu shows entry " << index;
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier,
+                          delegate->mapToScene(QPointF(delegate->width() / 2, delegate->height() / 2)).toPoint());
+        QTest::qWait(80);
+    };
+    const auto enter = [&](QQuickItem* field, const QString& text) {
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(field));
+        QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+        typeText(window_, text);
+        QTest::keyClick(window_, Qt::Key_Return);
+        QTest::qWait(30);
+    };
+    const auto clearField = [&](QQuickItem* field) {
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(field));
+        QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+        QTest::keyClick(window_, Qt::Key_Delete);
+        QTest::keyClick(window_, Qt::Key_Return);
+        QTest::qWait(30);
+    };
+    const auto authoredText = [&](const QString& key) {
+        return QString::fromStdString(std::get<std::string>(
+            session_->queryValues(networkIdentity(network_), nodeIdentity(write), key.toStdString()).front().value));
+    };
+    const auto authoredFlag = [&](const QString& key) {
+        return std::get<bool>(
+            session_->queryValues(networkIdentity(network_), nodeIdentity(write), key.toStdString()).front().value);
+    };
+
+    // Every authored setting renders exactly once: EXR's own controls, the
+    // always-present output-color rows and the file flags.
+    for (const QString& name :
+         {QStringLiteral("writeFile_") + write, QStringLiteral("writeNumber_") + write + "_frameFirst",
+          QStringLiteral("writeNumber_") + write + "_frameLast",
+          QStringLiteral("writeNumber_") + write + "_frameOffset", QStringLiteral("writeChoice_") + write + "_fileType",
+          QStringLiteral("writeChoice_") + write + "_precision",
+          QStringLiteral("writeChoice_") + write + "_compression",
+          QStringLiteral("writeChoice_") + write + "_colorMode", QStringLiteral("writeTransform_") + write,
+          QStringLiteral("writeLut_") + write, QStringLiteral("writeFlag_") + write + "_createDirectories",
+          QStringLiteral("writeFlag_") + write + "_overwrite", QStringLiteral("writeDeliver_") + write}) {
+        auto* control = item(name);
+        ASSERT_NE(control, nullptr) << name.toStdString();
+        EXPECT_TRUE(control->isVisible()) << name.toStdString();
+        EXPECT_GT(control->width(), 0) << name.toStdString();
+        EXPECT_GT(control->height(), 0) << name.toStdString();
+    }
+    auto* precision = item(QStringLiteral("writeChoice_") + write + "_precision");
+    auto* compression = item(QStringLiteral("writeChoice_") + write + "_compression");
+    auto* fileType = item(QStringLiteral("writeChoice_") + write + "_fileType");
+    auto* colorMode = item(QStringLiteral("writeChoice_") + write + "_colorMode");
+    auto* transform = item(QStringLiteral("writeTransform_") + write);
+    auto* profile = item(QStringLiteral("writeChoice_") + write + "_profile");
+    auto* frameRate = item(QStringLiteral("writeNumber_") + write + "_frameRate");
+    auto* bitrate = item(QStringLiteral("writeNumber_") + write + "_bitrateKbps");
+    ASSERT_NE(transform, nullptr);
+    ASSERT_NE(profile, nullptr);
+    ASSERT_NE(frameRate, nullptr);
+    ASSERT_NE(bitrate, nullptr);
+    // A movie setting is not shown while a still format is authored: the format
+    // row states its own controls and never a stale value from another format.
+    EXPECT_FALSE(profile->isVisible());
+    EXPECT_FALSE(frameRate->isVisible());
+    EXPECT_FALSE(bitrate->isVisible());
+    EXPECT_EQ(precision->property("currentText").toString(), QStringLiteral("float"));
+    EXPECT_EQ(compression->property("currentText").toString(), QStringLiteral("dwaa"));
+    EXPECT_EQ(fileType->property("currentText").toString(), QStringLiteral("exr"));
+    EXPECT_EQ(colorMode->property("currentText").toString(), QStringLiteral("raw"));
+    EXPECT_TRUE(modelEntries(transform).isEmpty()) << "raw names no explicit transform to enumerate";
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    ASSERT_TRUE(waitFor([&] { return compression->property("currentText").toString() == "zip"; }, 2000));
+    ASSERT_TRUE(session_->redo(nemo::EditOptions{session_->revision(), {}}).committed);
+    ASSERT_TRUE(waitFor([&] { return compression->property("currentText").toString() == "dwaa"; }, 2000));
+
+    // The transform entries are the ACTIVE project config's own (discovered once
+    // per generation/config/mode by the delivery adapter), and a mode that
+    // resolves no explicit transform enumerates nothing at all.
+    const QVariantMap colorspaces = delivery_->transformChoices(QStringLiteral("colorspace"));
+    EXPECT_TRUE(colorspaces.value(QStringLiteral("error")).toString().isEmpty())
+        << colorspaces.value(QStringLiteral("error")).toString().toStdString();
+    ASSERT_FALSE(colorspaces.value(QStringLiteral("choices")).toStringList().isEmpty())
+        << "the project config must enumerate its own colorspaces";
+    EXPECT_TRUE(
+        delivery_->transformChoices(QStringLiteral("raw")).value(QStringLiteral("choices")).toStringList().isEmpty());
+
+    // The authored color mode really drives that discovery through the control.
+    chooseEntry(colorMode, QStringLiteral("display"));
+    ASSERT_TRUE(waitFor([&] { return !modelEntries(transform).isEmpty(); }, 2000))
+        << "the display mode must state the config's display/view entries";
+    const QStringList views = modelEntries(transform);
+    EXPECT_EQ(views,
+              delivery_->transformChoices(QStringLiteral("display")).value(QStringLiteral("choices")).toStringList());
+    chooseEntry(transform, views.first());
+    ASSERT_TRUE(waitFor([&] { return authoredText(QStringLiteral("outputTransform")) == views.first(); }, 2000))
+        << "the authored transform must be the entry the artist selected";
+
+    // The optional LUT is a path the artist states: authored verbatim, with no
+    // extension or existence rewrite by the panel.
+    auto* lut = item(QStringLiteral("writeLut_") + write);
+    ASSERT_NE(lut, nullptr);
+    enter(lut, QStringLiteral("looks/filmic.cube"));
+    EXPECT_EQ(authoredText(QStringLiteral("lutFile")), QStringLiteral("looks/filmic.cube"));
+    clearField(lut);
+    EXPECT_TRUE(authoredText(QStringLiteral("lutFile")).isEmpty());
+
+    const QString pattern = directory_.filePath(QStringLiteral("delivery/shot.####.exr"));
+    enter(item(QStringLiteral("writeFile_") + write), pattern);
+    EXPECT_EQ(authoredText(QStringLiteral("file")), pattern);
+    auto* frameLastField = item(QStringLiteral("writeNumber_") + write + "_frameLast");
+    enter(frameLastField, QStringLiteral("3"));
+    EXPECT_DOUBLE_EQ(authoredNumber(write, QStringLiteral("frameLast")), 3);
+    capture(QStringLiteral("issue94-write-ready"));
+    controller_->setFrame(2);
+    QTest::qWait(100);
+    EXPECT_FALSE(QDir(directory_.filePath(QStringLiteral("delivery"))).exists())
+        << "opening/editing the Write inspector and changing time must not write";
+
+    auto* deliver = item(QStringLiteral("writeDeliver_") + write);
+    ASSERT_TRUE(deliver->isEnabled());
+    const auto revision = session_->revision();
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(deliver));
+    ASSERT_TRUE(waitFor([&] { return !delivery_->jobs().isEmpty() && !delivery_->busy(); }, 60000));
+    const auto job = delivery_->jobs().front().toMap();
+    ASSERT_EQ(job.value(QStringLiteral("state")).toString(), QStringLiteral("completed"))
+        << job.value(QStringLiteral("error")).toString().toStdString();
+    EXPECT_EQ(job.value(QStringLiteral("writtenFrames")).toInt(), 3);
+    EXPECT_TRUE(job.value(QStringLiteral("fullQuality")).toBool())
+        << "a delivery is the full-quality reference image, never a viewer-cache frame";
+    EXPECT_EQ(job.value(QStringLiteral("colorMode")).toString(), QStringLiteral("display"));
+    EXPECT_EQ(session_->revision(), revision) << "delivery is outside document history";
+    const QString firstFile = directory_.filePath(QStringLiteral("delivery/shot.0001.exr"));
+    for (int frame = 1; frame <= 3; ++frame) {
+        const auto path = directory_.filePath(QStringLiteral("delivery/shot.%1.exr").arg(frame, 4, 10, QChar('0')));
+        const auto readback = nemo::media::readImage(path.toStdString());
+        EXPECT_EQ(readback.header.nativePrecision, "float");
+        EXPECT_EQ(readback.header.channelNames, (std::vector<std::string>{"R", "G", "B", "A"}));
+        EXPECT_EQ(readback.image.width(), session_->snapshot().network(networkIdentity(network_)).format().width);
+    }
+    capture(QStringLiteral("issue94-write-completed"));
+    QFile first(firstFile);
+    ASSERT_TRUE(first.open(QIODevice::ReadOnly));
+    const QByteArray original = first.readAll();
+    first.close();
+
+    // A destination collision is the SEAM's refusal, resolved by its worker
+    // before any write: the request is accepted first, and the refusal then
+    // arrives as that job's own failure naming the file it would have replaced.
+    // The panel performs no preflight of its own and surfaces none.
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(deliver));
+    ASSERT_TRUE(waitFor([&] { return delivery_->jobs().size() == 2; }, 5000))
+        << "a colliding request is accepted and refused by the job, not synchronously";
+    ASSERT_TRUE(waitFor([&] { return !delivery_->busy(); }, 60000));
+    const auto refused = delivery_->jobs().front().toMap();
+    EXPECT_EQ(refused.value(QStringLiteral("state")).toString(), QStringLiteral("failed"));
+    EXPECT_EQ(refused.value(QStringLiteral("writtenFrames")).toInt(), 0);
+    auto* failure = item(QStringLiteral("writeFailure_") + write);
+    auto* problem = item(QStringLiteral("writeProblem_") + write);
+    ASSERT_NE(failure, nullptr);
+    ASSERT_NE(problem, nullptr);
+    ASSERT_TRUE(waitFor([&] { return failure->isVisible(); }, 2000));
+    EXPECT_TRUE(failure->property("text").toString().contains(firstFile))
+        << failure->property("text").toString().toStdString();
+    EXPECT_TRUE(delivery_->error().isEmpty()) << "a job's own refusal is not a submission failure";
+    EXPECT_FALSE(problem->isVisible()) << "the panel raises no refusal of its own";
+    ASSERT_TRUE(first.open(QIODevice::ReadOnly));
+    EXPECT_EQ(first.readAll(), original);
+    first.close();
+    window_->resize(950, 700);
+    QTest::qWait(100);
+    capture(QStringLiteral("issue94-write-narrow-refusal"));
+    // Back to the reference size before the next real gestures: the narrow
+    // evidence states the compact rows, and the gestures below then land where
+    // the panel really shows them.
+    window_->resize(1568, 926);
+    QTest::qWait(100);
+
+    // Explicit authorization must recover from the refusal through the same
+    // public submit path, rather than leaving Overwrite permanently stuck.
+    auto* overwrite = item(QStringLiteral("writeFlag_") + write + "_overwrite");
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(overwrite));
+    ASSERT_TRUE(authoredFlag(QStringLiteral("overwrite")));
+    controller_->setNodeParameter(write, QStringLiteral("precision"), QStringLiteral("half"));
+    QTest::qWait(30);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(deliver));
+    ASSERT_TRUE(waitFor([&] { return delivery_->jobs().size() == 3; }, 5000))
+        << failure->property("text").toString().toStdString();
+    ASSERT_TRUE(waitFor([&] { return !delivery_->busy(); }, 60000));
+    EXPECT_EQ(delivery_->jobs().front().toMap().value(QStringLiteral("state")).toString(), QStringLiteral("completed"));
+    EXPECT_EQ(nemo::media::readImage(firstFile.toStdString()).header.nativePrecision, "half");
+    EXPECT_FALSE(failure->isVisible());
+
+    // --- the authored format states its own settings -------------------------
+    // MOV replaces the EXR controls with its ProRes profile and the movie frame
+    // rate; the profile is a choice, the frame rate a typed number.
+    chooseEntry(fileType, QStringLiteral("mov"));
+    ASSERT_TRUE(waitFor([&] { return profile->isVisible() && frameRate->isVisible(); }, 2000));
+    EXPECT_FALSE(precision->isVisible());
+    EXPECT_FALSE(compression->isVisible());
+    EXPECT_FALSE(bitrate->isVisible());
+    EXPECT_EQ(profile->property("currentText").toString(), QStringLiteral("422"));
+    chooseEntry(profile, QStringLiteral("4444xq"));
+    // The new choice is an ordinary authored edit: it undoes and redoes through
+    // the shared host, and the control states the authored value either way.
+    ASSERT_TRUE(session_->undo(nemo::EditOptions{session_->revision(), {}}).committed);
+    ASSERT_TRUE(waitFor([&] { return profile->property("currentText").toString() == "422"; }, 2000));
+    ASSERT_TRUE(session_->redo(nemo::EditOptions{session_->revision(), {}}).committed);
+    ASSERT_TRUE(waitFor([&] { return profile->property("currentText").toString() == "4444xq"; }, 2000));
+    enter(frameRate, QStringLiteral("25"));
+    EXPECT_EQ(std::get<nemo::ChoiceValue>(
+                  session_->queryValues(networkIdentity(network_), nodeIdentity(write), "profile").front().value)
+                  .value,
+              "4444xq");
+    EXPECT_DOUBLE_EQ(authoredNumber(write, QStringLiteral("frameRate")), 25.0);
+    const QString moviePath = directory_.filePath(QStringLiteral("delivery/shot.mov"));
+    enter(item(QStringLiteral("writeFile_") + write), moviePath);
+    EXPECT_EQ(authoredText(QStringLiteral("file")), moviePath) << "the authored path is never rewritten";
+    enter(frameLastField, QStringLiteral("2"));
+    capture(QStringLiteral("issue94-write-movie"));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(deliver));
+    ASSERT_TRUE(waitFor([&] { return delivery_->jobs().size() == 4; }, 5000));
+    ASSERT_TRUE(waitFor([&] { return !delivery_->busy(); }, 120000));
+    const auto movie = delivery_->jobs().front().toMap();
+    ASSERT_EQ(movie.value(QStringLiteral("state")).toString(), QStringLiteral("completed"))
+        << movie.value(QStringLiteral("error")).toString().toStdString();
+    EXPECT_EQ(movie.value(QStringLiteral("fileType")).toString(), QStringLiteral("mov"));
+    EXPECT_EQ(movie.value(QStringLiteral("profile")).toString(), QStringLiteral("4444xq"));
+    EXPECT_EQ(movie.value(QStringLiteral("writtenFrames")).toInt(), 2);
+    EXPECT_TRUE(QFileInfo::exists(moviePath)) << "one movie file carries the whole range";
+    EXPECT_GT(QFileInfo(moviePath).size(), 0);
+    capture(QStringLiteral("issue94-write-movie-delivered"));
+
+    // MP4 states its bitrate and the same frame rate.
+    chooseEntry(fileType, QStringLiteral("mp4"));
+    ASSERT_TRUE(waitFor([&] { return bitrate->isVisible() && frameRate->isVisible() && !profile->isVisible(); }, 2000));
+    enter(bitrate, QStringLiteral("8000"));
+    EXPECT_DOUBLE_EQ(authoredNumber(write, QStringLiteral("bitrateKbps")), 8000.0);
+    const QString mp4Path = directory_.filePath(QStringLiteral("delivery/shot.mp4"));
+    enter(item(QStringLiteral("writeFile_") + write), mp4Path);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(deliver));
+    ASSERT_TRUE(waitFor([&] { return delivery_->jobs().size() == 5; }, 5000));
+    ASSERT_TRUE(waitFor([&] { return !delivery_->busy(); }, 120000));
+    const auto clip = delivery_->jobs().front().toMap();
+    ASSERT_EQ(clip.value(QStringLiteral("state")).toString(), QStringLiteral("completed"))
+        << clip.value(QStringLiteral("error")).toString().toStdString();
+    EXPECT_EQ(clip.value(QStringLiteral("fileType")).toString(), QStringLiteral("mp4"));
+    EXPECT_EQ(clip.value(QStringLiteral("writtenFrames")).toInt(), 2);
+    EXPECT_GT(QFileInfo(mp4Path).size(), 0);
+
+    // A cancelled movie publishes NO partial output: its container is finalized
+    // only after the whole range encoded, so nothing appears at its destination.
+    chooseEntry(fileType, QStringLiteral("mov"));
+    ASSERT_TRUE(waitFor([&] { return profile->isVisible() && frameRate->isVisible(); }, 2000));
+    const QString cancelledMovie = directory_.filePath(QStringLiteral("delivery/stopped.mov"));
+    enter(item(QStringLiteral("writeFile_") + write), cancelledMovie);
+    enter(frameLastField, QStringLiteral("400"));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(deliver));
+    auto* cancel = item(QStringLiteral("writeCancel_") + write);
+    ASSERT_TRUE(waitFor([&] { return cancel->isVisible(); }, 2000));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(cancel));
+    ASSERT_TRUE(waitFor([&] { return !delivery_->busy(); }, 60000));
+    EXPECT_EQ(delivery_->jobs().front().toMap().value(QStringLiteral("state")).toString(), QStringLiteral("cancelled"));
+    EXPECT_FALSE(QFileInfo::exists(cancelledMovie)) << "a cancelled movie leaves no file at its destination";
+
+    // A cancelled still sequence reports exactly the frames it finalized: each
+    // published EXR is a real file and no other frame is claimed.
+    chooseEntry(fileType, QStringLiteral("exr"));
+    ASSERT_TRUE(waitFor([&] { return precision->isVisible() && !bitrate->isVisible(); }, 2000));
+    enter(item(QStringLiteral("writeFile_") + write), directory_.filePath(QStringLiteral("delivery/cancel.####.exr")));
+    enter(frameLastField, QStringLiteral("400"));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(deliver));
+    ASSERT_TRUE(waitFor([&] { return cancel->isVisible(); }, 2000));
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(cancel));
+    ASSERT_TRUE(waitFor([&] { return !delivery_->busy(); }, 60000));
+    const auto cancelled = delivery_->jobs().front().toMap();
+    EXPECT_EQ(cancelled.value(QStringLiteral("state")).toString(), QStringLiteral("cancelled"));
+    EXPECT_LT(cancelled.value(QStringLiteral("writtenFrames")).toInt(), 400);
+    EXPECT_EQ(cancelled.value(QStringLiteral("failedFrames")).toInt(), 0);
+    capture(QStringLiteral("issue94-write-cancelled"));
     EXPECT_EQ(warnings_->count(), 0);
 }
 

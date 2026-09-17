@@ -135,6 +135,15 @@ ImageHeader headerOf(const OIIO::ImageInput& input, const std::string& path) {
     return header;
 }
 
+// The one delivery inventory of EXR compression names (issue #94). The check
+// exists because the EXR writer does not perform it: an unrecognized
+// `compression` string silently becomes ZIP, so a caller's authored setting
+// would disagree with the file instead of failing. Closed on purpose — a
+// second name is added only with verified round-trip evidence, never inherited
+// from the library's own list. Exported because a delivery preflight refuses an
+// unsupported setting before any file is touched, from this same list.
+constexpr std::array<std::string_view, 5> kSupportedExrCompressions{"zip", "piz", "rle", "none", "dwaa"};
+
 // Opens an image input or reports the offending file (never a bare OIIO error).
 [[nodiscard]] std::unique_ptr<OIIO::ImageInput> openImage(const std::string& path) {
     auto input = OIIO::ImageInput::open(path);
@@ -236,7 +245,23 @@ ImageReadResult readImage(const std::string& path) {
     return result;
 }
 
-void writeImage(const std::string& path, const CpuImage& image, const OutputPrecision precision) {
+bool isSupportedExrCompression(const std::string_view compression) {
+    return std::find(kSupportedExrCompressions.begin(), kSupportedExrCompressions.end(), compression) !=
+           kSupportedExrCompressions.end();
+}
+
+std::string supportedExrCompressions() {
+    std::string list;
+    for (const std::string_view name : kSupportedExrCompressions) {
+        if (!list.empty()) {
+            list += ", ";
+        }
+        list += name;
+    }
+    return list;
+}
+
+void writeImage(const std::string& path, const CpuImage& image, const ImageWriteOptions& options) {
     // The image's declared channels ARE the file's channels: an alpha-only
     // matte writes one channel named A, a multilayer render writes every
     // auxiliary layer channel it carries, and nothing is padded to four or
@@ -245,13 +270,46 @@ void writeImage(const std::string& path, const CpuImage& image, const OutputPrec
     if (channels.empty()) {
         throw ImageIoException(path, "the image declares no channels; there is nothing to write");
     }
+    // The compression name is validated before the encoder exists: the EXR
+    // writer maps a name it does not know back to its default, so an
+    // unsupported setting must be reported here with its own name rather than
+    // producing a file whose stored compression silently differs from the
+    // authored one (issue #94, story 76/77).
+    if (!options.compression.empty() && !isSupportedExrCompression(options.compression)) {
+        throw ImageIoException(
+            path, "compression '" + options.compression +
+                      "' is not a supported EXR compression (supported: " + supportedExrCompressions() + ")");
+    }
     auto output = OIIO::ImageOutput::create(path);
     if (!output) {
         throw ImageIoException(path, OIIO::geterror());
     }
-    OIIO::ImageSpec spec(image.width(), image.height(), static_cast<int>(channels.size()), outputType(precision));
+    // The raster keeps its authored data-window origin while the display window
+    // is the image's own FORMAT when the caller states one, so the single
+    // signed offset a reader reports (`ImageReadResult::header.windows`)
+    // returns exactly the described geometry — a negative or off-format data
+    // window is stored where the description says it is instead of being moved
+    // to the origin (issue #88 window contract, issue #94 story 77). A caller
+    // that states no format keeps the previous framing: the raster's extent at
+    // the logical origin, which is exactly the raster's own data window. The
+    // data window is stated on the spec this build's OpenImageIO has: its
+    // constructor takes the raster extent, and the window origins are the
+    // explicit fields.
+    const bool hasFormat = options.formatWidth > 0 && options.formatHeight > 0;
+    OIIO::ImageSpec spec(image.width(), image.height(), static_cast<int>(channels.size()),
+                         outputType(options.precision));
+    spec.x = options.windowX;
+    spec.y = options.windowY;
+    spec.full_x = hasFormat ? options.formatX : 0;
+    spec.full_y = hasFormat ? options.formatY : 0;
+    spec.full_width = hasFormat ? options.formatWidth : image.width();
+    spec.full_height = hasFormat ? options.formatHeight : image.height();
     spec.channelnames = channels;
-    spec.attribute("pixelaspectratio", image.layout().pixelAspect);
+    spec.attribute("pixelaspectratio", options.pixelAspect > 0.0F ? options.pixelAspect : image.layout().pixelAspect);
+    if (!options.compression.empty()) {
+        // Empty keeps the format's own default (never a module-private guess).
+        spec.attribute("compression", options.compression);
+    }
     if (!output->open(path, spec)) {
         throw ImageIoException(path, OIIO::geterror());
     }
@@ -261,6 +319,15 @@ void writeImage(const std::string& path, const CpuImage& image, const OutputPrec
     if (!output->close()) {
         throw ImageIoException(path, OIIO::geterror());
     }
+}
+
+void writeImage(const std::string& path, const CpuImage& image, const OutputPrecision precision) {
+    // The still write is the delivery write with the format's own default
+    // storage settings: one implementation, so a caller that names no
+    // compression can never diverge from one that does.
+    ImageWriteOptions options;
+    options.precision = precision;
+    writeImage(path, image, options);
 }
 
 }  // namespace nemo::media

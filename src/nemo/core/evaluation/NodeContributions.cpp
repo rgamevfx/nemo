@@ -42,6 +42,8 @@ namespace {
         return "output";
     case NodeRole::Viewer:
         return "viewer";
+    case NodeRole::Delivery:
+        return "delivery";
     }
     return "unknown";
 }
@@ -96,6 +98,8 @@ namespace {
     }
     if (document.isOutput != registered.isOutput)
         return "the network-output declaration differs";
+    if (document.isDeliverySink != registered.isDeliverySink)
+        return "the delivery-sink declaration differs";
     if (const auto problem = portsMismatch(document.inputs, registered.inputs, "input"))
         return problem;
     if (const auto problem = portsMismatch(document.outputs, registered.outputs, "output"))
@@ -129,7 +133,11 @@ void validateDeclaration(const NodeContribution& contribution,
     const NodeDescriptor& descriptor = contribution.descriptor;
     const std::string context = "node contribution '" + descriptor.type + "'";
 
-    const bool producesPixels = contribution.role == NodeRole::Image || contribution.role == NodeRole::Source;
+    // A Delivery node has real pixels — a pass-through CPU adapter — so it is a
+    // pixel role like an ordinary effect (issue #94); the display-only Viewer
+    // stays the one role that never implements any.
+    const bool producesPixels = contribution.role == NodeRole::Image || contribution.role == NodeRole::Source ||
+                                contribution.role == NodeRole::Delivery;
     if (producesPixels && !contribution.cpu && contribution.cpuUnavailableReason.empty()) {
         throw std::invalid_argument(context + ": the " + roleName(contribution.role) +
                                     " role promises a CPU implementation without an adapter or an explicit "
@@ -151,6 +159,10 @@ void validateDeclaration(const NodeContribution& contribution,
     if ((contribution.role == NodeRole::Output) != descriptor.isOutput) {
         throw std::invalid_argument(context + ": the " + roleName(contribution.role) +
                                     " role conflicts with the descriptor's network-output declaration");
+    }
+    if ((contribution.role == NodeRole::Delivery) != descriptor.isDeliverySink) {
+        throw std::invalid_argument(context + ": the " + roleName(contribution.role) +
+                                    " role conflicts with the descriptor's delivery-sink declaration");
     }
 
     std::set<std::string> declaredEditors;

@@ -119,6 +119,19 @@ if(NEMO_BUILD_GPU)
     endif()
     gtest_discover_tests(nemo_contribution_tests)
 
+    # Delivery* tests (issue #94): the native delivery queue over the shared
+    # device/allocator, the GPU export staging transfer and the media encoders,
+    # so they live with the GPU build and its compiled Slang kernels.
+    add_executable(nemo_delivery_tests DeliveryTests.cpp)
+    target_link_libraries(nemo_delivery_tests PRIVATE
+        nemo::eval nemo::media nemo::gpu GTest::gtest_main OpenImageIO::OpenImageIO)
+    if(DEFINED NEMO_SLANG_SPV_DIR)
+        target_compile_definitions(nemo_delivery_tests PRIVATE
+            NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}")
+        add_dependencies(nemo_delivery_tests nemo_shaders)
+    endif()
+    gtest_discover_tests(nemo_delivery_tests)
+
     add_executable(nemo_viewer_tests ViewerTests.cpp)
     target_sources(nemo_viewer_tests PRIVATE InteractiveSchedulerTests.cpp)
     target_link_libraries(nemo_viewer_tests PRIVATE nemo::eval nemo::media GTest::gtest_main)

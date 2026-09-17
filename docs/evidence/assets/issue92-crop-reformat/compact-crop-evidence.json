@@ -1,0 +1,30 @@
+{
+  "issue": 92,
+  "baseline": "39bdd9d",
+  "branch": "issue/92-compact-crop",
+  "authority": "Owner-supplied 763x421 Nuke Crop screenshot and explicit approval of compact parameter presentation; Nemo theme retained.",
+  "contract": "https://github.com/rgamevfx/nemo/issues/92#issuecomment-5707620198",
+  "scope": "CropBoxEditor layout, Crop consumed-key registration, four-line shared numeric bundle access/layout option, existing native scenario and ownership guidance. No rendering, viewer-handle, persistent-schema or default changes.",
+  "controls": [
+    "Preset selects existing composition/named formats by value; Reset reapplies the selected rectangle without resetting softness or flags.",
+    "One x/y/r/t row with adjacent wh/rt display toggle; original coordinate conversion and gestures preserved.",
+    "Softness field then shared slider, adjustment travel 0–100; typed values above 100 remain valid.",
+    "Inline reformat/intersect/black outside checkboxes; label Alt-click and shared right-click key menu retain animation/exposure access."
+  ],
+  "build": "cmake --build --preset debug --target nemo-ui nemo_workspace_ui_tests -j 2: passed; existing minizip mktemp linker warning remains.",
+  "native_command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=CropReformatSurface.Issue92CropCoordinatesShareTypedAndKeyedSemantics:CropReformatSurface.Issue92ExposedCropCoordinateEditsOnlyItsInstance:CropReformatSurface.Issue92CropHandlesDragTheAuthoredBox --gtest_output=json:docs/evidence/assets/issue92-crop-reformat/compact-crop-tests.json",
+  "native_environment": "QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 NEMO_TEST_NATIVE_UI=1 NEMO_TEST_VIEWER_WINDOW=1 NEMO92_EVIDENCE_DIR=<repo>/docs/evidence/assets/issue92-crop-reformat/compact-crop-native",
+  "result": "3 passed; 0 failed. Real production Qt Quick/Vulkan window and native pointer/key input; no QML warnings.",
+  "exercised": [
+    "Typed coordinates, width conversion and Alt-click keying.",
+    "Softness 125 typed without clipping, slider one-entry commit, undo and Escape cancellation.",
+    "Checkbox-label editing; format Reset as one undo entry, including an animated coordinate.",
+    "Named preset application and retained preset selection across coordinate edits and Reset.",
+    "Existing viewer-handle drag/pan/zoom and isolated exposed-coordinate editing."
+  ],
+  "visual_review": "Inspected final QQuickWindow captures at normal and 950x700 narrow size: four compact rows, all box fields and flags visible, no expanded coordinate sections. No Nuke runtime parity claim or undocumented preset-menu parity claim.",
+  "captures": ["compact-crop-native/issue92-crop-editor.png", "compact-crop-native/issue92-crop-editor-narrow.png", "compact-crop-native/issue92-crop-drag.png", "compact-crop-native/issue92-crop-exposure.png"],
+  "formatting": "clang-format-18 --dry-run --Werror for the two modified C++ files: passed.",
+  "limits": "Focused UI verification only; no full-suite, backend, release or sanitizer matrix repeat. Original issue verification limitations remain unchanged.",
+  "delivery": "Local only; no merge/push. Unrelated workflow/autosave/backup files and comp.spv excluded."
+}

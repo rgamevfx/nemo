@@ -4,8 +4,7 @@ import QtQuick.Layouts
 
 // Crop box editor (issue #92, stories 43-44), hosted by the generic inspector
 // through ParameterEditorRegistry id "nemo.crop.box" with presentation
-// "section". The host mounts it on the `x` row and consumes x/y/right/top, so
-// this editor is the ONE control for the node's box coordinates.
+// "section". The host mounts it on the `x` row and consumes the Crop parameters.
 //
 // The authored state stays the four typed parameters: every field is read
 // through the shared inspector query (frame-evaluated) and written through the
@@ -24,7 +23,7 @@ ColumnLayout {
 
     // Host-injected contract (ParametersPanel). A bare host may load this
     // editor without a controller; every control then states it cannot act.
-    property var theme
+    property var theme: null
     property string networkId: ""
     property string instanceId: ""
     property string nodeId: ""
@@ -51,26 +50,26 @@ ColumnLayout {
     // far corner (right/top) or as its size; both name the SAME parameters.
     readonly property var positionEntries: [{
         "key": "x",
-        "label": "X"
+        "label": "x"
     }, {
         "key": "y",
-        "label": "Y"
+        "label": "y"
     }]
     readonly property var extentEntries: cropEditor.sizeMode ? [{
         "key": "right",
-        "label": "W",
+        "label": "w",
         "name": "Width"
     }, {
         "key": "top",
-        "label": "H",
+        "label": "h",
         "name": "Height"
     }] : [{
         "key": "right",
-        "label": "Right",
+        "label": "r",
         "name": "Right"
     }, {
         "key": "top",
-        "label": "Top",
+        "label": "t",
         "name": "Top"
     }]
     // Size display is presentation state on this one control: it never reaches
@@ -185,7 +184,7 @@ ColumnLayout {
     }
 
     function ownsKey(key) {
-        return key === "x" || key === "y" || key === "right" || key === "top";
+        return paramRows[key] !== undefined;
     }
 
     // --- shared key and exposure affordances --------------------------------
@@ -297,133 +296,243 @@ ColumnLayout {
     // message comes from the controller/catalog; this editor never re-validates.
     readonly property string gestureProblem: cropEditor.panel && cropEditor.ownsKey(String(cropEditor.panel.gestureErrorKey)) ? String(cropEditor.panel.gestureError) : ""
 
+    property string selectedPreset: ""
+    readonly property var formats: {
+        revision;
+        if (!controller) return [];
+        return [controller.networkFormat(queryNetwork)].concat(controller.namedFormats());
+    }
+    function resetBox() {
+        var format = selectedPreset.length ? formats.find(function(entry) { return entry.name === cropEditor.selectedPreset; }) : formats[0];
+        if (!format || !panel) return;
+        var values = {x: 0, y: 0, right: Number(format.width), top: Number(format.height)};
+        if (!panel.beginEditForMany(networkId, nodeId, Object.keys(values))) return;
+        if (!panel.updateEditMany(values)) {
+            panel.cancelEdit();
+            return;
+        }
+        panel.commitEdit();
+    }
+
+    component Caption: ExposureLabel {
+        id: caption
+        required property string editKey
+        theme: cropEditor.theme
+        networkId: cropEditor.networkId
+        instanceId: cropEditor.instanceId
+        nodeId: cropEditor.nodeId
+        parameterKey: editKey
+        frame: cropEditor.frame
+        keyStatus: cropEditor.keyStatusOf(editKey)
+        implicitWidth: metrics.advanceWidth
+        implicitHeight: 23
+        onKeyRequested: cropEditor.keyAtFrame(editKey)
+        TextMetrics { id: metrics; text: caption.labelText; font.pixelSize: cropEditor.fontSizeValue }
+        KeyIndicator {
+            id: keyActions
+            visible: false
+            theme: cropEditor.cellTheme
+            networkId: cropEditor.networkId
+            nodeId: cropEditor.nodeId
+            parameterKey: caption.editKey
+            parameterLabel: cropEditor.labelFor(caption.editKey)
+            keyStatus: caption.keyStatus
+            frame: cropEditor.frame
+            revealAvailable: cropEditor.revealAvailable()
+            onKeyRequested: cropEditor.keyAtFrame(caption.editKey)
+            onRemoveKeyRequested: cropEditor.removeKeyAtFrame(caption.editKey)
+            onRevealRequested: cropEditor.revealInAnimation(caption.editKey)
+        }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.RightButton
+            onClicked: keyActions.openMenu(caption)
+        }
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            visible: caption.keyStatus !== "none"
+            color: caption.keyStatus === "key" ? cropEditor.accentColor : cropEditor.mutedColor
+        }
+    }
+    component Action: Button {
+        id: action
+        implicitHeight: 23
+        padding: 4
+        contentItem: Text {
+            text: action.text
+            color: cropEditor.textColor
+            font.pixelSize: cropEditor.fontSizeValue
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+        background: Rectangle {
+            color: action.down ? cropEditor.raisedColor : action.hovered ? cropEditor.hoverColor : cropEditor.fieldColor
+            border.color: cropEditor.borderColor
+            radius: cropEditor.smallRadiusValue
+        }
+    }
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 5
+        Text { text: "preset"; color: cropEditor.textColor; font.pixelSize: cropEditor.fontSizeValue; Layout.preferredWidth: 52 }
+        StudioComboBox {
+            id: preset
+            objectName: "cropPreset_" + cropEditor.nodeId
+            theme: cropEditor.theme
+            implicitHeight: 23
+            Layout.preferredWidth: 130
+            model: cropEditor.formats.map(function(format, index) { return index === 0 ? "format" : String(format.name); })
+            currentIndex: Math.max(0, cropEditor.formats.findIndex(function(format, index) { return index === 0 ? !cropEditor.selectedPreset.length : format.name === cropEditor.selectedPreset; }))
+            function restoreSelection() {
+                currentIndex = Qt.binding(function() { return Math.max(0, cropEditor.formats.findIndex(function(format, index) { return index === 0 ? !cropEditor.selectedPreset.length : format.name === cropEditor.selectedPreset; })); });
+            }
+            onModelChanged: Qt.callLater(restoreSelection)
+            onActivated: {
+                cropEditor.selectedPreset = currentIndex > 0 ? String(cropEditor.formats[currentIndex].name) : "";
+                cropEditor.resetBox();
+                restoreSelection();
+            }
+            ToolTip.visible: hovered
+            ToolTip.text: "Set the box to the composition format or a saved format"
+        }
+        Action {
+            objectName: "cropReset_" + cropEditor.nodeId
+            text: "Reset"
+            onClicked: cropEditor.resetBox()
+            ToolTip.visible: hovered
+            ToolTip.text: "Restore the box to the selected format; leave softness and flags unchanged"
+        }
+        Item { Layout.fillWidth: true }
+    }
     RowLayout {
         Layout.fillWidth: true
         spacing: 4
-
-        Text {
-            text: "Crop Box"
-            color: cropEditor.mutedColor
-            font.pixelSize: cropEditor.smallFontSize
-            Accessible.name: "Crop box"
+        Text { text: "box"; color: cropEditor.textColor; font.pixelSize: cropEditor.fontSizeValue; Layout.preferredWidth: 52 }
+        Repeater {
+            model: cropEditor.positionEntries.concat(cropEditor.extentEntries)
+            delegate: RowLayout {
+                id: fieldRow
+                required property var modelData
+                readonly property string fieldKey: String(modelData.key)
+                readonly property var fieldParameter: cropEditor.paramRow(fieldKey)
+                Layout.fillWidth: true
+                spacing: 3
+                Caption { editKey: fieldRow.fieldKey; labelText: fieldRow.modelData.label }
+                NumericField {
+                    objectName: "cropBox_" + cropEditor.nodeId + "_" + fieldRow.fieldKey
+                    theme: cropEditor.theme
+                    value: cropEditor.displayValue(fieldRow.fieldKey)
+                    hasMinimum: false
+                    hasMaximum: false
+                    hasSoftMinimum: false
+                    hasSoftMaximum: false
+                    step: fieldRow.fieldParameter ? Number(fieldRow.fieldParameter.step || 1) : 1
+                    label: cropEditor.labelFor(fieldRow.fieldKey)
+                    dragThreshold: cropEditor.dragThreshold
+                    fieldWidth: 62
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 40
+                    enabled: !!cropEditor.controller && !!fieldRow.fieldParameter
+                    gestureLive: cropEditor.panel ? cropEditor.panel.activeToken.length > 0 : false
+                    onTextCommitted: function(text) { cropEditor.commitText(fieldRow.fieldKey, text); }
+                    onTextRejected: function(text) { cropEditor.rejectText(fieldRow.fieldKey, text); }
+                    onStepped: function(value) { cropEditor.commitValue(fieldRow.fieldKey, value); }
+                    onScrubStarted: cropEditor.beginScrub(fieldRow.fieldKey)
+                    onScrubbed: function(value) { cropEditor.updateScrub(fieldRow.fieldKey, value); }
+                    onScrubFinished: cropEditor.finishScrub()
+                    onScrubCancelled: cropEditor.cancelScrub()
+                    onKeyRequested: cropEditor.keyAtFrame(fieldRow.fieldKey)
+                }
+            }
         }
-
-        Item {
-            Layout.fillWidth: true
-        }
-
-        Button {
-            id: sizeToggle
+        Action {
             objectName: "cropBoxSize_" + cropEditor.nodeId
-            implicitWidth: 96
-            implicitHeight: 19
-            padding: 0
-            text: cropEditor.sizeMode ? "Right / Top" : "Width / Height"
-            Accessible.name: cropEditor.sizeMode ? "Show the box's right and top edges" : "Show the box's width and height"
-            ToolTip.visible: sizeToggle.hovered
-            ToolTip.text: cropEditor.sizeMode ? "Showing width and height. Click for right/top." : "Showing right and top. Click for width/height."
+            text: cropEditor.sizeMode ? "rt" : "wh"
+            Accessible.name: cropEditor.sizeMode ? "Show right and top" : "Show width and height"
             onClicked: cropEditor.sizeMode = !cropEditor.sizeMode
-            contentItem: Text {
-                text: sizeToggle.text
-                color: sizeToggle.enabled ? cropEditor.textColor : cropEditor.disabledColor
-                font.pixelSize: cropEditor.smallFontSize
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-            background: Rectangle {
-                color: sizeToggle.down ? cropEditor.raisedColor : sizeToggle.hovered ? cropEditor.hoverColor : "transparent"
-                border.color: cropEditor.borderColor
-                radius: cropEditor.smallRadiusValue
-            }
         }
     }
-
-    Repeater {
-        model: cropEditor.positionEntries.concat(cropEditor.extentEntries)
-        delegate: RowLayout {
-            id: fieldRow
-            required property var modelData
-
-            readonly property string fieldKey: String(modelData.key)
-            readonly property string fieldLabel: String(modelData.name !== undefined ? modelData.name : modelData.label)
-            readonly property var fieldParameter: cropEditor.paramRow(fieldRow.fieldKey)
-            readonly property string fieldError: cropEditor.ownsKey(String(cropEditor.panel ? cropEditor.panel.gestureErrorKey : "")) && String(cropEditor.panel ? cropEditor.panel.gestureErrorKey : "") === fieldRow.fieldKey ? cropEditor.gestureProblem : ""
-
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 5
+        Caption { editKey: "softness"; labelText: "softness"; Layout.preferredWidth: 52 }
+        Loader {
             Layout.fillWidth: true
-            spacing: 4
-
-            ExposureLabel {
-                objectName: "label_" + cropEditor.nodeId + "_" + fieldRow.fieldKey
-                Layout.preferredWidth: 72
-                Layout.minimumWidth: 44
-                Layout.maximumWidth: 72
-                Layout.alignment: Qt.AlignVCenter
-                theme: cropEditor.theme
-                networkId: cropEditor.networkId
-                instanceId: cropEditor.instanceId
-                nodeId: cropEditor.nodeId
-                parameterKey: fieldRow.fieldKey
-                labelText: fieldRow.fieldLabel
-                keyStatus: cropEditor.keyStatusOf(fieldRow.fieldKey)
-                frame: cropEditor.frame
-                onKeyRequested: cropEditor.keyAtFrame(fieldRow.fieldKey)
+            sourceComponent: cropEditor.panel ? cropEditor.panel.numericEditorComponent : null
+            onLoaded: {
+                item.theme = cropEditor.theme;
+                item.panel = cropEditor.panel;
+                item.row = softnessRow;
+                item.compact = true;
+                item.fieldFirst = true;
             }
-
-            KeyIndicator {
-                objectName: "key_" + cropEditor.nodeId + "_" + fieldRow.fieldKey
-                Layout.preferredWidth: 24
-                Layout.maximumWidth: 24
-                Layout.alignment: Qt.AlignVCenter
-                theme: cropEditor.cellTheme
-                networkId: cropEditor.networkId
-                nodeId: cropEditor.nodeId
-                parameterKey: fieldRow.fieldKey
-                parameterLabel: fieldRow.fieldLabel
-                keyStatus: cropEditor.keyStatusOf(fieldRow.fieldKey)
-                scope: fieldRow.fieldParameter && fieldRow.fieldParameter.scope !== undefined ? String(fieldRow.fieldParameter.scope) : ""
-                frame: cropEditor.frame
-                revealAvailable: cropEditor.revealAvailable()
-                onKeyRequested: cropEditor.keyAtFrame(fieldRow.fieldKey)
-                onRemoveKeyRequested: cropEditor.removeKeyAtFrame(fieldRow.fieldKey)
-                onRevealRequested: cropEditor.revealInAnimation(fieldRow.fieldKey)
-            }
-
-            NumericField {
-                id: field
-                objectName: "cropBox_" + cropEditor.nodeId + "_" + fieldRow.fieldKey
-                theme: cropEditor.theme
-                value: cropEditor.displayValue(fieldRow.fieldKey)
-                text: ""
-                hasMinimum: false
-                hasMaximum: false
-                hasSoftMinimum: false
-                hasSoftMaximum: false
-                step: fieldRow.fieldParameter && fieldRow.fieldParameter.step !== undefined ? Number(fieldRow.fieldParameter.step) : 0.01
-                decimals: fieldRow.fieldParameter && fieldRow.fieldParameter.displayDecimals !== undefined ? Number(fieldRow.fieldParameter.displayDecimals) : -1
-                integer: false
-                label: fieldRow.fieldLabel
-                errorText: fieldRow.fieldError
-                dragThreshold: cropEditor.dragThreshold
-                fieldWidth: 62
-                Layout.fillWidth: true
-                Layout.minimumWidth: 56
-                Layout.alignment: Qt.AlignVCenter
-                enabled: cropEditor.controller !== null && cropEditor.controller !== undefined && fieldRow.fieldParameter !== null
-                gestureLive: cropEditor.panel ? cropEditor.panel.activeToken.length > 0 : false
-                onTextCommitted: function (text) {
-                    cropEditor.commitText(fieldRow.fieldKey, text);
+        }
+        QtObject {
+            id: softnessRow
+            readonly property string nodeId: cropEditor.nodeId
+            readonly property string parameterKey: "softness"
+            readonly property string rowLabel: "Softness"
+            readonly property real numberValue: cropEditor.numberValue("softness")
+            readonly property bool hasMinimum: true
+            readonly property bool hasMaximum: false
+            readonly property real minimum: 0
+            readonly property real maximum: 0
+            readonly property bool hasSoftMinimum: true
+            readonly property bool hasSoftMaximum: true
+            readonly property real softMinimum: 0
+            readonly property real softMaximum: 100
+            readonly property real numberStep: 1
+            readonly property int decimals: -1
+            readonly property bool integerParameter: false
+            readonly property int dragThreshold: cropEditor.dragThreshold
+            readonly property string rowError: cropEditor.panel && cropEditor.panel.gestureErrorKey === "softness" ? cropEditor.gestureProblem : ""
+            function rowRef() { return cropEditor.rowFor("softness"); }
+            function commitText(text) { return cropEditor.commitText("softness", text); }
+            function commitDiscrete(value) { return cropEditor.commitValue("softness", value); }
+            function keyAtFrame() { return cropEditor.keyAtFrame("softness"); }
+        }
+    }
+    Flow {
+        Layout.fillWidth: true
+        Layout.leftMargin: 57
+        spacing: 7
+        Repeater {
+            model: [{key: "reformat", label: "reformat"}, {key: "intersect", label: "intersect"}, {key: "blackOutside", label: "black outside"}]
+            delegate: CheckBox {
+                id: flag
+                required property var modelData
+                objectName: "cropFlag_" + cropEditor.nodeId + "_" + modelData.key
+                checked: cropEditor.paramRow(modelData.key) ? cropEditor.paramRow(modelData.key).value === true : false
+                implicitWidth: flagLabel.implicitWidth + 16
+                implicitHeight: 23
+                padding: 0
+                leftPadding: 16
+                Accessible.name: modelData.label
+                onToggled: {
+                    cropEditor.commitValue(modelData.key, checked);
+                    checked = Qt.binding(function() { return cropEditor.paramRow(flag.modelData.key).value === true; });
                 }
-                onTextRejected: cropEditor.rejectText(fieldRow.fieldKey, text)
-                onStepped: function (value) {
-                    cropEditor.commitValue(fieldRow.fieldKey, value);
+                contentItem: Caption {
+                    id: flagLabel
+                    editKey: flag.modelData.key
+                    labelText: flag.modelData.label
+                    MouseArea {
+                        anchors.fill: parent
+                        onPressed: function(mouse) { mouse.accepted = mouse.modifiers === Qt.NoModifier; }
+                        onClicked: cropEditor.commitValue(flag.modelData.key, !flag.checked)
+                    }
                 }
-                onScrubStarted: cropEditor.beginScrub(fieldRow.fieldKey)
-                onScrubbed: function (value) {
-                    cropEditor.updateScrub(fieldRow.fieldKey, value);
+                indicator: Rectangle {
+                    width: 12; height: 12; y: (flag.height - height) / 2
+                    radius: 2
+                    color: flag.checked ? cropEditor.accentColor : cropEditor.fieldColor
+                    border.color: flag.activeFocus ? cropEditor.accentColor : cropEditor.borderColor
+                    Text { anchors.centerIn: parent; text: flag.checked ? "\u00d7" : ""; color: cropEditor.textColor; font.pixelSize: 13 }
                 }
-                onScrubFinished: cropEditor.finishScrub()
-                onScrubCancelled: cropEditor.cancelScrub()
-                onKeyRequested: cropEditor.keyAtFrame(fieldRow.fieldKey)
+                background: Rectangle { color: flag.hovered ? cropEditor.hoverColor : "transparent"; radius: 2 }
             }
         }
     }

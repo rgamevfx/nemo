@@ -315,8 +315,12 @@ coefficients), Merge declares `nemo.merge.operation`
 Shuffle declares `nemo.shuffle.mapping` (`ShuffleEditor.qml`, the full-width
 two-input socket mapper). Shuffle's routing key/exposure cells reuse the shared
 controls inside its channel dialog; generic fallback retains all 30 parameters.
-Crop declares `nemo.crop.box` (`CropBoxEditor.qml`, x/y/right/top with an
-extent-display toggle); Reformat declares `nemo.reformat.format`
+Crop declares `nemo.crop.box` (`CropBoxEditor.qml`, compact format preset/reset,
+x/y/right/top with an extent-display toggle, softness and inline flags). Reset
+reapplies the selected composition/named format's rectangle, not other settings.
+Its softness control loads `ParametersPanel.numericEditorComponent`, preserving
+the shared slider/field gesture owner; `fieldFirst` only changes layout order.
+Reformat declares `nemo.reformat.format`
 (`ReformatFormatEditor.qml`, a compact mode-dependent section with one
 composition/named/custom output selector and inline flags). Its adjacent format
 popup keeps dimensions as an unapplied draft: Apply authors the node in one

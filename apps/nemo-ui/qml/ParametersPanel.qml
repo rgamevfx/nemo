@@ -26,6 +26,8 @@ FocusScope {
     // namespaced custom parameter editors; the generic schema controls remain
     // usable when no editor is registered.
     readonly property var controller: viewerController
+    // Registered section editors reuse the same numeric/slider gesture owner.
+    readonly property Component numericEditorComponent: numericControlComponent
 
     // Accumulated inspectors, newest first. Identity is (network, node), never
     // the node id alone, so the same node id in two networks stays distinct.
@@ -1809,6 +1811,7 @@ FocusScope {
             // for it; the field, key, marker and error always remain.
             property bool showSlider: true
             property bool compact: false
+            property bool fieldFirst: false
 
             width: parent ? parent.width : implicitWidth
             spacing: 2
@@ -1816,6 +1819,7 @@ FocusScope {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 4
+                layoutDirection: numericControl.fieldFirst ? Qt.RightToLeft : Qt.LeftToRight
 
                 Slider {
                     id: bundleSlider

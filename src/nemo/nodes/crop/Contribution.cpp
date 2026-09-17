@@ -36,9 +36,8 @@ namespace {
 NodeDescriptor cropDescriptor() {
     // The box and its behaviour, in the reference's own control order. `x`
     // carries the namespaced editor id: it is the host's mount row for
-    // CropBoxEditor.qml, which presents the four box numbers (and the
-    // width/height presentation toggle) as one interactive control and writes
-    // them through the shared parameter commands like any other node setting.
+    // CropBoxEditor.qml, which groups the box, softness and behavior flags and
+    // writes them through the shared parameter commands.
     return NodeDescriptor{.type = "crop",
                           .displayName = "Crop",
                           .group = "Transform",
@@ -436,10 +435,11 @@ NodeContribution cropContribution() {
     // way, so this node produces its whole layout itself (issue #90): the shared
     // auxiliary preservation would copy a plane at unchanged coordinates.
     contribution.ownsChannelLayout = true;
-    contribution.editors = {NodeEditorContribution{.id = "nemo.crop.box",
-                                                   .source = "qrc:/qt/qml/Nemo/qml/CropBoxEditor.qml",
-                                                   .consumes = {"x", "y", "right", "top"},
-                                                   .presentation = "section"}};
+    contribution.editors = {NodeEditorContribution{
+        .id = "nemo.crop.box",
+        .source = "qrc:/qt/qml/Nemo/qml/CropBoxEditor.qml",
+        .consumes = {"x", "y", "right", "top", "softness", "reformat", "intersect", "blackOutside"},
+        .presentation = "section"}};
     return contribution;
 }
 

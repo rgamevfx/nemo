@@ -1,0 +1,52 @@
+{
+  "tests": 3,
+  "failures": 0,
+  "disabled": 0,
+  "errors": 0,
+  "timestamp": "2026-09-16T22:46:31Z",
+  "time": "9.287s",
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "CropReformatSurface",
+      "tests": 3,
+      "failures": 0,
+      "disabled": 0,
+      "errors": 0,
+      "timestamp": "2026-09-16T22:46:31Z",
+      "time": "9.287s",
+      "testsuite": [
+        {
+          "name": "Issue92CropHandlesDragTheAuthoredBox",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 447,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T22:46:31Z",
+          "time": "5.672s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92CropCoordinatesShareTypedAndKeyedSemantics",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 611,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T22:46:37Z",
+          "time": "2.594s",
+          "classname": "CropReformatSurface"
+        },
+        {
+          "name": "Issue92ExposedCropCoordinateEditsOnlyItsInstance",
+          "file": "\/home\/rgame\/dev\/Nemo_Dev2\/tests\/Issue92CropReformatUiTests.cpp",
+          "line": 734,
+          "status": "RUN",
+          "result": "COMPLETED",
+          "timestamp": "2026-09-16T22:46:39Z",
+          "time": "1.019s",
+          "classname": "CropReformatSurface"
+        }
+      ]
+    }
+  ]
+}

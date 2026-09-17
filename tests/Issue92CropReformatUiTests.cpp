@@ -646,18 +646,89 @@ TEST_F(CropReformatSurface, Issue92CropCoordinatesShareTypedAndKeyedSemantics) {
         << "width 800 from x 200 authors right = 1000";
     EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("x")), 200.0);
 
-    // Keying a consumed coordinate goes through the shared key command and the
-    // shared key cell, at the frame the panel is on.
-    auto* keyCell = visualByName(item(QStringLiteral("cropBoxEditor_") + cropId_),
-                                 QStringLiteral("key_") + cropId_ + QStringLiteral("_x"));
-    ASSERT_NE(keyCell, nullptr);
-    ASSERT_TRUE(keyCell->isVisible());
-    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(keyCell));
+    // Compact labels retain the shared Alt-click keying gesture.
+    auto* keyLabel = visualByName(item(QStringLiteral("cropBoxEditor_") + cropId_),
+                                  QStringLiteral("label_") + cropId_ + QStringLiteral("_x"));
+    ASSERT_NE(keyLabel, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::AltModifier, center(keyLabel));
     QTest::qWait(50);
     EXPECT_EQ(controller_->nodeParameterKeyStatus(network_, cropId_, QStringLiteral("x")), QStringLiteral("key"));
     EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("x")), 200.0);
+    auto* editor = item(QStringLiteral("cropBoxEditor_") + cropId_);
+    auto* softness = visualByName(editor, QStringLiteral("param_") + cropId_ + QStringLiteral("_softness"));
+    ASSERT_NE(softness, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(softness));
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    typeText(window_, QStringLiteral("125"));
+    QTest::keyClick(window_, Qt::Key_Return);
+    QTest::qWait(40);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("softness")), 125.0);
+    auto* slider = visualByName(editor, QStringLiteral("slider_") + cropId_ + QStringLiteral("_softness"));
+    ASSERT_NE(slider, nullptr);
+    const auto beforeSlider = session_->revision();
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(slider));
+    QTest::qWait(40);
+    EXPECT_LT(authoredNumber(cropId_, QStringLiteral("softness")), 100.0);
+    EXPECT_EQ(session_->revision(), beforeSlider + 1);
+    ASSERT_TRUE(history_->undo());
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("softness")), 125.0);
+    QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, center(slider));
+    QTest::keyClick(window_, Qt::Key_Escape);
+    QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, center(slider));
+    QTest::qWait(40);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("softness")), 125.0);
+
+    auto* flag = item(QStringLiteral("cropFlag_") + cropId_ + QStringLiteral("_intersect"));
+    ASSERT_NE(flag, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(flag));
+    QTest::qWait(40);
+    EXPECT_TRUE(std::get<bool>(
+        session_->queryValues(networkIdentity(network_), nodeIdentity(cropId_), "intersect").front().value));
+    auto* reset = item(QStringLiteral("cropReset_") + cropId_);
+    ASSERT_NE(reset, nullptr);
+    const auto beforeReset = session_->revision();
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(reset));
+    QTest::qWait(40);
+    EXPECT_DOUBLE_EQ(
+        visualByName(editor, QStringLiteral("cropBox_") + cropId_ + QStringLiteral("_x"))->property("value").toDouble(),
+        0.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("right")), 1920.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("top")), 1080.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("softness")), 125.0);
+    EXPECT_EQ(session_->revision(), beforeReset + 1);
+    ASSERT_TRUE(history_->undo());
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("x")), 200.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("right")), 1000.0);
+    ASSERT_TRUE(controller_->setNamedFormat(QStringLiteral("SmallCrop"), 500, 300, 1.0));
+    QTest::qWait(40);
+    auto* preset = item(QStringLiteral("cropPreset_") + cropId_);
+    ASSERT_NE(preset, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(preset));
+    QTest::qWait(30);
+    QTest::keyClick(window_, Qt::Key_Down);
+    QTest::keyClick(window_, Qt::Key_Return);
+    QTest::qWait(40);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("right")), 500.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("top")), 300.0);
+    setCropBox(100.0, 50.0, 400.0, 250.0);
+    QTest::qWait(40);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(reset));
+    QTest::qWait(40);
+    EXPECT_DOUBLE_EQ(
+        visualByName(editor, QStringLiteral("cropBox_") + cropId_ + QStringLiteral("_x"))->property("value").toDouble(),
+        0.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("right")), 500.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(cropId_, QStringLiteral("top")), 300.0);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(toggle));
+    QTest::qWait(40);
     capture(QStringLiteral("issue92-crop-editor"));
-    EXPECT_EQ(warnings_->count(), 0);
+    window_->resize(950, 700);
+    QTest::qWait(100);
+    capture(QStringLiteral("issue92-crop-editor-narrow"));
+    for (const auto& warning : *warnings_) {
+        for (const auto& error : warning.front().value<QList<QQmlError>>())
+            ADD_FAILURE() << error.toString().toStdString();
+    }
 }
 
 TEST_F(CropReformatSurface, Issue92ExposedCropCoordinateEditsOnlyItsInstance) {

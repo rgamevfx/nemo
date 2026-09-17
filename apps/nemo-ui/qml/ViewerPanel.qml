@@ -156,11 +156,10 @@ FocusScope {
     property var cropPreviewBox: null
     property bool cropDragMoved: false
     property string cropGestureError: ""
-    // --- Roto authoring overlay (issue #93, stories 50-58) ------------------
-    // The identity of the Roto node this panel DIRECTLY views and the same
-    // group's inspector has open, or null. The overlay is drawn only for that
-    // node, from the shared per-node adapter's evaluated geometry.
+    // Roto authoring follows an inspected node in this context group, including
+    // downstream images whose pixel coordinates still match that node.
     property var rotoOverlayState: null
+    property string rotoOverlayReason: ""
     // The shared per-node authoring adapter, keyed by node and owned by the
     // authoring facade (ViewerController), so the overlay and the inspector's
     // shape list share one selection and one draft of that node and nothing else.
@@ -1190,40 +1189,46 @@ FocusScope {
     }
 
     // --- Roto overlay (issue #93) ------------------------------------------
-    // The overlay is derived from the SAME condition the crop overlay uses: the
-    // node this panel directly views, and the same group's inspector has open.
-    // It is additionally restricted to a Roto node, so a Crop or any other node
-    // never shows shape handles.
     function refreshRotoOverlay() {
         var next = null
-        if (controller && graphRole && hasImage && targetAvailable) {
+        var refusal = ""
+        if (controller && rotoFactory && graphRole && hasImage && targetAvailable) {
             var network = String(controller.rootNetworkId || "")
             var target = String(controller.viewerTargetId || "")
-            var inspected = false
             var nodes = panelContext && panelContext.inspectorNodes ? panelContext.inspectorNodes : []
-            for (var index = 0; index < nodes.length; ++index) {
-                if (String(nodes[index].network) === network && String(nodes[index].node) === target) {
-                    inspected = true
-                    break
+            // Prefer the directly viewed Roto; otherwise use the first inspected
+            // upstream Roto with an unambiguous coordinate-preserving path.
+            for (var pass = 0; pass < 2 && !next; ++pass) {
+                for (var index = 0; index < nodes.length; ++index) {
+                    var node = String(nodes[index].node)
+                    if (String(nodes[index].network) !== network || (node === target) !== (pass === 0))
+                        continue
+                    var inspector = controller.parameterInspector(network, node)
+                    if (!inspector || inspector.available !== true || String(inspector.type) !== "roto")
+                        continue
+                    var candidate = rotoFactory.createRotoControllerFor(network, node, panelGroup, viewerPanel)
+                    if (!candidate)
+                        continue
+                    if (candidate.canOverlayViewer(target)) {
+                        next = { "network": network, "node": node, "target": target }
+                        break
+                    }
+                    var reason = String(candidate.overlayReason(target))
+                    if (!refusal && reason.length > 0)
+                        refusal = reason
+                    if (candidate !== viewerPanel.rotoController)
+                        candidate.detachView(viewerPanel)
                 }
             }
-            if (inspected && network.length > 0 && target.length > 0) {
-                var inspector = controller.parameterInspector(network, target)
-                if (inspector && inspector.available === true && String(inspector.type) === "roto")
-                    next = {
-                        "network": network,
-                        "node": target
-                    }
-            }
         }
+        viewerPanel.rotoOverlayReason = next ? "" : refusal
         var previous = viewerPanel.rotoOverlayState
         var changed = (previous === null) !== (next === null)
         if (!changed && previous !== null && next !== null)
             changed = String(previous.node) !== String(next.node) || String(previous.network) !== String(next.network)
+                    || String(previous.target) !== String(next.target)
         if (!changed)
             return
-        // A live draft or gesture belongs to the target it started on: another
-        // target's overlay discards the preview instead of committing it.
         if (viewerPanel.rotoOverlayItem)
             viewerPanel.rotoOverlayItem.cancelAll()
         viewerPanel.rotoOverlayState = next
@@ -1250,7 +1255,12 @@ FocusScope {
         // and on every frame change is what makes the drawn geometry the frame
         // on screen.
         if (viewerPanel.rotoController)
-            viewerPanel.rotoController.frame = viewerPanel.currentFrame
+            viewerPanel.rotoController.setViewerFrame(viewerPanel, viewerPanel.currentFrame)
+    }
+
+    Connections {
+        target: viewerPanel.rotoController
+        function onSeekRequested(frame) { viewerPanel.updateClock(frame) }
     }
 
     function rotoViewMapping() {
@@ -1593,9 +1603,8 @@ FocusScope {
                             return;
                         }
                     }
-                    // A Roto press that lands on a shape, a point or a handle
-                    // belongs to the overlay; a blank press still pans, exactly
-                    // like the accepted crop behaviour.
+                    // Roto owns left-button selection and marquee. Middle-drag
+                    // and the wheel keep the viewer's navigation behavior.
                     if (mouse.button === Qt.LeftButton && viewerPanel.rotoActive && viewerPanel.rotoOverlayItem
                             && viewerPanel.rotoOverlayItem.press(mouse.x, mouse.y, mouse.modifiers)) {
                         forceActiveFocus();
@@ -1640,7 +1649,7 @@ FocusScope {
                         viewerPanel.finishCropGesture();
                         return;
                     }
-                    if (viewerPanel.rotoActive && viewerPanel.rotoOverlayItem
+                    if (!viewerPanel.panning && viewerPanel.rotoActive && viewerPanel.rotoOverlayItem
                             && viewerPanel.rotoOverlayItem.release(mouse.x, mouse.y))
                         return;
                     if (!viewerPanel.panning)
@@ -1649,6 +1658,7 @@ FocusScope {
                     viewerPanel.saveView();
                 }
                 onCanceled: {
+                    viewerPanel.panning = false;
                     if (viewerPanel.cropDragHandle.length > 0) {
                         viewerPanel.cancelCropGesture();
                         return;
@@ -1723,6 +1733,19 @@ FocusScope {
                         panelId: viewerPanel.panelId
                     }
                 }
+            }
+
+            Text {
+                objectName: "rotoOverlayReason_" + viewerPanel.panelId
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 8
+                visible: viewerPanel.rotoOverlayReason.length > 0
+                text: viewerPanel.rotoOverlayReason
+                color: viewerPanel.themeColor("muted", "#979ea8")
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
             }
         }
         Loader {
@@ -2192,7 +2215,7 @@ FocusScope {
         if (viewerPanel.rotoOverlayItem)
             viewerPanel.rotoOverlayItem.cancelAll();
         if (viewerPanel.rotoController)
-            viewerPanel.rotoController.frame = viewerPanel.currentFrame;
+            viewerPanel.rotoController.setViewerFrame(viewerPanel, viewerPanel.currentFrame);
         refreshCropOverlay();
         refreshRotoOverlay();
     }
@@ -2217,16 +2240,8 @@ FocusScope {
             event.accepted = true;
             return
         }
-        // Escape discards a live Roto drag or an unfinished draft; Enter closes
-        // the draft (a click on its first point is the same commit).
-        if (event.key === Qt.Key_Escape && viewerPanel.rotoActive && viewerPanel.rotoOverlayItem) {
-            viewerPanel.rotoOverlayItem.cancelAll();
-            event.accepted = true;
-            return
-        }
-        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && viewerPanel.rotoActive
-                && viewerPanel.rotoController && viewerPanel.rotoController.draftActive === true) {
-            viewerPanel.rotoController.commitDraft();
+        if (viewerPanel.rotoActive && viewerPanel.rotoOverlayItem
+                && viewerPanel.rotoOverlayItem.handleKey(event.key, event.modifiers)) {
             event.accepted = true;
             return
         }

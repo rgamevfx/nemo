@@ -699,10 +699,16 @@ NodeContribution rotoContribution() {
     // from the main input at unchanged coordinates, which is exactly what this
     // node does itself, with the target channel excluded.
     contribution.ownsChannelLayout = true;
-    contribution.editors = {NodeEditorContribution{.id = "nemo.roto.shapes",
-                                                   .source = "qrc:/qt/qml/Nemo/qml/RotoEditor.qml",
-                                                   .consumes = {"opacity"},
-                                                   .presentation = "section"}};
+    // The registered editor is the node's compact property panel: it renders the
+    // consumed rows itself (master opacity through the host's numeric bundle, the
+    // output channel, clip and mask controls, and the node-wide motion blur), so
+    // exactly one control owns each setting and the generic sections do not
+    // repeat them below the panel. An unavailable editor consumes nothing.
+    contribution.editors = {NodeEditorContribution{
+        .id = "nemo.roto.shapes",
+        .source = "qrc:/qt/qml/Nemo/qml/RotoEditor.qml",
+        .consumes = {"opacity", "outputChannel", "replace", "clip", "maskChannel", "invertMask", "shutter", "samples"},
+        .presentation = "section"}};
     return contribution;
 }
 

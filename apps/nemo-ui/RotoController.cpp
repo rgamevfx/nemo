@@ -13,7 +13,9 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <map>
 #include <set>
+#include <span>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -190,6 +192,122 @@ constexpr double kPi = 3.14159265358979323846;
     return {element.points[previous], element.points[next]};
 }
 
+// One static property key as the presenters spell it.
+[[nodiscard]] QString keyText(std::string_view name) {
+    return QString::fromLatin1(name.data(), static_cast<qsizetype>(name.size()));
+}
+
+// The point channels that state one contour's GEOMETRY: a Bezier is its
+// position, its two tangents and its feather; a B-spline is its control points,
+// its tension and its feather. Neither kind ever authors the other kind's
+// unused pair, so a keyed row states exactly the shape it draws.
+[[nodiscard]] std::span<const std::string_view> geometryKeys(RotoKind kind) {
+    static constexpr std::string_view spline[] = {kRotoParamPosition, kRotoParamTension, kRotoParamFeather};
+    static constexpr std::string_view bezier[] = {kRotoParamPosition, kRotoParamInTangent, kRotoParamOutTangent,
+                                                  kRotoParamFeather};
+    return kind == RotoKind::BSpline ? std::span<const std::string_view>(spline)
+                                     : std::span<const std::string_view>(bezier);
+}
+
+// A node type that carries the pixel grid of its input through unchanged, so a
+// Roto's shapes are still stated in the target's coordinate space. Every other
+// type - transform, reformat, crop, a nested occurrence, a type this build does
+// not model - states a mapping this authoring owner cannot prove, so it is
+// reported instead of guessed.
+[[nodiscard]] bool gridPreservingType(std::string_view type) {
+    // viewer/output are terminals: they display their input's grid unchanged.
+    return type == "grade" || type == "blur" || type == "merge" || type == "shuffle" || type == "roto" ||
+           type == "viewer" || type == "output";
+}
+
+// One node's answer to "can the viewed target be reached from here, and does
+// every route keep the pixel grid?".
+struct OverlayProbe {
+    // Some route from the node to the target exists at all; false means the node
+    // is unrelated to the target and no reason is owed.
+    bool reaches{false};
+    // A route exists whose every node carries the grid through unchanged.
+    bool safeRoute{false};
+    // A route exists that passes through a node whose mapping is not proven.
+    bool unsafeRoute{false};
+    // Display names of the nodes whose mapping is not proven and that lie on
+    // some route to the target.
+    std::set<std::string> blockers;
+};
+
+// ONE forward traversal of the graph answers both overlay questions: whether a
+// route from `origin` to `target` exists, whether any of them passes through a
+// node whose mapping is not proven, and which nodes those are. Following only
+// the origin's own fan-out is what keeps a composite's other input out of the
+// answer - a Merge states one coordinate space for A and B alike - and the memo
+// makes each node expand once. Two routes that disagree (one proven, one not)
+// are reported as an unsafe route as well, so a caller never picks the
+// convenient path out of an ambiguous graph.
+[[nodiscard]] OverlayProbe probeOverlay(const Graph& graph, NodeId origin, NodeId target) {
+    std::map<NodeId, std::vector<NodeId>> successors;
+    for (std::size_t index = 0; index < graph.edges().size(); ++index)
+        successors[graph.edges()[index].from.node].push_back(graph.edges()[index].to.node);
+    std::map<NodeId, OverlayProbe> probes;
+    std::function<OverlayProbe(NodeId)> probe = [&](NodeId id) -> OverlayProbe {
+        const auto cached = probes.find(id);
+        if (cached != probes.end())
+            return cached->second;
+        // Provisional entry, so a malformed cyclic graph can never recurse
+        // forever; the real answer replaces it below.
+        probes.emplace(id, OverlayProbe{});
+        const auto* instance = graph.node(id);
+        const bool proven = instance && instance->definition == kInvalidNetwork && gridPreservingType(instance->type);
+        OverlayProbe result;
+        if (id == target) {
+            result.reaches = true;
+            result.safeRoute = proven;
+            result.unsafeRoute = !proven;
+        } else {
+            const auto found = successors.find(id);
+            if (found != successors.end())
+                for (const auto next : found->second) {
+                    const auto child = probe(next);
+                    result.reaches = result.reaches || child.reaches;
+                    result.safeRoute = result.safeRoute || child.safeRoute;
+                    result.unsafeRoute = result.unsafeRoute || child.unsafeRoute;
+                }
+            if (!proven) {
+                // This node states a mapping this owner cannot prove, so every
+                // route through it is unsafe and none of them is proven.
+                result.safeRoute = false;
+                result.unsafeRoute = result.reaches;
+            }
+        }
+        probes[id] = result;
+        return result;
+    };
+    auto root = probe(origin);
+    if (!root.reaches)
+        return root;
+    // Every node without a proven mapping that still lies on some route to the
+    // target, so a refusal names what it cannot see through. Only nodes that
+    // reach the target are visited, so a side branch that never arrives is not
+    // blamed for a mapping the viewer never goes through.
+    std::set<NodeId> visited;
+    std::function<void(NodeId)> collect = [&](NodeId id) {
+        if (!visited.insert(id).second || !graph.node(id))
+            return;
+        const auto seen = probes.find(id);
+        if (seen == probes.end() || !seen->second.reaches)
+            return;
+        const auto* instance = graph.node(id);
+        if (instance->definition != kInvalidNetwork || !gridPreservingType(instance->type))
+            root.blockers.insert(instance->type);
+        const auto found = successors.find(id);
+        if (found == successors.end())
+            return;
+        for (const auto next : found->second)
+            collect(next);
+    };
+    collect(origin);
+    return root;
+}
+
 }  // namespace
 
 RotoController::RotoController(ProjectSession& session, NetworkId network, NodeId node, QObject* parent)
@@ -255,25 +373,45 @@ void RotoController::attachView(QObject* owner) {
     if (!owner)
         return;
     for (auto& view : views_)
-        if (view == owner)
+        if (view.owner == owner)
             return;
-    views_.push_back(QPointer<QObject>(owner));
+    views_.push_back({QPointer<QObject>(owner), false});
     // A presenter that dies without detaching still releases its view, so the
     // shared selection is never kept alive by a closed panel.
     connect(owner, &QObject::destroyed, this, [this, owner] { detachView(owner); });
 }
 
+bool RotoController::viewerAttached() const {
+    return std::any_of(views_.begin(), views_.end(), [](const AttachedView& view) { return view.viewer; });
+}
+
+void RotoController::setViewerFrame(QObject* owner, int frame) {
+    const auto view = std::find_if(views_.begin(), views_.end(),
+                                   [owner](const AttachedView& attached) { return attached.owner == owner; });
+    if (!owner || view == views_.end())
+        return;
+    const bool hadViewer = viewerAttached();
+    view->viewer = true;
+    setFrame(frame);
+    if (!hadViewer)
+        emit viewerAttachedChanged();
+}
+
 void RotoController::detachView(QObject* owner) {
-    std::erase_if(views_, [owner](const QPointer<QObject>& view) { return !view || view == owner; });
-    if (std::any_of(views_.begin(), views_.end(), [](const QPointer<QObject>& view) { return !view.isNull(); }))
+    const bool hadViewer = viewerAttached();
+    std::erase_if(views_, [owner](const AttachedView& view) { return !view.owner || view.owner == owner; });
+    if (hadViewer != viewerAttached())
+        emit viewerAttachedChanged();
+    if (!views_.empty())
         return;
     // The last presenter is gone: this is transient state, never document
     // state, so it is dropped with its views — including a live session
     // preview, which is discarded rather than left owning the one gesture.
     cancelHistoryGesture();
-    if (selectedElement_ != 0 || !selectedPoints_.empty()) {
+    if (selectedElement_ != 0 || !selectedPoints_.empty() || !selectedElements_.empty()) {
         selectedElement_ = 0;
         selectedPoints_.clear();
+        selectedElements_.clear();
         emit selectionChanged();
     }
 }
@@ -514,15 +652,30 @@ bool RotoController::selectElement(const QString& elementId, bool additive) {
     const auto* data = authoredData();
     if (!data || !findElement(*data, *element))
         return false;
-    if (!additive)
-        selectedPoints_.clear();
-    if (selectedElement_ == *element && !additive)
-        return true;
     // Selecting requires clearing the draft's preview: the selected element is
     // a different authoring context than the shape being drawn.
     cancelDraft();
-    selectedElement_ = *element;
-    selectedPoints_.clear();
+    if (!additive) {
+        if (selectedElements_.size() == 1 && selectedElements_.front() == *element && selectedPoints_.empty()) {
+            selectedElement_ = *element;
+            return true;
+        }
+        selectedElements_ = {*element};
+        selectedElement_ = *element;
+        selectedPoints_.clear();
+    } else {
+        const auto at = std::find(selectedElements_.begin(), selectedElements_.end(), *element);
+        if (at == selectedElements_.end()) {
+            selectedElements_.push_back(*element);
+            selectedElement_ = *element;
+        } else {
+            // Additive selection toggles: the same shape under Shift leaves the
+            // selection, and the primary falls back to the last remaining one.
+            selectedElements_.erase(at);
+            selectedElement_ = selectedElements_.empty() ? kInvalidRotoElement : selectedElements_.back();
+        }
+        selectedPoints_.clear();
+    }
     emit selectionChanged();
     refresh();
     return true;
@@ -530,18 +683,27 @@ bool RotoController::selectElement(const QString& elementId, bool additive) {
 
 bool RotoController::selectPoint(const QString& pointId, bool additive) {
     const auto point = identity(pointId);
-    if (!point || selectedElement_ == 0)
+    if (!available_ || !point)
         return false;
     const auto* data = authoredData();
     if (!data)
         return false;
     const auto* owner = findPointElement(*data, *point);
-    if (!owner || owner->id != selectedElement_)
+    if (!owner)
         return false;
-    if (!additive)
-        selectedPoints_.clear();
-    if (std::find(selectedPoints_.begin(), selectedPoints_.end(), *point) == selectedPoints_.end())
+    const auto at = std::find(selectedPoints_.begin(), selectedPoints_.end(), *point);
+    if (!additive) {
+        selectedPoints_ = {*point};
+        selectedElements_ = {owner->id};
+        selectedElement_ = owner->id;
+    } else if (at != selectedPoints_.end()) {
+        selectedPoints_.erase(at);
+    } else {
         selectedPoints_.push_back(*point);
+        // A point's own shape is part of the selection, so the primary element
+        // addresses it and its handles are the ones a presenter draws.
+        selectElementSilently(owner->id);
+    }
     emit selectionChanged();
     // The published records carry the per-point selection flag, so the
     // presenters that draw handles from them are re-stated.
@@ -549,11 +711,97 @@ bool RotoController::selectPoint(const QString& pointId, bool additive) {
     return true;
 }
 
+void RotoController::selectElementSilently(RotoElementId id) {
+    if (id == 0)
+        return;
+    if (std::find(selectedElements_.begin(), selectedElements_.end(), id) == selectedElements_.end())
+        selectedElements_.push_back(id);
+    selectedElement_ = id;
+}
+
+bool RotoController::elementSelected(const QString& elementId) const {
+    const auto element = identity(elementId);
+    if (!element)
+        return false;
+    return std::find(selectedElements_.begin(), selectedElements_.end(), *element) != selectedElements_.end();
+}
+
+QStringList RotoController::selectedElements() const {
+    QStringList ids;
+    ids.reserve(static_cast<qsizetype>(selectedElements_.size()));
+    for (const auto element : selectedElements_)
+        ids.push_back(identityText(element));
+    return ids;
+}
+
+bool RotoController::setPointSelection(const QStringList& pointIds, bool additive) {
+    if (!available_ || !authoredData())
+        return fail(reason_.isEmpty() ? QStringLiteral("the Roto node is unavailable") : reason_);
+    std::vector<RotoPointId> points;
+    std::vector<RotoElementId> owners;
+    points.reserve(static_cast<std::size_t>(pointIds.size()));
+    owners.reserve(static_cast<std::size_t>(pointIds.size()));
+    for (const auto& text : pointIds) {
+        const auto parsed = identity(text);
+        if (!parsed)
+            return fail(QStringLiteral("the point identity is invalid"));
+        const auto* owner = findPointElement(*authoredData(), *parsed);
+        if (!owner)
+            return fail(QStringLiteral("the point no longer exists"));
+        points.push_back(*parsed);
+        owners.push_back(owner->id);
+    }
+    if (!additive) {
+        selectedPoints_.clear();
+        selectedElements_.clear();
+        selectedElement_ = kInvalidRotoElement;
+    }
+    for (std::size_t index = 0; index < points.size(); ++index) {
+        if (std::find(selectedPoints_.begin(), selectedPoints_.end(), points[index]) == selectedPoints_.end())
+            selectedPoints_.push_back(points[index]);
+        // Later shapes win the primary: the last identity in the list is what
+        // the caller stated last, exactly like a click sequence.
+        selectElementSilently(owners[index]);
+    }
+    clearError();
+    emit selectionChanged();
+    refresh();
+    return true;
+}
+
+bool RotoController::selectAllPoints() {
+    const auto* data = authoredData();
+    if (!available_ || !data)
+        return fail(reason_.isEmpty() ? QStringLiteral("the Roto node is unavailable") : reason_);
+    selectedPoints_.clear();
+    selectedElements_.clear();
+    selectedElement_ = kInvalidRotoElement;
+    const auto ordered = orderedElements(*data);
+    for (const auto* element : ordered) {
+        if (element->kind == RotoKind::Group || element->points.empty())
+            continue;
+        if (elementEffectivelyLocked(*data, element->id))
+            continue;
+        selectedElements_.push_back(element->id);
+        for (std::size_t index = 0; index < element->points.size(); ++index)
+            selectedPoints_.push_back(element->points[index].id);
+        if (selectedElement_ == kInvalidRotoElement)
+            selectedElement_ = element->id;
+    }
+    if (selectedElements_.empty())
+        return fail(QStringLiteral("no editable shape is available"));
+    clearError();
+    emit selectionChanged();
+    refresh();
+    return true;
+}
+
 void RotoController::clearSelection() {
-    if (selectedElement_ == 0 && selectedPoints_.empty())
+    if (selectedElement_ == 0 && selectedPoints_.empty() && selectedElements_.empty())
         return;
     selectedElement_ = 0;
     selectedPoints_.clear();
+    selectedElements_.clear();
     emit selectionChanged();
     refresh();
 }
@@ -561,6 +809,88 @@ void RotoController::clearSelection() {
 bool RotoController::pointSelected(const QString& pointId) const {
     const auto point = identity(pointId);
     return point && std::find(selectedPoints_.begin(), selectedPoints_.end(), *point) != selectedPoints_.end();
+}
+
+bool RotoController::elementEffectivelyLocked(const RotoData& data, RotoElementId id) const {
+    std::set<RotoElementId> visited;
+    for (const RotoElement* element = findElement(data, id); element != nullptr;) {
+        if (element->locked)
+            return true;
+        if (element->parent == 0 || !visited.insert(element->id).second)
+            break;
+        element = findElement(data, element->parent);
+    }
+    return false;
+}
+
+const RotoData& RotoController::displayData(RotoElementId id) const {
+    if (const auto* evaluated = evaluatedData())
+        if (findElement(*evaluated, id))
+            return *evaluated;
+    return authored_;
+}
+
+bool RotoController::shapeSelected(RotoElementId id) const {
+    if (selectedElements_.empty())
+        return false;
+    const auto* data = authoredData();
+    if (!data)
+        return false;
+    std::set<RotoElementId> visited;
+    for (const RotoElement* element = findElement(*data, id); element != nullptr;) {
+        if (std::find(selectedElements_.begin(), selectedElements_.end(), element->id) != selectedElements_.end())
+            return true;
+        if (element->parent == 0 || !visited.insert(element->id).second)
+            break;
+        element = findElement(*data, element->parent);
+    }
+    return false;
+}
+
+void RotoController::collectScopes(const RotoData& data, RotoElementId id, std::set<RotoPointId>& seen,
+                                   std::vector<Scope>& scopes) const {
+    const auto* element = findElement(data, id);
+    if (!element)
+        return;
+    if (elementEffectivelyLocked(data, id))
+        return;
+    if (element->kind != RotoKind::Group) {
+        for (std::size_t index = 0; index < element->points.size(); ++index) {
+            const auto point = element->points[index].id;
+            // A point reached through two selected groups - or a shape selected
+            // alongside its own group - is still addressed exactly once.
+            if (seen.insert(point).second)
+                scopes.push_back(Scope{element->id, point});
+        }
+        return;
+    }
+    for (std::size_t index = 0; index < data.elements.size(); ++index)
+        if (data.elements[index].parent == id)
+            collectScopes(data, data.elements[index].id, seen, scopes);
+}
+
+std::vector<RotoController::Scope> RotoController::selectionScopes() const {
+    std::vector<Scope> scopes;
+    const auto* data = authoredData();
+    if (!available_ || !data)
+        return scopes;
+    if (!selectedPoints_.empty()) {
+        // An explicit point selection is addressed exactly, even inside a shape
+        // that is not in `selectedElements_` after a cross-shape union.
+        for (const auto point : selectedPoints_) {
+            const auto* owner = findPointElement(*data, point);
+            if (!owner)
+                continue;
+            if (elementEffectivelyLocked(*data, owner->id))
+                continue;
+            scopes.push_back(Scope{owner->id, point});
+        }
+        return scopes;
+    }
+    std::set<RotoPointId> seen;
+    for (const auto element : selectedElements_)
+        collectScopes(*data, element, seen, scopes);
+    return scopes;
 }
 
 QString RotoController::beginGesture(const QVariantList& targets) {
@@ -622,6 +952,7 @@ QString RotoController::beginGesture(const QVariantList& targets) {
         gestureAddresses_ = std::move(addresses);
         gestureSpecs_ = std::move(specs);
         gestureInvalid_ = false;
+        preview_ = gesture.snapshot;
         clearError();
         emit gestureChanged();
         return QString::number(static_cast<qulonglong>(gesture.token));
@@ -659,6 +990,11 @@ bool RotoController::updateGesture(const QString& token, const QVariantList& val
         }
         gestureInvalid_ = false;
         clearError();
+        // The preview the session now holds is what the panel states: the
+        // presenters read the live geometry from the published records instead
+        // of keeping a second preview of their own.
+        preview_ = gesture.snapshot;
+        refreshPreviewGeometry();
         return true;
     } catch (const std::exception& error) {
         gestureInvalid_ = true;
@@ -678,6 +1014,8 @@ bool RotoController::commitGesture(const QString& token) {
         gestureAddresses_.clear();
         gestureSpecs_.clear();
         gestureInvalid_ = false;
+        preview_.reset();
+        transformTargets_.clear();
         emit gestureChanged();
         return fail(problem);
     }
@@ -688,6 +1026,8 @@ bool RotoController::commitGesture(const QString& token) {
     gestureAddresses_.clear();
     gestureSpecs_.clear();
     gestureInvalid_ = false;
+    preview_.reset();
+    transformTargets_.clear();
     emit gestureChanged();
     if (!result.committed && !result.error) {
         // A batch whose every address is unchanged publishes nothing; that is a
@@ -713,6 +1053,8 @@ bool RotoController::cancelGesture(const QString& token) {
     gestureAddresses_.clear();
     gestureSpecs_.clear();
     gestureInvalid_ = false;
+    preview_.reset();
+    transformTargets_.clear();
     emit gestureChanged();
     if (result.error)
         return fail(QString::fromStdString(result.error->message));
@@ -753,25 +1095,30 @@ bool RotoController::keyAtFrame(const QString& elementId, const QString& pointId
         if (!current)
             return fail(QStringLiteral("the Roto property is unavailable"));
         const auto* channel = session_.document().animationChannel(*address);
-        Keyframe replacement;
-        replacement.time = frame;
-        replacement.value = *current;
+        const Keyframe* existing = nullptr;
         if (channel) {
             const auto found = std::find_if(channel->keys.begin(), channel->keys.end(),
                                             [frame](const Keyframe& item) { return item.time == frame; });
-            if (found == channel->keys.end())
-                return fail(QStringLiteral("the Roto animation channel changed under this edit"));
-            if (found->value == *current) {
+            if (found != channel->keys.end())
+                existing = &*found;
+        }
+        Command command = {};
+        if (existing == nullptr) {
+            // A channel that holds no key at THIS frame is not a conflict: the
+            // existing insertion factory creates the channel when the property
+            // was never keyed and inserts a key with the segment's continuity
+            // when it was, so "key the value I see" works at every frame.
+            command = insertKeyframeCommand(*address, frame);
+        } else {
+            if (existing->value == *current) {
                 clearError();
                 return true;
             }
-            replacement = *found;
-        } else {
-            replacement.interpolation =
-                animation_detail::componentCount(spec->type) == 0 ? KeyInterpolation::Hold : KeyInterpolation::Linear;
+            Keyframe replacement = *existing;
+            replacement.value = *current;
+            command = setKeyframesCommand({KeyframeEdit{*address, std::move(replacement)}});
         }
-        const auto result = session_.submit(setKeyframesCommand({KeyframeEdit{*address, std::move(replacement)}}),
-                                            {.expectedRevision = session_.revision()});
+        const auto result = session_.submit(std::move(command), {.expectedRevision = session_.revision()});
         if (result.error)
             return fail(QString::fromStdString(result.error->message));
         clearError();
@@ -942,11 +1289,11 @@ bool RotoController::removeElements(const QStringList& elementIds) {
         }
     }
     data.elements.eraseIf([&removed](const RotoElement& element) { return removed.find(element.id) != removed.end(); });
-    if (removed.find(selectedElement_) != removed.end()) {
-        selectedElement_ = 0;
-        selectedPoints_.clear();
-        emit selectionChanged();
-    }
+    std::erase_if(selectedElements_, [&removed](RotoElementId id) { return removed.find(id) != removed.end(); });
+    std::erase_if(selectedPoints_, [&removed](RotoPointId id) { return removed.find(id) != removed.end(); });
+    if (removed.find(selectedElement_) != removed.end() || selectedElement_ == kInvalidRotoElement)
+        selectedElement_ = selectedElements_.empty() ? kInvalidRotoElement : selectedElements_.front();
+    emit selectionChanged();
     return commitData(std::move(data));
 }
 
@@ -1192,42 +1539,52 @@ bool RotoController::setSmooth(const QString& elementId, const QStringList& poin
     const auto element = identity(elementId);
     if (!element || !authoredData())
         return fail(QStringLiteral("the element identity is invalid"));
-    const auto* record = evaluatedData() ? findElement(*evaluatedData(), *element) : nullptr;
-    if (!record)
-        record = findElement(*authoredData(), *element);
+    const auto* record = findElement(displayData(*element), *element);
     if (!record)
         return fail(QStringLiteral("the element no longer exists"));
     if (record->kind == RotoKind::Group)
         return fail(QStringLiteral("a group has no points"));
     // No explicit point list means the whole path, which is what a shape-level
     // action means.
-    std::vector<RotoPointId> points;
+    std::vector<Scope> scopes;
     if (pointIds.isEmpty()) {
         for (std::size_t i = 0; i < record->points.size(); ++i)
-            points.push_back(record->points[i].id);
+            scopes.push_back(Scope{*element, record->points[i].id});
     } else {
         for (const auto& text : pointIds) {
             const auto parsed = identity(text);
             if (!parsed)
                 return fail(QStringLiteral("the point identity is invalid"));
-            points.push_back(*parsed);
+            scopes.push_back(Scope{*element, *parsed});
         }
     }
-    if (points.empty())
+    if (scopes.empty())
         return false;
+    return smoothScopes(scopes, smooth);
+}
+
+bool RotoController::smoothScopes(const std::vector<Scope>& scopes, bool smooth) {
+    const auto* data = authoredData();
+    if (!data)
+        return fail(QStringLiteral("the Roto node has no authored shapes"));
     QVariantList targets;
     QVariantList values;
-    const bool bspline = record->kind == RotoKind::BSpline;
-    for (const auto point : points) {
-        const auto pointText = identityText(point);
-        if (bspline) {
-            targets.push_back(QVariantMap{{QStringLiteral("element"), identityText(*element)},
+    for (const auto& scope : scopes) {
+        const auto* record = findElement(displayData(scope.element), scope.element);
+        if (!record)
+            return fail(QStringLiteral("the element no longer exists"));
+        const auto elementText = identityText(scope.element);
+        const auto pointText = identityText(scope.point);
+        if (record->kind == RotoKind::BSpline) {
+            targets.push_back(QVariantMap{{QStringLiteral("element"), elementText},
                                           {QStringLiteral("point"), pointText},
                                           {QStringLiteral("key"), QStringLiteral("tension")}});
             values.push_back(smooth ? 0.0 : 1.0);
             continue;
         }
-        const auto index = record->points.indexOf([point](const RotoPoint& item) { return item.id == point; });
+        if (record->kind == RotoKind::Group)
+            return fail(QStringLiteral("a group has no points"));
+        const auto index = record->points.indexOf([&scope](const RotoPoint& item) { return item.id == scope.point; });
         if (index == record->points.size())
             return fail(QStringLiteral("a selected point no longer exists"));
         const auto& source = record->points[index];
@@ -1243,7 +1600,7 @@ bool RotoController::setSmooth(const QString& elementId, const QStringList& poin
             }
             for (const auto* key : {"inTangent", "outTangent"}) {
                 const double sign = key == std::string_view("inTangent") ? -1.0 : 1.0;
-                targets.push_back(QVariantMap{{QStringLiteral("element"), identityText(*element)},
+                targets.push_back(QVariantMap{{QStringLiteral("element"), elementText},
                                               {QStringLiteral("point"), pointText},
                                               {QStringLiteral("key"), QString::fromLatin1(key)}});
                 values.push_back(QVariantList{sign * tangent.value[0], sign * tangent.value[1]});
@@ -1252,22 +1609,431 @@ bool RotoController::setSmooth(const QString& elementId, const QStringList& poin
             // A cusp is a corner: both handles sit on the point, so the
             // incoming and outgoing chords disagree in direction.
             for (const auto* key : {"inTangent", "outTangent"}) {
-                targets.push_back(QVariantMap{{QStringLiteral("element"), identityText(*element)},
+                targets.push_back(QVariantMap{{QStringLiteral("element"), elementText},
                                               {QStringLiteral("point"), pointText},
                                               {QStringLiteral("key"), QString::fromLatin1(key)}});
                 values.push_back(QVariantList{0.0, 0.0});
             }
         }
     }
+    if (targets.isEmpty())
+        return fail(QStringLiteral("no point is selected to refine"));
     const auto token = beginGesture(targets);
     if (token.isEmpty())
         return false;
     if (!updateGesture(token, values) || !commitGesture(token)) {
-        if (!token.isEmpty())
-            static_cast<void>(cancelGesture(token));
+        static_cast<void>(cancelGesture(token));
         return false;
     }
     return true;
+}
+
+bool RotoController::smoothSelection(bool smooth) {
+    const auto scopes = selectionScopes();
+    if (scopes.empty())
+        return fail(QStringLiteral("select points or shapes to refine"));
+    return smoothScopes(scopes, smooth);
+}
+
+bool RotoController::deleteSelection() {
+    const auto* authored = authoredData();
+    if (!available_ || !authored)
+        return fail(reason_.isEmpty() ? QStringLiteral("the Roto node is unavailable") : reason_);
+    if (!selectedPoints_.empty()) {
+        RotoData data = *authored;
+        // Group the deleted points by the shape that owns them, so a point
+        // selection that spans shapes is still ONE topology command.
+        std::vector<std::pair<RotoElementId, std::set<RotoPointId>>> byOwner;
+        for (const auto point : selectedPoints_) {
+            const auto* owner = findPointElement(*authored, point);
+            if (!owner)
+                continue;
+            const auto found = std::find_if(byOwner.begin(), byOwner.end(),
+                                            [owner](const auto& entry) { return entry.first == owner->id; });
+            if (found == byOwner.end())
+                byOwner.push_back({owner->id, {point}});
+            else
+                found->second.insert(point);
+        }
+        if (byOwner.empty())
+            return fail(QStringLiteral("the selected points no longer exist"));
+        for (const auto& group : byOwner) {
+            const auto element = group.first;
+            const auto& points = group.second;
+            const auto position =
+                data.elements.indexOf([element](const RotoElement& item) { return item.id == element; });
+            if (position == data.elements.size())
+                return fail(QStringLiteral("the element no longer exists"));
+            if (elementEffectivelyLocked(data, element))
+                return fail(QStringLiteral("the element is locked"));
+            std::size_t keeps = 0;
+            for (std::size_t index = 0; index < data.elements[position].points.size(); ++index)
+                if (points.find(data.elements[position].points[index].id) == points.end())
+                    ++keeps;
+            // The model's structural rule: a closed shape keeps at least three
+            // points, so a deletion that would break one is refused whole.
+            if (keeps < 3)
+                return fail(QStringLiteral("a closed shape keeps at least three points"));
+            data.elements[position].points.eraseIf(
+                [&points](const RotoPoint& point) { return points.find(point.id) != points.end(); });
+            std::erase_if(selectedPoints_, [&points](RotoPointId id) { return points.find(id) != points.end(); });
+        }
+        const bool committed = commitData(std::move(data));
+        if (committed)
+            emit selectionChanged();
+        return committed;
+    }
+    if (selectedElements_.empty())
+        return fail(QStringLiteral("nothing is selected to delete"));
+    for (const auto element : selectedElements_)
+        if (authoredData() && elementEffectivelyLocked(*authoredData(), element))
+            return fail(QStringLiteral("the element is locked"));
+    QStringList ids;
+    ids.reserve(static_cast<qsizetype>(selectedElements_.size()));
+    for (const auto element : selectedElements_)
+        ids.push_back(identityText(element));
+    selectedElements_.clear();
+    selectedPoints_.clear();
+    selectedElement_ = kInvalidRotoElement;
+    const auto removed = removeElements(ids);
+    emit selectionChanged();
+    refresh();
+    return removed;
+}
+
+bool RotoController::keySelection(bool remove) {
+    const auto scopes = selectionScopes();
+    if (!available_ || !authoredData())
+        return fail(reason_.isEmpty() ? QStringLiteral("the Roto node is unavailable") : reason_);
+    if (scopes.empty())
+        return fail(QStringLiteral("select points or shapes to key"));
+    const auto frame = static_cast<double>(frame_);
+    std::vector<KeyframeEdit> edits;
+    std::vector<KeyframeRef> refs;
+    for (const auto& scope : scopes) {
+        const auto* record = findElement(displayData(scope.element), scope.element);
+        if (!record)
+            continue;
+        for (const auto& name : geometryKeys(record->kind)) {
+            const auto key = keyText(name);
+            const auto address = addressFor(scope, key);
+            if (!address)
+                continue;
+            const auto* channel = session_.document().animationChannel(*address);
+            const Keyframe* existing = nullptr;
+            if (channel)
+                for (const auto& candidate : channel->keys)
+                    if (candidate.time == frame)
+                        existing = &candidate;
+            if (remove) {
+                if (channel && existing)
+                    refs.push_back(KeyframeRef{channel->id, existing->id});
+                continue;
+            }
+            const auto current = currentValue(scope, key);
+            if (!current)
+                continue;
+            if (existing && existing->value == *current)
+                continue;
+            edits.push_back(KeyframeEdit{*address, keyframeForParameterEdit(session_.document(), nullptr,
+                                                                            ParameterEdit{*address, *current}, frame)});
+        }
+    }
+    if (remove ? refs.empty() : edits.empty()) {
+        clearError();
+        return true;
+    }
+    try {
+        const auto result =
+            remove ? session_.submit(removeKeyframesCommand(std::move(refs)), {.expectedRevision = session_.revision()})
+                   : session_.submit(setKeyframesCommand(std::move(edits)), {.expectedRevision = session_.revision()});
+        if (result.error)
+            return fail(QString::fromStdString(result.error->message));
+        clearError();
+        refresh();
+        return true;
+    } catch (const std::exception& error) {
+        return fail(QString::fromUtf8(error.what()));
+    }
+}
+
+QVariantList RotoController::keyTimesFor(const std::vector<Scope>& scopes) const {
+    std::set<double> times;
+    for (const auto& scope : scopes) {
+        const auto* record = findElement(displayData(scope.element), scope.element);
+        if (!record)
+            continue;
+        for (const auto& name : geometryKeys(record->kind)) {
+            const auto address = addressFor(scope, keyText(name));
+            if (!address)
+                continue;
+            const auto* channel = session_.document().animationChannel(*address);
+            if (!channel)
+                continue;
+            for (const auto& key : channel->keys)
+                times.insert(key.time);
+        }
+    }
+    QVariantList list;
+    list.reserve(static_cast<qsizetype>(times.size()));
+    for (const auto time : times)
+        list.push_back(time);
+    return list;
+}
+
+bool RotoController::insertCurvePoint(const QString& elementId, int segment, double t) {
+    const auto element = identity(elementId);
+    if (!element || !authoredData())
+        return fail(QStringLiteral("the element identity is invalid"));
+    if (!(t >= 0.0 && t <= 1.0) || !std::isfinite(t))
+        return fail(QStringLiteral("a curve position must be a fraction between 0 and 1"));
+    RotoData data = *authoredData();
+    const auto position = data.elements.indexOf([&element](const RotoElement& item) { return item.id == *element; });
+    if (position == data.elements.size())
+        return fail(QStringLiteral("the element no longer exists"));
+    auto& record = data.elements[position];
+    if (record.locked || elementEffectivelyLocked(data, record.id))
+        return fail(QStringLiteral("the element is locked"));
+    if (record.kind == RotoKind::Group)
+        return fail(QStringLiteral("a group has no points"));
+    const auto count = record.points.size();
+    if (count < 3)
+        return fail(QStringLiteral("a closed shape keeps at least three points"));
+    if (segment < 0 || static_cast<std::size_t>(segment) >= count)
+        return fail(QStringLiteral("the segment does not exist"));
+    const auto from = static_cast<std::size_t>(segment);
+    const auto to = (from + 1) % count;
+    // Hit testing addressed the curve at the current frame, not its unkeyed
+    // backing values. Keep the topology edit and any split tangent keys atomic.
+    const auto* sampled = findElement(displayData(*element), *element);
+    const RotoElement source = sampled ? *sampled : record;
+    RotoPoint created;
+    created.id = data.nextPointId++;
+    created.feather = (1.0 - t) * source.points[from].feather + t * source.points[to].feather;
+    if (record.kind == RotoKind::BSpline) {
+        // A B-spline's authored points ARE its control polygon, so there is no
+        // curve-preserving single-point insertion: the new control point is the
+        // curve's own sample, which is what "insert a point here" states for a
+        // spline, and its tension is the segment's blend so the softened corner
+        // keeps the contour's character.
+        const auto at = [&source, from, count](std::size_t offset) -> const RotoPoint& {
+            return source.points[(from + count + offset) % count];
+        };
+        const auto& p0 = at(count - 1);
+        const auto& p1 = at(0);
+        const auto& p2 = at(1);
+        const auto& p3 = at(2);
+        const double u2 = t * t;
+        const double u3 = u2 * t;
+        const double basis[4] = {(-u3 + 3.0 * u2 - 3.0 * t + 1.0) / 6.0, (3.0 * u3 - 6.0 * u2 + 4.0) / 6.0,
+                                 (-3.0 * u3 + 3.0 * u2 + 3.0 * t + 1.0) / 6.0, u3 / 6.0};
+        const RotoPoint* controls[4] = {&p0, &p1, &p2, &p3};
+        double x = 0.0;
+        double y = 0.0;
+        for (std::size_t control = 0; control < 4; ++control) {
+            x += basis[control] * controls[control]->position.value[0];
+            y += basis[control] * controls[control]->position.value[1];
+        }
+        const double tension = (1.0 - t) * p1.tension + t * p2.tension;
+        const double chordX = (1.0 - t) * p1.position.value[0] + t * p2.position.value[0];
+        const double chordY = (1.0 - t) * p1.position.value[1] + t * p2.position.value[1];
+        created.position = Vector2Value{{static_cast<float>((1.0 - tension) * x + tension * chordX),
+                                         static_cast<float>((1.0 - tension) * y + tension * chordY)}};
+        created.tension = tension;
+    } else {
+        // De Casteljau preserves the displayed segment at the edited frame.
+        const auto& start = source.points[from];
+        const auto& end = source.points[to];
+        const double p0x = start.position.value[0];
+        const double p0y = start.position.value[1];
+        const double p3x = end.position.value[0];
+        const double p3y = end.position.value[1];
+        const double p1x = p0x + start.outTangent.value[0];
+        const double p1y = p0y + start.outTangent.value[1];
+        const double p2x = p3x + end.inTangent.value[0];
+        const double p2y = p3y + end.inTangent.value[1];
+        const auto mix = [t](double a, double b) { return a + (b - a) * t; };
+        const double ax = mix(p0x, p1x);
+        const double ay = mix(p0y, p1y);
+        const double bx = mix(p1x, p2x);
+        const double by = mix(p1y, p2y);
+        const double cx = mix(p2x, p3x);
+        const double cy = mix(p2y, p3y);
+        const double dx = mix(ax, bx);
+        const double dy = mix(ay, by);
+        const double ex = mix(bx, cx);
+        const double ey = mix(by, cy);
+        const double fx = mix(dx, ex);
+        const double fy = mix(dy, ey);
+        created.position = Vector2Value{{static_cast<float>(fx), static_cast<float>(fy)}};
+        created.inTangent = Vector2Value{{static_cast<float>(dx - fx), static_cast<float>(dy - fy)}};
+        created.outTangent = Vector2Value{{static_cast<float>(ex - fx), static_cast<float>(ey - fy)}};
+        record.points[from].outTangent = Vector2Value{{static_cast<float>(ax - p0x), static_cast<float>(ay - p0y)}};
+        record.points[to].inTangent = Vector2Value{{static_cast<float>(cx - p3x), static_cast<float>(cy - p3y)}};
+    }
+    const auto createdId = created.id;
+    std::vector<ParameterEdit> keyed;
+    const auto queueKey = [&](RotoPointId point, std::string_view name, ParameterValue value) {
+        keyed.push_back({ParameterAddress{network_, node_, std::string(name), 0, *element, point}, std::move(value)});
+    };
+    bool animated = false;
+    for (const auto& point : source.points)
+        for (const auto name : geometryKeys(source.kind))
+            animated = animated || session_.document().animationChannel(
+                                       ParameterAddress{network_, node_, std::string(name), 0, *element, point.id});
+    if (animated) {
+        queueKey(createdId, kRotoParamPosition, created.position);
+        queueKey(createdId, kRotoParamFeather, created.feather);
+        if (source.kind == RotoKind::BSpline) {
+            queueKey(createdId, kRotoParamTension, created.tension);
+        } else {
+            queueKey(createdId, kRotoParamInTangent, created.inTangent);
+            queueKey(createdId, kRotoParamOutTangent, created.outTangent);
+            for (const auto& edit : {ParameterEdit{ParameterAddress{network_, node_, std::string(kRotoParamOutTangent),
+                                                                    0, *element, record.points[from].id},
+                                                   record.points[from].outTangent},
+                                     ParameterEdit{ParameterAddress{network_, node_, std::string(kRotoParamInTangent),
+                                                                    0, *element, record.points[to].id},
+                                                   record.points[to].inTangent}})
+                if (session_.document().animationChannel(edit.address))
+                    keyed.push_back(edit);
+        }
+    }
+    record.points.insert(from + 1, std::move(created));
+    if (keyed.empty()) {
+        if (!commitData(std::move(data)))
+            return false;
+    } else {
+        try {
+            const auto result = session_.submit(
+                transactionCommand("insert Roto curve point",
+                                   {setRotoDataCommand(network_, node_, std::move(data)),
+                                    parameterValueCommand(session_.document(), nullptr, frame_, keyed, {})}),
+                {.expectedRevision = session_.revision()});
+            if (result.error)
+                return fail(QString::fromStdString(result.error->message));
+            clearError();
+        } catch (const std::exception& error) {
+            return fail(QString::fromUtf8(error.what()));
+        }
+    }
+    // The new point is what the author just placed: it is the point mode's
+    // content, and its own shape is the primary element.
+    selectElementSilently(*element);
+    selectedPoints_.push_back(createdId);
+    emit selectionChanged();
+    refresh();
+    return true;
+}
+
+QString RotoController::beginSelectionTransform() {
+    if (gestureToken_ != 0)
+        return fail(QStringLiteral("a Roto edit is already in progress")), QString{};
+    const auto* authored = authoredData();
+    if (!available_ || !authored)
+        return fail(reason_.isEmpty() ? QStringLiteral("the Roto node is unavailable") : reason_), QString{};
+    const auto scopes = selectionScopes();
+    if (scopes.empty())
+        return fail(QStringLiteral("select points or shapes to move")), QString{};
+    transformTargets_.clear();
+    transformTargets_.reserve(scopes.size());
+    QVariantList targets;
+    for (const auto& scope : scopes) {
+        // The ORIGINAL placement and the ORIGINAL geometry, frozen once: every
+        // update states the selection against this sample, so a transform never
+        // accumulates, and a release publishes the last sample's answer.
+        const auto placement = placementOf(displayData(scope.element), scope.element);
+        if (!placement)
+            return fail(QStringLiteral("the element no longer exists")), QString{};
+        const auto position = currentValue(scope, keyText(kRotoParamPosition));
+        const auto inTangent = currentValue(scope, keyText(kRotoParamInTangent));
+        const auto outTangent = currentValue(scope, keyText(kRotoParamOutTangent));
+        // A placement that cannot be inverted names no image point (a zero scale
+        // flattens the shape onto a line), so the selection refuses instead of
+        // writing a coordinate the author could never name again.
+        const double determinant = placement->a * placement->d - placement->b * placement->c;
+        if (!(std::abs(determinant) > 1e-12))
+            return fail(QStringLiteral("the shape's transform cannot be inverted, so the selection cannot be moved")),
+                   QString{};
+        if (!position || !inTangent || !outTangent)
+            return fail(QStringLiteral("the selection's geometry is unavailable")), QString{};
+        const auto* positionValue = std::get_if<Vector2Value>(&*position);
+        const auto* inValue = std::get_if<Vector2Value>(&*inTangent);
+        const auto* outValue = std::get_if<Vector2Value>(&*outTangent);
+        if (!positionValue || !inValue || !outValue)
+            return fail(QStringLiteral("the selection's geometry is unavailable")), QString{};
+        TransformTarget target;
+        target.element = scope.element;
+        target.point = scope.point;
+        target.position = *positionValue;
+        target.inTangent = *inValue;
+        target.outTangent = *outValue;
+        target.placement = *placement;
+        transformTargets_.push_back(target);
+        const auto elementText = identityText(scope.element);
+        const auto pointText = identityText(scope.point);
+        for (const auto& name : {kRotoParamPosition, kRotoParamInTangent, kRotoParamOutTangent})
+            targets.push_back(QVariantMap{{QStringLiteral("element"), elementText},
+                                          {QStringLiteral("point"), pointText},
+                                          {QStringLiteral("key"), keyText(name)}});
+    }
+    const auto token = beginGesture(targets);
+    if (token.isEmpty()) {
+        transformTargets_.clear();
+        return token;
+    }
+    return token;
+}
+
+bool RotoController::updateSelectionTransform(const QString& token, double a, double b, double c, double d, double e,
+                                              double f) {
+    const auto finite = [](double value) { return std::isfinite(value); };
+    if (!finite(a) || !finite(b) || !finite(c) || !finite(d) || !finite(e) || !finite(f))
+        return fail(QStringLiteral("a selection transform must be finite"));
+    bool valid = false;
+    const auto parsed = token.trimmed().toULongLong(&valid);
+    if (!valid || parsed == 0 || parsed != gestureToken_)
+        return fail(QStringLiteral("the selection transform requires the active gesture token"));
+    if (transformTargets_.empty())
+        return fail(QStringLiteral("no live selection transform is frozen"));
+    const double determinant = a * d - b * c;
+    if (!(std::abs(determinant) > 1e-12))
+        return fail(QStringLiteral("the selection transform is not invertible"));
+    QVariantList values;
+    values.reserve(static_cast<qsizetype>(transformTargets_.size()) * 3);
+    for (const auto& target : transformTargets_) {
+        const auto& placement = target.placement;
+        const double placementDeterminant = placement.a * placement.d - placement.b * placement.c;
+        // Image pixel of the frozen point, then the affine, then back into the
+        // element's own coordinates through the frozen placement.
+        const double imageX =
+            placement.a * target.position.value[0] + placement.c * target.position.value[1] + placement.e;
+        const double imageY =
+            placement.b * target.position.value[0] + placement.d * target.position.value[1] + placement.f;
+        const double movedX = a * imageX + c * imageY + e;
+        const double movedY = b * imageX + d * imageY + f;
+        const double localX =
+            (placement.d * (movedX - placement.e) - placement.c * (movedY - placement.f)) / placementDeterminant;
+        const double localY =
+            (-placement.b * (movedX - placement.e) + placement.a * (movedY - placement.f)) / placementDeterminant;
+        // A tangent is a VECTOR: the affine's translation does not touch it, and
+        // its direction is composed through the frozen placement's linear part
+        // and back, so a rotated/scaled selection keeps its handles attached.
+        const auto mappedTangent = [&](double x, double y) {
+            const double placedX = placement.a * x + placement.c * y;
+            const double placedY = placement.b * x + placement.d * y;
+            const double tangentX = a * placedX + c * placedY;
+            const double tangentY = b * placedX + d * placedY;
+            return QPointF((placement.d * tangentX - placement.c * tangentY) / placementDeterminant,
+                           (-placement.b * tangentX + placement.a * tangentY) / placementDeterminant);
+        };
+        const auto inVector = mappedTangent(target.inTangent.value[0], target.inTangent.value[1]);
+        const auto outVector = mappedTangent(target.outTangent.value[0], target.outTangent.value[1]);
+        values.push_back(QVariantList{localX, localY});
+        values.push_back(QVariantList{inVector.x(), inVector.y()});
+        values.push_back(QVariantList{outVector.x(), outVector.y()});
+    }
+    return updateGesture(token, values);
 }
 
 bool RotoController::beginDraft(const QString& kind, double x, double y) {
@@ -1327,7 +2093,10 @@ bool RotoController::commitDraft() {
         const auto created =
             createShape(draftKind_, anchor.value[0], anchor.value[1], corner.value[0], corner.value[1]);
         cancelDraft();
-        return !created.isEmpty();
+        if (created.isEmpty())
+            return false;
+        finishDraftTool();
+        return true;
     }
     const auto kind = kindFromName(draftKind_);
     if (!kind)
@@ -1363,7 +2132,18 @@ bool RotoController::commitDraft() {
     if (!commitData(std::move(data)))
         return false;
     static_cast<void>(selectElement(identityText(created)));
+    finishDraftTool();
     return true;
+}
+
+void RotoController::finishDraftTool() {
+    // A finished shape returns the viewport to Select: the pen is a mode, and
+    // leaving it armed after the shape closes is how a second stray shape gets
+    // drawn. Escape and a cancelled draft deliberately keep the tool.
+    if (tool_ == QLatin1String("select"))
+        return;
+    tool_ = QStringLiteral("select");
+    emit toolChanged();
 }
 
 void RotoController::cancelDraft() {
@@ -1426,7 +2206,7 @@ QVariantMap RotoController::elementRecord(const RotoElement& element, std::size_
                        // the presenter states as no value rather than a frame.
                        {QStringLiteral("firstFrame"), element.firstFrame ? QVariant(*element.firstFrame) : QVariant{}},
                        {QStringLiteral("lastFrame"), element.lastFrame ? QVariant(*element.lastFrame) : QVariant{}},
-                       {QStringLiteral("selected"), element.id == selectedElement_}};
+                       {QStringLiteral("selected"), elementSelected(identityText(element.id))}};
 }
 
 QVariantMap RotoController::geometryRecord(const RotoElement& element, const RotoData& data) const {
@@ -1437,7 +2217,10 @@ QVariantMap RotoController::geometryRecord(const RotoElement& element, const Rot
                        {QStringLiteral("group"), element.kind == RotoKind::Group},
                        {QStringLiteral("inverted"), element.inverted},
                        {QStringLiteral("locked"), element.locked},
-                       {QStringLiteral("selected"), element.id == selectedElement_},
+                       // A selected group states every shape inside it as
+                       // selected, so a presenter highlights what the selection
+                       // actually addresses.
+                       {QStringLiteral("selected"), shapeSelected(element.id)},
                        {QStringLiteral("a"), placement ? placement->a : 1.0},
                        {QStringLiteral("b"), placement ? placement->b : 0.0},
                        {QStringLiteral("c"), placement ? placement->c : 0.0},
@@ -1605,6 +2388,90 @@ std::optional<RotoController::Placement> RotoController::placementOf(const RotoD
     return total;
 }
 
+void RotoController::refreshPreviewGeometry() {
+    if (gestureToken_ == 0 || !preview_ || !available_ || !hasAuthored_)
+        return;
+    std::optional<RotoData> evaluated;
+    try {
+        evaluated = evaluateRoto(*preview_, network_, node_, static_cast<double>(frame_));
+    } catch (const std::exception&) {
+        return;
+    }
+    QVariantList geometry;
+    QVariantList points;
+    for (const auto* element : orderedElements(*evaluated)) {
+        if (element->kind == RotoKind::Group)
+            continue;
+        geometry.push_back(geometryRecord(*element, *evaluated));
+    }
+    if (selectedElement_ != 0)
+        if (const auto* display = findElement(*evaluated, selectedElement_))
+            points = pointRecords(*display);
+    const bool changed = geometry_ != geometry || points_ != points;
+    geometry_ = std::move(geometry);
+    points_ = std::move(points);
+    if (changed)
+        emit dataChanged();
+}
+
+bool RotoController::canOverlayViewer(const QString& target) const {
+    const auto targetId = identity(target);
+    if (!available_ || node_ == kInvalidNode || !targetId)
+        return false;
+    if (*targetId == node_)
+        return true;
+    const Network* network = nullptr;
+    try {
+        network = &session_.document().network(network_);
+    } catch (const std::exception&) {
+        return false;
+    }
+    const auto& graph = network->graph();
+    if (!graph.node(node_) || !graph.node(*targetId))
+        return false;
+    // Self, or a target this node reaches with EVERY route carrying the pixel
+    // grid: a second route through a mapping this owner cannot prove is an
+    // ambiguity, not a shortcut.
+    const auto probe = probeOverlay(graph, node_, *targetId);
+    return probe.reaches && probe.safeRoute && !probe.unsafeRoute;
+}
+
+QString RotoController::overlayReason(const QString& target) const {
+    const auto targetId = identity(target);
+    if (!available_ || node_ == kInvalidNode || !targetId)
+        return {};
+    if (*targetId == node_)
+        return {};
+    const Network* network = nullptr;
+    try {
+        network = &session_.document().network(network_);
+    } catch (const std::exception&) {
+        return {};
+    }
+    const auto& graph = network->graph();
+    if (!graph.node(node_) || !graph.node(*targetId))
+        return {};
+    const auto probe = probeOverlay(graph, node_, *targetId);
+    // An unrelated target owes no reason: a presenter probing candidates keeps
+    // looking instead of reporting a refusal about a node it never feeds.
+    if (!probe.reaches)
+        return {};
+    QStringList names;
+    for (const auto& type : probe.blockers) {
+        const auto text = QString::fromStdString(type);
+        if (!names.contains(text))
+            names.push_back(text);
+    }
+    if (names.isEmpty())
+        return QStringLiteral("the overlay cannot prove the coordinate mapping to this target");
+    const auto list = names.join(QStringLiteral(", "));
+    if (probe.unsafeRoute && probe.safeRoute)
+        return QStringLiteral("the Roto reaches this target through more than one path (%1), so the overlay cannot "
+                              "state one coordinate mapping")
+            .arg(list);
+    return QStringLiteral("the coordinate mapping through %1 is not proven, so the overlay stays off").arg(list);
+}
+
 void RotoController::refresh() {
     const bool hadGesture = gestureToken_ != 0;
     const bool hadDraft = draftActive_;
@@ -1676,36 +2543,33 @@ void RotoController::refresh() {
                 geometry.push_back(geometryRecord(*element, *evaluated));
             }
         }
+        // The selection is transient, but it can outlive the records it names:
+        // an element that was undone away, or a point the same session removed,
+        // is dropped here so no presenter is left addressing dead identities.
+        const auto selectionBefore = selectedElements_.size() + selectedPoints_.size();
+        std::erase_if(selectedElements_, [this](RotoElementId id) { return findElement(authored_, id) == nullptr; });
+        std::erase_if(selectedPoints_, [this](RotoPointId id) { return findPointElement(authored_, id) == nullptr; });
+        if (selectedElements_.empty()) {
+            selectedElement_ = kInvalidRotoElement;
+        } else if (std::find(selectedElements_.begin(), selectedElements_.end(), selectedElement_) ==
+                   selectedElements_.end()) {
+            selectedElement_ = selectedElements_.front();
+        }
         if (selectedElement_ != 0) {
             const auto* record = findElement(authored_, selectedElement_);
-            if (!record) {
-                selectedElement_ = 0;
-                selectedPoints_.clear();
-                emit selectionChanged();
-            } else {
-                const RotoElement* display = nullptr;
-                if (const auto* evaluated = evaluatedData())
-                    display = findElement(*evaluated, selectedElement_);
-                const auto& source = display ? *display : *record;
-                points = pointRecords(source);
-                // A point of another element can never stay selected: the
-                // selection is one element's points, always.
-                const auto before = selectedPoints_.size();
-                std::erase_if(selectedPoints_, [&source](RotoPointId id) {
-                    return std::none_of(source.points.begin(), source.points.end(),
-                                        [id](const RotoPoint& point) { return point.id == id; });
-                });
-                if (selectedPoints_.size() != before)
-                    emit selectionChanged();
-            }
-        } else if (!selectedPoints_.empty()) {
-            selectedPoints_.clear();
-            emit selectionChanged();
+            const RotoElement* display = nullptr;
+            if (const auto* evaluated = evaluatedData())
+                display = findElement(*evaluated, selectedElement_);
+            if (const RotoElement* source = display ? display : record)
+                points = pointRecords(*source);
         }
+        if (selectedElements_.size() + selectedPoints_.size() != selectionBefore)
+            emit selectionChanged();
     } else {
-        if (selectedElement_ != 0 || !selectedPoints_.empty()) {
+        if (selectedElement_ != 0 || !selectedPoints_.empty() || !selectedElements_.empty()) {
             selectedElement_ = 0;
             selectedPoints_.clear();
+            selectedElements_.clear();
             emit selectionChanged();
         }
         if (hadDraft)
@@ -1719,7 +2583,14 @@ void RotoController::refresh() {
         gestureAddresses_.clear();
         gestureSpecs_.clear();
         gestureInvalid_ = false;
+        preview_.reset();
+        transformTargets_.clear();
         emit gestureChanged();
+    }
+    const auto keyTimes = available ? keyTimesFor(selectionScopes()) : QVariantList{};
+    if (keyTimes_ != keyTimes) {
+        keyTimes_ = keyTimes;
+        emit keyTimesChanged();
     }
     const bool availabilityChanged = available_ != available || reason_ != reason;
     const bool recordsChanged = elements_ != elements || geometry_ != geometry || points_ != points ||

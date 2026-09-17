@@ -9,7 +9,9 @@
 #include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
+#include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -46,6 +48,7 @@ class RotoController final : public QObject {
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     // The panel frame values and keys are read and authored at.
     Q_PROPERTY(int frame READ frame WRITE setFrame NOTIFY frameChanged)
+    Q_PROPERTY(bool viewerAttached READ viewerAttached NOTIFY viewerAttachedChanged)
     // Session revision the published snapshot was derived from. A presenter
     // binds to it to re-read `parameterState`.
     Q_PROPERTY(int revision READ revision NOTIFY dataChanged)
@@ -64,6 +67,15 @@ class RotoController final : public QObject {
     Q_PROPERTY(QVariantList points READ points NOTIFY dataChanged)
     Q_PROPERTY(QString selectedElement READ selectedElement NOTIFY selectionChanged)
     Q_PROPERTY(QStringList selectedPoints READ selectedPoints NOTIFY selectionChanged)
+    // Every selected shape, in selection order. `selectedElement` stays the
+    // primary (last selected) one the parameter surface addresses; a point
+    // selection carries its owners here, so a point of a second shape is never
+    // an addressing contradiction.
+    Q_PROPERTY(QStringList selectedElements READ selectedElements NOTIFY selectionChanged)
+    // Sorted unique frames the current selection's geometry channels hold keys
+    // at, so a compact spline surface can state the keys it acts on. Empty when
+    // nothing is selected.
+    Q_PROPERTY(QVariantList keyTimes READ keyTimes NOTIFY keyTimesChanged)
     // Active viewport tool: select, bezier, bspline, rectangle, ellipse.
     Q_PROPERTY(QString tool READ tool NOTIFY toolChanged)
     Q_PROPERTY(bool draftActive READ draftActive NOTIFY draftChanged)
@@ -87,6 +99,8 @@ public:
     [[nodiscard]] QVariantList points() const { return points_; }
     [[nodiscard]] QString selectedElement() const;
     [[nodiscard]] QStringList selectedPoints() const;
+    [[nodiscard]] QStringList selectedElements() const;
+    [[nodiscard]] QVariantList keyTimes() const { return keyTimes_; }
     [[nodiscard]] QString tool() const { return tool_; }
     [[nodiscard]] bool draftActive() const { return draftActive_; }
     [[nodiscard]] QString draftKind() const { return draftKind_; }
@@ -99,6 +113,10 @@ public:
     // closed presenter never leaves a stale highlight for the next one.
     void attachView(QObject* owner);
     Q_INVOKABLE void detachView(QObject* owner);
+    // An attached viewer owns the displayed authoring frame. Inspectors use
+    // their group clock only when no viewer presents this adapter.
+    [[nodiscard]] bool viewerAttached() const;
+    Q_INVOKABLE void setViewerFrame(QObject* owner, int frame);
 
     // --- reading one element/point property --------------------------------
     // {available, kind, value, valueText, label, step, hasMinimum, minimum,
@@ -108,10 +126,61 @@ public:
     Q_INVOKABLE bool setTool(const QString& tool);
 
     // --- transient selection ----------------------------------------------
+    // `selectElement` selects or, with `additive`, toggles ONE shape of the
+    // current selection; `selectPoint` resolves the point's owner and toggles
+    // the point itself, so a selection spans shapes. Both clear the point mode
+    // when they address a shape, and `selectedElement` is always the primary
+    // (last selected) element of `selectedElements`.
     Q_INVOKABLE bool selectElement(const QString& elementId, bool additive = false);
     Q_INVOKABLE bool selectPoint(const QString& pointId, bool additive = false);
     Q_INVOKABLE void clearSelection();
     Q_INVOKABLE bool pointSelected(const QString& pointId) const;
+    Q_INVOKABLE bool elementSelected(const QString& elementId) const;
+    // Replace (or, with `additive`, union) the point selection with `pointIds`,
+    // across shapes, and state the points' owners as the selected elements.
+    Q_INVOKABLE bool setPointSelection(const QStringList& pointIds, bool additive = false);
+    // Every point of every unlocked shape, in authored order.
+    Q_INVOKABLE bool selectAllPoints();
+
+    // --- selection-wide geometry edits ------------------------------------
+    // Delete: the selected points when there is a point selection (a closed
+    // shape keeps at least three), else the selected elements with everything
+    // they own. ONE topology command.
+    Q_INVOKABLE bool deleteSelection();
+    // Mirrored tangents (Bezier) or tension 0 (B-spline) for `smooth`; zeroed
+    // tangents (Bezier) or tension 1 (B-spline) for a cusp. The selected points
+    // when there is a point selection, else every point of the selected
+    // contours. Locked shapes and shapes under a locked ancestor are skipped;
+    // the whole set is ONE gesture, so ONE undo.
+    Q_INVOKABLE bool smoothSelection(bool smooth);
+    // Insert a point on the segment from `segment` to its successor at curve
+    // parameter `t` (0..1), in the element's own coordinates. A Bezier is split
+    // exactly (de Casteljau), so the contour keeps its shape; a B-spline takes
+    // one control point sampled on the curve. ONE topology command.
+    Q_INVOKABLE bool insertCurvePoint(const QString& elementId, int segment, double t);
+    // Current-frame geometry keys (position, tangents or tension, feather) for
+    // the selection: the selected points when there is a point selection, else
+    // every point of the selected contours. `remove` takes those same keys at
+    // the panel frame away. ONE command, whichever the direction.
+    Q_INVOKABLE bool keySelection(bool remove = false);
+
+    // --- selection transform (one existing value gesture) ------------------
+    // Freezes the selection's geometry and every addressed placement, and opens
+    // ONE session gesture over the point channels of the selection: the
+    // selected points when there is a point selection, else every point of the
+    // selected shapes/groups, recursively (locked shapes and shapes under a
+    // locked ancestor excluded, a point selected twice addressed once). Returns
+    // the gesture token, or an empty string with `error` set.
+    Q_INVOKABLE QString beginSelectionTransform();
+    // States the affine on ORIGINAL full-resolution image-pixel coordinates
+    // (x' = a*x + c*y + e, y' = b*x + d*y + f) for the frozen sample: positions
+    // and tangent vectors both move, each mapped back through the frozen
+    // placement, and the live preview is published as `geometry`/`points`. The
+    // gesture commits and cancels through the existing commitGesture/
+    // cancelGesture. A non-invertible affine is refused so no authored
+    // coordinate becomes unreachable.
+    Q_INVOKABLE bool updateSelectionTransform(const QString& token, double a, double b, double c, double d, double e,
+                                              double f);
 
     // --- numeric gestures (existing ProjectSession machinery) --------------
     // `targets` is one {element, point, key} map per edited address, in the
@@ -162,6 +231,18 @@ public:
     // nothing.
     Q_INVOKABLE void cancelDraft();
 
+    // --- viewing this Roto through a downstream node -----------------------
+    // A viewer may draw this node's shapes while it inspects a different node
+    // only when the pixel grid is the same one: this node itself, or a target
+    // this node reaches through nodes that carry the grid through unchanged
+    // (grade, blur, merge, shuffle, roto, viewer, output), with NO other route
+    // that passes through a node whose mapping is not proven (transform,
+    // reformat, crop, a nested occurrence, a type this build does not model).
+    // An unrelated target reports no reason at all, so a presenter can keep
+    // looking; an upstream target whose mapping is not proven reports why.
+    Q_INVOKABLE bool canOverlayViewer(const QString& target) const;
+    Q_INVOKABLE QString overlayReason(const QString& target) const;
+
 signals:
     void dataChanged();
     void selectionChanged();
@@ -170,6 +251,13 @@ signals:
     void gestureChanged();
     void frameChanged();
     void errorChanged();
+    // The frames (sorted, unique) the current selection's geometry channels
+    // hold keys at changed.
+    void keyTimesChanged();
+    void viewerAttachedChanged();
+    // Explicit inspector navigation, not a broadcast of every frame change:
+    // each attached viewer seeks through its existing transport owner.
+    void seekRequested(int frame);
 
 private:
     // One address inside this node: the element scope when `point` is 0.
@@ -190,6 +278,31 @@ private:
     [[nodiscard]] const RotoElement* findElement(const RotoData& data, RotoElementId id) const;
     [[nodiscard]] const RotoElement* findPointElement(const RotoData& data, RotoPointId id) const;
     [[nodiscard]] bool elementLocked(RotoElementId id) const;
+    // The model's lock is per element; an authoring gesture that walks a
+    // hierarchy refuses a shape whose ancestor is locked too, because the
+    // ancestor's transform is what the shape's pixels are stated in.
+    [[nodiscard]] bool elementEffectivelyLocked(const RotoData& data, RotoElementId id) const;
+    // The element's authored value as the panel displays it: the frame-evaluated
+    // record when the element contributes at `frame`, else its authored record.
+    // Every frozen drag sample and every current value comes from here, so a
+    // gesture and the records it previews always agree.
+    [[nodiscard]] const RotoData& displayData(RotoElementId id) const;
+    [[nodiscard]] std::vector<Scope> selectionScopes() const;
+    void collectScopes(const RotoData& data, RotoElementId id, std::set<RotoPointId>& seen,
+                       std::vector<Scope>& scopes) const;
+    // True when the element is selected, or when it is inside a selected group.
+    [[nodiscard]] bool shapeSelected(RotoElementId id) const;
+    // Adds the element once and makes it the primary selection.
+    void selectElementSilently(RotoElementId id);
+    // The frames the addressed channels hold keys at, sorted and unique.
+    [[nodiscard]] QVariantList keyTimesFor(const std::vector<Scope>& scopes) const;
+    // One gesture over the tangents/tension of `scopes`, shared by the
+    // element-scoped and the selection-wide smooth/cusp commands.
+    bool smoothScopes(const std::vector<Scope>& scopes, bool smooth);
+    // Re-states `geometry`/`points` from the live gesture preview snapshot, so a
+    // dragged selection shows the values it is stating before the release
+    // publishes them. The published document stays untouched.
+    void refreshPreviewGeometry();
     [[nodiscard]] std::optional<ParameterAddress> addressFor(const Scope& scope, const QString& key) const;
     // The value an address holds right now: the frame-evaluated value when the
     // element contributes at `frame`, else its authored value. This is exactly
@@ -214,6 +327,9 @@ private:
     // The element a new shape is created in: the selected group, else root.
     [[nodiscard]] RotoElementId creationParent() const;
     [[nodiscard]] QString uniqueName(const RotoData& data, const QString& base) const;
+    // Returns the viewport tool to Select after a finished draw, so the pen is a
+    // mode and not a sticky state.
+    void finishDraftTool();
 
     ProjectSession& session_;
     NetworkId network_{kInvalidNetwork};
@@ -232,6 +348,26 @@ private:
     QVariantList points_;
     RotoElementId selectedElement_{};
     std::vector<RotoPointId> selectedPoints_;
+    // Every selected shape in selection order; `selectedElement_` is always one
+    // of them (or 0 when nothing is selected).
+    std::vector<RotoElementId> selectedElements_;
+    QVariantList keyTimes_;
+    // One frozen sample per point of a live selection transform: the element and
+    // point identities, the ORIGINAL local position and tangents, and the
+    // ORIGINAL local -> image placement. Every update composes from this sample,
+    // so a drag never accumulates and a release publishes what was last stated.
+    struct TransformTarget {
+        RotoElementId element{};
+        RotoPointId point{};
+        Vector2Value position{};
+        Vector2Value inTangent{};
+        Vector2Value outTangent{};
+        Placement placement{};
+    };
+    std::vector<TransformTarget> transformTargets_;
+    // The session's transient preview of the live gesture, held as a shared
+    // handle (the session owns the value) so `geometry`/`points` can state it.
+    std::shared_ptr<const Document> preview_;
     // Draft: authored in image coordinates and never document state. `draft_`
     // holds the points a click already committed; `draftLive_` is the rubber
     // band the pointer is currently stating.
@@ -246,7 +382,11 @@ private:
     std::vector<ParameterAddress> gestureAddresses_;
     std::vector<ParameterSpec> gestureSpecs_;
     bool gestureInvalid_{false};
-    std::vector<QPointer<QObject>> views_;
+    struct AttachedView {
+        QPointer<QObject> owner;
+        bool viewer{false};
+    };
+    std::vector<AttachedView> views_;
 };
 
 }  // namespace nemo::ui

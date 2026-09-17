@@ -21,6 +21,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QGuiApplication>
+#include <QJSValue>
 #include <QMouseEvent>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -30,6 +31,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QWheelEvent>
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -328,6 +330,16 @@ TEST_F(RotoSurface, CurveToolsPublishClosedEditableContours) {
         EXPECT_EQ(data()->elements[0].kind, name == "bspline" ? nemo::RotoKind::BSpline : nemo::RotoKind::Bezier);
         EXPECT_GE(data()->elements[0].points.size(), 3u);
         capture(name);
+        if (name == "bspline") {
+            const auto original = data()->elements[0].points[0];
+            QTest::mousePress(window, Qt::LeftButton, Qt::AltModifier, first);
+            move(first + QPoint(25, 0));
+            QTest::mouseRelease(window, Qt::LeftButton, Qt::AltModifier, first + QPoint(25, 0));
+            ASSERT_NEAR(data()->elements[0].points[0].tension, 25 * 640 / image.width() / 200, .01);
+            EXPECT_EQ(data()->elements[0].points[0].position, original.position);
+            ASSERT_TRUE(history->undo());
+            EXPECT_EQ(data()->elements[0].points[0].tension, original.tension);
+        }
         ASSERT_TRUE(history->undo());
         ASSERT_TRUE(!data() || data()->elements.empty());
     }
@@ -336,7 +348,6 @@ TEST_F(RotoSurface, CurveToolsPublishClosedEditableContours) {
 TEST_F(RotoSurface, PointDragCommitsOnceAndUndoCancelsAnOpenDraftFirst) {
     rectangle();
     ASSERT_TRUE(data());
-    tool("select");
     const auto image = imageRect();
     const auto old = data()->elements[0].points[0].position;
     const QPoint point =
@@ -382,7 +393,7 @@ TEST_F(RotoSurface, InspectorReflectsPublishedValuesUndoAndKeyedFrames) {
     EXPECT_DOUBLE_EQ(field->property("value").toDouble(), 0.8);
     submit(nemo::setKeyframesCommand(
         {{address, nemo::Keyframe{.time = 0, .value = 0.8}}, {address, nemo::Keyframe{.time = 10, .value = 0.2}}}));
-    ASSERT_TRUE(router->setGroupContext("A", {{"timelineClock", 5}}));
+    controller->setFrame(5);
     ASSERT_TRUE(waitFor([&] { return std::abs(field->property("value").toDouble() - 0.5) < 0.0001; }));
     submit(nemo::setParamCommand(network.toULongLong(), roto.toULongLong(), "opacity", 0.9));
     EXPECT_NEAR(field->property("value").toDouble(), 0.5, 0.0001);
@@ -411,6 +422,24 @@ TEST_F(RotoSurface, NestedGroupsAndLocksUseTheNativeHierarchy) {
     ASSERT_EQ(data()->elements.size(), 3u);
     const auto shape = data()->elements[2];
     EXPECT_EQ(shape.parent, data()->elements[1].id);
+    auto* tree = item("rotoTree_" + roto);
+    auto* shapeName = item("rotoName_" + roto + "_" + QString::number(shape.id));
+    const auto outerGroup = data()->elements[0].id;
+    auto* groupName = item("rotoName_" + roto + "_" + QString::number(outerGroup));
+    ASSERT_NE(tree, nullptr);
+    ASSERT_NE(shapeName, nullptr);
+    ASSERT_NE(groupName, nullptr);
+    const int gripX = tree->mapToScene(QPointF(8, 0)).toPoint().x();
+    const auto beforeReparent = session->revision();
+    dragBetween(QPoint(gripX, center(shapeName).y()), QPoint(gripX, center(groupName).y() + 4));
+    ASSERT_EQ(session->revision(), beforeReparent + 1) << authoring()->property("error").toString().toStdString();
+    const auto moved = std::find_if(data()->elements.begin(), data()->elements.end(),
+                                    [&](const auto& element) { return element.id == shape.id; });
+    ASSERT_NE(moved, data()->elements.end());
+    EXPECT_EQ(moved->parent, outerGroup);
+    ASSERT_TRUE(history->undo());
+    EXPECT_EQ(data()->elements[2].parent, shape.parent);
+    QTest::qWait(30);
     auto* lock = item("rotoLock_" + roto + "_" + QString::number(shape.id));
     ASSERT_NE(lock, nullptr);
     capture("hierarchy-before-lock");
@@ -437,6 +466,17 @@ TEST_F(RotoSurface, MirroredFeatherAndTangentHandlesKeepThePointAnchored) {
     const auto screen = [&](double x, double y) { return (image.topLeft() + QPointF(x * sx, y * sy)).toPoint(); };
     dragBetween(screen(224, 126), screen(416, 234));
     ASSERT_TRUE(data() && data()->elements.size() == 1);
+    const auto unfeathered = data()->elements[0].points[0];
+    const auto origin = screen(unfeathered.position.value[0], unfeathered.position.value[1]);
+    QTest::mousePress(window, Qt::LeftButton, Qt::ControlModifier, origin);
+    move(origin + QPoint(20, 0));
+    capture("zero-feather-preview");
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::ControlModifier, origin + QPoint(20, 0));
+    ASSERT_NEAR(data()->elements[0].points[0].feather, 20 / sx, 1 / sx)
+        << authoring()->property("error").toString().toStdString();
+    EXPECT_EQ(data()->elements[0].points[0].position, unfeathered.position);
+    ASSERT_TRUE(history->undo());
+    EXPECT_EQ(data()->elements[0].points[0].feather, unfeathered.feather);
     auto shapes = *data();
     auto& shape = shapes.elements[0];
     shape.pivot = nemo::Vector2Value{{320, 180}};
@@ -493,7 +533,7 @@ TEST_F(RotoSurface, DenseAnimatedShapesRemainEditableAtProxyAndUpstreamFormatCha
     submit(nemo::setKeyframesCommand({{motion, nemo::Keyframe{.time = 0, .value = nemo::Vector2Value{{-10, 0}}}},
                                       {motion, nemo::Keyframe{.time = 10, .value = nemo::Vector2Value{{10, 0}}}}}));
     submit(nemo::setParamCommand(networkId, nodeId, "samples", std::int64_t{8}));
-    ASSERT_TRUE(router->setGroupContext("A", {{"timelineClock", 5}}));
+    controller->setFrame(5);
     controller->setResolutionMode("quarter");
     ASSERT_TRUE(waitFor([&] {
         const auto presentation = controller->presentation();
@@ -576,7 +616,7 @@ TEST_F(RotoSurface, SavedRotoReopensWithoutRetainingAnOldProjectDraft) {
 
 TEST_F(RotoSurface, PointTopologyAndLifetimeActionsUseAtomicHistory) {
     rectangle();
-    tool("select");
+    // Finishing a shape leaves it ready to edit, without a tool-strip detour.
     const auto image = imageRect();
     const auto first = data()->elements[0].points[0];
     const auto next = data()->elements[0].points[1];
@@ -591,17 +631,24 @@ TEST_F(RotoSurface, PointTopologyAndLifetimeActionsUseAtomicHistory) {
             QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(button));
         QTest::qWait(30);
     };
-    click("rotoSmooth_");
+    QTest::keyClick(window, Qt::Key_Z);
+    QTest::qWait(30);
     EXPECT_NE(data()->elements[0].points[0].outTangent, nemo::Vector2Value{});
-    click("rotoCusp_");
+    QTest::keyClick(window, Qt::Key_Z, Qt::ShiftModifier);
+    QTest::qWait(30);
     EXPECT_EQ(data()->elements[0].points[0].outTangent, nemo::Vector2Value{});
-    click("rotoAddPoint_");
+    // An arbitrary position between curve samples must be hittable too.
+    const double insertX = first.position.value[0] + (next.position.value[0] - first.position.value[0]) * 17 / 32;
+    const double insertY = first.position.value[1];
+    const auto onCurve =
+        (image.topLeft() + QPointF(insertX * image.width() / 640, insertY * image.height() / 360)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::ControlModifier | Qt::AltModifier, onCurve);
+    QTest::qWait(30);
     ASSERT_EQ(data()->elements[0].points.size(), 5u);
-    EXPECT_NEAR(data()->elements[0].points[1].position.value[0], (first.position.value[0] + next.position.value[0]) / 2,
-                .01);
-    EXPECT_NEAR(data()->elements[0].points[1].position.value[1], (first.position.value[1] + next.position.value[1]) / 2,
-                .01);
-    click("rotoRemovePoint_");
+    EXPECT_NEAR(data()->elements[0].points[1].position.value[0], insertX, 640.0 / image.width());
+    EXPECT_NEAR(data()->elements[0].points[1].position.value[1], insertY, 360.0 / image.height());
+    QTest::keyClick(window, Qt::Key_Delete);
+    QTest::qWait(30);
     ASSERT_EQ(data()->elements[0].points.size(), 4u);
     EXPECT_EQ(data()->elements[0].points[0].id, first.id);
     const auto enter = [&](const QString& name, Qt::Key key) {
@@ -615,6 +662,10 @@ TEST_F(RotoSurface, PointTopologyAndLifetimeActionsUseAtomicHistory) {
         QTest::keyClick(window, Qt::Key_Return);
         QTest::qWait(30);
     };
+    auto* lifetime = item("rotoSection_" + roto + "_lifetime");
+    ASSERT_NE(lifetime, nullptr);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(lifetime));
+    QTest::qWait(30);
     enter("rotoFirstFrame_", Qt::Key_1);
     enter("rotoLastFrame_", Qt::Key_3);
     ASSERT_EQ(data()->elements[0].firstFrame, 1.0);
@@ -679,6 +730,220 @@ TEST_F(RotoSurface, InspectorFlagsReflectUndoAndSelection) {
     EXPECT_FALSE(data()->elements[0].inverted);
     EXPECT_TRUE(data()->elements[1].inverted);
     EXPECT_TRUE(flag->property("checked").toBool());
+}
+TEST_F(RotoSurface, MarqueeAndShiftSelectionMoveOnlyChosenPointsAndCancelAtomically) {
+    rectangle();
+    const auto image = imageRect();
+    const auto screen = [&](double x, double y) {
+        return (image.topLeft() + QPointF(x * image.width() / 640, y * image.height() / 360)).toPoint();
+    };
+    const auto original = data()->elements[0];
+    dragBetween(screen(128, 65), screen(448, 120));
+    ASSERT_EQ(authoring()->property("selectedPoints").toStringList().size(), 2);
+    const auto before = session->revision();
+    const auto first = screen(original.points[0].position.value[0], original.points[0].position.value[1]);
+    const QPoint delta(25, 20);
+    dragBetween(first, first + delta);
+    ASSERT_EQ(session->revision(), before + 1);
+    for (std::size_t i = 0; i < original.points.size(); ++i) {
+        const auto& point = data()->elements[0].points[i];
+        EXPECT_NEAR(point.position.value[0],
+                    original.points[i].position.value[0] + (i < 2 ? delta.x() * 640 / image.width() : 0), 1);
+        EXPECT_NEAR(point.position.value[1],
+                    original.points[i].position.value[1] + (i < 2 ? delta.y() * 360 / image.height() : 0), 1);
+    }
+    const auto moved = *data();
+    // Shift-click removes one point instead of silently keeping it selected.
+    QTest::mouseClick(window, Qt::LeftButton, Qt::ShiftModifier, first + delta);
+    ASSERT_EQ(authoring()->property("selectedPoints").toStringList().size(), 1);
+    const auto& remaining = moved.elements[0].points[1].position.value;
+    const auto start = screen(remaining[0], remaining[1]);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, start);
+    move(start + QPoint(35, 10));
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, start + QPoint(35, 10));
+    EXPECT_EQ(session->revision(), before + 1);
+    EXPECT_TRUE(nemo::rotoContentEquals(*data(), moved));
+    ASSERT_TRUE(history->undo());
+    EXPECT_EQ(data()->elements[0].points[0].position, original.points[0].position);
+    EXPECT_EQ(data()->elements[0].points[1].position, original.points[1].position);
+    capture("marquee-selection-undo");
+    tool("rectangle");
+    dragBetween(screen(470, 190), screen(600, 280));
+    ASSERT_EQ(data()->elements.size(), 2u);
+    const auto both = *data();
+    dragBetween(screen(128, 65), screen(625, 300));
+    ASSERT_EQ(authoring()->property("selectedPoints").toStringList().size(), 8);
+    const auto beforeBoth = session->revision();
+    // Drag an already selected point outside the primary contour. The other
+    // contour must remain part of the same selection and atomic edit.
+    dragBetween(first, first + delta);
+    ASSERT_EQ(session->revision(), beforeBoth + 1);
+    for (std::size_t shape = 0; shape < both.elements.size(); ++shape)
+        for (std::size_t point = 0; point < both.elements[shape].points.size(); ++point) {
+            const auto& expected = both.elements[shape].points[point].position.value;
+            const auto& actual = data()->elements[shape].points[point].position.value;
+            EXPECT_NEAR(actual[0], expected[0] + delta.x() * 640 / image.width(), 1);
+            EXPECT_NEAR(actual[1], expected[1] + delta.y() * 360 / image.height(), 1);
+        }
+    capture("cross-shape-selection");
+    ASSERT_TRUE(history->undo());
+    EXPECT_TRUE(nemo::rotoContentEquals(*data(), both));
+}
+
+TEST_F(RotoSurface, DownstreamEditingRequiresAnUnambiguousCoordinateMapping) {
+    rectangle();
+    const auto grade = controller->createGraphNode(network, "grade", "Grade", 0, 180, {}, {});
+    ASSERT_FALSE(grade.isEmpty());
+    ASSERT_TRUE(controller->connectOrReplaceGraph(network, roto, 0, grade, 0));
+    ASSERT_TRUE(controller->assignViewer(network, 0, grade));
+    ASSERT_TRUE(waitFor([&] {
+        auto* overlay = item("rotoOverlay_roto-view");
+        return controller->viewerTargetId() == grade && overlay && overlay->isVisible();
+    }));
+    const auto image = imageRect();
+    const auto original = data()->elements[0].points[0].position;
+    const QPoint start =
+        (image.topLeft() + QPointF(original.value[0] * image.width() / 640, original.value[1] * image.height() / 360))
+            .toPoint();
+    dragBetween(start, start + QPoint(20, 15));
+    EXPECT_NEAR(data()->elements[0].points[0].position.value[0], original.value[0] + 20 * 640 / image.width(), 1);
+    capture("downstream-grade-edit");
+
+    const auto transform = controller->createGraphNode(network, "transform", "Transform", 0, 270, {}, {});
+    ASSERT_FALSE(transform.isEmpty());
+    ASSERT_TRUE(controller->connectOrReplaceGraph(network, roto, 0, transform, 0));
+    ASSERT_TRUE(controller->assignViewer(network, 0, transform));
+    ASSERT_TRUE(waitFor([&] {
+        auto* overlay = item("rotoOverlay_roto-view");
+        auto* reason = item("rotoOverlayReason_roto-view");
+        return (!overlay || !overlay->isVisible()) && reason && reason->isVisible();
+    }));
+    // A refused coordinate mapping must not author through an invisible handle.
+    const auto before = session->revision();
+    dragBetween(start, start + QPoint(20, 15));
+    EXPECT_EQ(session->revision(), before);
+    capture("unsupported-spatial-mapping");
+}
+
+TEST_F(RotoSurface, SelectionBoxScalesAndRotatesPointsAndTangentsInImageSpace) {
+    tool("ellipse");
+    const auto image = imageRect();
+    dragBetween((image.topLeft() + QPointF(image.width() * .25, image.height() * .25)).toPoint(),
+                (image.topLeft() + QPointF(image.width() * .65, image.height() * .65)).toPoint());
+    ASSERT_TRUE(data() && data()->elements.size() == 1);
+    QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+    ASSERT_EQ(authoring()->property("selectedPoints").toStringList().size(), 4);
+    auto* overlay = item("rotoOverlay_roto-view");
+    ASSERT_NE(overlay, nullptr);
+    const auto handles = [&] {
+        QVariant result;
+        const bool invoked = QMetaObject::invokeMethod(overlay, "selectionHandles", Qt::DirectConnection,
+                                                       Q_RETURN_ARG(QVariant, result));
+        EXPECT_TRUE(invoked);
+        return result.canConvert<QJSValue>() ? result.value<QJSValue>().toVariant().toMap() : result.toMap();
+    };
+    const auto screenHandle = [&](const QVariantMap& entries, const QString& name) {
+        const auto point = entries.value(name).toMap();
+        return overlay->mapToScene(QPointF(point.value("x").toDouble(), point.value("y").toDouble()));
+    };
+    auto box = handles();
+    ASSERT_TRUE(box.contains("right"));
+    const auto anchor = screenHandle(box, "left");
+    const auto right = screenHandle(box, "right");
+    const auto original = data()->elements[0];
+    const double factor = (right.x() + 40 - anchor.x()) / (right.x() - anchor.x());
+    const double anchorX = (anchor.x() - image.x()) * 640 / image.width();
+    const auto before = session->revision();
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, right.toPoint());
+    move((right + QPointF(40, 0)).toPoint());
+    EXPECT_EQ(session->revision(), before);
+    capture("selection-scale-preview");
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, (right + QPointF(40, 0)).toPoint());
+    ASSERT_EQ(session->revision(), before + 1);
+    for (std::size_t i = 0; i < original.points.size(); ++i) {
+        const auto& point = data()->elements[0].points[i];
+        EXPECT_NEAR(point.position.value[0], anchorX + (original.points[i].position.value[0] - anchorX) * factor,
+                    2 * 640 / image.width());
+        EXPECT_NEAR(point.position.value[1], original.points[i].position.value[1], 2 * 360 / image.height());
+        EXPECT_NEAR(point.inTangent.value[0], original.points[i].inTangent.value[0] * factor, 1);
+        EXPECT_NEAR(point.outTangent.value[0], original.points[i].outTangent.value[0] * factor, 1);
+    }
+    const auto scaled = data()->elements[0];
+    box = handles();
+    const auto centre = screenHandle(box, "pivot");
+    const auto rotate = screenHandle(box, "rotate");
+    const auto clockwise = centre + QPointF(centre.y() - rotate.y(), rotate.x() - centre.x());
+    dragBetween(rotate.toPoint(), clockwise.toPoint());
+    ASSERT_EQ(session->revision(), before + 2);
+    const double cx = (centre.x() - image.x()) * 640 / image.width();
+    const double cy = (centre.y() - image.y()) * 360 / image.height();
+    for (std::size_t i = 0; i < scaled.points.size(); ++i) {
+        const auto& point = data()->elements[0].points[i];
+        EXPECT_NEAR(point.position.value[0], cx - (scaled.points[i].position.value[1] - cy) / 1.5,
+                    3 * 640 / image.width());
+        EXPECT_NEAR(point.position.value[1], cy + (scaled.points[i].position.value[0] - cx) * 1.5,
+                    3 * 360 / image.height());
+        EXPECT_NEAR(point.outTangent.value[0], -scaled.points[i].outTangent.value[1] / 1.5, 1);
+        EXPECT_NEAR(point.outTangent.value[1], scaled.points[i].outTangent.value[0] * 1.5, 1);
+    }
+    capture("selection-rotated");
+    ASSERT_TRUE(history->undo());
+    EXPECT_EQ(data()->elements[0].points[0].position, scaled.points[0].position);
+    ASSERT_TRUE(history->undo());
+    EXPECT_EQ(data()->elements[0].points[0].position, original.points[0].position);
+    EXPECT_EQ(data()->elements[0].points[0].outTangent, original.points[0].outTangent);
+    // Explicit spline keying makes subsequent viewport edits animate at the
+    // current frame; it must not overwrite the previously keyed shape.
+    auto* setKey = item("rotoKeySet_" + roto);
+    ASSERT_NE(setKey, nullptr);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(setKey));
+    auto* frameField = item("viewerFrame_roto-view");
+    ASSERT_NE(frameField, nullptr);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(frameField));
+    QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+    QTest::keyClick(window, Qt::Key_1);
+    QTest::keyClick(window, Qt::Key_0);
+    QTest::keyClick(window, Qt::Key_Return);
+    ASSERT_TRUE(waitFor([&] { return controller->frame() == 10; }));
+    ASSERT_TRUE(waitFor([&] { return authoring()->property("frame").toInt() == 10; }));
+    const auto start = (image.topLeft() + QPointF(original.points[0].position.value[0] * image.width() / 640,
+                                                  original.points[0].position.value[1] * image.height() / 360))
+                           .toPoint();
+    dragBetween(start, start + QPoint(25, 15));
+    const auto atZero = nemo::evaluateRoto(session->document(), network.toULongLong(), roto.toULongLong(), 0);
+    const auto atTen = nemo::evaluateRoto(session->document(), network.toULongLong(), roto.toULongLong(), 10);
+    EXPECT_EQ(atZero.elements[0].points[0].position, original.points[0].position);
+    EXPECT_NEAR(atTen.elements[0].points[0].position.value[0],
+                original.points[0].position.value[0] + 25 * 640 / image.width(), 1);
+    EXPECT_NEAR(atTen.elements[0].points[0].position.value[1],
+                original.points[0].position.value[1] + 15 * 360 / image.height(), 1);
+    capture("keyed-viewport-edit");
+    auto* previousKey = item("rotoKeyPrev_" + roto);
+    auto* nextKey = item("rotoKeyNext_" + roto);
+    ASSERT_NE(previousKey, nullptr);
+    ASSERT_NE(nextKey, nullptr);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(previousKey));
+    ASSERT_TRUE(waitFor([&] { return controller->frame() == 0 && authoring()->property("frame").toInt() == 0; }));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(nextKey));
+    ASSERT_TRUE(waitFor([&] { return controller->frame() == 10 && authoring()->property("frame").toInt() == 10; }));
+    const auto& from = atTen.elements[0].points[0];
+    const auto& to = atTen.elements[0].points[1];
+    const double mx = (4 * from.position.value[0] + 3 * from.outTangent.value[0] + 4 * to.position.value[0] +
+                       3 * to.inTangent.value[0]) /
+                      8;
+    const double my = (4 * from.position.value[1] + 3 * from.outTangent.value[1] + 4 * to.position.value[1] +
+                       3 * to.inTangent.value[1]) /
+                      8;
+    const auto midpoint = (image.topLeft() + QPointF(mx * image.width() / 640, my * image.height() / 360)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::ControlModifier | Qt::AltModifier, midpoint);
+    const auto split = nemo::evaluateRoto(session->document(), network.toULongLong(), roto.toULongLong(), 10);
+    ASSERT_EQ(split.elements[0].points.size(), 5u);
+    EXPECT_NEAR(split.elements[0].points[1].position.value[0], mx, 2 * 640 / image.width());
+    EXPECT_NEAR(split.elements[0].points[1].position.value[1], my, 2 * 360 / image.height());
+    ASSERT_TRUE(history->undo());
+    const auto restored = nemo::evaluateRoto(session->document(), network.toULongLong(), roto.toULongLong(), 10);
+    EXPECT_EQ(restored.elements[0].points, atTen.elements[0].points);
 }
 
 }  // namespace

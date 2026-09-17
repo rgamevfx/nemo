@@ -4,6 +4,7 @@
   "status": "implemented-and-reviewed-locally-with-recorded-gate-limitations-landing-held",
   "reference": "Foundry Nuke 17.0 documentation and explicit owner-approved policy; no Nuke runtime parity claim.",
   "contract": "contract.json",
+  "presentation_refinement": "compact-ui-evidence.json",
   "scope": {
     "primary_stories": [
       43,

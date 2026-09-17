@@ -317,8 +317,13 @@ two-input socket mapper). Shuffle's routing key/exposure cells reuse the shared
 controls inside its channel dialog; generic fallback retains all 30 parameters.
 Crop declares `nemo.crop.box` (`CropBoxEditor.qml`, x/y/right/top with an
 extent-display toggle); Reformat declares `nemo.reformat.format`
-(`ReformatFormatEditor.qml`, saved-composition/custom target and named presets
-copied by value). Their numeric, key and exposure cells use those same controls.
+(`ReformatFormatEditor.qml`, a compact mode-dependent section with one
+composition/named/custom output selector and inline flags). Its adjacent format
+popup keeps dimensions as an unapplied draft: Apply authors the node in one
+gesture; preset save/update/delete changes only the document-owned registry.
+Presets are copied by value. Numeric fields and label exposure/Alt-click keying
+reuse the shared controls; label right-click opens the shared key menu without
+permanent key-button cells. No private history or renderer state is owned here.
 Viewer Crop handles use `ViewerPanel`'s existing image mapping and the shared
 batch-parameter gesture/history owner, not an independent undo stack.
 Their held-pointer mapping captures scalar camera coordinates; a newly delivered

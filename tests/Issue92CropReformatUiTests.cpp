@@ -945,6 +945,24 @@ TEST_F(CropReformatSurface, Issue92ReformatOrientationUsesSharedBooleanEditing) 
     ASSERT_TRUE(history_->undo());
     EXPECT_TRUE(authoredFlip());
     EXPECT_EQ(warnings_->count(), 0);
+    capture(QStringLiteral("issue92-reformat-compact"));
+
+    // Compact labels keep the shared key actions, without idle key buttons.
+    auto* flipLabel = item(QStringLiteral("label_") + reformat + QStringLiteral("_flip"));
+    ASSERT_NE(flipLabel, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::AltModifier, center(flipLabel));
+    QTest::qWait(30);
+    EXPECT_EQ(controller_->nodeParameterKeyStatus(network_, reformat, QStringLiteral("flip")), QStringLiteral("key"));
+    QTest::mouseClick(window_, Qt::RightButton, Qt::NoModifier, center(flipLabel));
+    QTest::qWait(50);
+    capture(QStringLiteral("issue92-reformat-key-menu"));
+    auto* removeKey = visualWithProperty(window_->contentItem(), "text",
+                                         QStringLiteral("Remove Key at Frame %1").arg(controller_->frame()));
+    ASSERT_NE(removeKey, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(removeKey));
+    QTest::qWait(50);
+    EXPECT_EQ(controller_->nodeParameterKeyStatus(network_, reformat, QStringLiteral("flip")), QStringLiteral("none"));
+    EXPECT_EQ(warnings_->count(), 0);
 }
 
 // Story 50/51: the Reformat format editor is the ONE control for the format
@@ -1012,13 +1030,12 @@ TEST_F(CropReformatSurface, Issue92ReformatFormatEditorAppliesPresetsByValue) {
     // Apply it from the preset chooser: the node copies the value and states
     // the custom source in ONE authored transition.
     const auto revisionBefore = session_->revision();
-    auto* presetBox = item(QStringLiteral("reformatPreset_") + reformatId);
+    auto* presetBox = item(QStringLiteral("reformatOutput_") + reformatId);
     ASSERT_NE(presetBox, nullptr);
     QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(presetBox));
     QTest::qWait(80);
-    auto* entry = visualWithProperty(window_->contentItem(), "modelData", QStringLiteral("Wide2to1"));
-    ASSERT_NE(entry, nullptr) << "the preset chooser must list the document's preset";
-    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(entry));
+    QTest::keyClick(window_, Qt::Key_Down);
+    QTest::keyClick(window_, Qt::Key_Return);
     QTest::qWait(80);
     EXPECT_EQ(session_->revision(), revisionBefore + 1) << "applying a preset is one history entry";
     const auto sourceValue = session_->queryValues(networkIdentity(network_), nodeIdentity(reformatId), "formatSource");
@@ -1038,6 +1055,7 @@ TEST_F(CropReformatSurface, Issue92ReformatFormatEditorAppliesPresetsByValue) {
     nameField = item(QStringLiteral("reformatPresetName_") + reformatId);
     ASSERT_NE(nameField, nullptr);
     QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(nameField));
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
     typeText(window_, QStringLiteral("Wide2to1"));
     setDraft(QStringLiteral("reformatPresetWidth_"), QStringLiteral("4096"));
     saveButton = item(QStringLiteral("reformatPresetSave_") + reformatId);
@@ -1059,6 +1077,73 @@ TEST_F(CropReformatSurface, Issue92ReformatFormatEditorAppliesPresetsByValue) {
         presetRemains = presetRemains || preset.name == "Wide2to1";
     EXPECT_FALSE(presetRemains);
     EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("width")), 2048.0);
+
+    // Applying a custom draft is atomic; closing an unapplied draft is inert.
+    auto* apply = item(QStringLiteral("reformatApply_") + reformatId);
+    ASSERT_NE(apply, nullptr);
+    const auto beforeApply = session_->revision();
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(apply));
+    QTest::qWait(60);
+    EXPECT_EQ(session_->revision(), beforeApply + 1);
+    EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("width")), 4096.0);
+    ASSERT_TRUE(history_->undo());
+    EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("width")), 2048.0);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(presetsButton));
+    QTest::qWait(40);
+    setDraft(QStringLiteral("reformatPresetWidth_"), QStringLiteral("1234"));
+    const auto beforeCancel = session_->revision();
+    QTest::keyClick(window_, Qt::Key_Escape);
+    QTest::qWait(40);
+    EXPECT_EQ(session_->revision(), beforeCancel);
+    EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("width")), 2048.0);
+    auto* editor = item(QStringLiteral("reformatFormatEditor_") + reformatId);
+    ASSERT_NE(editor, nullptr);
+    auto* formatPopup = editor->findChild<QObject*>(QStringLiteral("reformatPresetPopup_") + reformatId);
+    ASSERT_NE(formatPopup, nullptr);
+    ASSERT_FALSE(formatPopup->property("visible").toBool()) << "Escape closes the unapplied format draft";
+
+    const auto chooseType = [&](int index) {
+        auto* type = visualByName(editor, QStringLiteral("choice_") + reformatId + QStringLiteral("_type"));
+        ASSERT_NE(type, nullptr);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(type));
+        QTest::qWait(30);
+        const QStringList names{QStringLiteral("to format"), QStringLiteral("to box"), QStringLiteral("scale")};
+        auto* entry = visualWithProperty(window_->contentItem(), "modelData", names[index]);
+        ASSERT_NE(entry, nullptr);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(entry));
+        QTest::qWait(40);
+    };
+    const auto enterNumber = [&](const QString& key, const QString& text) {
+        auto* field = item(QStringLiteral("reformat_") + reformatId + '_' + key);
+        ASSERT_NE(field, nullptr);
+        ASSERT_TRUE(field->isVisible());
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(field));
+        QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+        typeText(window_, text);
+        QTest::keyClick(window_, Qt::Key_Return);
+        QTest::qWait(30);
+    };
+    chooseType(1);
+    enterNumber(QStringLiteral("boxWidth"), QStringLiteral("640"));
+    EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("boxWidth")), 640.0);
+    capture(QStringLiteral("issue92-reformat-box"));
+    chooseType(2);
+    enterNumber(QStringLiteral("scaleX"), QStringLiteral("0.5"));
+    EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("scaleX")), 0.5);
+    capture(QStringLiteral("issue92-reformat-scale"));
+    chooseType(0);
+    EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("width")), 2048.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("boxWidth")), 640.0);
+    EXPECT_DOUBLE_EQ(authoredNumber(reformatId, QStringLiteral("scaleX")), 0.5);
+    window_->resize(950, 700);
+    QTest::qWait(100);
+    auto* clamp = item(QStringLiteral("toggle_") + reformatId + QStringLiteral("_clamp"));
+    ASSERT_NE(clamp, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(clamp));
+    QTest::qWait(30);
+    EXPECT_TRUE(std::get<bool>(
+        session_->queryValues(networkIdentity(network_), nodeIdentity(reformatId), "clamp").front().value));
+    capture(QStringLiteral("issue92-reformat-narrow"));
     EXPECT_EQ(warnings_->count(), 0);
 }
 

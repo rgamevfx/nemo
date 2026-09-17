@@ -92,9 +92,6 @@ NodeDescriptor reformatDescriptor() {
     };
     std::vector<ParameterSpec> parameters{
         choice("type", "Type", "format", {"format", "box", "scale"}),
-        // The format target's editor mounts on this row: it presents the
-        // composition/custom choice and the custom canvas, and owns no other
-        // control.
         choice("formatSource", "Format", "composition", {"composition", "custom"}),
         integer("width", "Width", 1920, "OutputFormat", 8192.0),
         integer("height", "Height", 1080, "OutputFormat", 8192.0),
@@ -119,10 +116,8 @@ NodeDescriptor reformatDescriptor() {
         flag("preserveBoundingBox", "Preserve Bounding Box", false, "Sampling"),
     };
     for (ParameterSpec& parameter : parameters) {
-        if (parameter.name == "formatSource") {
-            // The format editor's mount row (issues #46, #92): the host presents
-            // this parameter through the registered editor, which owns exactly
-            // the four keys it consumes.
+        if (parameter.name == "type") {
+            // One section editor owns the mode-dependent Reformat surface.
             parameter.editor = "nemo.reformat.format";
         }
     }
@@ -693,10 +688,14 @@ NodeContribution reformatContribution() {
     // the documented solid alpha — so the executors must never copy the main
     // input's channels over it (issue #90).
     contribution.ownsChannelLayout = true;
-    contribution.editors = {NodeEditorContribution{.id = "nemo.reformat.format",
-                                                   .source = "qrc:/qt/qml/Nemo/qml/ReformatFormatEditor.qml",
-                                                   .consumes = {"formatSource", "width", "height", "pixelAspect"},
-                                                   .presentation = "section"}};
+    contribution.editors = {NodeEditorContribution{
+        .id = "nemo.reformat.format",
+        .source = "qrc:/qt/qml/Nemo/qml/ReformatFormatEditor.qml",
+        .consumes = {"type",     "formatSource", "width",          "height",       "pixelAspect",
+                     "boxWidth", "boxHeight",    "boxPixelAspect", "forceShape",   "scaleX",
+                     "scaleY",   "resize",       "center",         "flip",         "flop",
+                     "turn",     "filter",       "clamp",          "blackOutside", "preserveBoundingBox"},
+        .presentation = "section"}};
     return contribution;
 }
 

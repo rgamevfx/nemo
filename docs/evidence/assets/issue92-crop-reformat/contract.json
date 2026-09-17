@@ -53,5 +53,13 @@
     ],
     "production": "ViewerPanel computeDisplayRect/viewCenter/imageScale/syncView; #84 continuous wheel/pan and #85 full-frame override supersede prototype wheel behavior."
   },
-  "verification": "Approved ProjectSession/commands/history/save-reopen/CPU/native seam; real native UI. Focused debug builds/tests, one final full debug suite, release build, relevant sanitizers. Separate standards/spec review. Known unrelated colorimetry failure retained."
+  "verification": "Approved ProjectSession/commands/history/save-reopen/CPU/native seam; real native UI. Focused debug builds/tests, one final full debug suite, release build, relevant sanitizers. Separate standards/spec review. Known unrelated colorimetry failure retained.",
+  "presentation_refinement": {
+    "approval": "Owner approved screenshot-led compact grouping, one format selector, conditional sizing, inline checkboxes, adjacent format definition action, and removal of Geometry/Sampling clutter.",
+    "authority": "https://learn.foundry.com/nuke/content/resources/images/gsg_images/reformat.png",
+    "boundary": "Supersedes the original Reformat presentation only. Preserve Nemo theme, numerical defaults, saved parameters, commands/history, keying/exposure and preset-by-value semantics.",
+    "protected_inspector_reference": "issue25-prototype-reference-v1.tar.gz: workflow-session.json /verified[2],[3], /behavior[1],[2],[3]; archived ParametersPanel.qml. Host packing, columns, scrolling and unique/pinned inspectors unchanged.",
+    "verification": "Affected debug UI targets and focused native Wayland interactions/captures; no repeated full suite or backend/sanitizer matrix.",
+    "evidence": "compact-ui-evidence.json"
+  }
 }

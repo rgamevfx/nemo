@@ -60,6 +60,11 @@ Rectangle {
                                : "Show in Animation (no Animation panel in this group)";
     }
 
+    // Compact editors retain the shared key menu without a permanent key cell.
+    function openMenu(target) {
+        keyContextMenu.popup(target, 0, target.height);
+    }
+
     Text {
         anchors.centerIn: parent
         text: keyIndicator.keyStatus === "key" ? "\u25c6" : keyIndicator.keyStatus === "animated" ? "\u25c7" : "\u25cb"

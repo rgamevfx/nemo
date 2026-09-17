@@ -1,0 +1,76 @@
+{
+  "issue": 92,
+  "baseline": "e686ba1",
+  "status": "verified-locally-landing-held",
+  "pre_edit_contract": "https://github.com/rgamevfx/nemo/issues/92#issuecomment-5706362906",
+  "visual_authority": "https://learn.foundry.com/nuke/content/resources/images/gsg_images/reformat.png",
+  "comparison": {
+    "matched": [
+      "Compact type/output-format rows above a divider.",
+      "One composition/named/custom output selector with adjacent equals action.",
+      "Resize type plus center/flip/flop/turn on one normal-width row.",
+      "Filter plus clamp/black outside/preserve bounding box on one normal-width row.",
+      "No separate Geometry/Sampling sections or permanent key-button cells."
+    ],
+    "approved_adaptations": [
+      "Existing Nemo colors, fonts and inspector chrome; existing numerical defaults unchanged.",
+      "Composition remains the initial target; named formats remain document-owned and copied by value.",
+      "Box and scale modes show only their existing sizing controls; those modes are not pictured in the supplied screenshot.",
+      "Narrow inspectors wrap complete controls rather than clipping labels."
+    ],
+    "visual_review": "Inspected final production-window captures for normal to-format, box, scale, format popup and 950x700 narrow layout. Normal-width grouping matches the supplied reference; preserve bounding box wraps at narrow width. No Nuke runtime parity claim."
+  },
+  "architecture": [
+    "Existing nemo.reformat.format contribution consumes all Reformat parameter keys; no host inspector layout change.",
+    "Shared parameter gestures, NumericField, ExposureLabel and KeyIndicator menu retain command/history/key/exposure ownership.",
+    "Format popup owns only an unapplied local draft. Apply authors one node gesture; saving/updating/deleting a preset touches only the named-format registry.",
+    "No renderer, persistent schema, serialized value, numerical default, dependency or image baseline change."
+  ],
+  "build": {
+    "command": "VCPKG_ROOT=/home/rgame/.local/share/vcpkg cmake --build --preset debug --target nemo-ui nemo_workspace_ui_tests -j 2",
+    "result": "passed",
+    "warning": "Existing minizip-ng mktemp linker warning only."
+  },
+  "native_verification": {
+    "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=CropReformatSurface.Issue92Reformat* --gtest_output=json:docs/evidence/assets/issue92-crop-reformat/compact-ui-tests.json",
+    "environment": {
+      "XDG_RUNTIME_DIR": "/run/user/1000",
+      "WAYLAND_DISPLAY": "wayland-1",
+      "QT_QPA_PLATFORM": "wayland",
+      "NEMO_TEST_NATIVE_UI": "1",
+      "NEMO_TEST_VIEWER_WINDOW": "1",
+      "NEMO92_EVIDENCE_DIR": "docs/evidence/assets/issue92-crop-reformat/compact-native"
+    },
+    "result": "3 passed; 0 failed; 0 skipped",
+    "results": "compact-ui-tests.json",
+    "surface": "Production Qt Quick window, native Wayland input and Vulkan viewer; captured by QQuickWindow::grabWindow. Desktop capture unavailable on this host.",
+    "behaviors": [
+      "Checkbox label edits and a single undo restore the authored boolean.",
+      "Alt-click creates a key; right-click opens the shared menu and Remove Key removes it.",
+      "Preset creation, selection, update and deletion retain node values by value.",
+      "Custom format Apply commits atomically and undo restores the prior size.",
+      "Escape closes an unapplied format draft without a document revision.",
+      "Real mode-selector clicks expose editable box and scale controls; switching modes preserves their authored values.",
+      "Narrow-layout checkbox-label click authors clamp; no QML warnings.",
+      "Existing reformatted Crop offset/handle scenario remains green."
+    ],
+    "red_to_green": [
+      "Initial native checks found swallowed checkbox-label clicks. Plain label clicks now submit the same shared discrete gesture; Alt-click and exposure drag keep their shared handlers.",
+      "Escape initially left the draft popup open after numeric editing. A popup-scoped enabled Escape shortcut now closes the unapplied draft.",
+      "Mode interaction lookup now scopes to the custom editor instead of the hidden generic fallback; key-menu actions use actual visible menu clicks."
+    ]
+  },
+  "captures": [
+    "compact-native/issue92-reformat-compact.png",
+    "compact-native/issue92-reformat-key-menu.png",
+    "compact-native/issue92-reformat-preset-popup.png",
+    "compact-native/issue92-reformat-preset.png",
+    "compact-native/issue92-reformat-box.png",
+    "compact-native/issue92-reformat-scale.png",
+    "compact-native/issue92-reformat-narrow.png",
+    "compact-native/issue92-reformat-crop.png"
+  ],
+  "formatting": "clang-format-18 --dry-run --Werror src/nemo/nodes/reformat/Contribution.cpp tests/Issue92CropReformatUiTests.cpp: passed",
+  "verification_budget": "UI-only correction: affected debug targets and native interactions/captures. Full suite, release/backend/sanitizer matrices were not repeated; original verification.json remains historical evidence with its recorded limitations.",
+  "landing": "Local follow-up only on issue/85-region-evaluation. No push, merge, issue closure or hold release. User workflow assets and comp.spv untouched."
+}

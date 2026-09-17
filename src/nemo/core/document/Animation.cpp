@@ -40,6 +40,16 @@ const NodeInstance& addressNode(const Document& document, const ParameterAddress
 }
 
 const ParameterSpec& addressSpec(const Document& document, const ParameterAddress& address, const NodeInstance& node) {
+    // A roto-scoped address names a property of the node's authored Roto data,
+    // never a catalog parameter: the node type owns only its ordinary
+    // parameters, while the shape/point schema lives with the model that
+    // defines it.
+    if (address.rotoElement != kInvalidRotoElement) {
+        const auto* spec = rotoParameterSpec(address);
+        if (!spec)
+            invalid("animation address references unknown roto property '" + address.key + "'");
+        return *spec;
+    }
     const auto* spec = document.network(address.network).graph().catalog().parameterSpec(node.type, address.key);
     if (!spec)
         invalid("animation address references unknown parameter '" + address.key + "'");
@@ -70,9 +80,12 @@ void validateChannel(const Document& document, const AnimationChannel& channel) 
     // A node type this build does not model has no catalog contract. Its channel
     // is preserved as authored disabled data: structure, identities and times
     // are still validated, but spec-dependent checks are skipped. A known node
-    // type with an unknown parameter remains an error.
-    const ParameterSpec* spec = catalog.parameterSpec(node.type, channel.address.key);
-    const bool unavailable = catalog.find(node.type) == nullptr;
+    // type with an unknown parameter remains an error. A roto-scoped address is
+    // validated against the model's own roto schema instead of the catalog.
+    const bool rotoScoped = channel.address.rotoElement != kInvalidRotoElement;
+    const ParameterSpec* spec =
+        rotoScoped ? rotoParameterSpec(channel.address) : catalog.parameterSpec(node.type, channel.address.key);
+    const bool unavailable = !rotoScoped && catalog.find(node.type) == nullptr;
     // A future parameter record this build cannot type is preserved even when
     // the node type is known but the parameter is not; typed keys referencing an
     // unknown parameter on a known type remain an error.
@@ -106,7 +119,8 @@ void validateChannel(const Document& document, const AnimationChannel& channel) 
             continue;
         }
         if (spec != nullptr) {
-            if (const auto problem = catalog.validateParameter(node.type, channel.address.key, key.value))
+            if (const auto problem = rotoScoped ? validateRotoValue(channel.address, key.value)
+                                                : catalog.validateParameter(node.type, channel.address.key, key.value))
                 fail(*problem);
             const auto count = animation_detail::componentCount(spec->type);
             if (count == 0 && key.interpolation != KeyInterpolation::Hold)
@@ -127,6 +141,10 @@ void validateChannel(const Document& document, const AnimationChannel& channel) 
 }
 
 ParameterValue staticValue(const Document& document, const ParameterAddress& address) {
+    // A roto property's authored value lives in the node's Roto data and is
+    // resolved by its own owner; the element/point must exist.
+    if (address.rotoElement != kInvalidRotoElement)
+        return rotoParameterValue(document, address);
     const auto& node = addressNode(document, address);
     const auto& spec = addressSpec(document, address, node);
     ParameterValue result = spec.defaultValue;
@@ -192,6 +210,14 @@ ParameterValue evaluateChannel(const AnimationChannel& channel, ParameterType ty
 
 }  // namespace
 
+ParameterValue evaluateAnimationChannel(const AnimationChannel& channel, ParameterType type, double time) {
+    if (!std::isfinite(time))
+        invalid("animation query time must be finite");
+    if (channel.keys.empty())
+        invalid("animation channel " + std::to_string(channel.id) + " has no keys");
+    return evaluateChannel(channel, type, time);
+}
+
 ParameterValue animatedParameterValue(const Document& document, const ParameterAddress& address, double time) {
     if (!std::isfinite(time))
         invalid("animation query time must be finite");
@@ -232,6 +258,11 @@ void applyAnimationParameters(const Document& document, NetworkId network, NodeI
         for (const auto& channel : document.animationChannels()) {
             if (channel.address.network != network || channel.address.node != node ||
                 (channel.address.instance != kInvalidNetworkInstance) != occurrenceChannels)
+                continue;
+            // Roto properties are resolved by the Roto evaluator, which reads
+            // these same channels; they are never flattened into the node's
+            // ordinary parameter map.
+            if (channel.address.rotoElement != kInvalidRotoElement)
                 continue;
             if (occurrenceChannels) {
                 if (channel.address.instance != instance)

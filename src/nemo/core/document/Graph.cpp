@@ -180,6 +180,20 @@ void Graph::restoreNodeExtension(NodeId id, nlohmann::json extension, nlohmann::
     node->opaqueParams = std::move(opaqueParams);
 }
 
+void Graph::setRoto(NodeId id, RotoData roto) {
+    std::size_t index = 0;
+    NodeInstance* node = mutableNode(id, index);
+    if (node == nullptr)
+        throw GraphException(GraphError::UnknownNode, "cannot set roto data on unknown node " + std::to_string(id));
+    if (const auto problem = validateRotoData(roto))
+        throw GraphException(GraphError::InvalidRoto, "node '" + node->name + "' roto data: " + *problem);
+    if (node->roto && rotoContentEquals(*node->roto, roto))
+        return;
+    node->roto = std::make_shared<const RotoData>(std::move(roto));
+    ++revision_;
+    recordNode(id);
+}
+
 void Graph::renameNode(NodeId id, std::string name) {
     if (name.empty())
         throw GraphException(GraphError::InvalidName, "node name must not be empty");

@@ -23,9 +23,9 @@ namespace nemo::eval {
 // survive a semantic change to the interface the kernels were compiled
 // against. Node-local payload layouts are versioned separately by their own
 // declaring node.
-inline constexpr std::string_view kEffectBindingContractVersion = "nemo.native.bindings.v7";
+inline constexpr std::string_view kEffectBindingContractVersion = "nemo.native.bindings.v8";
 
-// Internal binding contract v7 (issues #88, #90, #98). Only coordinate/time facts
+// Internal binding contract v8 (issues #88, #90, #98, #93). Only coordinate/time facts
 // and the resolved named-channel projection are common to effects. Node-local
 // payloads have their own layout at set 0, binding 1.
 //
@@ -181,6 +181,9 @@ struct EffectPassDefinition {
     std::vector<EffectImageRef> inputs;
     EffectImageRef output{EffectImageKind::Output, 0};
     bool weights{false};
+    // Read-only node-local geometry words at set 4/binding 0. The executor
+    // owns upload and retention; the contribution owns the versioned layout.
+    bool geometry{false};
 };
 
 // Coverage of one scratch image the selected local passes produce. A scratch
@@ -207,6 +210,9 @@ struct GpuPreparation {
     // rejects a selected pass whose scratch output is undeclared, and a
     // declaration whose pass is not selected.
     std::vector<EffectScratchRegion> scratch;
+    // Owned, 32-bit-word-aligned geometry payload. Bounded by the device's
+    // storage-buffer limit before allocation; never borrowed from the document.
+    std::vector<std::byte> geometry;
 };
 
 struct GpuNodeContext {
@@ -249,6 +255,9 @@ struct GpuNodeContext {
     // format, which travels in `inputDescriptions`/`description`. Null only for a
     // direct preparation call without a network scope.
     const ImageFormat* owningFormat{nullptr};
+    // Immutable document snapshot for contribution-owned subframe geometry.
+    const Document* document{nullptr};
+    NetworkId network{kInvalidNetwork};
 };
 
 // Preparation is worker-side, reentrant value computation: no device,

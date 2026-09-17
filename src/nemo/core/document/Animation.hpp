@@ -2,6 +2,7 @@
 
 #include "nemo/core/document/Ids.hpp"
 #include "nemo/core/document/ParameterValue.hpp"
+#include "nemo/core/document/Roto.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
 #include <array>
@@ -13,11 +14,19 @@
 
 namespace nemo {
 
+// One authored property, addressed by the node scope it lives in and - for a
+// Roto node - by the node-local element/point identity it belongs to. An
+// ordinary parameter leaves both roto identities zero, so every existing
+// address, comparison and channel key is unchanged; a nonzero `rotoElement`
+// scopes the key to that shape or group, and a nonzero `rotoPoint` additionally
+// scopes it to one of that element's points.
 struct ParameterAddress {
     NetworkId network{kInvalidNetwork};
     NodeId node{kInvalidNode};
     std::string key;
     NetworkInstanceId instance{kInvalidNetworkInstance};
+    RotoElementId rotoElement{kInvalidRotoElement};
+    RotoPointId rotoPoint{kInvalidRotoPoint};
 
     friend bool operator==(const ParameterAddress&, const ParameterAddress&) = default;
 };
@@ -111,6 +120,14 @@ namespace animation_detail {
 // animation channel at a document-local frame. This query never mutates the
 // document and uses constant endpoint extrapolation.
 [[nodiscard]] ParameterValue animatedParameterValue(const Document&, const ParameterAddress&, double time);
+
+// Samples one already-resolved channel with the same interpolation engine every
+// other consumer uses. `type` is the channel's declared value shape; the
+// returned value has that shape. Kept public so a batched resolver (a Roto
+// evaluation, for instance) can index the channels once and then sample them
+// without a second animation implementation. A non-finite time or a value that
+// exceeds the finite parameter range is rejected exactly as above.
+[[nodiscard]] ParameterValue evaluateAnimationChannel(const AnimationChannel& channel, ParameterType type, double time);
 
 // Applies definition and occurrence animation over an already-composed static
 // parameter map. Explicit occurrence overrides suppress their definition

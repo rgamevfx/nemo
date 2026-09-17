@@ -201,6 +201,7 @@ EffectLibrary::EffectLibrary(std::vector<GpuNodeContribution> contributions, Eff
             hashMixWord(hash, static_cast<std::uint64_t>(pass.output.kind));
             hashMixWord(hash, pass.output.index);
             hashMixWord(hash, pass.weights);
+            hashMixWord(hash, pass.geometry);
             const auto& spirv = effect.programs[i].spirv;
             hashMixWord(hash, spirv ? spirv->size() : 0);
             if (spirv)

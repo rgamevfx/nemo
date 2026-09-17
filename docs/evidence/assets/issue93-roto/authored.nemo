@@ -1,0 +1,497 @@
+{
+  "animationChannels": [
+    {
+      "address": {
+        "key": "translation",
+        "network": 1,
+        "node": 2,
+        "rotoElement": 1
+      },
+      "id": 1,
+      "keys": [
+        {
+          "id": 1,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": -1.0,
+          "value": {
+            "type": "vector2",
+            "value": [
+              -40.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "id": 2,
+          "inSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "interpolation": "linear",
+          "outSlope": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "tangentMode": "smooth",
+          "time": 1.0,
+          "value": {
+            "type": "vector2",
+            "value": [
+              40.0,
+              0.0
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "color": {
+    "deliveryTransform": "sRGB/rec709",
+    "viewerTransform": "sRGB/rec709",
+    "workingSpace": "linear"
+  },
+  "format": "nemo",
+  "futureSmoke": {
+    "retained": true
+  },
+  "instances": [],
+  "mediaCatalog": {
+    "bins": [],
+    "entries": [],
+    "nextBinId": 1,
+    "nextEntryId": 1
+  },
+  "name": "",
+  "namedFormats": {},
+  "networks": [
+    {
+      "defaultOutput": 1,
+      "edges": [
+        {
+          "from": {
+            "node": 2,
+            "port": 0
+          },
+          "id": 1,
+          "to": {
+            "node": 1,
+            "port": 0
+          }
+        }
+      ],
+      "exposedParameters": [],
+      "id": 1,
+      "imageFormat": {
+        "height": 360,
+        "pixelAspect": 1.5,
+        "width": 640
+      },
+      "inputConnections": [],
+      "inputs": [],
+      "name": "Roto smoke",
+      "nextEdgeId": 2,
+      "nextInterfacePortId": 1,
+      "nextNodeId": 3,
+      "nodes": [
+        {
+          "id": 1,
+          "layout": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "name": "Output",
+          "params": {},
+          "type": "output"
+        },
+        {
+          "id": 2,
+          "layout": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "name": "Matte",
+          "params": {
+            "outputChannel": {
+              "type": "string",
+              "value": "R"
+            },
+            "samples": {
+              "type": "integer",
+              "value": 8
+            },
+            "shutter": {
+              "type": "float",
+              "value": 0.5
+            }
+          },
+          "roto": {
+            "elements": [
+              {
+                "blend": "combine",
+                "feather": 0.0,
+                "featherEnabled": true,
+                "featherFalloff": 1.0,
+                "featherProfile": "linear",
+                "id": 1,
+                "inverted": false,
+                "kind": "group",
+                "locked": false,
+                "name": "Moving mask",
+                "opacity": 1.0,
+                "pivot": [
+                  0.0,
+                  0.0
+                ],
+                "points": [],
+                "rotation": 0.0,
+                "scale": [
+                  1.0,
+                  1.0
+                ],
+                "translation": [
+                  0.0,
+                  0.0
+                ],
+                "visible": true
+              },
+              {
+                "blend": "combine",
+                "feather": 10.0,
+                "featherEnabled": true,
+                "featherFalloff": 1.0,
+                "featherProfile": "linear",
+                "id": 2,
+                "inverted": false,
+                "kind": "bezier",
+                "locked": false,
+                "name": "Rectangle",
+                "opacity": 1.0,
+                "parent": 1,
+                "pivot": [
+                  0.0,
+                  0.0
+                ],
+                "points": [
+                  {
+                    "feather": 0.0,
+                    "id": 1,
+                    "inTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "outTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "position": [
+                      120.0,
+                      80.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 2,
+                    "inTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "outTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "position": [
+                      360.0,
+                      80.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 3,
+                    "inTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "outTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "position": [
+                      360.0,
+                      280.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 4,
+                    "inTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "outTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "position": [
+                      120.0,
+                      280.0
+                    ],
+                    "tension": 0.0
+                  }
+                ],
+                "rotation": 0.0,
+                "scale": [
+                  1.0,
+                  1.0
+                ],
+                "translation": [
+                  0.0,
+                  0.0
+                ],
+                "visible": true
+              },
+              {
+                "blend": "subtract",
+                "feather": 0.0,
+                "featherEnabled": true,
+                "featherFalloff": 1.0,
+                "featherProfile": "linear",
+                "id": 3,
+                "inverted": false,
+                "kind": "bezier",
+                "locked": false,
+                "name": "Hole",
+                "opacity": 1.0,
+                "parent": 1,
+                "pivot": [
+                  0.0,
+                  0.0
+                ],
+                "points": [
+                  {
+                    "feather": 0.0,
+                    "id": 5,
+                    "inTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "outTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "position": [
+                      200.0,
+                      140.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 6,
+                    "inTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "outTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "position": [
+                      300.0,
+                      140.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 7,
+                    "inTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "outTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "position": [
+                      300.0,
+                      220.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 8,
+                    "inTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "outTangent": [
+                      0.0,
+                      0.0
+                    ],
+                    "position": [
+                      200.0,
+                      220.0
+                    ],
+                    "tension": 0.0
+                  }
+                ],
+                "rotation": 0.0,
+                "scale": [
+                  1.0,
+                  1.0
+                ],
+                "translation": [
+                  0.0,
+                  0.0
+                ],
+                "visible": true
+              },
+              {
+                "blend": "combine",
+                "feather": 0.0,
+                "featherEnabled": true,
+                "featherFalloff": 1.0,
+                "featherProfile": "linear",
+                "id": 4,
+                "inverted": false,
+                "kind": "bezier",
+                "locked": false,
+                "name": "Ellipse",
+                "opacity": 1.0,
+                "pivot": [
+                  0.0,
+                  0.0
+                ],
+                "points": [
+                  {
+                    "feather": 0.0,
+                    "id": 9,
+                    "inTangent": [
+                      -49.70560073852539,
+                      0.0
+                    ],
+                    "outTangent": [
+                      49.70560073852539,
+                      0.0
+                    ],
+                    "position": [
+                      450.0,
+                      80.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 10,
+                    "inTangent": [
+                      0.0,
+                      -49.70560073852539
+                    ],
+                    "outTangent": [
+                      0.0,
+                      49.70560073852539
+                    ],
+                    "position": [
+                      540.0,
+                      170.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 11,
+                    "inTangent": [
+                      49.70560073852539,
+                      0.0
+                    ],
+                    "outTangent": [
+                      -49.70560073852539,
+                      0.0
+                    ],
+                    "position": [
+                      450.0,
+                      260.0
+                    ],
+                    "tension": 0.0
+                  },
+                  {
+                    "feather": 0.0,
+                    "id": 12,
+                    "inTangent": [
+                      0.0,
+                      49.70560073852539
+                    ],
+                    "outTangent": [
+                      0.0,
+                      -49.70560073852539
+                    ],
+                    "position": [
+                      360.0,
+                      170.0
+                    ],
+                    "tension": 0.0
+                  }
+                ],
+                "rotation": 0.0,
+                "scale": [
+                  1.0,
+                  1.0
+                ],
+                "translation": [
+                  0.0,
+                  0.0
+                ],
+                "visible": true
+              }
+            ],
+            "nextElementId": 5,
+            "nextPointId": 13,
+            "version": 1
+          },
+          "type": "roto"
+        }
+      ],
+      "outputConnections": [],
+      "outputInputBindings": [],
+      "outputs": []
+    }
+  ],
+  "nextAnimationChannelId": 2,
+  "nextInstanceId": 1,
+  "nextKeyframeId": 3,
+  "nextNetworkId": 2,
+  "requiredFeatures": [
+    {
+      "id": "networks",
+      "version": 1
+    },
+    {
+      "id": "animation",
+      "version": 1
+    }
+  ],
+  "rootNetworkId": 1,
+  "schema": 7,
+  "sources": {}
+}

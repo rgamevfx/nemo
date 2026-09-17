@@ -50,6 +50,7 @@ FocusScope {
     onHasImageChanged: {
         refreshView();
         refreshCropOverlay();
+        refreshRotoOverlay();
     }
     // A view still in motion when the application closes is still the view the
     // project should record.
@@ -63,10 +64,12 @@ FocusScope {
     onSourceWidthChanged: {
         refreshView();
         refreshCropOverlay();
+        refreshRotoOverlay();
     }
     onSourceHeightChanged: {
         refreshView();
         refreshCropOverlay();
+        refreshRotoOverlay();
     }
 
     // The coalescing and settling discipline of the wheel burst: one zoom
@@ -153,6 +156,19 @@ FocusScope {
     property var cropPreviewBox: null
     property bool cropDragMoved: false
     property string cropGestureError: ""
+    // --- Roto authoring overlay (issue #93, stories 50-58) ------------------
+    // The identity of the Roto node this panel DIRECTLY views and the same
+    // group's inspector has open, or null. The overlay is drawn only for that
+    // node, from the shared per-node adapter's evaluated geometry.
+    property var rotoOverlayState: null
+    // The shared per-node authoring adapter, keyed by node and owned by the
+    // authoring facade (ViewerController), so the overlay and the inspector's
+    // shape list share one selection and one draft of that node and nothing else.
+    property var rotoController: null
+    readonly property var rotoOverlayItem: rotoOverlayLoader.item
+    readonly property bool rotoActive: viewerPanel.rotoOverlayState !== null && viewerPanel.rotoController !== null && viewerPanel.rotoController.available === true
+    readonly property bool rotoGestureActive: viewerPanel.rotoOverlayItem !== null && viewerPanel.rotoOverlayItem.gestureLive === true
+    onRotoGestureActiveChanged: viewerPanel.syncRotoHistoryGesture()
     onCropGestureActiveChanged: syncCropHistoryGesture()
     onCropOverlayChanged: cropCanvas.requestPaint()
     onCropEpochChanged: cropCanvas.requestPaint()
@@ -1152,17 +1168,99 @@ FocusScope {
         return controller.cancelNodeParameterEdit(token)
     }
 
-    // Escape and a preview-only Undo reach the one live box gesture through the
-    // shared history owner: the session's preview is discarded and the release
-    // that follows publishes nothing.
+    // Escape and a preview-only Undo reach the one live box or Roto gesture
+    // through the shared history owner: the session's preview is discarded and
+    // the release that follows publishes nothing.
     function cancelHistoryGesture() {
         cancelCropGesture()
+        if (viewerPanel.rotoOverlayItem)
+            viewerPanel.rotoOverlayItem.cancelAll()
     }
 
+    // One panel registers ONE gesture owner, whether the live edit is a crop box
+    // or a Roto handle.
     function syncCropHistoryGesture() {
         if (typeof historyController === "undefined" || !historyController)
             return
-        historyController.setGesture(viewerPanel, cropGestureActive)
+        historyController.setGesture(viewerPanel, cropGestureActive || viewerPanel.rotoGestureActive)
+    }
+
+    function syncRotoHistoryGesture() {
+        syncCropHistoryGesture()
+    }
+
+    // --- Roto overlay (issue #93) ------------------------------------------
+    // The overlay is derived from the SAME condition the crop overlay uses: the
+    // node this panel directly views, and the same group's inspector has open.
+    // It is additionally restricted to a Roto node, so a Crop or any other node
+    // never shows shape handles.
+    function refreshRotoOverlay() {
+        var next = null
+        if (controller && graphRole && hasImage && targetAvailable) {
+            var network = String(controller.rootNetworkId || "")
+            var target = String(controller.viewerTargetId || "")
+            var inspected = false
+            var nodes = panelContext && panelContext.inspectorNodes ? panelContext.inspectorNodes : []
+            for (var index = 0; index < nodes.length; ++index) {
+                if (String(nodes[index].network) === network && String(nodes[index].node) === target) {
+                    inspected = true
+                    break
+                }
+            }
+            if (inspected && network.length > 0 && target.length > 0) {
+                var inspector = controller.parameterInspector(network, target)
+                if (inspector && inspector.available === true && String(inspector.type) === "roto")
+                    next = {
+                        "network": network,
+                        "node": target
+                    }
+            }
+        }
+        var previous = viewerPanel.rotoOverlayState
+        var changed = (previous === null) !== (next === null)
+        if (!changed && previous !== null && next !== null)
+            changed = String(previous.node) !== String(next.node) || String(previous.network) !== String(next.network)
+        if (!changed)
+            return
+        // A live draft or gesture belongs to the target it started on: another
+        // target's overlay discards the preview instead of committing it.
+        if (viewerPanel.rotoOverlayItem)
+            viewerPanel.rotoOverlayItem.cancelAll()
+        viewerPanel.rotoOverlayState = next
+        viewerPanel.bindRotoController()
+    }
+
+    // The authoring facade shares an adapter within this context group.
+    // Independent groups retain independent clocks and transient selections.
+    readonly property var rotoFactory: (typeof viewerController !== "undefined" && viewerController) ? viewerController : controller
+
+    function bindRotoController() {
+        var state = viewerPanel.rotoOverlayState
+        if (!state || !viewerPanel.rotoFactory) {
+            if (viewerPanel.rotoController)
+                viewerPanel.rotoController.detachView(viewerPanel)
+            viewerPanel.rotoController = null
+            return
+        }
+        var created = viewerPanel.rotoFactory.createRotoControllerFor(state.network, state.node, viewerPanel.panelGroup, viewerPanel)
+        if (viewerPanel.rotoController && viewerPanel.rotoController !== created)
+            viewerPanel.rotoController.detachView(viewerPanel)
+        viewerPanel.rotoController = created && String(created.nodeId) === String(state.node) && String(created.networkId) === String(state.network) ? created : null
+        // The adapter evaluates and keys at the panel's frame; assigning it here
+        // and on every frame change is what makes the drawn geometry the frame
+        // on screen.
+        if (viewerPanel.rotoController)
+            viewerPanel.rotoController.frame = viewerPanel.currentFrame
+    }
+
+    function rotoViewMapping() {
+        return viewerPanel.cropViewMapping()
+    }
+
+    function rotoCursorShape(px, py) {
+        if (!viewerPanel.rotoOverlayItem)
+            return Qt.ArrowCursor
+        return viewerPanel.rotoOverlayItem.cursorShape(px, py)
     }
 
     function cropCursorShape(px, py) {
@@ -1459,6 +1557,11 @@ FocusScope {
                         if (handleCursor !== Qt.ArrowCursor)
                             return handleCursor;
                     }
+                    if (viewerPanel.rotoActive) {
+                        var rotoCursor = viewerPanel.rotoCursorShape(mouseX, mouseY);
+                        if (rotoCursor !== Qt.ArrowCursor)
+                            return rotoCursor;
+                    }
                     return viewerPanel.imageScale() > viewerPanel.displayScale() ? Qt.OpenHandCursor : Qt.ArrowCursor;
                 }
                 enabled: viewerPanel.targetAvailable
@@ -1490,6 +1593,17 @@ FocusScope {
                             return;
                         }
                     }
+                    // A Roto press that lands on a shape, a point or a handle
+                    // belongs to the overlay; a blank press still pans, exactly
+                    // like the accepted crop behaviour.
+                    if (mouse.button === Qt.LeftButton && viewerPanel.rotoActive && viewerPanel.rotoOverlayItem
+                            && viewerPanel.rotoOverlayItem.press(mouse.x, mouse.y, mouse.modifiers)) {
+                        forceActiveFocus();
+                        mouse.accepted = true;
+                        viewerPanel.panLastX = mouse.x;
+                        viewerPanel.panLastY = mouse.y;
+                        return;
+                    }
                     viewerPanel.panning = true;
                     viewerPanel.panLastX = mouse.x;
                     viewerPanel.panLastY = mouse.y;
@@ -1500,6 +1614,12 @@ FocusScope {
                         viewerPanel.panLastX = mouse.x;
                         viewerPanel.panLastY = mouse.y;
                         viewerPanel.updateCropGesture(mouse.x, mouse.y);
+                        return;
+                    }
+                    if (!viewerPanel.panning && viewerPanel.rotoActive && viewerPanel.rotoOverlayItem
+                            && viewerPanel.rotoOverlayItem.move(mouse.x, mouse.y)) {
+                        viewerPanel.panLastX = mouse.x;
+                        viewerPanel.panLastY = mouse.y;
                         return;
                     }
                     if (!viewerPanel.panning)
@@ -1515,11 +1635,14 @@ FocusScope {
                     viewerPanel.panLastY = mouse.y;
                     viewerPanel.syncView();
                 }
-                onReleased: {
+                onReleased: function(mouse) {
                     if (viewerPanel.cropDragHandle.length > 0) {
                         viewerPanel.finishCropGesture();
                         return;
                     }
+                    if (viewerPanel.rotoActive && viewerPanel.rotoOverlayItem
+                            && viewerPanel.rotoOverlayItem.release(mouse.x, mouse.y))
+                        return;
                     if (!viewerPanel.panning)
                         return;
                     viewerPanel.panning = false;
@@ -1528,6 +1651,10 @@ FocusScope {
                 onCanceled: {
                     if (viewerPanel.cropDragHandle.length > 0) {
                         viewerPanel.cancelCropGesture();
+                        return;
+                    }
+                    if (viewerPanel.rotoActive && viewerPanel.rotoOverlayItem) {
+                        viewerPanel.rotoOverlayItem.cancelAll();
                         return;
                     }
                     viewerPanel.panning = false;
@@ -1571,6 +1698,29 @@ FocusScope {
                         target: viewerPanel.theme
                         function onPresetChanged() { cropCanvas.requestPaint() }
                         function onAccentOverrideChanged() { cropCanvas.requestPaint() }
+                    }
+                }
+            }
+
+            // Roto authoring overlay (issue #93). It sits beside the crop
+            // handles and never takes the pointer itself: the pan gesture above
+            // delegates to it, so blank presses still pan, the middle drag and
+            // the wheel are unchanged, and a Crop overlay is never affected.
+            Loader {
+                id: rotoOverlayLoader
+                objectName: "rotoOverlayHost_" + viewerPanel.panelId
+                anchors.fill: parent
+                active: viewerPanel.rotoOverlayState !== null
+                sourceComponent: rotoOverlayComponent
+                onLoaded: viewerPanel.bindRotoController()
+
+                Component {
+                    id: rotoOverlayComponent
+                    RotoOverlay {
+                        panel: viewerPanel
+                        theme: viewerPanel.theme
+                        roto: viewerPanel.rotoController
+                        panelId: viewerPanel.panelId
                     }
                 }
             }
@@ -1967,15 +2117,18 @@ FocusScope {
         forwardContext()
         restoreForceFullFrame()
         refreshCropOverlay()
+        refreshRotoOverlay()
     })
     onViewerIndexChanged: {
         activateViewer();
         refreshCropOverlay();
+        refreshRotoOverlay();
     }
     onGraphRoleChanged: {
         if (graphRole)
             activateViewer();
         refreshCropOverlay();
+        refreshRotoOverlay();
     }
     onVisibleChanged: if (visible && graphRole) activateViewer()
 
@@ -1987,11 +2140,15 @@ FocusScope {
         // discards the preview instead of committing it.
         if (cropGestureActive)
             cancelCropGesture();
+        if (viewerPanel.rotoOverlayItem)
+            viewerPanel.rotoOverlayItem.cancelAll();
         refreshCropOverlay();
+        refreshRotoOverlay();
     }
     onViewerRoleChanged: {
         forwardContext();
         refreshCropOverlay();
+        refreshRotoOverlay();
     }
     onRoutedClockChanged: forwardContext()
 
@@ -2006,7 +2163,13 @@ FocusScope {
             // cancelled instead of committing through it.
             if (viewerPanel.cropGestureActive)
                 viewerPanel.cancelCropGesture();
+            // A Roto draft or handle drag is the same kind of live edit against
+            // the topology it started on: any published change (a deletion, an
+            // Undo from another owner, a reopen) discards it uncommitted.
+            if (viewerPanel.rotoOverlayItem)
+                viewerPanel.rotoOverlayItem.cancelAll();
             viewerPanel.refreshCropOverlay();
+            viewerPanel.refreshRotoOverlay();
         }
         // The described input geometry a reformat+intersect offset needs
         // arrives asynchronously from the worker, so the overlay is re-derived
@@ -2014,15 +2177,35 @@ FocusScope {
         function onNodeChannelsChanged() {
             viewerPanel.cropEpoch++;
             viewerPanel.refreshCropOverlay();
+            viewerPanel.refreshRotoOverlay();
         }
     }
-    onGraphRevisionChanged: refreshCropOverlay()
+    onGraphRevisionChanged: {
+        refreshCropOverlay();
+        refreshRotoOverlay();
+    }
     onCurrentFrameChanged: {
         if (cropGestureActive)
             cancelCropGesture();
+        // The evaluated geometry of a Roto node is per frame, so a frame change
+        // discards a draft or a live drag: the frame it was seeded at is gone.
+        if (viewerPanel.rotoOverlayItem)
+            viewerPanel.rotoOverlayItem.cancelAll();
+        if (viewerPanel.rotoController)
+            viewerPanel.rotoController.frame = viewerPanel.currentFrame;
         refreshCropOverlay();
+        refreshRotoOverlay();
     }
-    onTargetAvailableChanged: refreshCropOverlay()
+    onTargetAvailableChanged: {
+        refreshCropOverlay();
+        refreshRotoOverlay();
+    }
+    // Losing the panel's focus withdraws the transient authoring state: a draft
+    // that can no longer receive Enter or Escape must not keep accepting clicks.
+    onActiveFocusChanged: {
+        if (!activeFocus && viewerPanel.rotoOverlayItem)
+            viewerPanel.rotoOverlayItem.cancelAll();
+    }
 
     Keys.onPressed: function(event) {
         if (frameField.activeFocus || timecodeField.activeFocus)
@@ -2031,6 +2214,19 @@ FocusScope {
         // and the release that follows publishes nothing.
         if (event.key === Qt.Key_Escape && viewerPanel.cropGestureActive) {
             viewerPanel.cancelCropGesture();
+            event.accepted = true;
+            return
+        }
+        // Escape discards a live Roto drag or an unfinished draft; Enter closes
+        // the draft (a click on its first point is the same commit).
+        if (event.key === Qt.Key_Escape && viewerPanel.rotoActive && viewerPanel.rotoOverlayItem) {
+            viewerPanel.rotoOverlayItem.cancelAll();
+            event.accepted = true;
+            return
+        }
+        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && viewerPanel.rotoActive
+                && viewerPanel.rotoController && viewerPanel.rotoController.draftActive === true) {
+            viewerPanel.rotoController.commitDraft();
             event.accepted = true;
             return
         }

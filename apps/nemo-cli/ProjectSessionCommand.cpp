@@ -13,8 +13,11 @@
 
 #include <nlohmann/json.hpp>
 
+#include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/commands/NetworkCommands.hpp"
+#include "nemo/core/commands/RotoCommands.hpp"
 #include "nemo/core/document/ParameterValueJson.hpp"
+#include "nemo/core/document/Roto.hpp"
 #include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
@@ -161,6 +164,14 @@ template <typename T>
         if (result.address.instance == nemo::kInvalidNetworkInstance)
             throw std::invalid_argument("instance_id must be nonzero");
     }
+    // Roto properties are addressed by the node-local element (and point)
+    // identity of the property; an ordinary parameter leaves both zero.
+    if (edit.contains("roto_element_id"))
+        result.address.rotoElement = unsignedValue<nemo::RotoElementId>(edit, "roto_element_id");
+    if (edit.contains("roto_point_id"))
+        result.address.rotoPoint = unsignedValue<nemo::RotoPointId>(edit, "roto_point_id");
+    if (result.address.rotoPoint != nemo::kInvalidRotoPoint && result.address.rotoElement == nemo::kInvalidRotoElement)
+        throw std::invalid_argument("roto_point_id requires roto_element_id");
     if (edit.contains("value") && !edit.at("value").is_null())
         result.value = nemo::parameterValueFromJson(edit.at("value"));
     return result;
@@ -177,6 +188,13 @@ template <typename T>
     return result;
 }
 
+// Keyed/mixed gestures author or preview at an explicit document frame.
+[[nodiscard]] double gestureTime(const Json& request) {
+    if (!request.contains("time") || !request.at("time").is_number())
+        throw std::invalid_argument("a keyed gesture requires a numeric time");
+    return request.at("time").get<double>();
+}
+
 [[nodiscard]] nemo::Command makeCommand(const nemo::ProjectSession& session, const Json& command) {
     const std::string op = command.at("op").get<std::string>();
     if (op == "add-node") {
@@ -184,8 +202,17 @@ template <typename T>
                                     command.at("name").get<std::string>());
     }
     if (op == "set-param") {
-        return nemo::setParamCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
-                                     command.at("key").get<std::string>(),
+        const nemo::ParameterEdit edit = parameterEditAt(command);
+        // A scoped roto property is authored data on the node rather than a
+        // parameter-map entry, so it goes through the batch command that accepts
+        // a roto-scoped address; an ordinary parameter keeps its own command.
+        if (edit.address.rotoElement != nemo::kInvalidRotoElement ||
+            edit.address.rotoPoint != nemo::kInvalidRotoPoint) {
+            if (!edit.value)
+                throw std::invalid_argument("set-param requires a value");
+            return nemo::setParametersCommand({edit});
+        }
+        return nemo::setParamCommand(edit.address.network, edit.address.node, edit.address.key,
                                      nemo::parameterValueFromJson(command.at("value")));
     }
     if (op == "set-instance-param") {
@@ -194,8 +221,27 @@ template <typename T>
                                              nemo::parameterValueFromJson(command.at("value")));
     }
     if (op == "reset-param") {
-        return nemo::resetParamCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
-                                       command.at("key").get<std::string>());
+        nemo::ParameterEdit edit = parameterEditAt(command);
+        if (edit.address.rotoElement != nemo::kInvalidRotoElement ||
+            edit.address.rotoPoint != nemo::kInvalidRotoPoint) {
+            // A roto property is always authored, so a reset names its schema
+            // default rather than erasing the property.
+            edit.value.reset();
+            return nemo::setParametersCommand({std::move(edit)});
+        }
+        return nemo::resetParamCommand(edit.address.network, edit.address.node, edit.address.key);
+    }
+    if (op == "set-roto-data") {
+        if (!command.contains("roto"))
+            throw std::invalid_argument("set-roto-data requires a roto record");
+        return nemo::setRotoDataCommand(networkIdAt(command), nodeIdAt(command, "node_id"),
+                                        nemo::rotoDataFromJson(command.at("roto"), "set-roto-data roto"));
+    }
+    if (op == "insert-keyframe") {
+        const nemo::ParameterEdit edit = parameterEditAt(command);
+        if (!command.contains("time") || !command.at("time").is_number())
+            throw std::invalid_argument("insert-keyframe requires a numeric time");
+        return nemo::insertKeyframeCommand(edit.address, command.at("time").get<double>());
     }
     if (op == "reset-instance-param") {
         return nemo::resetInstanceParamCommand(unsignedValue<nemo::NetworkInstanceId>(command, "instance_id"),
@@ -434,6 +480,12 @@ void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::K
     const auto edgeAfter = request.contains("edge_after") ? unsignedValue<nemo::EdgeId>(request, "edge_after") : 0;
     const auto touching = request.contains("node_id") ? unsignedValue<nemo::NodeId>(request, "node_id") : 0;
     const auto keyAfter = request.value("key_after", std::string{});
+    // A Roto node's authored value is not a parameter-map entry, so a client
+    // asks for it explicitly; stating a frame as well returns the value this
+    // document resolves at that frame through the shared animation sampler.
+    const bool includeRoto = request.value("include_roto", false);
+    const bool hasFrame = request.contains("frame") && request.at("frame").is_number();
+    const double frame = hasFrame ? request.at("frame").get<double>() : 0.0;
     Json nodes = Json::array();
     while (nodes.size() < limit) {
         const auto page = session.queryNodes(network, filter, limit - nodes.size(), nodeAfter);
@@ -447,11 +499,21 @@ void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::K
             Json params = Json::object();
             for (const auto& value : session.queryValues(network, node.id, keyFilter, limit, keyAfter))
                 params[value.key] = nemo::parameterValueToJson(value.value);
-            nodes.push_back(Json{{"network", node.network},
-                                 {"id", node.id},
-                                 {"type", node.type},
-                                 {"name", node.name},
-                                 {"params", std::move(params)}});
+            Json entry{{"network", node.network},
+                       {"id", node.id},
+                       {"type", node.type},
+                       {"name", node.name},
+                       {"params", std::move(params)}};
+            if (includeRoto) {
+                const auto* authored = session.document().network(network).graph().node(node.id);
+                if (authored != nullptr && authored->roto != nullptr) {
+                    entry["roto"] = nemo::rotoDataToJson(*authored->roto);
+                    if (hasFrame)
+                        entry["roto_evaluated"] =
+                            nemo::rotoDataToJson(nemo::evaluateRoto(session.document(), network, node.id, frame));
+                }
+            }
+            nodes.push_back(std::move(entry));
         }
     }
     Json edges = Json::array();
@@ -765,7 +827,12 @@ int commandProjectSession(const std::vector<std::string>& args) {
                      "save-as {path,path_policy,backup} | autosave {slots} | recover {slot,expected_revision}\n"
                      "  format ops: set-network-format {network_id,format:{width,height,pixel_aspect}} | "
                      "apply-named-format {network_id,name} | set-named-format {name,format} | "
-                     "remove-named-format {name}\n";
+                     "remove-named-format {name}\n"
+                     "  roto ops: set-roto-data {network_id,node_id,roto} | "
+                     "query {network_id,node_id,include_roto,frame} | "
+                     "set-param/reset-param/insert-keyframe with roto_element_id[,roto_point_id] | "
+                     "begin-keyed-parameter-gesture/begin-value-parameter-gesture {time,edits,expected_revision} | "
+                     "update-keyed-parameter-gesture {token,edits,expected_revision}\n";
         return 2;
     }
     try {
@@ -818,6 +885,18 @@ int commandProjectSession(const std::vector<std::string>& args) {
                 } else if (op == "begin-parameter-gesture") {
                     response = gestureResultJson(
                         session.beginParameterGesture(parameterEditsAt(request), editOptions(request)));
+                } else if (op == "begin-keyed-parameter-gesture") {
+                    response = gestureResultJson(session.beginKeyedParameterGesture(
+                        gestureTime(request), parameterEditsAt(request), editOptions(request)));
+                } else if (op == "begin-value-parameter-gesture") {
+                    // The mixed gesture a numeric shape/point drag uses: an
+                    // already animated address is keyed, every other becomes a
+                    // static value, routed per address at begin.
+                    response = gestureResultJson(session.beginValueParameterGesture(
+                        gestureTime(request), parameterEditsAt(request), editOptions(request)));
+                } else if (op == "update-keyed-parameter-gesture") {
+                    response = gestureResultJson(session.updateKeyedParameterGesture(
+                        unsignedValue<nemo::ParameterGestureToken>(request, "token"), parameterEditsAt(request)));
                 } else if (op == "update-parameter-gesture") {
                     response = gestureResultJson(session.updateParameterGesture(
                         unsignedValue<nemo::ParameterGestureToken>(request, "token"), parameterEditsAt(request)));

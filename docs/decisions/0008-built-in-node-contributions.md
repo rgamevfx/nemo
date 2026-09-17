@@ -52,7 +52,7 @@ new shared capabilities still require a change in their existing owning module.
   support, preserving original support when Mix/masking can retain it; empty
   input remains empty. `supportsRegion=false` expands to that producer's useful
   domain. Executors receive each input's actual coverage and description.
-- Native binding contract v7 separates a 96-byte **pass-raster** request at
+- Native binding contract v8 separates a 96-byte **pass-raster** request at
   set 0/binding 0 from the optional node-local aligned payload at binding 1.
   The request includes signed origin, data support, stored channel count,
   components per texel, a planned-fill flag and resolved primary RGBA indices.
@@ -68,14 +68,17 @@ new shared capabilities still require a change in their existing owning module.
   and stores avoid dynamic component indexing; reordered/data channels retain
   the general path.
   Names are resolved before dispatch, never per pixel. Pass inputs use set 1;
-  output uses set 2/binding 0 and optional float weights set 3/binding 0.
+  output uses set 2/binding 0, optional float weights set 3/binding 0, and
+  optional node-owned packed geometry set 4/binding 0. Geometry is an owned,
+  word-aligned byte vector; the executor validates storage-buffer limits and
+  binds it only for passes declaring geometry.
   The executor owns allocations, barriers, submission and retirement, including
   a device-side final crop. No per-node waits or routine intermediate readback.
 - CPU and GPU preparation callbacks may execute concurrently. Captures must be
   immutable or internally synchronized; context references/spans are valid only
   during invocation. A CPU request retains its registration until return. A GPU
-  submission retains registrations, programs, payloads, weights and images until
-  actual completion; dropping a result does not release in-flight resources.
+  submission retains registrations, programs, payloads, weights, geometry and
+  images until actual completion; dropping a result does not release in-flight resources.
   Backend initialization/compilation stays off the UI thread and out of the
   per-frame registration path.
 - Descriptor and adapter versions must agree. Changed pixel/payload semantics
@@ -228,6 +231,57 @@ from adding a Notch tap or choosing the wrong Impulse neighbor; relative offsets
 also avoid subtracting large rounded float coordinates.
 The executor still owns upload and retirement; no new allocator, submission,
 readback or render-path coefficient sharing is introduced.
+
+## Roto geometry and matte policy (#93)
+
+Roto contributes through the same schema/editor/CPU/native entry points as other
+effects. Its typed authored hierarchy and animation addresses are documented in
+ADR-0007. A node contributes bounded geometry values, not a Vulkan allocation or
+a second scheduler. Optional unconnected images bind an unread connected image
+descriptor, or the output for a generator; no dummy image is allocated.
+
+The approved numerical policy is:
+
+- Closed Bézier and tension-controlled cubic B-spline contours use odd-even
+  coverage. Full-resolution image coordinates are independent of proxy density.
+  Nested transforms apply scale, physical-aspect-aware rotation about the pivot,
+  then translation; rotation uses the saved owning network's pixel aspect.
+  A connected background still owns the output format and display mapping.
+- Siblings fold in authored order: Combine `a + b - a*b`, Intersect `a*b`,
+  Subtract `a*(1-b)`. The first contributing sibling seeds the fold, except
+  leading Subtract starts from zero. Groups composite their children before
+  group inversion/opacity; lifetime and visibility remove the whole subtree.
+  Locks protect authored edits to that element, not its descendants.
+- Signed feather is outward when positive and inward when negative. Point and
+  enabled element widths add; inherited group bias is applied after each scale.
+  Width scales by the geometric mean of the affine axis scales. Disabling a
+  shape's feather disables its point widths too, without erasing their values.
+  Linear or smoothstep ramps are raised to `1 / falloff` (`falloff > 0`).
+- Motion blur is node-wide only: shutter `[0,1]` frames, default `.5`, centered
+  midpoint samples, at most 64. Samples 1 or shutter 0 uses the current frame.
+  Each sample evaluates animated points, transforms, properties and lifetime,
+  completes the hierarchy, then contributes to the average.
+- A generator stores exactly the named output channel (default `A`). A
+  connected node preserves other channels and appends a missing target.
+  Replace writes the matte; otherwise target output is
+  `matte + (1 - matte) * incoming`. Node opacity and an optional exact named mask
+  limit the matte. An absent/disabled mask is unlimited; a missing channel on a
+  connected mask is zero, before optional inversion.
+- Clip uses format, incoming bbox, their union/intersection, or no restriction.
+  For a generator, bbox is the sampled matte extent; inversion includes the
+  canvas. Unrestricted support unions canvas, incoming bounds and matte extent.
+
+Adaptive tessellation targets `.25` full-resolution pixels and is shared
+geometry preparation, not a shared pixel oracle: CPU scanlines and native
+ray crossings remain independently implemented. Explicit refusals bound each
+contour to 4096 vertices, a sample to 65536 vertices/1024 items/32 hierarchy
+levels, packed geometry to 4M words, and CPU row scratch to 4M values.
+Oversized or non-finite geometry is diagnosed rather than truncated.
+
+This is not an alpha-association migration. RGB premultiplication remains #89's
+contract; Roto preserves incoming association. The absent delivery-job seam
+remains owned by #87. Neither gap is an integrated-completion claim for #93.
+Reference comparison is against Nuke 17 documentation, not a Nuke runtime.
 
 ## Verification seam
 

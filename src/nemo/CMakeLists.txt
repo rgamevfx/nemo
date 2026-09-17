@@ -4,6 +4,7 @@ add_library(nemo_core
     core/document/ParameterValue.cpp
     core/document/ParameterValueJson.cpp
     core/document/Animation.cpp
+    core/document/Roto.cpp
     core/document/Graph.cpp
     core/document/MediaCatalog.cpp
     core/document/Document.cpp
@@ -11,6 +12,7 @@ add_library(nemo_core
     core/commands/MediaCatalogCommands.cpp
     core/commands/NetworkCommands.cpp
     core/commands/ReadSourceCommands.cpp
+    core/commands/RotoCommands.cpp
     core/document/Serialization.cpp
     core/session/ProjectSession.cpp
     core/session/ProjectFile.cpp
@@ -27,6 +29,7 @@ add_library(nemo_core
     nodes/merge/Contribution.cpp
     nodes/output/Contribution.cpp
     nodes/reformat/Contribution.cpp
+    nodes/roto/Contribution.cpp
     nodes/shuffle/Contribution.cpp
     nodes/source/Contribution.cpp
     nodes/testpattern/Contribution.cpp

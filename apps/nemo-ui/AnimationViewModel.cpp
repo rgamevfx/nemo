@@ -1,6 +1,7 @@
 #include "AnimationViewModel.hpp"
 
 #include "nemo/core/commands/AnimationCommands.hpp"
+#include "nemo/core/document/Roto.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +64,31 @@ void setComponent(ParameterValue& value, std::size_t index, double number) {
 }
 QString interpolationName(KeyInterpolation mode) {
     return mode == KeyInterpolation::Bezier ? "bezier" : mode == KeyInterpolation::Hold ? "hold" : "linear";
+}
+// Presentation name of one Roto channel: the authored element, the point's
+// position in its path, and the property's own label. Identity stays in the
+// address; this is display text only.
+QString rotoChannelLabel(const NodeInstance& node, const ParameterAddress& address, const ParameterSpec& spec) {
+    const auto property = QString::fromStdString(spec.label.empty() ? spec.name : spec.label);
+    const auto* element =
+        node.roto
+            ? node.roto->elements.find([&address](const RotoElement& item) { return item.id == address.rotoElement; })
+            : nullptr;
+    if (!element)
+        return property;
+    auto elementName = QString::fromStdString(element->name);
+    if (elementName.isEmpty())
+        elementName = QStringLiteral("Element");
+    if (address.rotoPoint == 0)
+        return QStringLiteral("%1 · %2").arg(elementName, property);
+    std::size_t index = 0;
+    for (std::size_t i = 0; i < element->points.size(); ++i) {
+        if (element->points[i].id == address.rotoPoint) {
+            index = i + 1;
+            break;
+        }
+    }
+    return QStringLiteral("%1 · Point %2 · %3").arg(elementName).arg(index).arg(property);
 }
 }  // namespace
 
@@ -142,14 +168,23 @@ void AnimationViewModel::refresh() {
                     continue;
                 const auto& definition = document.network(channel.address.network);
                 const auto* node = definition.graph().node(channel.address.node);
+                // A Roto channel carries the element (and point) identity in its
+                // address, and its schema is the Roto owner's, not the catalog's
+                // (the element/point properties are not node parameters). Every
+                // ordinary channel keeps the catalog route unchanged.
+                const bool rotoScoped = channel.address.rotoElement != 0;
                 const auto* spec =
-                    node ? definition.graph().catalog().parameterSpec(node->type, channel.address.key) : nullptr;
+                    rotoScoped ? rotoParameterSpec(channel.address)
+                               : (node ? definition.graph().catalog().parameterSpec(node->type, channel.address.key)
+                                       : nullptr);
                 const auto* displayNode = occurrence ? document.network(scope).graph().node(nodeId) : node;
                 if (!spec || !displayNode)
                     continue;
                 QString parameterKey = QString::fromStdString(channel.address.key);
                 QString label;
-                if (!occurrence) {
+                if (rotoScoped) {
+                    label = rotoChannelLabel(*node, channel.address, *spec);
+                } else if (!occurrence) {
                     label = QString::fromStdString(spec->label.empty() ? spec->name : spec->label);
                 } else {
                     for (const auto& exposed : definition.exposedParameters()) {
@@ -195,18 +230,27 @@ void AnimationViewModel::refresh() {
                                         {"inSlope", key.inSlope[component]},
                                         {"outSlope", key.outSlope[component]}});
                     }
-                    records.push_back(QVariantMap{{"id", id},
-                                                  {"networkId", networkId},
-                                                  {"nodeId", displayId},
-                                                  {"nodeKey", networkId + "_" + displayId},
-                                                  {"nodeName", QString::fromStdString(displayNode->name)},
-                                                  {"parameter", parameterKey},
-                                                  {"component", static_cast<int>(component)},
-                                                  {"parameterKey", parameterKey + suffix},
-                                                  {"label", label + suffix},
-                                                  {"kind", kind},
-                                                  {"continuous", count != 0},
-                                                  {"keys", keys}});
+                    records.push_back(QVariantMap{
+                        {"id", id},
+                        {"networkId", networkId},
+                        {"nodeId", displayId},
+                        {"nodeKey", networkId + "_" + displayId},
+                        {"nodeName", QString::fromStdString(displayNode->name)},
+                        {"parameter", parameterKey},
+                        {"component", static_cast<int>(component)},
+                        {"parameterKey", parameterKey + suffix},
+                        {"label", label + suffix},
+                        {"kind", kind},
+                        {"continuous", count != 0},
+                        // Roto scope of this channel, empty for an
+                        // ordinary node parameter. The identity is
+                        // display-visible so a presenter can name the
+                        // shape a key belongs to.
+                        {"rotoElement",
+                         channel.address.rotoElement != 0 ? QString::number(channel.address.rotoElement) : QString{}},
+                        {"rotoPoint",
+                         channel.address.rotoPoint != 0 ? QString::number(channel.address.rotoPoint) : QString{}},
+                        {"keys", keys}});
                     components_.emplace(id, Component{channel.id, component, spec->type});
                 }
             }

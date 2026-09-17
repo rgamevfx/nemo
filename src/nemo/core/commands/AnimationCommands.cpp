@@ -94,6 +94,13 @@ AnimationChannel* channelAt(Document::AnimationStorage& channels, const Paramete
     return index == channels.size() ? nullptr : &channels[index];
 }
 
+// Lookup by channel identity, for the paths that address an existing channel
+// (key removal and key movement) rather than a property.
+AnimationChannel* channelById(Document::AnimationStorage& channels, AnimationChannelId id) {
+    const std::size_t index = channels.indexOf([id](const AnimationChannel& channel) { return channel.id == id; });
+    return index == channels.size() ? nullptr : &channels[index];
+}
+
 Keyframe& keyAt(Document::AnimationStorage& channels, KeyframeRef ref) {
     const std::size_t index = channels.indexOf([&](const AnimationChannel& value) { return value.id == ref.channel; });
     if (index == channels.size())
@@ -130,6 +137,10 @@ Command setKeyframesCommand(std::vector<KeyframeEdit> edits) {
                 for (const auto& edit : edits) {
                     if (!std::isfinite(edit.key.time))
                         reject("parameter '" + edit.address.key + "' key time must be finite");
+                    // A roto property's lock, scope and value are model rules, so
+                    // a keyed write is refused exactly like a static one.
+                    if (const auto problem = validateRotoWrite(document, edit.address, edit.key.value))
+                        reject(*problem, GraphError::InvalidRoto);
                     // Resolve every target against the original state, not earlier batch
                     // edits. This permits time swaps and rejects id/time aliases atomically.
                     const auto* originalChannel = document.animationChannel(edit.address);
@@ -171,6 +182,13 @@ Command removeKeyframesCommand(std::vector<KeyframeRef> refs) {
     return {"remove animation keyframes", [refs = std::move(refs)](Document& document) {
                 auto channels = document.animationChannels();
                 const auto removed = validateTargets(channels, refs);
+                for (const auto& ref : refs) {
+                    const AnimationChannel* channel = channelById(channels, ref.channel);
+                    if (channel == nullptr)
+                        continue;  // validateTargets already refused an unknown channel
+                    if (const auto problem = rotoWriteProblem(document, channel->address))
+                        reject(*problem, GraphError::InvalidRoto);
+                }
                 for (std::size_t index = 0; index < channels.size(); ++index) {
                     AnimationChannel& channel = channels[index];
                     const std::size_t before = channel.keys.size();
@@ -191,6 +209,11 @@ Command moveKeyframesCommand(std::vector<KeyframeRef> refs, double deltaTime) {
                 auto channels = document.animationChannels();
                 validateTargets(channels, refs);
                 for (const auto& ref : refs) {
+                    AnimationChannel* channel = channelById(channels, ref.channel);
+                    if (channel == nullptr)
+                        continue;  // validateTargets already refused an unknown channel
+                    if (const auto problem = rotoWriteProblem(document, channel->address))
+                        reject(*problem, GraphError::InvalidRoto);
                     keyAt(channels, ref).time += deltaTime;
                     document.touchAnimationChannel(ref.channel);
                 }
@@ -203,12 +226,19 @@ Command insertKeyframeCommand(ParameterAddress address, double time) {
     if (!std::isfinite(time))
         throw std::invalid_argument("animation insertion time must be finite");
     return {"insert animation keyframe", [address = std::move(address), time](Document& document) {
+                if (const auto problem = rotoWriteProblem(document, address))
+                    reject(*problem, GraphError::InvalidRoto);
                 Keyframe key;
                 key.time = time;
                 // This query validates the scoped address and uses instance precedence.
                 key.value = animatedParameterValue(document, address, time);
                 const auto& graph = document.network(address.network).graph();
-                const auto* spec = graph.catalog().parameterSpec(graph.node(address.node)->type, address.key);
+                const ParameterSpec* spec =
+                    address.rotoElement != kInvalidRotoElement
+                        ? rotoParameterSpec(address)
+                        : graph.catalog().parameterSpec(graph.node(address.node)->type, address.key);
+                if (spec == nullptr)
+                    reject("parameter '" + address.key + "' has no schema to key");
                 const auto count = animation_detail::componentCount(spec->type);
                 key.interpolation = count ? KeyInterpolation::Linear : KeyInterpolation::Hold;
                 auto nextChannel = document.nextAnimationChannelId();

@@ -374,6 +374,7 @@ struct BoundInput {
     std::set<std::uint32_t> selected;
     bool output = false;
     bool weights = false;
+    bool geometry = false;
     for (const auto index : preparation.passes) {
         if (index >= implementation.passes.size() || !selected.insert(index).second)
             failEffect(node, program, "preparation selected an invalid or repeated local pass");
@@ -388,6 +389,7 @@ struct BoundInput {
         else if (!scratch.insert(pass.output.index).second)
             failEffect(node, effect.programs[index], "local pass '" + pass.id + "' overwrites scratch");
         weights = weights || pass.weights;
+        geometry = geometry || pass.geometry;
     }
     if (!output)
         failEffect(node, program, "selected local passes do not produce the node output");
@@ -396,6 +398,8 @@ struct BoundInput {
     if (std::any_of(preparation.weights.begin(), preparation.weights.end(),
                     [](float value) { return !std::isfinite(value); }))
         failEffect(node, program, "prepared weight buffer contains nonfinite values");
+    if (geometry != !preparation.geometry.empty() || preparation.geometry.size() % sizeof(std::uint32_t) != 0)
+        failEffect(node, program, "prepared geometry conflicts with the selected pass binding or word alignment");
 
     std::map<std::uint32_t, Region> coverage;
     for (const EffectScratchRegion& declared : preparation.scratch) {
@@ -886,10 +890,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
 
         GpuPreparation preparation;
         try {
-            preparation =
-                implementation.prepare({catalog, *effectiveNode, nodeRequest, node.params, maskPresent, pixelAspect,
-                                        inputRequests, description, planNode.source ? &*planNode.source : nullptr,
-                                        inputDescriptions, &document.network(expandedNode.id.network).format()});
+            preparation = implementation.prepare(
+                {catalog, *effectiveNode, nodeRequest, node.params, maskPresent, pixelAspect, inputRequests,
+                 description, planNode.source ? &*planNode.source : nullptr, inputDescriptions,
+                 &document.network(expandedNode.id.network).format(), &document, expandedNode.id.network});
         } catch (const std::exception& error) {
             failEffect(*effectiveNode, program, std::string("local preparation failed: ") + error.what());
         }
@@ -897,6 +901,10 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             validatePreparation(*effectiveNode, *registered, preparation, nodeRequest);
         if (preparation.weights.size() > device.properties().limits.maxStorageBufferRange / sizeof(float))
             failEffect(*effectiveNode, program, "prepared weights exceed the device storage-buffer limit");
+        if (preparation.geometry.size() > device.properties().limits.maxStorageBufferRange)
+            failEffect(*effectiveNode, program, "prepared geometry exceeds the device storage-buffer limit");
+        if (!preparation.geometry.empty() && device.properties().limits.maxBoundDescriptorSets < 5)
+            failEffect(*effectiveNode, program, "geometry binding requires five supported descriptor sets");
 
         const RasterGeometry nodeRaster = rasterGeometry(*effectiveNode, program, nodeRequest);
         ImageLayout nodeLayout;
@@ -952,6 +960,12 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                                                        gpu::MemoryPreference::HostMapped);
                 std::memcpy(weightBuffer.mapped(), preparation.weights.data(), bytes);
             }
+            gpu::Buffer shapeBuffer;
+            if (!preparation.geometry.empty()) {
+                shapeBuffer = allocator.create_buffer(preparation.geometry.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                      gpu::MemoryPreference::HostMapped);
+                std::memcpy(shapeBuffer.mapped(), preparation.geometry.data(), preparation.geometry.size());
+            }
             for (const auto passIndex : preparation.passes) {
                 const auto& definition = implementation.passes[passIndex];
                 const auto& passProgram = registered->programs[passIndex];
@@ -994,19 +1008,26 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                     switch (reference.kind) {
                     case EffectImageKind::Input: {
                         image = inputs[reference.index];
-                        raster = rasterGeometry(*effectiveNode, passProgram, inputRequests[reference.index]);
-                        // An absent optional slot has no description: its
-                        // channels come from the main image the executor binds
-                        // as its dummy descriptor below.
-                        if (inputDescriptions[reference.index] != nullptr)
+                        if (image != nullptr) {
+                            raster = rasterGeometry(*effectiveNode, passProgram, inputRequests[reference.index]);
                             channels = inputDescriptions[reference.index]->channels;
-                        if (image == nullptr && declaredInputs[reference.index].optional && !inputs.empty()) {
-                            // An absent optional mask keeps a valid descriptor
-                            // (maskPresent = 0): the main image stands in, and
-                            // reports its own geometry and channels.
-                            image = inputs[0];
-                            raster = rasterGeometry(*effectiveNode, passProgram, inputRequests[0]);
-                            channels = inputDescriptions[0]->channels;
+                        } else if (declaredInputs[reference.index].optional) {
+                            // Optional generators may have no main input. Bind
+                            // any real input, or the output as an unread dummy;
+                            // the contribution's presence flags forbid sampling
+                            // the absent slot. No fallback image is allocated.
+                            const auto available = std::find_if(inputs.begin(), inputs.end(),
+                                                                [](const auto* value) { return value != nullptr; });
+                            if (available != inputs.end()) {
+                                const auto index = static_cast<std::size_t>(available - inputs.begin());
+                                image = *available;
+                                raster = rasterGeometry(*effectiveNode, passProgram, inputRequests[index]);
+                                channels = inputDescriptions[index]->channels;
+                            } else {
+                                image = result;
+                                raster = passRaster;
+                                channels = description.channels;
+                            }
                         }
                         break;
                     }
@@ -1045,7 +1066,7 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                     }
                     bound.push_back(BoundInput{image, raster, fullResolution, channels,
                                                boundComponents(*effectiveNode, passProgram, *image)});
-                    if (reference.kind != EffectImageKind::External &&
+                    if (reference.kind != EffectImageKind::External && image != result &&
                         std::find(reads.begin(), reads.end(), image) == reads.end())
                         reads.push_back(image);
                 }
@@ -1103,6 +1124,8 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
                 bindings.push_back({0, 3, DescriptorKind::StorageBuffer, &planBuffer, nullptr, false});
                 if (definition.weights)
                     bindings.push_back({3, 0, DescriptorKind::StorageBuffer, &weightBuffer, nullptr, false});
+                if (definition.geometry)
+                    bindings.push_back({4, 0, DescriptorKind::StorageBuffer, &shapeBuffer, nullptr, false});
                 for (std::uint32_t binding = 0; binding < bound.size(); ++binding)
                     bindings.push_back(
                         {1, binding, DescriptorKind::StorageImage, nullptr, bound[binding].image, false});

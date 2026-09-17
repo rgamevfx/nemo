@@ -1,0 +1,161 @@
+{
+  "issue": 93,
+  "baseline": "14ba68cfc310924ae8e67f2214a7939522e387e1",
+  "branch": "main",
+  "scope": "Typed Roto authoring, existing animation/history/persistence, CPU/GLSL/Slang matte contribution; local commit only, no push/merge/closure",
+  "reference": {
+    "authority": "Nuke 17 documentation and approved Nemo interaction decisions; no Nuke runtime parity claim",
+    "url": "https://learn.foundry.com/nuke/17.0/content/reference_guide/draw_nodes/roto.html",
+    "pre_edit_contract": "https://github.com/rgamevfx/nemo/issues/93#issuecomment-5709247114"
+  },
+  "public_changes": [
+    "Built-in roto node and nemo.roto.shapes editor",
+    "Document schema 7, typed Roto record version 1, scoped element/point ParameterAddress",
+    "Native binding ABI 8: retained geometry storage at set 4/binding 0",
+    "Project-session set-roto-data and scoped static/keyed/gesture operations"
+  ],
+  "policy": {
+    "record": "docs/decisions/0008-built-in-node-contributions.md#roto-geometry-and-matte-policy-93",
+    "model": "docs/decisions/0007-evaluator-reuse-invalidation.md#typed-roto-hierarchy-and-sampled-reuse-93",
+    "blur": "Node-wide, shutter [0,1] frames default .5, centered midpoint samples <=64; samples=1 or shutter=0 disables",
+    "association": "Preserved, not migrated; #89 remains open"
+  },
+  "protected_prototype_mapping": {
+    "archive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+    "viewer": "viewer-session.json:/verified[11]",
+    "docking": "compact-docking-session.json:/verified[0]",
+    "inspector": [
+      "workflow-session.json:/verified[2]",
+      "workflow-session.json:/verified[3]",
+      "workflow-session.json:/behavior[1]",
+      "workflow-session.json:/behavior[2]",
+      "workflow-session.json:/behavior[3]"
+    ],
+    "supersession": "Existing group routing, #84/#85 viewport mapping and shared inspector/history controls remain the owners. Roto tools/hierarchy are approved new design, not copied StudioModel fixture state."
+  },
+  "public_session_smoke": {
+    "fixture": "authored.nemo",
+    "geometry": "640x360, PAR 1.5, nested feathered rectangle/subtraction/ellipse, animated group, 8 centered exposure samples",
+    "operations": "Real project-session commands, mixed parameter gesture, commit, save-as, reopen; schema, IDs, keys and futureSmoke unknown field retained",
+    "outputs": "CPU evaluate and native evaluate-gpu --backend slang",
+    "comparison": {
+      "width": 640,
+      "height": 360,
+      "format": "RGB8 PPM",
+      "different_channel_bytes": 0,
+      "maximum_difference": 0
+    },
+    "image": "cpu-native-matte.png",
+    "final_release_check": {
+      "commands": [
+        "nemo-cli validate authored.nemo",
+        "nemo-cli evaluate authored.nemo --out cpu.ppm --frame 0 --width 640 --height 360",
+        "nemo-cli evaluate-gpu authored.nemo --out slang.ppm --frame 0 --width 640 --height 360 --backend slang",
+        "cmp cpu.ppm slang.ppm"
+      ],
+      "result": "Validation has no errors/warnings; final release CPU and Slang RGB8 PPM files are byte-identical and match the previously inspected retained matte image",
+      "evidence": "artifact://712"
+    }
+  },
+  "native_surface": {
+    "implementation": "Actual Main.qml and production shared Qt/Vulkan runtime on native Wayland; real pointer/key events and QQuickWindow::grabWindow images, not a mock surface",
+    "fixture": "native-authoring.nemo",
+    "controls": "All five tools; point/tangent/mirrored feather edits; topology/smooth/cusp; hierarchy/locks; typed and cleared lifetime; animation/group clocks; undo/cancel; save/reopen",
+    "stress": "64 nested animated contours, 8 samples, quarter proxy, upstream 320x240 PAR1.25, narrow 950x700 layout",
+    "images": [
+      "mirrored-handles.png",
+      "dense-narrow-upstream-format.png",
+      "point-topology-lifetime.png",
+      "native-reopened.png",
+      "ellipse.png",
+      "inspector-only-cancel.png"
+    ]
+  },
+  "native_tool_limitations": [
+    "Wayland computer backend cannot capture pixels. Native Qt window grabs provide visual evidence.",
+    "AT-SPI full-tree traversal crashed the standalone application, identically with the Roto project and an empty Roto-free project. Temporary backtrace probe: QVariant::toString -> libQt6Gui.so.6+0x439d4e -> QtDBus. Window enumeration worked. No accessibility-stack redesign or workaround added to production."
+  ],
+  "review": {
+    "standards": {
+      "initial": "Findings in inspector-only history routing, selection publication before command acceptance, unsafe test lookup, stale ABI comment, avoidable static geometry copies, schema-constant assertion",
+      "resolution": "Inspector registers through existing HistoryController; selection uses existing selectElement only after accepted publication; test lookup is nullable; ABI comment current; sampler visits authored channels and only detaches changed values; constant pin removed",
+      "rejected": "Checkbox binding loss was not reproduced: native toggle/undo/selection test passed without a binding-reset workaround. No new empty-value API was added merely to replace two immutable default values or numeric invalid-ID spelling."
+    },
+    "spec": {
+      "initial": "Keyed featherProfile omitted; inspector-only cancellation; rewindable allocator watermarks; zero keyed featherFalloff; absent exact mask demand",
+      "resolution": "Sampler applies all supported scoped channels; native Escape/Undo history owner; monotonic whole-value edit watermarks; strictly positive falloff domain shared by static/keyed authoring; explicit existing named mask channel demand preserves zero-fill for truly missing channels; static geometry remains shared and all supported sampled properties, including Choice ramps, are validated through the existing value domain",
+      "additions": "Analytic PAR rotation, ancestor/point scaled feather and 8-sample exposure regressions; retained geometry test asserts positive charge before retirement",
+      "interface_decision": "Explicit network/node/group adapter factory replaces implicit active-node lookup; private integration detail preserving independent group clocks, not a new product behavior"
+    }
+  },
+  "remaining_integrated_gaps": [
+    "#89 alpha association/RGB premultiplication policy and implementation",
+    "No public delivery/export job seam exists in this checkout; delivery ownership remains #87. No export evidence or alternate export engine is claimed."
+  ],
+  "gates": {
+    "debug_roto": {
+      "core": "11/11 passed",
+      "rendering": "83/83 CPU/GLSL/Slang and retained-lifetime tests passed",
+      "native": "12/12 native Wayland production-surface scenarios passed together on final source",
+      "evidence": "artifact://696 (core/rendering), artifact://755 (final 12 native scenarios)"
+    },
+    "builds": {
+      "debug": "Complete debug build passed (final source)",
+      "release": "Complete release build passed (final source)",
+      "warnings": "Existing minizip-ng mktemp linker warning; no new dependency",
+      "evidence": "artifact://708; release bg_7 exit 0"
+    },
+    "debug_full_suite": {
+      "command": "QT_QPA_PLATFORM=offscreen ctest --preset debug -j2",
+      "discovered": 914,
+      "passed": 858,
+      "skipped_native": 54,
+      "failed": [
+        "Viewer.InterpretationMapIsParsedStrictly",
+        "AnimationSurface.VisibilityFramingAndGroupRestorationRemainPresentationOnly"
+      ],
+      "disposition": "Interpretation-map failure was already known. Animation restoration failed after fixed 50 ms workspace-switch wait under concurrent suite/build load; unchanged test passed in isolation in 1.47 s. Timing sensitivity is observed, not a proven root cause. Full suite was not rerun and is not reported green.",
+      "evidence": "artifact://708 (raw artifact://707); isolated bg_3 exit 0"
+    },
+    "sanitizer_build": {
+      "command": "cmake --build --preset asan --target nemo_core_tests nemo_contribution_tests nemo_workspace_ui_tests -j1",
+      "result": "Completed all targets; core Roto tests passed 11/11 with ASan/UBSan. Combined build-plus-render invocation hit its 1800-second deadline during renderer checks; no test failure preceded the timeout. Renderer and native suites are run separately from the build."
+    },
+    "native_leak_limitation": {
+      "result": "LeakSanitizer reports Qt accessibility metadata allocations at process shutdown. The unchanged, Roto-free CropReformatSurface.Issue92ReformatOrientationUsesSharedBooleanEditing reproduces the same QQmlData::createQQmlData -> qmlAttachedPropertiesObject -> QQuickControl::setAccessibleProperty -> QQuickAbstractButton::setCheckable stacks; its behavior assertion passes but process exits 1 with 11520 bytes/57 allocations (also Wayland globals).",
+      "decision": "No Roto workaround, broad suppression, or disabled leak detection added. Native leak gate is not green.",
+      "evidence": "artifact://724 (Roto); artifact://733 (Roto-free native checkbox control)",
+      "control": "QT_QPA_PLATFORM=wayland NEMO_TEST_NATIVE_UI=1 NEMO_TEST_VIEWER_WINDOW=1 build/asan/tests/nemo_workspace_ui_tests --gtest_filter=CropReformatSurface.Issue92ReformatOrientationUsesSharedBooleanEditing"
+    },
+    "asan_final_incremental": {
+      "command": "cmake --build --preset asan --target nemo_core_tests nemo_contribution_tests -j1; nemo_core_tests --gtest_filter=*Roto*; nemo_contribution_tests --gtest_filter=*RotoRaster.GeneratorContoursAndRegionalSampling/*:*RotoRaster.NarrowOutputDemandStillReadsTheNamedMaskChannel/*:*RotoNativeLifetime.*",
+      "result": "After relinking the final no-mask input-demand allocation fast path: 11 core and 8 CPU/GLSL/Slang generator, named-mask demand, and retained-geometry lifetime checks passed. ASan/UBSan and leak detection enabled with existing repository driver suppressions only.",
+      "evidence": "artifact://738"
+    },
+    "asan_renderer": {
+      "command": "build/asan/tests/nemo_contribution_tests --gtest_filter=*Roto*",
+      "result": "83/83 CPU/GLSL/Slang raster and retained-geometry tests passed with ASan/UBSan and leak detection; final allocation fast-path relink has the additional 8-check evidence recorded separately",
+      "evidence": "artifact://746"
+    },
+    "native_fixture_diagnosis": {
+      "failure": "Inspector-only scrub measured provisional controls after closing the Viewer: trace showed center (302,277), size 140x23 before the press, then center (369,378), size 514x23 during delivery. The stale coordinate hit the translation row rather than opacity.",
+      "correction": "Wait for Viewer removal and the recreated inspector field, then render its pending layout before measuring controls; keep press/move in QtTest's event sequence. Temporary trace removed; visible numerical preview and preserved document history pass in debug and ASan.",
+      "evidence": "artifact://745 (coordinate trace), artifact://755 (confirmed correction)"
+    },
+    "asan_native": {
+      "commands": [
+        "build/asan/tests/nemo_workspace_ui_tests --gtest_filter=RotoSurface.*",
+        "build/asan/tests/nemo_workspace_ui_tests --gtest_filter=RotoSurface.InspectorOnlyScrubCancelsBeforeUndoingTheDocument"
+      ],
+      "behavior": "11 unchanged native scenarios passed in full runs; the corrected inspector-only Escape/Undo scenario passed in the final isolated run. Final debug run passed all 12 together.",
+      "gate": "NOT GREEN: LeakSanitizer still exits 1 for independently reproduced Qt accessibility/Wayland leaks. No new suppression or disabled detection.",
+      "evidence": "artifact://740; artifact://755; control artifact://733"
+    },
+    "environment": {
+      "native": "QT_QPA_PLATFORM=wayland NEMO_TEST_NATIVE_UI=1 NEMO_TEST_VIEWER_WINDOW=1",
+      "sanitizer": "ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 LSAN_OPTIONS=suppressions=<repo>/tests/lsan_suppressions.txt",
+      "egl": "__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json:<repo>/build/issue70-evidence/mesa-egl-fixed/mesa.json",
+      "discovery": "Use QT_QPA_PLATFORM=offscreen while building/test-discovering; native execution is separate. Wayland-only test discovery also reports third-party globals at exit."
+    }
+  }
+}

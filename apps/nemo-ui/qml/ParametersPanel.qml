@@ -1251,6 +1251,10 @@ FocusScope {
             readonly property real sliderTo: parameterRow.hasSoftMaximum ? parameterRow.softMaximum : (parameterRow.hasMaximum ? parameterRow.maximum : 1)
             readonly property bool boolValue: parameter ? parameter.value === true : false
             readonly property string stringValue: parameter && parameter.value !== undefined && parameter.value !== null ? String(parameter.value) : ""
+            onStringValueChanged: {
+                if (stringField && !stringField.activeFocus)
+                    stringField.text = stringValue;
+            }
             readonly property int choiceIndex: {
                 if (!parameter || !parameter.choices)
                     return 0;

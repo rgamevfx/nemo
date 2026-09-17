@@ -164,7 +164,7 @@ mean*; neither re-implements the other.
 ## Native effects — node-local execution
 
 The independent CPU, Slang and retained GLSL implementations live in
-`src/nemo/nodes/{grade,blur,transform,merge,shuffle,crop,reformat}/`. Each module contributes schema and
+`src/nemo/nodes/{grade,blur,transform,merge,shuffle,crop,reformat,roto}/`. Each module contributes schema and
 CPU execution in `Contribution.cpp`, native payload/pass preparation and GLSL in
 `Gpu.cpp`, and its Slang kernel(s). Module-local `Parameters.hpp` owns typed
 effect interpretation; shared [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp)
@@ -175,7 +175,7 @@ Independent analytic fixtures, not agreement between implementations, remain
 the correctness oracle (ADR-0004, Fidelity below). Change the independent
 implementations together when a numerical contract changes.
 
-The internal native binding contract is version 7
+The internal native binding contract is version 8
 ([ADR-0008](../decisions/0008-built-in-node-contributions.md#boundaries)).
 Use `gpu/ChannelImage.hpp` for physical storage: four stored channels are packed
 RGBA32F; other counts are scalar R32_SFLOAT planes. Names/order remain intact.
@@ -186,13 +186,20 @@ Only complete primary/root RGB receives color conversion; alpha-only and
 auxiliary data bypass it. Identity packed viewer/replay images are retained
 directly; other views use device-side projection. Shuffle uses these same
 owners and the exact mapping/failure policies in ADR-0008.
-`GpuPreparation` supplies owned payload/weight values, local passes and
+`GpuPreparation` supplies owned payload/weight/geometry values, local passes and
 per-scratch coverage. Image-sampling kernels address signed producer coverage,
 not the output raster's dimensions; final writes respect described data support.
 Header description is independent of decode and GPU setup. Allocation, barriers,
 submission and retirement stay in `GpuExecutor` and the existing GPU owners. See
 [ADR-0008](../decisions/0008-built-in-node-contributions.md) and
 [`ownership.md`](ownership.md#add-a-node-or-effect).
+
+Roto contributes typed shape geometry through set 4, with submission-retained
+storage owned by the executor. Its hierarchy, signed feather, temporal sampling,
+channel/mask and bounded-refusal policies are recorded in
+[ADR-0008](../decisions/0008-built-in-node-contributions.md#roto-geometry-and-matte-policy-93).
+Use those contracts rather than introducing a node-local allocator, alpha
+conversion or export path; #89 and the delivery owner retain those gaps.
 
 ### Optional mask and mix (Grade, Blur, Transform, Merge)
 

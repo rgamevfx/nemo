@@ -736,3 +736,32 @@ current frame's description, layer selection, ROI and density on the worker,
 then uses the same plan for keys and execution. This removes duplicate
 description work without treating animated/sequence-dependent descriptions as
 time-invariant. Each destination retains its own resolution hysteresis.
+
+## Typed Roto hierarchy and sampled reuse (#93)
+
+Schema 7 adds a version-1 typed Roto record to a node, with stable element/point
+IDs, parent/order relationships and identity watermarks. Published records are
+immutable shared values backed by the existing copy-on-write containers.
+Commands validate and replace that value atomically; history and project files
+retain it through the same session/persistence owners. Unknown fields round-trip;
+future Roto record versions are refused instead of interpreted as current data.
+Whole-value edits cannot rewind allocator watermarks; undo/redo still restores
+retained document versions. Sampling shares static geometry and applies only
+changed authored channels rather than copying every point per exposure sample.
+
+`ParameterAddress` scopes existing channels by optional Roto element/point IDs.
+Point coordinates and tangent offsets, tension/feather, transforms and supported
+element properties use the existing sampling and gesture machinery. Topology
+and lifetime bounds are authored command state, not a second animation system.
+Occurrence overrides do not address Roto elements.
+
+Result identity includes authored shape content and relevant animation keys,
+times, interpolation and tangents, not just the value at the requested frame:
+changing a neighboring key can change an exposure sample while leaving the
+center frame unchanged. Identity watermarks alone do not change rendered content.
+Node preparation samples the immutable document supplied with its owning network
+identity; no panel selection, context-group clock or mutable session enters evaluation.
+
+Public session fixtures, inspected native captures, two-axis review dispositions
+and gate results are retained in
+`docs/evidence/assets/issue93-roto/verification.json`.

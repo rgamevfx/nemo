@@ -30,6 +30,7 @@ if(NEMO_BUILD_UI)
         ParameterEditorRegistry.cpp ParameterEditorRegistry.hpp
         ProjectFileController.cpp ProjectFileController.hpp
         ReadSourceController.cpp ReadSourceController.hpp
+        RotoController.cpp RotoController.hpp
         WorkspaceController.cpp WorkspaceController.hpp
         ViewerController.cpp ViewerController.hpp
         ViewerControllerRegistry.cpp ViewerControllerRegistry.hpp
@@ -65,6 +66,7 @@ if(NEMO_BUILD_UI)
                   qml/NumericField.qml qml/ChannelEditor.qml qml/MergeOperationEditor.qml
                   qml/ShuffleEditor.qml
                   qml/CropBoxEditor.qml qml/ReformatFormatEditor.qml
+                  qml/RotoEditor.qml qml/RotoOverlay.qml
                   qml/KeyIndicator.qml qml/ExposureLabel.qml
                   qml/HistoryMenu.qml qml/HistoryMenuItem.qml
     )

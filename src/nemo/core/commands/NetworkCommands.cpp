@@ -76,6 +76,10 @@ void copyNodeExact(Graph& graph, const NodeInstance& node) {
     (void)graph.addNodeWithId(node.id, node.type, node.name, node.params, node.layout, node.definition, node.instance);
     if (node.hasPortContract)
         graph.setPortContract(node.id, node.inputPorts, node.outputPorts);
+    // The node's authored Roto value moves with it, identities included, so a
+    // collapsed node keeps its shapes and its animation addresses.
+    if (node.roto)
+        graph.setRoto(node.id, *node.roto);
 }
 
 // Command-level network lookup: a command that names a network the document
@@ -118,6 +122,10 @@ void copyNodeExact(Graph& graph, const NodeInstance& node) {
             nodeMap[node.id] = created;
             if (node.hasPortContract)
                 document.network(id).graph().setPortContract(created, node.inputPorts, node.outputPorts);
+            // The node's authored Roto value travels with it, identities
+            // included, so a copied definition keeps its shapes addressable.
+            if (node.roto)
+                document.network(id).graph().setRoto(created, *node.roto);
             continue;
         }
         const auto* nested = document.instance(node.instance);
@@ -616,6 +624,10 @@ void unpack(Document& document, NetworkInstanceId instanceId) {
                 graph.setParam(newNode, key, value);
             if (node.hasPortContract)
                 graph.setPortContract(newNode, node.inputPorts, node.outputPorts);
+            // Unpacking materializes the definition's nodes in the parent, so the
+            // authored Roto value travels with them and keeps its identities.
+            if (node.roto)
+                graph.setRoto(newNode, *node.roto);
         }
     }
     for (const auto& [target, values] : originalOccurrence.params) {
@@ -761,6 +773,11 @@ void copySelected(Document& document, NetworkId sourceId, const std::vector<Node
                 destinationGraph.setParam(newNode, key, value);
             if (node.hasPortContract)
                 destinationGraph.setPortContract(newNode, node.inputPorts, node.outputPorts);
+            // The authored Roto value travels with the node, identities
+            // included; the copied animation channels address those same
+            // element/point identities.
+            if (node.roto)
+                destinationGraph.setRoto(newNode, *node.roto);
         }
         if (created)
             created->push_back(mapping[node.id]);

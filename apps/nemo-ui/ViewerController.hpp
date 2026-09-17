@@ -17,11 +17,15 @@
 #include <chrono>
 #include <cstddef>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace nemo::ui {
+class RotoController;
 class ViewerItem;
 class WindowPresentationState;
 // GUI-thread presentation state. The explicitly composed ProjectSession owns
@@ -113,6 +117,10 @@ public:
     // The panel owns its query adapter; the application-owned session outlives
     // every QML panel. No per-panel document or animation history is created.
     Q_INVOKABLE QObject* createAnimationModel(QObject* owner);
+    // One adapter per node and context group: inspector and viewer share
+    // selection/drafts without coupling independent group clocks.
+    Q_INVOKABLE QObject* createRotoControllerFor(const QString& networkValue, const QVariant& nodeValue,
+                                                 const QString& group, QObject* owner);
     // Panel-instance scheduler destination. Panel destinations are values >= 2;
     // Interactive and Cache stay reserved. Without a destination this
     // controller is a pure command/metadata facade: it never probes, submits,
@@ -644,5 +652,7 @@ private:
     // the last graphical copy. Never part of the document or its history.
     std::optional<nemo::NetworkId> clipboardNetwork_;
     std::vector<nemo::NodeId> clipboardNodes_;
+    // QObject-owned adapters; authored state remains in ProjectSession.
+    std::map<std::tuple<nemo::NetworkId, nemo::NodeId, QString>, RotoController*> rotoControllers_;
 };
 }  // namespace nemo::ui

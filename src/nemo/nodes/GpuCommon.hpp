@@ -6,9 +6,9 @@
 // nemo/eval/GpuExecutor.hpp: set 0 binding 0 common request, set 0 binding 1
 // node-local payload, set 0 binding 2 per-input spatial geometry, set 0 binding
 // 3 the produced raster's channel plan, set 1 binding n pass inputs (array
-// order), set 2 binding 0 result, set 3 binding 0 float weight storage. That
-// contract is versioned: node modules and the executor move together (issues
-// #90, #98, "nemo.native.bindings.v7"), and a node-local payload or shader whose
+// order), set 2 binding 0 result, set 3 binding 0 float weight storage, and set 4
+// binding 0 read-only geometry words. Node modules and the executor move together
+// (issues #90, #98, #93, "nemo.native.bindings.v8"), and a node-local payload or shader whose
 // layout changed carries its own new payload layout identity.
 //
 // This header only removes duplication that every node module would otherwise

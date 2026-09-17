@@ -97,7 +97,7 @@ private:
 // handles, so history entries, gesture previews and render snapshots retain
 // the same records until a controlled mutation replaces the ones it touched.
 struct Document {
-    static inline constexpr int kSchemaVersion = 6;
+    static inline constexpr int kSchemaVersion = 7;
     using NetworkStorage = CowVector<Network>;
     using InstanceStorage = CowVector<NetworkInstance>;
     using AnimationStorage = CowVector<AnimationChannel>;
@@ -348,6 +348,10 @@ private:
 // unambiguous when node/edge identities are local to a network.
 
 struct ParameterEdit {
+    // The roto identity of a Roto property travels WITH its address (the address
+    // appends rotoElement/rotoPoint), so there is exactly one spelling of a
+    // property edit for an ordinary parameter and a shape/point property alike,
+    // and the keyed/static behaviour of the whole edit batch is unchanged.
     ParameterAddress address;
     std::optional<ParameterValue> value;
 };

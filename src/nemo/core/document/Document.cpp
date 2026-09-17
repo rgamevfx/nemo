@@ -125,6 +125,10 @@ void hashParameterAddress(std::uint64_t& hash, const ParameterAddress& address) 
     hashMixWord(hash, address.node);
     hashMixText(hash, address.key);
     hashMixWord(hash, address.instance);
+    // The roto scope is part of the address: two channels keyed to different
+    // points of one node are different property identities.
+    hashMixWord(hash, address.rotoElement);
+    hashMixWord(hash, address.rotoPoint);
 }
 
 void hashAnimationKey(std::uint64_t& hash, const Keyframe& key) {
@@ -141,6 +145,12 @@ void hashAnimationKey(std::uint64_t& hash, const Keyframe& key) {
 std::string describePortRef(PortRef ref) {
     return "node " + std::to_string(ref.node) + " port " + std::to_string(ref.port);
 }
+
+// A node that authors no roto content is read as the empty value, so the write
+// path and the model's own validator see one shape of "no shapes yet" instead of
+// each inventing its own.
+const RotoData kEmptyRotoData{};
+
 void validateParameterEdit(const Document& document, const ParameterEdit& edit) {
     const auto& address = edit.address;
     if (address.network == kInvalidNetwork)
@@ -149,6 +159,23 @@ void validateParameterEdit(const Document& document, const ParameterEdit& edit) 
         throw GraphException(GraphError::UnknownNode, "parameter edit requires a node scope");
     if (address.key.empty())
         throw GraphException(GraphError::InvalidName, "parameter key must not be empty");
+
+    // A roto property is node-local authored data, never a node parameter: it is
+    // addressed through the same edit shape so the ordinary gesture, keyed and
+    // history machinery applies unchanged, but it resolves against the node's
+    // Roto value and its own schema. The model owns that rule, so this path and
+    // the animation write paths cannot disagree about it.
+    if (address.rotoElement != kInvalidRotoElement || address.rotoPoint != kInvalidRotoPoint) {
+        const auto* node = document.network(address.network).graph().node(address.node);
+        if (!node)
+            throw GraphException(GraphError::UnknownNode, "cannot edit unknown node " + std::to_string(address.node));
+        const ParameterSpec* spec = rotoParameterSpec(address);
+        const ParameterValue value =
+            edit.value ? *edit.value : (spec != nullptr ? spec->defaultValue : ParameterValue{false});
+        if (const auto problem = validateRotoWrite(document, address, value))
+            throw GraphException(GraphError::InvalidRoto, "node '" + node->name + "': " + *problem);
+        return;
+    }
 
     if (address.instance == kInvalidNetworkInstance) {
         const auto& graph = document.network(address.network).graph();
@@ -187,6 +214,17 @@ void validateParameterEdit(const Document& document, const ParameterEdit& edit) 
 void applyParameterEdit(Document& document, const ParameterEdit& edit) {
     validateParameterEdit(document, edit);
     const auto& address = edit.address;
+    if (address.rotoElement != kInvalidRotoElement) {
+        // A reset names the property's authored default, so a roto property can
+        // never hold an unauthored state: it is authored data, not a sparse
+        // parameter map.
+        auto& graph = document.network(address.network).graph();
+        const auto* node = graph.node(address.node);
+        const RotoData& current = node->roto ? *node->roto : kEmptyRotoData;
+        const ParameterValue value = edit.value.value_or(rotoParameterSpec(address)->defaultValue);
+        graph.setRoto(address.node, applyRotoParameter(current, address, value));
+        return;
+    }
     if (address.instance == kInvalidNetworkInstance) {
         auto& graph = document.network(address.network).graph();
         if (edit.value)
@@ -933,6 +971,26 @@ void Document::synchronizeReferences(const ChangeRecorder* touched) {
         // A parameter of a node type this build does not model, or a future
         // parameter record preserved opaquely, has no usable catalog spec; its
         // channel is retained as authored disabled data instead of being pruned.
+        if (address.rotoElement != kInvalidRotoElement) {
+            // A roto channel is keyed to one element (and point) of this node's
+            // authored value, so it retires with that shape instead of outliving
+            // it, and an unknown future property survives only as a preserved
+            // opaque record.
+            const auto hasOpaqueValue = [&channel] {
+                return std::any_of(channel.keys.begin(), channel.keys.end(),
+                                   [](const Keyframe& key) { return !key.opaqueValue.is_null(); });
+            };
+            if (rotoParameterSpec(address) == nullptr && !hasOpaqueValue())
+                return true;
+            if (!node->roto)
+                return true;
+            const RotoElement* element = rotoElement(*node->roto, address.rotoElement);
+            if (element == nullptr)
+                return true;
+            if (address.rotoPoint != kInvalidRotoPoint && rotoPoint(*element, address.rotoPoint) == nullptr)
+                return true;
+            return false;
+        }
         const auto& catalog = network->graph().catalog();
         if (catalog.find(node->type) != nullptr && catalog.parameterSpec(node->type, address.key) == nullptr) {
             const bool hasOpaqueValue = std::any_of(channel.keys.begin(), channel.keys.end(),
@@ -1162,6 +1220,7 @@ std::uint64_t Document::stateRevision() const {
                 hashMixText(hash, canonicalParameterValue(value));
             }
             hashMixWord(hash, static_cast<std::uint64_t>(nodeValue.params.size()));
+            hashMixWord(hash, nodeValue.roto ? rotoContentHash(*nodeValue.roto) : 0);
         }
         for (const auto& edge : networkValue.graph().edges()) {
             hashMixWord(hash, edge.id);
@@ -2071,7 +2130,7 @@ bool nodeContentEquals(const NodeInstance& left, const NodeInstance& right) {
            left.layout == right.layout && left.definition == right.definition && left.instance == right.instance &&
            left.hasPortContract == right.hasPortContract && left.inputPorts == right.inputPorts &&
            left.outputPorts == right.outputPorts && left.extension == right.extension &&
-           left.opaqueParams == right.opaqueParams;
+           left.opaqueParams == right.opaqueParams && rotoSharedEquals(left.roto, right.roto);
 }
 
 bool edgeContentEquals(const Edge& left, const Edge& right) {

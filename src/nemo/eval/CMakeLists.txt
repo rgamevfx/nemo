@@ -13,6 +13,7 @@ add_library(nemo_eval
     ../nodes/merge/Gpu.cpp
     ../nodes/output/Gpu.cpp
     ../nodes/reformat/Gpu.cpp
+    ../nodes/roto/Gpu.cpp
     ../nodes/shuffle/Gpu.cpp
     ../nodes/source/Gpu.cpp
     ../nodes/testpattern/Gpu.cpp

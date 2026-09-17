@@ -6,6 +6,7 @@
 
 #include "nemo/core/Hashing.hpp"
 #include "nemo/core/document/ParameterValue.hpp"
+#include "nemo/core/document/Roto.hpp"
 #include "nemo/core/evaluation/SourceRequest.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 namespace nemo {
@@ -28,6 +29,34 @@ namespace {
         canonical += encoded;
     }
     return canonical;
+}
+
+// Shape channels affect subframe samples even when their value at the requested
+// integer frame is unchanged. Keep their authored curves in the identity, not
+// just the current-frame projection. No document revision or UI state enters it.
+[[nodiscard]] std::uint64_t rotoAnimationHash(const Document& document, NetworkId network, NodeId node) {
+    std::uint64_t hash = kFnv1a64Basis;
+    for (const AnimationChannel& channel : document.animationChannels()) {
+        const auto& address = channel.address;
+        if (address.network != network || address.node != node || address.rotoElement == 0)
+            continue;
+        hashMixWord(hash, address.rotoElement);
+        hashMixWord(hash, address.rotoPoint);
+        hashMixWord(hash, address.instance);
+        hashMixText(hash, address.key);
+        hashMixWord(hash, channel.keys.size());
+        for (const Keyframe& key : channel.keys) {
+            hashMixWord(hash, std::bit_cast<std::uint64_t>(key.time));
+            hashMixText(hash, canonicalParameterValue(key.value));
+            hashMixWord(hash, static_cast<std::uint64_t>(key.interpolation));
+            hashMixWord(hash, static_cast<std::uint64_t>(key.tangentMode));
+            for (double slope : key.inSlope)
+                hashMixWord(hash, std::bit_cast<std::uint64_t>(slope));
+            for (double slope : key.outSlope)
+                hashMixWord(hash, std::bit_cast<std::uint64_t>(slope));
+        }
+    }
+    return hash;
 }
 
 // Canonical effective-source content for a source node's key (issues #11/#75):
@@ -136,6 +165,11 @@ ResultKey nodeResultKey(const Document& document, const NodeInstance& node,
             document.network(request.network).graph().catalog().implementationVersion(node.type).value_or(1)));
     appendCanonicalField(canonical, "type", node.type);
     appendCanonicalField(canonical, "params", canonicalParams(node));
+    if (node.roto) {
+        appendCanonicalField(canonical, "roto", std::to_string(rotoContentHash(*node.roto)));
+        appendCanonicalField(canonical, "roto-animation",
+                             std::to_string(rotoAnimationHash(document, request.network, node.id)));
+    }
     canonical += "inputs:";
     for (const std::uint64_t inputHash : inputKeyHashes) {
         canonical += std::to_string(inputHash);

@@ -567,8 +567,9 @@ ImageDescriptionPlan describeDependencies(const Document& document, const Evalua
             resolved.source = source;
             resolved.description = describeSource(document, resolved.node, source, sources);
         } else if (contribution->describe) {
-            resolved.description = contribution->describe(NodeDescriptionContext{
-                document, catalog, resolved.node, request.localTime, inputs, inherited, &owningFormat});
+            resolved.description =
+                contribution->describe(NodeDescriptionContext{document, catalog, resolved.node, request.localTime,
+                                                              inputs, inherited, &owningFormat, expanded.id.network});
         } else {
             resolved.description = inherited;
         }
@@ -1170,7 +1171,8 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                                          resolved.description,
                                          resolved.source ? &*resolved.source : nullptr,
                                          contextDescriptions,
-                                         &document.network(expandedNode.id.network).format()};
+                                         &document.network(expandedNode.id.network).format(),
+                                         expandedNode.id.network};
 
             if (contribution->role == NodeRole::Output) {
                 if (inputs.empty() || inputs[0] == nullptr)

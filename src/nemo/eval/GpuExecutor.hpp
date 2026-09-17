@@ -6,7 +6,8 @@
 //
 // Bindings: set 0/0 common request; set 0/1 optional node-local payload;
 // set 0/2 per-input geometry; set 0/3 channel plan;
-// set 1/n pass inputs; set 2/0 result; set 3/0 optional float weights.
+// set 1/n pass inputs; set 2/0 result; set 3/0 optional float weights;
+// set 4/0 optional immutable geometry words.
 // Native images are the shared channel image layout (issues #90, #98): four
 // stored channels in ONE packed VK_FORMAT_R32G32B32A32_SFLOAT image at the
 // logical W×H, any other count as VK_FORMAT_R32_SFLOAT scalar planes at

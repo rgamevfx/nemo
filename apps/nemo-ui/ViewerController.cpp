@@ -1,5 +1,6 @@
 #include "ViewerController.hpp"
 #include "AnimationViewModel.hpp"
+#include "RotoController.hpp"
 #include "ViewerItem.hpp"
 #include "nemo/core/commands/AnimationCommands.hpp"
 #include "nemo/core/commands/NetworkCommands.hpp"
@@ -954,6 +955,26 @@ QObject* ViewerController::createAnimationModel(QObject* owner) {
     if (!owner)
         return nullptr;
     return std::make_unique<AnimationViewModel>(session_, owner).release();
+}
+
+QObject* ViewerController::createRotoControllerFor(const QString& networkValue, const QVariant& nodeValue,
+                                                   const QString& group, QObject* owner) {
+    if (!owner || group.isEmpty())
+        return nullptr;
+    const auto network = networkIdentity(networkValue);
+    const auto node = graphIdentity(nodeValue);
+    if (!network || !node)
+        return nullptr;
+    const auto key = std::make_tuple(*network, static_cast<NodeId>(*node), group);
+    const auto found = rotoControllers_.find(key);
+    if (found != rotoControllers_.end()) {
+        found->second->attachView(owner);
+        return found->second;
+    }
+    auto created = std::make_unique<RotoController>(session_, *network, static_cast<NodeId>(*node), this);
+    rotoControllers_.emplace(key, created.get());
+    created->attachView(owner);
+    return created.release();  // QObject parent owns the adapter.
 }
 
 void ViewerController::setDestination(std::optional<eval::ViewerDestination> destination) {

@@ -84,6 +84,7 @@ struct CpuNodeContext {
     // instead, which travels in `description`/`inputDescriptions`. Null only for
     // a direct adapter invocation without a network scope.
     const ImageFormat* owningFormat{nullptr};
+    NetworkId network{kInvalidNetwork};
 };
 
 // One declared input port's demand (issue #88): the full-resolution signed
@@ -156,6 +157,7 @@ struct NodeDescriptionContext {
     // Null only for a direct rule invocation that has no network scope at all; a
     // real plan always supplies it.
     const ImageFormat* owningFormat{nullptr};
+    NetworkId network{kInvalidNetwork};
 };
 
 // A node's CPU reference pixel implementation. `version` is the implementation

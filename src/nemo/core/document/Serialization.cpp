@@ -392,6 +392,284 @@ nlohmann::json parameterValuesJson(const ParameterValues& params) {
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// Node-authored Roto data (issue #93), schema 7.
+//
+// One typed, versioned record per node: identities, geometry, properties and the
+// allocator watermarks. Every field's JSON type is fixed by the model's own
+// schema, so the record is structured rather than tag-per-value (unlike the
+// parameter map, whose entries must carry their type). Unknown fields of the
+// record, of an element and of a point are retained verbatim, so a load/save
+// cycle through a newer build loses nothing, and the complete record is
+// validated by the model before it is published.
+
+inline constexpr int kRotoDataVersion = 1;
+
+const char* rotoKindName(RotoKind kind) {
+    switch (kind) {
+    case RotoKind::Bezier:
+        return "bezier";
+    case RotoKind::BSpline:
+        return "bspline";
+    case RotoKind::Group:
+        return "group";
+    }
+    throw std::logic_error("invalid roto element kind");
+}
+
+RotoKind parseRotoKind(const std::string& name, const std::string& context) {
+    if (name == "bezier")
+        return RotoKind::Bezier;
+    if (name == "bspline")
+        return RotoKind::BSpline;
+    if (name == "group")
+        return RotoKind::Group;
+    throw DeserializeError(context + ": unknown roto element kind '" + name + "'");
+}
+
+const char* rotoBlendName(RotoBlend blend) {
+    switch (blend) {
+    case RotoBlend::Combine:
+        return "combine";
+    case RotoBlend::Intersect:
+        return "intersect";
+    case RotoBlend::Subtract:
+        return "subtract";
+    }
+    throw std::logic_error("invalid roto blend mode");
+}
+
+RotoBlend parseRotoBlend(const std::string& name, const std::string& context) {
+    if (name == "combine")
+        return RotoBlend::Combine;
+    if (name == "intersect")
+        return RotoBlend::Intersect;
+    if (name == "subtract")
+        return RotoBlend::Subtract;
+    throw DeserializeError(context + ": unknown roto blend mode '" + name + "'");
+}
+
+const char* rotoFeatherProfileName(RotoFeatherProfile profile) {
+    switch (profile) {
+    case RotoFeatherProfile::Linear:
+        return "linear";
+    case RotoFeatherProfile::Smooth:
+        return "smooth";
+    }
+    throw std::logic_error("invalid roto feather profile");
+}
+
+RotoFeatherProfile parseRotoFeatherProfile(const std::string& name, const std::string& context) {
+    if (name == "linear")
+        return RotoFeatherProfile::Linear;
+    if (name == "smooth")
+        return RotoFeatherProfile::Smooth;
+    throw DeserializeError(context + ": unknown roto feather profile '" + name + "'");
+}
+
+nlohmann::json rotoVectorJson(const Vector2Value& value) {
+    return nlohmann::json::array({value.value[0], value.value[1]});
+}
+
+Vector2Value parseRotoVector(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_array() || value.size() != 2)
+        throw DeserializeError(context + " must be an array of two numbers");
+    std::array<float, 2> components{};
+    for (std::size_t i = 0; i < components.size(); ++i) {
+        if (!value.at(i).is_number())
+            throw DeserializeError(context + " must contain only numbers");
+        const auto number = value.at(i).get<double>();
+        if (!std::isfinite(number) || std::abs(number) > std::numeric_limits<float>::max())
+            throw DeserializeError(context + " must be finite and within the 32-bit range");
+        components[i] = static_cast<float>(number);
+    }
+    return Vector2Value{components};
+}
+
+double parseRotoNumber(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_number())
+        throw DeserializeError(context + " must be a number");
+    const auto number = value.get<double>();
+    if (!std::isfinite(number))
+        throw DeserializeError(context + " must be finite");
+    return number;
+}
+
+bool parseRotoBoolean(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_boolean())
+        throw DeserializeError(context + " must be a boolean");
+    return value.get<bool>();
+}
+
+std::string parseRotoName(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_string())
+        throw DeserializeError(context + " must be a string");
+    return value.get<std::string>();
+}
+
+nlohmann::json rotoPointJson(const RotoPoint& point) {
+    nlohmann::json value{{"id", point.id},
+                         {"position", rotoVectorJson(point.position)},
+                         {"inTangent", rotoVectorJson(point.inTangent)},
+                         {"outTangent", rotoVectorJson(point.outTangent)},
+                         {"feather", point.feather},
+                         {"tension", point.tension}};
+    applyUnknownFields(value, point.extension);
+    return value;
+}
+
+RotoPoint parseRotoPoint(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    RotoPoint point;
+    point.id = requiredId(value, "id", context);
+    const auto position = value.find("position");
+    if (position == value.end())
+        throw DeserializeError(context + ": 'position' is required");
+    point.position = parseRotoVector(*position, context + " position");
+    if (const auto it = value.find("inTangent"); it != value.end())
+        point.inTangent = parseRotoVector(*it, context + " inTangent");
+    if (const auto it = value.find("outTangent"); it != value.end())
+        point.outTangent = parseRotoVector(*it, context + " outTangent");
+    if (const auto it = value.find("feather"); it != value.end())
+        point.feather = parseRotoNumber(*it, context + " feather");
+    if (const auto it = value.find("tension"); it != value.end())
+        point.tension = parseRotoNumber(*it, context + " tension");
+    point.extension = collectUnknownFields(value, {"id", "position", "inTangent", "outTangent", "feather", "tension"});
+    return point;
+}
+
+nlohmann::json rotoElementJson(const RotoElement& element) {
+    nlohmann::json value{{"id", element.id},
+                         {"name", element.name},
+                         {"kind", rotoKindName(element.kind)},
+                         {"blend", rotoBlendName(element.blend)},
+                         {"visible", element.visible},
+                         {"locked", element.locked},
+                         {"inverted", element.inverted},
+                         {"translation", rotoVectorJson(element.translation)},
+                         {"scale", rotoVectorJson(element.scale)},
+                         {"pivot", rotoVectorJson(element.pivot)},
+                         {"rotation", element.rotation},
+                         {"opacity", element.opacity},
+                         {"feather", element.feather},
+                         {"featherEnabled", element.featherEnabled},
+                         {"featherProfile", rotoFeatherProfileName(element.featherProfile)},
+                         {"featherFalloff", element.featherFalloff}};
+    // Additive optional fields: omitted when unauthored, exactly like the other
+    // authored records, so a value that states no parent and no lifetime keeps
+    // its exact byte shape.
+    if (element.parent != kInvalidRotoElement)
+        value["parent"] = element.parent;
+    if (element.firstFrame)
+        value["firstFrame"] = *element.firstFrame;
+    if (element.lastFrame)
+        value["lastFrame"] = *element.lastFrame;
+    nlohmann::json points = nlohmann::json::array();
+    for (const auto& point : element.points)
+        points.push_back(rotoPointJson(point));
+    value["points"] = std::move(points);
+    applyUnknownFields(value, element.extension);
+    return value;
+}
+
+RotoElement parseRotoElement(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    RotoElement element;
+    element.id = requiredId(value, "id", context);
+    if (value.contains("parent"))
+        element.parent = unsignedValue(value.at("parent"), context + " parent");
+    if (const auto it = value.find("name"); it != value.end())
+        element.name = parseRotoName(*it, context + " name");
+    const auto kind = value.find("kind");
+    if (kind == value.end() || !kind->is_string())
+        throw DeserializeError(context + ": string 'kind' is required");
+    element.kind = parseRotoKind(kind->get<std::string>(), context);
+    if (const auto it = value.find("blend"); it != value.end())
+        element.blend = parseRotoBlend(parseRotoName(*it, context + " blend"), context);
+    if (const auto it = value.find("visible"); it != value.end())
+        element.visible = parseRotoBoolean(*it, context + " visible");
+    if (const auto it = value.find("locked"); it != value.end())
+        element.locked = parseRotoBoolean(*it, context + " locked");
+    if (const auto it = value.find("inverted"); it != value.end())
+        element.inverted = parseRotoBoolean(*it, context + " inverted");
+    if (const auto it = value.find("translation"); it != value.end())
+        element.translation = parseRotoVector(*it, context + " translation");
+    if (const auto it = value.find("scale"); it != value.end())
+        element.scale = parseRotoVector(*it, context + " scale");
+    if (const auto it = value.find("pivot"); it != value.end())
+        element.pivot = parseRotoVector(*it, context + " pivot");
+    if (const auto it = value.find("rotation"); it != value.end())
+        element.rotation = parseRotoNumber(*it, context + " rotation");
+    if (const auto it = value.find("opacity"); it != value.end())
+        element.opacity = parseRotoNumber(*it, context + " opacity");
+    if (const auto it = value.find("feather"); it != value.end())
+        element.feather = parseRotoNumber(*it, context + " feather");
+    if (const auto it = value.find("featherEnabled"); it != value.end())
+        element.featherEnabled = parseRotoBoolean(*it, context + " featherEnabled");
+    if (const auto it = value.find("featherProfile"); it != value.end())
+        element.featherProfile = parseRotoFeatherProfile(parseRotoName(*it, context + " featherProfile"), context);
+    if (const auto it = value.find("featherFalloff"); it != value.end())
+        element.featherFalloff = parseRotoNumber(*it, context + " featherFalloff");
+    if (const auto it = value.find("firstFrame"); it != value.end())
+        element.firstFrame = parseRotoNumber(*it, context + " firstFrame");
+    if (const auto it = value.find("lastFrame"); it != value.end())
+        element.lastFrame = parseRotoNumber(*it, context + " lastFrame");
+    if (const auto points = value.find("points"); points != value.end()) {
+        if (!points->is_array())
+            throw DeserializeError(context + ": 'points' must be an array");
+        for (std::size_t i = 0; i < points->size(); ++i)
+            element.points.push_back(parseRotoPoint(points->at(i), context + " point " + std::to_string(i)));
+    }
+    element.extension = collectUnknownFields(
+        value, {"id",        "parent",   "name",           "kind",           "blend",          "visible",
+                "locked",    "inverted", "translation",    "scale",          "pivot",          "rotation",
+                "opacity",   "feather",  "featherEnabled", "featherProfile", "featherFalloff", "firstFrame",
+                "lastFrame", "points"});
+    return element;
+}
+
+nlohmann::json encodeRotoData(const RotoData& data) {
+    nlohmann::json elements = nlohmann::json::array();
+    for (const auto& element : data.elements)
+        elements.push_back(rotoElementJson(element));
+    nlohmann::json value{{"version", kRotoDataVersion},
+                         {"nextElementId", data.nextElementId},
+                         {"nextPointId", data.nextPointId},
+                         {"elements", std::move(elements)}};
+    applyUnknownFields(value, data.extension);
+    return value;
+}
+
+RotoData decodeRotoData(const nlohmann::json& value, const std::string& context) {
+    if (!value.is_object())
+        throw DeserializeError(context + " must be an object");
+    const auto version = value.find("version");
+    if (version == value.end() || !version->is_number_integer())
+        throw DeserializeError(context + ": integer 'version' is required");
+    if (version->get<int>() != kRotoDataVersion)
+        throw DeserializeError(context + ": roto data version " + std::to_string(version->get<int>()) +
+                               " is not supported by this build (" + std::to_string(kRotoDataVersion) + ")");
+    RotoData data;
+    if (value.contains("nextElementId"))
+        data.nextElementId = requiredId(value, "nextElementId", context);
+    if (value.contains("nextPointId"))
+        data.nextPointId = requiredId(value, "nextPointId", context);
+    if (const auto elements = value.find("elements"); elements != value.end()) {
+        if (!elements->is_array())
+            throw DeserializeError(context + ": 'elements' must be an array");
+        for (std::size_t i = 0; i < elements->size(); ++i)
+            data.elements.push_back(parseRotoElement(elements->at(i), context + " element " + std::to_string(i)));
+    }
+    // The model owns the structural contract; a stored value is refused with the
+    // same diagnostic a controlled write would report.
+    if (const auto problem = validateRotoData(data))
+        throw DeserializeError(context + ": " + *problem);
+    data.extension = collectUnknownFields(value, {"version", "nextElementId", "nextPointId", "elements"});
+    return data;
+}
+
 const char* interpolationName(KeyInterpolation value) {
     switch (value) {
     case KeyInterpolation::Hold:
@@ -924,6 +1202,13 @@ void loadAnimation(const nlohmann::json& json, LoadResult& result, int schema) {
                 channel.address.key = address.at("key").get<std::string>();
                 if (address.contains("instance"))
                     channel.address.instance = requiredId(address, "instance", context + " address");
+                if (address.contains("rotoElement"))
+                    channel.address.rotoElement = requiredId(address, "rotoElement", context + " address");
+                if (address.contains("rotoPoint"))
+                    channel.address.rotoPoint = requiredId(address, "rotoPoint", context + " address");
+                if (channel.address.rotoPoint != kInvalidRotoPoint &&
+                    channel.address.rotoElement == kInvalidRotoElement)
+                    throw DeserializeError(context + " address scopes a point without its element");
                 const auto& keys = entry.at("keys");
                 if (!keys.is_array())
                     throw DeserializeError("keys must be an array");
@@ -1121,8 +1406,11 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
             layout = parseLayout(n.at("layout"), nc);
         const auto definition = n.contains("definition") ? requiredId(n, "definition", nc) : kInvalidNetwork;
         const auto instance = n.contains("instance") ? requiredId(n, "instance", nc) : kInvalidNetworkInstance;
-        nlohmann::json extension = collectUnknownFields(
-            n, {"id", "type", "name", "params", "layout", "definition", "instance", "inputPorts", "outputPorts"});
+        std::optional<RotoData> roto;
+        if (const auto data = n.find("roto"); data != n.end())
+            roto = rotoDataFromJson(*data, nc + " roto");
+        nlohmann::json extension = collectUnknownFields(n, {"id", "type", "name", "params", "layout", "roto",
+                                                            "definition", "instance", "inputPorts", "outputPorts"});
         const bool hasOpaqueParams = !opaqueParams.empty();
         try {
             (void)network.graph().addNodeWithId(id, type, n.at("name").get<std::string>(), std::move(params), layout,
@@ -1133,6 +1421,10 @@ void loadNetwork(const nlohmann::json& entry, Network& network, LoadResult& resu
                 network.graph().setPortContract(id, parsePorts(n.at("inputPorts"), nc + " inputPorts"),
                                                 parsePorts(n.at("outputPorts"), nc + " outputPorts"));
             }
+            // Installed through the same controlled write a command uses, so
+            // stored roto state is validated exactly like authored state.
+            if (roto)
+                network.graph().setRoto(id, std::move(*roto));
             network.graph().restoreNodeExtension(id, std::move(extension), std::move(opaqueParams));
         } catch (const GraphException& error) {
             throw DeserializeError(nc + ": " + error.what());
@@ -1435,6 +1727,14 @@ void migrateReadSourceOwnership(Document& document, int schema, LoadResult& resu
 
 }  // namespace
 
+nlohmann::json rotoDataToJson(const RotoData& data) {
+    return encodeRotoData(data);
+}
+
+RotoData rotoDataFromJson(const nlohmann::json& value, const std::string& context) {
+    return decodeRotoData(value, context);
+}
+
 nlohmann::json saveDocument(const Document& document) {
     nlohmann::json networks = nlohmann::json::array();
     for (const auto& network : document.networks()) {
@@ -1445,6 +1745,8 @@ nlohmann::json saveDocument(const Document& document) {
                                  {"name", node.name},
                                  {"params", mergedParameterJson(node.params, node.opaqueParams)},
                                  {"layout", layoutJson(node.layout)}};
+            if (node.roto)
+                value["roto"] = rotoDataToJson(*node.roto);
             if (node.definition != kInvalidNetwork)
                 value["definition"] = node.definition;
             if (node.instance != kInvalidNetworkInstance)
@@ -1576,6 +1878,13 @@ nlohmann::json saveDocument(const Document& document) {
                                {"key", channel.address.key}};
         if (channel.address.instance != kInvalidNetworkInstance)
             address["instance"] = channel.address.instance;
+        // A roto property's channel is scoped to the node-local element/point
+        // identity it animates, so the address persists it exactly like network
+        // and node scopes.
+        if (channel.address.rotoElement != kInvalidRotoElement)
+            address["rotoElement"] = channel.address.rotoElement;
+        if (channel.address.rotoPoint != kInvalidRotoPoint)
+            address["rotoPoint"] = channel.address.rotoPoint;
         nlohmann::json keys = nlohmann::json::array();
         for (const auto& key : channel.keys) {
             nlohmann::json encoded{

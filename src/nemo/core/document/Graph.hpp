@@ -3,6 +3,7 @@
 #include "nemo/core/SharedContainers.hpp"
 #include "nemo/core/document/ChangeRecorder.hpp"
 #include "nemo/core/document/Ids.hpp"
+#include "nemo/core/document/Roto.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include <cstdint>
 #include <map>
@@ -82,6 +83,12 @@ struct NodeInstance {
     // interpret as typed parameters. Re-emitted verbatim alongside the typed
     // parameters; a later typed edit of the same key wins.
     nlohmann::json opaqueParams{};
+    // The node's authored Roto data (issue #93), or null when the node has no
+    // roto content. The value is immutable once published, so a version, a
+    // history entry and a render snapshot share one instance until a controlled
+    // edit replaces exactly the storage it touched. Only Graph::setRoto writes
+    // it; it never travels through QML or an opaque parameter.
+    std::shared_ptr<const RotoData> roto{};
 };
 
 struct Edge {
@@ -128,7 +135,12 @@ enum class GraphError {
     // non-positive pixel aspect, so it names no canvas to author against.
     InvalidImageFormat,
     // A named-format operation addressed a preset the document does not hold.
-    UnknownNamedFormat
+    UnknownNamedFormat,
+    // A Roto value or edit violated the model's structural contract: a duplicate
+    // or out-of-range identity, non-finite geometry, a shape with too few points
+    // to close, a group parent that is missing/not a group/cyclic, an out-of-range
+    // property, or an edit of a locked element.
+    InvalidRoto
 };
 
 struct GraphErrorDetails {
@@ -186,6 +198,13 @@ public:
     // does not model and parameter records of an unavailable type. Reserved for
     // deserialization.
     void restoreNodeExtension(NodeId id, nlohmann::json extension, nlohmann::json opaqueParams);
+    // Publishes one node's authored Roto data (issue #93). The complete value is
+    // validated against the model's structural contract - unique identities below
+    // the allocator watermarks, finite geometry, closed shapes, acyclic group
+    // parentage and every authored range - so a malformed value never becomes
+    // published state. The write is a no-op (and records nothing) when it names
+    // the value the node already holds.
+    void setRoto(NodeId id, RotoData roto);
     void removeNode(NodeId id);
     void renameNode(NodeId id, std::string name);
 

@@ -42,6 +42,16 @@ namespace nemo {
 // without a format, or any malformed format record, is refused. Unknown fields
 // inside either record are retained verbatim.
 //
+// Schema 7 adds the node-authored Roto value (issue #93): a node that has Roto
+// content carries "roto": {version, nextElementId, nextPointId, elements: [...]}
+// with each element's geometry, transforms, flags, lifetime and points. The
+// record is typed and structured - every field's JSON type is fixed by the
+// model's own schema - and versioned, so a future shape is refused rather than
+// guessed. Element/point identities and the allocator watermarks round-trip
+// exactly, and unknown fields of the record, of an element and of a point are
+// retained verbatim, so a load/save cycle through a newer build loses nothing.
+// A node type this build does not model keeps its Roto record as authored data.
+//
 // Source and color-config paths are stored verbatim; resolving or rebasing them
 // to a project location is the file layer's job, never a codec side effect.
 struct LoadResult {
@@ -63,5 +73,13 @@ inline constexpr std::string_view kProjectFormat = "nemo";
 struct DeserializeError : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+
+// The node-authored Roto value, encoded and decoded on its own so a command
+// adapter (the CLI, for instance) publishes exactly the record the project file
+// stores. `rotoDataFromJson` throws DeserializeError with `context` prefixed,
+// validates the record's structure, and refuses identities that are not below
+// the stated allocator watermarks.
+[[nodiscard]] nlohmann::json rotoDataToJson(const RotoData& data);
+[[nodiscard]] RotoData rotoDataFromJson(const nlohmann::json& value, const std::string& context);
 
 }  // namespace nemo

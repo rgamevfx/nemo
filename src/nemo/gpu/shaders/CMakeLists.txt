@@ -16,6 +16,7 @@ nemo_add_slang_shaders(nemo_shaders ALL
         ../../nodes/constcolor/constcolor.slang
         ../../nodes/merge/merge.slang
         ../../nodes/output/output.slang
+        ../../nodes/premult/premult.slang
         ../../nodes/source/source.slang
         ../../nodes/grade/grade.slang
         ../../nodes/blur/blur.slang
@@ -24,6 +25,7 @@ nemo_add_slang_shaders(nemo_shaders ALL
         ../../nodes/shuffle/shuffle.slang
         ../../nodes/crop/crop.slang
         ../../nodes/reformat/reformat.slang
+        ../../nodes/unpremult/unpremult.slang
     # Every node effect includes the shared per-input geometry block (issue
     # #85); the compiled SPIR-V must be rebuilt when that contract changes.
     DEPENDS

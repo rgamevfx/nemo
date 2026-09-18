@@ -26,6 +26,7 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -231,6 +232,87 @@ TEST(Effect, ConstcolorIsBitExact) {
             EXPECT_EQ(slangImage.pixel(x, y), cpuImage.pixel(x, y)) << "pixel (" << x << "," << y << ")";
             EXPECT_EQ(glslImage.pixel(x, y), cpuImage.pixel(x, y)) << "pixel (" << x << "," << y << ")";
         }
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, PremultAndUnpremultMatchIndependentArithmeticOnBothNativeFrontends) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+
+    const auto runCase = [&](const char* type, const char* selectorKey, const std::array<float, 4>& input,
+                             const std::optional<ChoiceValue>& selector, const std::optional<ChoiceValue>& by,
+                             const std::array<float, 4>& expected, const char* what) {
+        Document doc;
+        rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+        const NodeId color = rootGraph(doc).addNode("constcolor", "input");
+        rootGraph(doc).setParam(color, "color", ColorValue{input});
+        const NodeId operation = rootGraph(doc).addNode(type, "operation");
+        if (selector)
+            rootGraph(doc).setParam(operation, selectorKey, *selector);
+        if (by)
+            rootGraph(doc).setParam(operation, "by", *by);
+        const NodeId output = rootGraph(doc).addNode("output", "result");
+        (void)rootGraph(doc).connect({color, 0}, {operation, 0});
+        (void)rootGraph(doc).connect({operation, 0}, {output, 0});
+        const EvaluationRequest request = requestFor(doc, {0, 0, 3, 2}, 0);
+
+        const CpuImage cpu = evaluateCpuImage(doc, request);
+        const CpuImage slangImage = evaluateGpu(doc, request, slang, *boot.device, *boot.allocator)
+                                        .readBack(output, *boot.device, *boot.allocator);
+        const CpuImage glslImage = evaluateGpu(doc, request, glsl, *boot.device, *boot.allocator)
+                                       .readBack(output, *boot.device, *boot.allocator);
+        for (int y = 0; y < request.region.height; ++y) {
+            for (int x = 0; x < request.region.width; ++x) {
+                for (std::size_t channel = 0; channel < expected.size(); ++channel) {
+                    EXPECT_FLOAT_EQ(cpu.pixel(x, y)[channel], expected[channel]) << what << " CPU channel " << channel;
+                    EXPECT_FLOAT_EQ(slangImage.pixel(x, y)[channel], expected[channel])
+                        << what << " Slang channel " << channel;
+                    EXPECT_FLOAT_EQ(glslImage.pixel(x, y)[channel], expected[channel])
+                        << what << " GLSL channel " << channel;
+                }
+            }
+        }
+    };
+
+    runCase("premult", "multiply", {-2.0F, 8.0F, 0.5F, -0.25F}, std::nullopt, std::nullopt,
+            {0.5F, -2.0F, -0.125F, -0.25F}, "default premult by negative alpha");
+    runCase("premult", "multiply", {-2.0F, 8.0F, 0.5F, -0.25F}, ChoiceValue{"R"}, ChoiceValue{"G"},
+            {-16.0F, 8.0F, 0.5F, -0.25F}, "partial premult by green");
+    runCase("unpremult", "divide", {-2.0F, 8.0F, 0.5F, -0.25F}, std::nullopt, std::nullopt,
+            {8.0F, -32.0F, -2.0F, -0.25F}, "default unpremult by negative alpha");
+    runCase("unpremult", "divide", {-2.0F, 8.0F, 0.5F, 0.0F}, std::nullopt, std::nullopt, {0.0F, 0.0F, 0.0F, 0.0F},
+            "exact zero divisor");
+    runCase("unpremult", "divide", {0.000003814697265625F, -0.0000019073486328125F, 0.5F, 0.00000095367431640625F},
+            std::nullopt, std::nullopt, {4.0F, -2.0F, 524288.0F, 0.00000095367431640625F},
+            "near-zero divisor without epsilon or clamp");
+
+    Document chain;
+    rootGraph(chain).removeNode(rootGraph(chain).nodeByName("Output")->id);
+    const NodeId color = rootGraph(chain).addNode("constcolor", "premultiplied");
+    rootGraph(chain).setParam(color, "color", ColorValue{{0.25F, 0.5F, 1.0F, 0.25F}});
+    const NodeId unpremult = rootGraph(chain).addNode("unpremult", "Unpremult");
+    const NodeId grade = rootGraph(chain).addNode("grade", "Grade");
+    rootGraph(chain).setParam(grade, "multiply", ColorValue{{2.0F, 2.0F, 2.0F, 1.0F}});
+    const NodeId premult = rootGraph(chain).addNode("premult", "Premult");
+    const NodeId output = rootGraph(chain).addNode("output", "result");
+    (void)rootGraph(chain).connect({color, 0}, {unpremult, 0});
+    (void)rootGraph(chain).connect({unpremult, 0}, {grade, 0});
+    (void)rootGraph(chain).connect({grade, 0}, {premult, 0});
+    (void)rootGraph(chain).connect({premult, 0}, {output, 0});
+    const EvaluationRequest request = requestFor(chain, {0, 0, 2, 2}, 0);
+    constexpr std::array<float, 4> kAuthoredResult{0.5F, 1.0F, 2.0F, 0.25F};
+    const CpuImage cpu = evaluateCpuImage(chain, request);
+    const CpuImage slangImage = evaluateGpu(chain, request, slang, *boot.device, *boot.allocator)
+                                    .readBack(output, *boot.device, *boot.allocator);
+    const CpuImage glslImage = evaluateGpu(chain, request, glsl, *boot.device, *boot.allocator)
+                                   .readBack(output, *boot.device, *boot.allocator);
+    for (std::size_t channel = 0; channel < kAuthoredResult.size(); ++channel) {
+        EXPECT_FLOAT_EQ(cpu.pixel(0, 0)[channel], kAuthoredResult[channel]);
+        EXPECT_FLOAT_EQ(slangImage.pixel(0, 0)[channel], kAuthoredResult[channel]);
+        EXPECT_FLOAT_EQ(glslImage.pixel(0, 0)[channel], kAuthoredResult[channel]);
     }
     expectValidationClean(*boot.instance);
 }

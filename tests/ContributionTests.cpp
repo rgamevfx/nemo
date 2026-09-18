@@ -600,6 +600,127 @@ TEST_F(ContributionTest, AlphaOnlyReadPreservesItsNamedChannelThroughEffects) {
     expectValidationClean(*boot.instance);
 }
 
+TEST_F(ContributionTest, PremultUnpremultSettingsSurviveHistoryAndReopenWithoutTouchingAuxiliaryChannels) {
+    const NodeDescriptor* premultDescriptor = builtinNodeCatalogPtr()->find("premult");
+    const NodeDescriptor* unpremultDescriptor = builtinNodeCatalogPtr()->find("unpremult");
+    ASSERT_NE(premultDescriptor, nullptr);
+    ASSERT_NE(unpremultDescriptor, nullptr);
+    ASSERT_EQ(premultDescriptor->parameters.size(), 2U);
+    ASSERT_EQ(unpremultDescriptor->parameters.size(), 2U);
+    EXPECT_EQ(premultDescriptor->parameters[0].name, "multiply");
+    EXPECT_EQ(premultDescriptor->parameters[1].name, "by");
+    EXPECT_EQ(unpremultDescriptor->parameters[0].name, "divide");
+    EXPECT_EQ(unpremultDescriptor->parameters[1].name, "by");
+    EXPECT_EQ(premultDescriptor->parameters[0].defaultValue, ParameterValue{ChoiceValue{"RGB"}});
+    EXPECT_EQ(premultDescriptor->parameters[1].defaultValue, ParameterValue{ChoiceValue{"Alpha"}});
+    EXPECT_EQ(unpremultDescriptor->parameters[0].defaultValue, ParameterValue{ChoiceValue{"RGB"}});
+    EXPECT_EQ(unpremultDescriptor->parameters[1].defaultValue, ParameterValue{ChoiceValue{"Alpha"}});
+    for (const NodeDescriptor* descriptor : {premultDescriptor, unpremultDescriptor}) {
+        for (const ParameterSpec& parameter : descriptor->parameters) {
+            EXPECT_EQ(parameter.type, ParameterType::Choice);
+            EXPECT_TRUE(parameter.editor.empty())
+                << "generic inspector must own " << descriptor->type << "." << parameter.name;
+        }
+    }
+
+    ProjectSession session;
+    const NetworkId network = session.document().rootNetworkId();
+    const NodeId output = session.document().network(network).defaultOutput();
+    const NodeId source = createSessionNode(session, "source", "Multilayer");
+    const NodeId premult = createSessionNode(session, "premult", "Premult");
+    const NodeId unpremult = createSessionNode(session, "unpremult", "Unpremult");
+    SourceReference reference;
+    reference.path = (fs::path{NEMO_CHANNEL_FIXTURE_DIR} / "multilayer-b.exr").string();
+    ASSERT_TRUE(session
+                    .submit(transactionCommand("alpha arithmetic graph",
+                                               {setSourceCommand("plate", reference),
+                                                setParamCommand(network, source, "source", std::string{"plate"}),
+                                                setParamCommand(network, source, "inputTransform", ChoiceValue{"raw"}),
+                                                connectCommand(network, {source, 0}, {premult, 0}),
+                                                connectCommand(network, {premult, 0}, {unpremult, 0}),
+                                                connectCommand(network, {unpremult, 0}, {output, 0})}),
+                            EditOptions{session.revision(), {}})
+                    .committed);
+    ASSERT_TRUE(session
+                    .submit(setParamCommand(network, premult, "multiply", ChoiceValue{"R"}),
+                            EditOptions{session.revision(), {}})
+                    .committed);
+    ASSERT_TRUE(
+        session.submit(setParamCommand(network, premult, "by", ChoiceValue{"G"}), EditOptions{session.revision(), {}})
+            .committed);
+    ASSERT_TRUE(session
+                    .submit(setParamCommand(network, unpremult, "divide", ChoiceValue{"R"}),
+                            EditOptions{session.revision(), {}})
+                    .committed);
+    ASSERT_TRUE(
+        session.submit(setParamCommand(network, unpremult, "by", ChoiceValue{"G"}), EditOptions{session.revision(), {}})
+            .committed);
+
+    ASSERT_TRUE(session.undo(EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().network(network).graph().node(unpremult)->params.count("by"), 0U);
+    ASSERT_TRUE(session.redo(EditOptions{session.revision(), {}}).committed);
+    EXPECT_EQ(session.document().network(network).graph().node(unpremult)->params.at("by"),
+              ParameterValue{ChoiceValue{"G"}});
+
+    media::ImageSourceProvider provider;
+    auto requestedR = requestFor(session.document(), output);
+    requestedR.region = {2, 3, 3, 2};
+    requestedR.channels = {"R"};
+    const RegionPlan demand =
+        planDependencyRegions(session.document(), requestedR, *builtinNodeContributions(), &provider);
+    bool foundSource = false;
+    for (const auto& [id, node] : demand.images.nodes) {
+        if (node.node.id == source) {
+            foundSource = true;
+            EXPECT_EQ(demand.requests.at(id).channels, (std::vector<std::string>{"R", "G"}))
+                << "the selected multiplier/divisor remains an explicit upstream demand";
+        }
+    }
+    ASSERT_TRUE(foundSource);
+
+    const fs::path target = dir_ / "premult-unpremult.nemo";
+    const ProjectWriteRequest save = session.prepareSave(target);
+    const ProjectWriteResult written = ProjectFile::writeAtomic(save);
+    ASSERT_TRUE(written.ok) << written.error.message;
+    ASSERT_TRUE(session.commitSave(save, written).committed);
+    ProjectReadResult read = ProjectFile::read(target);
+    ASSERT_TRUE(read.ok) << read.error.message;
+    ProjectSession reopened;
+    ASSERT_TRUE(reopened.open(std::move(read)).replaced);
+    const Graph& graph = reopened.document().network(network).graph();
+    EXPECT_EQ(graph.nodeByName("Premult")->params.at("multiply"), ParameterValue{ChoiceValue{"R"}});
+    EXPECT_EQ(graph.nodeByName("Premult")->params.at("by"), ParameterValue{ChoiceValue{"G"}});
+    EXPECT_EQ(graph.nodeByName("Unpremult")->params.at("divide"), ParameterValue{ChoiceValue{"R"}});
+    EXPECT_EQ(graph.nodeByName("Unpremult")->params.at("by"), ParameterValue{ChoiceValue{"G"}});
+
+    auto request = requestFor(reopened.document(), graph.nodeByName("Output")->id);
+    request.region = {2, 3, 3, 2};
+    const CpuImage cpu = evaluateCpu(reopened.document(), request, nullptr, &provider).image;
+    expectStoredChannel(cpu, 0, 0, "R", 0.25F);
+    expectStoredChannel(cpu, 0, 0, "G", 0.5F);
+    expectStoredChannel(cpu, 0, 0, "A", 1.0F);
+    expectStoredChannel(cpu, 0, 0, "beauty.G", -5.0F);
+    expectStoredChannel(cpu, 0, 0, "matte.coverage", 0.125F);
+    expectStoredChannel(cpu, 0, 0, "depth.Z", 23.0F);
+
+    if (slangSpvDir().empty())
+        GTEST_SKIP() << "native Slang unavailable; CPU persistence workflow completed";
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_OR_FAIL(boot);
+    const auto library = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    eval::SourceSession nativeSources(*boot.instance, *boot.device, *boot.allocator,
+                                      slangSpvDir() / "mediaConvert.spv");
+    auto native = eval::evaluateGpu(reopened.document(), request, library, *boot.device, *boot.allocator,
+                                    10'000'000'000ULL, nullptr, &nativeSources);
+    const CpuImage pixels = native.readBack(graph.nodeByName("Output")->id, *boot.device, *boot.allocator);
+    EXPECT_EQ(pixels.layout().channels, cpu.layout().channels);
+    const std::size_t sampleCount =
+        static_cast<std::size_t>(cpu.width()) * static_cast<std::size_t>(cpu.height()) * cpu.channelCount();
+    for (std::size_t index = 0; index < sampleCount; ++index)
+        EXPECT_FLOAT_EQ(pixels.data()[index], cpu.data()[index]) << "stored sample " << index;
+    expectValidationClean(*boot.instance);
+}
+
 TEST_F(ContributionTest, MultilayerReadPreservesNamedDataThroughGradeAndRegionalReuse) {
     // Handwritten OpenEXR bytes, independent of Nemo and OIIO's writer.
     ProjectSession session;

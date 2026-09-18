@@ -4,10 +4,11 @@ Date: 2026-09-14
 Status: Proposed — implemented on issue/83-node-contributions, extended by
 issue #88 (described images, integer `shiftX`/`shiftY` on the test extension)
 and issue #90 (named-channel Shuffle, per-input requirements and viewer
-projection), then #98 (native storage and viewer scheduling repairs) and #92
-(retained-edge-domain claim, owning-format context, creation initial values);
-owner review pending and all prior landing holds still pending.
-References: issues #83, #85, #88, #90, #92, #98; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
+projection), then #98 (native storage and viewer scheduling repairs), #92
+(retained-edge-domain claim, owning-format context, creation initial values),
+and #89 (explicit Premult/Unpremult stored-channel arithmetic); owner review
+pending and all prior landing holds still pending.
+References: issues #83, #85, #88–#90, #92, #98; spec §§2, 10.2–10.4, 10.7, 12; ADR-0003, ADR-0004, ADR-0007
 
 ## Decision
 
@@ -153,6 +154,29 @@ Unavailable custom editors expose all ordinary parameters through the generic
 fallback. Native evidence and the
 remaining review/landing holds are recorded in
 `docs/evidence/assets/issue90-channels/verification.json`.
+
+## Explicit alpha arithmetic (#89)
+
+Premult and Unpremult are ordinary pointwise image contributions. Each has one
+required image input and exactly two generic `Choice` parameters: Premult
+declares `multiply` (default RGB) and `by` (default Alpha); Unpremult declares
+`divide` (default RGB) and `by` (default Alpha). They add no custom editor,
+mask, mix, inversion, renderer path or automatic alpha conversion.
+
+The selected primary stored roles are multiplied or divided by the selected
+primary stored role. Unselected primary roles and every auxiliary channel are
+exact pass-through. Dependency planning explicitly adds the multiplier/divisor
+when a selected output channel is demanded, and rejects a missing required role
+with the node/parameter relationship. Premult is exact float multiplication.
+Unpremult divides every nonzero value exactly, including near-zero, negative and
+HDR values; an exact zero divisor writes zero. No epsilon or clamp is applied.
+
+These nodes inherit the input description, including association metadata. They
+are explicit authored arithmetic and are never removed or cancelled as an
+association canonicalization. Existing straight-input source, Grade, Blur,
+Transform, Merge, viewer and delivery behavior is unchanged. CPU, Slang and
+retained GLSL implementations are independent and use the ordinary named-channel
+storage, role resolution, reuse and submission-lifetime contracts.
 
 Issue #98's repair checks, native captures, matched playback/upload/kernel
 measurements and remaining limitations are recorded in

@@ -153,7 +153,7 @@ struct ViewIntent {
 // isolation the selection asked for.
 struct ResolvedView {
     EvaluationRequest request;
-    // RGBA keeps the whole premultiplied presentation; a single identified
+    // RGBA presents the stored RGB opaquely (issue #99); a single identified
     // primary channel is isolated in the presentation copy only.
     gpu::ViewerChannel presentationChannel{gpu::ViewerChannel::RGBA};
 };

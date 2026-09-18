@@ -55,7 +55,7 @@ struct ViewerFrame {
     // Accepted for asynchronous encoding, not proof of a persisted chunk.
     bool cacheQueued{false};
     // The presentation-only display isolation the view asked for (issue #98):
-    // RGBA keeps the whole premultiplied presentation, while a single
+    // RGBA presents the stored RGB opaquely (issue #99), while a single
     // identified primary channel of a color-managed layer is isolated in the
     // presentation copy. It never changes the evaluated frame.
     gpu::ViewerChannel presentationChannel{gpu::ViewerChannel::RGBA};

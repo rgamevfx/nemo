@@ -809,10 +809,11 @@ TEST(Viewer, ViewerRenderAppliesTransformOnceAndMatchesCpuOcio) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Presentation quantization: display-referred values are premultiplied
-//    and quantized WITHOUT another transfer; scene-linear input is
-//    rejected. (.5,.25,1,.5 → bytes 64,32,128,128 — round-nearest of
-//    v*alpha*255.)
+// 6. Presentation quantization: display-referred values are quantized
+//    directly WITHOUT another transfer — the composite presents the stored
+//    RGB opaquely (issue #99), so alpha is never applied here; scene-linear
+//    input is rejected. (.5,.25,1,.5 → bytes 128,64,255,255 — round-nearest
+//    of v*255.)
 // ---------------------------------------------------------------------------
 
 TEST(Viewer, PresentationQuantizesExactlyOnceWithoutTransfer) {
@@ -853,12 +854,12 @@ TEST(Viewer, PresentationQuantizesExactlyOnceWithoutTransfer) {
         10'000'000'000ULL);
     std::uint8_t bytes[4] = {};
     gpu::downloadImage(consumerQueue, *consumerAllocator, presented.image, bytes, sizeof(bytes), 10'000'000'000ULL);
-    // Premultiplied (v * alpha), round-nearest quantization — no second
-    // transfer applied to display values.
-    EXPECT_EQ(bytes[0], 64);
-    EXPECT_EQ(bytes[1], 32);
-    EXPECT_EQ(bytes[2], 128);
-    EXPECT_EQ(bytes[3], 128);
+    // Stored RGB, round-nearest quantization, opaque alpha — no second
+    // transfer applied to display values and no alpha arithmetic (issue #99).
+    EXPECT_EQ(bytes[0], 128);
+    EXPECT_EQ(bytes[1], 64);
+    EXPECT_EQ(bytes[2], 255);
+    EXPECT_EQ(bytes[3], 255);
 
     // Scene-linear input is rejected: quantizing a scene-linear buffer
     // would silently change operation meaning.
@@ -914,10 +915,10 @@ TEST(Viewer, PresentationIsolatesDisplayChannels) {
     };
 
     // Independent oracle: round-nearest 8-bit of the saturated source
-    // (0.5, 0.25, 1.0, 0.5). RGBA stays premultiplied (64, 32, 128, 128);
-    // Red/Green/Blue replicate one channel over an opaque alpha; Alpha is
-    // opaque gray of the source alpha.
-    expectChannel(presented(gpu::ViewerChannel::RGBA), {64, 32, 128, 128}, "RGBA");
+    // (0.5, 0.25, 1.0, 0.5). RGBA is the composite — stored RGB over an opaque
+    // alpha (128, 64, 255, 255, issue #99); Red/Green/Blue replicate one
+    // channel over an opaque alpha; Alpha is opaque gray of the source alpha.
+    expectChannel(presented(gpu::ViewerChannel::RGBA), {128, 64, 255, 255}, "RGBA");
     expectChannel(presented(gpu::ViewerChannel::Red), {128, 128, 128, 255}, "Red");
     expectChannel(presented(gpu::ViewerChannel::Green), {64, 64, 64, 255}, "Green");
     expectChannel(presented(gpu::ViewerChannel::Blue), {255, 255, 255, 255}, "Blue");

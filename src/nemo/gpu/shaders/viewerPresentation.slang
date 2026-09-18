@@ -1,14 +1,17 @@
-// Presentation only: display-referred straight RGBA32F -> premultiplied
-// RGBA8 UNORM for Qt's native Vulkan texture interface. No color transform,
-// resampling, or scene-linear reuse. Rounding is to the nearest 8-bit value.
-// The channel uniform is a presentation-only display isolation: it never
-// reaches evaluation or the viewer cache.
+// Presentation only: display-referred RGBA32F -> opaque RGBA8 UNORM for Qt's
+// native Vulkan texture interface. The composite presents the STORED RGB and
+// never scales it by alpha: an association reaches the pixels only through an
+// explicit Premult node, so replacing alpha (Shuffle) cannot change the
+// presented color while RGB is untouched. No color transform, resampling, or
+// scene-linear reuse. Rounding is to the nearest 8-bit value. The channel
+// uniform is a presentation-only display isolation: it never reaches
+// evaluation or the viewer cache.
 [[vk::binding(0, 0)]] RWTexture2D<float4> source;
 [[vk::binding(1, 0)]] RWTexture2D<float4> surface;
 [[vk::binding(2, 0)]]
 cbuffer PresentationUniforms {
-    // Channel::RGBA = 0 (premultiplied, unchanged); Red = 1; Green = 2;
-    // Blue = 3; Alpha = 4. Any other value falls back to RGBA.
+    // Channel::RGBA = 0 (the composite: stored RGB, opaque); Red = 1;
+    // Green = 2; Blue = 3; Alpha = 4. Any other value falls back to RGBA.
     uint channel;
 }
 
@@ -31,8 +34,9 @@ void main(uint3 tid : SV_DispatchThreadID)
     else if (channel == 4u)
         result = float4(value.a, value.a, value.a, 1.0);
     else {
-        value.rgb *= value.a;
-        result = value;
+        // The composite carries the stored RGB opaquely; alpha is inspected
+        // through its own selection and applied only by an explicit Premult.
+        result = float4(value.rgb, 1.0);
     }
     surface[tid.xy] = floor(result * 255.0 + 0.5) / 255.0;
 }

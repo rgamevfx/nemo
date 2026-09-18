@@ -157,9 +157,12 @@ QSGNode* ViewerItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData*) {
         node = created.get();
     }
     if (node->requestId != result->requestId) {
+        // No TextureHasAlphaChannel: every presentation selection is opaque
+        // (issue #99), so the scene graph must not blend the image by an alpha
+        // the presentation deliberately does not apply.
         auto* texture = QNativeInterface::QSGVulkanTexture::fromNative(
             result->presentation.image.handle(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, window(),
-            QSize(result->frame.width, result->frame.height), QQuickWindow::TextureHasAlphaChannel);
+            QSize(result->frame.width, result->frame.height), {});
         if (!texture)
             qFatal("viewer: Qt failed to import the Vulkan presentation image");
         node->adopt(texture, result);

@@ -7,7 +7,9 @@ namespace nemo::gpu {
 // Presentation-only display isolation. The selection is applied in the
 // presentation copy, never in evaluation or the viewer cache, so a panel can
 // inspect one channel without changing what the graph produced or what the
-// cache stores. RGBA is the untouched premultiplied presentation.
+// cache stores. RGBA is the composite: the stored RGB, presented opaquely
+// (issue #99) — alpha reaches pixels only through an explicit Premult node, so
+// an alpha the graph replaced cannot change the presented color.
 enum class ViewerChannel : std::uint32_t { RGBA = 0, Red = 1, Green = 2, Blue = 3, Alpha = 4 };
 
 struct PresentationReady;
@@ -19,12 +21,14 @@ struct ViewerPresentation {
 
 // Worker-only conversion and external sharing, NOT another view transform.
 // Input: completed display-referred RGBA32F 2D image in GENERAL on producer.
-// Quantization/premultiplication writes directly into exportable memory;
-// no full-frame sharing copy or CPU readback. Output is immutable, released
-// to EXTERNAL ownership, with producer completion observed before return.
+// Quantization writes directly into exportable memory; no full-frame sharing
+// copy or CPU readback. Output is immutable, released to EXTERNAL ownership,
+// with producer completion observed before return.
 // `channel` selects the presentation-only display isolation: Red/Green/Blue
 // replicate that channel over an opaque alpha and Alpha becomes opaque gray,
-// while RGBA keeps today's premultiplied output byte-for-byte.
+// while RGBA presents the stored RGB over an opaque alpha (issue #99). Every
+// selection is opaque, so the surface never composites the image by its own
+// alpha.
 // Timeout/cancellation retain all referenced resources through GPU completion.
 // Both logical devices must be distinct and on the same physical GPU; they
 // and their Instance outlive all results and completion-retained tokens.

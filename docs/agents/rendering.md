@@ -164,10 +164,11 @@ mean*; neither re-implements the other.
 ## Native effects — node-local execution
 
 The independent CPU, Slang and retained GLSL implementations live in
-`src/nemo/nodes/{grade,blur,transform,merge,shuffle,crop,reformat,roto}/`. Each module contributes schema and
-CPU execution in `Contribution.cpp`, native payload/pass preparation and GLSL in
-`Gpu.cpp`, and its Slang kernel(s). Module-local `Parameters.hpp` owns typed
-effect interpretation; shared [`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp)
+`src/nemo/nodes/{grade,blur,transform,merge,shuffle,premult,unpremult,crop,reformat,roto}/`.
+Each module contributes schema and CPU execution in `Contribution.cpp`, native
+payload/pass preparation and GLSL in `Gpu.cpp`, and its Slang kernel(s).
+Module-local `Parameters.hpp` owns typed effect interpretation; shared
+[`Params.hpp`](../../src/nemo/core/evaluation/Params.hpp)
 owns generic reads, effective animation, channels and `effectiveEffectMask`.
 The shared evaluators consume immutable contributions and retain traversal,
 request validation, source mapping, reuse and GPU resource ownership.

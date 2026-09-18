@@ -27,10 +27,12 @@ add_library(nemo_core
     nodes/crop/Contribution.cpp
     nodes/grade/Contribution.cpp
     nodes/merge/Contribution.cpp
+    nodes/premult/Contribution.cpp
     nodes/output/Contribution.cpp
     nodes/reformat/Contribution.cpp
     nodes/roto/Contribution.cpp
     nodes/shuffle/Contribution.cpp
+    nodes/unpremult/Contribution.cpp
     nodes/source/Contribution.cpp
     nodes/testpattern/Contribution.cpp
     nodes/transform/Contribution.cpp

@@ -13,12 +13,14 @@ add_library(nemo_eval
     ../nodes/grade/Gpu.cpp
     ../nodes/merge/Gpu.cpp
     ../nodes/output/Gpu.cpp
+    ../nodes/premult/Gpu.cpp
     ../nodes/reformat/Gpu.cpp
     ../nodes/roto/Gpu.cpp
     ../nodes/shuffle/Gpu.cpp
     ../nodes/source/Gpu.cpp
     ../nodes/testpattern/Gpu.cpp
     ../nodes/transform/Gpu.cpp
+    ../nodes/unpremult/Gpu.cpp
     ../nodes/viewer/Gpu.cpp
     ../nodes/write/Gpu.cpp
     SourceSession.cpp

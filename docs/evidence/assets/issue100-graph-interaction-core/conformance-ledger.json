@@ -1,0 +1,5364 @@
+{
+  "ledger": "issue100-graph-interaction-core",
+  "generated_by": "docs/evidence/assets/issue100-graph-interaction-core/build-ledger.py",
+  "input": "docs/evidence/assets/issue44-graph-editing/reference-mapping.json",
+  "output": "docs/evidence/assets/issue100-graph-interaction-core/conformance-ledger.json",
+  "unit_contract": [
+    "scene",
+    "geometry",
+    "hit-test",
+    "gestures",
+    "command-facade",
+    "painter",
+    "panel"
+  ],
+  "shared_issues": {
+    "46": 6,
+    "49": 20,
+    "note": "rows shared with another ticket keep its issue and name its evidence"
+  },
+  "entries": [
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[0]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[1]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[2]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[3]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[4]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[5]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[6]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[7]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[8]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[9]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[10]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[11]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[12]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[16]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[18]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[19]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[20]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/verification/checks[21]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/implementation[0]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/implementation[0]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/implementation[1]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/implementation[1]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/implementation[2]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/implementation[2]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/implementation[3]",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/implementation[3]",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/move",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/controls/move",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/connect",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/controls/connect",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/reconnect",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/controls/reconnect",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/disconnect",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/controls/disconnect",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/cancel",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/controls/cancel",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/insert",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/controls/insert",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-behaviors-session.json:/controls/inspect",
+      "source": [
+        "GraphPanel.qml:228-313 ports",
+        "GraphPanel.qml:761-845 wires",
+        "GraphPanel.qml:1103-1167 node drag",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "gestures",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "command-facade",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "graph-behaviors-session.json:/controls/inspect",
+      "re_verification": [
+        "GraphDragPreviewCancellationAndGroupOffsets",
+        "WorkspaceDragTest.GraphGestureCostBudget"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[0]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[1]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[2]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[3]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[4]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[5]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[6]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[7]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[8]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[9]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[10]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[11]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[12]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[13]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[13]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[14]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[14]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[15]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[15]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[16]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[17]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[17]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[18]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[19]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[20]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[21]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[22]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[22]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[23]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[23]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[24]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[24]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[25]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[25]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[26]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[26]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[27]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[27]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/verification/checks[28]",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/verification/checks[28]",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/controls/pipes",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/controls/pipes",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/controls/dots",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/controls/dots",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "graph-routing-session.json:/controls/snapping",
+      "source": [
+        "GraphPanel.qml:427-593 route geometry/gesture",
+        "GraphPanel.qml:1054-1102 snapping"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter"
+      ],
+      "reference_scenario": "graph-routing-session.json:/controls/snapping",
+      "re_verification": [
+        "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[0]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[1]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[2]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[3]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[4]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[5]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[6]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[7]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[8]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[9]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[10]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[11]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[12]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[13]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[13]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[14]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[14]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[15]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[15]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[16]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[17]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[17]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[18]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[19]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[20]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[21]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[22]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[22]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[23]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[23]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[24]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[24]",
+      "re_verification": [
+        "RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Prototype owns child graph contexts; production uses explicit reusable definitions/instances. Owned-subnet lifecycle is #49, not deleting shared definitions in #44."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[25]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[25]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[26]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[26]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[27]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[27]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[28]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[28]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[29]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[29]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[30]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[30]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[31]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[31]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[32]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[32]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[33]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[33]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[34]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[34]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[35]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[35]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/verification/checks[36]",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/verification/checks[36]",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/creation",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/controls/creation",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/selected",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/controls/selected",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/unselected",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/controls/unselected",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/fallback",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/controls/fallback",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/delete",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/controls/delete",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-creation-deletion-session.json:/controls/dependent_state",
+      "source": [
+        "GraphPanel.qml:846-921 creation",
+        "GraphPanel.qml:1217-1249 delete",
+        "GraphPanel.qml:2083-2166 search",
+        "StudioModel.qml:createNode/deleteSelectedNodes"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "command-facade",
+      "supporting_units": [
+        "scene",
+        "gestures",
+        "panel"
+      ],
+      "reference_scenario": "node-creation-deletion-session.json:/controls/dependent_state",
+      "re_verification": [
+        "CatalogMenuCreatesRealNodesAndTimelineSeeks",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[0]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[0]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[1]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[1]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[2]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[2]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[3]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[3]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[4]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[4]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[5]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[5]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[6]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[6]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[7]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[7]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[8]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[8]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[9]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[9]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "node-style-session.json:/verified[10]",
+      "source": [
+        "GraphPanel.qml:122-133 category tokens",
+        "GraphPanel.qml:1634-1728 node visuals",
+        "Theme.qml category colors"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "painter",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "panel"
+      ],
+      "reference_scenario": "node-style-session.json:/verified[10]",
+      "re_verification": [
+        "NEMO100_EVIDENCE_DIR graph-node-style.json"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[0]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[1]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[2]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[3]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[4]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[5]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[6]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[7]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[8]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[9]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[10]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[11]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[12]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[13]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[13]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[14]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[14]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[15]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[15]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[16]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[17]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[17]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[18]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[19]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[20]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[21]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[22]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[22]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[23]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[23]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[24]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[24]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[25]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[25]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[26]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[26]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[27]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[27]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[28]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[28]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[29]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[29]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[30]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[30]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[31]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[31]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/verification/checks[32]",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/verification/checks[32]",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/left_drag",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/controls/left_drag",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/shift_left_drag",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/controls/shift_left_drag",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/drop",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/controls/drop",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/cancel",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/controls/cancel",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/hover",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/controls/hover",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "pipe-gesture-session.json:/controls/retained",
+      "source": [
+        "GraphPanel.qml:696-845 pipe pulls and release",
+        "GraphPanel.qml:1541-1624 wire paint",
+        "GraphPanel.qml:1748-1958 input owner"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "geometry",
+      "supporting_units": [
+        "gestures",
+        "painter",
+        "panel"
+      ],
+      "reference_scenario": "pipe-gesture-session.json:/controls/retained",
+      "re_verification": [
+        "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "GraphPipePullLocksSourceOrDestinationOnPress"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[0]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[0]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[1]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[1]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[2]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[2]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[3]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[3]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[4]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[4]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[5]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[5]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[6]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[6]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[7]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[7]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[8]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[8]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[9]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[9]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[10]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[10]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[11]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[11]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[12]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[12]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[13]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[13]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[14]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[14]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[15]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[15]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[16]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[16]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[17]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[17]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[18]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[18]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[19]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[19]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[20]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[20]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[21]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[21]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[22]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[22]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[23]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[23]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[24]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[24]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[25]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[25]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[26]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[26]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[27]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[27]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[28]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[28]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[29]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[29]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[30]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[30]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[31]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[31]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[32]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[32]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[33]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[33]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[34]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[34]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[35]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[35]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[36]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[36]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[37]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[37]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[38]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[38]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[39]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[39]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[40]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[40]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[41]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[41]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[42]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[42]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[43]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[43]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/verification/checks[44]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/verification/checks[44]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[0]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/implementation[0]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[1]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/implementation[1]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[2]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/implementation[2]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[3]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/implementation[3]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[4]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/implementation[4]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/implementation[5]",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/implementation[5]",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/navigation",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/controls/navigation",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/selection",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/controls/selection",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/ports",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/controls/ports",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/masks",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/controls/masks",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/collapse",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/controls/collapse",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/subnet_navigation",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 49,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/controls/subnet_navigation",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Hierarchy implementation remains #49; #44 exposes NetworkId-scoped graph query/edit seam and scope-local presentation records."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/cancellation",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/controls/cancellation",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "subnet-interaction-session.json:/controls/existing_workflows",
+      "source": [
+        "GraphPanel.qml:228-313 port geometry/core guard",
+        "GraphPanel.qml:1103-1216 drag/selection",
+        "GraphPanel.qml:1748-1958 input owner",
+        "StudioModel.qml hierarchy commands (#49)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "geometry",
+        "hit-test",
+        "gestures",
+        "command-facade"
+      ],
+      "reference_scenario": "subnet-interaction-session.json:/controls/existing_workflows",
+      "re_verification": [
+        "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView",
+        "WorkspaceDragTest.GraphGestureCostBudget",
+        "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry"
+      ],
+      "note": "Implement and verify on production graph. Historical pending-placement clause conflicts with the later creation record; use immediate creation per inventory supersession policy and #44 acceptance, not ghost placement."
+    },
+    {
+      "entry": "workflow-session.json:/verified[0]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/verified[0]",
+      "re_verification": [
+        "LowZoomConnectedNodeBodiesRemainSelectable",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/verified[1]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/verified[1]",
+      "re_verification": [
+        "SubnetParameterPopoutExposesEditsAndReordersRows",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/verified[2]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/verified[2]",
+      "re_verification": [
+        "SubnetParameterPopoutExposesEditsAndReordersRows",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/verified[3]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/verified[3]",
+      "re_verification": [
+        "SubnetParameterPopoutExposesEditsAndReordersRows",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/verified[5]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/verified[5]",
+      "re_verification": [
+        "LowZoomConnectedNodeBodiesRemainSelectable",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/verified[6]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/verified[6]",
+      "re_verification": [
+        "LowZoomConnectedNodeBodiesRemainSelectable",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/verified[7]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/verified[7]",
+      "re_verification": [
+        "LowZoomConnectedNodeBodiesRemainSelectable",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/verified[8]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/verified[8]",
+      "re_verification": [
+        "LowZoomConnectedNodeBodiesRemainSelectable",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[0]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/behavior[0]",
+      "re_verification": [
+        "LowZoomConnectedNodeBodiesRemainSelectable",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[1]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/behavior[1]",
+      "re_verification": [
+        "SubnetParameterPopoutExposesEditsAndReordersRows",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[2]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/behavior[2]",
+      "re_verification": [
+        "SubnetParameterPopoutExposesEditsAndReordersRows",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[3]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 46,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/behavior[3]",
+      "re_verification": [
+        "SubnetParameterPopoutExposesEditsAndReordersRows",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Inspector cards/pinning/scrolling are #46; no private inspector in graph work."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[5]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/behavior[5]",
+      "re_verification": [
+        "LowZoomConnectedNodeBodiesRemainSelectable",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    },
+    {
+      "entry": "workflow-session.json:/behavior[6]",
+      "source": [
+        "GraphPanel.qml:1748-1958 click/double-click",
+        "GraphPanel.qml:1961-2030 category toolbar",
+        "GraphPanel.qml:2083-2166 search",
+        "ParametersPanel.qml inspector arrangement (#46)"
+      ],
+      "implementation_issue": 44,
+      "owning_unit": "panel",
+      "supporting_units": [
+        "gestures"
+      ],
+      "reference_scenario": "workflow-session.json:/behavior[6]",
+      "re_verification": [
+        "LowZoomConnectedNodeBodiesRemainSelectable",
+        "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText"
+      ],
+      "note": "Implement and verify on production graph."
+    }
+  ],
+  "summary": {
+    "row_count": 227,
+    "by_unit": {
+      "scene": 0,
+      "geometry": 71,
+      "hit-test": 0,
+      "gestures": 29,
+      "command-facade": 43,
+      "painter": 11,
+      "panel": 73
+    },
+    "by_implementation_issue": {
+      "44": 201,
+      "46": 6,
+      "49": 20
+    },
+    "by_rule": {
+      "R01": {
+        "match": "file contains 'theme.qml'",
+        "owning_unit": "painter",
+        "supporting_units": [],
+        "regions_matched": [
+          "category colors"
+        ],
+        "sources": 11,
+        "rows": 11,
+        "primary_rows": 11,
+        "reason": "category colours are authored in Theme.qml and applied by the painter"
+      },
+      "R02": {
+        "match": "file contains 'studiomodel.qml'",
+        "owning_unit": "panel",
+        "supporting_units": [
+          "command-facade"
+        ],
+        "regions_matched": [
+          "createNode/deleteSelectedNodes",
+          "hierarchy commands (#49)"
+        ],
+        "sources": 102,
+        "rows": 102,
+        "primary_rows": 59,
+        "reason": "scope navigation and hierarchy commands are panel state plus the shared command path"
+      },
+      "R03": {
+        "match": "region contains 'port geometry/core guard'",
+        "owning_unit": "geometry",
+        "supporting_units": [
+          "hit-test"
+        ],
+        "regions_matched": [
+          "port geometry/core guard"
+        ],
+        "sources": 59,
+        "rows": 59,
+        "primary_rows": 0,
+        "reason": "port position, hit region and card core guard are geometry facts"
+      },
+      "R04": {
+        "match": "region contains 'ports'",
+        "owning_unit": "geometry",
+        "supporting_units": [
+          "hit-test"
+        ],
+        "regions_matched": [
+          "ports"
+        ],
+        "sources": 29,
+        "rows": 29,
+        "primary_rows": 0,
+        "reason": "port position and hit region are geometry facts"
+      },
+      "R05": {
+        "match": "region contains 'node visuals'",
+        "owning_unit": "geometry",
+        "supporting_units": [
+          "hit-test"
+        ],
+        "regions_matched": [
+          "node visuals"
+        ],
+        "sources": 11,
+        "rows": 11,
+        "primary_rows": 0,
+        "reason": "the card rectangle the visuals fill is geometry"
+      },
+      "R06": {
+        "match": "region contains 'pipe pulls and release'",
+        "owning_unit": "geometry",
+        "supporting_units": [
+          "gestures",
+          "painter"
+        ],
+        "regions_matched": [
+          "pipe pulls and release"
+        ],
+        "sources": 39,
+        "rows": 39,
+        "primary_rows": 39,
+        "reason": "the pulled route is a geometry polyline consumed by the connect session and the painter"
+      },
+      "R07": {
+        "match": "region contains 'route geometry/gesture'",
+        "owning_unit": "geometry",
+        "supporting_units": [
+          "gestures",
+          "painter"
+        ],
+        "regions_matched": [
+          "route geometry/gesture"
+        ],
+        "sources": 32,
+        "rows": 32,
+        "primary_rows": 32,
+        "reason": "route polyline and point-to-segment projection are geometry; the reroute session consumes them"
+      },
+      "R08": {
+        "match": "region contains 'wire paint'",
+        "owning_unit": "geometry",
+        "supporting_units": [
+          "gestures",
+          "painter"
+        ],
+        "regions_matched": [
+          "wire paint"
+        ],
+        "sources": 39,
+        "rows": 39,
+        "primary_rows": 0,
+        "reason": "the wire path the painter walks is the geometry polyline"
+      },
+      "R09": {
+        "match": "region contains 'wires'",
+        "owning_unit": "geometry",
+        "supporting_units": [
+          "gestures",
+          "painter"
+        ],
+        "regions_matched": [
+          "wires"
+        ],
+        "sources": 29,
+        "rows": 29,
+        "primary_rows": 0,
+        "reason": "wire geometry is owned once and consumed by both picking and drawing"
+      },
+      "R10": {
+        "match": "region contains 'node drag'",
+        "owning_unit": "gestures",
+        "supporting_units": [
+          "hit-test",
+          "command-facade"
+        ],
+        "regions_matched": [
+          "node drag"
+        ],
+        "sources": 29,
+        "rows": 29,
+        "primary_rows": 29,
+        "reason": "node move is a gesture session; it commits one move command through the facade"
+      },
+      "R11": {
+        "match": "region contains 'drag/selection'",
+        "owning_unit": "gestures",
+        "supporting_units": [
+          "hit-test",
+          "command-facade"
+        ],
+        "regions_matched": [
+          "drag/selection"
+        ],
+        "sources": 59,
+        "rows": 59,
+        "primary_rows": 0,
+        "reason": "drag and marquee selection are gesture sessions over the hit-test result"
+      },
+      "R12": {
+        "match": "region contains 'snapping'",
+        "owning_unit": "gestures",
+        "supporting_units": [
+          "geometry"
+        ],
+        "regions_matched": [
+          "snapping"
+        ],
+        "sources": 32,
+        "rows": 32,
+        "primary_rows": 0,
+        "reason": "snapping adjusts the session's candidate positions against geometry"
+      },
+      "R13": {
+        "match": "region contains 'creation'",
+        "owning_unit": "command-facade",
+        "supporting_units": [
+          "gestures",
+          "scene"
+        ],
+        "regions_matched": [
+          "creation"
+        ],
+        "sources": 43,
+        "rows": 43,
+        "primary_rows": 43,
+        "reason": "creation commits one command through the facade and reads the scene for its anchor"
+      },
+      "R14": {
+        "match": "region contains 'delete'",
+        "owning_unit": "command-facade",
+        "supporting_units": [
+          "gestures",
+          "scene"
+        ],
+        "regions_matched": [
+          "delete"
+        ],
+        "sources": 43,
+        "rows": 43,
+        "primary_rows": 0,
+        "reason": "deletion commits one command through the facade; the scene records what was removed"
+      },
+      "R15": {
+        "match": "region contains 'click/double-click'",
+        "owning_unit": "panel",
+        "supporting_units": [
+          "gestures"
+        ],
+        "regions_matched": [
+          "click/double-click"
+        ],
+        "sources": 14,
+        "rows": 14,
+        "primary_rows": 14,
+        "reason": "click arbitration and double-click dispatch are panel input plumbing"
+      },
+      "R16": {
+        "match": "region contains 'input owner'",
+        "owning_unit": "panel",
+        "supporting_units": [
+          "gestures"
+        ],
+        "regions_matched": [
+          "input owner"
+        ],
+        "sources": 127,
+        "rows": 127,
+        "primary_rows": 0,
+        "reason": "the panel owns the input path and hands the gesture sessions their events"
+      },
+      "R17": {
+        "match": "region contains 'search'",
+        "owning_unit": "panel",
+        "supporting_units": [],
+        "regions_matched": [
+          "search"
+        ],
+        "sources": 57,
+        "rows": 57,
+        "primary_rows": 0,
+        "reason": "the search field is panel chrome; it drives placement through the same command path"
+      },
+      "R18": {
+        "match": "region contains 'category toolbar'",
+        "owning_unit": "panel",
+        "supporting_units": [],
+        "regions_matched": [
+          "category toolbar"
+        ],
+        "sources": 14,
+        "rows": 14,
+        "primary_rows": 0,
+        "reason": "the tools/category hotbar is panel chrome"
+      },
+      "R19": {
+        "match": "region contains 'category tokens'",
+        "owning_unit": "panel",
+        "supporting_units": [],
+        "regions_matched": [
+          "category tokens"
+        ],
+        "sources": 11,
+        "rows": 11,
+        "primary_rows": 0,
+        "reason": "category tokens are panel-side settings consumed by placement"
+      },
+      "R20": {
+        "match": "region contains 'inspector arrangement'",
+        "owning_unit": "panel",
+        "supporting_units": [],
+        "regions_matched": [
+          "inspector arrangement (#46)"
+        ],
+        "sources": 14,
+        "rows": 14,
+        "primary_rows": 0,
+        "reason": "inspector popup arrangement is panel state"
+      }
+    },
+    "unmapped_regions": [],
+    "by_unit_involvement": {
+      "scene": 43,
+      "geometry": 170,
+      "hit-test": 99,
+      "gestures": 216,
+      "command-facade": 131,
+      "painter": 111,
+      "panel": 195
+    },
+    "by_primary_evidence": {
+      "CatalogMenuCreatesRealNodesAndTimelineSeeks": 42,
+      "GraphDragPreviewCancellationAndGroupOffsets": 29,
+      "GraphPipePullRetainsRoutesOnCancelAndDisconnectsOnRelease": 39,
+      "GraphScreenSpaceHitTestingSurvivesEveryZoomLevel": 32,
+      "LowZoomConnectedNodeBodiesRemainSelectable": 8,
+      "NEMO100_EVIDENCE_DIR graph-node-style.json": 11,
+      "RemovingActiveSubnetUnwindsToParentAndKeepsSharedDefinition": 1,
+      "SubnetNavigationShowsTypedTerminalsAndRestoresScopedView": 59,
+      "SubnetParameterPopoutExposesEditsAndReordersRows": 6
+    },
+    "by_appended_evidence": {
+      "EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry": 59,
+      "GraphPipePullLocksSourceOrDestinationOnPress": 39,
+      "GraphSearchCreatesImmediatelyAndProtectsSelectionWhileEditingText": 57,
+      "WorkspaceDragTest.GraphGestureCostBudget": 127
+    },
+    "region_count": 21,
+    "regions": [
+      "category colors",
+      "category tokens",
+      "category toolbar",
+      "click/double-click",
+      "createNode/deleteSelectedNodes",
+      "creation",
+      "delete",
+      "drag/selection",
+      "hierarchy commands (#49)",
+      "input owner",
+      "inspector arrangement (#46)",
+      "node drag",
+      "node visuals",
+      "pipe pulls and release",
+      "port geometry/core guard",
+      "ports",
+      "route geometry/gesture",
+      "search",
+      "snapping",
+      "wire paint",
+      "wires"
+    ],
+    "source_string_count": 794
+  }
+}

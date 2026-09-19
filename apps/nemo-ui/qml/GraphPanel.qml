@@ -3,9 +3,14 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Nemo
 
-// The graph surface is deliberately the only gesture owner. Document topology,
-// authored positions, and routes are changed only by ViewerController commands;
-// every other value in this item is presentation state.
+// The node graph panel is chrome, input plumbing, popups and shortcuts, and
+// nothing else. Every pointer event is forwarded verbatim to the
+// GraphInteraction core, which owns the scene, the view transform, the
+// selection, the hover result and the active gesture session. The panel renders
+// what the core publishes: the paint item, the enter-subnet chips, the marquee
+// and the popups. It computes no graph geometry, resolves no pick and iterates
+// no graph element; the view, the selection and the last-click record it
+// exposes are read-only aliases of the core's own properties.
 FocusScope {
     id: graphPanel
     objectName: "graphPanel"
@@ -22,100 +27,50 @@ FocusScope {
     property bool toolsOpen: false
     readonly property var controller: viewerController
     property var categories: []
-    property var catalogByType: ({})
-    property var portPresentationById: ({})
-    property var displayNodes: []
-    property var subnetDisplayNodes: []
-    property var displayEdges: []
-    property var selectedNodeIds: []
-    property string hoveredNodeId: ""
-    property string hoveredEdgeId: ""
-    property var hoveredEndpoint: ({})
-    property var hoveredReroute: ({})
-    property var wirePreview: ({})
-    property var graphSnapshotData: ({})
-    onGraphSnapshotDataChanged: portPresentationById = ({})
-    property string graphNetworkId: ""
-    property bool graphAvailable: false
-    // A scope path is explicit occurrence ancestry. Definitions can be used
-    // by multiple instances, so navigation never infers a parent from a
-    // definition identity.
+    // A scope path is explicit occurrence ancestry. Definitions can be used by
+    // multiple instances, so navigation never infers a parent from a definition
+    // identity.
     property var scopePath: []
     property var scopeBreadcrumbs: []
-    property var graphSelections: ({})
-    property var graphViews: ({})
     property bool stateReady: false
-
-    property real zoom: 1
-    property real panX: 0
-    property real panY: 0
-    // A wheel burst accumulates a target zoom and the pointer it is anchored
-    // at, and one application per event-loop turn moves the view. The settled
-    // view is persisted once the burst stops; nothing here writes the
-    // workspace mid-gesture.
-    property real zoomTarget: 1
-    property real zoomAnchorX: 0
-    property real zoomAnchorY: 0
-    property bool zoomQueued: false
-    property bool zoomApplied: false
-    property bool framePending: false
-    property bool lastClickValid: false
-    property real lastClickX: 0
-    property real lastClickY: 0
-    readonly property real nodeWidth: 112
-    readonly property real nodeHeight: 28
-    readonly property real portGlyphSize: 8
-    readonly property real portHitRadius: 14
-    readonly property real sceneWidth: 2600
-    readonly property real sceneHeight: 1500
-
-    property string gesture: ""
-    property bool gestureMoved: false
-    property real gesturePressX: 0
-    property real gesturePressY: 0
-    property real pressSceneX: 0
-    property real pressSceneY: 0
+    // The network displayed here. Scope navigation is presentation state, never
+    // document data: the core owns the scene the network id names.
+    property string graphNetworkId: ""
+    readonly property bool graphAvailable: interaction.available
+    // The node the core reported under a right press. The core has already made
+    // it the selection by the time the menu opens.
+    property string contextNodeId: ""
+    property string contextTarget: ""
+    property var contextNodeInfo: ({})
+    // The last pointer position the surface forwarded, in surface coordinates.
+    // The search popup is placed relative to it; the core owns the pointer for
+    // every gesture decision.
     property real pointerX: 0
     property real pointerY: 0
-    property bool shiftHeld: false
-    property real panOriginX: 0
-    property real panOriginY: 0
-    property real boxStartX: 0
-    property real boxStartY: 0
-    property var boxSelectionBase: []
-    property var dragIds: []
-    property var dragStartPositions: ({})
-    property string disconnectedInsertId: ""
-    property real dragDeltaX: 0
-    property real dragDeltaY: 0
-    property string wireFromId: ""
-    property int wireFromPort: 0
-    property string wireToId: ""
-    property int wireToPort: 0
-    property bool wireFromInput: false
-    property var wireOldEdge: null
-    property bool pipePullPending: false
-    property var pipePullEdge: null
-    property bool pipePullDestination: false
-    property var rerouteEdge: null
-    property var reroutePoints: []
-    property int rerouteIndex: -1
-    property bool rerouteRemove: false
-    property bool rerouteInserted: false
-    property var creationContext: ({})
     property point searchAnchor: Qt.point(0, 0)
-    property string contextNodeId: ""
-    property real contextMenuX: 0
-    property real contextMenuY: 0
-    property bool lastClickMoved: false
-    property int positionEpoch: 0
 
-    // Only a cancellable authored edit takes Undo away from the document: node
-    // move, wire connect/rewire/disconnect, reroute and the pending pipe pull
-    // are the gestures whose release publishes. Navigation (pan, subnet entry),
-    // selection (box, toggle) and view changes stay presentation state.
-    readonly property bool historyGestureActive: gesture === "nodes" || gesture === "wire" || gesture === "reroute" || gesture === "pipe"
-    onHistoryGestureActiveChanged: syncHistoryGesture()
+    // Everything about the graph the native UI tests read is the core's. The
+    // panel holds no second copy of the view, the selection or the last click.
+    readonly property real zoom: interaction.zoom
+    readonly property real panX: interaction.panX
+    readonly property real panY: interaction.panY
+    readonly property bool lastClickValid: interaction.lastClickValid
+    readonly property real lastClickX: interaction.lastClickX
+    readonly property real lastClickY: interaction.lastClickY
+    readonly property var selectedNodeIds: interaction.selectedNodeIds
+    // Only a gesture that can publish an authored edit takes Undo away from the
+    // document: node move, wire connect/rewire/disconnect, reroute and the pipe
+    // pull. The core decides which sessions those are. Navigation (pan, subnet
+    // entry), selection (marquee, toggle) and view changes stay presentation
+    // state and never claim Undo.
+    readonly property bool historyGestureActive: interaction.historyGestureActive
+    onHistoryGestureActiveChanged: historyController.setGesture(graphPanel, historyGestureActive)
+    // The shared history adapter routes a preview-only Undo to the registered
+    // gesture owner by this name: the gesture is dropped, so the release that
+    // follows finds nothing to commit and records no history entry.
+    function cancelHistoryGesture() {
+        interaction.cancelGesture();
+    }
 
     property Component headerTools: Component {
         RowLayout {
@@ -127,7 +82,7 @@ FocusScope {
                 implicitHeight: 24
                 implicitWidth: 67
                 padding: 5
-                onClicked: graphPanel.frameAll()
+                onClicked: interaction.frameAll()
             }
             ChromeButton {
                 id: toolsButton
@@ -170,21 +125,18 @@ FocusScope {
             "fontSize": graphPanel.theme ? graphPanel.theme.fontSize : 11
         })
 
-    function clampZoom(value) {
-        return Math.max(0.2, Math.min(2.5, Number(value) || 1));
-    }
     // The graph panel always starts from the document's root network; scope
     // navigation below is presentation state, never document data.
     function baseNetworkId() {
         return controller && controller.rootNetworkId !== undefined ? String(controller.rootNetworkId || "") : "";
     }
     function viewerShortcutEnabled() {
-        return graphPanel.activeFocus && selectedNodeIds.length === 1 && !gesture && !graphSearchPopup.opened && !graphContextMenu.opened;
+        return graphPanel.activeFocus && selectedNodeIds.length === 1 && !interaction.gestureActive && !graphSearchPopup.opened && !graphContextMenu.opened;
     }
     function assignViewerShortcut(viewerIndex) {
         if (!viewerShortcutEnabled())
             return;
-        controller.assignViewer(graphNetworkId, viewerIndex, String(selectedNodeIds[0]));
+        interaction.assignViewer(Number(viewerIndex));
     }
     function targetNetworkId() {
         if (scopePath.length)
@@ -199,63 +151,54 @@ FocusScope {
     function scopeKey(id) {
         return String(id || "");
     }
-    function networkSnapshot() {
-        return graphSnapshotData || ({});
+    function displayCategory(group) {
+        if (group === "I/O")
+            return "IO";
+        if (group === "Compositing")
+            return "Merge";
+        return theme && theme.nodeCategoryColors && theme.nodeCategoryColors[group] !== undefined ? group : "Utility";
     }
-    function activeNodes() {
-        return graphAvailable ? (networkSnapshot().nodes || []) : [];
+    // A plain copy of the core's selection, so a panel-state record never aliases
+    // the sequence the core publishes.
+    function selectionIds() {
+        var ids = [], source = selectedNodeIds;
+        for (var i = 0; i < source.length; ++i)
+            ids.push(String(source[i]));
+        return ids;
     }
-    function activeEdges() {
-        return graphAvailable ? (networkSnapshot().edges || []) : [];
-    }
-    function nodeById(value) {
-        var id = String(value), nodes = activeNodes();
-        for (var i = 0; i < nodes.length; ++i)
-            if (String(nodes[i].id) === id)
-                return nodes[i];
-        return null;
-    }
-    function edgeById(value) {
-        var id = String(value), edges = activeEdges();
-        for (var i = 0; i < edges.length; ++i)
-            if (String(edges[i].id) === id)
-                return edges[i];
-        return null;
-    }
-    function nodeLabel(node) {
-        return node && String(node.name || node.type || "Node");
-    }
-    function isSubnet(node) {
-        return !!node && !!node.definition && !!node.instance;
-    }
-    function subnetAt(px, py) {
-        var id = nodeAt(px, py), node = id ? nodeById(id) : null;
-        if (!isSubnet(node))
-            return "";
-        var point = scenePoint(px, py), x = nodeX(node), y = nodeY(node);
-        return point.x >= x + nodeWidth - 24 && point.x <= x + nodeWidth - 3 && point.y >= y + 3 && point.y <= y + 24 ? id : "";
-    }
-    // The subnet the context menu acts on: the right-clicked node, or the sole
-    // selection when the menu was opened without a node under the cursor.
-    function contextSubnetId() {
+    // The node the context menu acts on: the node the core reported under the
+    // pointer, or the sole selection when the menu was opened without one.
+    function contextTargetId() {
         var candidate = contextNodeId;
         if (!candidate && selectedNodeIds.length === 1)
             candidate = selectedNodeIds[0];
-        if (!candidate)
-            return "";
-        return isSubnet(nodeById(candidate)) ? String(candidate) : "";
+        return String(candidate || "");
     }
+    function contextSubnetId() {
+        return contextNodeInfo.isSubnet === true ? contextTarget : "";
+    }
+    // The context target and its node facts. The menus read these records rather
+    // than calling the core inside a binding: a binding is re-evaluated on the
+    // notify signal of every property it read, and a Q_INVOKABLE call registers
+    // no dependency at all, so a menu built from a bare call goes stale — a
+    // duplicated subnet left "Make independent" disabled forever.
+    function refreshContextTarget() {
+        contextTarget = contextTargetId();
+        contextNodeInfo = interaction.nodeInfo(contextTarget);
+    }
+    // Scope entry is explicit occurrence ancestry: definitions can be used by
+    // multiple instances, so the path records the occurrence that was entered.
     function enterSubnet(id) {
-        var node = nodeById(id);
-        if (!isSubnet(node) || !node.definition || !node.instance)
+        var info = interaction.nodeInfo(id);
+        if (info.exists !== true || info.isSubnet !== true)
             return false;
         var next = scopePath.slice();
         next.push({
                 "parentNetworkId": graphNetworkId,
-                "networkId": String(node.definition),
-                "instanceId": String(node.instance),
-                "nodeId": String(node.id),
-                "name": nodeLabel(node)
+                "networkId": String(info.definition),
+                "instanceId": String(info.instance),
+                "nodeId": String(id),
+                "name": String(info.name || info.type || "Node")
             });
         scopePath = next;
         switchNetwork();
@@ -272,344 +215,14 @@ FocusScope {
         switchNetwork();
     }
     function collapseSelection() {
-        if (!graphAvailable || !selectedNodeIds.length || !controller || !controller.collapseSelection)
-            return "";
-        var created = controller.collapseSelection(graphNetworkId, selectedNodeIds.slice(), "Subnet");
-        if (created) {
-            setSelection([String(created)]);
-            savePanelState();
-        }
-        return String(created || "");
+        if (!interaction.collapseSelection())
+            return;
+        savePanelState();
     }
-    function selected(id) {
-        return selectedNodeIds.indexOf(String(id)) >= 0;
-    }
-    function setSelection(ids) {
-        var next = [], nodes = activeNodes();
-        for (var i = 0; i < (ids || []).length; ++i) {
-            var id = String(ids[i]), exists = false;
-            for (var j = 0; j < nodes.length; ++j)
-                if (String(nodes[j].id) === id) {
-                    exists = true;
-                    break;
-                }
-            if (exists && next.indexOf(id) < 0)
-                next.push(id);
-        }
-        selectedNodeIds = next;
-        graphSelections[scopeKey(graphNetworkId)] = next.slice();
-        graphItem.selectedNodeIds = next;
-    }
-    function toggleSelection(id) {
-        var next = selectedNodeIds.slice(), wanted = String(id), at = next.indexOf(wanted);
-        if (at >= 0)
-            next.splice(at, 1);
-        else
-            next.push(wanted);
-        setSelection(next);
-    }
-    function portSide(port, output) {
-        return output ? "bottom" : (String(port && port.kind || "") === "mask" ? "right" : "top");
-    }
-    function portLocal(node, output, index) {
-        var ports = output ? (node.outputs || []) : (node.inputs || []), port = ports[index] || ({});
-        var side = portSide(port, output), sideCount = 0, sideIndex = 0;
-        for (var i = 0; i < ports.length; ++i) {
-            if (portSide(ports[i], output) !== side)
-                continue;
-            if (i === index)
-                sideIndex = sideCount;
-            ++sideCount;
-        }
-        var fraction = sideCount <= 1 ? 0.5 : (sideIndex + 1) / (sideCount + 1);
-        if (side === "right")
-            return {
-                "x": nodeWidth,
-                "y": nodeHeight * fraction
-            };
-        if (side === "bottom")
-            return {
-                "x": nodeWidth * fraction,
-                "y": nodeHeight
-            };
-        return {
-            "x": nodeWidth * fraction,
-            "y": 0
-        };
-    }
-    function decoratePorts(node, output) {
-        var ports = output ? (node.outputs || []) : (node.inputs || []), result = [];
-        for (var i = 0; i < ports.length; ++i) {
-            var source = ports[i], copy = {};
-            for (var key in source)
-                copy[key] = source[key];
-            copy.index = source.index !== undefined ? source.index : i;
-            copy.id = source.id !== undefined ? String(source.id) : String(copy.index);
-            var local = portLocal(node, output, i);
-            copy.x = local.x;
-            copy.y = local.y;
-            result.push(copy);
-        }
-        return result;
-    }
-    function copyNode(node) {
-        var copy = {};
-        for (var field in node)
-            copy[field] = node[field];
-        copy.x = nodeX(node);
-        copy.y = nodeY(node);
-        var id = String(node.id), ports = portPresentationById[id];
-        if (!ports) {
-            ports = {
-                "inputs": decoratePorts(node, false),
-                "outputs": decoratePorts(node, true)
-            };
-            portPresentationById[id] = ports;
-        }
-        copy.inputs = ports.inputs;
-        copy.outputs = ports.outputs;
-        var descriptor = catalogByType[String(node.type)];
-        copy.category = descriptor ? displayCategory(descriptor.group) : (node.category || "Utility");
-        return copy;
-    }
-    function displayCategory(group) {
-        if (group === "I/O")
-            return "IO";
-        if (group === "Compositing")
-            return "Merge";
-        return theme && theme.nodeCategoryColors && theme.nodeCategoryColors[group] !== undefined ? group : "Utility";
-    }
-    function refreshDisplayNodes() {
-        var source = activeNodes(), next = [], subnets = [];
-        for (var i = 0; i < source.length; ++i) {
-            var copy = copyNode(source[i]);
-            copy.category = copy.category || "Utility";
-            next.push(copy);
-            if (isSubnet(copy))
-                subnets.push(copy);
-        }
-        displayNodes = next;
-        subnetDisplayNodes = subnets;
-        var valid = [];
-        for (var s = 0; s < selectedNodeIds.length; ++s)
-            if (nodeById(selectedNodeIds[s]))
-                valid.push(String(selectedNodeIds[s]));
-        selectedNodeIds = valid;
-        graphItem.nodes = next;
-        graphItem.selectedNodeIds = valid;
-    }
-    function updateDisplayEdges() {
-        var source = activeEdges(), next = [];
-        for (var i = 0; i < source.length; ++i) {
-            var edge = source[i], copy = {};
-            for (var field in edge)
-                copy[field] = edge[field];
-            if (rerouteEdge && String(edge.id) === String(rerouteEdge.id) && gesture === "reroute")
-                copy.route = reroutePoints.slice();
-            next.push(copy);
-        }
-        displayEdges = next;
-        graphItem.edges = next;
-    }
-    function refreshSnapshots() {
-        var catalog = controller.nodeCatalog || [], byType = {}, groups = {};
-        for (var i = 0; i < catalog.length; ++i) {
-            var descriptor = catalog[i];
-            byType[String(descriptor.type)] = descriptor;
-            var label = displayCategory(descriptor.group);
-            if (!groups[label])
-                groups[label] = {
-                    "label": label,
-                    "nodes": []
-                };
-            groups[label].nodes.push(descriptor);
-        }
-        catalogByType = byType;
-        var ordered = ["Color", "Distort", "Filter", "Utility", "Merge", "IO"], nextGroups = [];
-        for (var g = 0; g < ordered.length; ++g)
-            if (groups[ordered[g]])
-                nextGroups.push(groups[ordered[g]]);
-        for (var key in groups)
-            if (ordered.indexOf(key) < 0)
-                nextGroups.push(groups[key]);
-        categories = nextGroups;
-        refreshDisplayNodes();
-        updateDisplayEdges();
-        graphItem.hoveredNodeId = hoveredNodeId;
-        graphItem.hoveredEdgeId = hoveredEdgeId;
-        graphItem.hoveredEndpoint = hoveredEndpoint;
-        graphItem.hoveredReroute = hoveredReroute;
-        graphItem.wirePreview = wirePreview;
-    }
+    // The scene point of a surface point. The transform is the core's, so the
+    // screenshot and test coordinate agrees with the pick by construction.
     function scenePoint(px, py) {
-        return {
-            "x": (px - panX) / zoom,
-            "y": (py - panY) / zoom
-        };
-    }
-    function canvasPoint(x, y) {
-        return {
-            "x": panX + x * zoom,
-            "y": panY + y * zoom
-        };
-    }
-    function nodeX(node) {
-        var start = dragStartPositions[String(node.id)];
-        return start ? start.x + dragDeltaX : Number(node.x) || 0;
-    }
-    function nodeY(node) {
-        var start = dragStartPositions[String(node.id)];
-        return start ? start.y + dragDeltaY : Number(node.y) || 0;
-    }
-    function portScene(node, output, index) {
-        var local = portLocal(node, output, index);
-        return {
-            "x": nodeX(node) + local.x,
-            "y": nodeY(node) + local.y
-        };
-    }
-    function portHitAllowed(node, port, output, px, py) {
-        var side = portSide(port, output), left = panX + nodeX(node) * zoom, top = panY + nodeY(node) * zoom;
-        var width = nodeWidth * zoom, height = nodeHeight * zoom;
-        if (side === "right")
-            return px >= left + width * 0.55;
-        if (side === "bottom")
-            return py >= top + height * 0.55;
-        return py <= top + height * 0.45;
-    }
-    function portAt(px, py, output) {
-        var best = null, bestDistance = portHitRadius, nodes = activeNodes();
-        for (var i = 0; i < nodes.length; ++i) {
-            var node = nodes[i], ports = output ? (node.outputs || []) : (node.inputs || []);
-            for (var p = 0; p < ports.length; ++p) {
-                if (!portHitAllowed(node, ports[p], output, px, py))
-                    continue;
-                var scene = portScene(node, output, p), point = canvasPoint(scene.x, scene.y);
-                var distance = Math.hypot(px - point.x, py - point.y);
-                if (distance <= bestDistance) {
-                    bestDistance = distance;
-                    best = {
-                        "node": String(node.id),
-                        "port": p,
-                        "direction": output ? "output" : "input",
-                        "x": point.x,
-                        "y": point.y,
-                        "distance": distance
-                    };
-                }
-            }
-        }
-        return best;
-    }
-    function anyPortAt(px, py) {
-        var output = portAt(px, py, true), input = portAt(px, py, false);
-        return !output ? input : (!input || output.distance <= input.distance ? output : input);
-    }
-    function nodeAt(px, py) {
-        var point = scenePoint(px, py), nodes = activeNodes();
-        for (var i = nodes.length - 1; i >= 0; --i) {
-            var node = nodes[i], x = nodeX(node), y = nodeY(node);
-            if (point.x >= x && point.x <= x + nodeWidth && point.y >= y && point.y <= y + nodeHeight)
-                return String(node.id);
-        }
-        return "";
-    }
-    function edgePoints(edge) {
-        var from = nodeById(edge.fromNode), to = nodeById(edge.toNode);
-        if (!from || !to)
-            return [];
-        var source = portScene(from, true, Number(edge.fromPort) || 0);
-        var points = [canvasPoint(source.x, source.y)], route = edge.route || [];
-        for (var i = 0; i < route.length; ++i)
-            points.push(canvasPoint(Number(route[i].x), Number(route[i].y)));
-        var end = portScene(to, false, Number(edge.toPort) || 0);
-        points.push(canvasPoint(end.x, end.y));
-        return points;
-    }
-    function projection(edge, px, py) {
-        var points = edgePoints(edge), best = null;
-        for (var i = 0; i + 1 < points.length; ++i) {
-            var a = points[i], b = points[i + 1], dx = b.x - a.x, dy = b.y - a.y;
-            var length = dx * dx + dy * dy, along = length ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / length)) : 0;
-            var x = a.x + along * dx, y = a.y + along * dy, distance = Math.hypot(px - x, py - y);
-            if (!best || distance < best.distance)
-                best = {
-                    "distance": distance,
-                    "segment": i,
-                    "x": x,
-                    "y": y
-                };
-        }
-        return best;
-    }
-    function edgeAt(px, py) {
-        var best = null, distance = 12;
-        for (var i = 0; i < activeEdges().length; ++i) {
-            var edge = activeEdges()[i], hit = projection(edge, px, py);
-            if (hit && hit.distance <= distance) {
-                distance = hit.distance;
-                best = edge;
-            }
-        }
-        return best;
-    }
-    function rerouteAt(px, py) {
-        var best = null, distance = 9;
-        for (var i = 0; i < activeEdges().length; ++i) {
-            var edge = activeEdges()[i], points = edgePoints(edge);
-            for (var p = 1; p + 1 < points.length; ++p) {
-                var d = Math.hypot(px - points[p].x, py - points[p].y);
-                if (d <= distance) {
-                    distance = d;
-                    best = {
-                        "edge": edge,
-                        "index": p - 1,
-                        "x": points[p].x,
-                        "y": points[p].y
-                    };
-                }
-            }
-        }
-        return best;
-    }
-    function endpointAt(px, py) {
-        var best = null, distance = portHitRadius;
-        for (var i = 0; i < activeEdges().length; ++i) {
-            var edge = activeEdges()[i], points = edgePoints(edge);
-            if (points.length < 2)
-                continue;
-            var sourceNode = nodeById(edge.fromNode), targetNode = nodeById(edge.toNode);
-            var sourceDistance = Math.hypot(px - points[0].x, py - points[0].y);
-            if (sourceDistance <= distance && sourceNode && portHitAllowed(sourceNode, (sourceNode.outputs || [])[edge.fromPort], true, px, py)) {
-                distance = sourceDistance;
-                best = {
-                    "edge": edge,
-                    "output": true
-                };
-            }
-            var targetDistance = Math.hypot(px - points[points.length - 1].x, py - points[points.length - 1].y);
-            if (targetDistance <= distance && targetNode && portHitAllowed(targetNode, (targetNode.inputs || [])[edge.toPort], false, px, py)) {
-                distance = targetDistance;
-                best = {
-                    "edge": edge,
-                    "output": false
-                };
-            }
-        }
-        return best;
-    }
-    function edgeForInput(node, port) {
-        var edges = activeEdges();
-        for (var i = 0; i < edges.length; ++i)
-            if (String(edges[i].toNode) === String(node) && Number(edges[i].toPort) === Number(port))
-                return edges[i];
-        return null;
-    }
-    function insideSurface(px, py) {
-        return px >= 0 && py >= 0 && px <= graphSurface.width && py <= graphSurface.height;
-    }
-    function pipeBodyAt(px, py) {
-        return anyPortAt(px, py) || endpointAt(px, py) || nodeAt(px, py) ? null : edgeAt(px, py);
+        return interaction.scenePoint(px, py);
     }
 
     function panelStateCopy() {
@@ -638,7 +251,7 @@ FocusScope {
             "lastClickX": Number(lastClickX),
             "lastClickY": Number(lastClickY)
         };
-        selections[scopeKey(graphNetworkId)] = selectedNodeIds.slice();
+        selections[scopeKey(graphNetworkId)] = selectionIds();
         merged.graphViews = views;
         merged.graphSelections = selections;
         merged.scopeRootNetworkId = baseNetworkId();
@@ -685,186 +298,65 @@ FocusScope {
     }
     // `autoFrameScope` is true only when a network scope is entered: a restored
     // view record is used as stored, and only a scope that has none is framed.
-    // A panel-state write must never re-frame a view the artist is using.
+    // A panel-state write must never re-frame a view the artist is using, so the
+    // request waits for the surface's size and a later adoption wins over it.
     function restoreScopeState(autoFrameScope) {
         var state = panelState || ({}), views = state.graphViews || ({}), selections = state.graphSelections || ({});
         var view = views[scopeKey(graphNetworkId)];
         if (!view && graphNetworkId === String(controller.rootNetworkId) && state.zoom !== undefined)
             view = state;
         if (view && isFinite(Number(view.zoom)) && isFinite(Number(view.panX)) && isFinite(Number(view.panY))) {
-            // A write this panel just made reads back as the view it already
-            // has; adopting it must not disturb a gesture that started since.
-            if (Number(view.zoom) !== zoom || Number(view.panX) !== panX || Number(view.panY) !== panY)
-                setView(Number(view.zoom), Number(view.panX), Number(view.panY));
-            lastClickValid = view.lastClickValid === true;
-            lastClickX = Number(view.lastClickX) || 0;
-            lastClickY = Number(view.lastClickY) || 0;
+            interaction.adoptView(Number(view.zoom), Number(view.panX), Number(view.panY), view.lastClickValid === true,
+                    Number(view.lastClickX) || 0, Number(view.lastClickY) || 0);
         } else {
-            lastClickValid = false;
-            lastClickX = 0;
-            lastClickY = 0;
-            if (autoFrameScope) {
-                // Framing is deferred until the surface has its size. A view
-                // adopted in the meantime (a restored record, a gesture) wins:
-                // it is the view the artist is looking at.
-                framePending = true;
-                Qt.callLater(graphPanel.frameIfStillUnframed);
-            }
+            interaction.clearLastClick();
+            if (autoFrameScope)
+                interaction.requestFrame();
         }
-        selectedNodeIds = [];
-        var saved = selections[scopeKey(graphNetworkId)] || [];
-        for (var i = 0; i < saved.length; ++i)
-            if (nodeById(saved[i]))
-                selectedNodeIds.push(String(saved[i]));
-        graphItem.selectedNodeIds = selectedNodeIds;
+        interaction.adoptSelection(selections[scopeKey(graphNetworkId)] || []);
     }
     function switchNetwork() {
         reconcileScopePath();
         var nextNetwork = targetNetworkId();
         if (stateReady && nextNetwork === graphNetworkId) {
-            graphSnapshotData = graphNetworkId.length ? controller.graphSnapshot(graphNetworkId) : ({});
-            graphAvailable = graphSnapshotData.available === true;
+            var refreshed = graphNetworkId.length ? controller.graphSnapshot(graphNetworkId) : ({});
             // Undo can remove the active child definition. Walk the explicit
-            // occurrence path back to its surviving parent rather than
-            // falling through to an unrelated definition or root graph.
-            if (!graphAvailable && scopePath.length) {
+            // occurrence path back to its surviving parent rather than falling
+            // through to an unrelated definition or root graph.
+            if (refreshed.available !== true && scopePath.length) {
                 scopePath = scopePath.slice(0, scopePath.length - 1);
                 switchNetwork();
                 return;
             }
+            interaction.setSnapshot(graphNetworkId, refreshed, controller.graphRevision());
             refreshSnapshots();
             return;
         }
         if (stateReady && graphNetworkId.length)
             savePanelState();
-        cancelInteraction();
+        interaction.cancelGesture();
         graphSearchPopup.close();
         graphContextMenu.close();
         graphNetworkId = nextNetwork;
-        graphAvailable = false;
-        graphSnapshotData = ({});
-        if (graphNetworkId.length && controller && controller.graphSnapshot) {
-            graphSnapshotData = controller.graphSnapshot(graphNetworkId) || ({});
-            graphAvailable = graphSnapshotData.available === true;
-        }
-        while (!graphAvailable && scopePath.length) {
+        var snapshot = ({});
+        if (graphNetworkId.length && controller && controller.graphSnapshot)
+            snapshot = controller.graphSnapshot(graphNetworkId) || ({});
+        while (snapshot.available !== true && scopePath.length) {
             scopePath = scopePath.slice(0, scopePath.length - 1);
             graphNetworkId = targetNetworkId();
-            graphSnapshotData = controller.graphSnapshot(graphNetworkId) || ({});
-            graphAvailable = graphSnapshotData.available === true;
+            snapshot = controller.graphSnapshot(graphNetworkId) || ({});
         }
         stateReady = false;
         reconcileScopePath();
+        interaction.setSnapshot(graphNetworkId, snapshot, controller.graphRevision());
         restoreScopeState(true);
         refreshSnapshots();
         stateReady = true;
     }
-    function creationPoint() {
-        if (lastClickValid)
-            return {
-                "x": lastClickX - nodeWidth / 2,
-                "y": lastClickY - nodeHeight / 2
-            };
-        var center = scenePoint(graphSurface.width / 2, graphSurface.height / 2);
-        return {
-            "x": center.x - nodeWidth / 2,
-            "y": center.y - nodeHeight / 2
-        };
-    }
-    function captureCreationContext() {
-        var point = creationPoint(), anchor = selectedNodeIds.length ? String(selectedNodeIds[selectedNodeIds.length - 1]) : "";
-        creationContext = {
-            "x": point.x,
-            "y": point.y,
-            "anchor": anchor,
-            "networkId": graphNetworkId
-        };
-    }
-    function uniqueName(descriptor) {
-        var base = String(descriptor.displayName || descriptor.type).replace(/\s+/g, "");
-        var names = activeNodes().map(function (node) {
-                return String(node.name);
-            }), suffix = 1;
-        while (names.indexOf(base + suffix) >= 0)
-            ++suffix;
-        return base + suffix;
-    }
-    function descendantsFrom(anchorId) {
-        var result = {}, pending = [], edges = activeEdges();
-        for (var i = 0; i < edges.length; ++i)
-            if (String(edges[i].fromNode) === String(anchorId) && Number(edges[i].fromPort) === 0)
-                pending.push(String(edges[i].toNode));
-        while (pending.length) {
-            var id = pending.pop();
-            if (result[id])
-                continue;
-            result[id] = true;
-            for (var j = 0; j < edges.length; ++j)
-                if (String(edges[j].fromNode) === id)
-                    pending.push(String(edges[j].toNode));
-        }
-        return result;
-    }
-    function creationPlan(descriptor) {
-        var point = creationPoint(), plan = {
-            "x": point.x,
-            "y": point.y,
-            "anchor": "",
-            "shiftedNodes": []
-        };
-        var anchor = creationContext && creationContext.anchor ? nodeById(creationContext.anchor) : null;
-        var inputs = descriptor.inputs || [], outputs = descriptor.outputs || [];
-        if (!anchor || !inputs.length || !(anchor.outputs || []).length || String(anchor.outputs[0].kind) !== String(inputs[0].kind))
-            return plan;
-        var valid = true, anchorId = String(anchor.id);
-        if (outputs.length) {
-            var outgoing = activeEdges();
-            for (var i = 0; i < outgoing.length; ++i) {
-                var edge = outgoing[i];
-                if (String(edge.fromNode) !== anchorId || Number(edge.fromPort) !== 0)
-                    continue;
-                var destination = nodeById(edge.toNode), destinationPort = destination && (destination.inputs || [])[Number(edge.toPort) || 0];
-                if (!destinationPort || String(destinationPort.kind) !== String(outputs[0].kind)) {
-                    valid = false;
-                    break;
-                }
-            }
-        }
-        if (!valid)
-            return plan;
-        plan.anchor = anchorId;
-        plan.x = Number(anchor.x) || 0;
-        plan.y = (Number(anchor.y) || 0) + 95;
-        var downstream = descendantsFrom(anchorId), bottom = plan.y + nodeHeight + 12, delta = 0, nodes = activeNodes();
-        for (var n = 0; n < nodes.length; ++n) {
-            var candidate = nodes[n];
-            if (!downstream[String(candidate.id)])
-                continue;
-            var x = Number(candidate.x) || 0, y = Number(candidate.y) || 0;
-            if (x < plan.x + nodeWidth && x + nodeWidth > plan.x && y < bottom)
-                delta = Math.max(delta, bottom - y);
-        }
-        if (delta > 0) {
-            for (var shifted = 0; shifted < nodes.length; ++shifted) {
-                var item = nodes[shifted];
-                if (downstream[String(item.id)])
-                    plan.shiftedNodes.push({
-                            "id": String(item.id),
-                            "x": Number(item.x) || 0,
-                            "y": (Number(item.y) || 0) + delta
-                        });
-            }
-        }
-        return plan;
-    }
+    // The core names the node, plans its position and the shift it owes the
+    // downstream nodes, and publishes the new selection.
     function createFromDescriptor(descriptor) {
-        if (!descriptor || !graphAvailable || !graphNetworkId.length)
-            return;
-        if (!creationContext || creationContext.networkId !== graphNetworkId)
-            captureCreationContext();
-        var plan = creationPlan(descriptor), id = controller.createGraphNode(graphNetworkId, String(descriptor.type), uniqueName(descriptor), plan.x, plan.y, plan.anchor, plan.shiftedNodes);
-        if (id)
-            setSelection([String(id)]);
+        interaction.createNode(descriptor);
         forceActiveFocus();
     }
     function filteredCatalog(needle) {
@@ -874,316 +366,51 @@ FocusScope {
                 result.push(catalog[i]);
         return result;
     }
-    function nodeIsDisconnectedProcessing(id) {
-        var node = nodeById(id);
-        if (!node || node.deletable === false || !(node.inputs || []).length || !(node.outputs || []).length)
-            return false;
-        var edges = activeEdges();
-        for (var i = 0; i < edges.length; ++i)
-            if (String(edges[i].fromNode) === String(id) || String(edges[i].toNode) === String(id))
-                return false;
-        return true;
-    }
-    function snapDelta(rawX, rawY) {
-        var threshold = 6 / zoom, bestX = rawX, bestY = rawY, dx = threshold + 0.001, dy = threshold + 0.001;
-        var moving = dragIds, nodes = activeNodes();
-        for (var m = 0; m < moving.length; ++m) {
-            var start = dragStartPositions[String(moving[m])];
-            if (!start)
-                continue;
-            var candidateX = start.x + rawX, candidateY = start.y + rawY;
-            for (var n = 0; n < nodes.length; ++n) {
-                if (moving.indexOf(String(nodes[n].id)) >= 0)
-                    continue;
-                var xDistance = Math.abs(Number(nodes[n].x) - candidateX);
-                if (xDistance < dx) {
-                    dx = xDistance;
-                    bestX = rawX + Number(nodes[n].x) - candidateX;
-                }
-                var yDistance = Math.abs(Number(nodes[n].y) - candidateY);
-                if (yDistance < dy) {
-                    dy = yDistance;
-                    bestY = rawY + Number(nodes[n].y) - candidateY;
-                }
-            }
-        }
-        dragDeltaX = bestX;
-        dragDeltaY = bestY;
-    }
-    function beginNodeDrag(id) {
-        var ids = selected(id) ? selectedNodeIds.slice() : [String(id)], starts = {};
-        for (var i = 0; i < ids.length; ++i) {
-            var node = nodeById(ids[i]);
-            if (node)
-                starts[String(ids[i])] = {
-                    "x": Number(node.x) || 0,
-                    "y": Number(node.y) || 0
+    // The creation catalog is panel chrome: the core owns the document, the
+    // panel only groups the descriptors its menus offer.
+    function refreshSnapshots() {
+        var catalog = controller.nodeCatalog || [], groups = {};
+        for (var i = 0; i < catalog.length; ++i) {
+            var descriptor = catalog[i];
+            var label = displayCategory(descriptor.group);
+            if (!groups[label])
+                groups[label] = {
+                    "label": label,
+                    "nodes": []
                 };
+            groups[label].nodes.push(descriptor);
         }
-        dragIds = ids;
-        dragStartPositions = starts;
-        dragDeltaX = 0;
-        dragDeltaY = 0;
-        disconnectedInsertId = ids.length === 1 && nodeIsDisconnectedProcessing(ids[0]) ? String(ids[0]) : "";
-        gesture = "nodes";
+        var ordered = ["Color", "Distort", "Filter", "Utility", "Merge", "IO"], nextGroups = [];
+        for (var g = 0; g < ordered.length; ++g)
+            if (groups[ordered[g]])
+                nextGroups.push(groups[ordered[g]]);
+        for (var key in groups)
+            if (ordered.indexOf(key) < 0)
+                nextGroups.push(groups[key]);
+        categories = nextGroups;
     }
-    function beginWire(port, oldEdge) {
-        wireFromInput = port.direction === "input";
-        if (wireFromInput) {
-            wireToId = String(port.node);
-            wireToPort = Number(port.port);
-            wireOldEdge = oldEdge || edgeForInput(port.node, port.port);
-        } else {
-            wireFromId = String(port.node);
-            wireFromPort = Number(port.port);
-            wireOldEdge = oldEdge || null;
+
+    // The interaction core: the panel forwards to it and renders what it
+    // publishes. It is declared before the paint item so the item can bind to it.
+    GraphInteraction {
+        id: interaction
+        objectName: "graphInteraction"
+        controller: graphPanel.controller
+        onViewSettled: graphPanel.savePanelState()
+        onContextMenuRequested: function (x, y, nodeId) {
+            graphPanel.contextNodeId = String(nodeId || "");
+            graphContextMenu.x = Math.max(2, Math.min(graphSurface.width - 190, x));
+            graphContextMenu.y = Math.max(2, Math.min(graphSurface.height - 120, y));
+            graphContextMenu.open();
         }
-        gesture = "wire";
-        updateWirePreview();
-    }
-    function updateWirePreview() {
-        if (gesture !== "wire") {
-            wirePreview = ({});
-            graphItem.wirePreview = ({});
-            return;
+        onInspectorRequested: function (nodeId) {
+            if (contextRouter)
+                contextRouter.requestInspector(graphPanel.panelGroup, graphPanel.graphNetworkId, String(nodeId));
         }
-        var target = wireFromInput ? portAt(pointerX, pointerY, true) : portAt(pointerX, pointerY, false);
-        var point = target ? {
-            "x": (target.x - panX) / zoom,
-            "y": (target.y - panY) / zoom
-        } : scenePoint(pointerX, pointerY);
-        var fromId = wireFromInput ? (target ? target.node : "") : wireFromId;
-        var fromPort = wireFromInput ? (target ? target.port : 0) : wireFromPort;
-        var toId = wireFromInput ? wireToId : (target ? target.node : "");
-        var toPort = wireFromInput ? wireToPort : (target ? target.port : 0);
-        wirePreview = {
-            "fromNode": fromId,
-            "fromPort": fromPort,
-            "toNode": toId,
-            "toPort": toPort,
-            "fromInput": wireFromInput,
-            "x": point.x,
-            "y": point.y,
-            "hiddenEdge": wireOldEdge ? String(wireOldEdge.id) : ""
-        };
-        graphItem.wirePreview = wirePreview;
-    }
-    function finishWire() {
-        if (Math.hypot(pointerX - gesturePressX, pointerY - gesturePressY) < 3 || !insideSurface(pointerX, pointerY)) {
-            clearInteraction();
-            return;
+        onScopeEntryRequested: function (nodeId) {
+            graphPanel.enterSubnet(String(nodeId));
         }
-        var target = wireFromInput ? portAt(pointerX, pointerY, true) : portAt(pointerX, pointerY, false);
-        var onNode = nodeAt(pointerX, pointerY);
-        if (target) {
-            var fromId = wireFromInput ? target.node : wireFromId, fromPort = wireFromInput ? target.port : wireFromPort;
-            var toId = wireFromInput ? wireToId : target.node, toPort = wireFromInput ? wireToPort : target.port;
-            if (wireOldEdge)
-                controller.rewireGraphEdge(graphNetworkId, String(wireOldEdge.id), fromId, fromPort, toId, toPort);
-            else
-                controller.connectOrReplaceGraph(graphNetworkId, fromId, fromPort, toId, toPort);
-        } else if (!onNode) {
-            // An existing edge disconnects only when a moved pull is released on
-            // empty surface; invalid node/outside drops preserve topology.
-            if (wireOldEdge)
-                controller.disconnectGraphEdge(graphNetworkId, String(wireOldEdge.id));
-        }
-        clearInteraction();
-    }
-    function clearInteraction() {
-        gesture = "";
-        gestureMoved = false;
-        dragIds = [];
-        dragStartPositions = ({});
-        disconnectedInsertId = "";
-        dragDeltaX = 0;
-        dragDeltaY = 0;
-        wireFromId = "";
-        wireToId = "";
-        wireOldEdge = null;
-        wirePreview = ({});
-        pipePullPending = false;
-        pipePullEdge = null;
-        pipePullDestination = false;
-        rerouteEdge = null;
-        reroutePoints = [];
-        rerouteIndex = -1;
-        rerouteRemove = false;
-        rerouteInserted = false;
-        hoveredEndpoint = ({});
-        hoveredReroute = ({});
-        graphItem.hoveredEndpoint = ({});
-        graphItem.hoveredReroute = ({});
-        graphItem.wirePreview = ({});
-        refreshDisplayNodes();
-        updateDisplayEdges();
-    }
-    function beginReroute(edge, index, remove) {
-        rerouteEdge = edge;
-        reroutePoints = [];
-        var source = edge.route || [];
-        for (var i = 0; i < source.length; ++i)
-            reroutePoints.push({
-                    "x": Number(source[i].x),
-                    "y": Number(source[i].y)
-                });
-        rerouteIndex = Number(index);
-        rerouteRemove = !!remove;
-        rerouteInserted = false;
-        gesture = "reroute";
-    }
-    function finishReroute() {
-        if (!rerouteEdge) {
-            clearInteraction();
-            return;
-        }
-        var points = reroutePoints.slice();
-        if (rerouteRemove && !gestureMoved && rerouteIndex >= 0 && rerouteIndex < points.length)
-            points.splice(rerouteIndex, 1);
-        if ((rerouteRemove && !gestureMoved) || gestureMoved || rerouteInserted)
-            controller.commitGraphRoute(graphNetworkId, String(rerouteEdge.id), points);
-        clearInteraction();
-    }
-    function beginRerouteSegment(edge, hit) {
-        var point = scenePoint(hit.x, hit.y), route = [];
-        for (var i = 0; i < (edge.route || []).length; ++i)
-            route.push({
-                    "x": Number(edge.route[i].x),
-                    "y": Number(edge.route[i].y)
-                });
-        route.splice(hit.segment, 0, point);
-        rerouteEdge = edge;
-        reroutePoints = route;
-        rerouteIndex = hit.segment;
-        rerouteInserted = true;
-        rerouteRemove = false;
-        gesture = "reroute";
-    }
-    function pipeEndpoint(edge, output) {
-        return output ? {
-            "node": String(edge.fromNode),
-            "port": Number(edge.fromPort),
-            "direction": "output",
-            "edge": String(edge.id)
-        } : {
-            "node": String(edge.toNode),
-            "port": Number(edge.toPort),
-            "direction": "input",
-            "edge": String(edge.id)
-        };
-    }
-    function updateHover() {
-        var node = nodeAt(pointerX, pointerY), edge = edgeAt(pointerX, pointerY), port = anyPortAt(pointerX, pointerY);
-        hoveredNodeId = node;
-        hoveredEdgeId = edge ? String(edge.id) : "";
-        var pipe = edge && !port && !node ? edge : null;
-        var pipeOutput = gesture === "pipe" ? !pipePullDestination : !shiftHeld;
-        hoveredEndpoint = port || (pipe ? pipeEndpoint(pipe, pipeOutput) : ({}));
-        var dot = rerouteAt(pointerX, pointerY);
-        hoveredReroute = dot ? {
-            "edge": String(dot.edge.id),
-            "index": dot.index,
-            "dragging": gesture === "reroute"
-        } : ({});
-        graphItem.hoveredNodeId = hoveredNodeId;
-        graphItem.hoveredEdgeId = hoveredEdgeId;
-        graphItem.hoveredEndpoint = hoveredEndpoint;
-        graphItem.hoveredReroute = hoveredReroute;
-        if (gesture === "wire")
-            updateWirePreview();
-    }
-    function cancelInteraction() {
-        clearInteraction();
-        positionEpoch++;
-        refreshDisplayNodes();
-    }
-    // Shared history routing: the controller calls this for a preview-only
-    // Undo, so the preview is dropped without publishing and the release that
-    // follows finds no gesture to commit.
-    function cancelHistoryGesture() {
-        cancelInteraction();
-    }
-    function syncHistoryGesture() {
-        historyController.setGesture(graphPanel, historyGestureActive);
-    }
-    // One zoom application per event-loop turn, from the deltas accumulated
-    // since the last turn, anchored at the pixel the pointer was last over.
-    // Proportionality, the clamp and cursor anchoring are the accepted
-    // behaviour; only when they are applied changed.
-    function queueZoom(factor, px, py) {
-        if (!zoomQueued) {
-            zoomTarget = zoom;
-            zoomQueued = true;
-            zoomFrame.start();
-        }
-        zoomTarget = clampZoom(zoomTarget * factor);
-        zoomAnchorX = px;
-        zoomAnchorY = py;
-        zoomSettle.restart();
-    }
-    function applyZoomTarget() {
-        zoomQueued = false;
-        var next = clampZoom(zoomTarget);
-        if (next === zoom)
-            return;
-        var point = scenePoint(zoomAnchorX, zoomAnchorY);
-        zoom = next;
-        panX = zoomAnchorX - point.x * zoom;
-        panY = zoomAnchorY - point.y * zoom;
-        zoomApplied = true;
-    }
-    // The burst has stopped: its final view is the view the artist ends the
-    // gesture with, so this is the one write it produces.
-    function settleView() {
-        if (!zoomApplied)
-            return;
-        zoomApplied = false;
-        savePanelState();
-    }
-    // A view the panel sets itself (a restored record, frame all) cancels any
-    // queued burst so a stale target can never move it afterwards.
-    function setView(next, x, y) {
-        zoomFrame.stop();
-        zoomQueued = false;
-        framePending = false;
-        zoom = clampZoom(next);
-        panX = x;
-        panY = y;
-        zoomTarget = zoom;
-    }
-    function frameIfStillUnframed() {
-        if (!framePending)
-            return;
-        framePending = false;
-        if (graphAvailable)
-            frameAll(false);
-    }
-    function frameAll(persistView) {
-        var nodes = activeNodes();
-        if (!nodes.length || graphSurface.width < 3 || graphSurface.height < 3)
-            return;
-        var minX = Number.POSITIVE_INFINITY, minY = Number.POSITIVE_INFINITY, maxX = Number.NEGATIVE_INFINITY, maxY = Number.NEGATIVE_INFINITY;
-        for (var i = 0; i < nodes.length; ++i) {
-            minX = Math.min(minX, Number(nodes[i].x) || 0);
-            minY = Math.min(minY, Number(nodes[i].y) || 0);
-            maxX = Math.max(maxX, (Number(nodes[i].x) || 0) + nodeWidth);
-            maxY = Math.max(maxY, (Number(nodes[i].y) || 0) + nodeHeight);
-        }
-        var edges = activeEdges();
-        for (var e = 0; e < edges.length; ++e) {
-            var route = edges[e].route || [];
-            for (var r = 0; r < route.length; ++r) {
-                minX = Math.min(minX, Number(route[r].x) || 0);
-                minY = Math.min(minY, Number(route[r].y) || 0);
-                maxX = Math.max(maxX, Number(route[r].x) || 0);
-                maxY = Math.max(maxY, Number(route[r].y) || 0);
-            }
-        }
-        var nextZoom = clampZoom(Math.min((graphSurface.width - 42) / Math.max(nodeWidth, maxX - minX), (graphSurface.height - 42) / Math.max(nodeHeight, maxY - minY)));
-        setView(nextZoom, (graphSurface.width - (maxX - minX) * nextZoom) / 2 - minX * nextZoom,
-                (graphSurface.height - (maxY - minY) * nextZoom) / 2 - minY * nextZoom);
-        if (persistView !== false)
-            savePanelState();
+        onSceneChanged: graphPanel.refreshContextTarget()
     }
 
     Connections {
@@ -1196,18 +423,21 @@ FocusScope {
         }
     }
 
-    // A panel-state write is a view/preference record, never a graph change:
-    // the panel picks up what it displays (view, selection) and rebuilds
-    // nothing. Another panel's write — a viewer pan, an inspector arrangement —
-    // must not cost this panel its node, edge and category model.
+    // A panel-state write is a view/preference record, never a graph change: the
+    // panel picks up what it displays (view, selection) and rebuilds nothing.
+    // Another panel's write — a viewer pan, an inspector arrangement — must not
+    // cost this panel its catalog model, and a write must never disturb a
+    // gesture that started since.
+    onContextNodeIdChanged: refreshContextTarget()
+    onSelectedNodeIdsChanged: refreshContextTarget()
     onPanelStateChanged: {
-        if (graphPanel.stateReady && !graphPanel.gesture)
+        if (graphPanel.stateReady && !interaction.gestureActive)
             graphPanel.restoreScopeState(false);
     }
     Component.onCompleted: {
         restoreScopePath();
         switchNetwork();
-        syncHistoryGesture();
+        historyController.setGesture(graphPanel, historyGestureActive);
     }
     // Teardown drops the registration so reopening a panel never accumulates
     // competing owners.
@@ -1219,22 +449,6 @@ FocusScope {
     Connections {
         target: graphPanel.Window.window
         function onClosing() { graphPanel.savePanelState(); }
-    }
-
-    // Zero-interval, non-repeating: one application per event-loop turn, the
-    // prototype's coalescing model. The settle timer is restarted by every
-    // wheel event of a burst and writes the view once the burst has stopped.
-    Timer {
-        id: zoomFrame
-        interval: 0
-        repeat: false
-        onTriggered: graphPanel.applyZoomTarget()
-    }
-    Timer {
-        id: zoomSettle
-        interval: 200
-        repeat: false
-        onTriggered: graphPanel.settleView()
     }
 
     Rectangle {
@@ -1270,7 +484,7 @@ FocusScope {
                         implicitWidth: Math.max(48, text.length * 7 + 18)
                         padding: 4
                         onClicked: {
-                            graphPanel.captureCreationContext();
+                            interaction.beginPlacement();
                             categoryMenu.open();
                         }
                         Menu {
@@ -1331,6 +545,11 @@ FocusScope {
             anchors.left: parent.left
             anchors.right: parent.right
             clip: true
+            // The core owns the visible rectangle: it sizes its deferred framing
+            // and its paint window from the surface it is given.
+            onWidthChanged: interaction.setViewport(width, height)
+            onHeightChanged: interaction.setViewport(width, height)
+            Component.onCompleted: interaction.setViewport(width, height)
             // The periodic grid is painted off-period once and then translated
             // by the view, so a pan or zoom step moves this item instead of
             // re-rasterising the whole panel area. It is repainted only when
@@ -1370,37 +589,27 @@ FocusScope {
             GraphItem {
                 id: graphItem
                 objectName: "graphItem"
-                x: graphPanel.panX
-                y: graphPanel.panY
-                width: graphPanel.sceneWidth
-                height: graphPanel.sceneHeight
-                scale: graphPanel.zoom
+                interaction: interaction
+                x: interaction.panX
+                y: interaction.panY
+                scale: interaction.zoom
                 transformOrigin: Item.TopLeft
-                nodes: graphPanel.displayNodes
-                edges: graphPanel.displayEdges
+                width: interaction.sceneWidth
+                height: interaction.sceneHeight
+                visibleRect: interaction.visibleRect
                 categoryColors: graphPanel.theme.nodeCategoryColors
-                visibleRect: Qt.rect(-graphPanel.panX / graphPanel.zoom, -graphPanel.panY / graphPanel.zoom, graphSurface.width / graphPanel.zoom, graphSurface.height / graphPanel.zoom)
-                selectedNodeIds: graphPanel.selectedNodeIds
-                hoveredNodeId: graphPanel.hoveredNodeId
-                hoveredEdgeId: graphPanel.hoveredEdgeId
-                hoveredEndpoint: graphPanel.hoveredEndpoint
-                hoveredReroute: graphPanel.hoveredReroute
-                wirePreview: graphPanel.wirePreview
                 presentationStyle: graphPanel.presentationStyle
-                viewScale: graphPanel.zoom
             }
             Repeater {
-                model: graphPanel.subnetDisplayNodes
+                model: interaction.enterAffordances
                 delegate: Rectangle {
                     required property var modelData
                     objectName: "graphEnterAffordance_" + String(modelData.id)
                     enabled: false
-                    x: graphPanel.panX + (graphPanel.nodeX(modelData) + graphPanel.nodeWidth - 24) * graphPanel.zoom
-                    y: graphPanel.panY + (graphPanel.nodeY(modelData) + 4) * graphPanel.zoom
-                    width: 20
-                    height: 20
-                    scale: graphPanel.zoom
-                    transformOrigin: Item.TopLeft
+                    x: Number(modelData.x)
+                    y: Number(modelData.y)
+                    width: Number(modelData.size)
+                    height: Number(modelData.size)
                     radius: 3
                     color: graphPanel.theme.raised
                     // Local subnets keep the neutral terminal border; a linked
@@ -1421,11 +630,11 @@ FocusScope {
             Rectangle {
                 id: selectionBox
                 objectName: "graphSelectionBox"
-                visible: graphPanel.gesture === "box"
-                x: Math.min(graphPanel.boxStartX, graphPanel.pointerX)
-                y: Math.min(graphPanel.boxStartY, graphPanel.pointerY)
-                width: Math.abs(graphPanel.pointerX - graphPanel.boxStartX)
-                height: Math.abs(graphPanel.pointerY - graphPanel.boxStartY)
+                visible: interaction.marqueeVisible
+                x: interaction.marqueeRect.x
+                y: interaction.marqueeRect.y
+                width: interaction.marqueeRect.width
+                height: interaction.marqueeRect.height
                 color: Qt.rgba(graphPanel.theme.accent.r, graphPanel.theme.accent.g, graphPanel.theme.accent.b, 0.12)
                 border.color: graphPanel.theme.accent
                 border.width: 1
@@ -1439,258 +648,33 @@ FocusScope {
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                 hoverEnabled: true
                 preventStealing: true
-                onEntered: {
-                    updateHover();
-                }
-                onExited: {
-                    if (!graphPanel.gesture) {
-                        hoveredNodeId = "";
-                        hoveredEdgeId = "";
-                        hoveredEndpoint = ({});
-                        hoveredReroute = ({});
-                        graphItem.hoveredNodeId = "";
-                        graphItem.hoveredEdgeId = "";
-                        graphItem.hoveredEndpoint = ({});
-                        graphItem.hoveredReroute = ({});
-                    }
-                }
+                onEntered: interaction.hover()
+                onExited: interaction.leave()
                 onPressed: function (mouse) {
                     if (contextRouter && panelId)
                         contextRouter.setActivePanel(panelId);
-                    shiftHeld = (mouse.modifiers & Qt.ShiftModifier) !== 0;
                     forceActiveFocus();
                     pointerX = mouse.x;
                     pointerY = mouse.y;
-                    gesturePressX = mouse.x;
-                    gesturePressY = mouse.y;
-                    var pressedScene = scenePoint(mouse.x, mouse.y);
-                    pressSceneX = pressedScene.x;
-                    pressSceneY = pressedScene.y;
-                    gestureMoved = false;
-                    lastClickMoved = false;
-                    updateHover();
-                    if (mouse.button === Qt.RightButton) {
-                        if (gesture)
-                            cancelInteraction();
-                        else {
-                            contextNodeId = nodeAt(mouse.x, mouse.y);
-                            if (contextNodeId && !selected(contextNodeId))
-                                setSelection([contextNodeId]);
-                            contextMenuX = Math.max(2, Math.min(graphSurface.width - 190, mouse.x));
-                            contextMenuY = Math.max(2, Math.min(graphSurface.height - 120, mouse.y));
-                            graphContextMenu.x = contextMenuX;
-                            graphContextMenu.y = contextMenuY;
-                            graphContextMenu.open();
-                        }
-                        mouse.accepted = true;
-                        return;
-                    }
-                    if (mouse.button === Qt.MiddleButton) {
-                        gesture = "pan";
-                        panOriginX = panX;
-                        panOriginY = panY;
-                        mouse.accepted = true;
-                        return;
-                    }
-                    if (mouse.button !== Qt.LeftButton)
-                        return;
-                    var enterId = subnetAt(mouse.x, mouse.y);
-                    if (enterId) {
-                        contextNodeId = enterId;
-                        gesture = "enter";
-                        mouse.accepted = true;
-                        return;
-                    }
-                    var port = anyPortAt(mouse.x, mouse.y), endpoint = port ? null : endpointAt(mouse.x, mouse.y), dot = (!port && !endpoint) ? rerouteAt(mouse.x, mouse.y) : null;
-                    if (port) {
-                        if (!selected(port.node))
-                            setSelection([port.node]);
-                        beginWire(port, null);
-                    } else if (endpoint) {
-                        var ep = endpoint.edge;
-                        beginWire(endpoint.output ? {
-                                "node": ep.fromNode,
-                                "port": ep.fromPort,
-                                "direction": "output"
-                            } : {
-                                "node": ep.toNode,
-                                "port": ep.toPort,
-                                "direction": "input"
-                            }, ep);
-                    } else if (dot)
-                        beginReroute(dot.edge, dot.index, (mouse.modifiers & Qt.AltModifier) !== 0);
-                    else {
-                        var nodeId = nodeAt(mouse.x, mouse.y), pipe = pipeBodyAt(mouse.x, mouse.y), shift = (mouse.modifiers & Qt.ShiftModifier) !== 0, alt = (mouse.modifiers & Qt.AltModifier) !== 0;
-                        if (nodeId) {
-                            if (shift) {
-                                toggleSelection(nodeId);
-                                gesture = "toggle";
-                            } else {
-                                if (!selected(nodeId))
-                                    setSelection([nodeId]);
-                                beginNodeDrag(nodeId);
-                            }
-                        } else if (alt && pipe) {
-                            var hit = projection(pipe, mouse.x, mouse.y);
-                            if (hit)
-                                beginRerouteSegment(pipe, hit);
-                        } else if (pipe) {
-                            pipePullPending = true;
-                            pipePullEdge = pipe;
-                            pipePullDestination = shift;
-                            gesture = "pipe";
-                            updateHover();
-                        } else if (shift) {
-                            gesture = "box";
-                            boxStartX = mouse.x;
-                            boxStartY = mouse.y;
-                            boxSelectionBase = selectedNodeIds.slice();
-                        } else {
-                            gesture = "pan";
-                            panOriginX = panX;
-                            panOriginY = panY;
-                        }
-                    }
+                    interaction.press(mouse.x, mouse.y, mouse.button, mouse.modifiers);
                     mouse.accepted = true;
                 }
                 onPositionChanged: function (mouse) {
-                    shiftHeld = (mouse.modifiers & Qt.ShiftModifier) !== 0;
                     pointerX = mouse.x;
                     pointerY = mouse.y;
-                    if (Math.hypot(mouse.x - gesturePressX, mouse.y - gesturePressY) > 3)
-                        gestureMoved = true;
-                    updateHover();
-                    if (!(mouse.buttons & Qt.LeftButton) && !(mouse.buttons & Qt.MiddleButton))
-                        return;
-                    if (gesture === "pipe" && pipePullPending && gestureMoved) {
-                        var edge = pipePullEdge;
-                        pipePullPending = false;
-                        beginWire(!pipePullDestination ? {
-                                "node": edge.toNode,
-                                "port": edge.toPort,
-                                "direction": "input"
-                            } : {
-                                "node": edge.fromNode,
-                                "port": edge.fromPort,
-                                "direction": "output"
-                            }, edge);
-                    } else if (gesture === "nodes") {
-                        var rawX = (mouse.x - gesturePressX) / zoom, rawY = (mouse.y - gesturePressY) / zoom;
-                        if (gestureMoved)
-                            snapDelta(rawX, rawY);
-                        refreshDisplayNodes();
-                        updateDisplayEdges();
-                    } else if (gesture === "reroute") {
-                        if (rerouteIndex >= 0 && rerouteIndex < reroutePoints.length) {
-                            var p = scenePoint(mouse.x, mouse.y);
-                            reroutePoints[rerouteIndex] = {
-                                "x": p.x,
-                                "y": p.y
-                            };
-                            graphItem.hoveredReroute = {
-                                "edge": String(rerouteEdge.id),
-                                "index": rerouteIndex,
-                                "dragging": true
-                            };
-                            updateDisplayEdges();
-                        }
-                    } else if (gesture === "pan") {
-                        panX = panOriginX + mouse.x - gesturePressX;
-                        panY = panOriginY + mouse.y - gesturePressY;
-                    }
+                    interaction.move(mouse.x, mouse.y, mouse.modifiers);
                 }
                 onReleased: function (mouse) {
                     pointerX = mouse.x;
                     pointerY = mouse.y;
-                    updateHover();
-                    lastClickMoved = gestureMoved;
-                    if (mouse.button === Qt.LeftButton && (gesture !== "pan" || !gestureMoved)) {
-                        lastClickValid = true;
-                        lastClickX = pressSceneX;
-                        lastClickY = pressSceneY;
-                    }
-                    if (mouse.button === Qt.LeftButton) {
-                        if (gesture === "enter") {
-                            var entered = contextNodeId;
-                            var shouldEnter = subnetAt(mouse.x, mouse.y) === entered;
-                            clearInteraction();
-                            if (shouldEnter)
-                                enterSubnet(entered);
-                        } else if (gesture === "wire") {
-                            finishWire();
-                            savePanelState();
-                        } else if (gesture === "pipe" && pipePullPending) {
-                            clearInteraction();
-                            savePanelState();
-                        } else if (gesture === "reroute") {
-                            finishReroute();
-                            savePanelState();
-                        } else if (gesture === "nodes") {
-                            var moves = [], ids = dragIds.slice();
-                            for (var i = 0; i < ids.length; ++i) {
-                                var id = String(ids[i]), start = dragStartPositions[id];
-                                if (start)
-                                    moves.push({
-                                            "id": id,
-                                            "x": start.x + dragDeltaX,
-                                            "y": start.y + dragDeltaY
-                                        });
-                            }
-                            var targetEdge = disconnectedInsertId && gestureMoved && insideSurface(pointerX, pointerY) ? edgeAt(pointerX, pointerY) : null, inserted = false;
-                            if (targetEdge && moves.length) {
-                                var startPos = dragStartPositions[disconnectedInsertId];
-                                if (startPos)
-                                    inserted = controller.insertExistingGraphNodeOnEdge(graphNetworkId, disconnectedInsertId, String(targetEdge.id), startPos.x + dragDeltaX, startPos.y + dragDeltaY);
-                            }
-                            if (!inserted && gestureMoved && moves.length)
-                                controller.commitGraphMove(graphNetworkId, moves);
-                            clearInteraction();
-                            savePanelState();
-                        } else if (gesture === "box" && gestureMoved) {
-                            var left = Math.min(boxStartX, pointerX), right = Math.max(boxStartX, pointerX), top = Math.min(boxStartY, pointerY), bottom = Math.max(boxStartY, pointerY), boxIds = boxSelectionBase.slice(), nodes = activeNodes();
-                            for (var n = 0; n < nodes.length; ++n) {
-                                var c = canvasPoint(nodeX(nodes[n]), nodeY(nodes[n]));
-                                if (c.x <= right && c.x + nodeWidth * zoom >= left && c.y <= bottom && c.y + nodeHeight * zoom >= top && boxIds.indexOf(String(nodes[n].id)) < 0)
-                                    boxIds.push(String(nodes[n].id));
-                            }
-                            setSelection(boxIds);
-                            savePanelState();
-                            clearInteraction();
-                        } else if (gesture === "pan") {
-                            if (!gestureMoved)
-                                setSelection([]);
-                            savePanelState();
-                            clearInteraction();
-                        } else {
-                            savePanelState();
-                            clearInteraction();
-                        }
-                    } else if (mouse.button === Qt.MiddleButton) {
-                        savePanelState();
-                        clearInteraction();
-                    } else
-                        clearInteraction();
+                    interaction.release(mouse.x, mouse.y, mouse.button, mouse.modifiers);
                 }
-                onCanceled: cancelInteraction()
+                onCanceled: interaction.cancelGesture()
                 onDoubleClicked: function (mouse) {
-                    if (mouse.button !== Qt.LeftButton || lastClickMoved)
-                        return;
-                    var id = nodeAt(mouse.x, mouse.y);
-                    if (id && contextRouter)
-                        contextRouter.requestInspector(panelGroup, graphNetworkId, String(id));
+                    interaction.doubleClick(mouse.x, mouse.y);
                 }
                 onWheel: function (wheel) {
-                    // A wheel event only accumulates; the turn's application and
-                    // the settled write happen outside the event path. The
-                    // accepted prototype guard is the wire drag alone.
-                    if (gesture === "wire") {
-                        wheel.accepted = true;
-                        return;
-                    }
-                    var delta = wheel.pixelDelta && wheel.pixelDelta.y ? wheel.pixelDelta.y : (wheel.angleDelta.y / 120) * 53;
-                    if (!delta)
-                        return;
-                    queueZoom(Math.exp(delta * 0.002), wheel.x, wheel.y);
+                    interaction.wheel(wheel.pixelDelta.y, wheel.angleDelta.y, wheel.x, wheel.y);
                     wheel.accepted = true;
                 }
             }
@@ -1700,9 +684,9 @@ FocusScope {
     Shortcut {
         sequence: "Tab"
         context: Qt.WindowShortcut
-        enabled: graphPanel.activeFocus && !graphPanel.gesture && !graphSearchPopup.opened
+        enabled: graphPanel.activeFocus && !interaction.gestureActive && !graphSearchPopup.opened
         onActivated: {
-            captureCreationContext();
+            interaction.beginPlacement();
             graphSearchPopup.open();
             graphSearchField.forceActiveFocus();
         }
@@ -1710,32 +694,23 @@ FocusScope {
     Shortcut {
         sequence: "Escape"
         context: Qt.WindowShortcut
-        enabled: graphPanel.gesture || graphSearchPopup.opened || graphContextMenu.opened
+        enabled: interaction.gestureActive || graphSearchPopup.opened || graphContextMenu.opened
         onActivated: {
             if (graphSearchPopup.opened)
                 graphSearchPopup.close();
             else if (graphContextMenu.opened)
                 graphContextMenu.close();
             else
-                cancelInteraction();
+                interaction.cancelGesture();
         }
     }
     Shortcut {
         sequence: "Delete"
         context: Qt.WindowShortcut
-        enabled: graphPanel.activeFocus && !graphPanel.gesture && !graphSearchPopup.opened && !graphContextMenu.opened
+        enabled: graphPanel.activeFocus && !interaction.gestureActive && !graphSearchPopup.opened && !graphContextMenu.opened
         onActivated: {
-            var ids = [];
-            for (var i = 0; i < selectedNodeIds.length; ++i) {
-                var n = nodeById(selectedNodeIds[i]);
-                if (n && n.deletable !== false)
-                    ids.push(String(n.id));
-            }
-            ;
-            if (ids.length && controller.deleteGraphNodes(graphNetworkId, ids)) {
-                setSelection([]);
-                savePanelState();
-            }
+            if (interaction.deleteSelection())
+                graphPanel.savePanelState();
         }
     }
     // Graphical copy/paste of a graph selection. The clipboard is panel
@@ -1744,19 +719,15 @@ FocusScope {
         sequences: [StandardKey.Copy]
         context: Qt.WindowShortcut
         enabled: graphPanel.activeFocus && graphPanel.selectedNodeIds.length > 0 && !graphSearchPopup.opened && !graphContextMenu.opened
-        onActivated: controller.copyGraphSelection(graphPanel.graphNetworkId, graphPanel.selectedNodeIds)
+        onActivated: interaction.copySelection()
     }
     Shortcut {
         sequences: [StandardKey.Paste]
         context: Qt.WindowShortcut
         enabled: graphPanel.activeFocus && !graphSearchPopup.opened && !graphContextMenu.opened
         onActivated: {
-            var point = graphPanel.creationPoint();
-            var created = controller.pasteGraphSelection(graphPanel.graphNetworkId, point.x, point.y);
-            if (!created.length)
-                return;
-            graphPanel.setSelection(String(created).split(","));
-            graphPanel.savePanelState();
+            if (interaction.pasteSelection())
+                graphPanel.savePanelState();
         }
     }
     // Digits 1..9 attach the single selected node to viewer N. The core command
@@ -1924,18 +895,8 @@ FocusScope {
         MenuItem {
             objectName: "graphEnterSelection"
             text: "Enter subnet"
-            enabled: {
-                var candidate = graphPanel.contextNodeId;
-                if (!candidate && graphPanel.selectedNodeIds.length === 1)
-                    candidate = graphPanel.selectedNodeIds[0];
-                return graphPanel.isSubnet(graphPanel.nodeById(candidate));
-            }
-            onTriggered: {
-                var candidate = graphPanel.contextNodeId;
-                if (!candidate && graphPanel.selectedNodeIds.length === 1)
-                    candidate = graphPanel.selectedNodeIds[0];
-                graphPanel.enterSubnet(candidate);
-            }
+            enabled: graphPanel.contextSubnetId().length > 0
+            onTriggered: graphPanel.enterSubnet(graphPanel.contextTargetId())
         }
         MenuSeparator {
         }
@@ -1956,14 +917,11 @@ FocusScope {
         MenuItem {
             objectName: "graphMakeIndependent"
             text: "Make independent"
-            enabled: {
-                var node = graphPanel.nodeById(graphPanel.contextSubnetId());
-                return !!node && String(node.linkState) !== "local";
-            }
+            enabled: graphPanel.contextSubnetId().length > 0 && String(graphPanel.contextNodeInfo.linkState) !== "local"
             onTriggered: {
-                var node = graphPanel.nodeById(graphPanel.contextSubnetId());
-                if (node && node.instance !== undefined)
-                    controller.makeIndependent(String(node.instance));
+                var info = interaction.nodeInfo(graphPanel.contextSubnetId());
+                if (info.exists === true)
+                    interaction.makeIndependent(String(info.instance));
             }
         }
         MenuItem {
@@ -1971,10 +929,9 @@ FocusScope {
             text: "Duplicate (linked)"
             enabled: graphPanel.contextSubnetId().length > 0
             onTriggered: {
-                var id = graphPanel.contextSubnetId(), node = graphPanel.nodeById(id);
-                if (!node)
-                    return;
-                controller.duplicateLinkedInstance(graphPanel.graphNetworkId, id, graphPanel.nodeX(node) + graphPanel.nodeWidth + 24, graphPanel.nodeY(node));
+                var id = graphPanel.contextSubnetId();
+                if (id.length)
+                    interaction.duplicateLinked(id);
             }
         }
         MenuSeparator {
@@ -1984,17 +941,8 @@ FocusScope {
             text: "Delete"
             enabled: graphPanel.selectedNodeIds.length > 0
             onTriggered: {
-                var ids = [];
-                for (var i = 0; i < graphPanel.selectedNodeIds.length; ++i) {
-                    var n = graphPanel.nodeById(graphPanel.selectedNodeIds[i]);
-                    if (n && n.deletable !== false)
-                        ids.push(String(n.id));
-                }
-                ;
-                if (ids.length && controller.deleteGraphNodes(graphPanel.graphNetworkId, ids)) {
-                    graphPanel.setSelection([]);
+                if (interaction.deleteSelection())
                     graphPanel.savePanelState();
-                }
             }
         }
         MenuItem {
@@ -2004,7 +952,7 @@ FocusScope {
             onTriggered: {
                 if (graphPanel.selectedNodeIds.length !== 1)
                     return;
-                controller.assignViewer(graphPanel.graphNetworkId, 0, String(graphPanel.selectedNodeIds[0]));
+                interaction.assignViewer(0);
             }
         }
     }

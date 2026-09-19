@@ -1,4 +1,5 @@
 #include "AnimationViewModel.hpp"
+#include "GraphInteraction.hpp"
 #include "HistoryController.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
@@ -283,6 +284,13 @@ protected:
         EXPECT_EQ(warnings.count(), 0);
     }
     QQuickItem* item(const QString& name) { return visual(window->contentItem(), name); }
+    // The interaction core the graph panel drives; the paint item is a consumer
+    // of it, so geometry, selection and hover are asked of the core.
+    nemo::ui::GraphInteraction* graphInteraction() {
+        auto* found = window->findChild<QObject*>(QStringLiteral("graphInteraction"));
+        EXPECT_NE(found, nullptr) << "the graph panel must own its interaction core";
+        return qobject_cast<nemo::ui::GraphInteraction*>(found);
+    }
     void click(const QString& name, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
         auto* target = item(name);
         ASSERT_NE(target, nullptr) << name.toStdString();
@@ -598,9 +606,7 @@ TEST_F(AnimationSurface, GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHi
     QTest::qWait(30);
     auto* graph = item("graphItem");
     ASSERT_NE(graph, nullptr);
-    QRectF rectangle;
-    ASSERT_TRUE(
-        QMetaObject::invokeMethod(graph, "nodeRect", Q_RETURN_ARG(QRectF, rectangle), Q_ARG(QVariant, QVariant(node))));
+    const auto rectangle = graphInteraction()->nodeRect(node);
     QTest::mouseDClick(window, Qt::LeftButton, Qt::NoModifier, graph->mapToScene(rectangle.center()).toPoint());
     QTest::qWait(30);
     EXPECT_EQ(js("animation.networkId").toString(), scope);

@@ -1,0 +1,27 @@
+{
+    "accent_override": "",
+    "acquired_port_index": 0,
+    "acquired_port_node": "2",
+    "appearance_preset": "Graphite",
+    "device_pixel_ratio": 1,
+    "drag_scene_delta_x": 103.84292844955564,
+    "drag_scene_delta_y": 69.22861896637043,
+    "drag_screen_delta_x": 60,
+    "drag_screen_delta_y": 40,
+    "graph_network": "1",
+    "graph_pan_x": 330.7153793304146,
+    "graph_pan_y": 99.58821012445938,
+    "graph_panel": "panel-3",
+    "graph_selection": [
+        "2"
+    ],
+    "graph_zoom": 0.5777957237516326,
+    "graphics_api": "opengl",
+    "native_ui": true,
+    "platform": "xcb",
+    "qt": "6.4.2",
+    "record": "zoomed-out-hit-testing",
+    "reroute_dot_hit_index": 0,
+    "window_height": 684,
+    "window_width": 1280
+}

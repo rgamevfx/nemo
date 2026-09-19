@@ -1,3 +1,4 @@
+#include "GraphInteraction.hpp"
 #include "GraphItem.hpp"
 #include "HistoryController.hpp"
 #include "MediaLibraryModel.hpp"
@@ -83,6 +84,13 @@ protected:
     QQuickItem* item(const QString& name, QQuickWindow* host = nullptr) {
         return historyItem((host ? host : window)->contentItem(), name);
     }
+    // The interaction core the graph panel drives; the paint item is a consumer
+    // of it, so geometry, selection and hover are asked of the core.
+    nemo::ui::GraphInteraction* graphInteraction() {
+        auto* found = window->findChild<QObject*>(QStringLiteral("graphInteraction"));
+        EXPECT_NE(found, nullptr) << "the graph panel must own its interaction core";
+        return qobject_cast<nemo::ui::GraphInteraction*>(found);
+    }
     QPoint center(QQuickItem* target) {
         return target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint();
     }
@@ -122,7 +130,7 @@ protected:
         text(type);
         QTest::keyClick(window, Qt::Key_Return);
         QTest::qWait(50);
-        const auto selection = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"))->selectedNodeIds();
+        const auto selection = graphInteraction()->selectedNodeIds();
         return selection.isEmpty() ? QString{} : selection.front();
     }
     void capture(const QString& name, QQuickWindow* host = nullptr) {
@@ -162,7 +170,7 @@ TEST_F(HistorySurface, GraphKeyboardAndEditMenuRestoreOneChronologicalTransition
 
     auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
     ASSERT_NE(graph, nullptr);
-    const auto start = graph->mapToScene(graph->nodeRect(node).center()).toPoint();
+    const auto start = graph->mapToScene(graphInteraction()->nodeRect(node).center()).toPoint();
     moveHeld(start, start + QPoint(45, 20));
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, start + QPoint(45, 20));
     QTest::qWait(40);
@@ -253,16 +261,16 @@ TEST_F(HistorySurface, UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit
     const auto revision = session.revision();
     auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
     ASSERT_NE(graph, nullptr);
-    const auto originalRect = graph->nodeRect(node);
-    const auto start = graph->mapToScene(graph->nodeRect(node).center()).toPoint();
+    const auto originalRect = graphInteraction()->nodeRect(node);
+    const auto start = graph->mapToScene(graphInteraction()->nodeRect(node).center()).toPoint();
     const auto end = start + QPoint(45, 20);
     moveHeld(start, end);
-    ASSERT_NE(graph->nodeRect(node), originalRect);
+    ASSERT_NE(graphInteraction()->nodeRect(node), originalRect);
     EXPECT_FALSE(history.canRedo());
     key(true);
     EXPECT_EQ(session.revision(), revision);
     key();
-    EXPECT_EQ(graph->nodeRect(node), originalRect);
+    EXPECT_EQ(graphInteraction()->nodeRect(node), originalRect);
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, end);
     QTest::qWait(30);
     EXPECT_EQ(session.revision(), revision);
@@ -336,7 +344,7 @@ TEST_F(HistorySurface, CompoundHistorySurvivesToolWindowReopeningAndScopedNaviga
     const auto beforeEdges = controller.graphEdges();
     auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
     ASSERT_NE(graph, nullptr);
-    auto point = graph->mapToScene(graph->nodeRect(node).center()).toPoint();
+    auto point = graph->mapToScene(graphInteraction()->nodeRect(node).center()).toPoint();
     QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, point);
     QTest::qWait(30);
     click("graphCollapseSelection");
@@ -360,7 +368,7 @@ TEST_F(HistorySurface, CompoundHistorySurvivesToolWindowReopeningAndScopedNaviga
         QTest::qWait(30);
         click("graphFrameAll");
         graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
-        point = graph->mapToScene(graph->nodeRect(subnet).center()).toPoint();
+        point = graph->mapToScene(graphInteraction()->nodeRect(subnet).center()).toPoint();
         QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier, point);
         QTest::qWait(30);
         click("graphEditExposedParameters");

@@ -333,6 +333,11 @@ public:
     [[nodiscard]] QString viewerTargetId() const;
     [[nodiscard]] QString rootNetworkId() const;
     Q_INVOKABLE QVariantMap graphSnapshot(const QString& networkId) const;
+    // The document revision a graph snapshot is projected from. The interaction
+    // layer stamps its scene with it and aborts a live gesture when it changes,
+    // which is why it is not part of the snapshot map: the projection's content
+    // stays exactly what it always was.
+    Q_INVOKABLE qulonglong graphRevision() const;
     Q_INVOKABLE QVariantMap graphScope(const QString& rootNetworkId, const QVariantList& instancePath) const;
     [[nodiscard]] QVariantList graphNodes() const;
     [[nodiscard]] QVariantList graphEdges() const;

@@ -1254,6 +1254,10 @@ QVariantMap ViewerController::graphScope(const QString& rootValue, const QVarian
     }
 }
 
+qulonglong ViewerController::graphRevision() const {
+    return static_cast<qulonglong>(session_.revision());
+}
+
 QVariantMap ViewerController::graphSnapshot(const QString& networkValue) const {
     const auto identity = graphIdentity(networkValue);
     if (!identity)

@@ -1,0 +1,34 @@
+{
+    "accent_override": "",
+    "appearance_preset": "Graphite",
+    "commands": 1,
+    "device_pixel_ratio": 1,
+    "graph_network": "1",
+    "graph_pan_x": 216.01492537313433,
+    "graph_pan_y": 21,
+    "graph_panel": "panel-3",
+    "graph_selection": [
+        "2",
+        "3"
+    ],
+    "graph_zoom": 1.2761194029850746,
+    "graphics_api": "opengl",
+    "hit_test_passes": 24,
+    "hit_test_passes_per_move": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+    ],
+    "native_ui": true,
+    "panel_writes": 4,
+    "platform": "xcb",
+    "qt": "6.4.2",
+    "rasterizations": 2,
+    "record": "node-style",
+    "selection_size": 2,
+    "window_height": 684,
+    "window_width": 1280
+}

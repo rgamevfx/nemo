@@ -37,6 +37,15 @@ if(NEMO_BUILD_UI)
         ViewerControllerRegistry.cpp ViewerControllerRegistry.hpp
         ViewerRuntime.cpp ViewerRuntime.hpp
         ViewerItem.cpp ViewerItem.hpp GraphItem.cpp GraphItem.hpp TimelineItem.cpp TimelineItem.hpp)
+    # The graph interaction core: scene, geometry, hit test, gesture sessions,
+    # the command facade and the panel-facing interaction object (issue #100).
+    target_sources(nemo_ui_shared PRIVATE
+        GraphScene.cpp GraphScene.hpp
+        GraphGeometry.cpp GraphGeometry.hpp
+        GraphHitTest.cpp GraphHitTest.hpp
+        GraphSessions.cpp GraphSessions.hpp
+        GraphCommandFacade.cpp GraphCommandFacade.hpp
+        GraphInteraction.cpp GraphInteraction.hpp)
     set_target_properties(nemo_ui_shared PROPERTIES AUTOMOC ON)
     target_include_directories(nemo_ui_shared PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(nemo_ui_shared PUBLIC

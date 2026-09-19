@@ -40,6 +40,11 @@ namespace {
     return identity;
 }
 
+// Primary RGB roles the presentation may isolate out of a color-managed layer.
+// Alpha is deliberately excluded: alpha is data, so it is demanded by name and
+// presented from the demanded image's RGB (issue #99).
+constexpr std::size_t kIsolatedViewRoles = 3;
+
 }  // namespace
 
 ViewerProjection resolveViewerProjection(const std::vector<std::string>& requested,
@@ -210,17 +215,21 @@ ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription&
     if (selected != kViewCompositeChannel && !hasChannel(request.channels, selected))
         throw ViewUnavailable(viewChannelUnavailable(selected, intent.layer), description);
 
-    // One identified primary channel of a color-managed layer is isolated in the
-    // presentation copy only: the evaluated frame still carries every channel of
-    // the layer, so isolating a channel never changes what the graph produced. A
-    // data channel is demanded by its exact name instead.
+    // One identified primary RGB channel of a color-managed layer is isolated
+    // in the presentation copy only: the evaluated frame still carries every
+    // channel of the layer, so isolating a channel never changes what the graph
+    // produced. ALPHA is not color: it is demanded by name like any other data
+    // channel, so the displayed matte travels in the RGB of the evaluated image
+    // instead of in a fourth component (issue #99) — the compressed replay
+    // stores YUV and cannot carry one. Any other unmatched name is demanded by
+    // its exact name as well.
     if (selected != kViewCompositeChannel) {
         bool isolated = false;
         if (resolveViewerProjection({}, request.channels).applyViewingTransform) {
             const std::array<int, 4> roles = rgbaChannelIndices(std::span<const std::string>(&selected, 1));
-            for (std::size_t role = 0; role < roles.size(); ++role) {
+            for (std::size_t role = 0; role < kIsolatedViewRoles; ++role) {
                 if (roles[role] >= 0) {
-                    // ViewerChannel: RGBA = 0, then R, G, B, A in role order.
+                    // ViewerChannel: RGBA = 0, then R, G, B in role order.
                     view.presentationChannel = static_cast<gpu::ViewerChannel>(role + 1);
                     isolated = true;
                     break;

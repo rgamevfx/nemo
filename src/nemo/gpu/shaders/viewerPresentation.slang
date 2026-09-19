@@ -2,16 +2,18 @@
 // native Vulkan texture interface. The composite presents the STORED RGB and
 // never scales it by alpha: an association reaches the pixels only through an
 // explicit Premult node, so replacing alpha (Shuffle) cannot change the
-// presented color while RGB is untouched. No color transform, resampling, or
-// scene-linear reuse. Rounding is to the nearest 8-bit value. The channel
-// uniform is a presentation-only display isolation: it never reaches
-// evaluation or the viewer cache.
+// presented color while RGB is untouched. There is no alpha mode: alpha is
+// data, demanded by name and presented from the demanded image's RGB (issue
+// #99), which is what lets a compressed replay carry a matte at all. No color
+// transform, resampling, or scene-linear reuse. Rounding is to the nearest
+// 8-bit value. The channel uniform is a presentation-only display isolation:
+// it never reaches evaluation or the viewer cache.
 [[vk::binding(0, 0)]] RWTexture2D<float4> source;
 [[vk::binding(1, 0)]] RWTexture2D<float4> surface;
 [[vk::binding(2, 0)]]
 cbuffer PresentationUniforms {
     // Channel::RGBA = 0 (the composite: stored RGB, opaque); Red = 1;
-    // Green = 2; Blue = 3; Alpha = 4. Any other value falls back to RGBA.
+    // Green = 2; Blue = 3. Any other value falls back to RGBA.
     uint channel;
 }
 
@@ -31,8 +33,6 @@ void main(uint3 tid : SV_DispatchThreadID)
         result = float4(value.g, value.g, value.g, 1.0);
     else if (channel == 3u)
         result = float4(value.b, value.b, value.b, 1.0);
-    else if (channel == 4u)
-        result = float4(value.a, value.a, value.a, 1.0);
     else {
         // The composite carries the stored RGB opaquely; alpha is inspected
         // through its own selection and applied only by an explicit Premult.

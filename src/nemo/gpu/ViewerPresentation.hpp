@@ -9,8 +9,11 @@ namespace nemo::gpu {
 // inspect one channel without changing what the graph produced or what the
 // cache stores. RGBA is the composite: the stored RGB, presented opaquely
 // (issue #99) — alpha reaches pixels only through an explicit Premult node, so
-// an alpha the graph replaced cannot change the presented color.
-enum class ViewerChannel : std::uint32_t { RGBA = 0, Red = 1, Green = 2, Blue = 3, Alpha = 4 };
+// an alpha the graph replaced cannot change the presented color. Alpha is
+// deliberately NOT a mode: alpha is data, so it is demanded by name and
+// presented from the demanded image's RGB, which is the only form a compressed
+// replay (YUV, no fourth component) can carry.
+enum class ViewerChannel : std::uint32_t { RGBA = 0, Red = 1, Green = 2, Blue = 3 };
 
 struct PresentationReady;
 struct ViewerPresentation {
@@ -25,10 +28,9 @@ struct ViewerPresentation {
 // copy or CPU readback. Output is immutable, released to EXTERNAL ownership,
 // with producer completion observed before return.
 // `channel` selects the presentation-only display isolation: Red/Green/Blue
-// replicate that channel over an opaque alpha and Alpha becomes opaque gray,
-// while RGBA presents the stored RGB over an opaque alpha (issue #99). Every
-// selection is opaque, so the surface never composites the image by its own
-// alpha.
+// replicate that channel over an opaque alpha, while RGBA presents the stored
+// RGB over an opaque alpha (issue #99). Every selection is opaque, so the
+// surface never composites the image by its own alpha.
 // Timeout/cancellation retain all referenced resources through GPU completion.
 // Both logical devices must be distinct and on the same physical GPU; they
 // and their Instance outlive all results and completion-retained tokens.

@@ -917,12 +917,12 @@ TEST(Viewer, PresentationIsolatesDisplayChannels) {
     // Independent oracle: round-nearest 8-bit of the saturated source
     // (0.5, 0.25, 1.0, 0.5). RGBA is the composite — stored RGB over an opaque
     // alpha (128, 64, 255, 255, issue #99); Red/Green/Blue replicate one
-    // channel over an opaque alpha; Alpha is opaque gray of the source alpha.
+    // channel over an opaque alpha. Alpha has no isolation mode: it is demanded
+    // as a data channel and presented from that image's RGB.
     expectChannel(presented(gpu::ViewerChannel::RGBA), {128, 64, 255, 255}, "RGBA");
     expectChannel(presented(gpu::ViewerChannel::Red), {128, 128, 128, 255}, "Red");
     expectChannel(presented(gpu::ViewerChannel::Green), {64, 64, 64, 255}, "Green");
     expectChannel(presented(gpu::ViewerChannel::Blue), {255, 255, 255, 255}, "Blue");
-    expectChannel(presented(gpu::ViewerChannel::Alpha), {128, 128, 128, 255}, "Alpha");
     expectValidationClean(*boot.instance);
 }
 

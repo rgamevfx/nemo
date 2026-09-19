@@ -154,7 +154,8 @@ struct ViewIntent {
 struct ResolvedView {
     EvaluationRequest request;
     // RGBA presents the stored RGB opaquely (issue #99); a single identified
-    // primary channel is isolated in the presentation copy only.
+    // primary RGB channel is isolated in the presentation copy only, while
+    // alpha is a demanded data channel that carries the matte in RGB.
     gpu::ViewerChannel presentationChannel{gpu::ViewerChannel::RGBA};
 };
 

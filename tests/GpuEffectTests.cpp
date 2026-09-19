@@ -132,10 +132,10 @@ void expectValidationClean(gpu::Instance& instance) {
     } while (false)
 
 // The multi-node acceptance composition (issue #8 example 1): spatially
-// varying testpattern as the over base, a const tint with values outside
-// the display range ([0, 1]) and partial alpha as the over source, merged
-// and emitted through Output. Out-of-range scene-linear values must
-// survive both executors unclamped.
+// varying testpattern as the over base (B, the background/main pipe), a const
+// tint with values outside the display range ([0, 1]) and partial alpha as the
+// over source (A, the foreground), merged and emitted through Output.
+// Out-of-range scene-linear values must survive both executors unclamped.
 struct Composition {
     Document doc;
     NodeId output = kInvalidNode;
@@ -152,8 +152,8 @@ struct Composition {
     rootGraph(doc).setParam(composition.tint, "color", ColorValue{{0.5F, 8.0F, -1.0F, 0.25F}});
     const NodeId over = rootGraph(doc).addNode("merge", "over");
     composition.output = rootGraph(doc).addNode("output", "result");
-    (void)rootGraph(doc).connect({plate, 0}, {over, 0});
-    (void)rootGraph(doc).connect({composition.tint, 0}, {over, 1});
+    (void)rootGraph(doc).connect({plate, 0}, {over, 1});
+    (void)rootGraph(doc).connect({composition.tint, 0}, {over, 0});
     (void)rootGraph(doc).connect({over, 0}, {composition.output, 0});
     return composition;
 }
@@ -517,8 +517,8 @@ struct MergeOracle {
     rootGraph(doc).setParam(oracle.mask, "color", ColorValue{{0.1F, 0.2F, 0.3F, 0.3F}});
     oracle.merge = rootGraph(doc).addNode("merge", "comp");
     oracle.output = rootGraph(doc).addNode("output", "result");
-    (void)rootGraph(doc).connect({oracle.background, 0}, {oracle.merge, 0});
-    (void)rootGraph(doc).connect({oracle.foreground, 0}, {oracle.merge, 1});
+    (void)rootGraph(doc).connect({oracle.background, 0}, {oracle.merge, 1});
+    (void)rootGraph(doc).connect({oracle.foreground, 0}, {oracle.merge, 0});
     (void)rootGraph(doc).connect({oracle.merge, 0}, {oracle.output, 0});
     return oracle;
 }
@@ -1630,8 +1630,8 @@ struct NamedChannelGraph {
     rootGraph(doc).setParam(secondary, "inputTransform", ChoiceValue{"raw"});
     graph.merge = rootGraph(doc).addNode("merge", "merge");
     graph.output = rootGraph(doc).addNode("output", "result");
-    (void)rootGraph(doc).connect({primary, 0}, {graph.merge, 0});
-    (void)rootGraph(doc).connect({secondary, 0}, {graph.merge, 1});
+    (void)rootGraph(doc).connect({primary, 0}, {graph.merge, 1});
+    (void)rootGraph(doc).connect({secondary, 0}, {graph.merge, 0});
     NodeId tail = graph.merge;
     if (withBlur) {
         graph.blur = rootGraph(doc).addNode("blur", "blur");

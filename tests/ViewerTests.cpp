@@ -356,8 +356,8 @@ struct SourceComposition {
         const NodeId tint = rootGraph(doc).addNode("constcolor", "tint");
         rootGraph(doc).setParam(tint, "color", ColorValue{{1.0F, 0.5F, 0.25F, 0.25F}});
         composition.over = rootGraph(doc).addNode("merge", "over");
-        (void)rootGraph(doc).connect({plate, 0}, {composition.over, 0});
-        (void)rootGraph(doc).connect({tint, 0}, {composition.over, 1});
+        (void)rootGraph(doc).connect({plate, 0}, {composition.over, 1});
+        (void)rootGraph(doc).connect({tint, 0}, {composition.over, 0});
         composition.output = rootGraph(doc).addNode("output", "result");
         (void)rootGraph(doc).connect({composition.over, 0}, {composition.output, 0});
     } else {

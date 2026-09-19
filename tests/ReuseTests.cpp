@@ -271,8 +271,8 @@ TEST(ReuseTest, MergeMaskSlotParticipatesInTheContentKey) {
                                  {"output", "out"}});
     rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", ColorValue{{0.0F, 0.0F, 1.0F, 0.5F}});
     rootGraph(doc).setParam(rootGraph(doc).nodeByName("mask")->id, "color", ColorValue{{0.0F, 0.0F, 0.0F, 0.25F}});
-    connect(rootGraph(doc), "plate", "comp", 0, 0);
-    connect(rootGraph(doc), "tint", "comp", 0, 1);
+    connect(rootGraph(doc), "plate", "comp", 0, 1);
+    connect(rootGraph(doc), "tint", "comp", 0, 0);
     connect(rootGraph(doc), "comp", "out");
     const EvaluationRequest request = requestFor(doc, "out", 0);
 
@@ -309,8 +309,8 @@ TEST(ReuseTest, AnimatedEffectiveValuesReuseAcrossHistoryRevisions) {
         makeDocument({{"testpattern", "plate"}, {"constcolor", "animated"}, {"merge", "comp"}, {"output", "out"}});
     const NodeId animated = rootGraph(doc).nodeByName("animated")->id;
     rootGraph(doc).setParam(animated, "color", ColorValue{{0.0F, 0.0F, 0.0F, 1.0F}});
-    connect(rootGraph(doc), "plate", "comp", 0, 0);
-    connect(rootGraph(doc), "animated", "comp", 0, 1);
+    connect(rootGraph(doc), "plate", "comp", 0, 1);
+    connect(rootGraph(doc), "animated", "comp", 0, 0);
     connect(rootGraph(doc), "comp", "out");
     const ParameterAddress address{doc.rootNetworkId(), animated, "color", kInvalidNetworkInstance};
     CommandStack stack(doc);
@@ -517,8 +517,8 @@ TEST(ReuseTest, EquivalentOccurrenceWithUnchangedEffectiveStateReuses) {
         Document doc =
             makeDocument({{"testpattern", "plate"}, {"constcolor", "tint"}, {"merge", "comp"}, {"output", "out"}});
         rootGraph(doc).setParam(rootGraph(doc).nodeByName("tint")->id, "color", ColorValue{{0.0F, 0.0F, 1.0F, 0.5F}});
-        connect(rootGraph(doc), "plate", "comp", 0, 0);
-        connect(rootGraph(doc), "tint", "comp", 0, 1);
+        connect(rootGraph(doc), "plate", "comp", 0, 1);
+        connect(rootGraph(doc), "tint", "comp", 0, 0);
         connect(rootGraph(doc), "comp", "out");
         return doc;
     };

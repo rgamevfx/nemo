@@ -91,16 +91,16 @@ Item {
             Layout.fillWidth: true
             spacing: 10
             Text {
-                text: "A \u00b7 Background"
+                text: "A \u00b7 Foreground"
                 color: theme.muted
                 font.pixelSize: theme.fontSize
-                Accessible.name: "Input A background"
+                Accessible.name: "Input A foreground"
             }
             Text {
-                text: "B \u00b7 Foreground"
+                text: "B \u00b7 Background"
                 color: theme.muted
                 font.pixelSize: theme.fontSize
-                Accessible.name: "Input B foreground"
+                Accessible.name: "Input B background"
             }
         }
 

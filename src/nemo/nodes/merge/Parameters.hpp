@@ -3,9 +3,9 @@
 #include "nemo/core/evaluation/Params.hpp"
 
 namespace nemo {
-// Merge composite operations (issue #75). Over stays the default and keeps
-// its existing numerical output; the other four extend the foreground-coverage
-// convention to an explicit per-channel blend target. The typed interpretation
+// Merge composite operations (issue #75). Over stays the default with the
+// straight-alpha convention; the other four extend foreground coverage to an
+// explicit per-channel blend target. The typed interpretation
 // is shared by the CPU reference, the GPU executor, and both shader front ends,
 // so an unknown authored value fails explicitly in every executor instead of
 // silently selecting a fallback.

@@ -192,6 +192,10 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
     };
     validatePorts(descriptor.inputs, "input");
     validatePorts(descriptor.outputs, "output");
+    if ((descriptor.inputs.empty() && descriptor.mainInput != 0) ||
+        (!descriptor.inputs.empty() && descriptor.mainInput >= descriptor.inputs.size()))
+        throw std::invalid_argument(context + ": main input port " + std::to_string(descriptor.mainInput) +
+                                    " is not declared");
 
     std::set<std::string> parameterNames;
     for (const auto& parameter : descriptor.parameters) {

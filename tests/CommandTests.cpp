@@ -1383,7 +1383,9 @@ TEST(CommandStackTest, CreateAfterAnchorPreservesFanoutAndCommitsShiftsAtomicall
     ASSERT_EQ(insertedGraph.edges().size(), 3u);
     EXPECT_NE(std::find_if(insertedGraph.edges().begin(), insertedGraph.edges().end(),
                            [source, created](const Edge& edge) {
-                               return edge.from == PortRef{source, 0} && edge.to == PortRef{*created, 0};
+                               // Merge declares B (port 1) as its main input, so an
+                               // automatically created node anchors there, not at A.
+                               return edge.from == PortRef{source, 0} && edge.to == PortRef{*created, 1};
                            }),
               insertedGraph.edges().end());
     EXPECT_EQ(std::count_if(insertedGraph.edges().begin(), insertedGraph.edges().end(),

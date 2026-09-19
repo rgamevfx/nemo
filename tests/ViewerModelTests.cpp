@@ -42,7 +42,7 @@ SourceReference plateSource() {
     return reference;
 }
 
-// Graph: constcolor (A) and source (B) merged over into the output.
+// Graph: source (A foreground) over constcolor (B background) into the output.
 Document overGraph(const std::string& sourceKey = "plate") {
     Document document;
     rootGraph(document).removeNode(rootGraph(document).nodeByName("Output")->id);
@@ -53,8 +53,8 @@ Document overGraph(const std::string& sourceKey = "plate") {
     rootGraph(document).setParam(source, "source", sourceKey);
     const NodeId merge = rootGraph(document).addNode("merge", "over");
     const NodeId output = rootGraph(document).addNode("output", "view");
-    static_cast<void>(rootGraph(document).connect(PortRef{color, 0}, PortRef{merge, 0}));
-    static_cast<void>(rootGraph(document).connect(PortRef{source, 0}, PortRef{merge, 1}));
+    static_cast<void>(rootGraph(document).connect(PortRef{color, 0}, PortRef{merge, 1}));
+    static_cast<void>(rootGraph(document).connect(PortRef{source, 0}, PortRef{merge, 0}));
     static_cast<void>(rootGraph(document).connect(PortRef{merge, 0}, PortRef{output, 0}));
     return document;
 }

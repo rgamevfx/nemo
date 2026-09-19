@@ -1,11 +1,12 @@
 // Nemo native effect contract (spec section 10.4, issue #8; operations and
-// masking per issue #75; contribution-local module per issue #83)
+// masking per issue #75; contribution-local module per issue #83;
+// owner-approved A/B role correction per issue #78, 2026-09-19)
 // ---------------------------------------------------------
 // name: merge
-// version: 3
+// version: 4
 // ports:
-//   - in_a : image2D input, port A (background / base)
-//   - in_b : image2D input, port B (foreground / source)
+//   - in_a : image2D input, port A (foreground / source)
+//   - in_b : image2D input, port B (background / base and main pipe)
 //   - in_mask : image2D input, optional port 2 (mask; absent binds a valid
 //     dummy descriptor and reports maskPresent = 0, never a manufactured
 //     source)
@@ -22,9 +23,13 @@
 // bindings (native binding contract v7, see GpuGeometry.slang):
 //   set 0, binding 0 : common request uniforms
 //   set 0, binding 1 : node-local payload ("nemo.nodes.merge.payload.v1")
-//   set 0, binding 2 : per-input spatial geometry (A, B, mask)
-//   set 1, binding 0 = A, binding 1 = B, binding 2 = mask — swapping A/B is a
-//     different result and fails declared image comparison
+//   set 0, binding 2 : per-input spatial geometry (B, A, mask — local binding
+//     order, main first)
+//   set 1, binding 0 = B (background/main), binding 1 = A (foreground),
+//     binding 2 = mask — the local bindings are main-first so the shared
+//     channel-plan/auxiliary helpers read the background at binding 0; the
+//     external graph ports stay A = 0, B = 1, and swapping them is a
+//     different result that fails declared image comparison
 //   set 2, binding 0 : output image2D
 // dependencies:
 //   region: output pixel (x, y) depends only on the input pixels holding the
@@ -81,10 +86,12 @@ cbuffer MergePayload {
     float4 op;
 };
 
+// Local bindings are main-first (issue #78 correction): binding 0 is B, the
+// background base and main pipe, and binding 1 is A, the foreground source.
 [[vk::binding(0, 1)]]
-RWTexture2D<float4> in_a;
-[[vk::binding(1, 1)]]
 RWTexture2D<float4> in_b;
+[[vk::binding(1, 1)]]
+RWTexture2D<float4> in_a;
 // Optional mask slot (port 2). An absent mask binds a valid dummy
 // descriptor with maskPresent = 0, so the read is always in bounds.
 [[vk::binding(2, 1)]]
@@ -117,19 +124,20 @@ void main(uint3 tid : SV_DispatchThreadID)
     // extent. A pixel outside an operand's raster is outside its data (a
     // smaller, differently anchored or empty data window): transparent black,
     // never an out-of-bounds load.
-    int2 aPixel = int2(p) + inputGeometry[0].regionAndOffset.zw;
-    int2 aExtent = int2(inputGeometry[0].extent.xy);
-    int2 bPixel = int2(p) + inputGeometry[1].regionAndOffset.zw;
-    int2 bExtent = int2(inputGeometry[1].extent.xy);
-    bool aInside = aPixel.x >= 0 && aPixel.y >= 0 && aPixel.x < aExtent.x && aPixel.y < aExtent.y;
-    bool bInside = bPixel.x >= 0 && bPixel.y >= 0 && bPixel.x < bExtent.x && bPixel.y < bExtent.y;
+    int2 bgPixel = int2(p) + inputGeometry[0].regionAndOffset.zw;
+    int2 bgExtent = int2(inputGeometry[0].extent.xy);
+    int2 fgPixel = int2(p) + inputGeometry[1].regionAndOffset.zw;
+    int2 fgExtent = int2(inputGeometry[1].extent.xy);
+    bool bgInside = bgPixel.x >= 0 && bgPixel.y >= 0 && bgPixel.x < bgExtent.x && bgPixel.y < bgExtent.y;
+    bool fgInside = fgPixel.x >= 0 && fgPixel.y >= 0 && fgPixel.x < fgExtent.x && fgPixel.y < fgExtent.y;
 
-    // Port A is the background/base and port B the foreground/source: each is
-    // gathered through the plane roles of its own geometry entry (issue #90).
-    float4 bg = aInside ? gpuLoadRgba(in_a, aPixel, inputGeometry[0].rgba, aExtent.y, inputGeometry[0].channels.y)
-                        : float4(0.0, 0.0, 0.0, 0.0);
-    float4 fg = bInside ? gpuLoadRgba(in_b, bPixel, inputGeometry[1].rgba, bExtent.y, inputGeometry[1].channels.y)
-                        : float4(0.0, 0.0, 0.0, 0.0);
+    // Binding 0 is B, the background base and main pipe; binding 1 is A, the
+    // foreground source. Each is gathered through the plane roles of its own
+    // geometry entry (issue #90).
+    float4 bg = bgInside ? gpuLoadRgba(in_b, bgPixel, inputGeometry[0].rgba, bgExtent.y, inputGeometry[0].channels.y)
+                         : float4(0.0, 0.0, 0.0, 0.0);
+    float4 fg = fgInside ? gpuLoadRgba(in_a, fgPixel, inputGeometry[1].rgba, fgExtent.y, inputGeometry[1].channels.y)
+                         : float4(0.0, 0.0, 0.0, 0.0);
 
     int operation = int(op.x);
     float4 composite;
@@ -167,8 +175,9 @@ void main(uint3 tid : SV_DispatchThreadID)
     // unmasked composite, so Mix 0 or zero coverage returns the background.
     float weight = coverage * mask.z;
     float4 result = weight <= 0.0 ? bg : (weight >= 1.0 ? composite : lerp(bg, composite, weight));
-    // The background is this node's main input: every stored channel the composite did
-    // not write keeps its named channel from A at the same coordinate (#90).
-    gpuStorePixel(out_color, int2(p), int(meta2.y), channels.x, channels.y, channels.z, rgba, result, in_a, aExtent.y,
-                  inputGeometry[0].channels.y);
+    // The background B is this node's main input (binding 0): every stored
+    // channel the composite did not write keeps its named channel from B at
+    // the same coordinate (#90).
+    gpuStorePixel(out_color, int2(p), int(meta2.y), channels.x, channels.y, channels.z, rgba, result, in_b,
+                  bgExtent.y, inputGeometry[0].channels.y);
 }

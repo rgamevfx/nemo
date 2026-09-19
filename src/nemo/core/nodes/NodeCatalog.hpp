@@ -138,6 +138,9 @@ struct NodeDescriptor {
     bool isDeliverySink{false};
     std::uint64_t implementationVersion{1};
     std::vector<PortSpec> inputs;
+    // Input supplying inherited image meaning and the default graph insertion
+    // connection. Zero for generators (unused); a declared port for processors.
+    std::uint32_t mainInput{0};
     std::vector<PortSpec> outputs;
     std::vector<ParameterSpec> parameters;
     NodeCapabilities capabilities;

@@ -942,32 +942,33 @@ TEST_F(ReadViewerSurface, DownstreamEffectKeepsItsSingleMediaSourcesDomain) {
     EXPECT_EQ(controller_->presentation()->request.output, static_cast<nemo::NodeId>(grade.toULongLong()));
 }
 
-// Mixed inputs keep Merge's main-input format; the smaller foreground occupies
-// its own coordinates rather than being stretched across the background.
+// Mixed inputs keep Merge's main-input format (B, port 1): the smaller
+// foreground (A) occupies its own coordinates rather than being stretched
+// across the background.
 TEST_F(ReadViewerSurface, MixedMediaSourcesKeepMainInputFormatWithoutStretching) {
     const auto first = writePng(directory_.path().toStdString(), "first", 96, 64, {0.25F, 0.5F, 0.75F, 1.0F});
     const auto second = writePng(directory_.path().toStdString(), "second", 40, 20, {0.9F, 0.1F, 0.1F, 1.0F});
-    const auto readA = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"), QStringLiteral("ReadA"),
-                                                    0.0, 0.0, {}, {});
-    const auto readB = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"), QStringLiteral("ReadB"),
-                                                    0.0, 40.0, {}, {});
+    const auto readBackground = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"),
+                                                             QStringLiteral("ReadBackground"), 0.0, 0.0, {}, {});
+    const auto readForeground = controller_->createGraphNode(rootNetwork(), QStringLiteral("source"),
+                                                             QStringLiteral("ReadForeground"), 0.0, 40.0, {}, {});
     const auto merge = controller_->createGraphNode(rootNetwork(), QStringLiteral("merge"), QStringLiteral("Merge1"),
                                                     40.0, 80.0, {}, {});
     const auto viewer = controller_->createGraphNode(rootNetwork(), QStringLiteral("viewer"), QStringLiteral("Viewer1"),
                                                      40.0, 160.0, {}, {});
-    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), readA, 0, merge, 0));
-    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), readB, 0, merge, 1));
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), readBackground, 0, merge, 1));
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), readForeground, 0, merge, 0));
     ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), merge, 0, viewer, 0));
-    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), readA, QString::fromStdString(first.string())));
+    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), readBackground, QString::fromStdString(first.string())));
     // One probe is outstanding per control: a second selection supersedes the
     // first, so each node is committed before the next is chosen.
     ASSERT_TRUE(waitFor([&] {
-        return readSource_->info(rootNetwork(), readA).value(QStringLiteral("state")).toString() ==
+        return readSource_->info(rootNetwork(), readBackground).value(QStringLiteral("state")).toString() ==
                QStringLiteral("ready");
     }));
-    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), readB, QString::fromStdString(second.string())));
+    ASSERT_TRUE(readSource_->setSourcePath(rootNetwork(), readForeground, QString::fromStdString(second.string())));
     ASSERT_TRUE(waitFor([&] {
-        return readSource_->info(rootNetwork(), readB).value(QStringLiteral("state")).toString() ==
+        return readSource_->info(rootNetwork(), readForeground).value(QStringLiteral("state")).toString() ==
                QStringLiteral("ready");
     }));
     ASSERT_TRUE(

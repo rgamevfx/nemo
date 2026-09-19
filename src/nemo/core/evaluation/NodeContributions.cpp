@@ -102,6 +102,8 @@ namespace {
         return "the delivery-sink declaration differs";
     if (const auto problem = portsMismatch(document.inputs, registered.inputs, "input"))
         return problem;
+    if (document.mainInput != registered.mainInput)
+        return "the declared main input differs";
     if (const auto problem = portsMismatch(document.outputs, registered.outputs, "output"))
         return problem;
     if (document.parameters.size() != registered.parameters.size())
@@ -204,6 +206,7 @@ void validateDeclaration(const NodeContribution& contribution,
     for (const NodeContribution& contribution : contributions) {
         hashMixText(hash, contribution.descriptor.type);
         hashMixWord(hash, contribution.descriptor.implementationVersion);
+        hashMixWord(hash, contribution.descriptor.mainInput);
         hashMixWord(hash, static_cast<std::uint64_t>(contribution.role));
         hashMixWord(hash, contribution.nativeGpu ? 1U : 0U);
         hashMixWord(hash, contribution.ownsChannelLayout ? 1U : 0U);

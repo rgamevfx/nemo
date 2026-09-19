@@ -559,7 +559,8 @@ ImageDescriptionPlan describeDependencies(const Document& document, const Evalua
         // node states its own authored values in (issue #92), so the same
         // resolved reference travels to the rule.
         const ImageFormat& owningFormat = document.network(expanded.id.network).format();
-        const ImageDescription* mainInput = !inputDescriptions.empty() ? inputDescriptions.front() : nullptr;
+        const auto mainPort = contribution->descriptor.mainInput;
+        const ImageDescription* mainInput = mainPort < inputDescriptions.size() ? inputDescriptions[mainPort] : nullptr;
         const ImageDescription inherited = mainInput != nullptr ? *mainInput : canvasDescription(owningFormat);
 
         if (contribution->role == NodeRole::Source) {
@@ -1235,7 +1236,7 @@ CpuEvaluation evaluateCpu(const Document& document, EvaluationRequest request, R
                 // channel layout (Shuffle) states every channel itself and is
                 // never overlaid.
                 if (!contribution->ownsChannelLayout) {
-                    *fresh = preserveAuxiliaryChannels(context, std::move(*fresh));
+                    *fresh = preserveAuxiliaryChannels(context, std::move(*fresh), contribution->descriptor.mainInput);
                 }
                 // The one central support guard: whatever a node's own pixel
                 // math produced, the raster agrees with the description it

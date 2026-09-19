@@ -144,8 +144,8 @@ TEST(PersistenceTest, MergeControlsRoundTripAndLegacyTwoPortDocumentsKeepOverOut
             network.graph().setParam(merge, "invertMask", ParameterValue{true});
             network.graph().setParam(merge, "mix", ParameterValue{0.25});
         }
-        network.graph().connect({background, 0}, {merge, 0});
-        network.graph().connect({foreground, 0}, {merge, 1});
+        network.graph().connect({background, 0}, {merge, 1});
+        network.graph().connect({foreground, 0}, {merge, 0});
         if (controls)
             network.graph().connect({mask, 0}, {merge, 2});
         const NodeId output = network.graph().nodeByName("Output")->id;

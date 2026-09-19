@@ -295,8 +295,8 @@ TEST(NetworkCommandsTest, NestedCollapseRetainsExternalScopeAndUnpacksWithoutCha
     const auto merge = graph.addNode("merge", "Merge");
     graph.setParam(foreground, "color", ColorValue{{.8F, .2F, .1F, .5F}});
     graph.setParam(background, "color", ColorValue{{.1F, .3F, .9F, 1.F}});
-    graph.connect({foreground, 0}, {merge, 1});
-    graph.connect({background, 0}, {merge, 0});
+    graph.connect({foreground, 0}, {merge, 0});
+    graph.connect({background, 0}, {merge, 1});
     graph.connect({merge, 0}, {output, 0});
     const EvaluationRequest request{.network = network, .output = output, .region = {0, 0, 8, 4}};
     const auto original = evaluateCpu(document, request).image;

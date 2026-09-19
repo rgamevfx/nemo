@@ -100,15 +100,16 @@ TEST(EvaluationTest, LinearChainRendersPatternThroughOutput) {
     EXPECT_EQ(evaluation.plan.result.residency, Residency::HostCpuReference);
 }
 
-// Acceptance example 1b: `plate -> merge(over, constcolor) -> output` renders
-// the pattern composited over a solid color.
+// Acceptance example 1b: `plate(B) -> merge(over, constcolor(A)) -> output`
+// renders the translucent solid color composited over the pattern. A is the
+// foreground source and B the background base and main pipe.
 TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     Document document =
         makeDocument({{"testpattern", "plate"}, {"constcolor", "backdrop"}, {"merge", "comp"}, {"output", "out"}});
     rootGraph(document).setParam(rootGraph(document).nodeByName("backdrop")->id, "color",
                                  ColorValue{{0.0F, 0.0F, 1.0F, 0.5F}});
-    connect(rootGraph(document), "plate", "comp", 0, 0);     // port A: over base
-    connect(rootGraph(document), "backdrop", "comp", 0, 1);  // port B: over source
+    connect(rootGraph(document), "plate", "comp", 0, 1);     // port B: over base (background, main pipe)
+    connect(rootGraph(document), "backdrop", "comp", 0, 0);  // port A: over source (foreground)
     connect(rootGraph(document), "comp", "out");
 
     const CpuEvaluation evaluation = evaluateCpu(document, fullFrameRequest(document, 0));
@@ -119,9 +120,9 @@ TEST(EvaluationTest, MergeCompositesPatternOverConstColor) {
     ASSERT_NE(merge, nullptr);
     ASSERT_NE(plate, nullptr);
     ASSERT_NE(backdrop, nullptr);
-    EXPECT_EQ(merge->inputs[0], plate->node);
-    EXPECT_EQ(merge->inputs[1], backdrop->node);
-    EXPECT_EQ(merge->inputImages[1].contentHash, backdrop->produced.contentHash);
+    EXPECT_EQ(merge->inputs[0], backdrop->node);
+    EXPECT_EQ(merge->inputs[1], plate->node);
+    EXPECT_EQ(merge->inputImages[1].contentHash, plate->produced.contentHash);
     const auto pixel = evaluation.image.pixel(4, 0);
     EXPECT_NEAR(pixel[0], 0.5F * (4.0F / 7.0F), 1e-6F);
     EXPECT_NEAR(pixel[2], 0.5F * 1.0F, 1e-6F);
@@ -143,9 +144,9 @@ constexpr std::array<float, 4> kMergeBackground{0.2F, 0.4F, 0.6F, 0.4F};
 constexpr std::array<float, 4> kMergeForeground{0.8F, 0.5F, 0.25F, 0.5F};
 constexpr std::array<float, 4> kMergeMask{0.1F, 0.2F, 0.3F, 0.3F};
 
-// Background (port A) and foreground (port B) constant colors plus a
-// constant mask available for the optional third port. `operation` is left
-// unauthored when null, exercising the descriptor's default.
+// Background (port B, the main input) and foreground (port A) constant colors
+// plus a constant mask available for the optional third port. `operation` is
+// left unauthored when null, exercising the descriptor's default.
 Document mergeDocument(const std::array<float, 4>& background, const std::array<float, 4>& foreground,
                        const char* operation = nullptr, const std::array<float, 4>& mask = kMergeMask) {
     Document document = makeDocument({{"constcolor", "background"},
@@ -160,8 +161,8 @@ Document mergeDocument(const std::array<float, 4>& background, const std::array<
         rootGraph(document).setParam(rootGraph(document).nodeByName("comp")->id, "operation",
                                      ChoiceValue{std::string{operation}});
     }
-    connect(rootGraph(document), "background", "comp", 0, 0);
-    connect(rootGraph(document), "foreground", "comp", 0, 1);
+    connect(rootGraph(document), "background", "comp", 0, 1);
+    connect(rootGraph(document), "foreground", "comp", 0, 0);
     connect(rootGraph(document), "comp", "out");
     return document;
 }
@@ -310,7 +311,7 @@ TEST(EvaluationTest, MergeMaskChannelInvertAndMixFollowTheSharedContract) {
     EXPECT_EQ(mergePixel(document), kMergeBackground);
 }
 
-// Story 34: A is the background and B the foreground, in both directions.
+// Story 34: A is the foreground and B the background, in both directions.
 // The swapped oracle recomputes the same formulas with the roles exchanged;
 // the alpha formula is symmetric, so the RGB differences are the evidence.
 TEST(EvaluationTest, MergeKeepsPortRolesInBothDirections) {
@@ -388,8 +389,8 @@ TEST(EvaluationTest, NonOutputProcessingNodeIsAValidEvaluationTarget) {
         makeDocument({{"testpattern", "plate"}, {"constcolor", "backdrop"}, {"merge", "comp"}, {"output", "out"}});
     rootGraph(document).setParam(rootGraph(document).nodeByName("backdrop")->id, "color",
                                  ColorValue{{0.0F, 0.25F, 1.0F, 1.0F}});
-    connect(rootGraph(document), "plate", "comp", 0, 0);
-    connect(rootGraph(document), "backdrop", "comp", 0, 1);
+    connect(rootGraph(document), "plate", "comp", 0, 1);
+    connect(rootGraph(document), "backdrop", "comp", 0, 0);
     connect(rootGraph(document), "comp", "out");
 
     EvaluationRequest request = fullFrameRequest(document, 0);
@@ -670,8 +671,8 @@ TEST(EvaluationTest, NestedSharedInstancesKeepScopedOverridesAndLazyInputs) {
     rootGraphRef.connect({document.instance(second)->node, 0}, {secondOutput, 0});
     const NodeId branches = rootGraphRef.addNode("merge", "branches");
     const NodeId combinedOutput = rootGraphRef.addNode("output", "combined-output");
-    rootGraphRef.connect({document.instance(first)->node, 0}, {branches, 0});
-    rootGraphRef.connect({document.instance(second)->node, 0}, {branches, 1});
+    rootGraphRef.connect({document.instance(first)->node, 0}, {branches, 1});
+    rootGraphRef.connect({document.instance(second)->node, 0}, {branches, 0});
     rootGraphRef.connect({branches, 0}, {combinedOutput, 0});
 
     const NodeId missingSource = rootGraphRef.addNode("source", "unused-missing");

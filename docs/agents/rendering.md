@@ -283,9 +283,14 @@ transform.
 ### Merge
 
 Merge has two required `Image` inputs and one optional `Mask` input: port A
-(index 0) is the background/base, port B (index 1) the foreground/source, and
-port 2 the optional mask. The A/B order is the production contract; Nuke-like
-usability never silently reverses existing graphs. CPU pixels live in
+(index 0) is the foreground/source, port B (index 1) the background/main pipe,
+and port 2 the optional mask. Merge declares `NodeDescriptor::mainInput = 1`:
+format, pixel aspect, interpretation and auxiliary channels follow B; bounds
+remain the union of A and B. Automatic graph insertion connects through B.
+The GPU pass binds B, A, mask locally so its main image stays at binding 0.
+This owner-approved correction (#78, 2026-09-19) intentionally changes old
+graphs' interpretation without rewiring saved ports or adding compatibility
+behavior. CPU pixels live in
 `nodes/merge/Contribution.cpp`; the GPU path uses `nodes/merge/merge.slang`
 and independent GLSL in `nodes/merge/Gpu.cpp`. Its local `MergePayload` carries
 the operation in `op.x`, separate from the common request uniforms. Both resolve

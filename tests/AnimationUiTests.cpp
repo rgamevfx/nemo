@@ -1310,6 +1310,7 @@ TEST_F(AnimationSurface, MergeOperationEditorSwapsConnectedInputsAtomically) {
     auto* swap = item("merge_swap_" + merge);
     ASSERT_NE(swap, nullptr);
     EXPECT_FALSE(swap->property("enabled").toBool()) << "a swap with no connected input is meaningless";
+    captureParameters(window, "merge-roles");
 
     ASSERT_TRUE(controller.connectOrReplaceGraph(scope, first, 0, merge, 0));
     ASSERT_TRUE(controller.connectOrReplaceGraph(scope, second, 0, merge, 1));

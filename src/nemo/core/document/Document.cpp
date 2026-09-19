@@ -1685,6 +1685,15 @@ namespace {
     return params;
 }
 
+[[nodiscard]] std::uint32_t mainInputPort(const Graph& graph, NodeId id) {
+    const NodeInstance& node = *graph.node(id);
+    // Structural network nodes have their own ordered interface contract.
+    if (node.hasPortContract)
+        return 0;
+    const NodeDescriptor* descriptor = graph.descriptor(node.type);
+    return descriptor != nullptr ? descriptor->mainInput : 0;
+}
+
 }  // namespace
 
 Command addNodeCommand(NetworkId network, std::string type, std::string name, std::shared_ptr<NodeId> createdId,
@@ -1721,7 +1730,7 @@ Command addNodeCommand(NetworkId network, std::string type, std::string name, st
             if (anchor != kInvalidNode && candidate.node(anchor) != nullptr &&
                 !candidate.inputPorts(inserted).empty() && !candidate.outputPorts(anchor).empty()) {
                 const PortRef anchorOutput{anchor, 0};
-                const PortRef insertedInput{inserted, 0};
+                const PortRef insertedInput{inserted, mainInputPort(candidate, inserted)};
                 if (!candidate.validateEdge(anchorOutput, insertedInput)) {
                     Graph routed = candidate;
                     std::vector<Edge> fanout;
@@ -1935,12 +1944,13 @@ Command insertNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, std::string ty
                        Graph trial = graph;
                        trial.disconnect(edgeId);
                        const NodeId trialNode = trial.addNodeWithId(trial.nextNodeId(), type, name, initial, position);
-                       const EdgeId trialUpstream = trial.connect(original.from, PortRef{trialNode, 0});
+                       const auto mainInput = mainInputPort(trial, trialNode);
+                       const EdgeId trialUpstream = trial.connect(original.from, PortRef{trialNode, mainInput});
                        const EdgeId trialDownstream = trial.connect(PortRef{trialNode, 0}, original.to);
 
                        const NodeId inserted = graph.addNodeWithId(trialNode, type, name, initial, position);
                        graph.disconnect(edgeId);
-                       const EdgeId actualUpstream = graph.connect(original.from, PortRef{inserted, 0});
+                       const EdgeId actualUpstream = graph.connect(original.from, PortRef{inserted, mainInput});
                        const EdgeId actualDownstream = graph.connect(PortRef{inserted, 0}, original.to);
                        (void)trialUpstream;
                        (void)trialDownstream;
@@ -1972,14 +1982,14 @@ Command insertExistingNodeOnEdgeCommand(NetworkId network, EdgeId edgeId, NodeId
                 throw GraphException(GraphError::PortOccupied, "cannot insert node " + std::to_string(nodeId) +
                                                                    " because it already has an incident edge");
             if (graph.inputPorts(nodeId).empty() || graph.outputPorts(nodeId).empty())
-                throw GraphException(GraphError::PortType, "node " + std::to_string(nodeId) +
-                                                               " must have primary input port 0 and output port 0");
+                throw GraphException(GraphError::PortType,
+                                     "node " + std::to_string(nodeId) + " must have a main input and output port 0");
 
             const Edge& original = *edge;
             Graph candidate = graph;
             candidate.setLayout(nodeId, position);
             candidate.disconnect(edgeId);
-            static_cast<void>(candidate.connect(original.from, PortRef{nodeId, 0}));
+            static_cast<void>(candidate.connect(original.from, PortRef{nodeId, mainInputPort(candidate, nodeId)}));
             static_cast<void>(candidate.connect(PortRef{nodeId, 0}, original.to));
             graph = std::move(candidate);
         }};

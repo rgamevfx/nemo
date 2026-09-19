@@ -246,14 +246,14 @@ straightPixel(const std::array<float, kImageChannels>& premultiplied) {
 // the node's own region, taken from each input's real origin. Neither input is
 // required to hold every sample of that region — an empty or short data window
 // contributes transparent black (issue #88), never a border pixel or an
-// out-of-bounds read. `original` is the node's main image input (declared port
-// 0) and `maskPort` is the declared port its optional mask lives on.
+// out-of-bounds read. `original` is the node's declared main image input,
+// and `maskPort` is the declared port its optional mask lives on.
 [[nodiscard]] inline CpuImage blendEffectOutput(const CpuNodeContext& context, const EffectMaskParameters& maskParams,
                                                 const CpuImage& original, CpuImage processed,
                                                 std::size_t maskPort = 1) {
     const NodeInstance& node = context.node;
     const CpuImage* mask = optionalImageInput(context, maskPort);
-    const InputAnchor anchor = anchorInput(context, 0, original);
+    const InputAnchor anchor = anchorInput(context, context.catalog.find(node.type)->mainInput, original);
     const int width = processed.width();
     const int height = processed.height();
     const bool perPixelCoverage = mask != nullptr && maskParams.channel >= 0;
@@ -331,8 +331,9 @@ straightPixel(const std::array<float, kImageChannels>& premultiplied) {
 // main input does not name stays as the effect left it (zero for a fresh
 // raster), and no channel is created: the produced raster's own naming decides
 // what exists.
-[[nodiscard]] inline CpuImage preserveAuxiliaryChannels(const CpuNodeContext& context, CpuImage produced) {
-    const CpuImage* main = optionalImageInput(context, 0);
+[[nodiscard]] inline CpuImage preserveAuxiliaryChannels(const CpuNodeContext& context, CpuImage produced,
+                                                        std::uint32_t mainInput) {
+    const CpuImage* main = optionalImageInput(context, mainInput);
     if (main == nullptr || produced.channelCount() == 0) {
         return produced;
     }
@@ -353,7 +354,7 @@ straightPixel(const std::array<float, kImageChannels>& premultiplied) {
     if (!any) {
         return produced;
     }
-    const InputAnchor anchor = anchorInput(context, 0, *main);
+    const InputAnchor anchor = anchorInput(context, mainInput, *main);
     for (int y = 0; y < produced.height(); ++y) {
         for (int x = 0; x < produced.width(); ++x) {
             for (std::size_t index = 0; index < names.size(); ++index) {

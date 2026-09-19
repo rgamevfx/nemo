@@ -2,8 +2,13 @@
 // module).
 //
 // The operation code and the shared mask word travel in this node's own
-// payload (set 0 binding 1); A/B/mask bind at set 1 in declared port order.
-// The composite math is Merge's own and shares nothing with the CPU
+// payload (set 0 binding 1). The local pass binds MAIN-FIRST (owner-approved
+// correction, issue #78, 2026-09-19): B, the background base and main pipe, at
+// set 1 binding 0; A, the foreground source, at binding 1; the optional mask at
+// binding 2. That keeps the shared channel-plan and auxiliary-channel helpers,
+// which read binding 0 / inputGeometry[0] as the main input, on the background
+// without touching the shared GPU ABI. The external graph ports stay A = 0,
+// B = 1. The composite math is Merge's own and shares nothing with the CPU
 // reference beyond the common typed metadata.
 
 #include <algorithm>
@@ -36,15 +41,16 @@ layout(std140, set = 0, binding = 1) uniform MergePayload {
 )GLSL";
 
 constexpr const char* kMergeGlslBody = R"GLSL(
-// Issue #75: A (background) at set 1 binding 0, B (foreground) at binding 1,
-// optional mask at binding 2. The operation code travels in op.x
+// Issue #75; main-first local binding order (issue #78 correction): B
+// (background base / main pipe) at set 1 binding 0, A (foreground source) at
+// binding 1, optional mask at binding 2. The operation code travels in op.x
 // (0 Over, 1 Plus, 2 Multiply, 3 Screen, 4 Difference) and the shared mask
 // word drives the final coverage*mix interpolation. An absent mask is bound
 // to a valid dummy descriptor with maskPresent = 0. Every input is read at
 // the pixel holding the same full-resolution sample, located through its own
 // raster origin (region evaluation, wider cache-backed inputs).
-layout(set = 1, binding = 0) restrict readonly uniform image2D in_a;     // port A: background
-layout(set = 1, binding = 1) restrict readonly uniform image2D in_b;     // port B: foreground
+layout(set = 1, binding = 0) restrict readonly uniform image2D in_b;     // port B: background (main input)
+layout(set = 1, binding = 1) restrict readonly uniform image2D in_a;     // port A: foreground
 layout(set = 1, binding = 2) restrict readonly uniform image2D in_mask;  // optional port 2
 layout(set = 2, binding = 0) restrict writeonly uniform image2D out_color;
 
@@ -70,11 +76,12 @@ void main() {
     ivec2 fgExtent = ivec2(inputGeometry[1].extent.xy);
     bool bgInside = bgPixel.x >= 0 && bgPixel.y >= 0 && bgPixel.x < bgExtent.x && bgPixel.y < bgExtent.y;
     bool fgInside = fgPixel.x >= 0 && fgPixel.y >= 0 && fgPixel.x < fgExtent.x && fgPixel.y < fgExtent.y;
-    // Port A is the background/base and port B the foreground/source: each is
-    // gathered through the plane roles of its own geometry entry (issue #90).
-    vec4 bg = bgInside ? gpuLoadRgba(in_a, bgPixel, inputGeometry[0].rgba, bgExtent.y,
+    // Binding 0 is B, the background base and main pipe; binding 1 is A, the
+    // foreground source. Each is gathered through the plane roles of its own
+    // geometry entry (issue #90).
+    vec4 bg = bgInside ? gpuLoadRgba(in_b, bgPixel, inputGeometry[0].rgba, bgExtent.y,
                                      inputGeometry[0].channels.y) : vec4(0.0);
-    vec4 fg = fgInside ? gpuLoadRgba(in_b, fgPixel, inputGeometry[1].rgba, fgExtent.y,
+    vec4 fg = fgInside ? gpuLoadRgba(in_a, fgPixel, inputGeometry[1].rgba, fgExtent.y,
                                      inputGeometry[1].channels.y) : vec4(0.0);
 
     int operation = int(op.x);
@@ -112,9 +119,10 @@ void main() {
     // unmasked composite, so Mix 0 or zero coverage returns the background.
     float weight = coverage * mask.z;
     vec4 result = weight <= 0.0 ? bg : (weight >= 1.0 ? composite : mix(bg, composite, weight));
-    // The background is this node's main input: every stored channel the composite did
-    // not write keeps its named channel from A at the same coordinate (#90).
-    gpuStorePixel(out_color, ivec2(p), int(meta2.y), channels.x, channels.y, channels.z, rgba, result, in_a,
+    // The background B is this node's main input (binding 0): every stored
+    // channel the composite did not write keeps its named channel from B at the
+    // same coordinate (#90).
+    gpuStorePixel(out_color, ivec2(p), int(meta2.y), channels.x, channels.y, channels.z, rgba, result, in_b,
                   bgExtent.y, inputGeometry[0].channels.y);
 }
 )GLSL";
@@ -124,8 +132,10 @@ void main() {
         .id = "merge",
         .shader = "merge/merge",
         .glsl = nemo::nodes::gpuGlsl(kMergeGlslPayload, kMergeGlslBody),
-        // Declared port order: A, B, optional mask.
-        .inputs = {EffectImageRef{EffectImageKind::Input, 0}, EffectImageRef{EffectImageKind::Input, 1},
+        // Main-first local binding order (issue #78 correction): binding 0 is
+        // B (background base / main pipe), binding 1 is A (foreground source),
+        // binding 2 the optional mask. External graph ports stay A = 0, B = 1.
+        .inputs = {EffectImageRef{EffectImageKind::Input, 1}, EffectImageRef{EffectImageKind::Input, 0},
                    EffectImageRef{EffectImageKind::Input, 2}},
         .output = EffectImageRef{EffectImageKind::Output, 0},
     };

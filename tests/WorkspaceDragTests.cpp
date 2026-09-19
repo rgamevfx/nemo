@@ -465,7 +465,7 @@ TEST_F(WorkspaceDragTest, NestedPanelMenusSwitchTypeAndCloseViewer) {
 TEST_F(WorkspaceDragTest, CatalogMenuCreatesRealNodesAndTimelineSeeks) {
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphToolsButton"));
     QTest::qWait(30);
-    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("toolCategory_Utility"));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("toolCategory_Generators"));
     QTest::qWait(30);
     const auto before = viewerController.graphNodes().size();
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("toolNode_constcolor"));

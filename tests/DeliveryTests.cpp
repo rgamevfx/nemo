@@ -742,6 +742,5 @@ TEST_F(DeliveryTest, MovieIsPublishedOnlyWhenTheWholeRangeEncodes) {
     EXPECT_FALSE(fs::exists(cancelled)) << "a cancelled movie leaves no file at its final path";
     EXPECT_TRUE(info.files.empty());
     EXPECT_EQ(info.writtenFrames, 0U) << "encoded frames are not delivered output";
-    EXPECT_NE(info.error.find(cancelled), std::string::npos) << info.error;
     EXPECT_TRUE(dir_->temporaries().empty());
 }

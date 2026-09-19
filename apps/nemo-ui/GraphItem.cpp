@@ -798,9 +798,20 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
     for (const auto& edge : scene->edges) {
         if (preview.wireVisible && edge.id == preview.wireHiddenEdge)
             continue;
+        const GraphNodeRecord* source = scene->node(edge.from.node);
+        const GraphNodeRecord* target = scene->node(edge.to.node);
         routePolyline(*scene, edge, polyline);
         if (polyline.isEmpty())
             continue;
+        // A card a gesture is moving takes its pipes with it. The polyline is
+        // the source port, the authored route and the target port, so the two
+        // endpoint displacements are the two ends' own transient offsets — the
+        // same rule the card and its ports are drawn by — and the cull below
+        // measures the pipe where it is drawn rather than where it was authored.
+        if (source != nullptr)
+            polyline.first() += offsetFor(*source);
+        if (target != nullptr)
+            polyline.last() += offsetFor(*target);
         if (!pathBounds(polyline).intersects(clip))
             continue;
         const bool highlighted = edge.id == hover.edge || edge.id == hover.endpoint.edge;

@@ -57,6 +57,9 @@ GraphInteraction::GraphInteraction(QObject* parent)
         emit affordancesChanged();
     });
     connect(view_.get(), &ViewSession::settled, this, &GraphInteraction::viewSettled);
+    // The enter chips are positioned from card geometry, so a gesture that moves
+    // a card has to republish them along with everything else the preview moves.
+    connect(this, &GraphInteraction::previewChanged, this, &GraphInteraction::affordancesChanged);
 }
 
 GraphInteraction::~GraphInteraction() = default;
@@ -106,7 +109,10 @@ QVariantList GraphInteraction::enterAffordances() const {
     for (const auto& node : scene_->nodes) {
         if (!node.hasChildScope())
             continue;
-        const QRectF chip = affordanceRect(node);
+        // The chip sits on the card, so it is placed where the card is
+        // displayed: a subnet a gesture is moving takes its chip with it, which
+        // is the same transient offset the painter draws the card by.
+        const QRectF chip = affordanceRect(node).translated(transientOffset(node.id));
         const QPointF corner = transform.toScreen(chip.topLeft());
         records.push_back(QVariantMap{
             {QStringLiteral("id"), node.id},

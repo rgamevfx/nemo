@@ -250,6 +250,22 @@ would have felt:
    record wiped the placement point. Found by tracing the failing assertion —
    `GraphScreenSpaceHitTestingSurvivesEveryZoomLevel` depends on it.
 
+One defect was found by the owner after this work landed, and is fixed on top of
+it: **a dragged card's pipes stayed at the authored position until release.**
+The rewrite replaced the panel's per-move republication of node positions with
+transient offsets applied at paint time, and the painter applied them to cards,
+ports and labels but not to the edge walk, which read `routePolyline` from the
+scene's authored positions — and culled on them. The replaced panel had baked
+`dragDeltaX/Y` into the node list on every move, which is why its painter's
+endpoints followed. The edge walk now displaces the polyline's two endpoints by
+the two ends' own transient offsets before bounds and drawing, so the reroute
+candidate and the cull follow with them; the enter affordance record applies the
+same offset, and `previewChanged` notifies `affordancesChanged`, without which a
+dragged subnet's chip would have stayed stale anyway. Verified by a mid-drag
+native capture — the dragged card's displayed output port carries the pipe and
+the authored position carries only background — and by the chip's record moving
+by exactly the drag delta.
+
 Two more were caught by review before they could matter: `ConnectSession`
 measured its move threshold from the fixed port rather than the press (a plain
 click on a wire would have disconnected it), and `acceptsWheel()` refused the

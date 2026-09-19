@@ -63,8 +63,7 @@ struct ScreenNode {
     const QRectF* card{};
 };
 
-[[nodiscard]] ScreenNode screenNodeAt(const GraphScene& scene, const QVector<QRectF>& screenCards,
-                                      const QString& id) {
+[[nodiscard]] ScreenNode screenNodeAt(const GraphScene& scene, const QVector<QRectF>& screenCards, const QString& id) {
     if (id.isEmpty())
         return {};
     const auto found = scene.nodeIndex.constFind(id);
@@ -94,14 +93,16 @@ const GraphHit& GraphHitResult::primary() const {
     return kNullHit;
 }
 
-GraphHitResult hitTestGraph(const GraphScene& scene, const GraphViewTransform& view, QPointF screen) {
+GraphHitResult hitTestGraph(const GraphScene& scene, const GraphViewTransform& view, QPointF screen,
+                            GraphHitScratch& scratch) {
     GraphHitResult result;
 
     // One forward pass over the nodes resolves the cards, both directions of
     // ports and, from the topmost card, the enter-subnet affordance. The screen
     // cards are kept because the edge walk guards an endpoint against the card
     // of the node it belongs to.
-    QVector<QRectF> screenCards;
+    QVector<QRectF>& screenCards = scratch.screenCards;
+    screenCards.clear();
     screenCards.reserve(scene.nodes.size());
     GraphHit outputBest;
     GraphHit inputBest;
@@ -111,8 +112,7 @@ GraphHitResult hitTestGraph(const GraphScene& scene, const GraphViewTransform& v
 
     for (const GraphNodeRecord& node : scene.nodes) {
         const QRectF card = cardRect(node);
-        const QRectF screenCard =
-            QRectF(view.toScreen(card.topLeft()), view.toScreen(card.bottomRight())).normalized();
+        const QRectF screenCard = QRectF(view.toScreen(card.topLeft()), view.toScreen(card.bottomRight())).normalized();
         screenCards.append(screenCard);
 
         // Inclusive bounds, and a later card replaces the earlier one, so the
@@ -155,18 +155,21 @@ GraphHitResult hitTestGraph(const GraphScene& scene, const GraphViewTransform& v
     }
 
     // One forward pass over the edges resolves connection endpoints, reroute
-    // dots and pipe bodies. The projected polyline is built once per edge and
-    // reused by every class, so no candidate allocates.
+    // dots and pipe bodies. The scene polyline and its projected copy are the
+    // caller's buffers, refilled per edge, so the pass allocates nothing on
+    // this path and the projected copy is built once per edge and reused by
+    // every class.
     GraphHit endpointBest;
     GraphHit rerouteBest;
     GraphHit pipeBest;
     qreal endpointDistance = kPortHitRadius;
     qreal rerouteDistance = kRerouteHitTolerance;
     qreal pipeDistance = kPipeHitTolerance;
-    QVector<QPointF> screenPolyline;
+    QVector<QPointF>& polyline = scratch.polyline;
+    QVector<QPointF>& screenPolyline = scratch.screenPolyline;
 
     for (const GraphEdgeRecord& edge : scene.edges) {
-        const QVector<QPointF> polyline = routePolyline(scene, edge);
+        routePolyline(scene, edge, polyline);
         if (polyline.size() < 2)
             continue;
         screenPolyline.clear();

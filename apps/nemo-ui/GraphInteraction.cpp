@@ -108,12 +108,12 @@ QVariantList GraphInteraction::enterAffordances() const {
             continue;
         const QRectF chip = affordanceRect(node);
         const QPointF corner = transform.toScreen(chip.topLeft());
-        records.push_back(QVariantMap{{QStringLiteral("id"), node.id},
-                                      {QStringLiteral("x"), corner.x()},
-                                      {QStringLiteral("y"), corner.y()},
-                                      {QStringLiteral("size"), chip.width() * transform.scale},
-                                      {QStringLiteral("linkState"),
-                                       node.linkState.isEmpty() ? QStringLiteral("local") : node.linkState}});
+        records.push_back(QVariantMap{
+            {QStringLiteral("id"), node.id},
+            {QStringLiteral("x"), corner.x()},
+            {QStringLiteral("y"), corner.y()},
+            {QStringLiteral("size"), chip.width() * transform.scale},
+            {QStringLiteral("linkState"), node.linkState.isEmpty() ? QStringLiteral("local") : node.linkState}});
     }
     return records;
 }
@@ -130,10 +130,10 @@ QVariantMap GraphInteraction::hoveredEndpoint() const {
     const auto& endpoint = hover_.endpoint;
     if (endpoint.isNull())
         return {};
-    QVariantMap map{{QStringLiteral("node"), endpoint.node},
-                    {QStringLiteral("port"), endpoint.port},
-                    {QStringLiteral("direction"),
-                     endpoint.output ? QStringLiteral("output") : QStringLiteral("input")}};
+    QVariantMap map{
+        {QStringLiteral("node"), endpoint.node},
+        {QStringLiteral("port"), endpoint.port},
+        {QStringLiteral("direction"), endpoint.output ? QStringLiteral("output") : QStringLiteral("input")}};
     if (!endpoint.edge.isEmpty())
         map.insert(QStringLiteral("edge"), endpoint.edge);
     return map;
@@ -252,7 +252,7 @@ void GraphInteraction::frame(bool settle) {
 }
 
 GraphHitResult GraphInteraction::query(QPointF viewport) {
-    GraphHitResult hits = hitTestGraph(*scene_, view_->transform(), viewport);
+    GraphHitResult hits = hitTestGraph(*scene_, view_->transform(), viewport, hitScratch_);
     ++hitTestPasses_;
     emit diagnosticsChanged();
     return hits;
@@ -311,13 +311,13 @@ void GraphInteraction::press(qreal x, qreal y, int button, int modifiers) {
         if (!selected_.contains(primary.node))
             applySelection(QStringList{primary.node});
         beginGesture(std::make_unique<ConnectSession>(
-            scene_, ConnectBegin{GraphEndpointRecord{primary.node, primary.port, primary.output}, {}, false, pressPointer_}));
+            scene_,
+            ConnectBegin{GraphEndpointRecord{primary.node, primary.port, primary.output}, {}, false, pressPointer_}));
         break;
     case GraphHitKind::Endpoint:
         beginGesture(std::make_unique<ConnectSession>(
-            scene_,
-            ConnectBegin{GraphEndpointRecord{primary.node, primary.port, primary.output}, primary.edge, false,
-                        pressPointer_}));
+            scene_, ConnectBegin{GraphEndpointRecord{primary.node, primary.port, primary.output}, primary.edge, false,
+                                 pressPointer_}));
         break;
     case GraphHitKind::Reroute:
         beginGesture(std::make_unique<RerouteSession>(scene_, primary, mods.testFlag(Qt::AltModifier), pressPointer_));
@@ -533,9 +533,9 @@ QPointF GraphInteraction::portPosition(const QString& nodeId, int port, bool out
 }
 
 QPointF GraphInteraction::creationScenePoint() const {
-    const QPointF scene =
-        lastClickValid_ ? lastClick_
-                        : view_->transform().toScene(QPointF(viewportSize_.x() / 2.0, viewportSize_.y() / 2.0));
+    const QPointF scene = lastClickValid_
+                              ? lastClick_
+                              : view_->transform().toScene(QPointF(viewportSize_.x() / 2.0, viewportSize_.y() / 2.0));
     return QPointF(scene.x() - kCardWidth / 2.0, scene.y() - kCardHeight / 2.0);
 }
 

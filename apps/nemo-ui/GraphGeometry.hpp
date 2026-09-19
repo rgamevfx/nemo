@@ -92,10 +92,13 @@ struct PolylineProjection {
     QPointF point;
 };
 
-// Source port, authored route points, target port. Empty when either endpoint
-// is not a node of this scene, which is how terminal bindings stay unpainted
-// and unpiecked.
-[[nodiscard]] QVector<QPointF> routePolyline(const GraphScene& scene, const GraphEdgeRecord& edge);
+// Source port, authored route points, target port, appended into `out`. `out`
+// is the caller's storage, so one interaction walks every edge into one buffer
+// instead of minting a vector per edge: the pick pass runs on every pointer
+// move and the painter runs every frame, and neither may ask the allocator for
+// a polyline per edge. Left empty when either endpoint is not a node of this
+// scene, which is how terminal bindings stay unpainted and unpiecked.
+void routePolyline(const GraphScene& scene, const GraphEdgeRecord& edge, QVector<QPointF>& out);
 
 // Closest point on a polyline, first segment winning a tie.
 [[nodiscard]] PolylineProjection projectOnPolyline(const QVector<QPointF>& polyline, QPointF point);

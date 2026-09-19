@@ -225,6 +225,9 @@ private:
     std::unique_ptr<ViewSession> view_;
     std::unique_ptr<GraphSession> gesture_;
     std::unique_ptr<GraphCommandFacade> commands_;
+    // The one ordered pass per pointer event writes into these buffers, so a
+    // move costs one hit test and no allocation for it.
+    GraphHitScratch hitScratch_;
     GraphHover hover_;
     QStringList selected_;
     QPointF viewportSize_;

@@ -187,8 +187,14 @@ graph surface built after it:
 3. Transient state lives beside the painter, never in the model; one write on
    commit.
 4. Never rebuild on pointer motion. Records are indexed, updated in place, and
-   split into dirty domains (elements, routes, labels) so that motion cannot
-   re-rasterise text.
+   split into domains by how often they change — network content, pipes,
+   transient — so that motion cannot re-rasterise text or re-triangulate the
+   network. A domain that must not be re-uploaded needs a batch of its own:
+   Qt's batcher re-uploads a whole batch when any of its geometry is dirty and
+   merges only within one batch root and clip list, and an identity transform
+   node is not a batch root until Qt promotes one, so `GraphItem` brackets its
+   static and transient groups with clip nodes whose rectangles are the item's
+   bounds plus a slack that clips nothing.
 5. Gestures are explicit sessions. No string-typed gesture state, no loose flag
    properties.
 6. Hit testing is one ordered pass in C++ with screen-space tolerance.

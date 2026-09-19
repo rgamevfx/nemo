@@ -309,6 +309,37 @@ writes is `docs/evidence/assets/issue100-graph-interaction-core/graph-node-style
 | geometry agreement | the port the painter draws is the port the pick acquires | one `portPosition` implementation, asserted at two zoom levels by `GraphScreenSpaceHitTestingSurvivesEveryZoomLevel` |
 | zoom burst | at most one applied transform per turn, one write when it settles | `GraphWheelBurstAppliesPerTurnAndPersistsOnceWhenItSettles` |
 
+### Structural cost: what a frame rebuilds
+
+The review of this branch found two costs by reading the code — allocator
+traffic in the pick path, and a whole-scene geometry rebuild per frame. Both are
+settled as counts by `WorkspaceDragTest.GraphFrameCostFollowsWhatMoves` (sixty
+cards, no pipes, one card dragged):
+
+| cost | budget | observed |
+|---|---|---|
+| static geometry rebuilds during a drag | two: one when the dragged card leaves the static group, one when the release puts it back | two, and none for the six moves between them |
+| vertices built per drag step | one card's worth, not the network's | under 1000 — a card is 48 body + 96 border + 132 per port — against a static group of 16,560 |
+| label rasterisations during a drag | zero | zero |
+| hit-test passes per pointer move | exactly one | one |
+
+The pick path allocates nothing: `routePolyline` fills a caller-owned buffer and
+the ordered pass reuses one set of buffers (`GraphHitScratch`) across edges and
+across pointer moves, so a hover in a thousand-edge network asks the allocator
+for nothing. The card outline is a constant shape derived once and translated
+per card, instead of a trigonometric pair per outline point per card per frame.
+
+The frame split is verified against Qt's own batcher, not only against our
+counters: on the same run with `QSG_RENDERER_DEBUG=render,upload`, the static
+batch (`Nodes: 2`, 16,560 vertices) reports `[retained]` on every drag frame
+while 462 vertices upload — the moved card and the port overlay — and it uploads
+exactly twice, when the drag takes the card out of the group and when the
+release puts it back. The separation is structural, not incidental: Qt
+re-uploads a whole batch when any of its geometry is dirty and merges only
+within one batch root and clip list, and an identity transform node is not a
+batch root until Qt promotes one, so the static group is bracketed by clip nodes
+whose rectangles are the item's bounds plus a slack no drawn shape reaches.
+
 ## Review resolutions
 
 The change was reviewed on two axes (repository standards and the ticket spec)
@@ -370,4 +401,20 @@ regression gate.
   for that review.
 - **Wall-clock performance is not measured here.** The ticket bounds gesture
   cost as counts, and the measured gate stays with its existing owner.
+- **Two paint-order cases inside overlapping cards move with the frame split.**
+  A card being dragged, and the accent a hovered port paints, are drawn in the
+  transient group over the static cards rather than at their position in the
+  node order, so a card dragged over a card that comes later in the network now
+  paints over it, where the replaced painter drew it under. That follows from
+  keeping the static group in a batch of its own, which is what makes a drag
+  cost the same at sixty nodes or a thousand; preserving the exact interleaving
+  would need one static group per gap between moved cards. Recorded for the
+  owner's call rather than decided here.
+- **The static card group is not culled to the viewport.** Culling it would make
+  its vertices a function of the view and rebuild them on every pan and zoom
+  step — the cost this work removes. The group is uploaded once and the surface
+  clip discards the off-screen pixels, so the trade is a constant per-frame
+  vertex count proportional to the network in place of a per-gesture rebuild. If
+  a network large enough to make that count matter arrives, the lever is a
+  quantised view window in the static key, not a return to per-frame rebuilds.
 - **The pre-existing unrelated failing colorimetry test** is untouched.

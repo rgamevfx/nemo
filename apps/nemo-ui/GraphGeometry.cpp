@@ -49,8 +49,7 @@ QPointF portPosition(const GraphNodeRecord& node, int port, bool output) {
             sideIndex = sideCount;
         ++sideCount;
     }
-    const qreal fraction =
-        sideCount <= 1 ? 0.5 : static_cast<qreal>(sideIndex + 1) / static_cast<qreal>(sideCount + 1);
+    const qreal fraction = sideCount <= 1 ? 0.5 : static_cast<qreal>(sideIndex + 1) / static_cast<qreal>(sideCount + 1);
 
     const QRectF card = cardRect(node);
     if (side == PortSide::Right)
@@ -69,8 +68,7 @@ bool withinAffordance(const GraphNodeRecord& node, QPointF scenePoint) {
     const QRectF card = cardRect(node);
     const qreal x = scenePoint.x() - card.left();
     const qreal y = scenePoint.y() - card.top();
-    return x >= kAffordanceHitLeft && x <= kAffordanceHitRight && y >= kAffordanceHitTop &&
-           y <= kAffordanceHitBottom;
+    return x >= kAffordanceHitLeft && x <= kAffordanceHitRight && y >= kAffordanceHitTop && y <= kAffordanceHitBottom;
 }
 
 bool portGuardSatisfied(PortSide side, QRectF screenCard, QPointF screenPoint) {
@@ -81,17 +79,16 @@ bool portGuardSatisfied(PortSide side, QRectF screenCard, QPointF screenPoint) {
     return screenPoint.y() <= screenCard.top() + screenCard.height() * kPortGuardFraction;
 }
 
-QVector<QPointF> routePolyline(const GraphScene& scene, const GraphEdgeRecord& edge) {
+void routePolyline(const GraphScene& scene, const GraphEdgeRecord& edge, QVector<QPointF>& out) {
+    out.clear();
     const auto* source = scene.node(edge.from.node);
     const auto* target = scene.node(edge.to.node);
     if (source == nullptr || target == nullptr)
-        return {};
-    QVector<QPointF> polyline;
-    polyline.reserve(edge.route.size() + 2);
-    polyline.push_back(portPosition(*source, edge.from.port, true));
-    polyline.append(edge.route);
-    polyline.push_back(portPosition(*target, edge.to.port, false));
-    return polyline;
+        return;
+    out.reserve(edge.route.size() + 2);
+    out.push_back(portPosition(*source, edge.from.port, true));
+    out.append(edge.route);
+    out.push_back(portPosition(*target, edge.to.port, false));
 }
 
 PolylineProjection projectOnPolyline(const QVector<QPointF>& polyline, QPointF point) {

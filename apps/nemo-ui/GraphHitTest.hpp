@@ -64,7 +64,19 @@ struct GraphHitResult {
     [[nodiscard]] const GraphHit& primary() const;
 };
 
-[[nodiscard]] GraphHitResult hitTestGraph(const GraphScene& scene, const GraphViewTransform& view, QPointF screen);
+// The buffers one ordered pass writes into, owned by the caller so a pointer
+// move reuses one set of allocations instead of minting a polyline per edge and
+// a screen rectangle per node. The pass clears what it uses, so a scratch that
+// has been through the pass once allocates nothing; nothing in the result
+// points into this storage.
+struct GraphHitScratch {
+    QVector<QRectF> screenCards;
+    QVector<QPointF> polyline;
+    QVector<QPointF> screenPolyline;
+};
+
+[[nodiscard]] GraphHitResult hitTestGraph(const GraphScene& scene, const GraphViewTransform& view, QPointF screen,
+                                          GraphHitScratch& scratch);
 
 // What the pointer currently acquires, published for the panel's feedback and
 // for the painter's highlight. Derived from the same ordered pass a press

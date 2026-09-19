@@ -271,24 +271,23 @@ protected:
                 return;
             QDir().mkpath(directory);
             auto* panel = item("graphPanel");
-            QJsonObject environment{{QStringLiteral("platform"), QGuiApplication::platformName()},
-                                    {QStringLiteral("graphics_api"), graphicsApiName()},
-                                    {QStringLiteral("native_ui"),
-                                     qEnvironmentVariableIntValue("NEMO_TEST_NATIVE_UI") == 1},
-                                    {QStringLiteral("qt"), QString::fromLatin1(qVersion())},
-                                    {QStringLiteral("device_pixel_ratio"), window->devicePixelRatio()},
-                                    {QStringLiteral("window_width"), window->width()},
-                                    {QStringLiteral("window_height"), window->height()},
-                                    {QStringLiteral("appearance_preset"), controller.appearancePreset()},
-                                    {QStringLiteral("accent_override"), controller.accentOverride()},
-                                    {QStringLiteral("record"), name},
-                                    {QStringLiteral("graph_panel"), panel->property("panelId").toString()},
-                                    {QStringLiteral("graph_zoom"), panel->property("zoom").toDouble()},
-                                    {QStringLiteral("graph_pan_x"), panel->property("panX").toDouble()},
-                                    {QStringLiteral("graph_pan_y"), panel->property("panY").toDouble()},
-                                    {QStringLiteral("graph_network"), panel->property("graphNetworkId").toString()},
-                                    {QStringLiteral("graph_selection"),
-                                     panel->property("selectedNodeIds").toJsonArray()}};
+            QJsonObject environment{
+                {QStringLiteral("platform"), QGuiApplication::platformName()},
+                {QStringLiteral("graphics_api"), graphicsApiName()},
+                {QStringLiteral("native_ui"), qEnvironmentVariableIntValue("NEMO_TEST_NATIVE_UI") == 1},
+                {QStringLiteral("qt"), QString::fromLatin1(qVersion())},
+                {QStringLiteral("device_pixel_ratio"), window->devicePixelRatio()},
+                {QStringLiteral("window_width"), window->width()},
+                {QStringLiteral("window_height"), window->height()},
+                {QStringLiteral("appearance_preset"), controller.appearancePreset()},
+                {QStringLiteral("accent_override"), controller.accentOverride()},
+                {QStringLiteral("record"), name},
+                {QStringLiteral("graph_panel"), panel->property("panelId").toString()},
+                {QStringLiteral("graph_zoom"), panel->property("zoom").toDouble()},
+                {QStringLiteral("graph_pan_x"), panel->property("panX").toDouble()},
+                {QStringLiteral("graph_pan_y"), panel->property("panY").toDouble()},
+                {QStringLiteral("graph_network"), panel->property("graphNetworkId").toString()},
+                {QStringLiteral("graph_selection"), panel->property("selectedNodeIds").toJsonArray()}};
             for (auto it = extra.begin(); it != extra.end(); ++it)
                 environment.insert(it.key(), it.value());
             QFile environmentFile(directory + QStringLiteral("/graph-") + name + QStringLiteral(".json"));
@@ -1892,6 +1891,78 @@ TEST_F(WorkspaceDragTest, GraphGestureCostBudget) {
                                {QStringLiteral("panel_writes"), writes},
                                {QStringLiteral("selection_size"), interaction->selectedNodeIds().size()}});
 }
+// Story 5 of issue #100 — "a drag costs the same whether the network has ten
+// nodes or a thousand" — as counts. The painter splits its vertices by change
+// rate: the cards and their ports are a function of the network, the theme and
+// the selection, and the pipes, the cards a gesture moves and the port under
+// the pointer are rebuilt per frame. With sixty cards on screen, a drag step
+// must build one card — not the network — and must not rebuild the static group
+// after the move that takes the dragged card out of it.
+TEST_F(WorkspaceDragTest, GraphFrameCostFollowsWhatMoves) {
+    const auto network = viewerController.rootNetworkId();
+    QStringList cards;
+    for (int index = 0; index < 60; ++index) {
+        cards.append(viewerController.createGraphNode(network, "constcolor", QStringLiteral("card%1").arg(index),
+                                                      (index % 12) * 140, (index / 12) * 44, {}, {}));
+    }
+    ASSERT_EQ(cards.size(), 60);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("graphFrameAll"));
+    QTest::qWait(40);
+    auto* graph = qobject_cast<nemo::ui::GraphItem*>(item("graphItem"));
+    ASSERT_NE(graph, nullptr);
+    auto* interaction = graphInteraction();
+
+    // One card is 48 body vertices, 96 border and 132 per port, so a drag step
+    // stays under a thousand even with the hovered port drawn, while the sixty
+    // cards' static group is over sixteen thousand: the gap between the two is
+    // what this test asserts. The zoom is the same preparation the cost budget
+    // test makes: a framed root network can sit at the 0.2 floor, where a card
+    // press would acquire the card's own port instead.
+    const QString dragged = cards.constFirst();
+    zoomGraphIn(graph->mapToScene(interaction->nodeRect(dragged).center()).toPoint(), 1.0);
+    const auto painted = [this] {
+        QSignalSpy rendered(window, &QQuickWindow::frameSwapped);
+        window->update();
+        return rendered.wait(1000);
+    };
+    ASSERT_TRUE(painted()) << "a frame must be painted before the gesture starts";
+    const auto staticBefore = graph->staticGeometryRebuilds();
+    const auto rastersBefore = graph->labelAtlasesRasterized();
+
+    const QPoint press = graph->mapToScene(interaction->nodeRect(dragged).center()).toPoint();
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, press);
+    // The pointer is in place before anything is counted: the press resolves its
+    // own target, and the count below is the moves'.
+    const auto hitTestsBefore = interaction->hitTestPasses();
+    const int steps = 6;
+    for (int step = 1; step <= steps; ++step) {
+        QTest::mouseMove(window, press + QPoint(7 * step, 4 * step), 2);
+        ASSERT_TRUE(painted()) << "a drag step must reach a painted frame";
+        EXPECT_LE(graph->staticGeometryRebuilds() - staticBefore, 1u)
+            << "a drag step rebuilds no static geometry: the group is rebuilt once, when the dragged "
+               "card leaves it, and not once per move";
+        EXPECT_EQ(graph->labelAtlasesRasterized(), rastersBefore)
+            << "a drag neither rasterises nor uploads a label atlas";
+        EXPECT_GT(graph->transientVerticesBuilt(), 0u) << "the moved card must actually be drawn";
+        EXPECT_LT(graph->transientVerticesBuilt(), 2000u)
+            << "a drag step builds the card it moves, not the cards around it";
+        EXPECT_EQ(interaction->hitTestPasses(), hitTestsBefore + static_cast<qulonglong>(step))
+            << "one pointer move is still exactly one hit-test pass";
+    }
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, press + QPoint(7 * steps, 4 * steps));
+    QTest::qWait(40);
+    EXPECT_EQ(graph->staticGeometryRebuilds() - staticBefore, 2u)
+        << "one rebuild takes the dragged card out of the static group and one puts it back";
+    recordEvidence(
+        QStringLiteral("frame-cost"),
+        QJsonObject{
+            {QStringLiteral("cards"), cards.size()},
+            {QStringLiteral("drag_steps"), steps},
+            {QStringLiteral("static_rebuilds"), static_cast<qint64>(graph->staticGeometryRebuilds() - staticBefore)},
+            {QStringLiteral("transient_vertices"), static_cast<qint64>(graph->transientVerticesBuilt())},
+            {QStringLiteral("label_atlases"), static_cast<qint64>(graph->labelAtlasesRasterized() - rastersBefore)}});
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {

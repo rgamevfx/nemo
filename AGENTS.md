@@ -214,6 +214,38 @@ positives. Do not act on its output.
   Share responsibilities, not merely matching text; an abstraction must
   simplify ownership or maintenance without adding render-path copies/waits.
 
+## Codebase hygiene
+
+This is an alpha codebase: one contributor, no users, no compatibility
+obligations. Nothing is kept because it might be useful later, because removal
+feels risky, or because a caller that was already migrated might come back.
+
+- **No dead code.** Unused functions, members, properties, parameters, signals
+  and constants are deleted in the change that makes them unused. A
+  declaration with no caller is a defect, not future-proofing.
+- **No shims.** No compatibility wrappers, aliases, `legacy*`/`old*`/`v2*`
+  duplicates, forwarding layers, or parameters kept for a caller that no
+  longer passes them. Migrate every caller and delete the old path in the same
+  change; a half-migrated boundary is a bug in the change, not a transition
+  state.
+- **No unused interface surface.** A `Q_INVOKABLE`, exported symbol, property
+  or signal with no consumer is removed, not documented.
+- **No marker debt.** `TODO`/`FIXME`/`HACK`/`XXX` comments are not a backlog:
+  work is either finished or recorded as a task. Commented-out code is deleted.
+- **No artifact residue.** No editor backups (`*~`), `.orig`/`.rej`/`.bak`
+  files, scratch scripts, stray logs or generated output in the tree. Retained
+  evidence lives under `docs/evidence/assets/` and is labelled as evidence.
+- **No parallel implementation.** When a responsibility already has an owner,
+  extend that owner; never add a second implementation beside it "for now".
+- **No hard-coded stand-ins for derivable state** — fixed bounds, fixture
+  values or placeholder constants where the real quantity is computable.
+- **No unnamed debt.** Anything deliberately left incomplete is recorded on the
+  owning task with its acceptance criterion; it is never discovered later in
+  source.
+
+A slice is not complete while it leaves unused code, a stray artifact, or two
+paths serving one purpose.
+
 ## Definition of done (landing on `main`)
 
 1. Builds clean in `debug` and `release` with `-Wall -Wextra -Wpedantic`
@@ -235,6 +267,8 @@ positives. Do not act on its output.
 8. The recorded evidence is the cheapest level that catches the relevant bug
    class (see "CI scope and evidence level"). Escalating past the ticket's
    stated verification budget needs owner direction, not a judgement call.
+9. The change satisfies "Codebase hygiene": no dead code, shim, unused
+   interface surface or artifact residue left behind.
 
 ## Working conventions
 

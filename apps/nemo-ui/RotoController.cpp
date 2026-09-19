@@ -216,8 +216,11 @@ constexpr double kPi = 3.14159265358979323846;
 // reported instead of guessed.
 [[nodiscard]] bool gridPreservingType(std::string_view type) {
     // viewer/output are terminals: they display their input's grid unchanged.
+    // premult/unpremult are pointwise channel arithmetic: they scale stored
+    // channels and cannot move a pixel, so they carry the grid through exactly
+    // as grade does.
     return type == "grade" || type == "blur" || type == "merge" || type == "shuffle" || type == "roto" ||
-           type == "viewer" || type == "output";
+           type == "premult" || type == "unpremult" || type == "viewer" || type == "output";
 }
 
 // One node's answer to "can the viewed target be reached from here, and does
@@ -2463,13 +2466,15 @@ QString RotoController::overlayReason(const QString& target) const {
             names.push_back(text);
     }
     if (names.isEmpty())
-        return QStringLiteral("the overlay cannot prove the coordinate mapping to this target");
+        return QStringLiteral("the Roto overlay is off: the coordinate mapping to this target is not established");
     const auto list = names.join(QStringLiteral(", "));
     if (probe.unsafeRoute && probe.safeRoute)
-        return QStringLiteral("the Roto reaches this target through more than one path (%1), so the overlay cannot "
-                              "state one coordinate mapping")
+        return QStringLiteral("the Roto overlay is off: this target is reached through more than one path (%1), so "
+                              "the overlay cannot state one coordinate mapping")
             .arg(list);
-    return QStringLiteral("the coordinate mapping through %1 is not proven, so the overlay stays off").arg(list);
+    return QStringLiteral("the Roto overlay is off: the route to this target goes through %1, whose coordinate "
+                          "mapping the overlay does not follow")
+        .arg(list);
 }
 
 void RotoController::refresh() {

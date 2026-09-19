@@ -235,7 +235,8 @@ public:
     // A viewer may draw this node's shapes while it inspects a different node
     // only when the pixel grid is the same one: this node itself, or a target
     // this node reaches through nodes that carry the grid through unchanged
-    // (grade, blur, merge, shuffle, roto, viewer, output), with NO other route
+    // (grade, blur, merge, shuffle, roto, premult, unpremult, viewer, output),
+    // with NO other route
     // that passes through a node whose mapping is not proven (transform,
     // reformat, crop, a nested occurrence, a type this build does not model).
     // An unrelated target reports no reason at all, so a presenter can keep

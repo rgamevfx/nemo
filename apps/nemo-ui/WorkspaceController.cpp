@@ -19,14 +19,20 @@ namespace nemo::workspace {
 
 namespace {
 
-constexpr int kPersistenceVersion = 2;
+constexpr int kPersistenceVersion = 3;
 constexpr qint64 kMaxLayoutBytes = 1024 * 1024;
 
 QVariantMap defaultCategoryColors() {
-    return {
-        {QStringLiteral("Merge"), QStringLiteral("#60656b")},   {QStringLiteral("Filter"), QStringLiteral("#a96832")},
-        {QStringLiteral("IO"), QStringLiteral("#386b91")},      {QStringLiteral("Color"), QStringLiteral("#71608c")},
-        {QStringLiteral("Distort"), QStringLiteral("#54816b")}, {QStringLiteral("Utility"), QStringLiteral("#59646f")}};
+    // Keys are catalog groups, shared by graph, inspector, menus and settings.
+    return {{QStringLiteral("Blur"), QStringLiteral("#305d7d")},
+            {QStringLiteral("Channels"), QStringLiteral("#66622c")},
+            {QStringLiteral("Color"), QStringLiteral("#594271")},
+            {QStringLiteral("Compositing"), QStringLiteral("#74602b")},
+            {QStringLiteral("Draw"), QStringLiteral("#743c4a")},
+            {QStringLiteral("Generators"), QStringLiteral("#485566")},
+            {QStringLiteral("I/O"), QStringLiteral("#2e5966")},
+            {QStringLiteral("Transform"), QStringLiteral("#326347")},
+            {QStringLiteral("Utility"), QStringLiteral("#505b67")}};
 }
 
 nlohmann::json variantMapToJson(const QVariantMap& value) {
@@ -544,7 +550,7 @@ void WorkspaceController::restoreFromJson(const nlohmann::json& json) {
     if (version == Workspace::kVersion) {
         nextPresets.push_back({QStringLiteral("workspace-1"), QStringLiteral("Default"), Workspace::fromJson(json)});
         nextActive = nextPresets.front().id;
-    } else if (version == kPersistenceVersion) {
+    } else if (version == 2 || version == kPersistenceVersion) {
         if (!json.contains("workspaces") || !json.at("workspaces").is_array() || json.at("workspaces").empty()) {
             throw std::runtime_error("workspace: persistence must contain at least one workspace");
         }
@@ -600,12 +606,39 @@ void WorkspaceController::restoreFromJson(const nlohmann::json& json) {
                     throw std::runtime_error("workspace: appearance categoryColors must be an object");
                 }
                 for (const auto& [category, value] : appearance.at("categoryColors").items()) {
-                    const QString key = QString::fromStdString(category);
-                    if (!nextColors.contains(key) || !value.is_string() ||
-                        !validColor(QString::fromStdString(value.get<std::string>()))) {
+                    QString key = QString::fromStdString(category);
+                    if (!value.is_string() || !validColor(QString::fromStdString(value.get<std::string>()))) {
                         throw std::runtime_error("workspace: appearance has invalid category color '" + category + "'");
                     }
-                    nextColors.insert(key, QString::fromStdString(value.get<std::string>()));
+                    const QString color = QString::fromStdString(value.get<std::string>());
+                    if (version == 2) {
+                        // One-time appearance migration: retain custom colors,
+                        // but let untouched defaults adopt the current palette.
+                        const struct {
+                            const char* before;
+                            const char* after;
+                            const char* defaultColor;
+                        } categories[] = {{"Merge", "Compositing", "#60656b"},
+                                          {"Filter", "Blur", "#a96832"},
+                                          {"IO", "I/O", "#386b91"},
+                                          {"Color", "Color", "#71608c"},
+                                          {"Distort", "Transform", "#54816b"},
+                                          {"Utility", "Utility", "#59646f"}};
+                        bool defaultColor = false;
+                        for (const auto& entry : categories) {
+                            if (key != QLatin1String(entry.before))
+                                continue;
+                            key = QLatin1String(entry.after);
+                            defaultColor = color.compare(QLatin1String(entry.defaultColor), Qt::CaseInsensitive) == 0;
+                            break;
+                        }
+                        if (defaultColor)
+                            continue;
+                    }
+                    if (!nextColors.contains(key)) {
+                        throw std::runtime_error("workspace: appearance has invalid category color '" + category + "'");
+                    }
+                    nextColors.insert(key, color);
                 }
             }
         }

@@ -53,10 +53,23 @@ QPointF portPosition(const GraphNodeRecord& node, int port, bool output) {
 
     const QRectF card = cardRect(node);
     if (side == PortSide::Right)
-        return {card.right(), card.top() + card.height() * fraction};
+        return {card.right() + kMaskArrowLength * 0.5, card.top() + card.height() * fraction};
     if (side == PortSide::Bottom)
-        return {card.left() + card.width() * fraction, card.bottom()};
-    return {card.left() + card.width() * fraction, card.top()};
+        return {card.left() + card.width() * fraction, card.bottom() + kPortArrowLength * 0.5};
+    return {card.left() + card.width() * fraction, card.top() - kPortArrowLength * 0.5};
+}
+
+std::array<QPointF, 3> portArrow(const GraphNodeRecord& node, int port, bool output) {
+    const auto& ports = output ? node.outputs : node.inputs;
+    const QPointF center = portPosition(node, port, output);
+    if (port >= 0 && port < ports.size() && portSide(ports.at(port), output) == PortSide::Right) {
+        return {center + QPointF(-kMaskArrowLength * 0.5, 0),
+                center + QPointF(kMaskArrowLength * 0.5, -kMaskArrowHalfWidth),
+                center + QPointF(kMaskArrowLength * 0.5, kMaskArrowHalfWidth)};
+    }
+    return {center + QPointF(0, kPortArrowLength * 0.5),
+            center + QPointF(-kPortArrowHalfWidth, -kPortArrowLength * 0.5),
+            center + QPointF(kPortArrowHalfWidth, -kPortArrowLength * 0.5)};
 }
 
 QRectF affordanceRect(const GraphNodeRecord& node) {

@@ -31,7 +31,8 @@ bool sameHit(const GraphHit& left, const GraphHit& right) {
 }
 
 bool sameHover(const GraphHover& left, const GraphHover& right) {
-    return left.edge == right.edge && sameHit(left.endpoint, right.endpoint) && sameHit(left.reroute, right.reroute);
+    return left.card == right.card && left.edge == right.edge && sameHit(left.endpoint, right.endpoint) &&
+           sameHit(left.reroute, right.reroute);
 }
 
 QString graphId(const QVariant& value) {
@@ -734,10 +735,14 @@ bool GraphInteraction::nodeNamed(const QString& name) const {
 
 void GraphInteraction::publishHover(const GraphHitResult& hits, Qt::KeyboardModifiers modifiers) {
     GraphHover next;
-    next.edge = hits.pipe.edge;
-    if (!hits.port.isNull()) {
+    const auto& primary = hits.primary();
+    if (primary.kind == GraphHitKind::Card)
+        next.card = primary.node;
+    if (hits.card.isNull() && hits.affordance.isNull())
+        next.edge = hits.pipe.edge;
+    if (primary.kind == GraphHitKind::Port) {
         next.endpoint = hits.port;
-    } else if (!hits.pipe.isNull() && hits.card.isNull()) {
+    } else if (!hits.pipe.isNull() && hits.card.isNull() && hits.affordance.isNull()) {
         // On neither a port nor a card: the feedback names the pipe end a pull
         // would grab, which is the end the active session has locked away from.
         if (const auto* edge = scene_->edge(hits.pipe.edge)) {

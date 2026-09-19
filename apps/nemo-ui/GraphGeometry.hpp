@@ -5,6 +5,7 @@
 #include <QPointF>
 #include <QRectF>
 #include <QVector>
+#include <array>
 #include <limits>
 
 namespace nemo::ui {
@@ -13,15 +14,14 @@ namespace nemo::ui {
 // polyline and point-to-segment projection. The painter and the picker both
 // call these functions; a second implementation of any of them is a defect.
 //
-// These are the interaction layer's preserved constants (issue #100, "Preserved
-// constants"). Do not retune them while rebuilding: port hit radius 14,
-// pipe-body tolerance 12, reroute tolerance 9, zoom clamp 0.2-2.5, wheel factor
-// exp(delta * 0.002) with 53 px per notch, 3 px move threshold, 200 ms zoom
-// settle, one zoom application per event-loop turn, and the rule that the wheel
-// is ignored during a wire drag.
+// Gesture tolerances remain the issue #100 baseline. The compact card and
+// outward arrow geometry are shared by painting, wires and acquisition.
 inline constexpr qreal kCardWidth = 112.0;
 inline constexpr qreal kCardHeight = 28.0;
-inline constexpr qreal kPortGlyphRadius = 4.0;
+inline constexpr qreal kPortArrowLength = 8.0;
+inline constexpr qreal kPortArrowHalfWidth = 5.0;
+inline constexpr qreal kMaskArrowLength = 6.0;
+inline constexpr qreal kMaskArrowHalfWidth = 3.0;
 // Screen-space tolerances: every tolerance is expressed in screen pixels and
 // scaled by the view transform, so picking feels identical at every zoom.
 inline constexpr qreal kPortHitRadius = 14.0;
@@ -71,9 +71,12 @@ struct GraphViewTransform {
 // Card rectangle in scene coordinates.
 [[nodiscard]] QRectF cardRect(const GraphNodeRecord& node);
 
-// Port centre in scene coordinates. The position is derived from the card and
-// the port's side, never from a second copy of the port layout.
+// Port centre in scene coordinates, half an arrow outside the card. The
+// painted connector, wire anchor and acquisition centre always agree.
 [[nodiscard]] QPointF portPosition(const GraphNodeRecord& node, int port, bool output);
+
+// Triangle in scene coordinates, pointing into an input or away from an output.
+[[nodiscard]] std::array<QPointF, 3> portArrow(const GraphNodeRecord& node, int port, bool output);
 
 // The painted affordance chip, in scene coordinates relative to the scene
 // origin.

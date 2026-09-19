@@ -118,10 +118,7 @@ FocusScope {
     // handed to the render thread.
     readonly property var presentationStyle: ({
             "accent": graphPanel.theme ? graphPanel.theme.accent : "#3485f6",
-            "border": graphPanel.theme ? graphPanel.theme.border : "#30343a",
             "muted": graphPanel.theme ? graphPanel.theme.muted : "#979ea8",
-            "panel": graphPanel.theme ? graphPanel.theme.panel : "#1e2023",
-            "node": graphPanel.theme ? graphPanel.theme.node : "#2a2e33",
             "fontSize": graphPanel.theme ? graphPanel.theme.fontSize : 11
         })
 
@@ -150,13 +147,6 @@ FocusScope {
     }
     function scopeKey(id) {
         return String(id || "");
-    }
-    function displayCategory(group) {
-        if (group === "I/O")
-            return "IO";
-        if (group === "Compositing")
-            return "Merge";
-        return theme && theme.nodeCategoryColors && theme.nodeCategoryColors[group] !== undefined ? group : "Utility";
     }
     // A plain copy of the core's selection, so a panel-state record never aliases
     // the sequence the core publishes.
@@ -372,7 +362,7 @@ FocusScope {
         var catalog = controller.nodeCatalog || [], groups = {};
         for (var i = 0; i < catalog.length; ++i) {
             var descriptor = catalog[i];
-            var label = displayCategory(descriptor.group);
+            var label = descriptor.group || "Utility";
             if (!groups[label])
                 groups[label] = {
                     "label": label,
@@ -380,13 +370,9 @@ FocusScope {
                 };
             groups[label].nodes.push(descriptor);
         }
-        var ordered = ["Color", "Distort", "Filter", "Utility", "Merge", "IO"], nextGroups = [];
+        var ordered = Object.keys(groups).sort(), nextGroups = [];
         for (var g = 0; g < ordered.length; ++g)
-            if (groups[ordered[g]])
-                nextGroups.push(groups[ordered[g]]);
-        for (var key in groups)
-            if (ordered.indexOf(key) < 0)
-                nextGroups.push(groups[key]);
+            nextGroups.push(groups[ordered[g]]);
         categories = nextGroups;
     }
 
@@ -478,7 +464,7 @@ FocusScope {
                         required property var modelData
                         theme: graphPanel.theme
                         objectName: "toolCategory_" + modelData.label
-                        text: modelData.label === "IO" ? "I/O" : modelData.label
+                        text: modelData.label
                         enabled: modelData.nodes.length > 0
                         implicitHeight: 23
                         implicitWidth: Math.max(48, text.length * 7 + 18)
@@ -563,7 +549,7 @@ FocusScope {
                 y: Math.round(((graphPanel.panY % period) + period) % period) - period
                 width: graphSurface.width + period
                 height: graphSurface.height + period
-                property color lineColor: Qt.rgba(graphPanel.theme.border.r, graphPanel.theme.border.g, graphPanel.theme.border.b, 0.24)
+                property color lineColor: Qt.rgba(graphPanel.theme.border.r, graphPanel.theme.border.g, graphPanel.theme.border.b, 0.14)
                 onLineColorChanged: requestPaint()
                 onWidthChanged: requestPaint()
                 onHeightChanged: requestPaint()

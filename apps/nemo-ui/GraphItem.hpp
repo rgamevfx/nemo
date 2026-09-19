@@ -86,10 +86,7 @@ private:
     QVariantMap presentationStyleProperty_;
     QRectF visibleRect_;
     QColor accentColor_{QStringLiteral("#3485f6")};
-    QColor borderColor_{QStringLiteral("#30343a")};
     QColor mutedColor_{QStringLiteral("#979ea8")};
-    QColor panelColor_{QStringLiteral("#1e2023")};
-    QColor nodeColor_{QStringLiteral("#2a2e33")};
     int fontSize_{11};
     qulonglong rasterizations_{};
     qulonglong staticRebuilds_{};

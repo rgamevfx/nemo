@@ -69,6 +69,7 @@ QVector<GraphPortRecord> portRecords(const QVariant& value) {
         port.index = map.contains(QStringLiteral("index")) ? map.value(QStringLiteral("index")).toInt()
                                                            : static_cast<int>(position);
         port.kind = map.value(QStringLiteral("kind")).toString();
+        port.name = map.value(QStringLiteral("name")).toString();
         ports.push_back(std::move(port));
     }
     return ports;

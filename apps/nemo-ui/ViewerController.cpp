@@ -393,7 +393,7 @@ QVariantMap formalPortSnapshot(const nemo::FormalPort& port, bool input) {
                        {QStringLiteral("y"), port.layout.y},
                        {QStringLiteral("inputs"), input ? QVariantList{} : QVariantList{terminal}},
                        {QStringLiteral("outputs"), input ? QVariantList{terminal} : QVariantList{}},
-                       {QStringLiteral("category"), QStringLiteral("IO")},
+                       {QStringLiteral("category"), QStringLiteral("I/O")},
                        {QStringLiteral("group"), QStringLiteral("I/O")},
                        {QStringLiteral("terminal"), true},
                        {QStringLiteral("direction"), input ? QStringLiteral("input") : QStringLiteral("output")},

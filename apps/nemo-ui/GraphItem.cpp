@@ -45,8 +45,8 @@ constexpr int kAtlasCellWidth = 112;
 constexpr int kAtlasCellHeight = 24;
 constexpr int kAtlasColumns = kAtlasWidth / kAtlasCellWidth;
 // Screen-space stroke weights, converted by the view transform at the call site.
-constexpr qreal kHighlightStrokeWidth = 4.0;
-constexpr qreal kActiveStrokeWidth = 2.0;
+constexpr qreal kHighlightStrokeWidth = 2.5;
+constexpr qreal kActiveStrokeWidth = 1.6;
 constexpr qreal kOrdinaryStrokeWidth = 1.35;
 constexpr qreal kWireStrokeWidth = 2.2;
 constexpr qreal kEndpointRingRadius = 7.0;
@@ -56,11 +56,8 @@ constexpr qreal kRerouteHoverRadius = 6.0;
 // How far outside the viewport a path is culled: enough that a stroke whose
 // vertices sit just outside still covers the edge of the clip.
 constexpr qreal kClipSlack = 8.0;
-// The card corner radius, and the port ring's thickness. The ring is drawn
-// inward from the glyph radius, which is what lets a hovered port repaint its
-// glyph and its ring together without disturbing the card it sits on.
+// Compact card shape; connector geometry belongs to GraphGeometry.
 constexpr qreal kCardCornerRadius = 3.0;
-constexpr qreal kPortRingThickness = 1.0;
 // How far the batch groups' clip rectangles are inflated past the item: enough
 // that no card, port glyph or preview offset can reach the edge, so the
 // rectangles separate batches without ever clipping a drawn shape.
@@ -277,6 +274,12 @@ void appendColoredLine(QVector<QSGGeometry::ColoredPoint2D>& vertices, QPointF f
     append(from + normal);
     append(to - normal);
     append(from - normal);
+}
+
+void appendPortArrow(QVector<QSGGeometry::ColoredPoint2D>& vertices, const GraphNodeRecord& node,
+                     const GraphPortRecord& port, bool output, QPointF offset, const QColor& color) {
+    for (const QPointF point : portArrow(node, port.index, output))
+        appendShapeVertex(vertices, point + offset, color);
 }
 
 // Uploads one buffer, and uploads nothing when the vertices are the same as
@@ -678,10 +681,7 @@ void GraphItem::setPresentationStyle(const QVariantMap& style) {
         return color.isValid() ? color : fallback;
     };
     accentColor_ = readColor(QStringLiteral("accent"), accentColor_);
-    borderColor_ = readColor(QStringLiteral("border"), borderColor_);
     mutedColor_ = readColor(QStringLiteral("muted"), mutedColor_);
-    panelColor_ = readColor(QStringLiteral("panel"), panelColor_);
-    nodeColor_ = readColor(QStringLiteral("node"), nodeColor_);
     const int fontSize = style.value(QStringLiteral("fontSize")).toInt();
     if (fontSize > 0)
         fontSize_ = fontSize;
@@ -859,6 +859,7 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
 
     const int rasterScale =
         std::max(1, static_cast<int>(std::ceil(window() ? window()->effectiveDevicePixelRatio() : 1.0)));
+    int visibleNodeLabels = 0;
     for (const auto& record : scene->nodes) {
         const auto movedPosition = preview.positions.constFind(record.id);
         const bool moving = movedPosition != preview.positions.constEnd();
@@ -873,16 +874,33 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
         // atlas is keyed on — while the card under them is only rebuilt
         // when the static key or the card's own movement says so.
         const QPointF labelPosition = card.topLeft() + QPointF(0, 2);
-        const bool labelled = frame.labelKeys.size() < kMaxVisibleLabels &&
+        const bool labelled = visibleNodeLabels < kMaxVisibleLabels &&
                               QRectF(labelPosition, QSizeF(kAtlasCellWidth, kAtlasCellHeight)).intersects(clip);
         if (!painted && !labelled)
             continue;
-        const QColor fill = categoryColorRecords_.value(record.category, QColor(QStringLiteral("#59646f")));
+        const QColor fill = categoryColorRecords_.value(
+            record.category, categoryColorRecords_.value(QStringLiteral("Utility"), mutedColor_.darker(150)));
         if (labelled) {
             const bool childScope = record.hasChildScope();
             frame.labelKeys.push_back({record.name.isEmpty() ? record.type : record.name, nodeTextColor(fill),
                                        fontSize_, rasterScale, childScope ? 7 : 6, childScope ? 27 : 6});
             frame.labelPositions.push_back(labelPosition);
+            ++visibleNodeLabels;
+            const auto imageInputs =
+                std::count_if(record.inputs.cbegin(), record.inputs.cend(),
+                              [](const GraphPortRecord& port) { return portSide(port, false) == PortSide::Top; });
+            if (imageInputs > 1) {
+                const int inset = (kAtlasCellWidth - static_cast<int>(kCardWidth / imageInputs) + 6) / 2;
+                for (const auto& port : record.inputs) {
+                    if (portSide(port, false) != PortSide::Top || port.name.isEmpty())
+                        continue;
+                    frame.labelKeys.push_back({port.name, mutedColor_, fontSize_, rasterScale, inset, inset});
+                    // Beside the wire, above its arrow, without another text
+                    // renderer or atlas invalidation on hover/drag/zoom.
+                    frame.labelPositions.push_back(portPosition(record, port.index, false) + offset +
+                                                   QPointF(-kAtlasCellWidth * 0.5 - 10, -kAtlasCellHeight));
+                }
+            }
         }
         if (!painted)
             continue;
@@ -890,14 +908,12 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
         QVector<QSGGeometry::ColoredPoint2D>& outlines = moving ? frame.movedOutlines : frame.cardOutlines;
         const bool selected = selection.contains(record.id);
         appendCardBody(bodies, card.topLeft(), fill);
-        appendCardBorder(outlines, card.topLeft(), selected ? 2 : 1, selected ? accentColor_ : borderColor_);
+        const QColor border =
+            QColor::fromRgbF((fill.redF() + mutedColor_.redF()) * 0.5, (fill.greenF() + mutedColor_.greenF()) * 0.5,
+                             (fill.blueF() + mutedColor_.blueF()) * 0.5);
+        appendCardBorder(outlines, card.topLeft(), selected ? 2 : 1, selected ? accentColor_ : border);
         const auto appendPort = [&](const GraphPortRecord& port, bool output) {
-            const bool mask = port.kind.compare(QStringLiteral("mask"), Qt::CaseInsensitive) == 0;
-            const QColor portFill = output ? (mask ? panelColor_ : fill) : (mask ? panelColor_ : mutedColor_);
-            const QColor portBorder = output ? nodeColor_ : (mask ? mutedColor_ : nodeColor_);
-            const QPointF center = portPosition(record, port.index, output) + offset;
-            appendColoredCircle(outlines, center, kPortGlyphRadius, portFill);
-            appendCircleBorder(outlines, center, kPortGlyphRadius, kPortRingThickness, portBorder);
+            appendPortArrow(outlines, record, port, output, offset, mutedColor_);
         };
         for (const auto& port : record.inputs)
             appendPort(port, false);
@@ -905,22 +921,19 @@ QSGNode* GraphItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData* /*unused*
             appendPort(port, true);
     }
 
-    // The port the pointer is on, read from the hover record rather than
-    // from the walk: one port glows, whatever the network holds, and it is
-    // drawn over the static glyph and ring it repeats. A hover that names
-    // no drawn port lights nothing, which is what the replaced painter did
-    // when no declared port matched.
+    // Hover is a transient overlay: it never rebuilds cards or rasterises text.
+    if (const auto* record = scene->node(hover.card); record != nullptr && !selection.contains(record->id)) {
+        appendCardBorder(frame.movedOutlines, cardRect(*record).topLeft() + offsetFor(*record), 1,
+                         mutedColor_.lighter(140));
+    }
     if (hover.endpoint.kind == GraphHitKind::Port || hover.endpoint.kind == GraphHitKind::Endpoint) {
         const GraphNodeRecord* record = scene->node(hover.endpoint.node);
         if (record != nullptr) {
             const QVector<GraphPortRecord>& ports = hover.endpoint.output ? record->outputs : record->inputs;
             const int index = hover.endpoint.port;
             if (index >= 0 && index < ports.size()) {
-                const bool mask = ports.at(index).kind.compare(QStringLiteral("mask"), Qt::CaseInsensitive) == 0;
-                const QColor portBorder = hover.endpoint.output ? nodeColor_ : (mask ? mutedColor_ : nodeColor_);
-                const QPointF center = portPosition(*record, index, hover.endpoint.output) + offsetFor(*record);
-                appendColoredCircle(frame.portHover, center, kPortGlyphRadius, accentColor_);
-                appendCircleBorder(frame.portHover, center, kPortGlyphRadius, kPortRingThickness, portBorder);
+                appendPortArrow(frame.portHover, *record, ports.at(index), hover.endpoint.output, offsetFor(*record),
+                                accentColor_);
             }
         }
     }

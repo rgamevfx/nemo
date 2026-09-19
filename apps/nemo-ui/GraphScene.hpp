@@ -28,6 +28,7 @@ struct GraphPortRecord {
     int index{};
     // image | mask | ..., which decides the port's side and its appearance.
     QString kind;
+    QString name;
 };
 
 struct GraphEndpointRecord {

@@ -82,6 +82,8 @@ struct GraphHitScratch {
 // for the painter's highlight. Derived from the same ordered pass a press
 // resolves its target with, so feedback can never disagree with the pick.
 struct GraphHover {
+    // A card is highlighted only when it wins over its ports and affordance.
+    QString card;
     // The pipe body under the pointer.
     QString edge;
     // The port that would be grabbed, or the end of the pipe under the pointer

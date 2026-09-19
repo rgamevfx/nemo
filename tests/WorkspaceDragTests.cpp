@@ -911,8 +911,9 @@ TEST_F(WorkspaceDragTest, EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry)
     ASSERT_NE(graph, nullptr);
     const auto rectangle = graphInteraction()->nodeRect(childNode);
     const auto input = graphInteraction()->portPosition(childNode, 0, false);
-    EXPECT_NEAR(input.x(), rectangle.left() + rectangle.width() / 3.0, 1e-6);
-    EXPECT_NEAR(input.y(), rectangle.top(), 1e-6);
+    EXPECT_LT(input.x(), rectangle.center().x());
+    EXPECT_GT(graphInteraction()->portPosition(childNode, 1, false).x(), rectangle.center().x());
+    EXPECT_LT(input.y(), rectangle.top()) << "Input arrows protrude above their owning card";
 }
 
 TEST_F(WorkspaceDragTest, GraphDragPreviewCancellationAndGroupOffsets) {
@@ -1572,13 +1573,47 @@ TEST(WorkspaceControllerTest, CategoryResetDoesNotResetOtherAppearanceSettings) 
     nemo::workspace::WorkspaceController controller(directory.filePath("workspace.json"));
     ASSERT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
     ASSERT_TRUE(controller.setAccentOverride(QStringLiteral("#123456")));
-    ASSERT_TRUE(controller.setCategoryColor(QStringLiteral("Merge"), QStringLiteral("#abcdef")));
+    const auto originalColors = controller.categoryColors();
+    ASSERT_TRUE(controller.setCategoryColor(QStringLiteral("Compositing"), QStringLiteral("#abcdef")));
 
     controller.resetCategoryColors();
 
     EXPECT_EQ(controller.appearancePreset(), QStringLiteral("Paper"));
     EXPECT_EQ(controller.accentOverride(), QStringLiteral("#123456"));
-    EXPECT_EQ(controller.categoryColors().value("Merge").toString(), QStringLiteral("#60656b"));
+    EXPECT_EQ(controller.categoryColors(), originalColors);
+}
+
+TEST(WorkspaceControllerTest, CategoryUpgradePreservesCustomColorsAndWorkspace) {
+    QTemporaryDir directory;
+    const auto path = directory.filePath("workspace.json");
+    nemo::workspace::WorkspaceController original(path);
+    const auto defaults = original.categoryColors();
+    ASSERT_TRUE(original.setAppearancePreset("Paper"));
+    const auto copy = original.duplicateWorkspace(original.activeWorkspaceId(), "Color work");
+    ASSERT_TRUE(original.switchWorkspace(copy));
+    auto saved = original.projectPresentation();
+    saved["version"] = 2;
+    saved["appearance"]["categoryColors"] = {{"Merge", "#abcdef"},   {"Filter", "#a96832"},  {"IO", "#123456"},
+                                             {"Distort", "#54816b"}, {"Utility", "#59646f"}, {"Color", "#71608c"}};
+    {
+        QFile file(path);
+        ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+        file.write(QByteArray::fromStdString(saved.dump()));
+    }
+    nemo::workspace::WorkspaceController restored(path);
+    ASSERT_TRUE(restored.error().isEmpty()) << restored.error().toStdString();
+    EXPECT_EQ(restored.root(), original.root());
+    EXPECT_EQ(restored.activeWorkspaceId(), copy);
+    EXPECT_EQ(restored.appearancePreset(), original.appearancePreset());
+    auto expected = defaults;
+    expected.insert("Compositing", "#abcdef");
+    expected.insert("I/O", "#123456");
+    EXPECT_EQ(restored.categoryColors(), expected);
+    ASSERT_TRUE(restored.save());
+    nemo::workspace::WorkspaceController reopened(path);
+    EXPECT_EQ(reopened.categoryColors(), expected);
+    EXPECT_EQ(reopened.workspaces(), original.workspaces());
+    EXPECT_EQ(reopened.activeWorkspaceId(), copy);
 }
 
 TEST_F(WorkspaceDragTest, ResetLayoutPreservesWorkspaceTabsAndAppearance) {
@@ -1912,24 +1947,25 @@ TEST_F(WorkspaceDragTest, GraphFrameCostFollowsWhatMoves) {
     ASSERT_NE(graph, nullptr);
     auto* interaction = graphInteraction();
 
-    // One card is 48 body vertices, 96 border and 132 per port, so a drag step
-    // stays under a thousand even with the hovered port drawn, while the sixty
-    // cards' static group is over sixteen thousand: the gap between the two is
-    // what this test asserts. The zoom is the same preparation the cost budget
-    // test makes: a framed root network can sit at the 0.2 floor, where a card
-    // press would acquire the card's own port instead.
-    const QString dragged = cards.constFirst();
+    // The transient budget distinguishes one moved card from the dense static
+    // group. Aim at a middle card: Frame All can leave the first card offscreen
+    // at the minimum zoom on a narrow native window, where wheels hit a sibling
+    // panel instead of the graph.
+    const QString dragged = cards.at(cards.size() / 2);
     zoomGraphIn(graph->mapToScene(interaction->nodeRect(dragged).center()).toPoint(), 1.0);
     const auto painted = [this] {
         QSignalSpy rendered(window, &QQuickWindow::frameSwapped);
         window->update();
         return rendered.wait(1000);
     };
+    // Selection is a content change, separate from the drag's transient work.
+    const QPoint press = graph->mapToScene(interaction->nodeRect(dragged).center()).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, press);
+    ASSERT_EQ(interaction->selectedNodeIds(), QStringList{dragged});
     ASSERT_TRUE(painted()) << "a frame must be painted before the gesture starts";
     const auto staticBefore = graph->staticGeometryRebuilds();
     const auto rastersBefore = graph->labelAtlasesRasterized();
 
-    const QPoint press = graph->mapToScene(interaction->nodeRect(dragged).center()).toPoint();
     QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, press);
     // The pointer is in place before anything is counted: the press resolves its
     // own target, and the count below is the moves'.

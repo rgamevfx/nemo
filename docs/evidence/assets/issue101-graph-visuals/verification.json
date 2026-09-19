@@ -1,0 +1,78 @@
+{
+  "issue": 101,
+  "work_class": "owner-approved new design",
+  "authority": "Owner-provided node graph mockup and approval to implement the scoped presentation plan",
+  "environment": {
+    "platform": "Linux Wayland",
+    "qt": "6.4.2",
+    "graphics_api": "OpenGL (native application harness)",
+    "device_pixel_ratio": 1,
+    "visual_scenario_window": [1024, 687],
+    "input": "QtTest mouse/key events delivered to the real QQuickWindow, Main.qml and production graph owners",
+    "capture": "QQuickWindow::grabWindow; OS computer capture unavailable, window enumeration timed out"
+  },
+  "builds": [
+    {"command": "cmake --build --preset debug --target nemo-ui nemo_workspace_ui_tests -j 3", "result": "passed"},
+    {"command": "cmake --build --preset release --target nemo-ui -j 3", "result": "passed"}
+  ],
+  "build_warnings": [
+    "Qt QML module OUTPUT_DIRECTORY tooling warning during configure",
+    "Dependency minizip-ng linker warning about mktemp"
+  ],
+  "production_correctness": {
+    "native_environment": "NEMO_TEST_NATIVE_UI=1 QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY=wayland-1",
+    "focused_command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=WorkspaceDragTest.Graph*:WorkspaceDragTest.EqualNodeIdsInDifferentScopesKeepTheirOwnPortGeometry:WorkspaceControllerTest.Category*:WorkspaceControllerTest.PresetsAppearanceAndIndependentLayoutsPersistTogether",
+    "result": "14 distinct existing/focused checks passed across the focused run and the final single-case rerun",
+    "last_focused_run": "13 passed; dense-frame measurement baseline required selecting the card before counting transient drag work",
+    "final_rerun": "WorkspaceDragTest.GraphFrameCostFollowsWhatMoves passed after setup correction; production code unchanged",
+    "test_adjustments": [
+      "Scoped-port check asserts separated A/B inputs and outward top arrows rather than old dot-edge coordinates",
+      "Dense fixture targets a visible middle card, not the offscreen first card at minimum zoom on this desktop",
+      "Dense-drag cost baseline starts after selection has painted; count assertions unchanged",
+      "Category reset no longer pins a default hex value",
+      "Appearance migration regression protects custom colors, untouched-default upgrades, active workspace/layout and save/reopen"
+    ],
+    "native_visual_smoke": "passed",
+    "palette_migration_smoke": "passed",
+    "unchanged_contracts": [
+      "112x28 card bodies",
+      "14-screen-pixel port acquisition radius",
+      "Command/history, graph schema, evaluation, gesture sessions and hit-test precedence"
+    ]
+  },
+  "visual_and_interaction_checks": [
+    "Shared distinct category fills and category-colored card outlines",
+    "Top/bottom arrow connectors and smaller right-side mask glyphs",
+    "Merge A/B and Shuffle B/A labels from actual catalog port names",
+    "Selected node retains category fill with accent border",
+    "Card and acquired-port hover overlays without atlas or static-geometry rebuild",
+    "Mask connection, undo and Escape cancellation through native window input",
+    "Port acquisition at 55% and 160% zoom",
+    "Subdued grid and neutral wires with thinner active/highlight strokes",
+    "Paper theme, black/white custom fill text and border contrast",
+    "All nine shared category settings match the controller palette"
+  ],
+  "reference_disposition": {
+    "appearance": "Owner-approved replacement of old dot/category appearance, not a pixel-exact prototype claim",
+    "protected_behavior": "#25 node-style, pipe-gesture and graph-routing records; existing #100 conformance ledger",
+    "native_review": "Captured states inspected; physical-pointer feel and owner aesthetic acceptance are not claimed"
+  },
+  "captures": [
+    "graph-overview.png",
+    "graph-port-hover.png",
+    "graph-card-hover.png",
+    "graph-mask-connected.png",
+    "graph-zoom-in.png",
+    "graph-zoom-out.png",
+    "graph-paper.png",
+    "graph-white-fill.png",
+    "graph-black-fill.png",
+    "appearance-categories.png"
+  ],
+  "scope_notes": [
+    "Appearance payload version 3 migrates version-2 saved category customizations; core Document schema unchanged",
+    "No new dependency, parallel renderer, per-node widget tree or gesture implementation",
+    "No unrelated full-suite, sanitizer, hosted-CI or Windows claim",
+    "Throwaway native driver removed after capture; permanent regression only for appearance migration"
+  ]
+}

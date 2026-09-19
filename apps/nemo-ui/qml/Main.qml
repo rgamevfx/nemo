@@ -687,7 +687,7 @@ ApplicationWindow {
                     spacing: 6
 
                     Repeater {
-                        model: ["Color", "Distort", "Filter", "Utility", "Merge", "IO"]
+                        model: Object.keys(appTheme.nodeCategoryColors).sort()
                         delegate: RowLayout {
                             id: categoryRow
                             required property string modelData
@@ -696,7 +696,7 @@ ApplicationWindow {
                             spacing: 7
 
                             Text {
-                                text: categoryRow.categoryId === "IO" ? "I/O" : categoryRow.categoryId
+                                text: categoryRow.categoryId
                                 color: appTheme.text
                                 font.pixelSize: appTheme.fontSize
                                 Layout.fillWidth: true

@@ -1,0 +1,25 @@
+{
+    "accent_override": "",
+    "appearance_preset": "Graphite",
+    "cards": 60,
+    "device_pixel_ratio": 1,
+    "drag_steps": 6,
+    "graph_network": "1",
+    "graph_pan_x": -824.0154841052927,
+    "graph_pan_y": -75.94879251004805,
+    "graph_panel": "panel-3",
+    "graph_selection": [
+        "32"
+    ],
+    "graph_zoom": 1.0904190670817995,
+    "graphics_api": "opengl",
+    "label_atlases": 0,
+    "native_ui": true,
+    "platform": "wayland",
+    "qt": "6.4.2",
+    "record": "frame-cost",
+    "static_rebuilds": 2,
+    "transient_vertices": 0,
+    "window_height": 687,
+    "window_width": 1274
+}

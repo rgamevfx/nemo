@@ -103,12 +103,12 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 | Optional input ports and absent slots | `src/nemo/core/nodes/NodeCatalog.hpp` (`PortSpec::optional`, `NodeDescriptor::mainInput`); `Plan.hpp` slot model with `CpuReference.cpp` expansion | An absent optional slot keeps its declared port position as `EvaluationNodeId{}` (node == `kInvalidNode`) in `ExpandedNode.inputs`/`PlanStep.inputs`; `Reuse.hpp` marks it in result identity with `kAbsentInputKeyHash`; `GpuExecutor` binds a valid unread dummy for an absent optional input, never an allocated fallback. Grade/Blur/Transform's optional input is port 1 `mask`; Merge's is port 2. Merge A/index 0 is foreground/source; B/index 1 is background/main pipe. `mainInput` defaults to 0; Merge declares 1 for image inheritance, CPU mask/mix anchoring, auxiliary preservation and automatic graph insertion. Its GPU pass binds B first for the shared channel plan. This owner-approved #78 correction intentionally replaces the old reversed roles without a compatibility path. `swapInputsCommand` (`Document.hpp`, exposed as `ViewerController::swapNodeInputs` and the `swap-inputs` CLI op) exchanges exactly the two image sources as one atomic undo step, retaining the mask, parameters, node identity and layout, and refuses an empty pair or two edges from one source before touching history |
 | Media and color adapters | `src/nemo/media/` public image/viewing contracts; external OIIO/OCIO/FFmpeg types stay behind `.cpp` adapters | CLI probe/render and `eval::SourceSession` consume the application media contract. `src/nemo/media/InputColor.{hpp,cpp}` is the ONE owner of an encoded source's RGB interpretation (`resolveInputColor`, retained per generation by `InputColorCache`); `ViewingTransform.hpp`'s `OcioConfigSnapshot` is the ONE retained config load (content identity, canonical space enumeration, file rules, processors). `src/nemo/media/ImageSource.{hpp,cpp}` owns still/sequence decode (`probeImageFrame`/`readImageFrame`, headless `ImageSourceProvider`); `VideoDecode.hpp` owns clip decode and takes the same input-color context. Reuse these rather than adding a second still reader or a second color resolver |
 | Explicit delivery jobs | `src/nemo/eval/DeliveryJob.hpp`, `src/nemo/media/DeliveryOutput.hpp`, `src/nemo/gpu/ExportStaging.hpp` | UI borrows `ViewerRuntime::deliveryQueue()`; CLI injects its native owners. The bounded worker retains a Document/settings snapshot and `SourceSession`, evaluates through `evaluateGpu` at full quality, then stages only the final raster through the shared Allocator and SubmissionQueue. Media owns output color/LUT processing, EXR and streaming ProRes/H.264 encoding. EXR publishes per frame; movies publish only after finalization. Temporary ownership is exclusive and unauthorized replacement is atomic. `DeliveryQueue::plan` is blocking and CLI-only; UI preflight failures arrive on the accepted job. Viewer-cache output never supplies delivery; broader working-set/eviction policy remains #97 |
-| Write node role and inspector | `NodeRole::Delivery` + `NodeDescriptor::isDeliverySink` in `core/evaluation/NodeContributions.hpp`; `src/nemo/nodes/write/Contribution.cpp`; editor `nemo.write.delivery` (`WriteDeliveryEditor.qml`) | The sink is an evaluation target without output ports; only Output defines the network result. Ordinary Write evaluation stays side-effect-free. The section editor groups authored parameters into file / frames / format / color / flags and submits explicit jobs through the delivery owner above |
+| Write node role and inspector | `NodeRole::Delivery` + `NodeDescriptor::isDeliverySink` in `core/evaluation/NodeContributions.hpp`; `src/nemo/nodes/write/Contribution.cpp`; editor `nemo.write.delivery` (`WriteDeliveryEditor.qml`) | The sink is an evaluation target without output ports; only Output defines the network result. Ordinary Write evaluation stays side-effect-free. The section editor composes shared controls for channels / file / frames / format / color / flags and submits explicit jobs through the delivery owner above |
 | Effective source request (Read choices vs the shared reference) | `src/nemo/core/evaluation/SourceRequest.{hpp,cpp}`; `resolveSourceRequest`, `EffectiveSourceRequest`, `ReadNodeOverrides`, `readAuthoredOverrides`/`readOverrideParameters`/`readInitializationParameters`, `mapSourceFrame`/`startAtOffset` | One resolver combines a Read's node-scoped choices with the shared `SourceReference` and committed facts. The node-scoped entry point is used by Reads and by result keys; the source-scoped entry point (shared reference's own mapping, no node overrides) is used by `eval::SourceSession::probe`. The media import worker consumes a `SourceReference` snapshot and maps it with `SourceReference::frameAt` — a Read requester hands it the snapshot that already carries the Read's effective mapping. `CpuReference.cpp`, `Reuse.cpp`, `eval::SourceSession::acquire` and `ReadSourceController` consume the resolved request and never re-derive mapping or precedence; see ADR-0007 "Read source ownership, effective requests, and schema 5 (#79)" |
 | Media import, probing and preview | `src/nemo/media/MediaImportService.hpp`; `MediaImportService`, `MediaImportRequest`/`MediaImportResult`, `inspectMediaSource`, plus `SequenceDiscovery.hpp` (`discoverSequenceRange`) | One service worker decodes, probes, discovers numbered-sequence coverage and reduces a display-referred preview off the GUI thread; the queue is bounded, a cancelled scan stops early with no facts claimed, and results carry request identity. A request also carries the merged `InputColorChoice`, the frozen source-local frame, `ProbeAlignment` and `projectGeneration`, so the worker never reads `Document` state and a result from a superseded project, frame or node never publishes into the new one. `apps/nemo-ui/MediaLibraryModel.*` is the production consumer, requests previews within 160×90 bounds, and owns no decoder |
 | Media Bin catalog adapter | `apps/nemo-ui/MediaLibraryModel.*`; Qt/QML query/command surface over `Document`/`MediaCatalog` | Submits validated catalog commands through `ProjectSession`; owns transient probe results and the bounded display-referred `QImage` thumbnail cache/provider, not persistent catalog state. A runtime probe is a proposal until `applyProbe` commits it; `relink` copies the preserved `SourceReference` |
 | Media Bin panel presentation | `apps/nemo-ui/qml/MediaBinPanel.qml` | Reactive adapter records plus panel-state view/selection preferences; it submits catalog operations, emits ordered `requestTimelineInsert` intent for #54, reveals through `revealMediaPanel`, and opens explicitly only through `MediaLibraryModel::openMediaSource` |
-| Native file chooser | `apps/nemo-ui/NativeFileChooser.hpp`; `openFiles`/`saveFile` with a requester-owned `OutcomeHandler` | One platform implementation per build; each request belongs to its requester and no outcome is broadcast. `ProjectFileController`, `MediaLibraryModel` and `ReadSourceController` are separate requesters of the same chooser, so a Read's browse result reaches only the Read that asked |
+| Native file chooser | `apps/nemo-ui/NativeFileChooser.hpp`; `openFiles`/`saveFile` with a requester-owned `OutcomeHandler` | One platform implementation per build; each request belongs to its requester. `ProjectFileController`, `MediaLibraryModel`, `ReadSourceController` and `DeliveryController` borrow the same chooser; node browse results retain the requesting network/node identity |
 | Workspace arrangement and panel state | `apps/nemo-ui/Workspace.hpp`/`Workspace.cpp`; Qt-free `Workspace`, `Panel`, and `Workspace::createPanel` | `WorkspaceController::registerPanelType`, `createPanel`, and `setPanelState` are the Qt/QML boundary; `main.cpp` registers production panels before QML loads |
 | Shared node appearance | `WorkspaceController::categoryColors`, consumed through `Theme.qml` | Keys are exact catalog groups, shared by graph, inspector and appearance settings; catalog menus retain those same group identities. Appearance version 3 migrates version-2 custom colors and updates untouched defaults (#101). Add category styling here, not in individual nodes or panels. |
 | Presentation and input | `apps/nemo-ui/WorkspaceController.*`, `ViewerController.*`, and `apps/nemo-ui/qml/` | Presentation reads state and submits commands; it does not own `Document`, evaluator, or GPU resource state |
@@ -288,22 +288,30 @@ public catalog change, not an assumed capability.
 #75 keeps that host and adds one seam rather than a second inspector. Every
 ordinary parameter — numeric, vector, color, choice, Boolean — is a generic row
 rendered by `ParametersPanel.qml` from `ViewerController::parameterInspector`:
-one aligned value/key/exposure column per row (`NumericField.qml` owns
-click-to-type/drag-to-scrub with Shift fine / Control coarse and
-`dragDistance`; `ExposureLabel.qml` keeps the parameter-exposure drag;
-`KeyIndicator.qml` owns the static/animated/keyed-at-frame state and the
-Set/Update Key, Remove Key and Show in Animation menu). `NumericField.qml`
+aligned exposure-label/value rows, without a separate key column (#102).
+`NumericField.qml` owns click-to-type, drag-to-scrub, fine/coarse modifiers,
+keyboard stepping and optional step buttons; `ExposureLabel.qml` owns exposure
+dragging, including inline checkbox labels and the grouped Mask label.
+`KeyIndicator.qml` owns the shared Reset Value, Set/Update Key,
+Remove Key and Show in Animation menu. Values expose it by right-click; keyed
+and animated numeric values retain a status diamond. `ParameterSlider.qml`,
+`InspectorCheckBox.qml`, `InspectorSeparator.qml` and the inspector tokens in
+`Theme.qml` own shared track, checkbox, separator and sizing presentation.
+`NumericField.qml`
 also presents an UNAVAILABLE value: an address whose presentation has no
 representable value (a Read offset with no integral alignment) shows a
 placeholder and disables scrub/step, while typed entry stays the recovery and
 the host commits it through the same shared gesture. A registered editor
 (`apps/nemo-ui/ParameterEditorRegistry.hpp`) declares the keys it owns
 (`consumes`) and the layout it needs: `presentation: "row"` renders it beside
-the ordinary label/key cells, `presentation: "section"` renders it full width
+the ordinary label/value cells, `presentation: "section"` renders it full width
 with no outer wrapper for an aggregate control. Consumed keys are omitted from
 the generic rows and a fully consumed section is dropped, so exactly one control
 renders each setting; an unavailable editor consumes nothing and the generic
 rows stay usable, with the refusal reason reported by `editor(id)`.
+Numeric row editors can consume the host's `rowAdapter` and
+`panel.numericEditorComponent` to change track presentation without rebuilding
+parameter metadata, validation or gesture handling.
 Section editors address sibling keys of their own node. A single exposed
 parameter keeps the generic typed/key/exposure control instead; the host neither
 mounts the aggregate editor nor consumes its sibling keys for that interface
@@ -321,22 +329,29 @@ control default in place of the authored value.
 Read declares `nemo.read.source`
 (section — the Read control presents file/summary/timing/color itself),
 Grade declares `nemo.channels.rgb` (`ChannelEditor.qml`, linked RGB with an
-expandable labelled R/G/B view and a separate Alpha for Primary/Range
-coefficients), Merge declares `nemo.merge.operation`
+expandable R/G/B/A view) and `nemo.numeric.graduated` (the shared numeric bundle
+with a linear graduated track, used by scalar Mix). Merge declares `nemo.merge.operation`
 (`MergeOperationEditor.qml`, the operation menu plus the Swap A/B action), and
 Shuffle declares `nemo.shuffle.mapping` (`ShuffleEditor.qml`, the full-width
 two-input socket mapper). Shuffle's routing key/exposure cells reuse the shared
 controls inside its channel dialog; generic fallback retains all 30 parameters.
-Write declares `nemo.write.delivery` (`WriteDeliveryEditor.qml`, the delivery
-settings grouped into file / frames / format / color / flags rows with inline
-key labels, plus the explicit Deliver / Cancel / progress strip). Format-specific
-controls show EXR precision/compression, MOV ProRes profile/FPS, or MP4 bitrate/FPS.
+Write declares `nemo.write.delivery` (`WriteDeliveryEditor.qml`): Channels,
+file/browse/type, first/last/offset, format, color/LUT, flags and Render, followed
+by job cancellation/progress/results. Render uses the authored first/last range;
+there are no tabs or render-mode selector. Format controls show EXR
+precision/compression, MOV ProRes profile/FPS, or MP4 bitrate/FPS.
 Output color selects raw, project delivery, named colorspace, or display/view;
 the optional LUT follows that transform. Choices come from the active OCIO config.
 Parameter edits use the ordinary one-undo gesture. Delivery is outside document
 history: the strip submits without filesystem preflight and displays the worker's
 progress, failures and finalized outputs. Movies are video-only; alpha is retained
 by ProRes 4444/4444 XQ, not ProRes 422 or H.264.
+The Write `channels` choice selects All/RGB/RGBA/Alpha. All preserves the existing
+container behavior. Explicit selections gather the target's named primary
+channels after final export staging and output color transformation, before encoding; they never
+change effect evaluation. Missing roles, alpha-only movies and explicit RGBA
+with a codec/profile that discards alpha are refused. Media's
+`deliveryStoresAlpha` reads the encoder's own layout.
 Crop declares `nemo.crop.box` (`CropBoxEditor.qml`, compact format preset/reset,
 x/y/right/top with an extent-display toggle, softness and inline flags). Reset
 reapplies the selected composition/named format's rectangle, not other settings.
@@ -367,11 +382,24 @@ Linking or collapsing is presentation state: it never
 equalizes stored values, Alpha is never edited by a linked RGB change, and
 changing editor presentation never changes the effect's execution parameters.
 
+The RGB editor's white button arms `ViewportPicker`. The next click in any
+open viewer uses that panel's existing image-coordinate mapping and displayed
+request identity. `ViewerRuntime` schedules one full-resolution working-RGB
+sample through `ViewerSession::sampleWorkingPixel` and shared export staging,
+before the viewing transform. No pointer-motion readback occurs. The picker
+rejects stale frames/results, preserves the authored parameter alpha, and
+commits through the ordinary captured parameter gesture. Main registers the
+preview with shared history; Escape or preview-only Undo cancels it.
+
 Inspector arrangement lives in workspace `panel.state.inspectors`, not graph
 selection. `ParametersPanel.qml` saves arrangement edits there and rehydrates
 external state even when a restored layout reuses the same panel ID. The shared
 `PinButton.qml` preserves the accepted inspector glyph; inspector accumulation
 pins and Animation visibility pins remain independent actions.
+Cards retain identity when one/two-column geometry changes, preserving draft
+text and channel expansion. Schema sections are separator groups; collapse,
+pin and close remain explicit card actions. Grouped numeric controls retain
+independent keys and side-by-side component cells.
 
 For a new Glow-like effect, add schema plus real CPU/GPU execution through the
 steps above. The graph catalog discovers it, and the existing generic inspector

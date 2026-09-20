@@ -1,10 +1,13 @@
 #include "DeliveryController.hpp"
 
+#include "NativeFileChooser.hpp"
 #include "nemo/media/DeliveryOutput.hpp"
 
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -37,6 +40,25 @@ constexpr int kRefreshIntervalMs = 200;
     for (const std::string& value : values)
         list.push_back(QString::fromStdString(value));
     return list;
+}
+
+// The save dialog's filters for one AUTHORED file type. A dialog convenience,
+// never a format check: the seam still refuses a format/extension mismatch
+// naming the file, so nothing here substitutes a suffix for validation. An
+// unrecognised type offers every file rather than guessing one.
+[[nodiscard]] std::vector<NativeFileChooser::Filter> outputChooserFilters(const QString& fileType) {
+    const QString type = fileType.trimmed().toLower();
+    std::vector<NativeFileChooser::Filter> filters;
+    if (type == QStringLiteral("exr")) {
+        filters.push_back(
+            NativeFileChooser::Filter{QStringLiteral("OpenEXR still or sequence"), {QStringLiteral("*.exr")}});
+    } else if (type == QStringLiteral("mov")) {
+        filters.push_back(NativeFileChooser::Filter{QStringLiteral("QuickTime movie"), {QStringLiteral("*.mov")}});
+    } else if (type == QStringLiteral("mp4")) {
+        filters.push_back(NativeFileChooser::Filter{QStringLiteral("MP4 video"), {QStringLiteral("*.mp4")}});
+    }
+    filters.push_back(NativeFileChooser::Filter{QStringLiteral("All files"), {QStringLiteral("*")}});
+    return filters;
 }
 
 // One job's documented map. Document identities and per-frame facts cross as
@@ -174,6 +196,72 @@ QVariantMap DeliveryController::transformChoices(const QString& mode) {
     out.insert(QStringLiteral("choices"), choices);
     out.insert(QStringLiteral("error"), problem);
     return out;
+}
+
+void DeliveryController::setNativeFileChooser(NativeFileChooser* chooser) {
+    chooser_ = chooser;
+}
+
+void DeliveryController::chooseOutputFile(const QString& networkId, const QString& nodeId, const QString& fileType,
+                                          const QString& currentPath) {
+    QString problem;
+    if (!resolveTarget(networkId, nodeId, problem)) {
+        setError(problem);
+        return;
+    }
+    if (chooser_ == nullptr) {
+        setError(QStringLiteral("This host has no native file chooser; type the output path instead."));
+        return;
+    }
+    // The dialog opens where the authored path lives and suggests its own file
+    // name, so a re-browse starts where the artist left off. A relative authored
+    // path resolves against the process working directory, exactly as the seam
+    // resolves it, so the dialog never opens at a folder that means something
+    // else to the platform layer.
+    const std::filesystem::path authored(currentPath.toStdString());
+    std::filesystem::path folder;
+    const std::filesystem::path parent = authored.parent_path();
+    if (!parent.empty()) {
+        std::error_code error;
+        folder = parent.is_absolute() ? parent : std::filesystem::absolute(parent, error);
+        if (error) {
+            folder.clear();
+        }
+    }
+    const QString suggested =
+        authored.filename().empty() ? QString() : QString::fromStdString(authored.filename().string());
+    const QString type = fileType.trimmed().toLower();
+    // The identity is captured by value: the editor that asked may be gone, or
+    // addressing another node, by the time the dialog answers — and an outcome
+    // that is not its own is ignored rather than committed onto whatever node
+    // the panel shows then.
+    const QString requestedNetwork = networkId;
+    const QString requestedNode = nodeId;
+    const bool started = chooser_->saveFile(
+        this,
+        [this, requestedNetwork, requestedNode](NativeFileChooser::Outcome outcome) {
+            if (outcome.status == NativeFileChooser::Outcome::Status::Cancelled)
+                return;  // A cancelled dialog changes nothing and reports nothing.
+            if (outcome.status != NativeFileChooser::Outcome::Status::Chosen || outcome.urls.isEmpty()) {
+                setError(outcome.message.isEmpty() ? QStringLiteral("The file chooser stated no output path.")
+                                                   : outcome.message);
+                return;
+            }
+            const QString chosen = outcome.urls.front().toLocalFile();
+            if (chosen.isEmpty()) {
+                setError(
+                    QStringLiteral("The file chooser returned a non-local path; the output path was not changed."));
+                return;
+            }
+            clearError();
+            emit outputFileChosen(requestedNetwork, requestedNode, chosen);
+        },
+        QStringLiteral("Choose the output path"), outputChooserFilters(type), folder, suggested, type);
+    if (!started) {
+        setError(QStringLiteral("The native file chooser already has a request open; no output path was chosen."));
+        return;
+    }
+    clearError();
 }
 
 quint64 DeliveryController::submit(const QString& networkId, const QString& nodeId, const int frame) {

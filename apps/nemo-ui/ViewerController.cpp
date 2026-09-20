@@ -3733,23 +3733,8 @@ void ViewerController::refreshRequest() {
         // node and follows relink revisions, while no node, used-media mark or
         // history entry is ever persisted for a catalog open.
         const bool privateMediaSource = mediaContext && target == kInvalidNode && !contextSourceKey_.empty();
-        if (privateMediaSource) {
-            const auto created = std::make_shared<NodeId>();
-            addNodeCommand(document.rootNetworkId(), "source", "source", created, {}).apply(document);
-            setParamCommand(document.rootNetworkId(), *created, "source", contextSourceKey_).apply(document);
-            // A media-key-routed viewer has no authored node, so the temporary
-            // request-only Read reproduces the shared reference's scoped
-            // mapping through the same translation: the source-scoped overload
-            // this viewer evaluated before Read mapping became node-scoped is
-            // preserved, with nothing persisted.
-            const auto reference = document.sources.find(contextSourceKey_);
-            if (reference != document.sources.end())
-                for (auto& [overrideKey, overrideValue] :
-                     nemo::readOverrideParameters(nemo::readAuthoredOverrides(reference->second)))
-                    setParamCommand(document.rootNetworkId(), *created, overrideKey, std::move(overrideValue))
-                        .apply(document);
-            target = *created;
-        }
+        if (privateMediaSource)
+            target = adoptMediaSourceNode(document, contextSourceKey_);
         // No render target means an explicit empty viewer, never an Output
         // fallback and never another group's target: the Output node still
         // defines network consumption, but it is not what this panel displays.
@@ -3919,6 +3904,76 @@ QSizeF ViewerController::compositionSize() const {
     if (const auto framing = targetFraming())
         return QSizeF(framing->width, framing->height);
     return {};
+}
+
+std::optional<ViewerController::DisplayedFrameIdentity> ViewerController::displayedFrameIdentity() const {
+    if (!presentation_ || presentation_->requestId != generation_ || outdated_ ||
+        lastRevision_ != session_.document().stateRevision() || presentation_->request.localTime != frame_)
+        return std::nullopt;
+    return DisplayedFrameIdentity{presentation_->requestId, presentation_->revision};
+}
+
+std::optional<ViewerController::WorkingSampleRequest>
+ViewerController::workingSampleRequest(const double imageX, const double imageY) const {
+    const auto displayed = displayedFrameIdentity();
+    if (!displayed)
+        return std::nullopt;
+    // Pick only the raster currently on screen, including signed overscan.
+    // Check floating bounds before converting, so huge finite coordinates never
+    // overflow an integer cast.
+    const Region& region = presentation_->request.region;
+    if (!std::isfinite(imageX) || !std::isfinite(imageY) || imageX < region.x || imageY < region.y ||
+        imageX >= static_cast<double>(region.x) + region.width ||
+        imageY >= static_cast<double>(region.y) + region.height)
+        return std::nullopt;
+    const int x = static_cast<int>(std::floor(imageX));
+    const int y = static_cast<int>(std::floor(imageY));
+    WorkingSampleRequest sample{session_.snapshot(), {}, *displayed};
+    sample.request.network = presentation_->request.network;
+    sample.request.output = presentation_->request.output;
+    sample.request.localTime = presentation_->request.localTime;
+    sample.request.fullWidth = presentation_->request.imageWidth();
+    sample.request.fullHeight = presentation_->request.imageHeight();
+    sample.request.region = Region{x, y, 1, 1};
+    // Full resolution and full quality: the display's own sampling reduction
+    // states how coarsely the frame is presented, never what the graph produced
+    // at the clicked coordinate.
+    sample.request.samplingScale = 1;
+    sample.request.quality = Quality::Full;
+    // The image's OWN channels — an empty demand is re-based onto them by the
+    // shared planner — not the display-only layer/channel isolation: the sample
+    // is the target's working RGB(A), never the presentation's bytes.
+    sample.request.channels.clear();
+    if (contextRole_ == ContextRole::Media) {
+        // The media role displays a routed CATALOG reference through a
+        // request-owned Read (see refreshRequest). The sample states the same
+        // thing in its own snapshot; an empty routed reference has nothing to
+        // sample and is reported as such rather than substituted.
+        if (contextSourceKey_.empty())
+            return std::nullopt;
+        sample.request.network = sample.document.rootNetworkId();
+        sample.request.output = adoptMediaSourceNode(sample.document, contextSourceKey_);
+        if (sample.request.output == kInvalidNode)
+            return std::nullopt;
+    }
+    return sample;
+}
+
+NodeId ViewerController::adoptMediaSourceNode(Document& document, const std::string& sourceKey) const {
+    const auto created = std::make_shared<NodeId>();
+    addNodeCommand(document.rootNetworkId(), "source", "source", created, {}).apply(document);
+    setParamCommand(document.rootNetworkId(), *created, "source", sourceKey).apply(document);
+    // A media-key-routed viewer has no authored node, so the temporary
+    // request-only Read reproduces the shared reference's scoped mapping
+    // through the same translation: the source-scoped overload this viewer
+    // evaluated before Read mapping became node-scoped is preserved, with
+    // nothing persisted.
+    const auto reference = document.sources.find(sourceKey);
+    if (reference != document.sources.end())
+        for (auto& [overrideKey, overrideValue] :
+             nemo::readOverrideParameters(nemo::readAuthoredOverrides(reference->second)))
+            setParamCommand(document.rootNetworkId(), *created, overrideKey, std::move(overrideValue)).apply(document);
+    return *created;
 }
 
 std::optional<ViewerController::Framing> ViewerController::targetFraming() const {

@@ -98,6 +98,10 @@ struct DeliveryOutputOptions {
 // config, named transform and LUT on the job worker.
 [[nodiscard]] std::string validateDeliveryOutput(const DeliveryOutputOptions& options);
 
+// Whether validated output settings store an alpha plane. Uses the encoder's
+// own layout, so an explicit RGBA selection cannot promise discarded alpha.
+[[nodiscard]] bool deliveryStoresAlpha(const DeliveryOutputOptions& options);
+
 // The choices one delivery color mode offers, straight from the project
 // config: the config's own color spaces for "colorspace", its own "display/view"
 // pairs for "display". "raw" and "project" have nothing to choose (raw applies

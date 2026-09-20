@@ -27,6 +27,16 @@ NodeDescriptor blurDescriptor() {
                           .inputs = effectImageInputs(),
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = withMaskParameters({
+                              // Channels first, then the numeric controls, then
+                              // the shared mask footer (issue #102): the schema
+                              // order is the row order.
+                              {.name = "channels",
+                               .type = ParameterType::Choice,
+                               .defaultValue = ParameterValue{ChoiceValue{"RGBA"}},
+                               .choices = {"RGBA", "RGB", "Alpha"},
+                               .label = "Channels",
+                               .section = "Blur",
+                               .editor = {}},
                               {.name = "size",
                                .type = ParameterType::Float,
                                .defaultValue = ParameterValue{0.0},
@@ -34,13 +44,6 @@ NodeDescriptor blurDescriptor() {
                                .maximum = 100.0,
                                .step = 0.1,
                                .label = "Size",
-                               .section = "Blur",
-                               .editor = {}},
-                              {.name = "channels",
-                               .type = ParameterType::Choice,
-                               .defaultValue = ParameterValue{ChoiceValue{"RGBA"}},
-                               .choices = {"RGBA", "RGB", "Alpha"},
-                               .label = "Channels",
                                .section = "Blur",
                                .editor = {}},
                               mixParameterSpec("Blur"),

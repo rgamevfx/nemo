@@ -28,6 +28,12 @@
 //     the event thread and a pending refusal never leaves an output file.
 //   - One timer refreshes `jobs` and runs only while a job is unsettled, so an
 //     idle panel polls nothing.
+//   - The Write editor's browse action asks the application's ONE native chooser
+//     through this adapter, which borrows it (issue #102). The dialog owns the
+//     selection; the adapter only forwards the chosen path with the identity the
+//     request was made for, and the editor commits it through the shared
+//     parameter gesture, so a browse is an ordinary document edit and no file is
+//     touched here.
 #include "nemo/core/session/ProjectSession.hpp"
 #include "nemo/eval/DeliveryJob.hpp"
 
@@ -44,6 +50,8 @@
 
 namespace nemo::ui {
 
+class NativeFileChooser;
+
 class DeliveryController final : public QObject {
     Q_OBJECT
     // Every accepted job, newest first, refreshed while any job is unsettled.
@@ -52,11 +60,12 @@ class DeliveryController final : public QObject {
     // exactly while this holds.
     Q_PROPERTY(bool busy READ busy NOTIFY jobsChanged)
     // The last refusal: an identity or job this adapter could not resolve, or a
-    // submission/cancellation/forget the seam refused. A successful
+    // submission/cancellation/forget/browse the seam refused. A successful
     // submit/cancel/forget clears it; the `status` QUERY states a call it could
     // not answer but never clears it. A job's own refusal — including the
     // preflight the seam's worker runs before any write — is stated on that
-    // job's entry in `jobs`, never here.
+    // job's entry in `jobs`, never here. A cancelled browse states nothing: no
+    // value changed and no request failed.
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
 public:
     // `session` is the application's project owner and must outlive this
@@ -65,6 +74,14 @@ public:
     // submit and at each transform discovery, so this adapter never retains a
     // copy of it.
     DeliveryController(ProjectSession& session, nemo::eval::DeliveryQueue& queue, QObject* parent = nullptr);
+
+    // The application's ONE native chooser (issue #102), borrowed like every
+    // other owner here. The Write editor's browse action is the only request
+    // this adapter makes and the dialog stays the chooser's own: no platform
+    // type crosses this interface and no filesystem work happens on the event
+    // thread. Unset — a bare host, a UI test — means the browse action reports
+    // that it cannot open a chooser instead of pretending.
+    void setNativeFileChooser(NativeFileChooser* chooser);
 
     [[nodiscard]] QVariantList jobs() const { return jobs_; }
     [[nodiscard]] bool busy() const { return busy_; }
@@ -89,6 +106,20 @@ public:
     // resolved then: a later edit, undo or frame change neither changes accepted
     // frames nor cancels the job.
     Q_INVOKABLE quint64 submit(const QString& networkId, const QString& nodeId, int frame);
+    // Opens the native save dialog for one Write node's output path (issue
+    // #102). The request carries the identity the editor was hosted with and
+    // the AUTHORED file type, which selects the dialog's filter and default
+    // suffix — a dialog convenience only, never a format check: the seam still
+    // refuses a format/extension mismatch. The outcome is delivered as
+    // outputFileChosen with the SAME identity, so an editor whose node changed
+    // while the dialog was open ignores it. A cancelled dialog changes nothing
+    // and reports nothing; a request that could not start (no chooser in this
+    // host, one request already outstanding, an unusable identity) is stated in
+    // `error`. Nothing is written here: the editor commits the chosen path
+    // through the shared parameter gesture, so a browse is one ordinary undo
+    // entry and never bypasses document history.
+    Q_INVOKABLE void chooseOutputFile(const QString& networkId, const QString& nodeId, const QString& fileType,
+                                      const QString& currentPath);
     // Requests cancellation of a queued or running job: false, with `error`,
     // when the job is unknown or already settled. A running job stops at the
     // next frame boundary; frames already finalized stay on disk and are
@@ -110,6 +141,10 @@ public:
 signals:
     void jobsChanged();
     void errorChanged();
+    // The path the artist chose for one Write node's output, in the identity it
+    // was requested for. Emitted only for a real selection; a cancellation
+    // emits nothing.
+    void outputFileChosen(const QString& networkId, const QString& nodeId, const QString& path);
 
 private slots:
     void refresh();
@@ -131,6 +166,9 @@ private:
     // The ONE queue, borrowed from the runtime that owns it: one delivery
     // worker on the application's device/allocator, bounded accepted-job list.
     nemo::eval::DeliveryQueue& queue_;
+    // The application's ONE native chooser, borrowed and optional: the browse
+    // request is the only thing this adapter asks of it.
+    NativeFileChooser* chooser_{nullptr};
     // A plain member, never parented: a QObject child that is also a member
     // would be destroyed twice.
     QTimer refreshTimer_;

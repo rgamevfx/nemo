@@ -36,6 +36,11 @@ enum class ViewerRequestKind : std::uint8_t {
     // other request. A viewer frame does NOT use it: a render resolves its own
     // current-frame description (issue #98).
     Describe,
+    // One on-demand working-space pixel of a target (issue #102): the concrete
+    // single-pixel demand a viewport color pick states. It travels through the
+    // same bounded admission, coalescing and cancellation as every other
+    // request, so a pick can never bypass the scheduler that owns viewer work.
+    Sample,
 };
 
 // What one scheduled unit asks for. A render states an immutable VIEW INTENT
@@ -115,6 +120,14 @@ public:
                   ViewerDestination destination = ViewerDestination::Interactive,
                   std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),
                   std::string colorConfigPath = {});
+    // One on-demand working-space pixel of a target (issue #102). `request` is
+    // the concrete single-pixel demand; it shares the interactive admission and
+    // coalescing with every other request, so a pick cannot preempt or displace
+    // work it never asked to replace unless the caller gave it that destination.
+    bool sample(Document document, EvaluationRequest request, std::uint64_t id,
+                ViewerDestination destination = ViewerDestination::Interactive,
+                std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),
+                std::string colorConfigPath = {});
     bool requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
                       ViewerDestination destination = ViewerDestination::Cache,
                       std::chrono::steady_clock::time_point requestedAt = std::chrono::steady_clock::now(),

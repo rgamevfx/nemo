@@ -27,6 +27,14 @@ QtObject {
     readonly property int radius: 7
     readonly property int smallRadius: 4
     readonly property int fontSize: 11
+    // Inspector presentation tokens (issue #102). The shared inspector
+    // controls read these instead of the base metrics, so a readable
+    // inspector row never enlarges an unrelated panel; a theme that omits
+    // them falls back to the base properties.
+    readonly property int inspectorFontSize: 13
+    readonly property int inspectorControlHeight: 30
+    readonly property int inspectorLabelWidth: 86
+    readonly property int inspectorSpacing: 8
     readonly property int minimumPaneWidth: 280
     readonly property int minimumPaneHeight: 140
     readonly property int splitHandleSize: 8

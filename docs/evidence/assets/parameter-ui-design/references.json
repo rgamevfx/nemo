@@ -1,0 +1,18 @@
+{
+  "issue": "https://github.com/rgamevfx/nemo/issues/102",
+  "reference_branch": "reference/parameter-ui-mockups",
+  "reference_commit": "7ec0697698ec6b01631b296f4c4d2d4ecae148b0",
+  "reference_images": ["grade.webp", "blur.webp", "write.webp"],
+  "write_superseding_reference": {
+    "file": "write-revised.png",
+    "source": "Owner-provided screenshot 2026-09-19_20-48.png"
+  },
+  "owner_decisions": {
+    "eyedropper": "Click any open viewer; sample working RGB before display transform; preserve parameter alpha.",
+    "grade": "Mix remains scalar without picker or RGB expander. Alpha is editable in expanded RGBA. Graduated tracks are linear over existing soft ranges; exact typing remains unclamped by soft travel.",
+    "header": "Retain explicit pin, collapse and close controls.",
+    "write": "Use revised reference without tabs or render-mode selector; Render uses authored first/last range. Retain transform, LUT and job feedback below the shown controls.",
+    "write_channels": "All, RGB, RGBA and Alpha; default All preserves existing behavior. Unsupported movie selections are refused."
+  },
+  "acceptance_boundary": "Reference assets and owner decisions, not a claim of owner acceptance of the implemented surface."
+}

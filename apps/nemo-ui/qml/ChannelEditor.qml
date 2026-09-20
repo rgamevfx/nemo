@@ -2,11 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Registered linked-RGB editor for Grade's multichannel parameters
-// (issue #77, stories 24-29, 32). Selected by the catalog `editor` metadata
-// ("nemo.channels.rgb") and driven entirely by the shared parameter gesture
-// API: one typed edit is one validated undo entry. Expanding, collapsing or
-// linking is presentation state and never rewrites the stored channels.
+// One schema-selected RGB editor. Expansion is presentation only; gestures
+// always carry the complete tuple, with alpha independent of linked RGB.
 Item {
     id: channelEditor
 
@@ -17,350 +14,282 @@ Item {
     property string nodeId: ""
     property string parameterKey: ""
     property var parameter: null
-    // Presentation-only: never persisted into the Document.
     property bool expanded: false
     property string errorText: ""
+    property var gestureBase: []
+    property var previewComponents: []
 
-    readonly property var components: {
-        var source = parameter && parameter.value && parameter.value.length !== undefined ? parameter.value : null;
-        var result = [0, 0, 0, 1];
-        for (var i = 0; i < 4; ++i) {
-            if (source && i < source.length)
-                result[i] = Number(source[i]);
-            else
-                result[i] = i === 3 ? 1 : 0;
-        }
-        return result;
-    }
+    readonly property var components: parameter && parameter.value ? parameter.value : [0, 0, 0, 1]
     readonly property bool equalChannels: components[0] === components[1] && components[1] === components[2]
-    readonly property string linkOperation: parameter && parameter.channels && parameter.channels.linked !== undefined ? String(parameter.channels.linked) : "none"
-    readonly property bool multiplicative: linkOperation === "multiplicative"
-    readonly property bool mixedLinked: !equalChannels && (linkOperation === "additive" || linkOperation === "multiplicative")
-    // A mixed linked edit is expressed relative to the captured tuple: the
-    // compact field starts from the neutral element, never from an arbitrary
-    // representative channel.
+    readonly property bool multiplicative: parameter && parameter.channels && parameter.channels.linked === "multiplicative"
+    readonly property bool mixedLinked: !equalChannels
     readonly property real neutralLinked: multiplicative ? 1 : 0
-    readonly property string mixedPrefix: multiplicative ? "\u00d7" : "\u0394"
-    readonly property bool hasMinimum: parameter && parameter.minimum !== undefined
-    readonly property bool hasMaximum: parameter && parameter.maximum !== undefined
-    readonly property real minimum: hasMinimum ? Number(parameter.minimum) : 0
-    readonly property real maximum: hasMaximum ? Number(parameter.maximum) : 0
-    readonly property bool hasSoftMinimum: parameter && parameter.softMinimum !== undefined
-    readonly property bool hasSoftMaximum: parameter && parameter.softMaximum !== undefined
-    readonly property real softMinimum: hasSoftMinimum ? Number(parameter.softMinimum) : 0
-    readonly property real softMaximum: hasSoftMaximum ? Number(parameter.softMaximum) : 0
-    readonly property real step: parameter && parameter.step !== undefined ? Number(parameter.step) : 0
+    readonly property real linkedValue: mixedLinked ? neutralLinked : Number(components[0])
+    readonly property real trackFrom: parameter && parameter.softMinimum !== undefined ? Number(parameter.softMinimum) : 0
+    readonly property real trackTo: parameter && parameter.softMaximum !== undefined ? Number(parameter.softMaximum) : 1
+    readonly property real step: parameter && parameter.step !== undefined ? Number(parameter.step) : 0.01
     readonly property int decimals: parameter && parameter.displayDecimals !== undefined ? Number(parameter.displayDecimals) : -1
-    readonly property int dragThreshold: controller ? Number(controller.dragDistance) : 4
-    readonly property string fieldLabel: parameter && parameter.label !== undefined ? String(parameter.label) : parameterKey
+    readonly property string fieldLabel: parameter && parameter.label ? String(parameter.label) : parameterKey
+    readonly property bool gestureLive: panel ? panel.activeToken.length > 0 : false
+    readonly property var picker: typeof viewportPicker !== "undefined" ? viewportPicker : null
+    readonly property var channelColors: ["#ed5559", "#56ce65", "#5e85ed", theme ? theme.muted : "#979ea8"]
+    readonly property int controlHeight: theme && theme.inspectorControlHeight !== undefined ? theme.inspectorControlHeight : 30
+    readonly property int textSize: theme && theme.inspectorFontSize !== undefined ? theme.inspectorFontSize : 13
+    onGestureLiveChanged: if (!gestureLive) previewComponents = []
 
     implicitHeight: editorColumn.implicitHeight
     Layout.fillWidth: true
 
     function rowObject() {
-        return {
-            "networkId": networkId,
-            "nodeId": nodeId,
-            "parameterKey": parameterKey,
-            "parameter": parameter,
-            "label": fieldLabel
-        };
+        return { networkId: networkId, nodeId: nodeId, parameterKey: parameterKey,
+                 parameter: parameter, label: fieldLabel };
     }
 
-    function commitValue(value) {
-        if (!panel)
-            return false;
-        var committed = panel.gestureSingle(rowObject(), value);
-        errorText = committed ? "" : (controller ? String(controller.error) : "");
-        return committed;
-    }
-
-    function linkedTyped(value) {
-        if (equalChannels)
-            return [value, value, value, components[3]];
-        if (multiplicative)
-            return [components[0] * value, components[1] * value, components[2] * value, components[3]];
-        return [components[0] + value, components[1] + value, components[2] + value, components[3]];
-    }
-
-    function componentTyped(index, value) {
-        var next = components.slice();
-        next[index] = value;
+    function editedTuple(index, value, base) {
+        var next = Array.prototype.slice.call(base);
+        if (index >= 0) {
+            next[index] = value;
+        } else if (base[0] === base[1] && base[1] === base[2]) {
+            next[0] = next[1] = next[2] = value;
+        } else {
+            for (var i = 0; i < 3; ++i)
+                next[i] = multiplicative ? Number(base[i]) * value : Number(base[i]) + value;
+        }
         return next;
     }
 
-    function refreshError() {
-        errorText = controller && String(controller.error).length > 0 ? String(controller.error) : "";
+    function commitValue(index, value) {
+        if (!panel)
+            return;
+        var committed = panel.gestureSingle(rowObject(), editedTuple(index, value, components));
+        errorText = committed ? "" : (controller ? String(controller.error) : "");
     }
 
-    function requestKey() {
+    function beginGesture() {
+        errorText = "";
+        gestureBase = Array.prototype.slice.call(components);
         if (panel)
-            panel.keyParameterAtFrame(networkId, nodeId, parameterKey);
+            panel.beginEditFor(networkId, nodeId, parameterKey);
+    }
+
+    function preview(index, value) {
+        if (!gestureLive)
+            return;
+        var tuple = editedTuple(index, value, gestureBase);
+        if (panel.updateEdit(tuple))
+            previewComponents = tuple;
+    }
+
+    function finishGesture() {
+        if (panel && gestureLive) {
+            var committed = panel.commitEdit();
+            errorText = committed ? "" : (controller ? String(controller.error) : "");
+        }
+        previewComponents = [];
+    }
+
+    function cancelGesture() {
+        if (panel)
+            panel.cancelEdit();
+        previewComponents = [];
+    }
+
+    component ChannelField: NumericField {
+        required property int componentIndex
+        theme: channelEditor.theme
+        panel: channelEditor.panel
+        networkId: channelEditor.networkId
+        nodeId: channelEditor.nodeId
+        parameterKey: channelEditor.parameterKey
+        keyStatus: {
+            if (!channelEditor.panel) return "none";
+            channelEditor.panel.revision;
+            return channelEditor.panel.parameterKeyStatusFor(networkId, nodeId, parameterKey);
+        }
+        scope: channelEditor.parameter && channelEditor.parameter.scope ? String(channelEditor.parameter.scope) : "RGBA"
+        frame: channelEditor.controller ? channelEditor.controller.frame : 0
+        revealAvailable: channelEditor.panel ? channelEditor.panel.groupHasAnimationPanel() : false
+        modified: channelEditor.parameter && channelEditor.parameter.modified === true
+        value: componentIndex < 0 ? channelEditor.linkedValue : Number(channelEditor.components[componentIndex])
+        hasMinimum: componentIndex >= 0 && channelEditor.parameter && channelEditor.parameter.minimum !== undefined
+        hasMaximum: componentIndex >= 0 && channelEditor.parameter && channelEditor.parameter.maximum !== undefined
+        minimum: hasMinimum ? Number(channelEditor.parameter.minimum) : 0
+        maximum: hasMaximum ? Number(channelEditor.parameter.maximum) : 0
+        hasSoftMinimum: componentIndex >= 0 || !channelEditor.mixedLinked
+        hasSoftMaximum: hasSoftMinimum
+        softMinimum: channelEditor.trackFrom
+        softMaximum: channelEditor.trackTo
+        step: channelEditor.step
+        decimals: channelEditor.decimals
+        label: channelEditor.fieldLabel + (componentIndex < 0 ? (channelEditor.mixedLinked ? (channelEditor.multiplicative ? " linked factor" : " linked offset") : " RGB") : " " + ["R", "G", "B", "Alpha"][componentIndex])
+        errorText: channelEditor.errorText
+        dragThreshold: channelEditor.controller ? Number(channelEditor.controller.dragDistance) : 4
+        gestureLive: channelEditor.gestureLive
+        controlHeight: channelEditor.controlHeight
+        textSize: channelEditor.textSize
+        onTextCommitted: function(text) { channelEditor.commitValue(componentIndex, Number(text)); }
+        onTextRejected: function(text) {
+            channelEditor.errorText = "Parameter '" + channelEditor.fieldLabel + "' rejects '" + text + "'";
+        }
+        onStepped: function(value) { channelEditor.commitValue(componentIndex, value); }
+        onScrubStarted: channelEditor.beginGesture()
+        onScrubbed: function(value) { channelEditor.preview(componentIndex, value); }
+        onScrubFinished: channelEditor.finishGesture()
+        onScrubCancelled: channelEditor.cancelGesture()
+        onKeyRequested: if (channelEditor.panel) channelEditor.panel.keyParameterAtFrame(networkId, nodeId, parameterKey)
     }
 
     ColumnLayout {
         id: editorColumn
-        anchors.left: parent.left
-        anchors.right: parent.right
-        spacing: 2
+        width: parent.width
+        spacing: 4
 
-        // Compact: linked RGB (common value, or explicit delta/factor when the
-        // stored channels differ) + expander + separately labelled Alpha.
         RowLayout {
             Layout.fillWidth: true
-            spacing: 3
+            spacing: 6
 
-            Text {
-                visible: !channelEditor.expanded && channelEditor.mixedLinked
-                text: channelEditor.mixedPrefix
-                color: theme.muted
-                font.pixelSize: theme.fontSize
-                Layout.alignment: Qt.AlignVCenter
-                Accessible.name: channelEditor.multiplicative ? "Linked RGB factor" : "Linked RGB offset"
-            }
-
-            NumericField {
-                id: linkedField
-                visible: !channelEditor.expanded
-                objectName: "channels_linked_" + channelEditor.nodeId + "_" + channelEditor.parameterKey
-                theme: channelEditor.theme
-                value: channelEditor.mixedLinked ? channelEditor.neutralLinked : channelEditor.components[0]
-                hasMinimum: false
-                hasMaximum: false
-                hasSoftMinimum: channelEditor.mixedLinked ? false : channelEditor.hasSoftMinimum
-                hasSoftMaximum: channelEditor.mixedLinked ? false : channelEditor.hasSoftMaximum
-                softMinimum: channelEditor.softMinimum
-                softMaximum: channelEditor.softMaximum
-                step: channelEditor.step
-                decimals: channelEditor.decimals
-                label: channelEditor.mixedLinked ? (channelEditor.multiplicative ? channelEditor.fieldLabel + " linked factor" : channelEditor.fieldLabel + " linked offset") : channelEditor.fieldLabel + " RGB"
-                errorText: channelEditor.errorText
-                dragThreshold: channelEditor.dragThreshold
-                fieldWidth: 56
+            ColumnLayout {
                 Layout.fillWidth: true
-                Layout.minimumWidth: 56
-                Layout.alignment: Qt.AlignVCenter
-                onTextCommitted: function (text) {
-                    var value = Number(text);
-                    if (!Number.isFinite(value)) {
-                        channelEditor.errorText = "Parameter '" + channelEditor.fieldLabel + "' rejects '" + text + "'";
-                        return;
-                    }
-                    channelEditor.commitValue(channelEditor.linkedTyped(value));
-                }
-                onStepped: function (value) {
-                    channelEditor.commitValue(channelEditor.linkedTyped(value));
-                }
-                onScrubStarted: {
-                    channelEditor.errorText = "";
-                    if (channelEditor.panel)
-                        channelEditor.panel.beginEditFor(channelEditor.networkId, channelEditor.nodeId, channelEditor.parameterKey);
-                }
-                onScrubbed: function (value) {
-                    if (channelEditor.panel)
-                        channelEditor.panel.updateEdit(channelEditor.linkedTyped(value));
-                }
-                onScrubFinished: {
-                    if (channelEditor.panel)
-                        channelEditor.panel.commitEdit();
-                    channelEditor.refreshError();
-                }
-                onScrubCancelled: {
-                    if (channelEditor.panel)
-                        channelEditor.panel.cancelEdit();
-                }
-                onKeyRequested: channelEditor.requestKey()
-                // A cancelled gesture (Escape or a preview-only Undo) returns
-                // the field to the authored value at once instead of holding
-                // the cancelled preview until release.
-                gestureLive: channelEditor.panel ? channelEditor.panel.activeToken.length > 0 : false
-            }
+                spacing: 5
 
-            // Expanded: labelled R, G, B with the same Alpha field, so a channel
-            // correction is understandable and individually scrub-able.
-            RowLayout {
-                visible: channelEditor.expanded
-                Layout.fillWidth: true
-                spacing: 4
-
-                Repeater {
-                    model: ["R", "G", "B", "A"]
-                    delegate: RowLayout {
-                        required property int index
-                        required property string modelData
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Text {
-                            text: modelData
-                            color: theme.muted
-                            font.pixelSize: theme.fontSize
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-                        NumericField {
-                            objectName: "channels_" + modelData + "_" + channelEditor.nodeId + "_" + channelEditor.parameterKey
-                            theme: channelEditor.theme
-                            value: channelEditor.components[index]
-                            hasMinimum: channelEditor.hasMinimum
-                            hasMaximum: channelEditor.hasMaximum
-                            minimum: channelEditor.minimum
-                            maximum: channelEditor.maximum
-                            hasSoftMinimum: channelEditor.hasSoftMinimum
-                            hasSoftMaximum: channelEditor.hasSoftMaximum
-                            softMinimum: channelEditor.softMinimum
-                            softMaximum: channelEditor.softMaximum
-                            step: channelEditor.step
-                            decimals: channelEditor.decimals
-                            label: channelEditor.fieldLabel + " " + modelData
-                            errorText: channelEditor.errorText
-                            dragThreshold: channelEditor.dragThreshold
+                GridLayout {
+                    visible: channelEditor.expanded
+                    Layout.fillWidth: true
+                    columns: width >= 340 ? 4 : width >= 160 ? 2 : 1
+                    columnSpacing: 6
+                    rowSpacing: 4
+                    Repeater {
+                        model: ["R", "G", "B", "A"]
+                        delegate: RowLayout {
+                            required property int index
+                            required property string modelData
                             Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
-                            onTextCommitted: function (text) {
-                                var value = Number(text);
-                                if (!Number.isFinite(value)) {
-                                    channelEditor.errorText = "Parameter '" + channelEditor.fieldLabel + "' rejects '" + text + "'";
-                                    return;
-                                }
-                                channelEditor.commitValue(channelEditor.componentTyped(index, value));
+                            spacing: 4
+                            Rectangle {
+                                width: 7
+                                height: 7
+                                radius: 4
+                                color: channelEditor.channelColors[index]
                             }
-                            onStepped: function (value) {
-                                channelEditor.commitValue(channelEditor.componentTyped(index, value));
+                            Text {
+                                text: modelData
+                                color: channelEditor.theme.text
+                                font.pixelSize: channelEditor.textSize
                             }
-                            onScrubStarted: {
-                                channelEditor.errorText = "";
-                                if (channelEditor.panel)
-                                    channelEditor.panel.beginEditFor(channelEditor.networkId, channelEditor.nodeId, channelEditor.parameterKey);
+                            ChannelField {
+                                componentIndex: index
+                                objectName: "channels_" + modelData + "_" + channelEditor.nodeId + "_" + channelEditor.parameterKey
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 46
                             }
-                            onScrubbed: function (value) {
-                                if (channelEditor.panel)
-                                    channelEditor.panel.updateEdit(channelEditor.componentTyped(index, value));
-                            }
-                            onScrubFinished: {
-                                if (channelEditor.panel)
-                                    channelEditor.panel.commitEdit();
-                                channelEditor.refreshError();
-                            }
-                            onScrubCancelled: {
-                                if (channelEditor.panel)
-                                    channelEditor.panel.cancelEdit();
-                            }
-                            onKeyRequested: channelEditor.requestKey()
-                            // A cancelled gesture (Escape or a preview-only
-                            // Undo) returns the field to the authored value at
-                            // once instead of holding the cancelled preview
-                            // until release.
-                            gestureLive: channelEditor.panel ? channelEditor.panel.activeToken.length > 0 : false
                         }
                     }
                 }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: !channelEditor.expanded && width >= 155 ? 2 : 1
+                    columnSpacing: 7
+                    rowSpacing: 2
+                    RowLayout {
+                        visible: !channelEditor.expanded
+                        spacing: 3
+                        Text {
+                            visible: channelEditor.mixedLinked
+                            text: channelEditor.multiplicative ? "\u00d7" : "\u0394"
+                            color: channelEditor.theme.muted
+                            font.pixelSize: channelEditor.textSize
+                        }
+                        ChannelField {
+                            componentIndex: -1
+                            objectName: "channels_linked_" + channelEditor.nodeId + "_" + channelEditor.parameterKey
+                            Layout.preferredWidth: 58
+                            Layout.minimumWidth: 46
+                        }
+                    }
+                    ParameterSlider {
+                        objectName: "channels_slider_" + channelEditor.nodeId + "_" + channelEditor.parameterKey
+                        theme: channelEditor.theme
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 52
+                        from: channelEditor.trackFrom
+                        to: channelEditor.trackTo
+                        value: channelEditor.linkedValue
+                        stepSize: channelEditor.step
+                        graduated: true
+                        gestureLive: channelEditor.gestureLive
+                        markers: {
+                            var tuple = channelEditor.previewComponents.length ? channelEditor.previewComponents : channelEditor.components;
+                            if (!channelEditor.expanded)
+                                return [];
+                            return [0, 1, 2].map(function(i) { return { value: Number(tuple[i]), color: channelEditor.channelColors[i] }; });
+                        }
+                        Accessible.name: channelEditor.fieldLabel + (channelEditor.mixedLinked ? (channelEditor.multiplicative ? " linked factor slider" : " linked offset slider") : " slider")
+                        onEditStarted: channelEditor.beginGesture()
+                        onValueEdited: function(value) { channelEditor.preview(-1, value); }
+                        onEditFinished: channelEditor.finishGesture()
+                        onEditCancelled: channelEditor.cancelGesture()
+                        onKeyRequested: if (channelEditor.panel)
+                            channelEditor.panel.keyParameterAtFrame(channelEditor.networkId, channelEditor.nodeId, channelEditor.parameterKey)
+                    }
+                }
             }
+
+            Button {
+                id: pickButton
+                objectName: "channels_pick_" + channelEditor.nodeId + "_" + channelEditor.parameterKey
+                implicitWidth: channelEditor.controlHeight
+                implicitHeight: channelEditor.controlHeight
+                padding: 5
+                enabled: channelEditor.picker !== null && !channelEditor.gestureLive
+                Accessible.name: "Pick " + channelEditor.fieldLabel + " RGB from a viewer"
+                onClicked: channelEditor.picker.begin(channelEditor.networkId, channelEditor.nodeId, channelEditor.parameterKey)
+                contentItem: Rectangle {
+                    color: "white"
+                    border.color: "#b7bcc4"
+                    radius: 1
+                }
+                background: Rectangle {
+                    color: pickButton.hovered ? channelEditor.theme.hover : channelEditor.theme.field
+                    border.color: pickButton.activeFocus ? channelEditor.theme.accent : channelEditor.theme.border
+                    radius: channelEditor.theme.smallRadius
+                    opacity: pickButton.enabled ? 1 : 0.45
+                }
+                ToolTip.visible: hovered
+                ToolTip.text: "Click an open viewer to pick working-space RGB. Alpha is unchanged. Escape cancels."
+            }
+
             Button {
                 id: expander
                 objectName: "channels_expand_" + channelEditor.nodeId + "_" + channelEditor.parameterKey
-                flat: true
-                implicitWidth: 18
-                implicitHeight: 23
+                implicitWidth: channelEditor.controlHeight
+                implicitHeight: channelEditor.controlHeight
+                enabled: !channelEditor.gestureLive
                 padding: 0
-                text: channelEditor.expanded ? "\u25be" : "\u25b8"
-                Accessible.name: channelEditor.expanded ? "Collapse RGB channels" : "Expand RGB channels"
+                text: "3"
+                Accessible.name: channelEditor.expanded ? "Collapse RGB channels" : "Expand RGB channels and alpha"
                 onClicked: channelEditor.expanded = !channelEditor.expanded
                 contentItem: Text {
                     text: expander.text
-                    color: theme.muted
-                    font.pixelSize: theme.fontSize
+                    color: channelEditor.expanded ? channelEditor.theme.accent : channelEditor.theme.muted
+                    font.pixelSize: channelEditor.textSize
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    color: expander.hovered ? theme.hover : "transparent"
-                    radius: theme.smallRadius
+                    color: expander.hovered ? channelEditor.theme.hover : channelEditor.theme.field
+                    border.color: channelEditor.expanded || expander.activeFocus ? channelEditor.theme.accent : channelEditor.theme.border
+                    radius: channelEditor.theme.smallRadius
                 }
-            }
-
-            Rectangle {
-                visible: !channelEditor.expanded
-                Layout.preferredWidth: 1
-                Layout.preferredHeight: 16
-                Layout.alignment: Qt.AlignVCenter
-                color: theme.border
-            }
-
-            Text {
-                visible: !channelEditor.expanded
-                text: "A"
-                color: theme.muted
-                font.pixelSize: theme.fontSize
-                Layout.alignment: Qt.AlignVCenter
-                Accessible.name: channelEditor.fieldLabel + " alpha"
-            }
-
-            NumericField {
-                id: alphaField
-                visible: !channelEditor.expanded
-                objectName: "channels_alpha_" + channelEditor.nodeId + "_" + channelEditor.parameterKey
-                theme: channelEditor.theme
-                value: channelEditor.components[3]
-                hasMinimum: channelEditor.hasMinimum
-                hasMaximum: channelEditor.hasMaximum
-                minimum: channelEditor.minimum
-                maximum: channelEditor.maximum
-                hasSoftMinimum: channelEditor.hasSoftMinimum
-                hasSoftMaximum: channelEditor.hasSoftMaximum
-                softMinimum: channelEditor.softMinimum
-                softMaximum: channelEditor.softMaximum
-                step: channelEditor.step
-                decimals: channelEditor.decimals
-                label: channelEditor.fieldLabel + " alpha"
-                errorText: channelEditor.errorText
-                dragThreshold: channelEditor.dragThreshold
-                fieldWidth: 56
-                Layout.preferredWidth: 56
-                Layout.maximumWidth: 56
-                Layout.alignment: Qt.AlignVCenter
-                onTextCommitted: function (text) {
-                    var value = Number(text);
-                    if (!Number.isFinite(value)) {
-                        channelEditor.errorText = "Parameter '" + channelEditor.fieldLabel + "' rejects '" + text + "'";
-                        return;
-                    }
-                    channelEditor.commitValue(channelEditor.componentTyped(3, value));
-                }
-                onStepped: function (value) {
-                    channelEditor.commitValue(channelEditor.componentTyped(3, value));
-                }
-                onScrubStarted: {
-                    channelEditor.errorText = "";
-                    if (channelEditor.panel)
-                        channelEditor.panel.beginEditFor(channelEditor.networkId, channelEditor.nodeId, channelEditor.parameterKey);
-                }
-                onScrubbed: function (value) {
-                    if (channelEditor.panel)
-                        channelEditor.panel.updateEdit(channelEditor.componentTyped(3, value));
-                }
-                onScrubFinished: {
-                    if (channelEditor.panel)
-                        channelEditor.panel.commitEdit();
-                    channelEditor.refreshError();
-                }
-                onScrubCancelled: {
-                    if (channelEditor.panel)
-                        channelEditor.panel.cancelEdit();
-                }
-                onKeyRequested: channelEditor.requestKey()
-                // A cancelled gesture (Escape or a preview-only Undo) returns
-                // the field to the authored value at once instead of holding
-                // the cancelled preview until release.
-                gestureLive: channelEditor.panel ? channelEditor.panel.activeToken.length > 0 : false
             }
         }
 
         Text {
-            visible: channelEditor.errorText.length > 0 && !channelEditor.expanded
+            visible: channelEditor.errorText.length > 0
             Layout.fillWidth: true
             text: channelEditor.errorText
-            color: theme.errorText
-            font.pixelSize: Math.max(9, theme.fontSize - 1)
-            elide: Text.ElideRight
+            color: channelEditor.theme.errorText
+            font.pixelSize: channelEditor.textSize
             wrapMode: Text.WordWrap
         }
     }

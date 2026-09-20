@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/Image.hpp"
 #include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/evaluation/Params.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
@@ -160,6 +161,119 @@ constexpr std::uint64_t kTransferTimeoutNs = 60'000'000'000ULL;
         text += channel;
     }
     return text;
+}
+
+// The primary roles one authored channel selection names (issue #102), or
+// nothing when the value is outside the inventory: the node's declared choices
+// are the authority, exactly as they are for precision and compression.
+// `all` names no role explicitly — an empty set means every channel the
+// delivered image carries, which is exactly what a delivery wrote before the
+// selection existed, so the default is behavior-preserving.
+[[nodiscard]] std::optional<std::vector<std::size_t>> channelRolesFor(const std::string& selection) {
+    if (selection == "all")
+        return std::vector<std::size_t>{};
+    if (selection == "rgb")
+        return std::vector<std::size_t>{0, 1, 2};
+    if (selection == "rgba")
+        return std::vector<std::size_t>{0, 1, 2, 3};
+    if (selection == "alpha")
+        return std::vector<std::size_t>{3};
+    return std::nullopt;
+}
+
+// The channels one selection delivers, by the target's OWN names (issue #102),
+// plus the selected roles the image carries no channel for. A stored channel
+// name is the media's own — "R", or "rgba.R" inside a layer — so the selection
+// FILTERS the described list through the shared primary-role rule instead of
+// inventing a spelling, and both the delivered names and their order stay the
+// described ones, which is the order the evaluated raster carries them in.
+struct ChannelSelection {
+    std::vector<std::string> names;
+    std::vector<std::size_t> missing;
+};
+
+[[nodiscard]] ChannelSelection selectDeliveredChannels(const std::vector<std::string>& described,
+                                                       const std::vector<std::size_t>& roles) {
+    ChannelSelection selection;
+    const auto indices = rgbaChannelIndices(described);
+    for (std::size_t index = 0; index < described.size(); ++index) {
+        for (const std::size_t role : roles) {
+            if (indices[role] == static_cast<int>(index)) {
+                selection.names.push_back(described[index]);
+                break;
+            }
+        }
+    }
+    for (const std::size_t role : roles) {
+        if (indices[role] < 0)
+            selection.missing.push_back(role);
+    }
+    return selection;
+}
+
+// The primary role's own name, for a refusal that states what the image does
+// not carry.
+[[nodiscard]] std::string primaryRoleName(const std::size_t role) {
+    if (role == 0)
+        return "R";
+    if (role == 1)
+        return "G";
+    if (role == 2)
+        return "B";
+    return "alpha";
+}
+
+// True when a selection includes at least one primary COLOR role (R/G/B): a
+// movie container carries its primary channels, so an alpha-only selection
+// cannot be encoded as one.
+[[nodiscard]] bool selectsPrimaryColor(const std::vector<std::size_t>& roles) {
+    for (const std::size_t role : roles) {
+        if (role < 3) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The delivered raster with exactly the selected channels (issue #102),
+// gathered BY NAME out of the evaluated frame. The evaluator produces every
+// channel its description names, so the selection is a projection of that frame
+// — exactly like the viewer's own channel projection — and no sample value is
+// recomputed: the frozen delivered order becomes the storage order, one
+// interleaved float per channel, and the geometry, precision, pixel aspect and
+// interpretation travel through untouched. A frame that already IS the delivered
+// image is returned without a copy.
+[[nodiscard]] CpuImage gatherDeliveredChannels(CpuImage image, const std::vector<std::string>& delivered) {
+    const auto& evaluated = image.layout().channels;
+    if (evaluated == delivered) {
+        return image;
+    }
+    std::vector<std::size_t> source;
+    source.reserve(delivered.size());
+    for (const std::string& name : delivered) {
+        const int index = channelIndex(evaluated, name);
+        if (index < 0) {
+            // The selection was resolved from the SAME description the raster is
+            // produced for, so this is an invariant, never a user error: state it
+            // instead of writing zeros under a name the frame does not carry.
+            throw DeliveryException("the evaluated frame does not carry the selected channel '" + name + "'");
+        }
+        source.push_back(static_cast<std::size_t>(index));
+    }
+    ImageLayout layout = image.layout();
+    layout.channels = delivered;
+    CpuImage projected(std::move(layout));
+    const std::size_t evaluatedStride = evaluated.size();
+    const std::size_t deliveredStride = delivered.size();
+    const float* from = image.data();
+    float* to = projected.data();
+    const std::size_t samples = static_cast<std::size_t>(image.width()) * static_cast<std::size_t>(image.height());
+    for (std::size_t sample = 0; sample < samples; ++sample) {
+        for (std::size_t channel = 0; channel < deliveredStride; ++channel) {
+            to[sample * deliveredStride + channel] = from[sample * evaluatedStride + source[channel]];
+        }
+    }
+    return projected;
 }
 
 // The node one delivery job aims at, with instance overrides and request-local
@@ -295,6 +409,18 @@ struct ResolvedDeliveryNode {
         output.colorMode = effectiveChoice(catalog, effective, params, "colorMode");
         output.outputTransform = effectiveText(catalog, effective, params, "outputTransform");
         output.lutFile = effectiveText(catalog, effective, params, "lutFile");
+        // The authored channel selection (issue #102), resolved into the seam's
+        // own primary roles. The value is the node's, the inventory is the
+        // descriptor's, and an unsupported value is refused here naming both —
+        // never silently mapped onto a default.
+        const std::string selection = effectiveChoice(catalog, effective, params, "channels");
+        auto roles = channelRolesFor(selection);
+        if (!roles) {
+            throw DeliveryException(describeNode(effective) + ": channel selection '" + selection +
+                                    "' is not a supported delivery selection (supported: " +
+                                    declaredChoices(catalog, effective.type, "channels") + ")");
+        }
+        settings.channelRoles = std::move(*roles);
         return settings;
     } catch (const EvaluationException& error) {
         // The shared readers' failures are already node-identifying; delivery
@@ -335,6 +461,26 @@ struct ResolvedDeliveryNode {
     }
     if (!isDeclaredChoice(catalog, node.type, "colorMode", output.colorMode)) {
         return reject("color mode", output.colorMode);
+    }
+    // The channel selection is the seam's own vocabulary of primary roles
+    // (issue #102): a caller that states one directly states a real, strictly
+    // ascending set, and a movie — whose container carries its primary RGB
+    // channels — cannot deliver an alpha-only selection.
+    for (std::size_t index = 0; index < settings.channelRoles.size(); ++index) {
+        if (settings.channelRoles[index] >= kImageChannels ||
+            (index > 0 && settings.channelRoles[index] <= settings.channelRoles[index - 1])) {
+            return describeNode(node) +
+                   ": the delivery channel selection is not a set of distinct primary roles (R, G, B, alpha)";
+        }
+    }
+    if (movie && !settings.channelRoles.empty() && !selectsPrimaryColor(settings.channelRoles)) {
+        return describeNode(node) + ": a " + output.fileType +
+               " movie carries its primary RGB channels, so an alpha-only channel selection cannot be delivered";
+    }
+    if (movie && !settings.channelRoles.empty() && settings.channelRoles.back() == 3 &&
+        !media::deliveryStoresAlpha(output)) {
+        return describeNode(node) + ": the selected " + output.fileType +
+               " encoding does not store alpha; choose RGB or an alpha-capable format/profile";
     }
     return media::validateDeliveryOutput(output);
 }
@@ -458,6 +604,8 @@ struct JobPlan {
         }
     };
     refuse(settingsProblem(catalog, target.node(), settings));
+    if (!preflight.plan.problem.empty())
+        return preflight;
 
     // The frame range is resolved first: it is what the paths, the collisions
     // and the delivery window are stated for.
@@ -532,7 +680,34 @@ struct JobPlan {
         preflight.raster = deliveryWindow(described);
         preflight.plan.width = preflight.raster.width;
         preflight.plan.height = preflight.raster.height;
-        preflight.plan.channels = described.channels;
+        // The channels this job DELIVERS (issue #102): the authored selection
+        // resolved against the target's OWN described names, or every described
+        // channel when no selection is authored. The description itself stays the
+        // EVALUATED frame's contract — the evaluator produces every channel it
+        // names — and the delivered image is that frame projected onto these
+        // channels by the worker.
+        std::vector<std::string> delivered = described.channels;
+        if (!settings.channelRoles.empty()) {
+            const ChannelSelection selection = selectDeliveredChannels(described.channels, settings.channelRoles);
+            delivered = selection.names;
+            if (!selection.missing.empty()) {
+                std::string missing;
+                for (const std::size_t role : selection.missing) {
+                    if (!missing.empty()) {
+                        missing += ", ";
+                    }
+                    missing += primaryRoleName(role);
+                }
+                // A selected role the image carries no channel for is refused
+                // rather than delivered as transparent black under a name
+                // nothing carries, or silently dropped from the selection.
+                refuse(describeNode(target.node()) + ": the delivered image carries no " + missing + " channel (it " +
+                       (described.channels.empty() ? std::string{"carries none at all"}
+                                                   : "carries " + channelListText(described.channels)) +
+                       "); the selected channels cannot be delivered");
+            }
+        }
+        preflight.plan.channels = delivered;
     } catch (const std::exception& error) {
         if (preflight.plan.problem.empty()) {
             preflight.plan.problem = error.what();
@@ -1026,6 +1201,11 @@ CpuImage DeliveryQueue::Impl::renderFrame(Job& job, const DeliveryFrame& frame, 
     request.region = job.raster;
     request.fullWidth = job.format.width;
     request.fullHeight = job.format.height;
+    // No channel demand is set here, deliberately: a request's channel list
+    // prunes what upstream nodes compute but never narrows the raster the target
+    // produces (the executor builds the produced layout from the target's own
+    // description), so the authored selection is applied to the evaluated frame
+    // below instead of being asked for twice with two different meanings.
     // Full quality through the native executor, no reuse cache: a delivery
     // result never publishes into the interactive cache, and the viewer's own
     // (possibly lossy) representation can never serve it (story 79).
@@ -1041,14 +1221,17 @@ CpuImage DeliveryQueue::Impl::renderFrame(Job& job, const DeliveryFrame& frame, 
         throw DeliveryException("the native evaluation produced no image for the Write node", frame.path);
     }
     const GpuNodeImage& image = *produced->second;
+    // The EVALUATED frame carries every channel the target's description names
+    // (a request's channel demand prunes what upstream nodes compute, never the
+    // delivered raster), which is the contract this check has always stated.
     if (image.layout.width != job.raster.width || image.layout.height != job.raster.height ||
-        image.layout.channels != job.info.channels) {
-        throw DeliveryException("the produced frame does not match the frozen delivery raster: expected " +
-                                    std::to_string(job.raster.width) + "x" + std::to_string(job.raster.height) +
-                                    " pixels with channels " + channelListText(job.info.channels) + ", produced " +
-                                    std::to_string(image.layout.width) + "x" + std::to_string(image.layout.height) +
-                                    " pixels with channels " + channelListText(image.layout.channels),
-                                frame.path);
+        image.layout.channels != job.description.channels) {
+        throw DeliveryException(
+            "the produced frame does not match the frozen delivery raster: expected " +
+                std::to_string(job.raster.width) + "x" + std::to_string(job.raster.height) + " pixels with channels " +
+                channelListText(job.description.channels) + ", produced " + std::to_string(image.layout.width) + "x" +
+                std::to_string(image.layout.height) + " pixels with channels " + channelListText(image.layout.channels),
+            frame.path);
     }
     // The final production transfer: charged to the shared allocator, retained by
     // the device's own submission queue, and never the diagnostic readback.
@@ -1056,6 +1239,13 @@ CpuImage DeliveryQueue::Impl::renderFrame(Job& job, const DeliveryFrame& frame, 
     gpu::StagedExport staged = staging.stage(image.image, image.layout, kTransferTimeoutNs);
     recordStaging(job, staged.stagingBytes);
     color.apply(staged.image);
+    // The authored channel selection (issue #102) is a projection of the
+    // evaluated frame, applied after the color transform exactly like the
+    // writer's own alpha handling: the delivered image carries exactly the
+    // selected channels, and the `all` default returns the frame unchanged.
+    if (!job.settings.channelRoles.empty()) {
+        staged.image = gatherDeliveredChannels(std::move(staged.image), job.info.channels);
+    }
     return std::move(staged.image);
 }
 
@@ -1075,9 +1265,12 @@ void DeliveryQueue::Impl::runFrame(Job& job, const DeliveryFrame& frame, SourceS
         // The raster's own first-sample coordinate is the file's data-window
         // origin, so the delivered image keeps the described geometry instead of
         // being moved to the origin on the way out (issue #88, story 77), and the
-        // described pixel aspect and channel naming travel with it.
+        // described pixel aspect and channel naming travel with it. The channels
+        // are the ones this job DELIVERS (issue #102): the authored selection, or
+        // every described channel.
         ImageDescription delivered = job.description;
         delivered.dataBounds = job.raster;
+        delivered.channels = job.info.channels;
         media::writeDeliveryImage(temporary.file(), staged, delivered, job.settings.output);
         publishFile(temporary.file(), frame.path, job.settings.overwrite);
         temporary.discard();
@@ -1114,6 +1307,9 @@ void DeliveryQueue::Impl::runMovie(Job& job, SourceSession& sources, media::Deli
         ImageDescription contract = job.description;
         contract.format = job.raster;
         contract.dataBounds = job.raster;
+        // The channels this job DELIVERS (issue #102): the authored selection, or
+        // every described channel. Every encoded frame is projected onto them.
+        contract.channels = job.info.channels;
         writer = std::make_unique<media::DeliveryMovieWriter>(temporary.file(), contract, job.settings.output);
         for (const DeliveryFrame& frame : job.frames) {
             if (cancellationRequested(job)) {

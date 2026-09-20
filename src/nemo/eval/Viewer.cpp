@@ -1,6 +1,7 @@
 #include "nemo/eval/Viewer.hpp"
 #include "nemo/core/Hashing.hpp"
 #include "nemo/core/evaluation/Params.hpp"
+#include "nemo/gpu/ExportStaging.hpp"
 #include "nemo/media/ViewingTransform.hpp"
 #include <algorithm>
 #include <array>
@@ -104,6 +105,34 @@ ImageDescription ViewerSession::describe(const Document& document, const Evaluat
 ViewerSession::SourceProbe ViewerSession::probeSource(const Document& document, const std::string& sourceKey) const {
     const SourceSession::Probe probe = sources_.probe(document, sourceKey);
     return SourceProbe{probe.info, probe.decision};
+}
+
+std::array<float, 4> ViewerSession::sampleWorkingPixel(const Document& document, const EvaluationRequest& inputRequest,
+                                                       const std::uint64_t timeout_ns) {
+    // Bounded by the demand: a pick is one full-resolution pixel, so the
+    // readback can never become a frame download through a wider request.
+    validateRequestDomain(inputRequest);
+    const EvaluationRequest request = canonicalizeRequest(inputRequest);
+    if (request.samplingScale != 1 || request.region.width != 1 || request.region.height != 1) {
+        throw EvaluationException("a viewport sample is exactly one full-resolution pixel", request.output);
+    }
+    validateRequest(document, request);
+    const std::string colorIdentity = sources_.colorConfigIdentity();
+    // The same shared description/plan/key mechanism the viewer render uses, so
+    // a sample and the frame beside it can never resolve the authored state
+    // differently. Nothing is published: a pick is a read.
+    const RegionPlan plan = planDependencyRegions(document, request, *effects_.contributions(), &sources_);
+    const auto evaluation = evaluateGpu(document, request, effects_, device_, allocator_, timeout_ns, &reuse_,
+                                        &sources_, colorIdentity, &plan);
+    const auto composition = evaluation.images.at(request.output);
+    if (!hasPrimaryRgb(composition->layout.channels))
+        throw EvaluationException("the sampled image has no complete primary RGB channels", request.output);
+    // The working raster is the composition's own output: the viewing transform
+    // and the presentation projection are deliberately downstream of this point,
+    // so what is sampled is what the effect chain produced.
+    gpu::ExportStaging staging(device_, allocator_);
+    const auto staged = staging.stage(composition->image, composition->layout, timeout_ns);
+    return staged.image.pixel(0, 0);
 }
 
 CacheCounts ViewerSession::reuseCounts() const {

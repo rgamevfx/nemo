@@ -137,6 +137,22 @@ bool ViewerRuntime::describe(Document document, EvaluationRequest request, std::
     return accepted;
 }
 
+bool ViewerRuntime::sample(Document document, EvaluationRequest request, std::uint64_t id,
+                           eval::ViewerDestination destination, std::string colorConfigPath) {
+    bool accepted = false;
+    {
+        std::lock_guard lock(mutex_);
+        if (!stopping_)
+            accepted = scheduler_.sample(std::move(document), std::move(request), id, destination,
+                                         std::chrono::steady_clock::now(), std::move(colorConfigPath));
+        // A pick publishes a value, not a frame: like a description it must not
+        // displace what the destination currently shows.
+    }
+    if (accepted)
+        ready_.notify_one();
+    return accepted;
+}
+
 bool ViewerRuntime::requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
                                  eval::ViewerDestination destination, std::string colorConfigPath) {
     bool accepted = false;
@@ -311,6 +327,13 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
             } else if (pending.kind == eval::ViewerRequestKind::Describe) {
                 publish(ViewerTargetDescription{session->describe(*pending.document, pending.request()), pending.id},
                         pending);
+            } else if (pending.kind == eval::ViewerRequestKind::Sample) {
+                // One on-demand working-space pixel: the same session, the same
+                // plan mechanism and the same device as a render, so a pick can
+                // never disagree with the frame beside it (issue #102).
+                const auto sample =
+                    session->sampleWorkingPixel(*pending.document, pending.request(), 10'000'000'000ULL);
+                publish(ViewerWorkingSample{sample, pending.id}, pending);
             } else {
                 auto publicationGuard = [this, pending] { return scheduler_.isCacheCurrent(pending); };
                 eval::ViewerFrame frame;

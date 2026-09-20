@@ -327,6 +327,7 @@ int commandEvaluate(const std::vector<std::string>& args) {
             {"frameFirst", settings.frameFirst},
             {"frameLast", settings.frameLast},
             {"frameOffset", settings.frameOffset},
+            {"channelRoles", settings.channelRoles},
             {"precision", output.precision == nemo::media::OutputPrecision::Half ? "half" : "float"},
             {"compression", output.compression},
             {"profile", output.profile},

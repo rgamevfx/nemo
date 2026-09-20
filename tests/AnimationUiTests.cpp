@@ -11,8 +11,11 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFontInfo>
 #include <QGuiApplication>
 #include <QJSEngine>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -611,15 +614,18 @@ TEST_F(AnimationSurface, GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHi
     QTest::qWait(30);
     EXPECT_EQ(js("animation.networkId").toString(), scope);
     EXPECT_EQ(js("animation.targetNodeId").toString(), node);
+    if (item("parametersPanel")->property("twoColumns").toBool())
+        click("columnToggle");
     auto* slider = item("slider_" + node + "_translateX");
     ASSERT_NE(slider, nullptr);
+    ASSERT_TRUE(slider->isVisible());
     const auto start = js("animation.viewStart");
     const auto address = ParameterAddress{scope.toULongLong(), node.toULongLong(), "translateX"};
     const auto before = *session.document().animationChannel(address);
     const auto revision = session.revision();
     const auto from = slider->mapToScene(QPointF(slider->width() / 2, slider->height() / 2)).toPoint();
     drag(from, from + QPoint(28, 0));
-    EXPECT_EQ(session.revision(), revision + 1);
+    ASSERT_EQ(session.revision(), revision + 1);
     const auto edited = *session.document().animationChannel(address);
     EXPECT_NE(edited.keys[0].value, before.keys[0].value);
     click("animationTrackView");
@@ -980,9 +986,8 @@ QQuickItem* parameterItem(QQuickItem* root, const QString& name) {
     return root ? visual(root, name) : nullptr;
 }
 
-// Crops the Parameters panel (not the Animation panel) for the shared-editing
-// captures, so the normal-width and 411 logical px appearance evidence is
-// recorded from the same production surface the gestures ran against.
+// Capture the production Parameters surface and actual window metrics: Qt or
+// the compositor can constrain a requested narrow size.
 void captureParameters(QQuickWindow* window, const QString& name) {
     const auto dir = qEnvironmentVariable("NEMO_ANIMATION_CAPTURE_DIR");
     if (dir.isEmpty())
@@ -995,6 +1000,18 @@ void captureParameters(QQuickWindow* window, const QString& name) {
     const auto origin = panel->mapToScene(QPointF{});
     const QRect crop = QRectF(origin, QSizeF(panel->width(), panel->height())).toAlignedRect();
     EXPECT_TRUE(window->grabWindow().copy(crop).save(dir + '/' + name + "-parameters.png"));
+    const auto font = window->property("font").value<QFont>();
+    const QJsonObject metadata{{"platform", QGuiApplication::platformName()},
+                               {"qt", QString::fromLatin1(qVersion())},
+                               {"windowWidth", window->width()},
+                               {"windowHeight", window->height()},
+                               {"devicePixelRatio", window->devicePixelRatio()},
+                               {"windowFont", font.toString()},
+                               {"resolvedWindowFontFamily", QFontInfo(font).family()},
+                               {"background", window->color().name()}};
+    QFile record(dir + '/' + name + "-parameters.json");
+    ASSERT_TRUE(record.open(QIODevice::WriteOnly));
+    ASSERT_GT(record.write(QJsonDocument(metadata).toJson()), 0);
 }
 
 QString panelGroupOf(QQuickWindow* window) {
@@ -1054,6 +1071,13 @@ TEST_F(AnimationSurface, NumericEditorTypedCommitAndRejectionPreserveState) {
     ASSERT_NE(field, nullptr);
 
     enter("param_" + node + "_translateX", "12.5");
+    const auto beforeResize = session.revision();
+    const auto originalSize = window->size();
+    window->resize(750, originalSize.height());
+    QTest::qWait(80);
+    EXPECT_EQ(session.revision(), beforeResize) << "reflow must not commit the text buffer";
+    window->resize(originalSize);
+    QTest::qWait(80);
     QTest::keyClick(window, Qt::Key_Return);
     QTest::qWait(30);
     const auto committed = session.queryValues(scope.toULongLong(), node.toULongLong(), "translateX");
@@ -1155,7 +1179,10 @@ TEST_F(AnimationSurface, TransformTranslatePairKeepsIndependentIdentities) {
     ASSERT_NE(pairedX, nullptr);
     ASSERT_NE(pairedY, nullptr);
 
-    click("key_" + node + "_translateX");
+    QTest::mouseClick(window, Qt::RightButton, Qt::NoModifier,
+                      pairedX->mapToScene(QPointF(pairedX->width() / 2, pairedX->height() / 2)).toPoint());
+    QTest::qWait(30);
+    click("parameterSetKey_" + node + "_translateX");
     QTest::qWait(30);
     EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "translateX"), QStringLiteral("key"));
     EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "translateY"), QStringLiteral("none"))
@@ -1180,19 +1207,31 @@ TEST_F(AnimationSurface, TransformTranslatePairKeepsIndependentIdentities) {
 // value, mixed channels take an explicit factor while retaining their ratios,
 // and alpha stays untouched.
 TEST_F(AnimationSurface, GradeLinkedRgbEditingPreservesComponentsAndAlpha) {
+    // Give the tall inspector its own dock; the compositor can constrain this
+    // native window to a shorter work area than the fixture's requested size.
+    for (const auto* type : {"viewer", "nodegraph", "animation"}) {
+        const auto other = panelByType(workspace.root(), type);
+        if (!other.isEmpty())
+            workspace.closePanel(other.value("id").toString());
+    }
+    window->resize(785, 650);
+    QTest::qWait(100);
     const auto scope = controller.rootNetworkId();
     const auto node = controller.createGraphNode(scope, "grade", "LinkedGrade", 20, 680, {}, {});
     ASSERT_FALSE(node.isEmpty());
     ASSERT_TRUE(editors.registerEditor(QStringLiteral("nemo.channels.rgb"),
                                        QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/ChannelEditor.qml"))));
+    ASSERT_TRUE(
+        editors.registerEditor(QStringLiteral("nemo.numeric.graduated"),
+                               QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/GraduatedNumberEditor.qml"))));
     ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
     QTest::qWait(60);
+    if (parameterPanelItem(window)->property("twoColumns").toBool())
+        click("columnToggle");
     const auto network = scope.toULongLong();
     const auto nodeId = node.toULongLong();
     auto* linked = item("channels_linked_" + node + "_gain");
-    auto* alpha = item("channels_alpha_" + node + "_gain");
     ASSERT_NE(linked, nullptr);
-    ASSERT_NE(alpha, nullptr);
 
     // Equal RGB takes one typed linked value and leaves alpha alone.
     enter("channels_linked_" + node + "_gain", "2");
@@ -1206,6 +1245,12 @@ TEST_F(AnimationSurface, GradeLinkedRgbEditingPreservesComponentsAndAlpha) {
     // ratios are retained and alpha is still untouched.
     click("channels_expand_" + node + "_gain");
     QTest::qWait(30);
+    // Independent alpha is reachable in the expanded view, not coupled to RGB.
+    enter("channels_A_" + node + "_gain", "0.5");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value,
+              (nemo::ParameterValue{nemo::ColorValue{{2.0F, 2.0F, 2.0F, 0.5F}}}));
     auto* redField = item("channels_R_" + node + "_gain");
     ASSERT_NE(redField, nullptr);
     ASSERT_TRUE(redField->isVisible()) << "the expanded channel field must be visible before it is driven";
@@ -1238,7 +1283,7 @@ TEST_F(AnimationSurface, GradeLinkedRgbEditingPreservesComponentsAndAlpha) {
     ASSERT_TRUE(relinked->isVisible()) << "the compact linked field returns when the row is collapsed";
     const auto mixed = session.queryValues(network, nodeId, "gain");
     ASSERT_FALSE(mixed.empty());
-    EXPECT_EQ(mixed.front().value, (nemo::ParameterValue{nemo::ColorValue{{3.0F, 2.0F, 2.0F, 1.0F}}}));
+    EXPECT_EQ(mixed.front().value, (nemo::ParameterValue{nemo::ColorValue{{3.0F, 2.0F, 2.0F, 0.5F}}}));
     enter("channels_linked_" + node + "_gain", "2");
     QTest::keyClick(window, Qt::Key_Return);
     QTest::qWait(40);
@@ -1248,19 +1293,70 @@ TEST_F(AnimationSurface, GradeLinkedRgbEditingPreservesComponentsAndAlpha) {
         << "the compact linked field is outside the visible inspector viewport";
     const auto scaled = session.queryValues(network, nodeId, "gain");
     ASSERT_FALSE(scaled.empty());
-    EXPECT_EQ(scaled.front().value, (nemo::ParameterValue{nemo::ColorValue{{6.0F, 4.0F, 4.0F, 1.0F}}}));
-    captureParameters(window, "grade-linked-expanded");
+    EXPECT_EQ(scaled.front().value, (nemo::ParameterValue{nemo::ColorValue{{6.0F, 4.0F, 4.0F, 0.5F}}}));
 
     // Toggling presentation is value-preserving in both directions.
     click("channels_expand_" + node + "_gain");
     QTest::qWait(30);
     EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value,
-              (nemo::ParameterValue{nemo::ColorValue{{6.0F, 4.0F, 4.0F, 1.0F}}}));
+              (nemo::ParameterValue{nemo::ColorValue{{6.0F, 4.0F, 4.0F, 0.5F}}}));
+    captureParameters(window, "grade-linked-expanded");
+
+    // The graduated linked track keeps unequal ratios and independent alpha,
+    // and a cancelled drag cannot publish its preview on pointer release.
+    auto* track = item("channels_slider_" + node + "_gain");
+    ASSERT_NE(track, nullptr);
+    const auto center = track->mapToScene(QPointF(track->width() / 2, track->height() / 2)).toPoint();
+    const auto right = track->mapToScene(QPointF(track->width() - 1, track->height() / 2)).toPoint();
+    const auto revision = session.revision();
+    drag(center, right, Qt::NoModifier, /*cancel=*/true);
+    EXPECT_EQ(session.revision(), revision);
+    EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value, scaled.front().value);
+    drag(center, right);
+    EXPECT_EQ(session.revision(), revision + 1);
+    EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value,
+              (nemo::ParameterValue{nemo::ColorValue{{12.0F, 8.0F, 8.0F, 0.5F}}}));
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
+    EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value, scaled.front().value);
+    const auto savedPath = directory.filePath("grade.nemo").toStdString();
+    ASSERT_TRUE(ProjectFile::writeAtomic(session.prepareSave(savedPath)).ok);
+    const auto reopened = ProjectFile::read(savedPath);
+    ASSERT_TRUE(reopened.ok);
+    ProjectSession restored(reopened.document);
+    EXPECT_EQ(restored.queryValues(network, nodeId, "gain").front().value, scaled.front().value);
+
+    // Alt-click keys the tuple; its pointer position must never seek the track.
+    const auto beforeKey = session.revision();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::AltModifier, right);
+    QTest::qWait(40);
+    EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value, scaled.front().value);
+    EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "gain"), QStringLiteral("key"));
+    EXPECT_EQ(session.revision(), beforeKey + 1);
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
+    EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value, scaled.front().value);
+    EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "gain"), QStringLiteral("none"));
+
+    // Inline flags retain the label hit target: an ordinary click toggles once,
+    // while the same shared label continues to own parameter exposure dragging.
+    click("channels_expand_" + node + "_gain");
+    QTest::qWait(40);
+    auto* reverseLabel = item("label_" + node + "_reverse");
+    ASSERT_NE(reverseLabel, nullptr);
+    const auto reverseBefore = session.queryValues(network, nodeId, "reverse").front().value;
+    const auto beforeToggle = session.revision();
+    QTest::mouseClick(
+        window, Qt::LeftButton, Qt::NoModifier,
+        reverseLabel->mapToScene(QPointF(reverseLabel->width() / 2, reverseLabel->height() / 2)).toPoint());
+    QTest::qWait(40);
+    EXPECT_EQ(session.revision(), beforeToggle + 1);
+    EXPECT_EQ(session.queryValues(network, nodeId, "reverse").front().value,
+              (nemo::ParameterValue{!std::get<bool>(reverseBefore)}));
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
+    EXPECT_EQ(session.queryValues(network, nodeId, "reverse").front().value, reverseBefore);
 }
 
-// The Parameters panel keeps its saved two-column preference but renders one
-// column when two do not fit; the narrow appearance is captured at 411 logical
-// pixels next to the normal-width one.
+// The saved two-column preference survives a narrow layout. Record actual
+// geometry separately from the requested window size.
 TEST_F(AnimationSurface, ParametersPanelAdaptsColumnsWithoutRewritingThePreference) {
     const auto scope = controller.rootNetworkId();
     const auto first = controller.createGraphNode(scope, "transform", "NarrowA", 20, 800, {}, {});
@@ -1280,7 +1376,7 @@ TEST_F(AnimationSurface, ParametersPanelAdaptsColumnsWithoutRewritingThePreferen
     QTest::qWait(120);
     auto* secondColumn = item("inspectorColumn_1");
     ASSERT_NE(secondColumn, nullptr);
-    EXPECT_FALSE(secondColumn->isVisible()) << "two columns must not overflow a 411 logical px panel";
+    EXPECT_FALSE(secondColumn->isVisible()) << "two columns must not overflow the narrow panel";
     EXPECT_TRUE(panel->property("twoColumns").toBool())
         << "a narrow layout must not rewrite the saved column preference";
     captureParameters(window, "parameters-411");

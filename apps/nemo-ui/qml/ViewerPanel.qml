@@ -23,6 +23,20 @@ FocusScope {
     property var workspace: null
     property var theme: null
 
+    // Application-injected viewport color sampling (issue #102). Absent in
+    // workspace-only harnesses, so every use is guarded; the eyedropper's
+    // gesture, sampling request and authored edit all live in that owner.
+    readonly property var viewportSampler: typeof viewportPicker !== "undefined" ? viewportPicker : null
+    readonly property bool pickArmed: viewerPanel.viewportSampler !== null
+                                      && viewerPanel.viewportSampler.active === true
+    // What the pick states: the instruction while it is armed, and the reason
+    // nothing was authored when a click or the sample was refused. A completed
+    // pick clears it — the authored value is its own feedback — so a stated text
+    // while nothing is armed is a refusal, never a stale progress message.
+    readonly property string pickStatus: viewerPanel.viewportSampler !== null
+                                         ? String(viewerPanel.viewportSampler.status || "") : ""
+    readonly property bool pickStatusIsError: viewerPanel.pickStatus.length > 0 && !viewerPanel.pickArmed
+
     // Each panel instance owns its controller and therefore its scheduler
     // destination and retained presentation. Harnesses that install only the
     // shared controller keep using it, as does a panel without an id.
@@ -953,6 +967,22 @@ FocusScope {
         return view.originY + imageY * view.scale
     }
 
+    // The full-resolution image coordinate a panel point addresses, in the
+    // PRESENTED frame's own domain: the exact inverse of the same mapping the
+    // box handles are drawn and hit through, so a click and a handle can never
+    // disagree about where a pixel is. Null when there is nothing to map.
+    function imagePointAt(px, py) {
+        if (!viewerPanel.hasImage)
+            return null
+        var view = cropViewMapping()
+        if (!(view.sx > 0) || !(view.scale > 0))
+            return null
+        return {
+            "x": (px - view.originX) / view.sx,
+            "y": (py - view.originY) / view.scale
+        }
+    }
+
     // The box in the presented image's own y-down coordinates.
     function cropDisplayBox(left, right, top, bottom, offsetX, offsetY) {
         return {
@@ -1552,6 +1582,36 @@ FocusScope {
                 elide: Text.ElideRight
             }
 
+            // Viewport color picking (issue #102) states itself where the click
+            // lands: the instruction while a pick is armed, and the reason
+            // nothing was authored when the click or the sample is refused. The
+            // picker owns the text, the panel only presents it, and it never
+            // covers the media (it sits at the top edge, not over the centre).
+            Rectangle {
+                objectName: "viewerPickStatus_" + viewerPanel.panelId
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: 8
+                visible: viewerPanel.pickStatus.length > 0
+                color: viewerPanel.pickStatusIsError
+                       ? themeColor("errorSurface", "#5a2b2b")
+                       : themeColor("header", "#212428")
+                border.color: themeColor("border", "#30343a")
+                radius: themeColor("smallRadius", 4)
+                implicitWidth: pickStatusText.implicitWidth + 12
+                implicitHeight: pickStatusText.implicitHeight + 6
+
+                Text {
+                    id: pickStatusText
+                    anchors.centerIn: parent
+                    text: viewerPanel.pickStatus
+                    color: viewerPanel.pickStatusIsError
+                           ? themeColor("errorText", "#f0d0d0")
+                           : themeColor("text", "#dce0e6")
+                    font.pixelSize: 11
+                }
+            }
+
             MouseArea {
                 id: panArea
                 anchors.fill: parent
@@ -1560,6 +1620,10 @@ FocusScope {
                 // otherwise. Hover is what makes that state follow the pointer.
                 hoverEnabled: true
                 cursorShape: {
+                    // An armed viewport pick states the sampling cursor over the
+                    // whole image area: that click samples, it never pans.
+                    if (viewerPanel.pickArmed)
+                        return viewerPanel.viewportSampler.picking ? Qt.BusyCursor : Qt.CrossCursor;
                     // A handle under the pointer states its own resize/move
                     // cursor; everywhere else the accepted pan cursor is kept.
                     if (viewerPanel.cropOverlay !== null) {
@@ -1589,6 +1653,18 @@ FocusScope {
                     wheel.accepted = true;
                 }
                 onPressed: function(mouse) {
+                    // An armed viewport pick owns the left press: the click
+                    // samples the displayed target through the shared picker
+                    // (which states its own refusals) and never starts a pan.
+                    if (mouse.button === Qt.LeftButton && viewerPanel.pickArmed) {
+                        forceActiveFocus();
+                        mouse.accepted = true;
+                        var picked = viewerPanel.imagePointAt(mouse.x, mouse.y);
+                        viewerPanel.viewportSampler.sample(viewerPanel.controller,
+                                                           picked !== null ? picked.x : NaN,
+                                                           picked !== null ? picked.y : NaN);
+                        return;
+                    }
                     // A left press that lands on the box's own handle edits the
                     // authored crop box instead of panning; every other press
                     // (blank image area, middle button) keeps the pan gesture.

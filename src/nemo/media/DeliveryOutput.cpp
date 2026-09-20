@@ -504,6 +504,10 @@ struct ResolvedEncoder {
 
 }  // namespace
 
+bool deliveryStoresAlpha(const DeliveryOutputOptions& options) {
+    return options.fileType == "exr" || layoutFor(options).alpha;
+}
+
 struct DeliveryMovieWriter::Impl {
     std::string path;
     DeliveryOutputOptions options;

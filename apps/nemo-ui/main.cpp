@@ -9,6 +9,7 @@
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
 #include "ViewerRuntime.hpp"
+#include "ViewportPicker.hpp"
 #include "WorkspaceController.hpp"
 #include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
@@ -249,6 +250,15 @@ int main(int argc, char* argv[]) {
     // captures the current project config; no decoder/device lives in the UI
     // adapter and accepted exports remain independent of later project edits.
     nemo::ui::DeliveryController delivery(projectSession, runtime.deliveryQueue());
+    // The Write inspector's output choice borrows the application's ONE native
+    // chooser, like every other file-choosing workflow.
+    delivery.setNativeFileChooser(&nativeFileChooser);
+    // Viewport color sampling (issue #102): one application-injected context owns
+    // the armed pick gesture, the on-demand working-space sample it triggers and
+    // the one-undo parameter commit, through the shared facade controller that
+    // also owns every inspector gesture. Declared after that controller and after
+    // the runtime so it is destroyed before both are.
+    nemo::ui::ViewportPicker viewportPicker(runtime, viewerController, projectSession);
     int result = 0;
     {
         QQmlApplicationEngine engine;
@@ -266,6 +276,7 @@ int main(int argc, char* argv[]) {
         engine.rootContext()->setContextProperty(QStringLiteral("readSourceController"), &readSource);
         engine.rootContext()->setContextProperty(QStringLiteral("mediaLibrary"), &mediaLibrary);
         engine.rootContext()->setContextProperty(QStringLiteral("deliveryController"), &delivery);
+        engine.rootContext()->setContextProperty(QStringLiteral("viewportPicker"), &viewportPicker);
         // The same contribution list supplies schema, execution and optional
         // editor metadata. The existing presentation host still owns controls,
         // consumed rows, unavailable-editor fallback and their lifetimes.

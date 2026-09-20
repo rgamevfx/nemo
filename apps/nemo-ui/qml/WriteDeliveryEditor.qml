@@ -2,19 +2,31 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Write delivery editor (issue #94), hosted by the generic inspector through
+// Write delivery editor (issue #94, recomposed for the shared inspector
+// foundation in issue #102), hosted by the generic inspector through
 // ParameterEditorRegistry id "nemo.write.delivery" with presentation "section".
 // The host mounts it on the `file` row and consumes the Write node's other
 // delivery settings.
 //
-// The authored state stays the typed node parameters: every field is read
+// Composition: one row per authored group in the owner's reference order —
+// channels, file (path / browse / file type), frames (first / last / offset),
+// format (the authored format's own settings), color (mode / transform) with
+// the optional LUT beneath it, then the directory flags beside the explicit
+// Render action, with the job's own cancel / progress / result / failure state
+// beneath them. There are no tabs and no render-mode selector: the authored
+// frame range is the only thing that decides which frames a job delivers.
+//
+// The authored state stays the typed node parameters: every cell is read
 // through the shared inspector query (frame-evaluated) and written through the
 // shared panel gesture, so a typed value, an arrow-key step and a scrub are all
 // exactly one validated undo entry with the existing key-at-frame semantics.
-// Nothing here is a second settings model: the rows are presentation groupings
-// (file / frames / format / output color / directory flags) over the SAME
-// parameters the schema declares, which is why the panel offers no flat list of
-// them.
+// Nothing here is a second settings model, and nothing here re-implements a
+// control: the numeric cells, the choices, the check boxes, the label cells and
+// the value menu they host all come from the shared foundation, which owns the
+// gesture, the validation, the animation actions and the appearance. The
+// channels row is the node's own authored selection — `all`, `rgb`, `rgba` or
+// `alpha` — which the delivery seam resolves against the evaluated frame's own
+// channel names; this editor never maps or renames a channel itself.
 //
 // The format row states exactly what the AUTHORED format consumes — EXR
 // precision and compression, MOV profile and frame rate, MP4 bitrate and frame
@@ -23,15 +35,15 @@ import QtQuick.Layouts
 // config) and the optional LUT path. A hidden setting is not an authored one:
 // the value travels to the seam unchanged when its format returns.
 //
-// Delivery itself is not authored state. "Deliver" submits the node's resolved
+// Delivery itself is not authored state. "Render" submits the node's resolved
 // settings to the ONE delivery-job seam (issue #94 stories 74-86) as an
 // external side effect: it never enters document history, so undo can never
 // claim to reverse an export (story 86). Ordinary playback through a Write node
 // writes nothing at all (story 73) — this editor is the only path that can
-// create files, and only when the artist presses Deliver. Submitting performs
-// no filesystem preflight: the seam's own worker resolves and refuses the
-// request before touching a file, and that refusal arrives as the job's own
-// failure naming the offending path.
+// create files, and only when the artist presses Render. Submitting performs no
+// filesystem preflight: the seam's own worker resolves and refuses the request
+// before touching a file, and that refusal arrives as the job's own failure
+// naming the offending path.
 ColumnLayout {
     id: writeEditor
 
@@ -47,25 +59,43 @@ ColumnLayout {
     property var controller
     property var panel
 
+    // --- inspector metrics --------------------------------------------------
+    // The shared inspector tokens, with the same fallback chain the shared
+    // controls use: a custom or older theme states the base metrics and the row
+    // still reads correctly instead of collapsing.
+    readonly property int inspectorFontSize: writeEditor.theme && writeEditor.theme.inspectorFontSize !== undefined
+                                             ? Number(writeEditor.theme.inspectorFontSize)
+                                             : writeEditor.fontSizeValue
+    readonly property int controlHeight: writeEditor.theme && writeEditor.theme.inspectorControlHeight !== undefined
+                                         ? Number(writeEditor.theme.inspectorControlHeight)
+                                         : 24
+    readonly property int labelWidth: writeEditor.theme && writeEditor.theme.inspectorLabelWidth !== undefined
+                                      ? Number(writeEditor.theme.inspectorLabelWidth)
+                                      : 86
+    readonly property int rowSpacing: writeEditor.theme && writeEditor.theme.inspectorSpacing !== undefined
+                                      ? Number(writeEditor.theme.inspectorSpacing)
+                                      : 6
+    readonly property int fontSizeValue: writeEditor.theme ? Number(writeEditor.theme.fontSize) : 11
+    readonly property int smallFontSize: Math.max(9, writeEditor.inspectorFontSize - 2)
+
     readonly property color textColor: writeEditor.theme ? writeEditor.theme.text : "#dce0e6"
     readonly property color mutedColor: writeEditor.theme ? writeEditor.theme.muted : "#979ea8"
     readonly property color borderColor: writeEditor.theme ? writeEditor.theme.border : "#30343a"
     readonly property color fieldColor: writeEditor.theme ? writeEditor.theme.field : "#24272c"
-    readonly property color panelColor: writeEditor.theme ? writeEditor.theme.panel : "#1e2023"
     readonly property color raisedColor: writeEditor.theme ? writeEditor.theme.raised : "#282c31"
     readonly property color hoverColor: writeEditor.theme ? writeEditor.theme.hover : "#343940"
     readonly property color accentColor: writeEditor.theme ? writeEditor.theme.accent : "#3485f6"
     readonly property color disabledColor: writeEditor.theme ? writeEditor.theme.disabled : "#5f6670"
     readonly property color errorColor: writeEditor.theme ? writeEditor.theme.errorText : "#f0d0d0"
     readonly property int smallRadiusValue: writeEditor.theme ? writeEditor.theme.smallRadius : 4
-    readonly property int fontSizeValue: writeEditor.theme ? writeEditor.theme.fontSize : 11
-    readonly property int smallFontSize: Math.max(9, writeEditor.fontSizeValue - 1)
-    readonly property int labelWidth: 52
 
     // The delivery seam installed by main.cpp. It is a context property, so a
     // bare editor host (a UI test or a preview) simply has none.
     readonly property var delivery: (typeof deliveryController !== "undefined" && deliveryController !== null) ? deliveryController : null
     readonly property bool canDeliver: writeEditor.delivery !== null && writeEditor.panel !== null && writeEditor.controller !== null
+    // The seam owns the ONE native chooser; a host without one (or without the
+    // browse entry point) states that instead of offering a dead button.
+    readonly property bool canBrowse: writeEditor.delivery !== null && writeEditor.delivery.chooseOutputFile !== undefined
 
     // --- authored format and output color -----------------------------------
     // The file type and color mode as the inspector resolves them at the current
@@ -115,7 +145,7 @@ ColumnLayout {
 
     objectName: "writeDeliveryEditor_" + writeEditor.nodeId
     Layout.fillWidth: true
-    spacing: 3
+    spacing: writeEditor.rowSpacing
 
     // --- query coordinates -------------------------------------------------
     // The inspector query addresses the real node that owns the parameters (a
@@ -247,6 +277,27 @@ ColumnLayout {
         return writeEditor.paramRows[key] !== undefined;
     }
 
+    // The shared controls' optional wiring, read from the SAME queried row: the
+    // key status, the edit scope and the modified-from-default marker travel to
+    // the control that states them, and no second model is kept here.
+    function keyStatusOf(key) {
+        writeEditor.revision;
+        writeEditor.frame;
+        if (!writeEditor.panel || key.length === 0)
+            return "none";
+        return String(writeEditor.panel.parameterKeyStatusFor(writeEditor.networkId, writeEditor.nodeId, key));
+    }
+
+    function scopeOf(key) {
+        var entry = writeEditor.paramRow(key);
+        return entry !== null && entry.scope !== undefined ? String(entry.scope) : "";
+    }
+
+    function modifiedOf(key) {
+        var entry = writeEditor.paramRow(key);
+        return entry !== null && entry.modified === true;
+    }
+
     function rowFor(key) {
         return {
             "networkId": writeEditor.networkId,
@@ -258,6 +309,8 @@ ColumnLayout {
     }
 
     function labelFor(key) {
+        if (key === "channels")
+            return "Channels";
         if (key === "file")
             return "File";
         if (key === "fileType")
@@ -265,13 +318,13 @@ ColumnLayout {
         if (key === "createDirectories")
             return "Create Directories";
         if (key === "overwrite")
-            return "Overwrite Files";
+            return "Overwrite Existing Files";
         if (key === "frameFirst")
             return "First";
         if (key === "frameLast")
             return "Last";
         if (key === "frameOffset")
-            return "File Offset";
+            return "Offset";
         if (key === "precision")
             return "Precision";
         if (key === "compression")
@@ -299,50 +352,14 @@ ColumnLayout {
     }
 
     // --- shared key and exposure affordances --------------------------------
-    // A consumed parameter has no generic row left, so the editor states those
-    // same cells itself through the SAME shared owners: the label cell carries
-    // the exposure drag and the Alt-click keying gesture, and the key cell owns
-    // Set/Update/Remove Key and Show in Animation. No key state, command or
-    // exposure rule lives here.
-    readonly property var cellTheme: ({
-            "text": writeEditor.textColor,
-            "muted": writeEditor.mutedColor,
-            "accent": writeEditor.accentColor,
-            "border": writeEditor.borderColor,
-            "hover": writeEditor.hoverColor,
-            "field": writeEditor.fieldColor,
-            "panel": writeEditor.panelColor,
-            "raised": writeEditor.raisedColor,
-            "disabled": writeEditor.disabledColor,
-            "errorText": writeEditor.errorColor,
-            "smallRadius": writeEditor.smallRadiusValue,
-            "fontSize": writeEditor.fontSizeValue
-        })
-
-    function keyStatusOf(key) {
-        writeEditor.revision;
-        writeEditor.frame;
-        if (!writeEditor.panel || key.length === 0)
-            return "none";
-        return String(writeEditor.panel.parameterKeyStatusFor(writeEditor.networkId, writeEditor.nodeId, key));
-    }
-
+    // The label cells own the exposure drag and the Alt-click keying gesture and
+    // the value cells own the right-click value menu, both through the SAME
+    // shared controls the generic rows use. No key state, command or exposure
+    // rule lives here.
     function keyAtFrame(key) {
         if (!writeEditor.panel || key.length === 0)
             return false;
         return writeEditor.panel.keyParameterAtFrame(writeEditor.networkId, writeEditor.nodeId, key);
-    }
-
-    function removeKeyAtFrame(key) {
-        if (!writeEditor.panel || key.length === 0)
-            return false;
-        return writeEditor.panel.removeParameterKeyAtFrame(writeEditor.networkId, writeEditor.nodeId, key);
-    }
-
-    function revealInAnimation(key) {
-        if (!writeEditor.panel || !writeEditor.panel.revealInAnimation)
-            return;
-        writeEditor.panel.revealInAnimation(writeEditor.networkId, writeEditor.nodeId, key);
     }
 
     function revealAvailable() {
@@ -392,6 +409,29 @@ ColumnLayout {
     // message comes from the controller/catalog; this editor never re-validates.
     readonly property string gestureProblem: writeEditor.panel && writeEditor.ownsKey(String(writeEditor.panel.gestureErrorKey)) ? String(writeEditor.panel.gestureError) : ""
 
+    // --- the native output-path chooser -------------------------------------
+    // The ONE native chooser the application owns, asked through the delivery
+    // adapter for THIS node's identity. The chosen path is committed through the
+    // shared gesture, so a browse is one ordinary undo entry; a cancelled dialog
+    // changes nothing, and an outcome for another node is ignored.
+    function browseFile() {
+        if (!writeEditor.canBrowse)
+            return;
+        writeEditor.delivery.chooseOutputFile(writeEditor.networkId, writeEditor.nodeId, writeEditor.outputFileType,
+                                              writeEditor.textValue("file"));
+    }
+
+    Connections {
+        target: writeEditor.delivery
+        function onOutputFileChosen(chosenNetwork, chosenNode, path) {
+            if (String(chosenNetwork) !== writeEditor.networkId || String(chosenNode) !== writeEditor.nodeId)
+                return;
+            if (String(path).length === 0)
+                return;
+            writeEditor.commitValue("file", String(path));
+        }
+    }
+
     // --- delivery job state -------------------------------------------------
     // The seam republishes every accepted job; `jobs` is a binding dependency so
     // the strip below re-evaluates whenever progress or a result arrives. Jobs
@@ -410,10 +450,11 @@ ColumnLayout {
     readonly property bool jobActive: writeEditor.jobState === "queued" || writeEditor.jobState === "running"
     readonly property string seamError: writeEditor.delivery ? String(writeEditor.delivery.error) : ""
 
-    // The seam's own last refusal (a submission, cancellation or forget it could
-    // not answer). The editor raises none of its own: a request the seam refuses
-    // before any write arrives as the JOB's own failure below, naming the
-    // offending path, so nothing here repeats a preflight the seam owns.
+    // The seam's own last refusal (a submission, cancellation, forget or browse
+    // it could not answer). The editor raises none of its own: a request the
+    // seam refuses before any write arrives as the JOB's own failure below,
+    // naming the offending path, so nothing here repeats a preflight the seam
+    // owns.
     readonly property string problemText: writeEditor.seamError
 
     function frameCount() {
@@ -436,8 +477,9 @@ ColumnLayout {
     }
 
     // What the last job delivers: its format, the MOV profile where the format
-    // has one, and the output color when a transform ran. Compact by
-    // construction (the row elides) and it states only what the seam reported.
+    // has one, the channels it wrote and the output color when a transform ran.
+    // Compact by construction (the row elides) and it states only what the seam
+    // reported.
     function deliverySummary() {
         var job = writeEditor.job;
         if (job === null)
@@ -448,6 +490,9 @@ ColumnLayout {
             parts.push("MOV ProRes " + String(job.profile).toUpperCase());
         else if (type.length > 0)
             parts.push(type.toUpperCase());
+        var channels = job.channels !== undefined && job.channels !== null ? job.channels : [];
+        if (channels.length > 0)
+            parts.push(channels.join(" "));
         var color = job.colorMode !== undefined ? String(job.colorMode) : "";
         if (color.length > 0 && color !== "raw")
             parts.push(color);
@@ -466,7 +511,7 @@ ColumnLayout {
         if (state === "queued")
             return "queued · " + total + (total === 1 ? " frame" : " frames") + format;
         if (state === "running")
-            return "delivering " + Number(job.writtenFrames) + "/" + total + format;
+            return "rendering " + Number(job.writtenFrames) + "/" + total + format;
         if (state === "completed")
             return "delivered " + Number(job.writtenFrames) + (total === 1 ? " frame" : " frames") + format;
         if (state === "cancelled")
@@ -492,84 +537,116 @@ ColumnLayout {
     }
 
     // --- components ---------------------------------------------------------
-    component Caption: ExposureLabel {
-        id: caption
+    // The shared value menu for a cell that is neither a numeric field nor a
+    // check box: KeyIndicator owns the wording, the enable rules and the object
+    // names, and this zero-size host never adds a key-button column. A
+    // right-click on the cell opens it at the pointer.
+    component ValueMenu: KeyIndicator {
+        id: valueMenu
+        required property string cellKey
+        width: 0
+        height: 0
+        theme: writeEditor.theme
+        networkId: writeEditor.networkId
+        nodeId: writeEditor.nodeId
+        parameterKey: valueMenu.cellKey
+        parameterLabel: writeEditor.labelFor(valueMenu.cellKey)
+        keyStatus: writeEditor.keyStatusOf(valueMenu.cellKey)
+        scope: writeEditor.scopeOf(valueMenu.cellKey)
+        frame: writeEditor.frame
+        revealAvailable: writeEditor.revealAvailable()
+        resettable: writeEditor.panel !== null
+        modified: writeEditor.modifiedOf(valueMenu.cellKey)
+        onKeyRequested: writeEditor.keyAtFrame(valueMenu.cellKey)
+        onRemoveKeyRequested: {
+            if (writeEditor.panel)
+                writeEditor.panel.removeParameterKeyAtFrame(writeEditor.networkId, writeEditor.nodeId, valueMenu.cellKey);
+        }
+        onRevealRequested: {
+            if (writeEditor.panel)
+                writeEditor.panel.revealInAnimation(writeEditor.networkId, writeEditor.nodeId, valueMenu.cellKey);
+        }
+        onResetRequested: {
+            if (writeEditor.panel)
+                writeEditor.panel.resetValue(writeEditor.rowFor(valueMenu.cellKey));
+        }
+    }
+
+    // The group label cell: the shared label control, so exposure dragging and
+    // the Alt-click keying shortcut stay exactly where they are on a consumed
+    // parameter.
+    component GroupLabel: ExposureLabel {
+        id: groupLabel
         required property string editKey
+        required property string caption
+        Layout.preferredWidth: writeEditor.labelWidth
+        Layout.minimumWidth: 44
+        Layout.maximumWidth: writeEditor.labelWidth
+        Layout.alignment: Qt.AlignVCenter
         theme: writeEditor.theme
         networkId: writeEditor.networkId
         instanceId: writeEditor.instanceId
         nodeId: writeEditor.nodeId
-        parameterKey: editKey
+        parameterKey: groupLabel.editKey
+        labelText: groupLabel.caption
+        keyStatus: writeEditor.keyStatusOf(groupLabel.editKey)
         frame: writeEditor.frame
-        keyStatus: writeEditor.keyStatusOf(editKey)
-        implicitWidth: metrics.advanceWidth
-        implicitHeight: 23
-        onKeyRequested: writeEditor.keyAtFrame(editKey)
-        TextMetrics {
-            id: metrics
-            text: caption.labelText
-            font.pixelSize: writeEditor.fontSizeValue
-        }
-        KeyIndicator {
-            id: keyActions
-            visible: false
-            theme: writeEditor.cellTheme
-            networkId: writeEditor.networkId
-            nodeId: writeEditor.nodeId
-            parameterKey: caption.editKey
-            parameterLabel: writeEditor.labelFor(caption.editKey)
-            keyStatus: caption.keyStatus
-            frame: writeEditor.frame
-            revealAvailable: writeEditor.revealAvailable()
-            onKeyRequested: writeEditor.keyAtFrame(caption.editKey)
-            onRemoveKeyRequested: writeEditor.removeKeyAtFrame(caption.editKey)
-            onRevealRequested: writeEditor.revealInAnimation(caption.editKey)
+        textSize: writeEditor.inspectorFontSize
+        controlHeight: writeEditor.controlHeight
+        onKeyRequested: writeEditor.keyAtFrame(groupLabel.editKey)
+        // The shared value menu for the group's own lead key: the label cell is
+        // where the old key column's actions belong now, and a left press still
+        // starts the exposure drag and Alt-click still keys.
+        ValueMenu {
+            id: groupMenu
+            cellKey: groupLabel.editKey
         }
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.RightButton
-            onClicked: keyActions.openMenu(caption)
-        }
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: 1
-            visible: caption.keyStatus !== "none"
-            color: caption.keyStatus === "key" ? writeEditor.accentColor : writeEditor.mutedColor
+            onClicked: groupMenu.openMenu(groupLabel)
         }
     }
 
-    component Action: Button {
-        id: action
-        implicitHeight: 23
-        padding: 4
-        contentItem: Text {
-            text: action.text
-            color: action.enabled ? writeEditor.textColor : writeEditor.disabledColor
-            font.pixelSize: writeEditor.fontSizeValue
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-        }
-        background: Rectangle {
-            color: action.down ? writeEditor.raisedColor : action.hovered ? writeEditor.hoverColor : writeEditor.fieldColor
-            border.color: writeEditor.borderColor
-            radius: writeEditor.smallRadiusValue
+    // A cell's own inline label ("first", "offset", "fps"), sized to its text.
+    component InlineLabel: ExposureLabel {
+        id: inlineLabel
+        required property string editKey
+        required property string caption
+        implicitWidth: inlineMetrics.advanceWidth + 2
+        Layout.alignment: Qt.AlignVCenter
+        theme: writeEditor.theme
+        networkId: writeEditor.networkId
+        instanceId: writeEditor.instanceId
+        nodeId: writeEditor.nodeId
+        parameterKey: inlineLabel.editKey
+        labelText: inlineLabel.caption
+        keyStatus: writeEditor.keyStatusOf(inlineLabel.editKey)
+        frame: writeEditor.frame
+        textSize: writeEditor.inspectorFontSize
+        controlHeight: writeEditor.controlHeight
+        onKeyRequested: writeEditor.keyAtFrame(inlineLabel.editKey)
+        TextMetrics {
+            id: inlineMetrics
+            text: inlineLabel.caption
+            font.pixelSize: writeEditor.inspectorFontSize
         }
     }
 
-    // One integer setting in the compact reference style: the shared label cell
-    // (exposure/key affordances) beside the shared numeric field.
+    // One integer setting: an optional inline label beside the shared numeric
+    // field, which owns typing, stepping, the scrub gesture, the exact-value
+    // rules and the right-click value menu. The cell states its own natural
+    // width, so a row of cells wraps instead of squeezing its fields unreadably
+    // when the card is narrow.
     component NumberCell: RowLayout {
         id: numberCell
         required property string cellKey
-        required property string caption
-        Layout.fillWidth: true
-        spacing: 3
-        Caption {
+        property string caption: ""
+        spacing: 5
+        InlineLabel {
             editKey: numberCell.cellKey
-            labelText: numberCell.caption
+            caption: numberCell.caption
+            visible: numberCell.caption.length > 0
         }
         NumericField {
             objectName: "writeNumber_" + writeEditor.nodeId + "_" + numberCell.cellKey
@@ -585,9 +662,21 @@ ColumnLayout {
             label: writeEditor.labelFor(numberCell.cellKey)
             errorText: writeEditor.panel && String(writeEditor.panel.gestureErrorKey) === numberCell.cellKey ? String(writeEditor.panel.gestureError) : ""
             dragThreshold: writeEditor.dragThreshold
-            fieldWidth: 54
+            // The shared value menu and the animation status, owned by the field
+            // itself when it is bound to the host.
+            panel: writeEditor.panel
+            networkId: writeEditor.networkId
+            nodeId: writeEditor.nodeId
+            parameterKey: numberCell.cellKey
+            keyStatus: writeEditor.keyStatusOf(numberCell.cellKey)
+            scope: writeEditor.scopeOf(numberCell.cellKey)
+            frame: writeEditor.frame
+            revealAvailable: writeEditor.revealAvailable()
+            modified: writeEditor.modifiedOf(numberCell.cellKey)
+            controlHeight: writeEditor.controlHeight
+            stepper: true
             Layout.fillWidth: true
-            Layout.minimumWidth: 38
+            Layout.minimumWidth: 40
             enabled: writeEditor.controller !== null && writeEditor.paramRow(numberCell.cellKey) !== null
             gestureLive: writeEditor.panel ? writeEditor.panel.activeToken.length > 0 : false
             onTextCommitted: function(text) { writeEditor.commitText(numberCell.cellKey, text); }
@@ -612,8 +701,10 @@ ColumnLayout {
         property int revision: writeEditor.revision
         theme: writeEditor.theme
         objectName: "writeChoice_" + writeEditor.nodeId + "_" + choiceCell.cellKey
-        implicitHeight: 23
+        controlHeight: writeEditor.controlHeight
+        textSize: writeEditor.inspectorFontSize
         Layout.fillWidth: true
+        Layout.minimumWidth: 56
         enabled: writeEditor.paramRow(choiceCell.cellKey) !== null
         model: writeEditor.choicesOf(choiceCell.cellKey)
         currentIndex: writeEditor.choiceIndex(choiceCell.cellKey)
@@ -627,61 +718,60 @@ ColumnLayout {
         onActivated: writeEditor.commitValue(choiceCell.cellKey, String(currentText))
         ToolTip.visible: hovered
         ToolTip.text: writeEditor.cellHint(choiceCell.cellKey)
+        // The shared value menu and the supported Alt-click keying shortcut,
+        // wired exactly as the generic choice row wires them: a plain click
+        // still opens the combo, a right-click opens the menu at the pointer.
+        ValueMenu {
+            id: cellMenu
+            cellKey: choiceCell.cellKey
+        }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: function(mouse) {
+                mouse.accepted = (mouse.button === Qt.RightButton) || !!(mouse.modifiers & Qt.AltModifier);
+            }
+            onClicked: function(mouse) {
+                if (mouse.button === Qt.RightButton)
+                    cellMenu.openMenu(null);
+                else
+                    writeEditor.keyAtFrame(choiceCell.cellKey);
+            }
+        }
     }
 
-    // One flag setting with the shared label cell and the compact check box.
-    component Flag: CheckBox {
+    // One flag setting, using the shared check box: it reports the user's input
+    // and never assigns `checked`, so the authored binding survives a refused or
+    // deferred commit, and its own value menu states the key/reset actions.
+    component Flag: InspectorCheckBox {
         id: flag
         required property string cellKey
         required property string caption
         objectName: "writeFlag_" + writeEditor.nodeId + "_" + flag.cellKey
+        theme: writeEditor.theme
+        text: flag.caption
         checked: writeEditor.boolValue(flag.cellKey)
         enabled: writeEditor.paramRow(flag.cellKey) !== null
-        implicitWidth: flagLabel.implicitWidth + 16
-        implicitHeight: 23
-        padding: 0
-        leftPadding: 16
-        Accessible.name: flag.caption
-        onToggled: {
-            writeEditor.commitValue(flag.cellKey, checked);
-            checked = Qt.binding(function() { return writeEditor.boolValue(flag.cellKey); });
-        }
-        contentItem: Caption {
-            id: flagLabel
-            editKey: flag.cellKey
-            labelText: flag.caption
-            MouseArea {
-                anchors.fill: parent
-                onPressed: function(mouse) { mouse.accepted = mouse.modifiers === Qt.NoModifier; }
-                onClicked: writeEditor.commitValue(flag.cellKey, !flag.checked)
-            }
-        }
-        indicator: Rectangle {
-            width: 12
-            height: 12
-            y: (flag.height - height) / 2
-            radius: 2
-            color: flag.checked ? writeEditor.accentColor : writeEditor.fieldColor
-            border.color: flag.activeFocus ? writeEditor.accentColor : writeEditor.borderColor
-            Text {
-                anchors.centerIn: parent
-                text: flag.checked ? "\u00d7" : ""
-                color: writeEditor.textColor
-                font.pixelSize: 13
-            }
-        }
-        background: Rectangle {
-            color: flag.hovered ? writeEditor.hoverColor : "transparent"
-            radius: 2
-        }
+        panel: writeEditor.panel
+        networkId: writeEditor.networkId
+        instanceId: writeEditor.instanceId
+        nodeId: writeEditor.nodeId
+        parameterKey: flag.cellKey
+        keyStatus: writeEditor.keyStatusOf(flag.cellKey)
+        scope: writeEditor.scopeOf(flag.cellKey)
+        frame: writeEditor.frame
+        revealAvailable: writeEditor.revealAvailable()
+        modified: writeEditor.modifiedOf(flag.cellKey)
+        onToggled: function(state) { writeEditor.commitValue(flag.cellKey, state); }
+        onKeyRequested: writeEditor.keyAtFrame(flag.cellKey)
     }
 
     // The output transform: the shared TYPEABLE combo the Shuffle and Viewer
     // layers use, stating the active config's own entries beside the authored
-    // value. A value the current config does not enumerate keeps its
-    // exact text and stays committable, so a project switch never rewrites an
-    // authored transform. Selection and typed text both go through the shared
-    // gesture, which owns validation and the undo entry.
+    // value. A value the current config does not enumerate keeps its exact text
+    // and stays committable, so a project switch never rewrites an authored
+    // transform. Selection and typed text both go through the shared gesture,
+    // which owns validation and the undo entry.
     component TransformCell: StudioComboBox {
         id: transformCell
         required property string cellKey
@@ -691,9 +781,11 @@ ColumnLayout {
         typeable: true
         readout: writeEditor.textValue(transformCell.cellKey)
         model: writeEditor.transformEntries
-        implicitHeight: 23
+        controlHeight: writeEditor.controlHeight
+        textSize: writeEditor.inspectorFontSize
         Layout.fillWidth: true
-        enabled: writeEditor.paramRow(transformCell.cellKey) !== null
+        Layout.minimumWidth: 70
+        enabled: writeEditor.transformSelectable && writeEditor.paramRow(transformCell.cellKey) !== null
         Accessible.name: writeEditor.labelFor(transformCell.cellKey)
         // The panel revision is the authored-value watermark: re-state the
         // readout when it moves, exactly as the entry cells do.
@@ -702,16 +794,72 @@ ColumnLayout {
         onTextAccepted: function(text) { writeEditor.commitValue(transformCell.cellKey, text); }
         ToolTip.visible: hovered
         ToolTip.text: writeEditor.transformProblem.length > 0 ? writeEditor.transformProblem : writeEditor.labelFor(transformCell.cellKey) + " — applied to the delivered pixels before the LUT; color mode raw applies no transform at all."
+        // The same shared value menu and keying shortcut as a choice cell: a
+        // plain click still edits the entry, which stays typeable.
+        ValueMenu {
+            id: transformMenu
+            cellKey: transformCell.cellKey
+        }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: function(mouse) {
+                mouse.accepted = (mouse.button === Qt.RightButton) || !!(mouse.modifiers & Qt.AltModifier);
+            }
+            onClicked: function(mouse) {
+                if (mouse.button === Qt.RightButton)
+                    transformMenu.openMenu(null);
+                else
+                    writeEditor.keyAtFrame(transformCell.cellKey);
+            }
+        }
     }
 
-    // --- file ---------------------------------------------------------------
+    // A compact themed button for this editor's own actions. It is presentation
+    // only: every parameter edit goes through the shared gesture.
+    component Action: Button {
+        id: action
+        implicitHeight: writeEditor.controlHeight
+        padding: 6
+        contentItem: Text {
+            text: action.text
+            color: action.enabled ? writeEditor.textColor : writeEditor.disabledColor
+            font.pixelSize: writeEditor.inspectorFontSize
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+        background: Rectangle {
+            color: action.down ? writeEditor.raisedColor : action.hovered ? writeEditor.hoverColor : writeEditor.fieldColor
+            border.color: action.activeFocus ? writeEditor.accentColor : writeEditor.borderColor
+            radius: writeEditor.smallRadiusValue
+        }
+    }
+
+    // --- channels -----------------------------------------------------------
+    // Which channels the delivery writes: the node's own authored choice, the
+    // same value the seam resolves. `all` (the default) delivers every channel
+    // the connected image carries.
     RowLayout {
         Layout.fillWidth: true
-        spacing: 4
-        Caption {
+        spacing: writeEditor.rowSpacing
+        GroupLabel {
+            editKey: "channels"
+            caption: "Channels"
+        }
+        ChoiceCell {
+            cellKey: "channels"
+        }
+    }
+
+    // One path cell: the authored path, the native chooser's own button and the
+    // format it delivers.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: writeEditor.rowSpacing
+        GroupLabel {
             editKey: "file"
-            labelText: "file"
-            Layout.preferredWidth: writeEditor.labelWidth
+            caption: "File"
         }
         TextField {
             id: fileField
@@ -720,9 +868,9 @@ ColumnLayout {
             text: writeEditor.textValue("file")
             enabled: writeEditor.panel !== null
             Layout.fillWidth: true
-            Layout.minimumWidth: 90
-            implicitHeight: 23
-            font.pixelSize: writeEditor.fontSizeValue
+            Layout.minimumWidth: 80
+            implicitHeight: writeEditor.controlHeight
+            font.pixelSize: writeEditor.inspectorFontSize
             color: writeEditor.textColor
             selectByMouse: true
             placeholderText: writeEditor.fileHint
@@ -744,34 +892,75 @@ ColumnLayout {
                 radius: writeEditor.smallRadiusValue
             }
         }
+        // The native chooser's own affordance: a folder mark, never a second
+        // text entry. A host without a chooser states that in its tooltip.
+        Action {
+            id: browseAction
+            objectName: "writeBrowse_" + writeEditor.nodeId
+            implicitWidth: 32
+            enabled: writeEditor.canBrowse && writeEditor.panel !== null
+            onClicked: writeEditor.browseFile()
+            Accessible.name: "Browse for the output path"
+            ToolTip.visible: hovered
+            ToolTip.text: writeEditor.canBrowse ? "Browse for the output path" : "This host has no native file chooser; type the path instead"
+            contentItem: Item {
+                Rectangle {
+                    x: (parent.width - 14) / 2
+                    y: (parent.height - 11) / 2
+                    width: 6
+                    height: 3
+                    radius: 1
+                    color: browseAction.enabled ? writeEditor.mutedColor : writeEditor.disabledColor
+                }
+                Rectangle {
+                    x: (parent.width - 14) / 2
+                    y: (parent.height - 11) / 2 + 3
+                    width: 14
+                    height: 8
+                    radius: 1.5
+                    color: "transparent"
+                    border.width: 1
+                    border.color: browseAction.enabled ? writeEditor.mutedColor : writeEditor.disabledColor
+                }
+            }
+        }
         ChoiceCell {
             cellKey: "fileType"
             Layout.fillWidth: false
-            Layout.preferredWidth: 72
+            Layout.preferredWidth: 74
         }
     }
 
     // --- frames -------------------------------------------------------------
+    // The authored range is the whole frame decision: there is no render-mode
+    // selector, and a movie delivers the same authored frames as one container.
+    // The cells wrap when the card is narrow instead of squeezing the fields.
     RowLayout {
         Layout.fillWidth: true
-        spacing: 4
-        Caption {
+        spacing: writeEditor.rowSpacing
+        GroupLabel {
             editKey: "frameFirst"
-            labelText: "frames"
-            Layout.preferredWidth: writeEditor.labelWidth
+            caption: "Frames"
         }
-        NumberCell {
-            cellKey: "frameFirst"
-            caption: "first"
-        }
-        NumberCell {
-            cellKey: "frameLast"
-            caption: "last"
-        }
-        NumberCell {
-            cellKey: "frameOffset"
-            caption: "off"
-            visible: writeEditor.exrFormat
+        Flow {
+            Layout.fillWidth: true
+            spacing: writeEditor.rowSpacing
+            NumberCell {
+                cellKey: "frameFirst"
+                caption: "first"
+            }
+            NumberCell {
+                cellKey: "frameLast"
+                caption: "last"
+            }
+            // File numbering is an EXR SEQUENCE setting: a movie is one container
+            // named by the authored path, so the offset is absent rather than shown
+            // with a value that would do nothing.
+            NumberCell {
+                cellKey: "frameOffset"
+                caption: "offset"
+                visible: writeEditor.exrFormat
+            }
         }
     }
 
@@ -779,73 +968,73 @@ ColumnLayout {
     // ONE row for the authored format's own settings: EXR precision and
     // compression, MOV profile and frame rate, MP4 bitrate and frame rate. A
     // control whose format is not authored is absent rather than disabled with a
-    // stale value, and the group label keys/exposes the first control that IS
-    // present.
+    // stale value, the group label keys/exposes the first control that IS
+    // present, and the cells wrap when the card is narrow.
     RowLayout {
         id: formatRow
         Layout.fillWidth: true
-        spacing: 4
-        Caption {
+        spacing: writeEditor.rowSpacing
+        GroupLabel {
             editKey: writeEditor.formatLeadKey
-            labelText: "format"
-            Layout.preferredWidth: writeEditor.labelWidth
+            caption: "Format"
         }
-        ChoiceCell {
-            cellKey: "precision"
-            visible: writeEditor.exrFormat
+        Flow {
+            id: formatOptions
+            readonly property real cellWidth: Math.max(100, (width - spacing) / 2)
             Layout.fillWidth: true
-            Layout.minimumWidth: 60
-        }
-        ChoiceCell {
-            cellKey: "compression"
-            visible: writeEditor.exrFormat
-            Layout.fillWidth: true
-            Layout.minimumWidth: 60
-        }
-        ChoiceCell {
-            cellKey: "profile"
-            visible: writeEditor.movFormat
-            Layout.fillWidth: true
-            Layout.minimumWidth: 60
-        }
-        NumberCell {
-            cellKey: "frameRate"
-            caption: "fps"
-            visible: writeEditor.movieFormat
-        }
-        NumberCell {
-            cellKey: "bitrateKbps"
-            caption: "kbps"
-            visible: writeEditor.mp4Format
+            spacing: writeEditor.rowSpacing
+            ChoiceCell {
+                cellKey: "precision"
+                width: formatOptions.cellWidth
+                visible: writeEditor.exrFormat
+            }
+            ChoiceCell {
+                cellKey: "compression"
+                width: formatOptions.cellWidth
+                visible: writeEditor.exrFormat
+            }
+            ChoiceCell {
+                cellKey: "profile"
+                width: formatOptions.cellWidth
+                visible: writeEditor.movFormat
+            }
+            NumberCell {
+                cellKey: "frameRate"
+                width: formatOptions.cellWidth
+                caption: "fps"
+                visible: writeEditor.movieFormat
+            }
+            NumberCell {
+                cellKey: "bitrateKbps"
+                width: formatOptions.cellWidth
+                caption: "kbps"
+                visible: writeEditor.mp4Format
+            }
         }
     }
 
     // --- output color -------------------------------------------------------
-    // The output color mode and the transform that mode selects, on one compact
-    // row. The entry list is the ACTIVE project config's own enumeration (the
-    // delivery adapter discovers it once per generation/config/mode) and the
-    // authored value is stated verbatim even when the current config does not
-    // enumerate it, so switching projects never rewrites a setting. A mode with
-    // no explicit choice disables the entry cell instead of pretending to offer
+    // The output color mode and the transform that mode selects, on one row. The
+    // entry list is the ACTIVE project config's own enumeration (the delivery
+    // adapter discovers it once per generation/config/mode) and the authored
+    // value is stated verbatim even when the current config does not enumerate
+    // it, so switching projects never rewrites a setting. A mode with no
+    // explicit choice disables the entry cell instead of pretending to offer
     // one.
     RowLayout {
         id: colorRow
         Layout.fillWidth: true
-        spacing: 4
-        Caption {
+        spacing: writeEditor.rowSpacing
+        GroupLabel {
             editKey: "colorMode"
-            labelText: "color"
-            Layout.preferredWidth: writeEditor.labelWidth
+            caption: "Color"
         }
         ChoiceCell {
             cellKey: "colorMode"
-            Layout.fillWidth: true
             Layout.minimumWidth: 70
         }
         TransformCell {
             cellKey: "outputTransform"
-            Layout.minimumWidth: 70
-            enabled: writeEditor.transformSelectable && writeEditor.paramRow("outputTransform") !== null
         }
     }
 
@@ -855,7 +1044,7 @@ ColumnLayout {
         objectName: "writeTransformProblem_" + writeEditor.nodeId
         visible: writeEditor.transformProblem.length > 0
         Layout.fillWidth: true
-        Layout.leftMargin: writeEditor.labelWidth + 5
+        Layout.leftMargin: writeEditor.labelWidth + writeEditor.rowSpacing
         text: writeEditor.transformProblem
         color: writeEditor.errorColor
         font.pixelSize: writeEditor.smallFontSize
@@ -868,11 +1057,10 @@ ColumnLayout {
     // when the job runs, never here.
     RowLayout {
         Layout.fillWidth: true
-        spacing: 4
-        Caption {
+        spacing: writeEditor.rowSpacing
+        GroupLabel {
             editKey: "lutFile"
-            labelText: "lut"
-            Layout.preferredWidth: writeEditor.labelWidth
+            caption: "LUT"
         }
         TextField {
             id: lutField
@@ -881,9 +1069,9 @@ ColumnLayout {
             text: writeEditor.textValue("lutFile")
             enabled: writeEditor.panel !== null
             Layout.fillWidth: true
-            Layout.minimumWidth: 90
-            implicitHeight: 23
-            font.pixelSize: writeEditor.fontSizeValue
+            Layout.minimumWidth: 80
+            implicitHeight: writeEditor.controlHeight
+            font.pixelSize: writeEditor.inspectorFontSize
             color: writeEditor.textColor
             selectByMouse: true
             placeholderText: "Optional .cube LUT"
@@ -907,36 +1095,67 @@ ColumnLayout {
         }
     }
 
-    // --- file behavior flags ------------------------------------------------
-    Flow {
-        Layout.fillWidth: true
-        Layout.leftMargin: writeEditor.labelWidth + 5
-        spacing: 7
-        Flag {
-            cellKey: "createDirectories"
-            caption: "create dirs"
-        }
-        Flag {
-            cellKey: "overwrite"
-            caption: "overwrite"
-        }
-    }
-
-    // --- explicit delivery --------------------------------------------------
+    // --- directory flags and the explicit render action ----------------------
+    // The flags stay on the authored parameters and the Render action submits the
+    // one delivery request. The flags wrap when the card is narrow; the action
+    // stays on the trailing edge.
     RowLayout {
         Layout.fillWidth: true
         Layout.topMargin: 2
-        spacing: 5
-        Action {
-            id: deliverAction
+        spacing: writeEditor.rowSpacing
+        Flow {
+            Layout.fillWidth: true
+            spacing: writeEditor.rowSpacing * 2
+            Flag {
+                cellKey: "createDirectories"
+                caption: "create directories"
+            }
+            Flag {
+                cellKey: "overwrite"
+                caption: "overwrite existing files"
+            }
+        }
+        Button {
+            id: renderAction
             objectName: "writeDeliver_" + writeEditor.nodeId
-            text: writeEditor.jobActive ? "Delivering" : "Deliver"
+            text: writeEditor.jobActive ? "Rendering" : "Render"
+            implicitHeight: writeEditor.controlHeight
+            padding: 8
             enabled: writeEditor.canDeliver && !writeEditor.jobActive && writeEditor.textValue("file").length > 0
             onClicked: writeEditor.submit()
+            Accessible.name: renderAction.text
             ToolTip.visible: hovered
             ToolTip.text: writeEditor.canDeliver ? "Render this node's frames through the delivery job seam. Undo cannot reverse it." : "The delivery seam is unavailable in this host"
-            Layout.preferredWidth: 74
+            contentItem: RowLayout {
+                spacing: 7
+                Text {
+                    Layout.alignment: Qt.AlignVCenter
+                    text: "\u25b6"
+                    color: renderAction.enabled ? writeEditor.textColor : writeEditor.disabledColor
+                    font.pixelSize: Math.max(8, writeEditor.inspectorFontSize - 3)
+                }
+                Text {
+                    Layout.alignment: Qt.AlignVCenter
+                    text: renderAction.text
+                    color: renderAction.enabled ? writeEditor.textColor : writeEditor.disabledColor
+                    font.pixelSize: writeEditor.inspectorFontSize
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            background: Rectangle {
+                color: renderAction.down ? writeEditor.raisedColor : renderAction.hovered ? writeEditor.hoverColor : writeEditor.fieldColor
+                border.color: renderAction.activeFocus ? writeEditor.accentColor : writeEditor.borderColor
+                radius: writeEditor.smallRadiusValue
+            }
         }
+    }
+
+    // --- job feedback -------------------------------------------------------
+    // Cancellation, progress, the result and the failure, beneath the action that
+    // started the job. Every message is the seam's own.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: writeEditor.rowSpacing
         Action {
             id: cancelAction
             objectName: "writeCancel_" + writeEditor.nodeId
@@ -946,7 +1165,6 @@ ColumnLayout {
                 if (writeEditor.job)
                     writeEditor.delivery.cancel(Number(writeEditor.job.id));
             }
-            Layout.preferredWidth: 62
         }
         Text {
             objectName: "writeStatus_" + writeEditor.nodeId
@@ -954,7 +1172,7 @@ ColumnLayout {
             Layout.alignment: Qt.AlignVCenter
             text: writeEditor.statusText()
             color: writeEditor.jobActive ? writeEditor.textColor : writeEditor.mutedColor
-            font.pixelSize: writeEditor.fontSizeValue
+            font.pixelSize: writeEditor.smallFontSize
             elide: Text.ElideRight
             Accessible.name: text
         }
@@ -962,12 +1180,12 @@ ColumnLayout {
             objectName: "writeClear_" + writeEditor.nodeId
             visible: writeEditor.job !== null && !writeEditor.jobActive
             text: "\u00d7"
+            implicitWidth: 28
             Accessible.name: "Clear the delivery result"
             onClicked: {
                 if (writeEditor.job)
                     writeEditor.delivery.forget(Number(writeEditor.job.id));
             }
-            Layout.preferredWidth: 22
         }
     }
 

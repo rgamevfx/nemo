@@ -64,7 +64,8 @@ struct ViewerFrame {
 };
 
 // Worker-confined orchestration over the shared native dependency plan:
-// source decode -> native effects -> GPU OCIO. Never host pixel readback.
+// source decode -> native effects -> GPU OCIO. No routine host readback; the
+// only device-to-host transfer is the on-demand viewport sample below.
 // Matching scene-linear results reuse #9's cache; distinct representations
 // coexist. Returned display images are immutable and ready for presentation.
 // timeout_ns bounds individual GPU waits, not CPU decoding/compilation or
@@ -120,6 +121,21 @@ public:
     // media is described from the source session's metadata, never by decoding
     // a frame to measure it.
     [[nodiscard]] ImageDescription describe(const Document& document, const EvaluationRequest& request);
+
+    // Issue #102: evaluates `request`'s target in the WORKING space and returns
+    // exactly the one pixel it names. `request` must be a single pixel at
+    // sampling scale 1 (`canonicalizeRequest` applied), so the transfer a pick
+    // charges is bounded by the demand itself; anything wider is refused with
+    // EvaluationException rather than quietly turned into a frame download.
+    //
+    // The demand's channels are the caller's statement of what the sample
+    // means: an empty demand is the image's own channels (the working RGB(A) the
+    // graph produced), which is what a color picker wants, while the display's
+    // layer/channel isolation belongs to the presentation and is deliberately
+    // not part of it. Nothing is cached or published: a pick is a read, not a
+    // viewer frame, and it never replaces what a destination displays.
+    [[nodiscard]] std::array<float, 4> sampleWorkingPixel(const Document& document, const EvaluationRequest& request,
+                                                          std::uint64_t timeout_ns = 10'000'000'000ULL);
 
     // Configures persistent requested-only display cache storage. Setup is
     // worker-side and may allocate media resources; render remains live-first.

@@ -69,7 +69,8 @@ struct DeliveryException : std::runtime_error {
 // The settings one job is accepted with. They are authored on a Write node and
 // resolved once at submit (story 83), so the frozen copy — not the node — is
 // what the job delivers with. The output format/color choices are the media
-// owner's `DeliveryOutputOptions`; the file/range/directory policy stays here.
+// owner's `DeliveryOutputOptions`; the file/range/directory policy and the
+// channel selection stay here.
 struct DeliverySettings {
     // The output path: for `exr` a still file or a '#'/'@' sequence pattern
     // (consumed verbatim by `media::resolveFramePath`), for `mov`/`mp4` exactly
@@ -85,6 +86,15 @@ struct DeliverySettings {
     std::int64_t frameFirst{1};
     std::int64_t frameLast{1};
     std::int64_t frameOffset{0};
+    // The authored channel selection (issue #102) as the primary roles it
+    // delivers, ascending: 0 R, 1 G, 2 B, 3 alpha. EMPTY means every channel the
+    // delivered image carries — the behavior a delivery had before the selection
+    // existed, and what the schema's `all` default resolves to. The NAMES are
+    // resolved at preflight from the target's OWN described channels (a stored
+    // name is the media's own: "R", or "rgba.R" inside a layer), so a selection
+    // filters the described list and never invents a spelling. A role the image
+    // carries no channel for is refused there, naming the channels it does carry.
+    std::vector<std::size_t> channelRoles;
     // Format, MOV profile, MP4 bitrate, frame rate and output color (raw /
     // project / colorspace / display, plus an optional LUT applied after the
     // base transform to primary RGB only).
@@ -116,6 +126,9 @@ struct DeliveryPlan {
     // file, so `frames` names the frames that container carries.
     int width{0};
     int height{0};
+    // The channels this job delivers: the authored selection resolved against
+    // the target's own described names, or every described channel when no
+    // selection is authored (issue #102).
     std::vector<std::string> channels;
     // True when the delivered output is one movie container rather than one file
     // per frame.
@@ -165,6 +178,10 @@ struct DeliveryJobInfo {
     bool fullQuality{true};
     int width{0};
     int height{0};
+    // The channels this job delivers (issue #102): the authored selection, or
+    // every channel the target's description names. This is what the delivered
+    // file carries, so a consumer never has to re-read the node the job froze
+    // its settings from.
     std::vector<std::string> channels;
     // True when this job delivers ONE movie container rather than one file per
     // frame. A movie's frames report encoding progress through `writtenFrames`

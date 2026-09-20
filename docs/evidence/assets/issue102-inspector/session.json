@@ -1,0 +1,300 @@
+{
+  "issue": "https://github.com/rgamevfx/nemo/issues/102",
+  "reviewBaseline": "406d3963da25bfe76c78516a061e63c4206a55fb",
+  "references": "../parameter-ui-design/references.json",
+  "referenceIntegrity": "All three original images byte-match pinned commit 7ec0697698ec6b01631b296f4c4d2d4ecae148b0; write-revised.png byte-matches the owner-provided screenshot.",
+  "productionCorrectness": {
+    "builds": [
+      "cmake --build --preset debug --parallel 2: passed",
+      "cmake --build --preset release --parallel 2: passed",
+      "cmake --build --preset asan --target nemo_workspace_ui_tests nemo_delivery_tests --parallel 2: passed"
+    ],
+    "buildWarnings": "Existing Qt QML module output-directory configure warnings and third-party minizip mktemp linker warnings remain.",
+    "format": "clang-format-18 --dry-run --Werror over 25 task C++ files: passed",
+    "focused": [
+      {
+        "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=AnimationSurface.NumericEditor*:AnimationSurface.TransformTranslatePairKeepsIndependentIdentities:AnimationSurface.GradeLinkedRgbEditingPreservesComponentsAndAlpha:AnimationSurface.ParametersPanelAdaptsColumnsWithoutRewritingThePreference:AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory:AnimationSurface.InspectorFollowingPinsAndMasksSurviveGroupAndWorkspaceChanges:AnimationSurface.RestoringPresentationRetainsInspectorMembershipAndPinnedChannels:AnimationSurface.MergeOperationEditorSwapsConnectedInputsAtomically:WorkspaceDragTest.SubnetParameterPopoutExposesEditsAndReordersRows",
+        "environment": {
+          "WAYLAND_DISPLAY": "wayland-1",
+          "XDG_RUNTIME_DIR": "/run/user/1000",
+          "QT_QPA_PLATFORM": "wayland",
+          "NEMO_TEST_NATIVE_UI": "1"
+        },
+        "passed": 11
+      },
+      {
+        "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=CropReformatSurface.Issue102ViewportPickSamplesTheDisplayedTarget:CropReformatSurface.Issue94WriteInspectorEditsAndDeliversExplicitly",
+        "environment": {
+          "WAYLAND_DISPLAY": "wayland-1",
+          "XDG_RUNTIME_DIR": "/run/user/1000",
+          "QT_QPA_PLATFORM": "wayland",
+          "NEMO_TEST_NATIVE_UI": "1",
+          "NEMO_TEST_VIEWER_WINDOW": "1"
+        },
+        "passed": 2
+      },
+      {
+        "command": "build/debug/tests/nemo_delivery_tests --gtest_filter=DeliveryTest.AuthoredChannelSelectionReachesTheDeliveredFile:DeliveryTest.MovieIsPublishedOnlyWhenTheWholeRangeEncodes",
+        "passed": 2
+      },
+      {
+        "command": "build/asan/tests/nemo_delivery_tests --gtest_filter=DeliveryTest.AuthoredChannelSelectionReachesTheDeliveredFile:DeliveryTest.MovieIsPublishedOnlyWhenTheWholeRangeEncodes",
+        "environment": {
+          "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json",
+          "ASAN_OPTIONS": "detect_leaks=1",
+          "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+          "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt"
+        },
+        "passed": 2,
+        "exitCode": 0
+      },
+      {
+        "command": "build/asan/tests/nemo_workspace_ui_tests --gtest_filter=CropReformatSurface.Issue102ViewportPickSamplesTheDisplayedTarget:CropReformatSurface.Issue94WriteInspectorEditsAndDeliversExplicitly",
+        "environment": {
+          "WAYLAND_DISPLAY": "wayland-1",
+          "XDG_RUNTIME_DIR": "/run/user/1000",
+          "QT_QPA_PLATFORM": "wayland",
+          "NEMO_TEST_NATIVE_UI": "1",
+          "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json",
+          "ASAN_OPTIONS": "detect_leaks=1",
+          "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+          "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+          "NEMO_TEST_VIEWER_WINDOW": "1"
+        },
+        "passedAssertions": 2,
+        "exitCode": 1,
+        "diagnostic": "LSan: 1264 bytes in 14 allocations; Qt/Wayland platform and keyboard-focus stacks, not a sanitizer-clean exit."
+      },
+      {
+        "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=CropReformatSurface.Issue102ViewportPickSamplesTheDisplayedTarget",
+        "environment": {
+          "WAYLAND_DISPLAY": "wayland-1",
+          "XDG_RUNTIME_DIR": "/run/user/1000",
+          "QT_QPA_PLATFORM": "wayland",
+          "NEMO_TEST_NATIVE_UI": "1",
+          "NEMO_TEST_VIEWER_WINDOW": "1"
+        },
+        "passed": 1,
+        "coverage": "Actual wheel zoom and middle-button pan precede the sampled viewer click; working RGB is checked against the independent CPU reference."
+      },
+      {
+        "command": "build/asan/tests/nemo_workspace_ui_tests --gtest_filter=CropReformatSurface.Issue102ViewportPickSamplesTheDisplayedTarget",
+        "environment": {
+          "WAYLAND_DISPLAY": "wayland-1",
+          "XDG_RUNTIME_DIR": "/run/user/1000",
+          "QT_QPA_PLATFORM": "wayland",
+          "NEMO_TEST_NATIVE_UI": "1",
+          "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json:/home/rgame/dev/Nemo_Dev2/build/issue70-reproduction/stage-fixed/10_mesa_fixed.json",
+          "ASAN_OPTIONS": "detect_leaks=1",
+          "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+          "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt",
+          "NEMO_TEST_VIEWER_WINDOW": "1"
+        },
+        "passedAssertions": 1,
+        "exitCode": 1,
+        "coverage": "Native pan/zoom and working-space pixel oracle; same Qt/Wayland 1264-byte LSan shutdown report."
+      }
+    ],
+    "redGreen": [
+      "Explicit RGBA movie requests were initially allowed to lose alpha; unsupported encoders now refuse before delivery.",
+      "Alt-clicking the graduated track initially sought the tuple instead of keying it; unchanged unequal RGB/alpha plus one key/undo now pass.",
+      "Grouped flag labels initially lost their label hit target; the shared ExposureLabel now handles click/key/exposure ownership.",
+      "Native paired X/Y controls initially overlapped at first display and edited Y from an X click; a single Row positioner with measured cells now passes the existing typed/scrub/key identity scenarios."
+    ],
+    "appSmoke": {
+      "command": "build/debug/apps/nemo-ui/nemo-ui --source docs/evidence/assets/parameter-ui-design/write-revised.png --viewer-cache-dir /tmp/nemo-issue102-app-cache --cache-benchmark-frames 1",
+      "environment": {
+        "WAYLAND_DISPLAY": "wayland-1",
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "QT_QPA_PLATFORM": "wayland",
+        "NEMO_TEST_NATIVE_UI": "1",
+        "XDG_CONFIG_HOME": "/tmp/nemo-issue102-app-config",
+        "OCIO": "/home/rgame/dev/Nemo_Dev2/docs/evidence/issue12-view.ocio"
+      },
+      "observed": {
+        "event": "viewer_frame_swapped",
+        "frame": 0,
+        "width": 960,
+        "height": 540,
+        "request_to_swap_ms": 251.758021,
+        "cache_hit": false
+      },
+      "shutdown": "Owned isolated process explicitly stopped after frame evidence; not a claim of automatic clean exit."
+    }
+  },
+  "sanitizerPlatformInvestigation": {
+    "standaloneProbe": "#include <QGuiApplication>\nint main(int argc, char** argv) { QGuiApplication app(argc, argv); return 0; }",
+    "compile": "c++ -std=c++20 -fsanitize=address -g probe.cpp -o probe $(pkg-config --cflags --libs Qt6Gui)",
+    "environment": {
+      "WAYLAND_DISPLAY": "wayland-1",
+      "XDG_RUNTIME_DIR": "/run/user/1000",
+      "QT_QPA_PLATFORM": "wayland",
+      "NEMO_TEST_NATIVE_UI": "1",
+      "ASAN_OPTIONS": "detect_leaks=1"
+    },
+    "observed": "1152 bytes in 12 Wayland protocol allocations reproduce without Nemo or Vulkan. A standalone QWindow/event-loop probe has the same total. The additional native-test 112 bytes have QtWayland keyboard and Qt focus weak-reference allocation stacks. No new suppressions; leak detection stayed enabled.",
+    "earlierAttempt": "An initial native sanitizer run hit the existing 2-second Write editor readiness check during concurrent builds. Standalone and final combined runs passed that check without increasing the timeout."
+  },
+  "reviews": {
+    "standards": "Four reported findings addressed: dead checkbox signals removed; invalid channel-role planning returns before indexing; contribution guide states color-before-projection order; scalar graduated editor consumes the host row adapter. Selected movie publication is exercised.",
+    "spec": "Reported Alt-click slider regression fixed and exercised through the real field. Integration also restored grouped exposure labels and non-overlapping paired numeric hit targets. Owner visual acceptance remains separate."
+  },
+  "visualConformance": {
+    "method": "Native Qt/Wayland QQuickWindow input and grabs of production QML, not a static gallery or OS screen-byte color sample.",
+    "theme": "Repository Theme.qml dark theme; inspector typography token 13 px, control height 30, label column 86, spacing 8.",
+    "windowMetadata": "Actual window geometry/DPR/Qt/requested and resolved window font accompany the generic captures below. A requested 411-pixel window was constrained to 960 pixels; the narrower Parameters dock still transitioned to one column.",
+    "captures": {
+      "grade-expanded.png": {
+        "sha256": "1a916ce7660efadd34b2edb587815d1ac94de662fe555c506aeca4ac36bc4299",
+        "nativeWindow": {
+          "background": "#181a1d",
+          "devicePixelRatio": 1,
+          "platform": "wayland",
+          "qt": "6.4.2",
+          "resolvedWindowFontFamily": "Noto Sans",
+          "windowFont": "Inter,-1,11,5,400,0,0,0,0,0,0,0,0,0,0,1",
+          "windowHeight": 650,
+          "windowWidth": 960
+        },
+        "pixelSize": [
+          942,
+          560
+        ]
+      },
+      "generic-two-columns.png": {
+        "sha256": "f7eb5905f3d405b6fa9e6786d9d3a7a07c269c9ab4e97eacbebf82773a53e5bb",
+        "nativeWindow": {
+          "background": "#181a1d",
+          "devicePixelRatio": 1,
+          "platform": "wayland",
+          "qt": "6.4.2",
+          "resolvedWindowFontFamily": "Noto Sans",
+          "windowFont": "Inter,-1,11,5,400,0,0,0,0,0,0,0,0,0,0,1",
+          "windowHeight": 900,
+          "windowWidth": 1274
+        },
+        "pixelSize": [
+          623,
+          198
+        ]
+      },
+      "generic-narrow.png": {
+        "sha256": "f7f0b13d144e0170dbe065374ae3ce9a0a783b09fd173fa4aff2518ebdc8e139",
+        "nativeWindow": {
+          "background": "#181a1d",
+          "devicePixelRatio": 1,
+          "platform": "wayland",
+          "qt": "6.4.2",
+          "resolvedWindowFontFamily": "Noto Sans",
+          "windowFont": "Inter,-1,11,5,400,0,0,0,0,0,0,0,0,0,0,1",
+          "windowHeight": 1004,
+          "windowWidth": 960
+        },
+        "pixelSize": [
+          466,
+          227
+        ]
+      },
+      "generic-edit-error.png": {
+        "sha256": "adb9fc319d0aba6548529f51d7ea925459236fabf3a9f681ee65173df398b589",
+        "nativeWindow": {
+          "background": "#181a1d",
+          "devicePixelRatio": 1,
+          "platform": "wayland",
+          "qt": "6.4.2",
+          "resolvedWindowFontFamily": "Noto Sans",
+          "windowFont": "Inter,-1,11,5,400,0,0,0,0,0,0,0,0,0,0,1",
+          "windowHeight": 687,
+          "windowWidth": 1274
+        },
+        "pixelSize": [
+          623,
+          139
+        ]
+      },
+      "generic-paired.png": {
+        "sha256": "9c0ce63140277cd949f55c7ef9833b41c86f02370b213da189f1be90b67b8e39",
+        "nativeWindow": {
+          "background": "#181a1d",
+          "devicePixelRatio": 1,
+          "platform": "wayland",
+          "qt": "6.4.2",
+          "resolvedWindowFontFamily": "Noto Sans",
+          "windowFont": "Inter,-1,11,5,400,0,0,0,0,0,0,0,0,0,0,1",
+          "windowHeight": 687,
+          "windowWidth": 1274
+        },
+        "pixelSize": [
+          623,
+          139
+        ]
+      },
+      "custom-merge-disabled.png": {
+        "sha256": "295da2179851440983a9f8457d11beb44792b0589e02e2b7eaa49440756c58a3",
+        "nativeWindow": {
+          "background": "#181a1d",
+          "devicePixelRatio": 1,
+          "platform": "wayland",
+          "qt": "6.4.2",
+          "resolvedWindowFontFamily": "Noto Sans",
+          "windowFont": "Inter,-1,11,5,400,0,0,0,0,0,0,0,0,0,0,1",
+          "windowHeight": 687,
+          "windowWidth": 1274
+        },
+        "pixelSize": [
+          623,
+          139
+        ]
+      },
+      "write-ready.png": {
+        "sha256": "7e0051e85b339d90253854deda022a9e1cd225afede8b26c42edb943fc691bb6",
+        "pixelSize": [
+          1274,
+          687
+        ]
+      },
+      "write-narrow-refusal.png": {
+        "sha256": "0817b3862bc534cd306f1f52337753d9687af955f27ed36b39e70107124c1d47",
+        "pixelSize": [
+          960,
+          700
+        ]
+      },
+      "write-completed.png": {
+        "sha256": "c3183fc2b3640a381d6f68ccaca9d243495e73bde931425232676c20b8c5a85d",
+        "pixelSize": [
+          1274,
+          687
+        ]
+      },
+      "write-movie-delivered.png": {
+        "sha256": "0399d416ee80ed50b8d54cb77833b883eebabe32fa21e45070e8583da25cd945",
+        "pixelSize": [
+          1568,
+          926
+        ]
+      },
+      "write-cancelled.png": {
+        "sha256": "140d4e99e1a3a974c8d004877e9db65ca651f63e711c2f9e63f591f6eb4dde43",
+        "pixelSize": [
+          1568,
+          926
+        ]
+      },
+      "grade-viewport-pick.png": {
+        "sha256": "afe81e9d819f336ba961c5efeebcbe514b2f832cdee9c3780013b7484046c4ff",
+        "pixelSize": [
+          1274,
+          687
+        ]
+      }
+    },
+    "ownerAcceptance": "Pending owner manual app review; screenshots are evidence, not owner sign-off."
+  },
+  "limitations": [
+    "Full suites, hosted CI and Windows execution were not run, per owner direction.",
+    "Native file chooser selection and end-to-end physical label drag initiation still need manual acceptance; existing native exposure authoring/drop receiver behavior passed.",
+    "Native LSan does not exit cleanly because of the independently investigated Qt/Wayland allocations.",
+    "No push, merge or issue closure is part of this local commit."
+  ]
+}

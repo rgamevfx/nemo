@@ -36,6 +36,7 @@ if(NEMO_BUILD_UI)
         ViewerController.cpp ViewerController.hpp
         ViewerControllerRegistry.cpp ViewerControllerRegistry.hpp
         ViewerRuntime.cpp ViewerRuntime.hpp
+        ViewportPicker.cpp ViewportPicker.hpp
         ViewerItem.cpp ViewerItem.hpp GraphItem.cpp GraphItem.hpp TimelineItem.cpp TimelineItem.hpp)
     # The graph interaction core: scene, geometry, hit test, gesture sessions,
     # the command facade and the panel-facing interaction object (issue #100).
@@ -74,6 +75,8 @@ if(NEMO_BUILD_UI)
                   qml/ReadSourceEditor.qml qml/MediaBinPanel.qml qml/SubnetParameters.qml
                   qml/AnimationPanel.qml qml/AnimationHeaderTools.qml qml/PinButton.qml
                   qml/NumericField.qml qml/ChannelEditor.qml qml/MergeOperationEditor.qml
+                  qml/ParameterSlider.qml qml/InspectorCheckBox.qml qml/InspectorSeparator.qml
+                  qml/GraduatedNumberEditor.qml
                   qml/ShuffleEditor.qml
                   qml/CropBoxEditor.qml qml/ReformatFormatEditor.qml
                   qml/RotoEditor.qml qml/RotoOverlay.qml

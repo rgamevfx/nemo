@@ -15,10 +15,19 @@ Item {
     property string labelText: ""
     property string keyStatus: "none"
     property int frame: 0
+    property bool clickable: false
+    // Optional inspector metrics (issue #102). 0 keeps the base presentation,
+    // so a panel that has not adopted the shared inspector metrics is
+    // unchanged; an inspector row passes theme.inspectorFontSize /
+    // theme.inspectorControlHeight so its label aligns with its value cells.
+    property int textSize: 0
+    property int controlHeight: 0
 
     signal keyRequested()
+    signal clicked()
 
-    implicitHeight: labelItem.implicitHeight
+    implicitWidth: labelItem.implicitWidth
+    implicitHeight: controlHeight > 0 ? controlHeight : labelItem.implicitHeight
     property var dragPayload: ({})
 
     Drag.dragType: Drag.Automatic
@@ -43,20 +52,25 @@ Item {
         objectName: exposureLabel.parameterKey.length > 0 ? "label_" + exposureLabel.nodeId + "_" + exposureLabel.parameterKey : ""
         text: exposureLabel.labelText.length > 0 ? exposureLabel.labelText : exposureLabel.parameterKey
         color: theme.text
-        font.pixelSize: theme.fontSize
+        font.pixelSize: exposureLabel.textSize > 0 ? exposureLabel.textSize : theme.fontSize
         elide: Text.ElideRight
         verticalAlignment: Text.AlignVCenter
         Accessible.name: text
     }
 
-    // Alt-click keys at the current frame; a plain press is released so the
-    // label stays selectable and the exposure drag can start.
+    // Alt-click keys at the current frame. Checkbox labels also accept an
+    // ordinary click; the drag handler can take over either label's plain press.
     MouseArea {
         anchors.fill: parent
         onPressed: function (mouse) {
-            mouse.accepted = !!(mouse.modifiers & Qt.AltModifier);
+            mouse.accepted = exposureLabel.clickable || !!(mouse.modifiers & Qt.AltModifier);
         }
-        onClicked: exposureLabel.keyRequested()
+        onClicked: function (mouse) {
+            if (mouse.modifiers & Qt.AltModifier)
+                exposureLabel.keyRequested();
+            else
+                exposureLabel.clicked();
+        }
     }
 
     DragHandler {

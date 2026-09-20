@@ -45,6 +45,10 @@ namespace nemo::nodes {
     return {{PortKind::Image, "image", false}, {PortKind::Mask, "mask", true}};
 }
 
+// The mask footer is one schema row: the channel choice and its invert toggle
+// render on one line (issue #102), exactly like every other grouped row, so the
+// host needs no effect-name branch for it. The channel choice leads the row, so
+// the group's label is the row name.
 [[nodiscard]] inline std::vector<ParameterSpec> maskParameterSpecs() {
     return {
         {.name = "maskChannel",
@@ -53,13 +57,15 @@ namespace nemo::nodes {
          .choices = {"none", "R", "G", "B", "A"},
          .label = "Mask Channel",
          .section = "Mask",
-         .editor = {}},
+         .editor = {},
+         .row = "Mask"},
         {.name = "invertMask",
          .type = ParameterType::Boolean,
          .defaultValue = ParameterValue{false},
-         .label = "Invert Mask",
+         .label = "Invert",
          .section = "Mask",
-         .editor = {}},
+         .editor = {},
+         .row = "Mask"},
     };
 }
 

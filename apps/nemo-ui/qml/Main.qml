@@ -38,6 +38,17 @@ ApplicationWindow {
     Component.onCompleted: historyController.registerWindow(window)
     Component.onDestruction: historyController.unregisterWindow(window)
 
+    // The picker is shared across viewers, including cancellation before a
+    // viewer has focus. Register one window-local preview with shared history.
+    Item {
+        id: viewportPickGesture
+        readonly property var picker: typeof viewportPicker !== "undefined" ? viewportPicker : null
+        readonly property bool active: picker !== null && picker.active
+        onActiveChanged: historyController.setGesture(viewportPickGesture, active)
+        function cancelHistoryGesture() { picker.cancel(); }
+        Component.onDestruction: historyController.setGesture(viewportPickGesture, false)
+    }
+
     Theme {
         id: appTheme
         workspace: window.controller
@@ -795,8 +806,13 @@ ApplicationWindow {
     Shortcut {
         sequence: "Esc"
         context: Qt.ApplicationShortcut
-        enabled: dockDrag.active
-        onActivated: dockDrag.cancelDrag()
+        enabled: dockDrag.active || viewportPickGesture.active
+        onActivated: {
+            if (dockDrag.active)
+                dockDrag.cancelDrag();
+            else
+                viewportPickGesture.cancelHistoryGesture();
+        }
     }
 
     onClosing: function(close) {

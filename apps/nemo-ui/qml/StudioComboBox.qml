@@ -5,6 +5,11 @@ ComboBox {
     id: control
 
     required property var theme
+    // Optional presentation metrics (issue #102). The defaults are this
+    // control's accepted appearance, so no unrelated consumer changes; an
+    // inspector row passes its own readable metrics explicitly.
+    property int controlHeight: 25
+    property int textSize: theme.fontSize
     // A typeable combo states a live value beside its presets: `readout` is
     // shown while the artist is not editing, and the text they type or pick is
     // reported through textAccepted. A plain combo is selection-only.
@@ -15,8 +20,8 @@ ComboBox {
 
     editable: typeable
     implicitWidth: 78
-    implicitHeight: 25
-    font.pixelSize: theme.fontSize
+    implicitHeight: controlHeight
+    font.pixelSize: textSize
     leftPadding: 8
     rightPadding: 22
 

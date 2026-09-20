@@ -2,6 +2,7 @@
 
 #include "ViewerRuntime.hpp"
 #include "nemo/core/evaluation/Image.hpp"
+#include "nemo/core/evaluation/Request.hpp"
 #include "nemo/core/evaluation/ViewerResolution.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
@@ -287,6 +288,34 @@ public:
     // superseded identity replaces the outstanding query instead of queueing
     // beside it. `nodeChannelsChanged` reports the answer.
     Q_INVOKABLE QVariantMap nodeInputChannels(const QString& networkValue, const QVariant& nodeValue);
+    // --- viewport sampling (issue #102) ------------------------------------
+    // The identity of the frame this panel currently DISPLAYS: the submission
+    // that produced it and the authored revision it was rendered from. A
+    // viewport pick is stated against this identity and re-checks it before it
+    // authors anything, so a retargeted, reframed or re-rendered panel can
+    // never commit a sample taken from another image.
+    struct DisplayedFrameIdentity {
+        std::uint64_t request{};
+        std::uint64_t revision{};
+        friend bool operator==(const DisplayedFrameIdentity&, const DisplayedFrameIdentity&) = default;
+    };
+    // One on-demand working-space sample demand for `imageX`/`imageY`, in the
+    // displayed frame's own full-resolution image coordinates. `document` is the
+    // snapshot the demand addresses — for the media role it is the same
+    // request-owned composition the render used, so the sample and the frame on
+    // screen describe one image — and `request` is exactly one full-resolution
+    // pixel of the displayed target in the target's OWN channels. `displayed`
+    // is the identity the demand was stated against.
+    struct WorkingSampleRequest {
+        Document document;
+        EvaluationRequest request;
+        DisplayedFrameIdentity displayed;
+    };
+    [[nodiscard]] std::optional<DisplayedFrameIdentity> displayedFrameIdentity() const;
+    // nullopt when this panel displays no frame, or when the coordinate names no
+    // pixel of the displayed image (a point in the surround is never clamped to
+    // an edge pixel).
+    [[nodiscard]] std::optional<WorkingSampleRequest> workingSampleRequest(double imageX, double imageY) const;
     // The document's authored canvas presets (#96), ascending by name, each
     // {name, width, height, pixelAspect}. This is a read of the session's own
     // stored state: presentation owns no second format registry, and a preset
@@ -646,6 +675,12 @@ private:
     [[nodiscard]] QString beginParameterGestureFor(const QString& networkValue, const QVariant& nodeValue,
                                                    const QStringList& keys);
     bool updateParameterGestureValues(const QString& tokenValue, const QVariantMap& values);
+    // The media role's displayed target is the routed CATALOG reference, which
+    // is not a persisted node: one request-owned Read addressing it is inserted
+    // into the request's own snapshot, so the viewport sampler and the render
+    // demand describe the same image while no node, used-media mark or history
+    // entry is ever persisted for a catalog open.
+    [[nodiscard]] NodeId adoptMediaSourceNode(Document& document, const std::string& sourceKey) const;
 
     std::optional<nemo::ParameterAddress> parameterGestureAddress_;
     nemo::ParameterGestureToken parameterGestureToken_{0};

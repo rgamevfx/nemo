@@ -11,6 +11,7 @@
 #include <QString>
 #include <QVulkanInstance>
 
+#include <array>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -60,6 +61,14 @@ struct ViewerFailure {
     std::string message;
     std::uint64_t requestId{};
 };
+// One completed on-demand working-space sample (issue #102). The values are the
+// target's OWN working RGB(A) at the requested full-resolution pixel, produced
+// by the same viewer session that renders frames — never a display byte and
+// never a fabricated fallback.
+struct ViewerWorkingSample {
+    std::array<float, 4> rgba{0.0F, 0.0F, 0.0F, 1.0F};
+    std::uint64_t requestId{};
+};
 // A view the current frame cannot answer (issue #98): the layer or channel it
 // addresses is not part of what this frame's described image carries. The
 // answer still carries the description that refused it, with the identity it
@@ -77,7 +86,7 @@ struct ViewerUnavailableView {
     ImageDescription description;
 };
 using ViewerWorkResult = std::variant<std::shared_ptr<const ViewerResult>, SourceProbeResult, ViewerTargetDescription,
-                                      ViewerUnavailableView, ViewerFailure>;
+                                      ViewerWorkingSample, ViewerUnavailableView, ViewerFailure>;
 
 struct ViewerRuntimeCounts {
     std::uint64_t queued{};
@@ -151,6 +160,14 @@ public:
     bool describe(Document document, EvaluationRequest request, std::uint64_t id,
                   eval::ViewerDestination destination = eval::ViewerDestination::Interactive,
                   std::string colorConfigPath = {});
+    // Issue #102: ONE on-demand working-space pixel of `request`'s target. The
+    // caller states a single full-resolution sample; the worker evaluates it in
+    // the working space and publishes ViewerWorkingSample (or ViewerFailure).
+    // It is admitted exactly like every other viewer request, so it can never
+    // run beside, displace or be displaced by work it was not given.
+    bool sample(Document document, EvaluationRequest request, std::uint64_t id,
+                eval::ViewerDestination destination = eval::ViewerDestination::Interactive,
+                std::string colorConfigPath = {});
     // `first` and `last` are inclusive local-time frames. The range is held
     // as one lazy descriptor per destination and produces cache publications
     // only; it never replaces that destination's interactive viewer result.

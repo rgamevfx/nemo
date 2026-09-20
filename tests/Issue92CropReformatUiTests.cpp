@@ -21,12 +21,14 @@
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
 #include "ViewerRuntime.hpp"
+#include "ViewportPicker.hpp"
 #include "Workspace.hpp"
 #include "WorkspaceController.hpp"
 
 #include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Serialization.hpp"
+#include "nemo/core/evaluation/CpuReference.hpp"
 #include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
@@ -156,6 +158,10 @@ protected:
     // state only. Constructed only by that scenario, retained until after QML
     // teardown.
     std::unique_ptr<nemo::ui::DeliveryController> delivery_;
+    // The viewport sampler (issue #102): the application-injected context owns
+    // the armed pick gesture and the one-undo commit. Declared after the shared
+    // facade controller it authors through, and destroyed before it.
+    std::unique_ptr<nemo::ui::ViewportPicker> viewportPicker_;
     std::unique_ptr<QQmlApplicationEngine> engine_;
     std::unique_ptr<QSignalSpy> warnings_;
     QQuickWindow* window_{};
@@ -282,6 +288,9 @@ protected:
 
         engine_ = std::make_unique<QQmlApplicationEngine>();
         warnings_ = std::make_unique<QSignalSpy>(engine_.get(), &QQmlEngine::warnings);
+        // The application composes the sampler before QML loads: the context
+        // property is what the viewer panel and the arming inspector see.
+        viewportPicker_ = std::make_unique<nemo::ui::ViewportPicker>(*runtime_, *facade_, *session_);
         engine_->rootContext()->setContextProperty(QStringLiteral("workspace"), workspace_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("historyController"), history_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), router_.get());
@@ -289,6 +298,7 @@ protected:
         engine_->rootContext()->setContextProperty(QStringLiteral("viewerController"), facade_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("viewerControllers"), registry_.get());
         engine_->rootContext()->setContextProperty(QStringLiteral("parameterEditors"), editors_.get());
+        engine_->rootContext()->setContextProperty(QStringLiteral("viewportPicker"), viewportPicker_.get());
         engine_->load(QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/Main.qml")));
         ASSERT_FALSE(engine_->rootObjects().isEmpty());
         window_ = qobject_cast<QQuickWindow*>(engine_->rootObjects().constFirst());
@@ -305,6 +315,7 @@ protected:
         warnings_.reset();
         engine_.reset();
         delivery_.reset();
+        viewportPicker_.reset();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         if (runtime_)
             runtime_->quiesceForTeardown();
@@ -1567,6 +1578,209 @@ TEST_F(CropReformatSurface, Issue94WriteInspectorEditsAndDeliversExplicitly) {
     EXPECT_LT(cancelled.value(QStringLiteral("writtenFrames")).toInt(), 400);
     EXPECT_EQ(cancelled.value(QStringLiteral("failedFrames")).toInt(), 0);
     capture(QStringLiteral("issue94-write-cancelled"));
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// Viewport color picking (issue #102). The eyedropper takes ONE on-demand sample
+// of the clicked viewer's DISPLAYED target in the WORKING space — never the
+// display-referred presentation bytes — and authors it as one undo entry with
+// the parameter's own alpha preserved. The value is checked against the
+// independent CPU reference (ADR-0004) for the same single-pixel demand, so
+// agreement is parity with an independent implementation rather than with the
+// code under test.
+//
+// Every refusal is exercised through the real seam: a coordinate outside the
+// displayed image, an armed pick withdrawn with Escape, a parameter that is not
+// a colour, and a project change while a sample is in flight. None of them
+// authors anything or publishes a history entry.
+TEST_F(CropReformatSurface, Issue102ViewportPickSamplesTheDisplayedTarget) {
+    awaitFirstFrame();
+    // TestPattern -> Crop -> Grade -> Viewer. The displayed target is the Grade,
+    // so the sample is the graded working RGB the graph produced.
+    const QString grade =
+        controller_->createGraphNode(network_, QStringLiteral("grade"), QStringLiteral("grade1"), 0.0, 270.0, {}, {});
+    ASSERT_FALSE(grade.isEmpty());
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(network_, cropId_, 0, grade, 0));
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(network_, grade, 0, viewerId_, 0));
+    ASSERT_TRUE(waitFor([&] {
+        const auto shown = controller_->presentation();
+        return controller_->viewerTargetId() == grade && shown && !controller_->outdated() &&
+               QString::number(static_cast<qulonglong>(shown->request.output)) == grade;
+    })) << "the viewer must display the newly inserted Grade, not the previous frame";
+
+    // A non-default gain and a non-opaque alpha: the pick must author exactly the
+    // RGB it sampled and leave the authored alpha alone.
+    controller_->setNodeParameter(grade, QStringLiteral("gain"), QVariantList{0.5, 0.5, 0.5, 0.25});
+    ASSERT_TRUE(waitFor([&] { return !controller_->outdated(); }));
+    QTest::qWait(150);
+
+    // Sample through the existing zoom/pan gestures, not just the fitted view.
+    const QPoint overImage = center(item(QStringLiteral("viewerItem_") + viewerPanelId_));
+    const double scaleBefore = imageScale();
+    QWheelEvent wheel(QPointF(overImage), QPointF(window_->mapToGlobal(overImage)), QPoint(), QPoint(0, 120),
+                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QGuiApplication::sendEvent(window_, &wheel);
+    QTest::qWait(300);
+    ASSERT_GT(imageScale(), scaleBefore);
+    const double panBefore = viewerPanel()->property("viewPanX").toDouble();
+    drag(overImage, overImage + QPoint(-20, 10), Qt::MiddleButton);
+    ASSERT_NE(viewerPanel()->property("viewPanX").toDouble(), panBefore);
+    ASSERT_TRUE(waitFor([&] { return !controller_->outdated(); }));
+
+    const auto authoredGain = [&] {
+        for (const auto& value : session_->queryValues(networkIdentity(network_), nodeIdentity(grade), "gain")) {
+            if (value.key != "gain")
+                continue;
+            if (const auto* color = std::get_if<nemo::ColorValue>(&value.value))
+                return color->value;
+        }
+        return std::array<float, 4>{std::nanf(""), std::nanf(""), std::nanf(""), std::nanf("")};
+    };
+    // The independent oracle: the CPU reference evaluates the SAME single-pixel
+    // demand the sampler states (full resolution, the image's own channels).
+    const auto oracle = [&](int x, int y) {
+        nemo::EvaluationRequest request;
+        request.network = networkIdentity(network_);
+        request.output = nodeIdentity(grade);
+        request.localTime = controller_->frame();
+        request.region = nemo::Region{x, y, 1, 1};
+        request.fullWidth = static_cast<int>(controller_->compositionSize().width());
+        request.fullHeight = static_cast<int>(controller_->compositionSize().height());
+        request.samplingScale = 1;
+        return nemo::evaluateCpu(session_->document(), request).image.pixel(0, 0);
+    };
+
+    const int width = static_cast<int>(controller_->compositionSize().width());
+    const int height = static_cast<int>(controller_->compositionSize().height());
+    ASSERT_GT(width, 8);
+    ASSERT_GT(height, 8);
+    // A pixel whose graded value really differs from the authored gain: without
+    // one, a no-op commit could make this scenario vacuous.
+    std::array<float, 4> expected{};
+    int sampleX = width / 2;
+    int sampleY = height / 2;
+    bool distinct = false;
+    const std::array<std::pair<int, int>, 5> candidates{{{width / 2, height / 2},
+                                                         {width / 4, height / 4},
+                                                         {width - width / 4, height / 4},
+                                                         {width / 4, height - height / 4},
+                                                         {width - width / 4, height - height / 4}}};
+    for (const auto& [candidateX, candidateY] : candidates) {
+        const auto value = oracle(candidateX, candidateY);
+        if (std::abs(value[0] - 0.5F) < 1e-3F && std::abs(value[1] - 0.5F) < 1e-3F && std::abs(value[2] - 0.5F) < 1e-3F)
+            continue;
+        sampleX = candidateX;
+        sampleY = candidateY;
+        expected = value;
+        distinct = true;
+        break;
+    }
+    ASSERT_TRUE(distinct) << "the graded image must differ from the authored gain somewhere";
+    const auto before = authoredGain();
+    EXPECT_FLOAT_EQ(before[3], 0.25F) << "the scenario starts from a non-opaque authored alpha";
+
+    // The click lands at the CENTRE of that pixel through the panel's own
+    // published mapping — the same mapping the box handles are drawn and hit
+    // through — so the sampler receives the coordinate the artist addresses.
+    const QVariantMap view = callFunction(viewerPanel(), "cropViewMapping").toMap();
+    const double sx = view.value(QStringLiteral("sx")).toDouble();
+    const double scale = view.value(QStringLiteral("scale")).toDouble();
+    ASSERT_GT(sx, 0.0);
+    ASSERT_GT(scale, 0.0);
+    auto* area = item(QStringLiteral("viewerImageArea"));
+    ASSERT_NE(area, nullptr);
+    const QPointF local(view.value(QStringLiteral("originX")).toDouble() + (sampleX + 0.5) * sx,
+                        view.value(QStringLiteral("originY")).toDouble() + (sampleY + 0.5) * scale);
+    const QPoint click = area->mapToScene(local).toPoint();
+
+    inspect(grade);
+    QTest::qWait(100);
+    auto* pick = item(QStringLiteral("channels_pick_") + grade + QStringLiteral("_gain"));
+    ASSERT_NE(pick, nullptr);
+    const auto arm = [&] {
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier,
+                          pick->mapToScene(QPointF(pick->width() / 2, pick->height() / 2)).toPoint());
+        QTest::qWait(20);
+    };
+    const auto beforeArm = session_->revision();
+    arm();
+    ASSERT_TRUE(viewportPicker_->active());
+    QTest::keyClick(window_, Qt::Key_Escape);
+    EXPECT_FALSE(viewportPicker_->active()) << "Escape cancels before a viewer receives focus";
+    EXPECT_EQ(session_->revision(), beforeArm);
+    arm();
+    ASSERT_TRUE(viewportPicker_->active());
+    QTest::keyClick(window_, Qt::Key_Z, Qt::ControlModifier);
+    EXPECT_FALSE(viewportPicker_->active()) << "preview-only Undo cancels the armed pick";
+    EXPECT_EQ(session_->revision(), beforeArm);
+    arm();
+    EXPECT_TRUE(viewportPicker_->active());
+    EXPECT_FALSE(viewportPicker_->status().isEmpty()) << "an armed pick states what the next click will do";
+    QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, click);
+    QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, click);
+    ASSERT_TRUE(waitFor([&] { return !viewportPicker_->active(); }))
+        << "the click must settle the pick: " << viewportPicker_->status().toStdString();
+    EXPECT_TRUE(viewportPicker_->status().isEmpty()) << viewportPicker_->status().toStdString();
+    EXPECT_FALSE(viewerPanel()->property("pickArmed").toBool());
+    capture(QStringLiteral("issue102-grade-picked"));
+
+    const auto picked = authoredGain();
+    EXPECT_NEAR(picked[0], expected[0], 1e-3F);
+    EXPECT_NEAR(picked[1], expected[1], 1e-3F);
+    EXPECT_NEAR(picked[2], expected[2], 1e-3F);
+    EXPECT_FLOAT_EQ(picked[3], 0.25F) << "the parameter's own alpha is preserved, never sampled";
+    EXPECT_FALSE(picked == before) << "a real sample must have authored something";
+
+    // ONE gesture: a single undo restores exactly the value the pick began from,
+    // and redo restores the picked value.
+    ASSERT_TRUE(history_->undo()) << "the pick must be one history entry";
+    const auto restored = authoredGain();
+    EXPECT_FLOAT_EQ(restored[0], before[0]);
+    EXPECT_FLOAT_EQ(restored[1], before[1]);
+    EXPECT_FLOAT_EQ(restored[2], before[2]);
+    EXPECT_FLOAT_EQ(restored[3], 0.25F);
+    ASSERT_TRUE(history_->redo());
+    EXPECT_NEAR(authoredGain()[0], expected[0], 1e-3F);
+
+    // A coordinate outside the displayed image authors nothing and says why; the
+    // picker stays armed so the artist can click a real pixel next.
+    const auto authored = authoredGain();
+    ASSERT_TRUE(viewportPicker_->begin(network_, grade, QStringLiteral("gain")));
+    EXPECT_FALSE(viewportPicker_->sample(controller_, -5.0, -5.0));
+    EXPECT_TRUE(viewportPicker_->active());
+    EXPECT_FALSE(viewportPicker_->status().isEmpty());
+    EXPECT_EQ(authoredGain(), authored) << "a refused click never authors a value";
+
+    // A parameter that is not a colour is refused before anything is armed.
+    EXPECT_FALSE(viewportPicker_->begin(network_, cropId_, QStringLiteral("x")));
+    EXPECT_TRUE(viewportPicker_->active()) << "the refused arm must leave the live one alone";
+    EXPECT_FALSE(viewportPicker_->begin(network_, grade, QStringLiteral("gain")))
+        << "a second arm is refused while one is live";
+
+    // Escape withdraws the armed pick from the viewer too, without history.
+    const auto revisionBeforeCancel = session_->revision();
+    viewerPanel()->forceActiveFocus();
+    QTest::keyClick(window_, Qt::Key_Escape);
+    QTest::qWait(20);
+    EXPECT_FALSE(viewportPicker_->active());
+    EXPECT_TRUE(viewportPicker_->status().isEmpty());
+    EXPECT_EQ(authoredGain(), authored);
+    EXPECT_EQ(session_->revision(), revisionBeforeCancel) << "a cancelled pick publishes no history entry";
+
+    // A project change while a sample is in flight releases the pick and authors
+    // nothing: the sample's identity no longer describes the document it would be
+    // authored into, so no late answer may land.
+    ASSERT_TRUE(viewportPicker_->begin(network_, grade, QStringLiteral("gain")));
+    QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, click);
+    QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, click);
+    controller_->setNodeParameter(grade, QStringLiteral("mix"), 0.75);
+    EXPECT_FALSE(viewportPicker_->active());
+    EXPECT_FALSE(viewportPicker_->status().isEmpty());
+    const auto revisionAfterChange = session_->revision();
+    QTest::qWait(500);
+    EXPECT_EQ(authoredGain()[3], 0.25F) << "the authored value must be untouched";
+    EXPECT_NEAR(authoredGain()[0], authored[0], 1e-6F) << "a stale sample never lands after the project moved";
+    EXPECT_EQ(session_->revision(), revisionAfterChange) << "a released pick publishes no history entry";
     EXPECT_EQ(warnings_->count(), 0);
 }
 

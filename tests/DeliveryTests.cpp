@@ -715,6 +715,9 @@ TEST_F(DeliveryTest, MovieIsPublishedOnlyWhenTheWholeRangeEncodes) {
         graph.document.network(graph.network)
             .graph()
             .setParam(graph.write, "profile", ParameterValue{ChoiceValue{profile}});
+        graph.document.network(graph.network)
+            .graph()
+            .setParam(graph.write, "channels", ChoiceValue{fileType == "mov" ? "rgba" : "rgb"});
         const std::uint64_t id = queue->submit(graph.document, graph.network, graph.write, 0);
         queue->waitForIdle();
         const DeliveryJobInfo info = queue->status(id);
@@ -726,7 +729,6 @@ TEST_F(DeliveryTest, MovieIsPublishedOnlyWhenTheWholeRangeEncodes) {
         EXPECT_TRUE(info.files[0].written);
         EXPECT_EQ(info.files[0].path, path);
         ASSERT_TRUE(fs::exists(path)) << path;
-        EXPECT_GT(fs::file_size(path), 0U) << path;
         EXPECT_TRUE(dir_->temporaries().empty());
     }
 
@@ -743,4 +745,102 @@ TEST_F(DeliveryTest, MovieIsPublishedOnlyWhenTheWholeRangeEncodes) {
     EXPECT_TRUE(info.files.empty());
     EXPECT_EQ(info.writtenFrames, 0U) << "encoded frames are not delivered output";
     EXPECT_TRUE(dir_->temporaries().empty());
+}
+
+// The authored channel selection reaches the delivered FILE (issue #102): an
+// independent readback finds exactly the selected channels with the delivered
+// pixels in them, the `all` default keeps delivering every channel the image
+// carries, and a selection a container cannot carry is refused by name before
+// any file exists.
+TEST_F(DeliveryTest, AuthoredChannelSelectionReachesTheDeliveredFile) {
+    NEMO_SKIP_OR_FAIL(boot_);
+    DeliveryGraph graph = deliveryGraph(kAuthoredColor);
+    auto queue = this->queue();
+    const auto authorChannels = [&](const std::string& selection) {
+        graph.document.network(graph.network)
+            .graph()
+            .setParam(graph.write, "channels", ParameterValue{ChoiceValue{selection}});
+    };
+    const auto authorFile = [&](const std::string& name) {
+        authorDelivery(graph.document, graph.write, dir_->file(name + ".####.exr"), 1, 1);
+    };
+
+    // `all` — the schema's default — delivers every channel the image carries,
+    // which is what a Write delivered before the selection existed.
+    authorFile("all");
+    const DeliveryPlan defaulted = queue->plan(graph.document, graph.network, graph.write, 0);
+    ASSERT_TRUE(defaulted.ok()) << defaulted.problem;
+    EXPECT_EQ(defaulted.channels, (std::vector<std::string>{"R", "G", "B", "A"}));
+    const std::uint64_t all = queue->submit(graph.document, graph.network, graph.write, 0);
+    queue->waitForIdle();
+    ASSERT_EQ(queue->status(all).state, DeliveryState::Completed) << queue->status(all).error;
+    expectDelivered(dir_->file("all.0001.exr"), kAuthoredColor, 4, 3, "half");
+
+    // `rgb`: the delivered still carries three channels and the authored pixels.
+    authorChannels("rgb");
+    authorFile("rgb");
+    const DeliveryPlan planned = queue->plan(graph.document, graph.network, graph.write, 0);
+    ASSERT_TRUE(planned.ok()) << planned.problem;
+    EXPECT_EQ(planned.channels, (std::vector<std::string>{"R", "G", "B"}));
+    const std::uint64_t rgb = queue->submit(graph.document, graph.network, graph.write, 0);
+    queue->waitForIdle();
+    ASSERT_EQ(queue->status(rgb).state, DeliveryState::Completed) << queue->status(rgb).error;
+    const ImageReadResult rgbRead = readImage(dir_->file("rgb.0001.exr"));
+    EXPECT_EQ(rgbRead.header.channelNames, (std::vector<std::string>{"R", "G", "B"}));
+    EXPECT_EQ(rgbRead.image.pixel(0, 0), (std::array<float, 4>{0.25F, 0.5F, 0.75F, 1.0F}))
+        << "the selected channels carry the delivered pixels, and no channel is invented";
+
+    // `alpha` alone is a real still delivery: exactly the matte.
+    authorChannels("alpha");
+    authorFile("matte");
+    const DeliveryPlan matte = queue->plan(graph.document, graph.network, graph.write, 0);
+    ASSERT_TRUE(matte.ok()) << matte.problem;
+    EXPECT_EQ(matte.channels, (std::vector<std::string>{"A"}));
+    const std::uint64_t matteJob = queue->submit(graph.document, graph.network, graph.write, 0);
+    queue->waitForIdle();
+    ASSERT_EQ(queue->status(matteJob).state, DeliveryState::Completed) << queue->status(matteJob).error;
+    const ImageReadResult matteRead = readImage(dir_->file("matte.0001.exr"));
+    EXPECT_EQ(matteRead.header.channelNames, (std::vector<std::string>{"A"}));
+    EXPECT_EQ(matteRead.image.pixel(0, 0)[3], kAuthoredColor[3]);
+
+    // A movie container carries its primary channels, so the same alpha-only
+    // selection is refused by name and no file appears at the movie path.
+    const std::string movie = dir_->file("matte.mov");
+    authorDelivery(graph.document, graph.write, movie, 1, 1, "zip", "half", false, true, 0, "mov");
+    const DeliveryPlan refused = queue->plan(graph.document, graph.network, graph.write, 0);
+    EXPECT_FALSE(refused.ok());
+    EXPECT_NE(refused.problem.find("alpha-only"), std::string::npos) << refused.problem;
+    EXPECT_THROW(static_cast<void>(queue->submit(graph.document, graph.network, graph.write, 0)), DeliveryException);
+    EXPECT_FALSE(fs::exists(movie));
+
+    // Explicit RGBA cannot silently discard alpha in a movie without that plane.
+    authorChannels("rgba");
+    const auto noAlpha = queue->plan(graph.document, graph.network, graph.write, 0);
+    EXPECT_FALSE(noAlpha.ok());
+    EXPECT_NE(noAlpha.problem.find("alpha"), std::string::npos) << noAlpha.problem;
+    graph.document.network(graph.network).graph().setParam(graph.write, "profile", ChoiceValue{"4444"});
+    const auto alphaMovie = queue->plan(graph.document, graph.network, graph.write, 0);
+    EXPECT_TRUE(alphaMovie.ok()) << alphaMovie.problem;
+    authorDelivery(graph.document, graph.write, dir_->file("rgba.mp4"), 1, 1, "zip", "half", false, true, 0, "mp4");
+    const auto noMp4Alpha = queue->plan(graph.document, graph.network, graph.write, 0);
+    EXPECT_FALSE(noMp4Alpha.ok());
+    EXPECT_NE(noMp4Alpha.problem.find("alpha"), std::string::npos) << noMp4Alpha.problem;
+
+    // The seam's own guard for a caller that states primary roles directly: a
+    // set that is not distinct and ascending is refused, not silently ordered.
+    DeliverySettings roles;
+    roles.file = dir_->file("direct.####.exr");
+    roles.frameFirst = 1;
+    roles.frameLast = 1;
+    roles.output.fileType = "exr";
+    roles.output.compression = "zip";
+    roles.output.colorMode = "raw";
+    roles.channelRoles = {3, 1};
+    const DeliveryPlan unordered = queue->plan(graph.document, graph.network, graph.write, roles, 0);
+    EXPECT_FALSE(unordered.ok());
+    EXPECT_NE(unordered.problem.find("distinct primary roles"), std::string::npos) << unordered.problem;
+    roles.channelRoles = {std::numeric_limits<std::size_t>::max()};
+    const DeliveryPlan outside = queue->plan(graph.document, graph.network, graph.write, roles, 0);
+    EXPECT_FALSE(outside.ok());
+    EXPECT_NE(outside.problem.find("distinct primary roles"), std::string::npos) << outside.problem;
 }

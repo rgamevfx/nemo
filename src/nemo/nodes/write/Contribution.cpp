@@ -36,6 +36,23 @@ NodeDescriptor writeDescriptor() {
                           .outputs = {},
                           .parameters =
                               {
+                                  // Which channels the delivery writes (issue
+                                  // #102). `all` — the default — delivers every
+                                  // channel the connected image carries, which
+                                  // is exactly what a Write delivered before the
+                                  // selection existed; the named sets deliver
+                                  // the target's own primary channels for those
+                                  // roles. The delivery seam resolves the names
+                                  // from the image's own description (never a
+                                  // spelling this schema invents) and refuses a
+                                  // selection the image carries no channel for.
+                                  {.name = "channels",
+                                   .type = ParameterType::Choice,
+                                   .defaultValue = ParameterValue{ChoiceValue{"all"}},
+                                   .choices = {"all", "rgb", "rgba", "alpha"},
+                                   .label = "Channels",
+                                   .section = "File",
+                                   .editor = {}},
                                   // The delivery editor mounts on the `file` row: the host selects an editor from a
                                   // parameter's `editor` metadata and never consumes the key of the row that
                                   // carries the id, so exactly one row names it (issue #94).
@@ -205,16 +222,16 @@ NodeContribution writeContribution() {
     // No `describe` rule and no `ownsChannelLayout`: the delivered image is the
     // inherited image, so every named channel travels through untouched and the
     // shared auxiliary preservation is a no-op for this pass-through.
-    contribution.editors = {
-        NodeEditorContribution{.id = "nemo.write.delivery",
-                               .source = "qrc:/qt/qml/Nemo/qml/WriteDeliveryEditor.qml",
-                               // Every authored delivery key renders exactly once: the grouped editor
-                               // presents all of them itself (file / frames / format / color / flags),
-                               // so the generic fallback rows stay free for an unavailable editor.
-                               .consumes = {"file", "fileType", "createDirectories", "overwrite", "frameFirst",
-                                            "frameLast", "frameOffset", "precision", "compression", "profile",
-                                            "frameRate", "bitrateKbps", "colorMode", "outputTransform", "lutFile"},
-                               .presentation = "section"}};
+    contribution.editors = {NodeEditorContribution{
+        .id = "nemo.write.delivery",
+        .source = "qrc:/qt/qml/Nemo/qml/WriteDeliveryEditor.qml",
+        // Every authored delivery key renders exactly once: the grouped editor
+        // presents all of them itself (channels / file / frames / format / color /
+        // flags), so the generic fallback rows stay free for an unavailable editor.
+        .consumes = {"channels", "file", "fileType", "createDirectories", "overwrite", "frameFirst", "frameLast",
+                     "frameOffset", "precision", "compression", "profile", "frameRate", "bitrateKbps", "colorMode",
+                     "outputTransform", "lutFile"},
+        .presentation = "section"}};
     return contribution;
 }
 

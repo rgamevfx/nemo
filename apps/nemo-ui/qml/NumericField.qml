@@ -35,6 +35,29 @@ FocusScope {
     property int dragThreshold: 4
     property real fieldWidth: 62
 
+    // Inspector wiring (issue #102), all optional. With a panel and an identity
+    // the field owns the shared value menu (key/reset actions) and states the
+    // animation status; without them it is an ordinary numeric editor and its
+    // right-click stays with its host. Typing, selection, cut/copy/paste,
+    // Escape and the one-undo scrub are identical in both cases.
+    property var panel: null
+    property string networkId: ""
+    property string nodeId: ""
+    property string parameterKey: ""
+    property string keyStatus: "none"
+    property string scope: ""
+    property int frame: 0
+    property bool revealAvailable: false
+    property bool modified: false
+    // Inspector metrics. The defaults are this control's accepted appearance,
+    // so an unrelated consumer is unchanged; an inspector row states its own
+    // readable height, text size and whether it offers step buttons.
+    property int controlHeight: 23
+    property int textSize: 0
+    property bool stepper: false
+
+    readonly property bool bound: panel !== null && networkId.length > 0 && nodeId.length > 0 && parameterKey.length > 0
+
     // Discrete commit of an exactly typed value, carried as text so the
     // catalog parses it without a lossy double round-trip.
     signal textCommitted(string text)
@@ -52,7 +75,7 @@ FocusScope {
 
     activeFocusOnTab: enabled
     implicitWidth: fieldWidth
-    implicitHeight: 23
+    implicitHeight: controlHeight
 
     readonly property real effectiveStep: integer ? 1 : (step > 0 ? step : 0.01)
     property bool editing: false
@@ -199,6 +222,7 @@ FocusScope {
     }
 
     Rectangle {
+        id: fieldFrame
         anchors.fill: parent
         color: root.enabled ? theme.field : theme.panel
         border.width: 1
@@ -206,14 +230,29 @@ FocusScope {
         radius: theme.smallRadius
     }
 
+    // The animation status of an inspector value, stated without a key-button
+    // column: a keyed value shows a filled diamond, an animated one an outline.
+    // An ordinary field (no host wiring, nothing keyed) shows nothing at all.
+    Text {
+        id: keyGlyph
+        visible: root.keyStatus === "key" || root.keyStatus === "animated"
+        anchors.left: parent.left
+        anchors.leftMargin: 5
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.keyStatus === "key" ? "\u25c6" : "\u25c7"
+        color: theme ? theme.accent : "#3485f6"
+        font.pixelSize: 10
+        Accessible.name: root.keyStatus === "key" ? "Keyed at this frame" : "Animated"
+    }
+
     TextInput {
         id: input
         anchors.fill: parent
-        anchors.leftMargin: 4
-        anchors.rightMargin: 4
+        anchors.leftMargin: keyGlyph.visible ? 16 : 4
+        anchors.rightMargin: root.stepper ? 16 : 4
         verticalAlignment: TextInput.AlignVCenter
         horizontalAlignment: TextInput.AlignRight
-        font.pixelSize: theme.fontSize
+        font.pixelSize: root.textSize > 0 ? root.textSize : theme.fontSize
         color: root.enabled ? theme.text : theme.disabled
         selectByMouse: true
         readOnly: !root.editing
@@ -307,6 +346,102 @@ FocusScope {
         Accessible.name: root.label.length > 0 ? root.label : "Numeric value"
     }
 
+    // The up/down affordance of an inspector numeric cell: one click is one
+    // discrete step, committed through the same one-undo gesture as an arrow
+    // key. A value that cannot be stepped without losing precision (an exact
+    // 64-bit integer) disables both buttons and keeps typed entry.
+    Item {
+        id: stepButtons
+        visible: root.stepper
+        width: 13
+        height: 18
+        anchors.right: parent.right
+        anchors.rightMargin: 3
+        anchors.verticalCenter: parent.verticalCenter
+        enabled: root.incrementSafe
+
+        Text {
+            id: stepUpGlyph
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: -1
+            text: "\u25b4"
+            font.pixelSize: 8
+            color: root.enabled ? theme.muted : theme.disabled
+        }
+
+        Text {
+            id: stepDownGlyph
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: 9
+            text: "\u25be"
+            font.pixelSize: 8
+            color: root.enabled ? theme.muted : theme.disabled
+        }
+
+        MouseArea {
+            anchors.top: parent.top
+            width: parent.width
+            height: parent.height / 2
+            enabled: stepButtons.enabled
+            cursorShape: Qt.PointingHandCursor
+            onClicked: function (mouse) {
+                root.adjustBy(1, mouse.modifiers);
+            }
+        }
+
+        MouseArea {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: parent.height / 2
+            enabled: stepButtons.enabled
+            cursorShape: Qt.PointingHandCursor
+            onClicked: function (mouse) {
+                root.adjustBy(-1, mouse.modifiers);
+            }
+        }
+    }
+
+    // Right-click on an inspector value offers the shared value actions. The
+    // menu belongs to KeyIndicator, the one owner of the key status and the
+    // action wording, so no second copy of it exists; an ordinary field with no
+    // host wiring keeps plain text editing and no menu at all.
+    MouseArea {
+        id: contextMenuArea
+        anchors.fill: parent
+        acceptedButtons: root.bound ? Qt.RightButton : Qt.NoButton
+        onClicked: valueMenu.openMenu(fieldFrame)
+    }
+
+    KeyIndicator {
+        id: valueMenu
+        width: 0
+        height: 0
+        theme: root.theme
+        networkId: root.networkId
+        nodeId: root.nodeId
+        parameterKey: root.parameterKey
+        parameterLabel: root.label
+        keyStatus: root.keyStatus
+        scope: root.scope
+        frame: root.frame
+        revealAvailable: root.revealAvailable
+        resettable: root.bound
+        modified: root.modified
+        onKeyRequested: if (root.bound)
+            root.panel.keyParameterAtFrame(root.networkId, root.nodeId, root.parameterKey)
+        onRemoveKeyRequested: if (root.bound)
+            root.panel.removeParameterKeyAtFrame(root.networkId, root.nodeId, root.parameterKey)
+        onRevealRequested: if (root.bound)
+            root.panel.revealInAnimation(root.networkId, root.nodeId, root.parameterKey)
+        onResetRequested: if (root.bound)
+            root.panel.resetValue({
+                "networkId": root.networkId,
+                "nodeId": root.nodeId,
+                "parameterKey": root.parameterKey,
+                "label": root.label
+            })
+    }
+
     HoverHandler {
         id: hover
     }
@@ -318,9 +453,15 @@ FocusScope {
                 return root.errorText;
             if (!root.valueAvailable)
                 return "No representable value. Click to type a new value.";
+            var status = "";
+            if (root.keyStatus === "key")
+                status = " Keyed at frame " + root.frame + ".";
+            else if (root.keyStatus === "animated")
+                status = " Animated; no key at frame " + root.frame + ".";
+            var actions = root.bound ? " Right-click for key and reset actions." : "";
             if (!root.incrementSafe)
-                return "Exact 64-bit value: type the new value (scrubbing would lose precision).";
-            return "Click to type or drag to scrub. Shift fine (" + root.displayText(root.effectiveStep * 0.1) + "), Ctrl coarse (" + root.displayText(root.effectiveStep * 10) + ").";
+                return "Exact 64-bit value: type the new value (scrubbing would lose precision)." + status + actions;
+            return "Click to type or drag to scrub. Shift fine (" + root.displayText(root.effectiveStep * 0.1) + "), Ctrl coarse (" + root.displayText(root.effectiveStep * 10) + ")." + status + actions;
         }
     }
 }

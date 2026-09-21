@@ -120,8 +120,9 @@ ProjectFileController::ProjectFileController(nemo::ProjectSession& session,
             &ProjectFileController::refreshPresentationDirty);
     connect(&workspace_, &nemo::workspace::WorkspaceController::activeWorkspaceIdChanged, this,
             &ProjectFileController::refreshPresentationDirty);
-    connect(&workspace_, &nemo::workspace::WorkspaceController::appearanceChanged, this,
-            &ProjectFileController::refreshPresentationDirty);
+    // Appearance and the Settings/storage preferences are application state
+    // stored in the workspace file; they are not part of the project
+    // presentation, so they never make a project dirty.
     connect(&router_, &PanelContextRouter::groupContextChanged, this, &ProjectFileController::refreshPresentationDirty);
     refreshFromSession();
     // The state the app starts with is the baseline: a restored workspace.json

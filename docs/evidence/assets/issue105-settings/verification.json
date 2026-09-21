@@ -1,0 +1,164 @@
+{
+  "issue": 105,
+  "status": "Independent Settings/appearance/extensions implemented; issue remains open for prerequisite and native acceptance gates.",
+  "base": "3b3895fd28f1a3b4c15cf06cd33ddf84ac79a0b2",
+  "branch": "issue/104-direct-subnet-viewing",
+  "scope": {
+    "settings": "Separate persistent resizable three-section non-modal window; validated auto-save; no project/undo mutation.",
+    "appearance": "Relocated accepted controls; existing WorkspaceController and Theme remain owners; project presentation no longer imports application appearance.",
+    "cache": "Existing directory and disk-budget options persisted and applied before GUI runtime construction; real existing owner usage snapshots; requested/effective state and restart notice. RAM/device budgets and safe clear explicitly unavailable pending #14.",
+    "extensions": "Metadata-only discovery; canonical linked folders; explicit native trust by identity and location; shared normal GUI/CLI admission; immutable active inventory; no hot unload, installation copy or deletion."
+  },
+  "references": {
+    "approved_new_design": "https://github.com/rgamevfx/nemo/issues/105",
+    "pre_edit_contract": "https://github.com/rgamevfx/nemo/issues/105#issuecomment-5764963563",
+    "appearance_archive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz:issue25-prototype-reference-v1/apps/nemo-ui/prototype/",
+    "appearance_source": "Archived Main.qml appearancePopup/themePresetMenu/accentField/categoryField/reset handlers; evidence/node-category-settings.png.",
+    "coverage": "node-style-session.json verified[3..10]; workspace-session.json verified[12]. #101 palette migration supersedes historic defaults. New Settings arrangement is #105 approval, not prototype geometry parity.",
+    "owners": [
+      "docs/agents/ownership.md",
+      "docs/agents/rendering.md",
+      "docs/decisions/0008-built-in-node-contributions.md"
+    ]
+  },
+  "verification": {
+    "builds": [
+      {
+        "command": "cmake --build --preset debug -j 2",
+        "result": "passed"
+      },
+      {
+        "command": "cmake --build --preset release -j 2",
+        "result": "passed"
+      }
+    ],
+    "build_warnings": "Existing third-party minizip mktemp linker warning; initial configuration also reported the existing QML tooling output-directory warning.",
+    "format": {
+      "command": "clang-format-18 --dry-run --Werror <changed C++ files>",
+      "result": "passed; final inspection-wrapper removal preserves the formatter output"
+    },
+    "focused_packages": {
+      "command": "NEMO_TEST_EXTENSION_ROOT=$PWD/build/colorwarp/package build/debug/tests/nemo_extension_tests --gtest_filter=ExtensionTest.*",
+      "passed": 23,
+      "failed": 0,
+      "scope": "Real package discovery, admission/refusal, preferences, unavailable authored state, existing CPU/GPU native-library retention contracts."
+    },
+    "focused_ui": {
+      "command": "build/debug/tests/nemo_workspace_ui_tests --gtest_filter=WorkspaceControllerTest.*:WorkspaceDragTest.Settings*:RestoredPackageSurface.Issue37ExtensionPanelUsesTheSharedShell",
+      "environment": {
+        "NEMO_TEST_EXTENSION_ROOT": "$PWD/build/colorwarp/package",
+        "NEMO_TEST_NATIVE_UI": "1",
+        "NEMO_TEST_VIEWER_WINDOW": "1",
+        "QT_QPA_PLATFORM": "wayland",
+        "NEMO105_EVIDENCE_DIR": "/tmp/nemo105-reviewed-native",
+        "NEMO37_EVIDENCE_DIR": "/tmp/nemo105-reviewed-panel"
+      },
+      "passed": 14,
+      "failed": 0,
+      "method": "Actual native Qt Wayland/Vulkan windows, QTest mouse/keyboard/wheel input and QQuickWindow captures. Isolated temporary application preferences and real ColorWarp copies. Includes enabled/disabled saved choices under explicit developer override.",
+      "scope_limit": "Activation restarts in the GUI probe construct the real default InstalledPackages owner again inside the test process; they are not physical desktop process restarts. No native folder chooser selection was performed."
+    },
+    "full_suite": {
+      "command": "NEMO_TEST_EXTENSION_ROOT=$PWD/build/colorwarp/package ctest --preset debug --output-on-failure",
+      "runs": 1,
+      "total": 1007,
+      "passed": 938,
+      "skipped": 68,
+      "failed": 1,
+      "seconds": 362.35,
+      "failure": "Viewer.InterpretationMapIsParsedStrictly: source interpretation has unknown field colorimetry; already recorded before #105.",
+      "order": "Full suite ran once before final review corrections; final debug/release builds and the 23+14 focused cases passed after those corrections."
+    },
+    "normal_cli": {
+      "command": "build/debug/apps/nemo-cli/nemo-cli evaluate docs/evidence/assets/issue37-colorwarp/issue37-headless.nemo --out <temporary>/frame.ppm --width 16 --height 16",
+      "method": "Three separate processes; isolated XDG config/data/home; canonical external package link; NEMO_EXTENSION_PATH removed; persisted format-1 choices disabled/enabled/disabled. Temporary files removed.",
+      "results": [
+        {
+          "enabled": false,
+          "exit": 1,
+          "ok": false,
+          "errors": [
+            "node 'ColorWarp' (id 4, type 'org.nemo.colorwarp'): unknown node type has no registered implementation"
+          ],
+          "warnings": [
+            "unknown node type 'org.nemo.colorwarp' (node 'ColorWarp'); retained as data, not evaluated"
+          ],
+          "preferences_unchanged": true
+        },
+        {
+          "enabled": true,
+          "exit": 0,
+          "ok": true,
+          "errors": [],
+          "warnings": [],
+          "preferences_unchanged": true
+        },
+        {
+          "enabled": false,
+          "exit": 1,
+          "ok": false,
+          "errors": [
+            "node 'ColorWarp' (id 4, type 'org.nemo.colorwarp'): unknown node type has no registered implementation"
+          ],
+          "warnings": [
+            "unknown node type 'org.nemo.colorwarp' (node 'ColorWarp'); retained as data, not evaluated"
+          ],
+          "preferences_unchanged": true
+        }
+      ]
+    },
+    "not_run": [
+      "Hosted CI (not required by ticket)",
+      "Broad sanitizer suite (no new rendering/in-flight ownership policy)",
+      "Windows execution (outside this Linux verification window)"
+    ]
+  },
+  "native_conformance": {
+    "inspected": [
+      "Full and 560x400 appearance controls, invalid-color reason, extension list, trust confirmation, active/pending-deactivation states, narrow scroll and confirmation controls, developer-override honesty, existing extension panel following shared Paper theme."
+    ],
+    "capture_backend": "Vulkan QRhi on native Wayland. OpenGL grabWindow yielded uniform black and those captures were rejected.",
+    "assets": [
+      "settings-appearance-full",
+      "settings-appearance-narrow",
+      "settings-invalid-color",
+      "settings-extensions-disabled",
+      "settings-extension-trust",
+      "settings-extension-active",
+      "settings-extension-pending",
+      "settings-extension-override-enabled",
+      "settings-extensions-narrow",
+      "settings-extension-disable-confirmation-narrow",
+      "settings-extension-disabled-pending",
+      "settings-extension-override-disabled",
+      "extension-panel-paper"
+    ]
+  },
+  "review": {
+    "fixed_point": "Scoped staged diff against 3b3895fd28f1a3b4c15cf06cd33ddf84ac79a0b2; unrelated pre-existing working changes excluded.",
+    "standards": {
+      "hard_violations": 0,
+      "low_priority_judgement_calls": 5,
+      "applied": [
+        "Shared startup record lookup and pending-activation predicate.",
+        "Removed test-only explicit-root inspection overload, redundant test, and now-single-use wrapper."
+      ],
+      "not_adopted": [
+        "Typed scalar QML confirmation arguments retain the version as text to avoid JavaScript uint64 precision loss; an untyped QVariantMap would not strengthen this boundary.",
+        "The fixed three-section view and persistence validator retain their small explicit contract rather than add abstraction-only QML properties.",
+        "MiB/bytes conversion stays explicit at the preference/runtime boundaries; no new unit abstraction for invariant arithmetic."
+      ]
+    },
+    "spec": {
+      "low_priority_defects": 1,
+      "resolution": "Fixed fictional next-launch/restart claims under NEMO_EXTENSION_PATH; label saved choice separately and disable activation controls. Native captures verify both saved choices.",
+      "additional_hardening": "Plain-text error/path rendering; bounded scrollable trust confirmation."
+    }
+  },
+  "remaining_gates": [
+    "#14 public RAM/device budget/usage and safe-clear interfaces plus owner pressure/clear acceptance. No private cache manager or fake controls.",
+    "Physical native folder chooser and normal desktop process restart/enable/disable/extension-use sequence. computer.capabilities and computer.windows both returned Computer session is closed; documented desktop CLI/input fallbacks unavailable.",
+    "Existing owner API/schema/image review holds and #37 original gates remain open; no push, merge or closure."
+  ],
+  "working_tree_limit": "Verification used the existing checkout with pre-existing #37/#104/user changes intact. Commit staging excludes those changes, including their separate main.cpp, ExtensionUiTests.cpp and ColorWarp README hunks and assets."
+}

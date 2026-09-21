@@ -1316,19 +1316,29 @@ TEST_F(RestoredPackageSurface, Issue37ExtensionPanelUsesTheSharedShell) {
 
     const QRect bodyRect = body->mapRectToScene(QRectF(0, 0, body->width(), body->height())).toRect();
     const QImage graphiteBody = window_->grabWindow().copy(bodyRect);
-    clickNamed(QStringLiteral("themeSettingsButton"));
-    clickNamed(QStringLiteral("themePresetMenu"));
-    QTest::keyClick(window_, Qt::Key_End);
-    QTest::keyClick(window_, Qt::Key_Return);
-    QTest::keyClick(window_, Qt::Key_Escape);
+    const auto selectTheme = [&](Qt::Key key) {
+        clickNamed(QStringLiteral("themeSettingsButton"));
+        auto* settings = window_->findChild<QQuickWindow*>(QStringLiteral("settingsWindow"));
+        ASSERT_NE(settings, nullptr);
+        ASSERT_TRUE(waitFor([&] { return settings->isVisible(); }));
+        const auto clickSetting = [&](const char* name) {
+            auto* target = visualByName(settings->contentItem(), QString::fromLatin1(name));
+            ASSERT_NE(target, nullptr);
+            QTest::mouseClick(settings, Qt::LeftButton, Qt::NoModifier, center(target));
+            settle();
+        };
+        clickSetting("settingsSection_1");
+        clickSetting("themePresetMenu");
+        QTest::keyClick(settings, key);
+        QTest::keyClick(settings, Qt::Key_Return);
+        settings->close();
+        settle();
+    };
+    selectTheme(Qt::Key_End);
     ASSERT_TRUE(waitFor([&] { return window_->grabWindow().copy(bodyRect) != graphiteBody; }, 2000))
         << "the installed body must visibly follow the shared appearance control";
     capture(QStringLiteral("issue37-panel-paper"));
-    clickNamed(QStringLiteral("themeSettingsButton"));
-    clickNamed(QStringLiteral("themePresetMenu"));
-    QTest::keyClick(window_, Qt::Key_Home);
-    QTest::keyClick(window_, Qt::Key_Return);
-    QTest::keyClick(window_, Qt::Key_Escape);
+    selectTheme(Qt::Key_Home);
     settle(100);
 
     // Split from the installed panel's own menu, then resize the shared divider.

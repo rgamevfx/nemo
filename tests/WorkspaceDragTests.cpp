@@ -10,7 +10,10 @@
 #include "WorkspaceController.hpp"
 #include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
+#include <filesystem>
 
+#include "ScopedEnvironment.hpp"
+#include "SettingsController.hpp"
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -1593,10 +1596,18 @@ TEST(WorkspaceControllerTest, CategoryUpgradePreservesCustomColorsAndWorkspace) 
     ASSERT_TRUE(original.setAppearancePreset("Paper"));
     const auto copy = original.duplicateWorkspace(original.activeWorkspaceId(), "Color work");
     ASSERT_TRUE(original.switchWorkspace(copy));
+    // Seed a version-2 application preference store: the layout payload plus
+    // the older appearance record its migration must upgrade.
     auto saved = original.projectPresentation();
     saved["version"] = 2;
-    saved["appearance"]["categoryColors"] = {{"Merge", "#abcdef"},   {"Filter", "#a96832"},  {"IO", "#123456"},
-                                             {"Distort", "#54816b"}, {"Utility", "#59646f"}, {"Color", "#71608c"}};
+    saved["appearance"] = {{"preset", "Paper"},
+                           {"categoryColors",
+                            {{"Merge", "#abcdef"},
+                             {"Filter", "#a96832"},
+                             {"IO", "#123456"},
+                             {"Distort", "#54816b"},
+                             {"Utility", "#59646f"},
+                             {"Color", "#71608c"}}}};
     {
         QFile file(path);
         ASSERT_TRUE(file.open(QIODevice::WriteOnly));
@@ -1616,6 +1627,144 @@ TEST(WorkspaceControllerTest, CategoryUpgradePreservesCustomColorsAndWorkspace) 
     EXPECT_EQ(reopened.categoryColors(), expected);
     EXPECT_EQ(reopened.workspaces(), original.workspaces());
     EXPECT_EQ(reopened.activeWorkspaceId(), copy);
+}
+
+// The workspace file is the application preference store: an accepted
+// appearance or Settings edit is saved by the edit itself, and every value a
+// restart reads back comes from that one store.
+TEST(WorkspaceControllerTest, ApplicationPreferencesPersistThroughTheWorkspaceFile) {
+    QTemporaryDir directory;
+    const QString path = directory.filePath("workspace.json");
+    nemo::workspace::WorkspaceController controller(path);
+
+    QSignalSpy presentations(&controller, &nemo::workspace::WorkspaceController::presentationChanged);
+    QSignalSpy roots(&controller, &nemo::workspace::WorkspaceController::rootChanged);
+    const auto projectBefore = controller.projectPresentation();
+
+    ASSERT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
+    ASSERT_TRUE(controller.setAccentOverride(QStringLiteral("#123456")));
+    ASSERT_TRUE(controller.setCategoryColor(QStringLiteral("Compositing"), QStringLiteral("#abcdef")));
+    ASSERT_TRUE(controller.setSettingsWindow(2, 960, 720));
+    ASSERT_TRUE(controller.setCacheStorage(QStringLiteral("/tmp/nemo-cache"), 4096));
+
+    // No explicit save() stands between the user's change and the restart; the
+    // arrangement and the project presentation were not re-published, because
+    // application preferences are not project state.
+    EXPECT_EQ(presentations.count(), 0);
+    EXPECT_EQ(roots.count(), 0);
+    EXPECT_EQ(controller.projectPresentation(), projectBefore);
+
+    nemo::workspace::WorkspaceController restored(path);
+    ASSERT_TRUE(restored.error().isEmpty()) << restored.error().toStdString();
+    EXPECT_EQ(restored.appearancePreset(), QStringLiteral("Paper"));
+    EXPECT_EQ(restored.accentOverride(), QStringLiteral("#123456"));
+    EXPECT_EQ(restored.categoryColors().value(QStringLiteral("Compositing")).toString(), QStringLiteral("#abcdef"));
+    EXPECT_EQ(restored.settingsSection(), 2);
+    EXPECT_EQ(restored.settingsWidth(), 960);
+    EXPECT_EQ(restored.settingsHeight(), 720);
+    EXPECT_EQ(restored.cacheDirectory(), QStringLiteral("/tmp/nemo-cache"));
+    EXPECT_EQ(restored.cacheDiskMiB(), 4096);
+
+    // The empty directory means "use the runtime platform default".
+    ASSERT_TRUE(restored.setCacheStorage(QString(), 1024));
+    nemo::workspace::WorkspaceController reopened(path);
+    EXPECT_TRUE(reopened.cacheDirectory().isEmpty());
+    EXPECT_EQ(reopened.cacheDiskMiB(), 1024);
+}
+
+TEST(WorkspaceControllerTest, InvalidApplicationPreferencesKeepTheLastAcceptedValue) {
+    QTemporaryDir directory;
+    nemo::workspace::WorkspaceController controller(directory.filePath("workspace.json"));
+
+    EXPECT_FALSE(controller.setSettingsWindow(3, 800, 600));
+    EXPECT_FALSE(controller.setSettingsWindow(-1, 800, 600));
+    EXPECT_FALSE(controller.setSettingsWindow(1, 559, 600));
+    EXPECT_FALSE(controller.setSettingsWindow(1, 800, 399));
+    EXPECT_FALSE(controller.setCacheStorage(QStringLiteral("relative/cache"), 1024));
+    EXPECT_FALSE(controller.setCacheStorage(QString(), 0));
+    EXPECT_FALSE(controller.setCacheStorage(QString(), -1));
+
+    EXPECT_EQ(controller.settingsSection(), 0);
+    EXPECT_EQ(controller.settingsWidth(), 800);
+    EXPECT_EQ(controller.settingsHeight(), 600);
+    EXPECT_TRUE(controller.cacheDirectory().isEmpty());
+    EXPECT_EQ(controller.cacheDiskMiB(), 2048);
+    EXPECT_FALSE(controller.error().isEmpty());
+
+    // The smallest supported popout and an absolute cache directory are valid.
+    ASSERT_TRUE(controller.setSettingsWindow(1, 560, 400));
+    ASSERT_TRUE(controller.setCacheStorage(directory.filePath(QStringLiteral("cache")), 512));
+    EXPECT_EQ(controller.settingsSection(), 1);
+    EXPECT_TRUE(controller.error().isEmpty());
+}
+
+TEST(WorkspaceControllerTest, FailedPreferenceWriteKeepsTheAcceptedValueAndReportsIt) {
+    QTemporaryDir directory;
+    const QString path = directory.filePath("workspace.json");
+    nemo::workspace::WorkspaceController controller(path);
+    ASSERT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
+
+    // Replace the store with a directory where the store file belongs: the
+    // write cannot succeed, so no later edit may be accepted as if it had.
+    ASSERT_TRUE(QFile::remove(path));
+    ASSERT_TRUE(QDir().mkdir(path));
+    EXPECT_FALSE(controller.setAccentOverride(QStringLiteral("#123456")));
+    EXPECT_EQ(controller.accentOverride(), QString());
+    EXPECT_EQ(controller.appearancePreset(), QStringLiteral("Paper"));
+    EXPECT_FALSE(controller.error().isEmpty());
+    EXPECT_FALSE(controller.setSettingsWindow(2, 900, 700));
+    EXPECT_EQ(controller.settingsSection(), 0);
+    EXPECT_EQ(controller.settingsWidth(), 800);
+
+    // Restoring the store path makes the same edits succeed and persist.
+    ASSERT_TRUE(QDir().rmdir(path));
+    ASSERT_TRUE(controller.setAccentOverride(QStringLiteral("#123456")));
+    ASSERT_TRUE(controller.setSettingsWindow(2, 900, 700));
+    nemo::workspace::WorkspaceController restored(path);
+    EXPECT_EQ(restored.appearancePreset(), QStringLiteral("Paper"));
+    EXPECT_EQ(restored.accentOverride(), QStringLiteral("#123456"));
+    EXPECT_EQ(restored.settingsSection(), 2);
+    EXPECT_EQ(restored.settingsWidth(), 900);
+}
+
+// Project presentation carries arrangement records only. A project written when
+// appearance was still project state must not overwrite the user's accepted
+// application preferences when it is opened.
+TEST(WorkspaceControllerTest, ProjectPresentationCarriesLayoutOnlyAndNeverAppliesStoredAppearance) {
+    QTemporaryDir directory;
+    const QString store = directory.filePath("workspace.json");
+    nemo::workspace::WorkspaceController controller(store);
+    const auto groupOf = [](const nemo::workspace::WorkspaceController& value) {
+        const Json root = Json::parse(QJsonDocument::fromVariant(value.root()).toJson().toStdString());
+        return QString::fromStdString(root["children"][0]["children"][0]["panels"][0]["group"]);
+    };
+
+    ASSERT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
+    ASSERT_TRUE(controller.setAccentOverride(QStringLiteral("#123456")));
+    ASSERT_TRUE(controller.setCategoryColor(QStringLiteral("Compositing"), QStringLiteral("#abcdef")));
+    ASSERT_TRUE(controller.setCacheStorage(QStringLiteral("/tmp/nemo-cache"), 4096));
+    EXPECT_EQ(groupOf(controller), QStringLiteral("A"));
+
+    const auto projectPayload = controller.projectPresentation();
+    EXPECT_FALSE(projectPayload.contains("appearance"));
+    EXPECT_FALSE(projectPayload.contains("settings"));
+
+    auto legacyProject = projectPayload;
+    legacyProject["appearance"] = {{"preset", "Slate"},
+                                   {"accentOverride", "#00ff00"},
+                                   {"categoryColors", {{"Compositing", "#ff0000"}}}};
+    legacyProject["workspaces"][0]["layout"]["root"]["children"][0]["children"][0]["panels"][0]["group"] = "D";
+    ASSERT_TRUE(controller.applyProjectPresentation(legacyProject));
+    EXPECT_EQ(groupOf(controller), QStringLiteral("D"));
+    EXPECT_EQ(controller.appearancePreset(), QStringLiteral("Paper"));
+    EXPECT_EQ(controller.accentOverride(), QStringLiteral("#123456"));
+    EXPECT_EQ(controller.categoryColors().value(QStringLiteral("Compositing")).toString(), QStringLiteral("#abcdef"));
+    EXPECT_EQ(controller.cacheDirectory(), QStringLiteral("/tmp/nemo-cache"));
+
+    // The user's preferences are still exactly what the one store holds.
+    nemo::workspace::WorkspaceController restored(store);
+    EXPECT_EQ(restored.appearancePreset(), QStringLiteral("Paper"));
+    EXPECT_EQ(restored.accentOverride(), QStringLiteral("#123456"));
 }
 
 TEST_F(WorkspaceDragTest, ResetLayoutPreservesWorkspaceTabsAndAppearance) {
@@ -1686,10 +1835,17 @@ TEST(WorkspaceControllerTest, UnreadableWorkspaceIsPreservedUntilExplicitReset) 
 
     nemo::workspace::WorkspaceController controller(path);
     EXPECT_FALSE(controller.error().isEmpty());
-    const auto restoreError = controller.error();
     controller.registerPanelType(QStringLiteral("viewer"), QStringLiteral("Viewer"), QStringLiteral("ViewerPanel.qml"));
-    ASSERT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
-    EXPECT_EQ(controller.error(), restoreError);
+    // The workspace file is the application preference store, so an appearance
+    // edit cannot be persisted while it is unreadable: the edit is refused
+    // rather than accepted unsaved, and a diagnosis naming the store stays
+    // visible until the user resets it.
+    EXPECT_FALSE(controller.setAppearancePreset(QStringLiteral("Paper")));
+    EXPECT_EQ(controller.appearancePreset(), QStringLiteral("Graphite"));
+    EXPECT_FALSE(controller.setSettingsWindow(1, 640, 480));
+    EXPECT_EQ(controller.settingsSection(), 0);
+    EXPECT_FALSE(controller.error().isEmpty());
+    EXPECT_TRUE(controller.error().contains(path));
     EXPECT_FALSE(controller.save());
     QFile preserved(path);
     ASSERT_TRUE(preserved.open(QIODevice::ReadOnly));
@@ -1698,6 +1854,12 @@ TEST(WorkspaceControllerTest, UnreadableWorkspaceIsPreservedUntilExplicitReset) 
 
     controller.reset();
     ASSERT_TRUE(controller.save());
+    // With the store replaced, the same edits are accepted and persisted.
+    EXPECT_TRUE(controller.setAppearancePreset(QStringLiteral("Paper")));
+    EXPECT_TRUE(controller.setSettingsWindow(1, 640, 480));
+    nemo::workspace::WorkspaceController reloaded(path);
+    EXPECT_EQ(reloaded.appearancePreset(), QStringLiteral("Paper"));
+    EXPECT_EQ(reloaded.settingsSection(), 1);
     ASSERT_TRUE(preserved.open(QIODevice::ReadOnly));
     EXPECT_NE(preserved.readAll(), invalid);
 }
@@ -1999,6 +2161,182 @@ TEST_F(WorkspaceDragTest, GraphFrameCostFollowsWhatMoves) {
             {QStringLiteral("static_rebuilds"), static_cast<qint64>(graph->staticGeometryRebuilds() - staticBefore)},
             {QStringLiteral("transient_vertices"), static_cast<qint64>(graph->transientVerticesBuilt())},
             {QStringLiteral("label_atlases"), static_cast<qint64>(graph->labelAtlasesRasterized() - rastersBefore)}});
+}
+
+TEST_F(WorkspaceDragTest, SettingsWindowRetainsAcceptedPreferencesWithoutEditingTheProject) {
+    const bool dirtyBefore = projectFile.dirty();
+    const auto revision = projectSession.revision();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("themeSettingsButton"));
+    auto* settings = window->findChild<QQuickWindow*>("settingsWindow");
+    ASSERT_NE(settings, nullptr);
+    ASSERT_TRUE(QTest::qWaitFor([&] { return settings->isVisible(); }));
+    const auto click = [&](const QString& name) {
+        auto* targetItem = visual(settings->contentItem(), name);
+        if (!targetItem)
+            throw std::runtime_error("Missing Settings input " + name.toStdString());
+        QTest::mouseClick(settings, Qt::LeftButton, Qt::NoModifier,
+                          targetItem->mapToScene(QPointF(targetItem->width() / 2, targetItem->height() / 2)).toPoint());
+        QTest::qWait(30);
+    };
+    const auto type = [&](const QString& name, const QString& value) {
+        click(name);
+        QTest::keyClick(settings, Qt::Key_A, Qt::ControlModifier);
+        for (const auto character : value)
+            QTest::keyClick(settings, character.toLatin1());
+        QTest::keyClick(settings, Qt::Key_Return);
+        QTest::qWait(30);
+    };
+    const auto capture = [&](const QString& name) {
+        const auto path = qEnvironmentVariable("NEMO105_EVIDENCE_DIR");
+        if (path.isEmpty())
+            return;
+        ASSERT_TRUE(QDir().mkpath(path));
+        QTest::qWait(120);
+        ASSERT_TRUE(settings->grabWindow().save(path + "/" + name + ".png"));
+    };
+    click("settingsSection_1");
+    type("accentColorField", "#aabbcc");
+    EXPECT_EQ(controller.accentOverride(), "#aabbcc");
+    type("accentColorField", "invalid");
+    EXPECT_EQ(controller.accentOverride(), "#aabbcc");
+    EXPECT_FALSE(controller.error().isEmpty());
+    capture("settings-invalid-color");
+    type("accentColorField", "#112233");
+    EXPECT_TRUE(controller.error().isEmpty());
+    type("categoryColorField_Blur", "#336699");
+    EXPECT_EQ(controller.categoryColors().value("Blur").toString(), "#336699");
+    capture("settings-appearance-full");
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, QPoint(20, 20));
+    EXPECT_TRUE(settings->isVisible()) << "outside clicks must not dismiss the independent Settings window";
+    settings->resize(560, 400);
+    settings->requestActivate();
+    QTest::qWait(350);
+    capture("settings-appearance-narrow");
+    click("settingsSection_2");
+    QTest::qWait(350);
+    capture("settings-extensions-narrow");
+    click("settingsClose");
+    EXPECT_FALSE(settings->isVisible());
+    nemo::workspace::WorkspaceController reopened(directory.filePath("workspace.json"));
+    EXPECT_EQ(reopened.settingsSection(), 2);
+    EXPECT_EQ(reopened.settingsWidth(), 560);
+    EXPECT_EQ(reopened.settingsHeight(), 400);
+    EXPECT_EQ(reopened.accentOverride(), "#112233");
+    EXPECT_EQ(reopened.categoryColors().value("Blur").toString(), "#336699");
+    EXPECT_EQ(projectSession.revision(), revision);
+    EXPECT_EQ(projectFile.dirty(), dirtyBefore);
+}
+
+TEST_F(WorkspaceDragTest, SettingsTrustChangesOnlyTheNextNormalLaunch) {
+    const auto packageRoot = qEnvironmentVariable("NEMO_TEST_EXTENSION_ROOT");
+    if (packageRoot.isEmpty())
+        GTEST_SKIP() << "requires the real ColorWarp package build";
+    namespace fs = std::filesystem;
+    const auto home = directory.filePath("preferences").toStdString();
+    const nemo::test::ScopedEnvironment override("NEMO_EXTENSION_PATH", std::nullopt);
+    const nemo::test::ScopedEnvironment config("XDG_CONFIG_HOME", home + "/config");
+    const nemo::test::ScopedEnvironment data("XDG_DATA_HOME", home + "/data");
+    const nemo::test::ScopedEnvironment local("LOCALAPPDATA", home + "/local");
+    const auto destination = nemo::extensions::standardPackageRoots().front() / "colorwarp";
+    fs::create_directories(destination.parent_path());
+    fs::copy(fs::path(packageRoot.toStdString()) / "colorwarp", destination, fs::copy_options::recursive);
+    const nemo::extensions::InstalledPackages startup;
+    ASSERT_EQ(startup.contributions()->find("org.nemo.colorwarp"), nullptr);
+    nemo::eval::ViewerCacheOptions cache;
+    cache.directory = directory.path().toStdString();
+    cache.maxDiskBytes = 2048ULL * 1024 * 1024;
+    ASSERT_TRUE(controller.setCacheStorage(directory.path(), 2048));
+    nemo::ui::SettingsController preferences(controller, chooser, startup, viewerRuntime, cache, false);
+    ASSERT_FALSE(preferences.restartRequired());
+    auto* settings = window->findChild<QQuickWindow*>("settingsWindow");
+    ASSERT_NE(settings, nullptr);
+    settings->setProperty("settings", QVariant::fromValue(&preferences));
+    ASSERT_TRUE(controller.setSettingsWindow(2, 800, 600));
+    const auto revision = projectSession.revision();
+    const bool dirty = projectFile.dirty();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center("themeSettingsButton"));
+    ASSERT_TRUE(QTest::qWaitFor([&] { return settings->isVisible(); }));
+    const auto click = [&](const QString& name) {
+        auto* targetItem = visual(settings->contentItem(), name);
+        if (!targetItem)
+            return false;
+        for (int attempt = 0; attempt < 10; ++attempt) {
+            const auto point = targetItem->mapToScene(QPointF(targetItem->width() / 2, targetItem->height() / 2));
+            if (point.y() >= 40 && point.y() < settings->height() - 20) {
+                QTest::mouseClick(settings, Qt::LeftButton, Qt::NoModifier, point.toPoint());
+                QCoreApplication::processEvents();
+                return true;
+            }
+            const QPointF wheelPoint(settings->width() - 35, settings->height() / 2);
+            QWheelEvent wheel(wheelPoint, settings->mapToGlobal(wheelPoint.toPoint()), {}, QPoint(0, -240),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QGuiApplication::sendEvent(settings, &wheel);
+            QTest::qWait(80);
+        }
+        return false;
+    };
+    const auto capture = [&](const QString& name) {
+        const auto output = qEnvironmentVariable("NEMO105_EVIDENCE_DIR");
+        if (!output.isEmpty()) {
+            ASSERT_TRUE(QDir().mkpath(output));
+            ASSERT_TRUE(settings->grabWindow().save(QDir(output).filePath(name + ".png")));
+        }
+    };
+    QTest::qWait(100);
+    capture("settings-extensions-disabled");
+    ASSERT_TRUE(click("enableExtension_org.nemo.colorwarp"));
+    auto* confirmation = settings->findChild<QObject*>("extensionConfirmation");
+    ASSERT_NE(confirmation, nullptr);
+    ASSERT_TRUE(QTest::qWaitFor([&] { return confirmation->property("opened").toBool(); }));
+    QTest::qWait(100);
+    capture("settings-extension-trust");
+    ASSERT_TRUE(click("confirmExtensionChange"));
+    ASSERT_TRUE(preferences.error().isEmpty()) << preferences.error().toStdString();
+    EXPECT_TRUE(preferences.restartRequired());
+    EXPECT_EQ(startup.contributions()->find("org.nemo.colorwarp"), nullptr);
+    QTest::qWait(100);
+    capture("settings-extension-pending");
+    const nemo::extensions::InstalledPackages restarted;
+    ASSERT_NE(restarted.contributions()->find("org.nemo.colorwarp"), nullptr);
+    nemo::ui::SettingsController activePreferences(controller, chooser, restarted, viewerRuntime, cache, false);
+    ASSERT_FALSE(activePreferences.restartRequired());
+    settings->setProperty("settings", QVariant::fromValue(&activePreferences));
+    QTest::qWait(100);
+    capture("settings-extension-active");
+    const auto inspectOverride = [&](const QString& evidenceName) {
+        const nemo::test::ScopedEnvironment developerOverride("NEMO_EXTENSION_PATH",
+                                                              destination.parent_path().string());
+        const nemo::extensions::InstalledPackages overridden;
+        ASSERT_NE(overridden.contributions()->find("org.nemo.colorwarp"), nullptr);
+        nemo::ui::SettingsController overridePreferences(controller, chooser, overridden, viewerRuntime, cache, false);
+        settings->setProperty("settings", QVariant::fromValue(&overridePreferences));
+        QTest::qWait(100);
+        auto* toggle = visual(settings->contentItem(), "enableExtension_org.nemo.colorwarp");
+        ASSERT_NE(toggle, nullptr);
+        EXPECT_FALSE(toggle->isEnabled()) << "saved choices cannot be edited under an explicit startup override";
+        EXPECT_FALSE(overridePreferences.restartRequired());
+        capture(evidenceName);
+        settings->setProperty("settings", QVariant::fromValue(&activePreferences));
+    };
+    inspectOverride("settings-extension-override-enabled");
+    settings->resize(560, 400);
+    QTest::qWait(350);
+    capture("settings-extensions-narrow");
+    ASSERT_TRUE(click("enableExtension_org.nemo.colorwarp"));
+    ASSERT_TRUE(QTest::qWaitFor([&] { return confirmation->property("opened").toBool(); }));
+    capture("settings-extension-disable-confirmation-narrow");
+    ASSERT_TRUE(click("confirmExtensionChange"));
+    ASSERT_TRUE(activePreferences.error().isEmpty()) << activePreferences.error().toStdString();
+    EXPECT_TRUE(activePreferences.restartRequired());
+    EXPECT_NE(restarted.contributions()->find("org.nemo.colorwarp"), nullptr);
+    QTest::qWait(100);
+    capture("settings-extension-disabled-pending");
+    inspectOverride("settings-extension-override-disabled");
+    const nemo::extensions::InstalledPackages disabled;
+    EXPECT_EQ(disabled.contributions()->find("org.nemo.colorwarp"), nullptr);
+    EXPECT_EQ(projectSession.revision(), revision);
+    EXPECT_EQ(projectFile.dirty(), dirty);
+    settings->setProperty("settings", QVariant::fromValue<QObject*>(nullptr));
 }
 
 }  // namespace

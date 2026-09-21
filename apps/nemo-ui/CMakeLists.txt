@@ -33,6 +33,7 @@ if(NEMO_BUILD_UI)
         ReadSourceController.cpp ReadSourceController.hpp
         RotoController.cpp RotoController.hpp
         WorkspaceController.cpp WorkspaceController.hpp
+        SettingsController.cpp SettingsController.hpp
         ViewerController.cpp ViewerController.hpp
         ParameterInteraction.hpp
         ViewerControllerRegistry.cpp ViewerControllerRegistry.hpp
@@ -51,7 +52,7 @@ if(NEMO_BUILD_UI)
     set_target_properties(nemo_ui_shared PROPERTIES AUTOMOC ON)
     target_include_directories(nemo_ui_shared PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(nemo_ui_shared PUBLIC
-        nemo::core nemo::workspace nemo::eval Qt6::Quick Qt6::QuickControls2)
+        nemo::core nemo::workspace nemo::eval nemo::extensions Qt6::Quick Qt6::QuickControls2)
     if(UNIX AND NOT APPLE)
         target_link_libraries(nemo_ui_shared PUBLIC Qt6::DBus)
     elseif(WIN32)
@@ -84,6 +85,7 @@ if(NEMO_BUILD_UI)
                   qml/KeyIndicator.qml qml/ExposureLabel.qml
                   qml/HistoryMenu.qml qml/HistoryMenuItem.qml
                   qml/WriteDeliveryEditor.qml
+                  qml/SettingsWindow.qml qml/AppearanceSettings.qml qml/CacheSettings.qml qml/ExtensionSettings.qml
     )
 
     # The application keeps its own entry point and loads the module's compiled

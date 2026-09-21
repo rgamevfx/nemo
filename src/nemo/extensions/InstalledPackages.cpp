@@ -98,8 +98,28 @@ constexpr std::string_view kQmlCapability = "nemo.ui.qml.v1";
     return true;
 }
 
+// A refused manifest carries the state the Settings surface shows for it, so a
+// presentation layer never parses diagnostic text.
+class ManifestRefusal : public std::runtime_error {
+public:
+    ManifestRefusal(PackageStatus status, const std::string& message) : std::runtime_error(message), status_(status) {}
+
+    [[nodiscard]] PackageStatus status() const noexcept { return status_; }
+
+private:
+    PackageStatus status_;
+};
+
+// The declaration is not supported by this build: manifest format, effect API
+// range, capability, declared file, node schema or GPU binding contract.
 [[noreturn]] void fail(const std::string& context, const std::string& reason) {
-    throw std::runtime_error(context + ": " + reason);
+    throw ManifestRefusal{PackageStatus::Incompatible, context + ": " + reason};
+}
+
+// manifest.json is not a valid declaration at all: unreadable, not JSON, not an
+// object, a wrong value type, an unknown key.
+[[noreturn]] void malformed(const std::string& context, const std::string& reason) {
+    throw ManifestRefusal{PackageStatus::MalformedManifest, context + ": " + reason};
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +134,7 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
         const bool allowed =
             std::any_of(known.begin(), known.end(), [&entry](std::string_view key) { return key == entry.key(); });
         if (!allowed) {
-            fail(context, "unknown key '" + entry.key() + "'");
+            malformed(context, "unknown key '" + entry.key() + "'");
         }
     }
 }
@@ -128,10 +148,10 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
                                                    const std::string& context) {
     const auto entry = parent.find(key);
     if (entry == parent.end()) {
-        fail(context, std::string("'") + key + "' is required");
+        malformed(context, std::string("'") + key + "' is required");
     }
     if (!entry->is_object()) {
-        fail(context, std::string("'") + key + "' must be an object");
+        malformed(context, std::string("'") + key + "' must be an object");
     }
     return *entry;
 }
@@ -140,10 +160,10 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
                                                   const std::string& context) {
     const auto entry = parent.find(key);
     if (entry == parent.end()) {
-        fail(context, std::string("'") + key + "' is required");
+        malformed(context, std::string("'") + key + "' is required");
     }
     if (!entry->is_array()) {
-        fail(context, std::string("'") + key + "' must be an array");
+        malformed(context, std::string("'") + key + "' must be an array");
     }
     return *entry;
 }
@@ -151,14 +171,14 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
 [[nodiscard]] std::string requiredString(const nlohmann::json& parent, const char* key, const std::string& context) {
     const auto entry = parent.find(key);
     if (entry == parent.end()) {
-        fail(context, std::string("'") + key + "' is required");
+        malformed(context, std::string("'") + key + "' is required");
     }
     if (!entry->is_string()) {
-        fail(context, std::string("'") + key + "' must be a string");
+        malformed(context, std::string("'") + key + "' must be a string");
     }
     const std::string value = entry->get<std::string>();
     if (value.empty()) {
-        fail(context, std::string("'") + key + "' must not be empty");
+        malformed(context, std::string("'") + key + "' must not be empty");
     }
     return value;
 }
@@ -170,7 +190,7 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
         return std::nullopt;
     }
     if (!entry->is_string()) {
-        fail(context, std::string("'") + key + "' must be a string");
+        malformed(context, std::string("'") + key + "' must be a string");
     }
     return entry->get<std::string>();
 }
@@ -179,7 +199,7 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
                                              const std::string& context) {
     const auto entry = parent.find(key);
     if (entry == parent.end()) {
-        fail(context, std::string("'") + key + "' is required");
+        malformed(context, std::string("'") + key + "' is required");
     }
     if (entry->is_number_unsigned()) {
         return entry->get<std::uint64_t>();
@@ -187,11 +207,11 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
     if (entry->is_number_integer()) {
         const auto value = entry->get<std::int64_t>();
         if (value < 0) {
-            fail(context, std::string("'") + key + "' must be a non-negative integer");
+            malformed(context, std::string("'") + key + "' must be a non-negative integer");
         }
         return static_cast<std::uint64_t>(value);
     }
-    fail(context, std::string("'") + key + "' must be a non-negative integer");
+    malformed(context, std::string("'") + key + "' must be a non-negative integer");
 }
 
 [[nodiscard]] std::optional<double> optionalNumber(const nlohmann::json& parent, const char* key,
@@ -201,7 +221,7 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
         return std::nullopt;
     }
     if (!entry->is_number()) {
-        fail(context, std::string("'") + key + "' must be a number");
+        malformed(context, std::string("'") + key + "' must be a number");
     }
     return entry->get<double>();
 }
@@ -215,16 +235,16 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
     if (entry->is_number_unsigned()) {
         const auto value = entry->get<std::uint64_t>();
         if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
-            fail(context, std::string("'") + key + "' is outside the integer range");
+            malformed(context, std::string("'") + key + "' is outside the integer range");
         }
         return static_cast<int>(value);
     }
     if (!entry->is_number_integer()) {
-        fail(context, std::string("'") + key + "' must be an integer");
+        malformed(context, std::string("'") + key + "' must be an integer");
     }
     const auto value = entry->get<std::int64_t>();
     if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
-        fail(context, std::string("'") + key + "' is outside the integer range");
+        malformed(context, std::string("'") + key + "' is outside the integer range");
     }
     return static_cast<int>(value);
 }
@@ -349,13 +369,13 @@ void rejectUnknownKeys(const nlohmann::json& object, std::initializer_list<std::
 template <std::size_t N>
 [[nodiscard]] ParameterValue vectorDefault(const nlohmann::json& value, const std::string& context) {
     if (!value.is_array() || value.size() != N) {
-        fail(context, "'default' must be an array of " + std::to_string(N) + " numbers");
+        malformed(context, "'default' must be an array of " + std::to_string(N) + " numbers");
     }
     std::array<float, N> components{};
     for (std::size_t index = 0; index < N; ++index) {
         const nlohmann::json& element = value.at(index);
         if (!element.is_number()) {
-            fail(context, "'default' components must be numbers");
+            malformed(context, "'default' components must be numbers");
         }
         components[index] = element.get<float>();
     }
@@ -375,35 +395,35 @@ template <std::size_t N>
     switch (type) {
     case ParameterType::Boolean:
         if (!value.is_boolean()) {
-            fail(context, "'default' must be a boolean");
+            malformed(context, "'default' must be a boolean");
         }
         return value.get<bool>();
     case ParameterType::Integer: {
         if (value.is_number_unsigned()) {
             const auto number = value.get<std::uint64_t>();
             if (number > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-                fail(context, "'default' is outside the integer range");
+                malformed(context, "'default' is outside the integer range");
             }
             return static_cast<std::int64_t>(number);
         }
         if (!value.is_number_integer()) {
-            fail(context, "'default' must be an integer");
+            malformed(context, "'default' must be an integer");
         }
         return value.get<std::int64_t>();
     }
     case ParameterType::Float:
         if (!value.is_number()) {
-            fail(context, "'default' must be a number");
+            malformed(context, "'default' must be a number");
         }
         return value.get<double>();
     case ParameterType::String:
         if (!value.is_string()) {
-            fail(context, "'default' must be a string");
+            malformed(context, "'default' must be a string");
         }
         return value.get<std::string>();
     case ParameterType::Choice:
         if (!value.is_string()) {
-            fail(context, "'default' must name a declared choice");
+            malformed(context, "'default' must name a declared choice");
         }
         return ChoiceValue{value.get<std::string>()};
     case ParameterType::Vector2:
@@ -418,7 +438,7 @@ template <std::size_t N>
 
 [[nodiscard]] ParameterSpec parseParameter(const nlohmann::json& entry, const std::string& context) {
     if (!entry.is_object()) {
-        fail(context, "every parameter must be an object");
+        malformed(context, "every parameter must be an object");
     }
     rejectUnknownKeys(entry,
                       {"name", "type", "default", "minimum", "maximum", "softMinimum", "softMaximum", "step", "label",
@@ -430,7 +450,7 @@ template <std::size_t N>
     parameter.type = parseParameterType(requiredString(entry, "type", parameterContext), parameterContext);
     const auto defaultValue = entry.find("default");
     if (defaultValue == entry.end()) {
-        fail(parameterContext, "'default' is required");
+        malformed(parameterContext, "'default' is required");
     }
     parameter.defaultValue = plainDefault(*defaultValue, parameter.type, parameterContext);
     parameter.minimum = optionalNumber(entry, "minimum", parameterContext);
@@ -445,11 +465,11 @@ template <std::size_t N>
     parameter.row = optionalString(entry, "row", parameterContext).value_or(std::string{});
     if (const nlohmann::json* choices = optionalMember(entry, "choices")) {
         if (!choices->is_array()) {
-            fail(parameterContext, "'choices' must be an array");
+            malformed(parameterContext, "'choices' must be an array");
         }
         for (const nlohmann::json& choice : *choices) {
             if (!choice.is_string()) {
-                fail(parameterContext, "'choices' entries must be strings");
+                malformed(parameterContext, "'choices' entries must be strings");
             }
             parameter.choices.push_back(choice.get<std::string>());
         }
@@ -459,24 +479,33 @@ template <std::size_t N>
 
 struct ParsedManifest {
     PackageRecord record;
+    // Declared presentation metadata. Empty means the manifest declared none:
+    // the host never invents an author or a description for a package.
+    std::string name;
+    std::string author;
+    std::string description;
     std::vector<std::string> dependencies;
     std::vector<PanelContribution> panels;
     std::string library;  // absolute path of the package's library
 };
 
-[[nodiscard]] ParsedManifest parseManifest(const fs::path& root, const std::string& text) {
-    ParsedManifest parsed;
+// Reads one declaration into `parsed`. The metadata is filled in as far as the
+// declaration can be read, so a package refused later — an unsupported API
+// range, a missing declared file, an unknown key — still reports the identity,
+// name, version, description and contributions it did declare. A throw leaves
+// exactly that partial metadata in `parsed`.
+void parseManifest(const fs::path& root, const std::string& text, ParsedManifest& parsed) {
     std::string context = "installed package at '" + pathText(root) + "'";
     const nlohmann::json manifest = nlohmann::json::parse(text, nullptr, false);
     if (manifest.is_discarded()) {
-        fail(context, "manifest.json is not valid JSON");
+        malformed(context, "manifest.json is not valid JSON");
     }
     if (!manifest.is_object()) {
-        fail(context, "manifest.json must contain an object");
+        malformed(context, "manifest.json must contain an object");
     }
     rejectUnknownKeys(manifest,
-                      {"format", "id", "version", "stateVersion", "processingVersion", "api", "dependencies",
-                       "capabilities", "library", "node", "gpu", "editors", "panels"},
+                      {"format", "id", "name", "author", "description", "version", "stateVersion", "processingVersion",
+                       "api", "dependencies", "capabilities", "library", "node", "gpu", "editors", "panels"},
                       context);
 
     const std::uint64_t format = requiredUnsigned(manifest, "format", context);
@@ -488,16 +517,19 @@ struct ParsedManifest {
     }
     parsed.record.id = requiredString(manifest, "id", context);
     if (!isNamespacedIdentifier(parsed.record.id)) {
-        fail(context, "package id '" + parsed.record.id +
-                          "' must be namespaced and free of whitespace or control "
-                          "characters");
+        malformed(context, "package id '" + parsed.record.id +
+                               "' must be namespaced and free of whitespace or control "
+                               "characters");
     }
     context = "installed package '" + parsed.record.id + "' at '" + pathText(root) + "'";
+    parsed.name = optionalString(manifest, "name", context).value_or(std::string{});
+    parsed.author = optionalString(manifest, "author", context).value_or(std::string{});
+    parsed.description = optionalString(manifest, "description", context).value_or(std::string{});
     parsed.record.version = requiredUnsigned(manifest, "version", context);
     parsed.record.stateVersion = requiredUnsigned(manifest, "stateVersion", context);
     parsed.record.processingVersion = requiredUnsigned(manifest, "processingVersion", context);
     if (parsed.record.version == 0 || parsed.record.stateVersion == 0 || parsed.record.processingVersion == 0) {
-        fail(context, "'version', 'stateVersion' and 'processingVersion' must be positive");
+        malformed(context, "'version', 'stateVersion' and 'processingVersion' must be positive");
     }
 
     const nlohmann::json& api = requiredObject(manifest, "api", context);
@@ -512,14 +544,14 @@ struct ParsedManifest {
     const nlohmann::json& dependencies = requiredArray(manifest, "dependencies", context);
     for (const nlohmann::json& dependency : dependencies) {
         if (!dependency.is_string()) {
-            fail(context, "'dependencies' entries must be package ids");
+            malformed(context, "'dependencies' entries must be package ids");
         }
         const std::string id = dependency.get<std::string>();
         if (!isNamespacedIdentifier(id)) {
-            fail(context, "dependency '" + id + "' is not a namespaced package id");
+            malformed(context, "dependency '" + id + "' is not a namespaced package id");
         }
         if (id == parsed.record.id) {
-            fail(context, "declares itself as a dependency");
+            malformed(context, "declares itself as a dependency");
         }
         parsed.dependencies.push_back(id);
     }
@@ -527,7 +559,7 @@ struct ParsedManifest {
         std::set<std::string, std::less<>> declared;
         for (const std::string& dependency : parsed.dependencies) {
             if (!declared.insert(dependency).second) {
-                fail(context, "declares duplicate dependency '" + dependency + "'");
+                malformed(context, "declares duplicate dependency '" + dependency + "'");
             }
         }
     }
@@ -536,14 +568,14 @@ struct ParsedManifest {
     std::set<std::string, std::less<>> declaredCapabilities;
     for (const nlohmann::json& capability : capabilities) {
         if (!capability.is_string()) {
-            fail(context, "'capabilities' entries must be strings");
+            malformed(context, "'capabilities' entries must be strings");
         }
         const std::string name = capability.get<std::string>();
         if (name != kPointwiseCapability && name != kQmlCapability) {
             fail(context, "declares unsupported capability '" + name + "'");
         }
         if (!declaredCapabilities.insert(name).second) {
-            fail(context, "declares duplicate capability '" + name + "'");
+            malformed(context, "declares duplicate capability '" + name + "'");
         }
     }
     if (!declaredCapabilities.contains(std::string{kPointwiseCapability})) {
@@ -561,18 +593,18 @@ struct ParsedManifest {
     NodeDescriptor& descriptor = parsed.record.descriptor;
     descriptor.type = requiredString(node, "type", nodeContext);
     if (!isNamespacedIdentifier(descriptor.type)) {
-        fail(nodeContext, "type '" + descriptor.type +
-                              "' must be namespaced and free of whitespace or control "
-                              "characters");
+        malformed(nodeContext, "type '" + descriptor.type +
+                                   "' must be namespaced and free of whitespace or control "
+                                   "characters");
     }
     descriptor.displayName = optionalString(node, "displayName", nodeContext).value_or(descriptor.type);
     descriptor.group = optionalString(node, "group", nodeContext).value_or(std::string{});
     const nlohmann::json* parameters = optionalMember(node, "parameters");
     if (parameters == nullptr) {
-        fail(nodeContext, "'parameters' is required");
+        malformed(nodeContext, "'parameters' is required");
     }
     if (!parameters->is_array()) {
-        fail(nodeContext, "'parameters' must be an array");
+        malformed(nodeContext, "'parameters' must be an array");
     }
     for (const nlohmann::json& parameter : *parameters) {
         descriptor.parameters.push_back(parseParameter(parameter, nodeContext));
@@ -603,23 +635,23 @@ struct ParsedManifest {
 
     if (const nlohmann::json* editors = optionalMember(manifest, "editors")) {
         if (!editors->is_array()) {
-            fail(context, "'editors' must be an array");
+            malformed(context, "'editors' must be an array");
         }
         std::set<std::string, std::less<>> declaredEditors;
         for (const nlohmann::json& editor : *editors) {
             if (!editor.is_object()) {
-                fail(context, "every editor must be an object");
+                malformed(context, "every editor must be an object");
             }
             rejectUnknownKeys(editor, {"id", "source", "presentation", "consumes"}, context + " editor");
             NodeEditorContribution contribution;
             contribution.id = requiredString(editor, "id", context + " editor");
             if (!isNamespacedIdentifier(contribution.id)) {
-                fail(context, "editor id '" + contribution.id +
-                                  "' must be namespaced and free of whitespace or "
-                                  "control characters");
+                malformed(context, "editor id '" + contribution.id +
+                                       "' must be namespaced and free of whitespace or "
+                                       "control characters");
             }
             if (!declaredEditors.insert(contribution.id).second) {
-                fail(context, "declares duplicate editor '" + contribution.id + "'");
+                malformed(context, "declares duplicate editor '" + contribution.id + "'");
             }
             const std::string editorContext = context + " editor '" + contribution.id + "'";
             std::string source;
@@ -633,19 +665,19 @@ struct ParsedManifest {
             }
             if (const nlohmann::json* consumes = optionalMember(editor, "consumes")) {
                 if (!consumes->is_array()) {
-                    fail(editorContext, "'consumes' must be an array of declared parameter keys");
+                    malformed(editorContext, "'consumes' must be an array of declared parameter keys");
                 }
                 std::set<std::string, std::less<>> consumed;
                 for (const nlohmann::json& key : *consumes) {
                     if (!key.is_string()) {
-                        fail(editorContext, "'consumes' entries must be parameter keys");
+                        malformed(editorContext, "'consumes' entries must be parameter keys");
                     }
                     const std::string name = key.get<std::string>();
                     if (name.empty() || !consumed.insert(name).second) {
-                        fail(editorContext, "consumes an empty or duplicate parameter key");
+                        malformed(editorContext, "consumes an empty or duplicate parameter key");
                     }
                     if (!parameterNames.contains(name)) {
-                        fail(editorContext, "consumes undeclared parameter '" + name + "'");
+                        malformed(editorContext, "consumes undeclared parameter '" + name + "'");
                     }
                     contribution.consumes.push_back(name);
                 }
@@ -656,23 +688,23 @@ struct ParsedManifest {
 
     if (const nlohmann::json* panels = optionalMember(manifest, "panels")) {
         if (!panels->is_array()) {
-            fail(context, "'panels' must be an array");
+            malformed(context, "'panels' must be an array");
         }
         std::set<std::string, std::less<>> declaredPanels;
         for (const nlohmann::json& panel : *panels) {
             if (!panel.is_object()) {
-                fail(context, "every panel must be an object");
+                malformed(context, "every panel must be an object");
             }
             rejectUnknownKeys(panel, {"id", "title", "source"}, context + " panel");
             PanelContribution contribution;
             contribution.id = requiredString(panel, "id", context + " panel");
             if (!isNamespacedIdentifier(contribution.id)) {
-                fail(context, "panel id '" + contribution.id +
-                                  "' must be namespaced and free of whitespace or "
-                                  "control characters");
+                malformed(context, "panel id '" + contribution.id +
+                                       "' must be namespaced and free of whitespace or "
+                                       "control characters");
             }
             if (!declaredPanels.insert(contribution.id).second) {
-                fail(context, "declares duplicate panel '" + contribution.id + "'");
+                malformed(context, "declares duplicate panel '" + contribution.id + "'");
             }
             const std::string panelContext = context + " panel '" + contribution.id + "'";
             contribution.title = requiredString(panel, "title", panelContext);
@@ -691,7 +723,7 @@ struct ParsedManifest {
 
     if (const nlohmann::json* gpu = optionalMember(manifest, "gpu")) {
         if (!gpu->is_object()) {
-            fail(context, "'gpu' must be an object");
+            malformed(context, "'gpu' must be an object");
         }
         const std::string gpuContext = context + " gpu";
         rejectUnknownKeys(*gpu, {"bindings", "payloadBytes", "payloadLayout", "spirv", "glsl"}, gpuContext);
@@ -709,7 +741,7 @@ struct ParsedManifest {
         declared.payloadBytes = static_cast<std::uint32_t>(payloadBytes);
         declared.payloadLayout = requiredString(*gpu, "payloadLayout", gpuContext);
         if (declared.payloadLayout.find('.') == std::string::npos) {
-            fail(gpuContext, "'payloadLayout' must be a namespaced layout identity");
+            malformed(gpuContext, "'payloadLayout' must be a namespaced layout identity");
         }
         std::string spirv;
         if (!resolvePackageFile(root, requiredString(*gpu, "spirv", gpuContext), spirv, reason)) {
@@ -727,15 +759,550 @@ struct ParsedManifest {
         }
         parsed.record.gpu = std::move(declared);
     }
-    return parsed;
 }
 
-[[nodiscard]] ParsedManifest parseManifestFile(const fs::path& root) {
+void parseManifestFile(const fs::path& root, ParsedManifest& parsed) {
     std::string text;
     if (!readTextFile(pathText((root / kManifestFile)), text)) {
-        fail("installed package at '" + pathText(root) + "'", "manifest.json could not be read");
+        malformed("installed package at '" + pathText(root) + "'", "manifest.json could not be read");
     }
-    return parseManifest(root, text);
+    parseManifest(root, text, parsed);
+}
+
+// ---------------------------------------------------------------------------
+// Per-user package settings. One file holds the registered linked folders and
+// the explicit enablements; both are canonical absolute locations, so a folder
+// reached by two routes or spelled two ways is never registered or enabled
+// twice, and disabling or removing one location never touches another.
+// ---------------------------------------------------------------------------
+
+constexpr std::uint64_t kPreferencesFormat = 1;
+
+// Canonical text location of a package folder: the resolved path when the
+// folder exists, its normalized spelling otherwise, so a folder that moved is
+// still compared by one deterministic location instead of by a stale string.
+[[nodiscard]] std::string canonicalDirectoryText(const fs::path& path) {
+    std::error_code error;
+    const fs::path canonical = fs::weakly_canonical(path, error);
+    return pathText(error ? path : canonical);
+}
+
+// The explicit NEMO_EXTENSION_PATH roots, or nullopt when that developer/test
+// override is not set. An empty or separator-only value is not an override.
+[[nodiscard]] std::optional<std::vector<fs::path>> configuredRootOverride() {
+#if defined(_WIN32)
+    const wchar_t* configured = _wgetenv(L"NEMO_EXTENSION_PATH");
+    constexpr wchar_t separator = L';';
+#else
+    const char* configured = std::getenv("NEMO_EXTENSION_PATH");
+    constexpr char separator = ':';
+#endif
+    if (configured == nullptr) {
+        return std::nullopt;
+    }
+    std::vector<fs::path> roots;
+    const std::basic_string_view list{configured};
+    std::size_t begin = 0;
+    while (begin <= list.size()) {
+        const std::size_t end = list.find(separator, begin);
+        const auto entry = list.substr(begin, end == decltype(list)::npos ? end : end - begin);
+        if (!entry.empty()) {
+            roots.emplace_back(entry);
+        }
+        if (end == decltype(list)::npos) {
+            break;
+        }
+        begin = end + 1;
+    }
+    if (roots.empty()) {
+        return std::nullopt;
+    }
+    return roots;
+}
+
+// What one normal startup scans. A standard root's direct child folders are
+// packages; a registered linked folder IS a package folder, whether or not it
+// still exists, so a moved or emptied registration stays visible instead of
+// disappearing from the Settings list.
+struct DiscoverySource {
+    std::vector<fs::path> roots;
+    std::vector<fs::path> linkedFolders;
+};
+
+[[nodiscard]] DiscoverySource discoverySource(const PackagePreferences& preferences) {
+    DiscoverySource source;
+    source.roots = standardPackageRoots();
+    std::set<std::string, std::less<>> seen;
+    for (const fs::path& root : source.roots) {
+        seen.insert(canonicalDirectoryText(root));
+    }
+    for (const std::string& folder : preferences.linkedFolders) {
+        if (!seen.insert(folder).second) {
+            continue;
+        }
+        source.linkedFolders.push_back(pathFromText(folder));
+    }
+    return source;
+}
+
+// The settings object. `context` names the file in every failure, so a caller
+// never has to guess which settings file was unusable.
+[[nodiscard]] PackagePreferences parsePreferences(const nlohmann::json& settings, const std::string& context) {
+    rejectUnknownKeys(settings, {"format", "linkedFolders", "enabled"}, context);
+    const std::uint64_t format = requiredUnsigned(settings, "format", context);
+    if (format != kPreferencesFormat) {
+        fail(context, "package settings format " + std::to_string(format) +
+                          " is not supported by this build (this build reads format " +
+                          std::to_string(kPreferencesFormat) + ")");
+    }
+    PackagePreferences preferences;
+    std::set<std::string, std::less<>> folders;
+    for (const nlohmann::json& folder : requiredArray(settings, "linkedFolders", context)) {
+        if (!folder.is_string()) {
+            fail(context, "'linkedFolders' entries must be package folder paths");
+        }
+        const std::string declared = folder.get<std::string>();
+        if (declared.empty()) {
+            fail(context, "'linkedFolders' entries must not be empty");
+        }
+        const std::string canonical = canonicalDirectoryText(pathFromText(declared));
+        if (!folders.insert(canonical).second) {
+            fail(context, "registers the package folder '" + canonical + "' twice");
+        }
+        preferences.linkedFolders.push_back(canonical);
+    }
+    std::set<std::pair<std::string, std::string>> enablements;
+    for (const nlohmann::json& entry : requiredArray(settings, "enabled", context)) {
+        const std::string entryContext = context + " enabled package";
+        if (!entry.is_object()) {
+            fail(context, "every enabled package must be an object");
+        }
+        rejectUnknownKeys(entry, {"id", "directory"}, entryContext);
+        EnabledPackage package;
+        package.id = requiredString(entry, "id", entryContext);
+        if (!isNamespacedIdentifier(package.id)) {
+            fail(entryContext, "identity '" + package.id + "' is not a namespaced package id");
+        }
+        package.directory = canonicalDirectoryText(pathFromText(requiredString(entry, "directory", entryContext)));
+        if (!enablements.emplace(package.id, package.directory).second) {
+            fail(context, "enables '" + package.id + "' at '" + package.directory + "' twice");
+        }
+        preferences.enabled.push_back(std::move(package));
+    }
+    return preferences;
+}
+
+// ---------------------------------------------------------------------------
+// Discovery and metadata analysis. Nothing in this section opens a library,
+// calls an entrypoint or reads a file other than a package's manifest.json, so
+// inspection, discovery and disabled packages never execute package code. The
+// analysis is shared verbatim by metadata inspection and by activation: a
+// package the Settings surface shows as admitted is admitted.
+// ---------------------------------------------------------------------------
+
+// One discovered package folder with the analysis' conclusion. `manifest` holds
+// the metadata the declaration carried — including the partial metadata of a
+// refused package; `reason` and `status` describe why it contributes nothing;
+// `requested` says whether the persisted policy (or an explicit override) asks
+// for it; `admitted` says the declaration itself is usable, which a dependency
+// problem does not change.
+struct Candidate {
+    fs::path directory;
+    std::optional<ParsedManifest> manifest;
+    bool requested{false};
+    bool admitted{false};
+    PackageStatus status{PackageStatus::Disabled};
+    std::string reason;
+};
+
+[[nodiscard]] std::string describeCandidate(const std::vector<Candidate>& candidates, std::size_t index) {
+    const std::string identity =
+        candidates[index].manifest ? "'" + candidates[index].manifest->record.id + "' at " : "at ";
+    return "installed package " + identity + "'" + pathText(candidates[index].directory) + "'";
+}
+
+// The first reason wins: a package is refused once, with the reason that
+// explains the discovery order it was found in. `declarationAdmitted` states
+// whether the package's own declaration survived the refusal — a dependency
+// problem leaves it admitted, the package's own declaration does not.
+void refuseCandidate(std::vector<Candidate>& candidates, std::size_t index, PackageStatus status,
+                     const std::string& reason, bool declarationAdmitted) {
+    if (!candidates[index].reason.empty()) {
+        return;
+    }
+    candidates[index].reason = reason;
+    candidates[index].status = status;
+    candidates[index].admitted = declarationAdmitted;
+}
+
+// The other discovered locations of one colliding group, so a duplicate is
+// explained by naming every offender instead of letting scan order pick one.
+[[nodiscard]] std::string otherLocations(const std::vector<Candidate>& candidates,
+                                         const std::vector<std::size_t>& group, std::size_t index) {
+    std::string others;
+    for (const std::size_t member : group) {
+        if (member == index) {
+            continue;
+        }
+        if (!others.empty()) {
+            others += ", ";
+        }
+        others += "'" + pathText(candidates[member].directory) + "'";
+    }
+    return others;
+}
+
+// Discovery: every root's direct child package folders, by name, in root order
+// and then every linked package folder. A child folder is a package only when
+// it carries a manifest; a root that is not an existing directory is skipped,
+// the working directory is never searched implicitly, and one canonical folder
+// reached through two routes is one package. A registered linked folder that
+// moved or holds no manifest stays a candidate with a MissingPackage status, so
+// the registration never reads as "no such extension was ever selected".
+[[nodiscard]] std::vector<Candidate> discoverCandidates(const DiscoverySource& source) {
+    std::vector<Candidate> candidates;
+    std::set<std::string, std::less<>> visited;
+    const auto addPackage = [&candidates, &visited](const fs::path& directory) {
+        const std::string canonical = canonicalDirectoryText(directory);
+        if (!visited.insert(canonical).second) {
+            return;
+        }
+        const fs::path folder = pathFromText(canonical);
+        ParsedManifest parsed;
+        try {
+            parseManifestFile(folder, parsed);
+            candidates.push_back(
+                Candidate{folder, std::move(parsed), false, true, PackageStatus::Disabled, std::string{}});
+        } catch (const ManifestRefusal& refusal) {
+            // The metadata the declaration did carry is kept, so a refused
+            // package is still listed with its identity, name and version beside
+            // the reason it cannot run.
+            candidates.push_back(
+                Candidate{folder, std::move(parsed), false, false, refusal.status(), std::string{refusal.what()}});
+        } catch (const std::exception& failure) {
+            candidates.push_back(Candidate{folder, std::nullopt, false, false, PackageStatus::MalformedManifest,
+                                           std::string{failure.what()}});
+        }
+    };
+    const auto addMissing = [&candidates, &visited](const fs::path& directory, const std::string& reason) {
+        const std::string canonical = canonicalDirectoryText(directory);
+        if (!visited.insert(canonical).second) {
+            return;
+        }
+        Candidate candidate{pathFromText(canonical), std::nullopt, false, false, PackageStatus::MissingPackage, reason};
+        candidates.push_back(std::move(candidate));
+    };
+    for (const fs::path& root : source.roots) {
+        std::error_code error;
+        if (!fs::is_directory(root, error)) {
+            continue;
+        }
+        std::vector<fs::path> children;
+        fs::directory_iterator iterator(root, error);
+        const fs::directory_iterator end;
+        for (; !error && iterator != end; iterator.increment(error)) {
+            std::error_code entryError;
+            if (iterator->is_directory(entryError)) {
+                children.push_back(iterator->path());
+            }
+        }
+        std::sort(children.begin(), children.end());
+        for (const fs::path& child : children) {
+            std::error_code manifestError;
+            if (fs::is_regular_file(child / kManifestFile, manifestError)) {
+                addPackage(child);
+            }
+        }
+    }
+    for (const fs::path& folder : source.linkedFolders) {
+        std::error_code error;
+        if (!fs::is_directory(folder, error)) {
+            addMissing(folder, "the registered package folder '" + canonicalDirectoryText(folder) + "' does not exist");
+            continue;
+        }
+        if (!fs::is_regular_file(folder / kManifestFile, error)) {
+            addMissing(folder,
+                       "the registered package folder '" + canonicalDirectoryText(folder) + "' holds no manifest.json");
+            continue;
+        }
+        addPackage(folder);
+    }
+    return candidates;
+}
+
+// The persisted policy asks for `candidate` when it names that canonical
+// location and, once a manifest declared one, its identity too. An identity
+// alone never enables a package installed somewhere the user did not enable,
+// and a package whose manifest cannot be read keeps the decision the user made
+// for its folder.
+[[nodiscard]] bool requestedByPolicy(const Candidate& candidate, const PackagePreferences& preferences) {
+    const std::string directory = pathText(candidate.directory);
+    const std::string identity = candidate.manifest ? candidate.manifest->record.id : std::string{};
+    return std::any_of(preferences.enabled.begin(), preferences.enabled.end(),
+                       [&directory, &identity](const EnabledPackage& enabled) {
+                           return enabled.directory == directory && (identity.empty() || enabled.id == identity);
+                       });
+}
+
+void markRequested(std::vector<Candidate>& candidates, const PackagePreferences& preferences, bool enableAll) {
+    for (Candidate& candidate : candidates) {
+        candidate.requested = enableAll || requestedByPolicy(candidate, preferences);
+    }
+}
+
+// The metadata conclusions and the order in which the packages that will really
+// run must be activated.
+struct Analysis {
+    std::vector<std::size_t> activationOrder;
+    std::map<std::string, std::size_t, std::less<>> packageIndex;
+};
+
+// Duplicate identities/types/editors/panels (every offender, never a discovery
+// order winner), built-in collisions, node schema legality, dependency presence
+// and cycles. A dependency the user has not enabled is diagnosed as disabled
+// rather than activated implicitly, and a package that is not requested keeps
+// its metadata but is never ordered for activation.
+[[nodiscard]] Analysis analyzeCandidates(std::vector<Candidate>& candidates) {
+    Analysis analysis;
+
+    std::map<std::string, std::vector<std::size_t>, std::less<>> byPackageId;
+    std::map<std::string, std::vector<std::size_t>, std::less<>> byNodeType;
+    std::map<std::string, std::vector<std::size_t>, std::less<>> byEditorId;
+    std::map<std::string, std::vector<std::size_t>, std::less<>> byPanelId;
+    std::set<std::string, std::less<>> builtinTypes;
+    std::set<std::string, std::less<>> builtinEditors;
+    for (const NodeContribution& contribution : builtinContributions()) {
+        builtinTypes.insert(contribution.descriptor.type);
+        for (const NodeEditorContribution& editor : contribution.editors) {
+            builtinEditors.insert(editor.id);
+        }
+    }
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        const std::optional<ParsedManifest>& declared = candidates[index].manifest;
+        if (!declared || declared->record.id.empty()) {
+            continue;  // the declaration did not get far enough to name anything
+        }
+        const PackageRecord& record = declared->record;
+        byPackageId[record.id].push_back(index);
+        if (!record.descriptor.type.empty()) {
+            byNodeType[record.descriptor.type].push_back(index);
+        }
+        for (const NodeEditorContribution& editor : record.editors) {
+            byEditorId[editor.id].push_back(index);
+        }
+        for (const PanelContribution& panel : declared->panels) {
+            byPanelId[panel.id].push_back(index);
+        }
+    }
+    for (const auto& [id, group] : byPackageId) {
+        if (group.size() > 1) {
+            for (const std::size_t index : group) {
+                refuseCandidate(candidates, index, PackageStatus::DuplicateIdentity,
+                                describeCandidate(candidates, index) + ": duplicate package identity '" + id +
+                                    "'; every package with that identity is refused, also installed at " +
+                                    otherLocations(candidates, group, index),
+                                false);
+            }
+        }
+    }
+    for (const auto& [type, group] : byNodeType) {
+        if (group.size() > 1) {
+            for (const std::size_t index : group) {
+                refuseCandidate(candidates, index, PackageStatus::DuplicateIdentity,
+                                describeCandidate(candidates, index) + ": duplicate node type '" + type +
+                                    "', also declared at " + otherLocations(candidates, group, index),
+                                false);
+            }
+        }
+        if (builtinTypes.contains(type)) {
+            for (const std::size_t index : group) {
+                refuseCandidate(candidates, index, PackageStatus::DuplicateIdentity,
+                                describeCandidate(candidates, index) + ": node type '" + type +
+                                    "' is already declared by this build",
+                                false);
+            }
+        }
+    }
+    for (const auto& [id, group] : byEditorId) {
+        if (group.size() > 1) {
+            for (const std::size_t index : group) {
+                refuseCandidate(candidates, index, PackageStatus::DuplicateIdentity,
+                                describeCandidate(candidates, index) + ": duplicate editor identity '" + id +
+                                    "', also declared at " + otherLocations(candidates, group, index),
+                                false);
+            }
+        }
+        if (builtinEditors.contains(id)) {
+            for (const std::size_t index : group) {
+                refuseCandidate(candidates, index, PackageStatus::DuplicateIdentity,
+                                describeCandidate(candidates, index) + ": editor identity '" + id +
+                                    "' is already declared by this build",
+                                false);
+            }
+        }
+    }
+    for (const auto& [id, group] : byPanelId) {
+        if (group.size() > 1) {
+            for (const std::size_t index : group) {
+                refuseCandidate(candidates, index, PackageStatus::DuplicateIdentity,
+                                describeCandidate(candidates, index) + ": duplicate panel identity '" + id +
+                                    "', also declared at " + otherLocations(candidates, group, index),
+                                false);
+            }
+        }
+    }
+
+    // Schema validation: the descriptor the manifest declares must be a legal
+    // node schema on its own, before any library is opened.
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        if (!candidates[index].admitted || !candidates[index].reason.empty()) {
+            continue;
+        }
+        try {
+            const std::vector<NodeDescriptor> declared{candidates[index].manifest->record.descriptor};
+            const NodeCatalog catalog(declared);
+            (void)catalog;
+        } catch (const std::invalid_argument& error) {
+            refuseCandidate(candidates, index, PackageStatus::Incompatible,
+                            describeCandidate(candidates, index) + ": " + error.what(), false);
+        }
+    }
+
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        if (candidates[index].manifest && !candidates[index].manifest->record.id.empty()) {
+            analysis.packageIndex.emplace(candidates[index].manifest->record.id, index);
+        }
+    }
+
+    // Dependency presence, before any native code is considered: a missing or
+    // disabled prerequisite is a diagnostic, never an implicit enablement. The
+    // package's own declaration stays admitted, so the Settings surface reports
+    // the prerequisite instead of hiding the package.
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        if (!candidates[index].manifest || !candidates[index].reason.empty()) {
+            continue;
+        }
+        for (const std::string& dependency : candidates[index].manifest->dependencies) {
+            const auto found = analysis.packageIndex.find(dependency);
+            if (found == analysis.packageIndex.end()) {
+                refuseCandidate(
+                    candidates, index, PackageStatus::MissingDependency,
+                    describeCandidate(candidates, index) + ": dependency '" + dependency + "' is not installed", true);
+                break;
+            }
+            if (!candidates[found->second].requested) {
+                refuseCandidate(candidates, index, PackageStatus::DisabledDependency,
+                                describeCandidate(candidates, index) + ": dependency '" + dependency +
+                                    "' is disabled; enable it explicitly",
+                                true);
+                break;
+            }
+        }
+    }
+    // A refused package refuses everything that depends on it, transitively.
+    {
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (std::size_t index = 0; index < candidates.size(); ++index) {
+                if (!candidates[index].manifest || !candidates[index].reason.empty()) {
+                    continue;
+                }
+                for (const std::string& dependency : candidates[index].manifest->dependencies) {
+                    const auto found = analysis.packageIndex.find(dependency);
+                    if (found != analysis.packageIndex.end() && !candidates[found->second].reason.empty()) {
+                        refuseCandidate(candidates, index, PackageStatus::RefusedDependency,
+                                        describeCandidate(candidates, index) + ": depends on refused package '" +
+                                            dependency + "'",
+                                        true);
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Resolve the entire dependency order before executing any native code, over
+    // the packages that will really run. Kahn's residual nodes lie on, or depend
+    // on, a cycle; neither can activate.
+    std::vector<std::vector<std::size_t>> dependents(candidates.size());
+    std::vector<std::size_t> remaining(candidates.size(), 0);
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        if (!candidates[index].requested || !candidates[index].reason.empty()) {
+            continue;
+        }
+        for (const std::string& dependency : candidates[index].manifest->dependencies) {
+            const std::size_t source = analysis.packageIndex.at(dependency);
+            dependents[source].push_back(index);
+            ++remaining[index];
+        }
+        if (remaining[index] == 0) {
+            analysis.activationOrder.push_back(index);
+        }
+    }
+    for (std::size_t position = 0; position < analysis.activationOrder.size(); ++position) {
+        for (const std::size_t dependent : dependents[analysis.activationOrder[position]]) {
+            if (--remaining[dependent] == 0) {
+                analysis.activationOrder.push_back(dependent);
+            }
+        }
+    }
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        if (!candidates[index].requested || !candidates[index].reason.empty() || remaining[index] == 0) {
+            continue;
+        }
+        std::string involved;
+        for (const std::string& dependency : candidates[index].manifest->dependencies) {
+            if (remaining[analysis.packageIndex.at(dependency)] != 0) {
+                if (!involved.empty()) {
+                    involved += ", ";
+                }
+                involved += "'" + dependency + "'";
+            }
+        }
+        refuseCandidate(candidates, index, PackageStatus::DependencyCycle,
+                        describeCandidate(candidates, index) + ": dependency cycle through " + involved, true);
+    }
+    return analysis;
+}
+
+// The inspected metadata of one discovered package. `active` is only true for a
+// package of the startup snapshot that really contributed; a package that is
+// admitted but not requested is simply inactive, and one that a dependency
+// blocks keeps its admitted declaration.
+[[nodiscard]] PackageInfo infoFor(const Candidate& candidate, bool active) {
+    PackageInfo info;
+    info.directory = pathText(candidate.directory);
+    info.diagnostic = candidate.reason;
+    info.requestedEnabled = candidate.requested;
+    info.active = active;
+    info.admitted = candidate.admitted;
+    info.status = active ? PackageStatus::Active : candidate.status;
+    const bool blocked = info.status == PackageStatus::MissingDependency ||
+                         info.status == PackageStatus::RefusedDependency ||
+                         info.status == PackageStatus::DependencyCycle || info.status == PackageStatus::FailedToLoad;
+    info.canEnable = candidate.admitted && !blocked;
+    if (!candidate.manifest) {
+        return info;
+    }
+    const ParsedManifest& parsed = *candidate.manifest;
+    info.id = parsed.record.id;
+    info.name = parsed.name;
+    info.author = parsed.author;
+    info.description = parsed.description;
+    info.version = parsed.record.version;
+    if (!parsed.record.descriptor.type.empty()) {
+        info.nodeTypes.push_back(parsed.record.descriptor.type);
+    }
+    for (const NodeEditorContribution& editor : parsed.record.editors) {
+        info.editors.push_back(editor.id);
+    }
+    for (const PanelContribution& panel : parsed.panels) {
+        info.panels.push_back(panel.id);
+    }
+    info.dependencies = parsed.dependencies;
+    return info;
 }
 
 }  // namespace
@@ -951,38 +1518,14 @@ NodeContribution packageContribution(const PackageRecord& record) {
 
 }  // namespace detail
 
-std::vector<std::filesystem::path> installedPackageRoots() {
+std::vector<std::filesystem::path> standardPackageRoots() {
     std::vector<fs::path> roots;
-#if defined(_WIN32)
-    const wchar_t* configured = _wgetenv(L"NEMO_EXTENSION_PATH");
-    constexpr wchar_t separator = L';';
-#else
-    const char* configured = std::getenv("NEMO_EXTENSION_PATH");
-    constexpr char separator = ':';
-#endif
-    if (configured != nullptr) {
-        const std::basic_string_view list{configured};
-        std::size_t begin = 0;
-        while (begin <= list.size()) {
-            const std::size_t end = list.find(separator, begin);
-            const auto entry = list.substr(begin, end == decltype(list)::npos ? end : end - begin);
-            if (!entry.empty()) {
-                roots.emplace_back(entry);
-            }
-            if (end == decltype(list)::npos) {
-                break;
-            }
-            begin = end + 1;
-        }
-        if (!roots.empty()) {
-            return roots;
-        }
-    }
 #if defined(_WIN32)
     if (const wchar_t* localAppData = _wgetenv(L"LOCALAPPDATA"); localAppData != nullptr && *localAppData != L'\0') {
         const fs::path base{localAppData};
-        if (base.is_absolute())
+        if (base.is_absolute()) {
             roots.push_back(base / "Nemo" / "extensions");
+        }
     }
 #else
     if (const char* dataHome = std::getenv("XDG_DATA_HOME"); dataHome != nullptr && *dataHome != '\0') {
@@ -1002,255 +1545,290 @@ std::vector<std::filesystem::path> installedPackageRoots() {
     return roots;
 }
 
+std::filesystem::path packagePreferencesPath() {
+#if defined(_WIN32)
+    if (const wchar_t* localAppData = _wgetenv(L"LOCALAPPDATA"); localAppData != nullptr && *localAppData != L'\0') {
+        const fs::path base{localAppData};
+        if (base.is_absolute()) {
+            return base / "Nemo" / "extensions.json";
+        }
+    }
+#else
+    if (const char* configHome = std::getenv("XDG_CONFIG_HOME"); configHome != nullptr && *configHome != '\0') {
+        const fs::path base{configHome};
+        if (base.is_absolute()) {
+            return base / "nemo" / "extensions.json";
+        }
+    }
+    if (const char* home = std::getenv("HOME"); home != nullptr && *home != '\0') {
+        const fs::path base{home};
+        if (base.is_absolute()) {
+            return base / ".config" / "nemo" / "extensions.json";
+        }
+    }
+#endif
+    return {};
+}
+
+bool PackagePreferences::isEnabled(const std::string& id, const std::string& canonicalDirectory) const {
+    return std::any_of(enabled.begin(), enabled.end(), [&id, &canonicalDirectory](const EnabledPackage& package) {
+        return package.id == id && package.directory == canonicalDirectory;
+    });
+}
+
+void PackagePreferences::setEnabled(const std::string& id, const std::string& canonicalDirectory, bool enable) {
+    const auto match = [&id, &canonicalDirectory](const EnabledPackage& package) {
+        return package.id == id && package.directory == canonicalDirectory;
+    };
+    const auto found = std::find_if(enabled.begin(), enabled.end(), match);
+    if (!enable) {
+        if (found != enabled.end()) {
+            enabled.erase(found);
+        }
+        return;
+    }
+    if (found == enabled.end()) {
+        enabled.push_back(EnabledPackage{id, canonicalDirectory});
+    }
+}
+
+void PackagePreferences::removeLinkedFolder(const std::string& canonicalDirectory) {
+    linkedFolders.erase(std::remove(linkedFolders.begin(), linkedFolders.end(), canonicalDirectory),
+                        linkedFolders.end());
+    // A removed registration forgets the enablement of the package installed
+    // there, and nothing else. The folder and its files are left untouched.
+    enabled.erase(std::remove_if(enabled.begin(), enabled.end(),
+                                 [&canonicalDirectory](const EnabledPackage& package) {
+                                     return package.directory == canonicalDirectory;
+                                 }),
+                  enabled.end());
+}
+
+PackagePreferencesLoad loadPackagePreferences(const std::filesystem::path& path) {
+    PackagePreferencesLoad loaded;
+    if (path.empty()) {
+        loaded.diagnostic = "the per-user package settings location cannot be determined on this system";
+        return loaded;
+    }
+    std::error_code error;
+    const bool present = fs::exists(path, error);
+    if (error) {
+        loaded.diagnostic = "package settings at '" + pathText(path) + "' could not be read: " + error.message();
+        return loaded;
+    }
+    if (!present) {
+        // A first launch: nothing is linked and nothing is enabled, so no
+        // package that was merely discovered becomes trusted.
+        return loaded;
+    }
+    if (!fs::is_regular_file(path, error)) {
+        loaded.diagnostic = "package settings at '" + pathText(path) + "' are not a regular file";
+        return loaded;
+    }
+    std::string text;
+    {
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream) {
+            loaded.diagnostic = "package settings at '" + pathText(path) + "' could not be read";
+            return loaded;
+        }
+        text.assign(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+    }
+    const std::string context = "package settings at '" + pathText(path) + "'";
+    try {
+        const nlohmann::json settings = nlohmann::json::parse(text, nullptr, false);
+        if (settings.is_discarded()) {
+            malformed(context, "the file is not valid JSON");
+        }
+        if (!settings.is_object()) {
+            malformed(context, "the file must contain an object");
+        }
+        loaded.preferences = parsePreferences(settings, context);
+    } catch (const std::exception& failure) {
+        // Fail closed: an unreadable trust decision enables nothing, and the
+        // file is left exactly as it was found so a later build — or the user —
+        // can still read it.
+        loaded.preferences = PackagePreferences{};
+        loaded.diagnostic = failure.what();
+    }
+    return loaded;
+}
+
+bool savePackagePreferences(const std::filesystem::path& path, const PackagePreferences& preferences,
+                            std::string& diagnostic) {
+    if (path.empty()) {
+        diagnostic = "the per-user package settings location cannot be determined on this system";
+        return false;
+    }
+    nlohmann::json settings;
+    settings["format"] = kPreferencesFormat;
+    settings["linkedFolders"] = preferences.linkedFolders;
+    nlohmann::json enabled = nlohmann::json::array();
+    for (const EnabledPackage& package : preferences.enabled) {
+        enabled.push_back(nlohmann::json{{"id", package.id}, {"directory", package.directory}});
+    }
+    settings["enabled"] = std::move(enabled);
+    const std::string text = settings.dump(2) + "\n";
+
+    const fs::path directory = path.parent_path();
+    std::error_code error;
+    if (!directory.empty()) {
+        fs::create_directories(directory, error);
+        if (error) {
+            diagnostic =
+                "cannot create the package settings directory '" + pathText(directory) + "': " + error.message();
+            return false;
+        }
+    }
+    // One atomic replacement: a temporary file beside the target is renamed over
+    // it, so a reader sees either the previous or the complete new settings and
+    // never a half-written file.
+    fs::path temporary = path;
+    temporary += ".tmp";
+    {
+        std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+        if (!stream) {
+            diagnostic = "cannot write the package settings at '" + pathText(temporary) + "'";
+            return false;
+        }
+        stream << text;
+        stream.flush();
+        if (!stream) {
+            diagnostic = "cannot write the package settings at '" + pathText(temporary) + "'";
+            std::error_code cleanup;
+            fs::remove(temporary, cleanup);
+            return false;
+        }
+    }
+#if defined(_WIN32)
+    if (::MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING) == 0) {
+        error = std::error_code(static_cast<int>(::GetLastError()), std::system_category());
+    }
+#else
+    fs::rename(temporary, path, error);
+#endif
+    if (error) {
+        diagnostic = "cannot replace the package settings at '" + pathText(path) + "': " + error.message();
+        std::error_code cleanup;
+        fs::remove(temporary, cleanup);
+        return false;
+    }
+    diagnostic.clear();
+    return true;
+}
+
+bool canonicalPackageFolder(const std::filesystem::path& folder, std::string& canonical, std::string& reason) {
+    std::error_code error;
+    if (!fs::is_directory(folder, error)) {
+        reason = "'" + pathText(folder) + "' is not a package folder";
+        return false;
+    }
+    if (!fs::is_regular_file(folder / kManifestFile, error)) {
+        reason = "'" + pathText(folder) + "' holds no manifest.json; select the package folder itself";
+        return false;
+    }
+    canonical = canonicalDirectoryText(folder);
+    reason.clear();
+    return true;
+}
+
+std::vector<PackageInfo> inspectInstalledPackages(const PackagePreferences& preferences) {
+    std::vector<Candidate> candidates = discoverCandidates(discoverySource(preferences));
+    markRequested(candidates, preferences, false);
+    (void)analyzeCandidates(candidates);
+    std::vector<PackageInfo> inventory;
+    inventory.reserve(candidates.size());
+    for (const Candidate& candidate : candidates) {
+        inventory.push_back(infoFor(candidate, false));
+    }
+    return inventory;
+}
+
+InstalledPackages::InstalledPackages() {
+    if (auto override = configuredRootOverride()) {
+        initialize(std::move(*override), true);
+        return;
+    }
+    initialize({}, false);
+}
+
 InstalledPackages::InstalledPackages(std::vector<fs::path> roots) {
-    // Every discovered package folder keeps one slot, in discovery order, so a
-    // package whose manifest cannot even be parsed is still reported where it
-    // was found instead of being appended after the packages that were refused
-    // later.
-    struct Candidate {
-        fs::path directory;
-        std::optional<ParsedManifest> manifest;
-        bool refused{false};
-        std::string reason;
-    };
-    std::vector<Candidate> candidates;
+    initialize(std::move(roots), true);
+}
 
-    // Discovery: the configured roots in order, each root's child package
-    // folders by name. A child folder is a package only when it carries a
-    // manifest; a root that is not an existing directory is skipped, and the
-    // working directory is never searched implicitly.
-    for (const fs::path& root : roots) {
-        std::error_code error;
-        if (!fs::is_directory(root, error)) {
-            continue;
-        }
-        std::vector<fs::path> children;
-        fs::directory_iterator iterator(root, error);
-        const fs::directory_iterator end;
-        for (; !error && iterator != end; iterator.increment(error)) {
-            std::error_code entryError;
-            if (iterator->is_directory(entryError)) {
-                children.push_back(iterator->path());
-            }
-        }
-        std::sort(children.begin(), children.end());
-        for (const fs::path& child : children) {
-            std::error_code manifestError;
-            if (!fs::is_regular_file(child / kManifestFile, manifestError)) {
-                continue;
-            }
-            fs::path directory = child;
-            const fs::path canonical = fs::weakly_canonical(child, manifestError);
-            if (!manifestError) {
-                directory = canonical;
-            }
-            try {
-                candidates.push_back(Candidate{directory, parseManifestFile(directory), false, std::string{}});
-            } catch (const std::exception& failure) {
-                candidates.push_back(Candidate{directory, std::nullopt, true, failure.what()});
-            }
-        }
+void InstalledPackages::initialize(std::vector<fs::path> trustedRoots, bool trusted) {
+    trustedOverride_ = trusted;
+    DiscoverySource source;
+    PackagePreferences preferences;
+    std::string settingsDiagnostic;
+    if (trusted) {
+        source.roots = std::move(trustedRoots);
+    } else {
+        const PackagePreferencesLoad settings = loadPackagePreferences(packagePreferencesPath());
+        preferences = settings.preferences;
+        settingsDiagnostic = settings.diagnostic;
+        source = discoverySource(preferences);
+    }
+    if (!settingsDiagnostic.empty()) {
+        // An unreadable settings file is reported like any other refusal: the
+        // application never silently replaces the user's decision with a guess.
+        diagnostics_.push_back(std::move(settingsDiagnostic));
     }
 
-    const auto refuse = [&candidates](std::size_t index, const std::string& reason) {
-        if (!candidates[index].refused) {
-            candidates[index].refused = true;
-            candidates[index].reason = reason;
-        }
-    };
-    const auto describe = [&candidates](std::size_t index) {
-        const std::string identity =
-            candidates[index].manifest ? "'" + candidates[index].manifest->record.id + "' at " : "at ";
-        return "installed package " + identity + "'" + pathText(candidates[index].directory) + "'";
-    };
+    // Every discovered package folder - including one that carries no readable
+    // manifest - keeps one slot, in discovery order, so a package that is
+    // malformed, refused or merely disabled is still reported where it was
+    // found.
+    std::vector<Candidate> candidates = discoverCandidates(source);
+    markRequested(candidates, preferences, trusted);
+    const Analysis analysis = analyzeCandidates(candidates);
 
-    // Duplicate identities refuse every offender: which package wins is never
-    // decided by discovery order. A package identity, a node type (including a
-    // built-in type), an editor identity and a panel identity are all unique
-    // across the installed set.
-    std::map<std::string, std::vector<std::size_t>, std::less<>> byPackageId;
-    std::map<std::string, std::vector<std::size_t>, std::less<>> byNodeType;
-    std::map<std::string, std::vector<std::size_t>, std::less<>> byEditorId;
-    std::map<std::string, std::vector<std::size_t>, std::less<>> byPanelId;
-    std::set<std::string, std::less<>> builtinTypes;
-    std::set<std::string, std::less<>> builtinEditors;
-    std::vector<NodeContribution> contributions = builtinContributions();
-    for (const NodeContribution& contribution : contributions) {
-        builtinTypes.insert(contribution.descriptor.type);
-        for (const NodeEditorContribution& editor : contribution.editors)
-            builtinEditors.insert(editor.id);
-    }
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (!candidates[index].manifest) {
-            continue;
-        }
-        const PackageRecord& record = candidates[index].manifest->record;
-        byPackageId[record.id].push_back(index);
-        byNodeType[record.descriptor.type].push_back(index);
-        for (const NodeEditorContribution& editor : record.editors) {
-            byEditorId[editor.id].push_back(index);
-        }
-        for (const PanelContribution& panel : candidates[index].manifest->panels) {
-            byPanelId[panel.id].push_back(index);
-        }
-    }
-    for (const auto& [id, group] : byPackageId) {
-        if (group.size() > 1) {
-            for (const std::size_t index : group) {
-                refuse(index, describe(index) + ": duplicate package identity '" + id + "'");
-            }
-        }
-    }
-    for (const auto& [type, group] : byNodeType) {
-        if (group.size() > 1) {
-            for (const std::size_t index : group) {
-                refuse(index, describe(index) + ": duplicate node type '" + type + "'");
-            }
-        }
-        if (builtinTypes.contains(type)) {
-            for (const std::size_t index : group) {
-                refuse(index, describe(index) + ": node type '" + type + "' is already declared by this build");
-            }
-        }
-    }
-    for (const auto& [id, group] : byEditorId) {
-        if (group.size() > 1) {
-            for (const std::size_t index : group) {
-                refuse(index, describe(index) + ": duplicate editor identity '" + id + "'");
-            }
-        }
-        if (builtinEditors.contains(id)) {
-            for (const std::size_t index : group)
-                refuse(index, describe(index) + ": editor identity '" + id + "' is already declared by this build");
-        }
-    }
-    for (const auto& [id, group] : byPanelId) {
-        if (group.size() > 1) {
-            for (const std::size_t index : group) {
-                refuse(index, describe(index) + ": duplicate panel identity '" + id + "'");
-            }
-        }
-    }
-
-    // Schema validation: the descriptor the manifest declares must be a legal
-    // node schema on its own, before any library is opened.
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (candidates[index].refused) {
-            continue;
-        }
-        try {
-            const std::vector<NodeDescriptor> declared{candidates[index].manifest->record.descriptor};
-            const NodeCatalog catalog(declared);
-            (void)catalog;
-        } catch (const std::invalid_argument& error) {
-            refuse(index, describe(index) + ": " + error.what());
-        }
-    }
-
-    std::map<std::string, std::size_t, std::less<>> packageIndex;
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (candidates[index].manifest) {
-            packageIndex.emplace(candidates[index].manifest->record.id, index);
-        }
-    }
-    // A refused package refuses everything that depends on it, transitively.
-    const auto propagate = [&candidates, &packageIndex, &refuse, &describe]() {
-        bool changed = true;
-        while (changed) {
-            changed = false;
-            for (std::size_t index = 0; index < candidates.size(); ++index) {
-                if (candidates[index].refused) {
-                    continue;
-                }
-                for (const std::string& dependency : candidates[index].manifest->dependencies) {
-                    const auto found = packageIndex.find(dependency);
-                    if (found != packageIndex.end() && candidates[found->second].refused) {
-                        refuse(index, describe(index) + ": depends on refused package '" + dependency + "'");
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-        }
-    };
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (candidates[index].refused) {
-            continue;
-        }
-        for (const std::string& dependency : candidates[index].manifest->dependencies) {
-            const auto found = packageIndex.find(dependency);
-            if (found == packageIndex.end()) {
-                refuse(index, describe(index) + ": dependency '" + dependency + "' is not installed");
-                break;
-            }
-        }
-    }
-    propagate();
-
-    // Resolve the entire dependency order before executing any native code.
-    // Kahn's residual nodes lie on, or depend on, a cycle; neither can activate.
-    std::vector<std::vector<std::size_t>> dependents(candidates.size());
-    std::vector<std::size_t> remaining(candidates.size(), 0);
-    std::vector<std::size_t> activationOrder;
-    activationOrder.reserve(candidates.size());
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (candidates[index].refused)
-            continue;
-        for (const std::string& dependency : candidates[index].manifest->dependencies) {
-            dependents[packageIndex.at(dependency)].push_back(index);
-            ++remaining[index];
-        }
-        if (remaining[index] == 0)
-            activationOrder.push_back(index);
-    }
-    for (std::size_t position = 0; position < activationOrder.size(); ++position) {
-        for (const std::size_t dependent : dependents[activationOrder[position]]) {
-            if (--remaining[dependent] == 0)
-                activationOrder.push_back(dependent);
-        }
-    }
-    for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (candidates[index].refused || remaining[index] == 0)
-            continue;
-        std::string involved;
-        for (const std::string& dependency : candidates[index].manifest->dependencies) {
-            if (remaining[packageIndex.at(dependency)] != 0) {
-                if (!involved.empty())
-                    involved += ", ";
-                involved += "'" + dependency + "'";
-            }
-        }
-        refuse(index, describe(index) + ": dependency cycle through " + involved);
-    }
-
-    std::vector<std::shared_ptr<const SharedLibrary>> libraries(candidates.size());
-    for (const std::size_t index : activationOrder) {
-        ParsedManifest& manifest = *candidates[index].manifest;
+    // Activation: the enabled and admitted packages, in dependency order, and
+    // nothing else. Every other package's library is never opened, and a
+    // failure is retained as an inactive inventory entry instead of failing the
+    // application or hiding an unrelated supported package.
+    std::vector<std::shared_ptr<const detail::SharedLibrary>> libraries(candidates.size());
+    std::vector<bool> active(candidates.size(), false);
+    for (const std::size_t index : analysis.activationOrder) {
+        const ParsedManifest& manifest = *candidates[index].manifest;
+        // A dependency that failed to activate in this snapshot refuses its
+        // dependant before its own native library is opened.
         for (const std::string& dependency : manifest.dependencies) {
-            if (candidates[packageIndex.at(dependency)].refused) {
-                refuse(index, describe(index) + ": depends on refused package '" + dependency + "'");
+            const auto found = analysis.packageIndex.find(dependency);
+            if (found == analysis.packageIndex.end() || !candidates[found->second].reason.empty()) {
+                refuseCandidate(
+                    candidates, index, PackageStatus::RefusedDependency,
+                    describeCandidate(candidates, index) + ": depends on refused package '" + dependency + "'", true);
                 break;
             }
         }
-        if (candidates[index].refused)
+        if (!candidates[index].reason.empty()) {
             continue;
+        }
         std::string reason;
-        libraries[index] = SharedLibrary::open(pathFromText(manifest.library), manifest.record.gpu.has_value(), reason);
+        libraries[index] =
+            detail::SharedLibrary::open(pathFromText(manifest.library), manifest.record.gpu.has_value(), reason);
         if (!libraries[index]) {
-            refuse(index, describe(index) + ": " + reason);
+            refuseCandidate(candidates, index, PackageStatus::FailedToLoad,
+                            describeCandidate(candidates, index) + ": " + reason, true);
             continue;
         }
         ParameterValues defaults;
-        for (const ParameterSpec& parameter : manifest.record.descriptor.parameters)
+        for (const ParameterSpec& parameter : manifest.record.descriptor.parameters) {
             defaults.emplace(parameter.name, parameter.defaultValue);
-        if (const auto problem = detail::validatePackageParameters(libraries[index], manifest.record.id, defaults)) {
-            refuse(index, describe(index) + ": invalid default parameters: " + *problem);
-            libraries[index].reset();
         }
+        if (const auto problem = detail::validatePackageParameters(libraries[index], manifest.record.id, defaults)) {
+            refuseCandidate(candidates, index, PackageStatus::FailedToLoad,
+                            describeCandidate(candidates, index) + ": invalid default parameters: " + *problem, true);
+            libraries[index].reset();
+            continue;
+        }
+        active[index] = true;
     }
 
     for (std::size_t index = 0; index < candidates.size(); ++index) {
-        if (candidates[index].refused) {
+        inventory_.push_back(infoFor(candidates[index], active[index]));
+        if (!active[index]) {
             continue;
         }
         ParsedManifest& manifest = *candidates[index].manifest;
@@ -1261,11 +1839,12 @@ InstalledPackages::InstalledPackages(std::vector<fs::path> roots) {
         records_.push_back(std::move(manifest.record));
     }
     for (const Candidate& candidate : candidates) {
-        if (candidate.refused) {
+        if (!candidate.reason.empty()) {
             diagnostics_.push_back(candidate.reason);
         }
     }
 
+    std::vector<NodeContribution> contributions = builtinContributions();
     contributions.reserve(contributions.size() + records_.size());
     for (const PackageRecord& record : records_) {
         contributions.push_back(detail::packageContribution(record));

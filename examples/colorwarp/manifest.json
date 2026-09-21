@@ -1,6 +1,7 @@
 {
   "format": 1,
   "id": "org.nemo.colorwarp",
+  "name": "ColorWarp",
   "version": 1,
   "stateVersion": 1,
   "processingVersion": 1,

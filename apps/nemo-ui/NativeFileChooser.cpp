@@ -121,7 +121,7 @@ QString hresultText(HRESULT result) {
 // Worker-thread Win32 common item dialog (IFileOpenDialog/IFileSaveDialog).
 // The thread that calls Show() owns the dialog's modal loop and message pump;
 // the owner HWND comes from the app window on the GUI thread.
-NativeDialogResult runWindowsDialog(bool save, bool multiple, const QString& title,
+NativeDialogResult runWindowsDialog(bool save, bool multiple, bool directory, const QString& title,
                                     const std::vector<NativeFileChooser::Filter>& filters,
                                     const std::filesystem::path& folder, const QString& suggestedName,
                                     const QString& defaultSuffix, HWND owner) {
@@ -145,6 +145,8 @@ NativeDialogResult runWindowsDialog(bool save, bool multiple, const QString& tit
     dialog->GetOptions(&options);
     options |= FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
     options |= save ? FOS_OVERWRITEPROMPT : FOS_FILEMUSTEXIST;
+    if (directory)
+        options |= FOS_PICKFOLDERS;
     if (multiSelect) {
         options |= FOS_ALLOWMULTISELECT;
     }
@@ -289,6 +291,16 @@ bool NativeFileChooser::openFiles(QObject* requester, OutcomeHandler onOutcome, 
     return begin(requester, std::move(onOutcome), std::move(request));
 }
 
+bool NativeFileChooser::openFolder(QObject* requester, OutcomeHandler onOutcome, const QString& title,
+                                   const std::filesystem::path& startFolder) {
+    Request request;
+    request.title = title;
+    request.acceptLabel = QStringLiteral("Select Folder");
+    request.startFolder = startFolder;
+    request.directory = true;
+    return begin(requester, std::move(onOutcome), std::move(request));
+}
+
 bool NativeFileChooser::saveFile(QObject* requester, OutcomeHandler onOutcome, const QString& title,
                                  const std::vector<Filter>& filters, const std::filesystem::path& startFolder,
                                  const QString& suggestedName, const QString& defaultSuffix) {
@@ -368,6 +380,7 @@ void NativeFileChooser::startWindowsDialog(const Request& request, std::uint64_t
     const HWND owner = GetActiveWindow();
     const bool save = request.save;
     const bool multiple = request.multiple;
+    const bool directory = request.directory;
     const QString title = request.title;
     const std::vector<Filter> filters = request.filters;
     const std::filesystem::path folder = request.startFolder;
@@ -375,9 +388,9 @@ void NativeFileChooser::startWindowsDialog(const Request& request, std::uint64_t
     const QString defaultSuffix = request.defaultSuffix;
     QMetaObject::invokeMethod(
         blockingWorker_,
-        [this, owner, save, multiple, title, filters, folder, suggestedName, defaultSuffix, serial] {
-            const NativeDialogResult result =
-                runWindowsDialog(save, multiple, title, filters, folder, suggestedName, defaultSuffix, owner);
+        [this, owner, save, multiple, directory, title, filters, folder, suggestedName, defaultSuffix, serial] {
+            const NativeDialogResult result = runWindowsDialog(save, multiple, directory, title, filters, folder,
+                                                               suggestedName, defaultSuffix, owner);
             QMetaObject::invokeMethod(
                 this,
                 [this, result, serial] {
@@ -405,6 +418,7 @@ void NativeFileChooser::startPortalDialog(const Request& request, std::uint64_t 
     QVariantMap options;
     options.insert(QStringLiteral("handle_token"), token);
     options.insert(QStringLiteral("multiple"), request.multiple);
+    options.insert(QStringLiteral("directory"), request.directory);
     options.insert(QStringLiteral("accept_label"), request.acceptLabel);
     if (!request.startFolder.empty() && request.startFolder != std::filesystem::path(".")) {
         QByteArray bytes = QByteArray::fromStdString(request.startFolder.string());

@@ -195,7 +195,7 @@ ApplicationWindow {
             window.quitPending = true
             return
         }
-        if (!workspace.save()) {
+        if ((settingsWindow.visible && !settingsWindow.remember()) || !workspace.save()) {
             saveErrorDialog.open()
             return
         }
@@ -310,8 +310,8 @@ ApplicationWindow {
                 objectName: "themeSettingsButton"
                 theme: appTheme
                 width: 30
-                Accessible.name: "Appearance settings"
-                onClicked: appearance.open()
+                Accessible.name: "Settings"
+                onClicked: settingsWindow.open()
                 contentItem: Canvas {
                     id: settingsGlyph
                     onPaint: {
@@ -590,172 +590,12 @@ ApplicationWindow {
         }
     }
 
-    Popup {
-        id: appearance
-        objectName: "appearancePopup"
-        x: 80
-        y: 40
-        width: 344
-        padding: 16
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle {
-            color: appTheme.header
-            radius: appTheme.radius
-            border.color: appTheme.border
-        }
-        contentItem: ColumnLayout {
-            spacing: 12
-
-            Text {
-                text: "Appearance"
-                color: appTheme.text
-                font.pixelSize: 12
-                font.weight: Font.Medium
-            }
-
-            RowLayout {
-                Text {
-                    text: "Theme"
-                    color: appTheme.muted
-                    font.pixelSize: appTheme.fontSize
-                    Layout.fillWidth: true
-                }
-                StudioComboBox {
-                    id: themePresetMenu
-                    objectName: "themePresetMenu"
-                    theme: appTheme
-                    model: ["Graphite", "Slate", "Paper"]
-                    currentIndex: Math.max(0, model.indexOf(window.controller.appearancePreset))
-                    implicitWidth: 142
-                    implicitHeight: 28
-                    onActivated: window.controller.setAppearancePreset(currentText)
-                }
-            }
-
-            RowLayout {
-                Text {
-                    text: "Accent"
-                    color: appTheme.muted
-                    font.pixelSize: appTheme.fontSize
-                    Layout.fillWidth: true
-                }
-                Rectangle {
-                    width: 18
-                    height: 18
-                    radius: 9
-                    color: appTheme.accent
-                }
-                TextField {
-                    id: accentField
-                    objectName: "accentColorField"
-                    text: appTheme.accent.toString()
-                    implicitWidth: 112
-                    implicitHeight: 28
-                    selectByMouse: true
-                    Accessible.name: "Accent color"
-                    validator: RegularExpressionValidator {
-                        regularExpression: /#[0-9a-fA-F]{6}/
-                    }
-                    onEditingFinished: {
-                        if (acceptableInput)
-                            window.controller.setAccentOverride(text)
-                        text = appTheme.accent.toString()
-                    }
-                    Connections {
-                        target: window.controller
-                        function onAppearanceChanged() {
-                            accentField.text = appTheme.accent.toString()
-                        }
-                    }
-                }
-            }
-
-            ChromeButton {
-                objectName: "resetAccentButton"
-                theme: appTheme
-                text: "Reset accent"
-                onClicked: {
-                    window.controller.setAccentOverride("")
-                    accentField.text = appTheme.accent.toString()
-                }
-            }
-
-            Text {
-                text: "Node category colors"
-                color: appTheme.muted
-                font.pixelSize: appTheme.fontSize
-            }
-
-            ScrollView {
-                id: categoryScroll
-                Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(300, categoryColumn.implicitHeight)
-                clip: true
-
-                ColumnLayout {
-                    id: categoryColumn
-                    width: categoryScroll.availableWidth
-                    spacing: 6
-
-                    Repeater {
-                        model: Object.keys(appTheme.nodeCategoryColors).sort()
-                        delegate: RowLayout {
-                            id: categoryRow
-                            required property string modelData
-                            property string categoryId: modelData
-                            Layout.fillWidth: true
-                            spacing: 7
-
-                            Text {
-                                text: categoryRow.categoryId
-                                color: appTheme.text
-                                font.pixelSize: appTheme.fontSize
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                            }
-                            Rectangle {
-                                width: 18
-                                height: 18
-                                radius: appTheme.smallRadius
-                                color: appTheme.nodeCategoryColor(categoryRow.categoryId)
-                                border.color: appTheme.border
-                            }
-                            TextField {
-                                id: categoryField
-                                objectName: "categoryColorField_" + categoryRow.categoryId
-                                text: appTheme.nodeCategoryColor(categoryRow.categoryId)
-                                implicitWidth: 112
-                                implicitHeight: 28
-                                selectByMouse: true
-                                Accessible.name: categoryRow.categoryId + " node category color"
-                                validator: RegularExpressionValidator {
-                                    regularExpression: /#[0-9a-fA-F]{6}/
-                                }
-                                onEditingFinished: {
-                                    if (acceptableInput)
-                                        window.controller.setCategoryColor(categoryRow.categoryId, text)
-                                    text = appTheme.nodeCategoryColor(categoryRow.categoryId)
-                                }
-                                Connections {
-                                    target: window.controller
-                                    function onAppearanceChanged() {
-                                        categoryField.text = appTheme.nodeCategoryColor(categoryRow.categoryId)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            ChromeButton {
-                objectName: "resetNodeCategoryColorsButton"
-                theme: appTheme
-                text: "Reset node category colors"
-                Layout.fillWidth: true
-                onClicked: window.controller.resetCategoryColors()
-            }
-        }
+    SettingsWindow {
+        id: settingsWindow
+        controller: window.controller
+        settings: typeof settingsController !== "undefined" ? settingsController : null
+        theme: appTheme
+        transientParent: window
     }
 
     DockDrag {
@@ -831,7 +671,7 @@ ApplicationWindow {
             unsavedChangesDialog.open()
             return
         }
-        if (!workspace.save()) {
+        if ((settingsWindow.visible && !settingsWindow.remember()) || !workspace.save()) {
             close.accepted = false
             saveErrorDialog.open()
         }

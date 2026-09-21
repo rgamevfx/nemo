@@ -22,6 +22,13 @@ namespace {
 constexpr int kPersistenceVersion = 3;
 constexpr qint64 kMaxLayoutBytes = 1024 * 1024;
 
+// Application preference bounds. The Settings popout's sections are App
+// Settings, UI Settings and Extensions; a narrower popout than this cannot
+// present its content, so the stored size is validated against the same floor.
+constexpr int kSettingsSectionCount = 3;
+constexpr int kSettingsMinWidth = 560;
+constexpr int kSettingsMinHeight = 400;
+
 QVariantMap defaultCategoryColors() {
     // Keys are catalog groups, shared by graph, inspector, menus and settings.
     return {{QStringLiteral("Blur"), QStringLiteral("#305d7d")},
@@ -74,7 +81,8 @@ WorkspaceController::WorkspaceController(QString path, QObject* parent) : QObjec
         return;
     }
     try {
-        restoreFromJson(nlohmann::json::parse(bytes.constData(), bytes.constData() + bytes.size()));
+        restoreFromJson(nlohmann::json::parse(bytes.constData(), bytes.constData() + bytes.size()),
+                        /*includeApplicationState=*/true);
         preserveUnreadableFile_ = false;
     } catch (const std::exception& exception) {
         setError(
@@ -138,6 +146,26 @@ QString WorkspaceController::accentOverride() const {
 
 QVariantMap WorkspaceController::categoryColors() const {
     return categoryColors_;
+}
+
+int WorkspaceController::settingsSection() const {
+    return settingsSection_;
+}
+
+int WorkspaceController::settingsWidth() const {
+    return settingsWidth_;
+}
+
+int WorkspaceController::settingsHeight() const {
+    return settingsHeight_;
+}
+
+QString WorkspaceController::cacheDirectory() const {
+    return cacheDirectory_;
+}
+
+int WorkspaceController::cacheDiskMiB() const {
+    return cacheDiskMiB_;
 }
 
 void WorkspaceController::setError(QString message) {
@@ -465,15 +493,51 @@ bool WorkspaceController::validColor(const QString& value) {
     return expression.match(value).hasMatch();
 }
 
+bool WorkspaceController::applyAppearance(const std::function<void()>& mutate) {
+    // Appearance is an application preference stored in the workspace file.
+    // Mutate, persist, then publish: a value that never reached disk is rolled
+    // back to the last accepted one instead of being shown as if it were saved.
+    const QString previousPreset = appearancePreset_;
+    const QString previousAccent = accentOverride_;
+    const QVariantMap previousColors = categoryColors_;
+    mutate();
+    if (!save()) {
+        appearancePreset_ = previousPreset;
+        accentOverride_ = previousAccent;
+        categoryColors_ = previousColors;
+        emit appearanceChanged();
+        return false;
+    }
+    emit appearanceChanged();
+    return true;
+}
+
+bool WorkspaceController::applySettings(const std::function<void()>& mutate) {
+    const int previousSection = settingsSection_;
+    const int previousWidth = settingsWidth_;
+    const int previousHeight = settingsHeight_;
+    const QString previousDirectory = cacheDirectory_;
+    const int previousDiskMiB = cacheDiskMiB_;
+    mutate();
+    if (!save()) {
+        settingsSection_ = previousSection;
+        settingsWidth_ = previousWidth;
+        settingsHeight_ = previousHeight;
+        cacheDirectory_ = previousDirectory;
+        cacheDiskMiB_ = previousDiskMiB;
+        emit settingsChanged();
+        return false;
+    }
+    emit settingsChanged();
+    return true;
+}
+
 bool WorkspaceController::setAppearancePreset(const QString& preset) {
     if (!validPreset(preset)) {
         setError(QStringLiteral("setAppearancePreset: invalid preset '%1'").arg(preset));
         return false;
     }
-    appearancePreset_ = preset;
-    setError({});
-    emit appearanceChanged();
-    return true;
+    return applyAppearance([&] { appearancePreset_ = preset; });
 }
 
 bool WorkspaceController::setAccentOverride(const QString& color) {
@@ -481,10 +545,7 @@ bool WorkspaceController::setAccentOverride(const QString& color) {
         setError(QStringLiteral("setAccentOverride: expected #RRGGBB or empty"));
         return false;
     }
-    accentOverride_ = color;
-    setError({});
-    emit appearanceChanged();
-    return true;
+    return applyAppearance([&] { accentOverride_ = color; });
 }
 
 bool WorkspaceController::setCategoryColor(const QString& category, const QString& color) {
@@ -496,56 +557,101 @@ bool WorkspaceController::setCategoryColor(const QString& category, const QStrin
         setError(QStringLiteral("setCategoryColor: expected #RRGGBB"));
         return false;
     }
-    categoryColors_.insert(category, color);
-    setError({});
-    emit appearanceChanged();
-    return true;
+    return applyAppearance([&] { categoryColors_.insert(category, color); });
 }
 
 void WorkspaceController::resetCategoryColors() {
-    categoryColors_ = defaultCategoryColors();
-    setError({});
-    emit appearanceChanged();
+    (void)applyAppearance([&] { categoryColors_ = defaultCategoryColors(); });
 }
 
 void WorkspaceController::resetAppearance() {
-    appearancePreset_ = QStringLiteral("Graphite");
-    accentOverride_.clear();
-    categoryColors_ = defaultCategoryColors();
-    setError({});
-    emit appearanceChanged();
+    (void)applyAppearance([&] {
+        appearancePreset_ = QStringLiteral("Graphite");
+        accentOverride_.clear();
+        categoryColors_ = defaultCategoryColors();
+    });
 }
 
-nlohmann::json WorkspaceController::persistenceJson() const {
+bool WorkspaceController::setSettingsWindow(int section, int width, int height) {
+    if (section < 0 || section >= kSettingsSectionCount) {
+        setError(QStringLiteral("setSettingsWindow: section must be 0..%1").arg(kSettingsSectionCount - 1));
+        return false;
+    }
+    if (width < kSettingsMinWidth || height < kSettingsMinHeight) {
+        setError(QStringLiteral("setSettingsWindow: size must be at least %1x%2")
+                     .arg(kSettingsMinWidth)
+                     .arg(kSettingsMinHeight));
+        return false;
+    }
+    return applySettings([&] {
+        settingsSection_ = section;
+        settingsWidth_ = width;
+        settingsHeight_ = height;
+    });
+}
+
+bool WorkspaceController::setCacheStorage(const QString& directory, int diskMiB) {
+    if (!directory.isEmpty() && !QDir::isAbsolutePath(directory)) {
+        setError(QStringLiteral("setCacheStorage: cache directory must be an absolute path"));
+        return false;
+    }
+    if (diskMiB <= 0) {
+        setError(QStringLiteral("setCacheStorage: disk budget must be a positive number of MiB"));
+        return false;
+    }
+    return applySettings([&] {
+        cacheDirectory_ = directory;
+        cacheDiskMiB_ = diskMiB;
+    });
+}
+
+nlohmann::json WorkspaceController::layoutJson() const {
     nlohmann::json workspaces = nlohmann::json::array();
     for (const auto& preset : presets_) {
         workspaces.push_back({{"id", preset.id.toStdString()},
                               {"name", preset.name.toStdString()},
                               {"layout", preset.workspace.toJson()}});
     }
+    return {{"version", kPersistenceVersion},
+            {"activeWorkspaceId", activeWorkspaceId_.toStdString()},
+            {"workspaces", workspaces}};
+}
+
+nlohmann::json WorkspaceController::persistenceJson() const {
     nlohmann::json colors = nlohmann::json::object();
     for (auto it = categoryColors_.cbegin(); it != categoryColors_.cend(); ++it) {
         colors[it.key().toStdString()] = it.value().toString().toStdString();
     }
-    return {{"version", kPersistenceVersion},
-            {"activeWorkspaceId", activeWorkspaceId_.toStdString()},
-            {"workspaces", workspaces},
-            {"appearance",
-             {{"preset", appearancePreset_.toStdString()},
-              {"accentOverride", accentOverride_.toStdString()},
-              {"categoryColors", colors}}}};
+    // The workspace file is the one application preference store: arrangement
+    // records plus the user's appearance and Settings choices. Project files
+    // carry neither of the latter two (see projectPresentation).
+    nlohmann::json json = layoutJson();
+    json["appearance"] = {{"preset", appearancePreset_.toStdString()},
+                          {"accentOverride", accentOverride_.toStdString()},
+                          {"categoryColors", colors}};
+    json["settings"] = {{"section", settingsSection_},
+                        {"width", settingsWidth_},
+                        {"height", settingsHeight_},
+                        {"cacheDirectory", cacheDirectory_.toStdString()},
+                        {"cacheDiskMiB", cacheDiskMiB_}};
+    return json;
 }
 
-void WorkspaceController::restoreFromJson(const nlohmann::json& json) {
+void WorkspaceController::restoreFromJson(const nlohmann::json& json, bool includeApplicationState) {
     if (!json.is_object() || !json.contains("version") || !json.at("version").is_number_integer()) {
         throw std::runtime_error("workspace: persistence root must contain an integer 'version'");
     }
 
     std::vector<Preset> nextPresets;
     QString nextActive;
-    QString nextPreset = QStringLiteral("Graphite");
-    QString nextAccent;
-    QVariantMap nextColors = defaultCategoryColors();
+    QString nextPreset = appearancePreset_;
+    QString nextAccent = accentOverride_;
+    QVariantMap nextColors = categoryColors_;
+    int nextSection = settingsSection_;
+    int nextWidth = settingsWidth_;
+    int nextHeight = settingsHeight_;
+    QString nextCacheDirectory = cacheDirectory_;
+    int nextCacheDiskMiB = cacheDiskMiB_;
     const int version = json.at("version").get<int>();
     if (version == Workspace::kVersion) {
         nextPresets.push_back({QStringLiteral("workspace-1"), QStringLiteral("Default"), Workspace::fromJson(json)});
@@ -580,7 +686,7 @@ void WorkspaceController::restoreFromJson(const nlohmann::json& json) {
                          [&](const Preset& preset) { return preset.id == nextActive; })) {
             throw std::runtime_error("workspace: activeWorkspaceId does not identify a workspace");
         }
-        if (json.contains("appearance")) {
+        if (includeApplicationState && json.contains("appearance")) {
             const auto& appearance = json.at("appearance");
             if (!appearance.is_object()) {
                 throw std::runtime_error("workspace: appearance must be an object");
@@ -642,6 +748,50 @@ void WorkspaceController::restoreFromJson(const nlohmann::json& json) {
                 }
             }
         }
+        if (includeApplicationState && json.contains("settings")) {
+            const auto& settings = json.at("settings");
+            if (!settings.is_object()) {
+                throw std::runtime_error("workspace: settings must be an object");
+            }
+            if (settings.contains("section")) {
+                if (!settings.at("section").is_number_integer()) {
+                    throw std::runtime_error("workspace: settings section must be an integer");
+                }
+                nextSection = settings.at("section").get<int>();
+                if (nextSection < 0 || nextSection >= kSettingsSectionCount) {
+                    throw std::runtime_error("workspace: settings section is out of range");
+                }
+            }
+            if (settings.contains("width") || settings.contains("height")) {
+                if (!settings.contains("width") || !settings.at("width").is_number_integer() ||
+                    !settings.contains("height") || !settings.at("height").is_number_integer()) {
+                    throw std::runtime_error("workspace: settings size requires integer width and height");
+                }
+                nextWidth = settings.at("width").get<int>();
+                nextHeight = settings.at("height").get<int>();
+                if (nextWidth < kSettingsMinWidth || nextHeight < kSettingsMinHeight) {
+                    throw std::runtime_error("workspace: settings size is below the minimum popout size");
+                }
+            }
+            if (settings.contains("cacheDirectory")) {
+                if (!settings.at("cacheDirectory").is_string()) {
+                    throw std::runtime_error("workspace: settings cacheDirectory must be a string");
+                }
+                nextCacheDirectory = QString::fromStdString(settings.at("cacheDirectory").get<std::string>());
+                if (!nextCacheDirectory.isEmpty() && !QDir::isAbsolutePath(nextCacheDirectory)) {
+                    throw std::runtime_error("workspace: settings cacheDirectory must be absolute");
+                }
+            }
+            if (settings.contains("cacheDiskMiB")) {
+                if (!settings.at("cacheDiskMiB").is_number_integer()) {
+                    throw std::runtime_error("workspace: settings cacheDiskMiB must be an integer");
+                }
+                nextCacheDiskMiB = settings.at("cacheDiskMiB").get<int>();
+                if (nextCacheDiskMiB <= 0) {
+                    throw std::runtime_error("workspace: settings cacheDiskMiB must be positive");
+                }
+            }
+        }
     } else {
         throw std::runtime_error("workspace: unsupported persistence version " + std::to_string(version));
     }
@@ -651,9 +801,16 @@ void WorkspaceController::restoreFromJson(const nlohmann::json& json) {
     workspace_ = activeIndex->workspace;
     presets_ = std::move(nextPresets);
     activeWorkspaceId_ = nextActive;
-    appearancePreset_ = nextPreset;
-    accentOverride_ = nextAccent;
-    categoryColors_ = std::move(nextColors);
+    if (includeApplicationState) {
+        appearancePreset_ = nextPreset;
+        accentOverride_ = nextAccent;
+        categoryColors_ = std::move(nextColors);
+        settingsSection_ = nextSection;
+        settingsWidth_ = nextWidth;
+        settingsHeight_ = nextHeight;
+        cacheDirectory_ = std::move(nextCacheDirectory);
+        cacheDiskMiB_ = nextCacheDiskMiB;
+    }
 }
 
 bool WorkspaceController::save() {
@@ -696,12 +853,17 @@ nlohmann::json WorkspaceController::projectPresentation() {
     // its preset; the standalone save path does the same. Snapshot first so a
     // project records current panel/layout state rather than the last switch.
     snapshotActiveWorkspace();
-    return persistenceJson();
+    // Layout records only: a project may describe an arrangement, never the
+    // user's appearance or application preferences.
+    return layoutJson();
 }
 
 bool WorkspaceController::applyProjectPresentation(const nlohmann::json& presentation) {
     try {
-        restoreFromJson(presentation);
+        // A project payload may still contain an appearance record written by
+        // an older build; it is ignored rather than applied, so opening a
+        // project never overwrites the user's accepted appearance.
+        restoreFromJson(presentation, /*includeApplicationState=*/false);
     } catch (const std::exception& exception) {
         setError(
             QStringLiteral("Cannot restore project workspace records: %1").arg(QString::fromUtf8(exception.what())));
@@ -709,10 +871,10 @@ bool WorkspaceController::applyProjectPresentation(const nlohmann::json& present
     }
     // restoreFromJson replaces the active arrangement wholesale; the panels and
     // context router rebuild from rootChanged exactly as on a workspace switch.
+    // Appearance and settings are untouched, so neither is re-published here.
     setError({});
     emit workspacesChanged();
     emit activeWorkspaceIdChanged();
-    emit appearanceChanged();
     notifyRootChanged();
     return true;
 }

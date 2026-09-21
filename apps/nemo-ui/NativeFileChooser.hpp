@@ -73,6 +73,9 @@ public:
     [[nodiscard]] bool saveFile(QObject* requester, OutcomeHandler onOutcome, const QString& title,
                                 const std::vector<Filter>& filters = {}, const std::filesystem::path& startFolder = {},
                                 const QString& suggestedName = {}, const QString& defaultSuffix = {});
+    // Select one existing folder through the same requester-owned native dialog.
+    [[nodiscard]] bool openFolder(QObject* requester, OutcomeHandler onOutcome, const QString& title,
+                                  const std::filesystem::path& startFolder = {});
     // True while a request is outstanding and its outcome is pending.
     [[nodiscard]] bool inFlight() const { return inFlight_; }
 
@@ -93,6 +96,7 @@ private:
         std::vector<Filter> filters;
         bool save{false};
         bool multiple{false};
+        bool directory{false};
     };
 
     [[nodiscard]] bool begin(QObject* requester, OutcomeHandler onOutcome, Request request);

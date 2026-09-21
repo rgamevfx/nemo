@@ -216,7 +216,11 @@ ViewerRuntimeCounts ViewerRuntime::composeCountsLocked(const eval::ViewerSchedul
                                cacheCounts_.admissionDropped + cacheCounts_.admissionRejected,
                                cacheCounts_.errors,
                                cacheCounts_.published,
-                               cacheCounts_.lastError};
+                               cacheCounts_.lastError,
+                               cacheCounts_.diskBytes,
+                               cacheCounts_.compressedHotBytes,
+                               cacheCounts_.decodedHotFrames,
+                               cacheCounts_.activeFrames};
 }
 
 ViewerRuntimeCounts ViewerRuntime::counts() const {

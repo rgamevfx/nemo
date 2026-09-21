@@ -43,6 +43,7 @@
 #include <fstream>
 #include <functional>
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -441,6 +442,119 @@ void mutateManifest(const fs::path& package, const std::string& identity,
     writeManifest(package, manifest);
 }
 
+// --- the per-user package settings fixture (issue #105) ---------------------
+
+#if defined(_WIN32)
+constexpr const char* kDataHomeVariable = "LOCALAPPDATA";
+constexpr const char* kConfigHomeVariable = "LOCALAPPDATA";
+#else
+constexpr const char* kDataHomeVariable = "XDG_DATA_HOME";
+constexpr const char* kConfigHomeVariable = "XDG_CONFIG_HOME";
+#endif
+
+// The isolated per-user layout of one Settings scenario: the standard extension
+// directory, the settings file and the environment the host reads them from, so
+// no scenario touches the developer's real directories or the real settings.
+// The explicit NEMO_EXTENSION_PATH override is cleared: these scenarios exercise
+// the persisted policy an ordinary launch uses.
+class UserEnvironment {
+public:
+    explicit UserEnvironment(const fs::path& workspace)
+        : data_(workspace / "user-data"), config_(configLocation(workspace, data_)),
+          dataHome_(kDataHomeVariable, data_.string()), configHome_(kConfigHomeVariable, config_.string()),
+          override_("NEMO_EXTENSION_PATH", std::nullopt) {}
+
+    [[nodiscard]] fs::path standardRoot() const {
+#if defined(_WIN32)
+        return data_ / "Nemo" / "extensions";
+#else
+        return data_ / "nemo" / "extensions";
+#endif
+    }
+
+    [[nodiscard]] fs::path settingsPath() const {
+#if defined(_WIN32)
+        return data_ / "Nemo" / "extensions.json";
+#else
+        return config_ / "nemo" / "extensions.json";
+#endif
+    }
+
+private:
+    [[nodiscard]] static fs::path configLocation(const fs::path& workspace, const fs::path& data) {
+#if defined(_WIN32)
+        (void)workspace;
+        return data;  // one platform variable names both per-user locations
+#else
+        (void)data;
+        return workspace / "user-config";
+#endif
+    }
+
+    fs::path data_;
+    fs::path config_;
+    test::ScopedEnvironment dataHome_;
+    test::ScopedEnvironment configHome_;
+    test::ScopedEnvironment override_;
+};
+
+// Every file of one package folder, by relative path and exact bytes: a settings
+// change must leave an externally managed package untouched.
+[[nodiscard]] std::map<std::string, std::string> snapshotFiles(const fs::path& root) {
+    std::map<std::string, std::string> files;
+    for (const fs::directory_entry& entry : fs::recursive_directory_iterator(root)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        std::ifstream stream(entry.path(), std::ios::binary);
+        files[fs::relative(entry.path(), root).generic_string()] =
+            std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+    }
+    return files;
+}
+
+[[nodiscard]] std::string readFile(const fs::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+}
+
+// The canonical recorded location of one package folder, as the Settings surface
+// registers and displays it.
+[[nodiscard]] std::string canonicalLocation(const fs::path& folder) {
+    std::string canonical;
+    std::string reason;
+    if (!nemo::extensions::canonicalPackageFolder(folder, canonical, reason)) {
+        throw std::runtime_error("not a package folder: " + reason);
+    }
+    return canonical;
+}
+
+// The inventory entry of one package location, or a hard failure naming what the
+// inventory held instead.
+[[nodiscard]] const nemo::extensions::PackageInfo& entryAt(const std::vector<nemo::extensions::PackageInfo>& inventory,
+                                                           const std::string& directory) {
+    const auto found = std::find_if(inventory.begin(), inventory.end(),
+                                    [&directory](const auto& info) { return info.directory == directory; });
+    if (found == inventory.end()) {
+        throw std::runtime_error("no inventory entry for '" + directory + "'");
+    }
+    return *found;
+}
+
+void savePreferences(const fs::path& path, const nemo::extensions::PackagePreferences& preferences) {
+    std::string diagnostic;
+    ASSERT_TRUE(nemo::extensions::savePackagePreferences(path, preferences, diagnostic)) << diagnostic;
+}
+
+// Breaks one package's declared native library, so an accidental activation of a
+// package the user did not enable fails loudly instead of passing quietly.
+void breakLibrary(const fs::path& package) {
+    const fs::path library = package / readManifest(package).at("library").get<std::string>();
+    std::ofstream stream(library, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(stream.good());
+    stream << "not a native library";
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -454,8 +568,8 @@ TEST_F(ExtensionTest, InstalledRootsAreExplicitAndAPackagelessRootContributesNot
     ASSERT_TRUE(fs::create_directories(emptyRoot));
 
     {
-        // An empty entry is dropped, explicit roots keep their order, and the
-        // production discovery function feeds the loader the application uses.
+        // The explicit developer override ignores empty entries and activates
+        // its admitted packages without consulting or rewriting user settings.
 #if defined(_WIN32)
         constexpr const char* separators = ";;";
 #else
@@ -463,12 +577,7 @@ TEST_F(ExtensionTest, InstalledRootsAreExplicitAndAPackagelessRootContributesNot
 #endif
         const test::ScopedEnvironment path{"NEMO_EXTENSION_PATH",
                                            installedRoot().string() + separators + emptyRoot.string()};
-        const std::vector<fs::path> roots = nemo::extensions::installedPackageRoots();
-        ASSERT_EQ(roots.size(), 2U);
-        EXPECT_EQ(roots[0], installedRoot());
-        EXPECT_EQ(roots[1], emptyRoot);
-
-        nemo::extensions::InstalledPackages packages(nemo::extensions::installedPackageRoots());
+        nemo::extensions::InstalledPackages packages;
         ASSERT_NE(packages.contributions()->find(kColorWarpType), nullptr);
         EXPECT_FALSE(contains(packages.diagnostics(), kColorWarpType));
     }
@@ -484,7 +593,7 @@ TEST_F(ExtensionTest, InstalledRootsAreExplicitAndAPackagelessRootContributesNot
         const test::ScopedEnvironment home{"XDG_DATA_HOME", data.string()};
         const auto expected = data / "nemo" / "extensions";
 #endif
-        const std::vector<fs::path> roots = nemo::extensions::installedPackageRoots();
+        const std::vector<fs::path> roots = nemo::extensions::standardPackageRoots();
         ASSERT_EQ(roots.size(), 1U);
         EXPECT_EQ(roots.front(), expected);
     }
@@ -1084,6 +1193,498 @@ TEST_F(ExtensionTest, RegistrationIdentityFollowsTheDeclaredPackageVersionWhileS
     request.output = loaded.document.network(authored->network).defaultOutput();
     const CpuImage pixels = evaluateCpu(loaded.document, request, nullptr, nullptr, changed.contributions()).image;
     expectPixelNear(pixels, sample("knot0r1").expected, "upgraded package, same authored state");
+}
+
+// ---------------------------------------------------------------------------
+// Settings (issue #105): discovery lists the declared metadata without running
+// any package code, enablement is trusted by identity AND location, a disabled
+// prerequisite is diagnosed instead of being enabled implicitly, and a removed
+// registration never touches the installed files.
+// ---------------------------------------------------------------------------
+TEST_F(ExtensionTest, DiscoveryListsDeclaredMetadataAndExecutesNothingThatIsNotEnabled) {
+    NEMO_REQUIRE_INSTALLED_PACKAGE(*this);
+    const UserEnvironment environment(workspace());
+    const fs::path installed = copyPackage(environment.standardRoot(), "colorwarp");
+    // The declared library is unreadable on purpose: a package that is merely
+    // discovered — or listed by inspection — must never be opened, so any
+    // accidental activation would refuse here instead of passing quietly.
+    breakLibrary(installed);
+    // This copy declares no presentation metadata, whatever the fixture does:
+    // absence is reported as absence and never filled in by the host.
+    {
+        nlohmann::json manifest = readManifest(installed);
+        manifest.erase("name");
+        manifest.erase("author");
+        manifest.erase("description");
+        writeManifest(installed, manifest);
+    }
+
+    nemo::extensions::InstalledPackages packages;  // one normal startup, no override
+    ASSERT_FALSE(packages.trustedOverride());
+    ASSERT_EQ(packages.inventory().size(), 1U);
+    const nemo::extensions::PackageInfo& info = packages.inventory().front();
+    EXPECT_EQ(info.id, kColorWarpType);
+    EXPECT_TRUE(info.name.empty()) << "the manifest declares no name; the host invents none";
+    EXPECT_TRUE(info.author.empty());
+    EXPECT_TRUE(info.description.empty());
+    EXPECT_EQ(info.version, 1U);
+    EXPECT_TRUE(fs::equivalent(info.directory, installed)) << info.directory;
+    ASSERT_EQ(info.nodeTypes.size(), 1U);
+    EXPECT_EQ(info.nodeTypes.front(), kColorWarpType);
+    EXPECT_TRUE(contains(info.editors, "org.nemo.colorwarp.mesh"));
+    EXPECT_TRUE(contains(info.panels, kPanelId));
+    EXPECT_TRUE(info.dependencies.empty());
+    EXPECT_TRUE(info.admitted);
+    EXPECT_TRUE(info.canEnable);
+    EXPECT_FALSE(info.requestedEnabled) << "a newly discovered package is never enabled by itself";
+    EXPECT_FALSE(info.active);
+    EXPECT_EQ(info.status, nemo::extensions::PackageStatus::Disabled);
+    EXPECT_TRUE(info.diagnostic.empty());
+
+    // Nothing was activated: no panel, no contribution, no diagnostic.
+    EXPECT_TRUE(packages.panels().empty());
+    EXPECT_TRUE(packages.diagnostics().empty());
+    EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+    EXPECT_NE(packages.contributions()->find("constcolor"), nullptr);
+
+    // Metadata inspection reports the same facts and never opens the library.
+    const std::vector<nemo::extensions::PackageInfo> inspected =
+        nemo::extensions::inspectInstalledPackages(nemo::extensions::PackagePreferences{});
+    ASSERT_EQ(inspected.size(), 1U);
+    EXPECT_EQ(inspected.front().id, kColorWarpType);
+    EXPECT_EQ(inspected.front().directory, info.directory);
+    EXPECT_EQ(inspected.front().status, nemo::extensions::PackageStatus::Disabled);
+    EXPECT_FALSE(inspected.front().active);
+    EXPECT_TRUE(inspected.front().diagnostic.empty());
+}
+
+TEST_F(ExtensionTest, PersistedEnablementIsTrustedByLocationAndNotByIdentity) {
+    NEMO_REQUIRE_INSTALLED_PACKAGE(*this);
+    const UserEnvironment environment(workspace());
+    const fs::path installed = copyPackage(environment.standardRoot(), "colorwarp");
+    const std::vector<nemo::extensions::PackageInfo> discovered =
+        nemo::extensions::inspectInstalledPackages(nemo::extensions::PackagePreferences{});
+    ASSERT_EQ(discovered.size(), 1U);
+    const std::string location = discovered.front().directory;
+    EXPECT_EQ(location, canonicalLocation(installed));
+
+    // The same identity at another location is not trust for this install.
+    {
+        nemo::extensions::PackagePreferences preferences;
+        preferences.setEnabled(kColorWarpType, location + "-elsewhere", true);
+        savePreferences(environment.settingsPath(), preferences);
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U);
+        EXPECT_FALSE(packages.inventory().front().requestedEnabled);
+        EXPECT_EQ(packages.inventory().front().status, nemo::extensions::PackageStatus::Disabled);
+        EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+    }
+    // The recorded (identity, location) pair is what a restart activates, with
+    // no launch argument or environment variable involved.
+    {
+        nemo::extensions::PackagePreferences preferences;
+        preferences.setEnabled(kColorWarpType, location, true);
+        EXPECT_TRUE(preferences.isEnabled(kColorWarpType, location));
+        EXPECT_FALSE(preferences.isEnabled(kColorWarpType, location + "-elsewhere"));
+        savePreferences(environment.settingsPath(), preferences);
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U);
+        const nemo::extensions::PackageInfo& info = packages.inventory().front();
+        EXPECT_TRUE(info.requestedEnabled);
+        EXPECT_TRUE(info.active);
+        EXPECT_EQ(info.status, nemo::extensions::PackageStatus::Active);
+        EXPECT_NE(packages.contributions()->find(kColorWarpType), nullptr);
+        ASSERT_EQ(packages.panels().size(), 1U);
+        EXPECT_EQ(packages.panels().front().id, kPanelId);
+        EXPECT_TRUE(packages.diagnostics().empty());
+    }
+    // The same canonical folder reached through both routes is one package:
+    // registering the standard-directory install lists and activates it once.
+    {
+        nemo::extensions::PackagePreferences preferences;
+        preferences.linkedFolders.push_back(location);
+        preferences.setEnabled(kColorWarpType, location, true);
+        savePreferences(environment.settingsPath(), preferences);
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U) << "one folder is one package, however many routes reach it";
+        EXPECT_TRUE(packages.inventory().front().active);
+        ASSERT_EQ(packages.panels().size(), 1U);
+        EXPECT_NE(packages.contributions()->find(kColorWarpType), nullptr);
+        EXPECT_TRUE(packages.diagnostics().empty()) << "a folder reached twice is not a duplicate identity";
+    }
+}
+
+TEST_F(ExtensionTest, DisabledAndMissingPrerequisitesAreDiagnosedAndNeverEnabledImplicitly) {
+    NEMO_REQUIRE_INSTALLED_PACKAGE(*this);
+    const UserEnvironment environment(workspace());
+    const fs::path supported = copyPackage(environment.standardRoot(), "colorwarp");
+    const fs::path dependent = copyPackage(environment.standardRoot(), "dependent");
+    mutateManifest(dependent, "org.nemo.dependent",
+                   [](nlohmann::json& manifest) { manifest["dependencies"] = {"org.nemo.colorwarp"}; });
+    const std::string supportedLocation = canonicalLocation(supported);
+    const std::string dependentLocation = canonicalLocation(dependent);
+
+    // Only the dependant is enabled: its prerequisite is diagnosed, not enabled.
+    {
+        nemo::extensions::PackagePreferences preferences;
+        preferences.setEnabled("org.nemo.dependent", dependentLocation, true);
+        savePreferences(environment.settingsPath(), preferences);
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 2U);
+        const nemo::extensions::PackageInfo& blocked = entryAt(packages.inventory(), dependentLocation);
+        EXPECT_EQ(blocked.status, nemo::extensions::PackageStatus::DisabledDependency);
+        EXPECT_TRUE(blocked.admitted) << "the declaration itself is usable; only its prerequisite is not";
+        EXPECT_TRUE(blocked.canEnable);
+        EXPECT_TRUE(blocked.requestedEnabled);
+        EXPECT_FALSE(blocked.active);
+        EXPECT_TRUE(blocked.diagnostic.find("org.nemo.colorwarp") != std::string::npos);
+        EXPECT_TRUE(blocked.diagnostic.find("disabled") != std::string::npos);
+        const nemo::extensions::PackageInfo& prerequisite = entryAt(packages.inventory(), supportedLocation);
+        EXPECT_FALSE(prerequisite.requestedEnabled) << "no dependency is ever enabled implicitly";
+        EXPECT_EQ(prerequisite.status, nemo::extensions::PackageStatus::Disabled);
+        EXPECT_TRUE(prerequisite.diagnostic.empty()) << "a package is not blamed for its dependant";
+        EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+        EXPECT_EQ(packages.contributions()->find("org.nemo.dependent"), nullptr);
+        EXPECT_TRUE(packages.panels().empty());
+    }
+    // Enabling the prerequisite explicitly activates both, in dependency order.
+    {
+        nemo::extensions::PackagePreferences preferences;
+        preferences.setEnabled("org.nemo.dependent", dependentLocation, true);
+        preferences.setEnabled(kColorWarpType, supportedLocation, true);
+        savePreferences(environment.settingsPath(), preferences);
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 2U);
+        EXPECT_TRUE(entryAt(packages.inventory(), dependentLocation).active);
+        EXPECT_TRUE(entryAt(packages.inventory(), supportedLocation).active);
+        EXPECT_NE(packages.contributions()->find("org.nemo.dependent"), nullptr);
+        EXPECT_NE(packages.contributions()->find(kColorWarpType), nullptr);
+        // Both active packages contribute their panel.
+        std::vector<std::string> panelIds;
+        for (const nemo::extensions::PanelContribution& panel : packages.panels()) {
+            panelIds.push_back(panel.id);
+        }
+        EXPECT_TRUE(contains(panelIds, kPanelId));
+        EXPECT_TRUE(contains(panelIds, "org.nemo.dependent.example"));
+    }
+    // A prerequisite that is not installed at all cannot be repaired from here.
+    {
+        nlohmann::json manifest = readManifest(dependent);
+        manifest["dependencies"] = {"org.nemo.absent"};
+        writeManifest(dependent, manifest);
+        // The dependant's own library is broken too: a host that opened it before
+        // checking its prerequisite would report a load failure instead of the
+        // missing dependency.
+        breakLibrary(dependent);
+        nemo::extensions::PackagePreferences preferences;
+        preferences.setEnabled("org.nemo.dependent", dependentLocation, true);
+        savePreferences(environment.settingsPath(), preferences);
+        nemo::extensions::InstalledPackages packages;
+        const nemo::extensions::PackageInfo& blocked = entryAt(packages.inventory(), dependentLocation);
+        EXPECT_EQ(blocked.status, nemo::extensions::PackageStatus::MissingDependency);
+        EXPECT_TRUE(blocked.admitted);
+        EXPECT_FALSE(blocked.canEnable) << "an enable switch cannot install a missing package";
+        EXPECT_FALSE(blocked.active);
+        EXPECT_EQ(packages.contributions()->find("org.nemo.dependent"), nullptr);
+    }
+    // A prerequisite that cannot be loaded refuses its dependant before the
+    // dependant's own library is opened.
+    {
+        nlohmann::json manifest = readManifest(dependent);
+        manifest["dependencies"] = {"org.nemo.colorwarp"};
+        writeManifest(dependent, manifest);
+        breakLibrary(supported);
+        nemo::extensions::PackagePreferences preferences;
+        preferences.setEnabled("org.nemo.dependent", dependentLocation, true);
+        preferences.setEnabled(kColorWarpType, supportedLocation, true);
+        savePreferences(environment.settingsPath(), preferences);
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 2U);
+        const nemo::extensions::PackageInfo& failed = entryAt(packages.inventory(), supportedLocation);
+        EXPECT_EQ(failed.status, nemo::extensions::PackageStatus::FailedToLoad);
+        EXPECT_TRUE(failed.admitted) << "the declaration was valid; the native library is not";
+        EXPECT_FALSE(failed.canEnable);
+        EXPECT_FALSE(failed.active);
+        EXPECT_TRUE(failed.diagnostic.find("cannot load") != std::string::npos) << failed.diagnostic;
+        const nemo::extensions::PackageInfo& blocked = entryAt(packages.inventory(), dependentLocation);
+        EXPECT_EQ(blocked.status, nemo::extensions::PackageStatus::RefusedDependency);
+        EXPECT_TRUE(blocked.admitted);
+        EXPECT_FALSE(blocked.active);
+        EXPECT_TRUE(blocked.diagnostic.find("org.nemo.colorwarp") != std::string::npos);
+        EXPECT_EQ(packages.contributions()->find("org.nemo.dependent"), nullptr);
+        EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+    }
+}
+
+TEST_F(ExtensionTest, DuplicateIdentitiesRefuseEveryOffenderAndNameEveryLocation) {
+    NEMO_REQUIRE_INSTALLED_PACKAGE(*this);
+    const UserEnvironment environment(workspace());
+    const fs::path first = copyPackage(environment.standardRoot(), "first");
+    const fs::path second = copyPackage(environment.standardRoot(), "second");
+    const std::string firstLocation = canonicalLocation(first);
+    const std::string secondLocation = canonicalLocation(second);
+
+    nemo::extensions::PackagePreferences preferences;
+    preferences.setEnabled(kColorWarpType, firstLocation, true);
+    preferences.setEnabled(kColorWarpType, secondLocation, true);
+    savePreferences(environment.settingsPath(), preferences);
+
+    nemo::extensions::InstalledPackages packages;
+    ASSERT_EQ(packages.inventory().size(), 2U);
+    for (const std::string& location : {firstLocation, secondLocation}) {
+        const nemo::extensions::PackageInfo& offender = entryAt(packages.inventory(), location);
+        EXPECT_EQ(offender.status, nemo::extensions::PackageStatus::DuplicateIdentity);
+        EXPECT_FALSE(offender.admitted);
+        EXPECT_FALSE(offender.canEnable);
+        EXPECT_FALSE(offender.active);
+        EXPECT_TRUE(offender.diagnostic.find(kColorWarpType) != std::string::npos);
+        // Every offender names the other location, so the conflict is explained
+        // instead of being resolved by discovery order.
+        const std::string& other = location == firstLocation ? secondLocation : firstLocation;
+        EXPECT_TRUE(offender.diagnostic.find(other) != std::string::npos) << offender.diagnostic;
+    }
+    EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+    EXPECT_TRUE(packages.panels().empty());
+    EXPECT_EQ(packages.diagnostics().size(), 2U);
+    EXPECT_NE(packages.contributions()->find("constcolor"), nullptr);
+}
+
+TEST_F(ExtensionTest, MissingAndMovedLinkedFoldersStayListedWithAUsefulStatus) {
+    NEMO_REQUIRE_INSTALLED_PACKAGE(*this);
+    const UserEnvironment environment(workspace());
+    const fs::path linked = copyPackage(workspace() / "external", "colorwarp");
+    const std::string location = canonicalLocation(linked);
+
+    nemo::extensions::PackagePreferences preferences;
+    preferences.linkedFolders.push_back(location);
+    preferences.setEnabled(kColorWarpType, location, true);
+    savePreferences(environment.settingsPath(), preferences);
+    {
+        // A registered folder is discovered without being copied, and is active
+        // only because the user enabled that exact location.
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U);
+        EXPECT_EQ(packages.inventory().front().directory, location);
+        EXPECT_TRUE(packages.inventory().front().active);
+    }
+    // The folder moves away: the registration stays listed with the reason, and
+    // the user's enablement for that folder is still recorded.
+    const fs::path moved = workspace() / "moved-away";
+    std::error_code error;
+    fs::rename(linked, moved, error);
+    ASSERT_FALSE(error) << error.message();
+    {
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U);
+        const nemo::extensions::PackageInfo& missing = packages.inventory().front();
+        EXPECT_EQ(missing.directory, location);
+        EXPECT_EQ(missing.status, nemo::extensions::PackageStatus::MissingPackage);
+        EXPECT_FALSE(missing.admitted);
+        EXPECT_FALSE(missing.canEnable);
+        EXPECT_FALSE(missing.active);
+        EXPECT_TRUE(missing.requestedEnabled);
+        EXPECT_TRUE(contains(packages.diagnostics(), location));
+        EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+    }
+    // A registered folder that exists but holds no package reads the same way,
+    // and a folder without a manifest is refused as a selection.
+    {
+        const fs::path empty = workspace() / "empty-linked";
+        ASSERT_TRUE(fs::create_directories(empty));
+        std::string canonical;
+        std::string reason;
+        EXPECT_FALSE(nemo::extensions::canonicalPackageFolder(empty, canonical, reason));
+        EXPECT_TRUE(reason.find("manifest.json") != std::string::npos) << reason;
+
+        nemo::extensions::PackagePreferences second;
+        second.linkedFolders.push_back(fs::weakly_canonical(empty).generic_string());
+        savePreferences(environment.settingsPath(), second);
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U);
+        EXPECT_EQ(packages.inventory().front().status, nemo::extensions::PackageStatus::MissingPackage);
+        EXPECT_FALSE(packages.inventory().front().active);
+    }
+}
+
+TEST_F(ExtensionTest, RemovingALinkedRegistrationLeavesThePackageByteIdentical) {
+    NEMO_REQUIRE_INSTALLED_PACKAGE(*this);
+    const UserEnvironment environment(workspace());
+    const fs::path linked = copyPackage(workspace() / "external", "colorwarp");
+    const std::string location = canonicalLocation(linked);
+
+    nemo::extensions::PackagePreferences preferences;
+    preferences.linkedFolders.push_back(location);
+    preferences.setEnabled(kColorWarpType, location, true);
+    savePreferences(environment.settingsPath(), preferences);
+    const std::map<std::string, std::string> before = snapshotFiles(linked);
+    ASSERT_FALSE(before.empty());
+    {
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U);
+        EXPECT_TRUE(packages.inventory().front().active);
+    }
+
+    // Removal forgets the registration and the enablement of that folder, and
+    // schedules the deactivation by preference only: the files are untouched.
+    preferences.removeLinkedFolder(location);
+    EXPECT_TRUE(preferences.linkedFolders.empty());
+    EXPECT_TRUE(preferences.enabled.empty());
+    savePreferences(environment.settingsPath(), preferences);
+    EXPECT_EQ(snapshotFiles(linked), before) << "removing a registration must not rewrite the package";
+    EXPECT_TRUE(fs::exists(linked / "manifest.json"));
+
+    {
+        // The next startup runs without it; the folder is not even discovered.
+        nemo::extensions::InstalledPackages packages;
+        EXPECT_TRUE(packages.inventory().empty());
+        EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+        EXPECT_TRUE(packages.panels().empty());
+    }
+    {
+        // Registering a folder is not trust: linking it again lists it, disabled
+        // and unexecuted, until the user enables that location.
+        nemo::extensions::PackagePreferences relinked;
+        relinked.linkedFolders.push_back(location);
+        savePreferences(environment.settingsPath(), relinked);
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U);
+        EXPECT_TRUE(packages.inventory().front().admitted);
+        EXPECT_FALSE(packages.inventory().front().requestedEnabled);
+        EXPECT_FALSE(packages.inventory().front().active);
+        EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+        EXPECT_EQ(snapshotFiles(linked), before);
+    }
+}
+
+TEST_F(ExtensionTest, CorruptOrUnwritablePackageSettingsFailClosedAndAreReported) {
+    NEMO_REQUIRE_INSTALLED_PACKAGE(*this);
+    const UserEnvironment environment(workspace());
+    (void)copyPackage(environment.standardRoot(), "colorwarp");
+
+    // A settings file that is not a declaration enables nothing, reports why, and
+    // is left exactly as it was found.
+    const std::string corrupt = "{ this is not a settings file";
+    {
+        std::error_code error;
+        fs::create_directories(environment.settingsPath().parent_path(), error);
+        ASSERT_FALSE(error) << error.message();
+        std::ofstream stream(environment.settingsPath(), std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(stream.good());
+        stream << corrupt;
+    }
+    {
+        nemo::extensions::InstalledPackages packages;
+        ASSERT_EQ(packages.inventory().size(), 1U);
+        EXPECT_FALSE(packages.inventory().front().requestedEnabled);
+        EXPECT_FALSE(packages.inventory().front().active);
+        EXPECT_EQ(packages.inventory().front().status, nemo::extensions::PackageStatus::Disabled);
+        ASSERT_EQ(packages.diagnostics().size(), 1U);
+        EXPECT_TRUE(packages.diagnostics().front().find("not valid JSON") != std::string::npos)
+            << packages.diagnostics().front();
+        EXPECT_TRUE(packages.diagnostics().front().find(environment.settingsPath().string()) != std::string::npos);
+        EXPECT_EQ(packages.contributions()->find(kColorWarpType), nullptr);
+    }
+    EXPECT_EQ(readFile(environment.settingsPath()), corrupt) << "a settings file the host cannot read is preserved";
+
+    // A settings file that was never written is a normal first launch, not a
+    // failure, and it enables nothing either.
+    const nemo::extensions::PackagePreferencesLoad absent =
+        nemo::extensions::loadPackagePreferences(workspace() / "absent-settings" / "extensions.json");
+    EXPECT_TRUE(absent.diagnostic.empty());
+    EXPECT_TRUE(absent.preferences.linkedFolders.empty());
+    EXPECT_TRUE(absent.preferences.enabled.empty());
+
+    // A location that cannot hold a settings file reports the failure instead of
+    // claiming the change was saved.
+    const fs::path blocked = workspace() / "blocked";
+    {
+        std::ofstream stream(blocked, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(stream.good());
+        stream << "not a directory";
+    }
+    std::string diagnostic;
+    EXPECT_FALSE(nemo::extensions::savePackagePreferences(blocked / "extensions.json",
+                                                          nemo::extensions::PackagePreferences{}, diagnostic));
+    EXPECT_FALSE(diagnostic.empty());
+}
+
+TEST_F(ExtensionTest, AnIncompatiblePackageStillReportsTheMetadataItDeclared) {
+    NEMO_REQUIRE_INSTALLED_PACKAGE(*this);
+    const UserEnvironment environment(workspace());
+    const fs::path incompatible = copyPackage(environment.standardRoot(), "incompatible");
+    // A declaration this build cannot run: a namespaced but unsupported GPU
+    // binding contract refuses the whole package. The refusal happens after the
+    // node/editor/panel sections were read, so the declared metadata is still
+    // reported beside the reason.
+    mutateManifest(incompatible, "org.nemo.incompatible",
+                   [](nlohmann::json& manifest) { manifest["gpu"]["bindings"] = "nemo.native.bindings.v1"; });
+    // The declared presentation metadata travels with the refusal, whatever the
+    // fixture declares.
+    {
+        nlohmann::json manifest = readManifest(incompatible);
+        manifest["name"] = "ColorWarp";
+        manifest["author"] = "Nemo contributors";
+        manifest["description"] = "A bounded hue/saturation tensor warp.";
+        writeManifest(incompatible, manifest);
+    }
+
+    const std::vector<nemo::extensions::PackageInfo> inspected =
+        nemo::extensions::inspectInstalledPackages(nemo::extensions::PackagePreferences{});
+    ASSERT_EQ(inspected.size(), 1U);
+    const nemo::extensions::PackageInfo& info = inspected.front();
+    EXPECT_EQ(info.id, "org.nemo.incompatible") << "the declared identity is listed with the refusal";
+    EXPECT_EQ(info.name, "ColorWarp");
+    EXPECT_EQ(info.author, "Nemo contributors");
+    EXPECT_EQ(info.description, "A bounded hue/saturation tensor warp.");
+    EXPECT_EQ(info.version, 1U);
+    EXPECT_TRUE(fs::equivalent(info.directory, incompatible)) << info.directory;
+    ASSERT_EQ(info.nodeTypes.size(), 1U);
+    EXPECT_EQ(info.nodeTypes.front(), "org.nemo.incompatible");
+    EXPECT_TRUE(contains(info.editors, "org.nemo.incompatible.mesh"));
+    EXPECT_TRUE(contains(info.panels, "org.nemo.incompatible.example"));
+    EXPECT_EQ(info.status, nemo::extensions::PackageStatus::Incompatible);
+    EXPECT_FALSE(info.admitted);
+    EXPECT_FALSE(info.canEnable) << "a declaration this build cannot run is not offered for enablement";
+    EXPECT_FALSE(info.active);
+    EXPECT_TRUE(info.diagnostic.find("binding contract") != std::string::npos) << info.diagnostic;
+
+    // A startup that never enabled it lists it with the same reason, contributes
+    // nothing, and stays usable.
+    nemo::extensions::InstalledPackages packages;
+    ASSERT_EQ(packages.inventory().size(), 1U);
+    EXPECT_EQ(packages.inventory().front().status, nemo::extensions::PackageStatus::Incompatible);
+    EXPECT_EQ(packages.contributions()->find("org.nemo.incompatible"), nullptr);
+    EXPECT_NE(packages.contributions()->find("constcolor"), nullptr);
+    EXPECT_EQ(packages.diagnostics().size(), 1U);
+}
+
+TEST_F(ExtensionTest, PackagePreferencesRoundTripAndEnableOneLocationOnly) {
+    const fs::path settings = workspace() / "settings" / "extensions.json";
+    nemo::extensions::PackagePreferences preferences;
+    preferences.linkedFolders.push_back("/packages/one");
+    preferences.setEnabled("org.example.one", "/packages/one", true);
+    preferences.setEnabled("org.example.one", "/packages/one", true);  // idempotent
+    EXPECT_EQ(preferences.enabled.size(), 1U);
+    EXPECT_TRUE(preferences.isEnabled("org.example.one", "/packages/one"));
+    EXPECT_FALSE(preferences.isEnabled("org.example.one", "/packages/two"));
+    EXPECT_FALSE(preferences.isEnabled("org.example.two", "/packages/one"));
+    savePreferences(settings, preferences);
+
+    nemo::extensions::PackagePreferencesLoad loaded = nemo::extensions::loadPackagePreferences(settings);
+    EXPECT_TRUE(loaded.diagnostic.empty()) << loaded.diagnostic;
+    EXPECT_EQ(loaded.preferences.linkedFolders, preferences.linkedFolders);
+    ASSERT_EQ(loaded.preferences.enabled.size(), 1U);
+    EXPECT_EQ(loaded.preferences.enabled.front().id, "org.example.one");
+    EXPECT_EQ(loaded.preferences.enabled.front().directory, "/packages/one");
+
+    // Disabling the recorded pair is what a restart reads back, and removing a
+    // registration forgets both facts about that folder.
+    loaded.preferences.setEnabled("org.example.one", "/packages/one", false);
+    EXPECT_TRUE(loaded.preferences.enabled.empty());
+    loaded.preferences.setEnabled("org.example.one", "/packages/one", true);
+    loaded.preferences.removeLinkedFolder("/packages/one");
+    EXPECT_TRUE(loaded.preferences.linkedFolders.empty());
+    EXPECT_TRUE(loaded.preferences.enabled.empty());
 }
 
 #if defined(NEMO_TEST_GPU)

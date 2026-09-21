@@ -99,6 +99,10 @@ struct ViewerRuntimeCounts {
     std::uint64_t cacheErrors{};
     std::uint64_t cachePublished{};
     std::string cacheError;
+    std::uint64_t cacheDiskBytes{};
+    std::uint64_t cacheCompressedRamBytes{};
+    std::uint64_t cacheDecodedHotFrames{};
+    std::uint64_t cacheActiveFrames{};
     [[nodiscard]] bool operator==(const ViewerRuntimeCounts&) const = default;
 };
 

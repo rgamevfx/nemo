@@ -892,10 +892,17 @@ int main(int argc, char** argv) {
     std::vector<std::string> args(argv + 2, argv + argc);
     // Composition root: discover the installed extension packages ONCE for this
     // process and hold the inventory for its whole lifetime (the loader retains
-    // the native library handle until the last CPU/GPU user releases it). A
-    // refused package is reported honestly on stderr and omitted; it never
-    // aborts an unrelated command.
-    nemo::extensions::InstalledPackages packages(nemo::extensions::installedPackageRoots());
+    // the native library handle until the last CPU/GPU user releases it). One
+    // normal startup uses the same persisted activation policy as the desktop
+    // shell — the explicit NEMO_EXTENSION_PATH override when that is set, and
+    // the user's per-user enablement otherwise — so a package runs headlessly
+    // exactly when it runs interactively. A refused or not-enabled package is
+    // reported honestly on stderr and omitted; it never aborts an unrelated
+    // command.
+    nemo::extensions::InstalledPackages packages;
+    if (packages.trustedOverride())
+        std::cerr << "nemo-cli: extension: NEMO_EXTENSION_PATH selects the package roots as an explicit override; "
+                     "no package preference is read or written\n";
     for (const std::string& diagnostic : packages.diagnostics())
         std::cerr << "nemo-cli: extension: " << diagnostic << '\n';
     const std::shared_ptr<const nemo::NodeContributions> contributions = packages.contributions();

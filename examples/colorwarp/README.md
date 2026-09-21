@@ -95,17 +95,40 @@ exists or is installed.
 
 ## Use
 
-Put the package's **parent** directory on the extension path and the loader finds
-it as a child package folder:
+Launch Nemo normally, open the gear, then select **Extensions**:
 
-```bash
-export NEMO_EXTENSION_PATH="$HOME/.local/share/nemo/extensions"
-```
+1. Choose **Add Extension Folder…** and select the package folder containing
+   `manifest.json` (for the build above, `build/colorwarp/package/colorwarp`,
+   **not** its parent). Linking only reads metadata; it copies and executes
+   nothing.
+2. Inspect the identity, version, location, contributions and diagnostics.
+   Select **Enable…** only if you trust the native code: extensions run with
+   Nemo's privileges, not in a sandbox. Dependencies are never enabled for you.
+3. Save any project work, quit normally, and reopen Nemo. The package's node,
+   editor and panel become available. No launch flags or environment variables
+   are needed; normal headless execution uses the same saved activation policy.
 
-The default root is `$XDG_DATA_HOME/nemo/extensions` (`$HOME/.local/share` when
-`XDG_DATA_HOME` is unset); on Windows it is `%LOCALAPPDATA%/Nemo/extensions` and
-the separator is `;`. `$HOME/.local` as a prefix lands in the default root
-exactly. Nothing is ever loaded from the current directory or from a project.
+Alternatively, **Open Extensions Folder** creates/opens the standard directory.
+Place one package per child directory there, then **Refresh**. Discoveries,
+including packages installed before this policy was introduced, start disabled.
+The directory is `$XDG_DATA_HOME/nemo/extensions`, or
+`$HOME/.local/share/nemo/extensions` when `XDG_DATA_HOME` is unset; on Windows,
+`%LOCALAPPDATA%/Nemo/extensions`. The install prefix `$HOME/.local` above lands
+in the default Linux location.
+
+Enablement is saved by package identity **and canonical location**, separately
+from the current running inventory. Disable takes effect after restart;
+**Remove link…** forgets an external registration and deactivates it next launch
+without deleting or changing its files. Missing, incompatible or disabled
+packages leave saved nodes, animation, links and unavailable panels intact.
+Restore and re-enable a compatible package, then restart to recover their use.
+Do not overwrite native libraries while a process is using them.
+
+For isolated development/testing only, `NEMO_EXTENSION_PATH` explicitly trusts
+the package roots it lists (the package's **parent** directories; `:` separated
+on Unix, `;` on Windows). This override does not change saved preferences and is
+reported by Settings/CLI. Remove the override to return to ordinary enablement.
+Nothing is loaded from the working directory or arbitrary project locations.
 
 Inside Nemo, add a `ColorWarp` node from the `Color` group. Its inspector shows
 one section control — the wheel — plus the shared numeric control for `Strength`.

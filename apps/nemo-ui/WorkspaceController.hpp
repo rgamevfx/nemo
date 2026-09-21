@@ -22,6 +22,14 @@ class WorkspaceController final : public QObject {
     Q_PROPERTY(QString appearancePreset READ appearancePreset NOTIFY appearanceChanged)
     Q_PROPERTY(QString accentOverride READ accentOverride NOTIFY appearanceChanged)
     Q_PROPERTY(QVariantMap categoryColors READ categoryColors NOTIFY appearanceChanged)
+    // Application preferences: the last Settings section, the Settings popout
+    // size and the cache/storage choices. They are user state, not composition
+    // state, so they never travel in project presentation.
+    Q_PROPERTY(int settingsSection READ settingsSection NOTIFY settingsChanged)
+    Q_PROPERTY(int settingsWidth READ settingsWidth NOTIFY settingsChanged)
+    Q_PROPERTY(int settingsHeight READ settingsHeight NOTIFY settingsChanged)
+    Q_PROPERTY(QString cacheDirectory READ cacheDirectory NOTIFY settingsChanged)
+    Q_PROPERTY(int cacheDiskMiB READ cacheDiskMiB NOTIFY settingsChanged)
 
 public:
     explicit WorkspaceController(QString path, QObject* parent = nullptr);
@@ -34,6 +42,12 @@ public:
     [[nodiscard]] QString appearancePreset() const;
     [[nodiscard]] QString accentOverride() const;
     [[nodiscard]] QVariantMap categoryColors() const;
+    [[nodiscard]] int settingsSection() const;
+    [[nodiscard]] int settingsWidth() const;
+    [[nodiscard]] int settingsHeight() const;
+    // Empty means the runtime platform default; the consumer resolves it.
+    [[nodiscard]] QString cacheDirectory() const;
+    [[nodiscard]] int cacheDiskMiB() const;
 
     Q_INVOKABLE void registerPanelType(const QString& typeId, const QString& title, const QString& qmlSource,
                                        const QString& headerSource = {});
@@ -65,14 +79,27 @@ public:
     Q_INVOKABLE void resetCategoryColors();
     Q_INVOKABLE void resetAppearance();
 
+    // Remembered Settings popout section and size. Section 0..2 selects the
+    // App Settings / UI Settings / Extensions pane; the size is the resizable
+    // popout's accepted inner size. Validation mirrors what the popout may
+    // present, and a rejected or unsaved value leaves the last accepted one.
+    Q_INVOKABLE bool setSettingsWindow(int section, int width, int height);
+    // Application cache/storage preference. An empty directory keeps the
+    // runtime's platform default; a non-empty one must be absolute. The
+    // caller owns writability/effective-state diagnosis; this owner only
+    // validates the shape of the request and that it was persisted.
+    Q_INVOKABLE bool setCacheStorage(const QString& directory, int diskMiB);
+
     Q_INVOKABLE bool save();
     Q_INVOKABLE void reset();
 
     // Project-file presentation boundary. The project envelope stores the same
-    // versioned workspace records the standalone workspace file uses, so layout,
-    // panel state (including unavailable-panel metadata) and appearance
-    // round-trip without a second arrangement model. Qt/QML never sees this
-    // payload; only the project file adapter reads and applies it.
+    // versioned workspace records the standalone workspace file uses, so layout
+    // and panel state (including unavailable-panel metadata) round-trip without
+    // a second arrangement model. It deliberately carries no appearance or
+    // settings record: those are application preferences stored in the
+    // workspace file, and a project must never overwrite them. Qt/QML never
+    // sees this payload; only the project file adapter reads and applies it.
     [[nodiscard]] nlohmann::json projectPresentation();
     [[nodiscard]] bool applyProjectPresentation(const nlohmann::json& presentation);
 
@@ -95,6 +122,10 @@ signals:
     void workspacesChanged();
     void activeWorkspaceIdChanged();
     void appearanceChanged();
+    // Any persisted application preference (Settings section/size, cache
+    // directory, disk budget) changed. Application preferences never emit
+    // presentationChanged or rootChanged: they are not project state.
+    void settingsChanged();
 
 private:
     struct PanelDescriptor {
@@ -126,7 +157,18 @@ private:
     static bool validColor(const QString& value);
     static bool validPreset(const QString& value);
     static QString normalizedName(const QString& value);
-    void restoreFromJson(const nlohmann::json& json);
+    // Validate and commit one appearance edit. The value becomes visible only
+    // after the preference store has accepted it: a failed write restores the
+    // last accepted value and keeps the write diagnosis visible.
+    bool applyAppearance(const std::function<void()>& mutate);
+    // Same contract for the application preferences.
+    bool applySettings(const std::function<void()>& mutate);
+    // includeApplicationState is true only for the workspace file, which is the
+    // application preference store. A project presentation restores layout
+    // records only: an older project's appearance/settings must not overwrite
+    // the user's choices. restoreFromJson is transactional either way.
+    void restoreFromJson(const nlohmann::json& json, bool includeApplicationState);
+    [[nodiscard]] nlohmann::json layoutJson() const;
     [[nodiscard]] nlohmann::json persistenceJson() const;
 
     Workspace workspace_;
@@ -143,6 +185,11 @@ private:
     QString appearancePreset_ = QStringLiteral("Graphite");
     QString accentOverride_;
     QVariantMap categoryColors_;
+    int settingsSection_ = 0;
+    int settingsWidth_ = 800;
+    int settingsHeight_ = 600;
+    QString cacheDirectory_;
+    int cacheDiskMiB_ = 2048;
 };
 
 }  // namespace nemo::workspace

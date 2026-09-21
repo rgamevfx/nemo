@@ -314,14 +314,43 @@ contract; Roto preserves incoming association. The absent delivery-job seam
 remains owned by #87. Neither gap is an integrated-completion claim for #93.
 Reference comparison is against Nuke 17 documentation, not a Nuke runtime.
 
-## Trusted installed pointwise packages (#37)
+## Trusted installed pointwise packages (#37, #105)
 
-`extensions/InstalledPackages` discovers explicit platform package roots once
-at startup. Strict manifest/schema/API/capability/file validation, duplicate
-identity checks and dependency ordering precede executable activation. Failed
-dependencies refuse their dependants without hiding unrelated valid packages.
-Installed code is trusted: metadata validation is not sandboxing, and there is
-no hot reload, package marketplace or project-embedded executable discovery.
+`extensions/InstalledPackages` separates metadata inventory from activation.
+Discovery parses one strictly validated manifest per package folder and never
+opens a library, calls an entrypoint or runs package code, so listing,
+refreshing or inspecting packages cannot execute one. The manifest's `name`,
+`author` and `description` are optional presentation keys; absence is reported
+as absence. Inspection exposes the declared identity, name, author, version,
+description, contributions, dependencies, admission (`PackageInfo::admitted`)
+and a typed `PackageStatus` — active, disabled, missing package, malformed
+manifest, incompatible, duplicate identity, missing/disabled/refused
+dependency, dependency cycle, failed to load — so a presentation layer never
+parses diagnostic text. A package refused after its identity and version were
+read still reports them, and a dependency is never enabled implicitly.
+
+Activation is one immutable startup snapshot: only enabled, admitted packages
+are opened through the fixed ABI in `EffectAbi.h`, in dependency order. Strict
+manifest/schema/API/capability/file validation, duplicate identity checks (every
+offender refused, every offending location named) and dependency ordering
+precede executable activation. Failed dependencies refuse their dependants
+without hiding unrelated valid packages. Installed code is trusted: metadata
+validation is not sandboxing, and there is no hot reload, package marketplace or
+project-embedded executable discovery.
+
+Enablement is per-user state (`extensions/InstalledPackages.hpp`): the registered
+linked package folders and the enabled packages, persisted as (identity,
+canonical location) pairs at `$XDG_CONFIG_HOME/nemo/extensions.json`
+(`%LOCALAPPDATA%/Nemo/extensions.json` on Windows) and written atomically. An
+identity alone never enables a package, a folder discovered by two routes is one
+package, newly discovered and pre-existing installations are disabled until the
+user enables that exact location, and removing a registration only forgets it —
+package files are never copied, moved or deleted. A corrupt or unwritable
+settings file enables nothing and reports why. Both the desktop shell and the
+headless CLI construct `InstalledPackages` the same way, so a package runs
+headlessly exactly when it runs interactively; the explicit `NEMO_EXTENSION_PATH`
+developer/test override selects its roots and activates every admitted package
+without reading or writing the user's settings.
 
 `extensions/EffectAbi.h` defines version 1: effective-parameter JSON and
 host-owned flat buffers cross a C callback table; C++ objects, Qt, Vulkan

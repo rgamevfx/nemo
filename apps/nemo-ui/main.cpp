@@ -6,6 +6,7 @@
 #include "ParameterEditorRegistry.hpp"
 #include "ProjectFileController.hpp"
 #include "ReadSourceController.hpp"
+#include "SettingsController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
 #include "ViewerRuntime.hpp"
@@ -132,8 +133,13 @@ int main(int argc, char* argv[]) {
             << "nemo-ui: invalid cache options; chunk frames 1..48, positive bitrate, benchmark requires source\n";
         return 2;
     }
+    nemo::workspace::WorkspaceController workspace(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
+                                                   QStringLiteral("/workspace.json"));
     nemo::eval::ViewerCacheOptions cacheOptions;
-    cacheOptions.directory = parser.value(cacheDirectoryOption).toStdString();
+    cacheOptions.directory = parser.isSet(cacheDirectoryOption) || workspace.cacheDirectory().isEmpty()
+                                 ? parser.value(cacheDirectoryOption).toStdString()
+                                 : workspace.cacheDirectory().toStdString();
+    cacheOptions.maxDiskBytes = static_cast<std::uint64_t>(workspace.cacheDiskMiB()) * 1024ULL * 1024ULL;
     cacheOptions.encoding.codec = parser.value(cacheCodecOption).toStdString();
     cacheOptions.encoding.bitrateKbps = bitrate;
     cacheOptions.chunkFrames = static_cast<std::size_t>(chunkFrames);
@@ -156,7 +162,7 @@ int main(int argc, char* argv[]) {
     // CPU/GPU user releases it). The composed inventory is the single source of
     // node schema/execution, editor declarations and panels; a refused package
     // is reported honestly on stderr and omitted rather than aborting startup.
-    nemo::extensions::InstalledPackages packages(nemo::extensions::installedPackageRoots());
+    nemo::extensions::InstalledPackages packages;
     for (const std::string& diagnostic : packages.diagnostics())
         std::cerr << "nemo-ui: extension: " << diagnostic << '\n';
     const std::shared_ptr<const nemo::NodeContributions> contributions = packages.contributions();
@@ -227,8 +233,6 @@ int main(int argc, char* argv[]) {
         panelContextRouter.setTimelineTarget(QStringLiteral("A"), QStringLiteral("source:%1").arg(source));
     });
 
-    nemo::workspace::WorkspaceController workspace(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
-                                                   QStringLiteral("/workspace.json"));
     panelContextRouter.setWorkspaceController(&workspace);
     // Production panels register their presentation descriptors before QML is
     // loaded; the shared shell never switches on panel type.
@@ -264,6 +268,8 @@ int main(int argc, char* argv[]) {
     // and routes through, so the engine and every panel body are destroyed
     // while the model, its provider cache and the import worker are alive.
     nemo::ui::NativeFileChooser nativeFileChooser;
+    nemo::ui::SettingsController settings(workspace, nativeFileChooser, packages, runtime, cacheOptions,
+                                          parser.isSet(cacheDirectoryOption));
     nemo::media::MediaImportService mediaImportService;
     nemo::ui::MediaLibraryModel mediaLibrary(projectSession, mediaImportService, &panelContextRouter, &workspace);
     mediaLibrary.setNativeFileChooser(&nativeFileChooser);
@@ -299,6 +305,7 @@ int main(int argc, char* argv[]) {
         // before the model and its import worker.
         engine.addImageProvider(QStringLiteral("nemo-media"), mediaLibrary.createThumbnailProvider());
         engine.rootContext()->setContextProperty(QStringLiteral("workspace"), &workspace);
+        engine.rootContext()->setContextProperty(QStringLiteral("settingsController"), &settings);
         engine.rootContext()->setContextProperty(QStringLiteral("historyController"), &historyController);
         engine.rootContext()->setContextProperty(QStringLiteral("panelContextRouter"), &panelContextRouter);
         engine.rootContext()->setContextProperty(QStringLiteral("projectFile"), &projectFile);

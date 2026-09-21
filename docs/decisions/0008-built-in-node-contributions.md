@@ -21,9 +21,10 @@ projection remains a runtime-object-free `NodeCatalog`; `NodeContributions` and
 state. Desktop, CLI and evaluation use the same builders.
 
 This replaces the central per-effect switches, independently maintained runtime
-shader inventories and growing shared effect uniform. It does not introduce a
-plugin loader, stable binary ABI, service locator or universal extension SDK.
-An ordinary effect requires its module, one list entry and normal build wiring;
+shader inventories and growing shared effect uniform. The internal C++
+interfaces are not a binary SDK; the separate installed-package boundary below
+adds a constrained C ABI without exporting those interfaces. An ordinary
+built-in effect requires its module, one list entry and normal build wiring;
 new shared capabilities still require a change in their existing owning module.
 
 ## Boundaries
@@ -312,6 +313,42 @@ This is not an alpha-association migration. RGB premultiplication remains #89's
 contract; Roto preserves incoming association. The absent delivery-job seam
 remains owned by #87. Neither gap is an integrated-completion claim for #93.
 Reference comparison is against Nuke 17 documentation, not a Nuke runtime.
+
+## Trusted installed pointwise packages (#37)
+
+`extensions/InstalledPackages` discovers explicit platform package roots once
+at startup. Strict manifest/schema/API/capability/file validation, duplicate
+identity checks and dependency ordering precede executable activation. Failed
+dependencies refuse their dependants without hiding unrelated valid packages.
+Installed code is trusted: metadata validation is not sandboxing, and there is
+no hot reload, package marketplace or project-embedded executable discovery.
+
+`extensions/EffectAbi.h` defines version 1: effective-parameter JSON and
+host-owned flat buffers cross a C callback table; C++ objects, Qt, Vulkan
+handles, allocators and exceptions do not. The first capability is one-input
+pointwise RGBA processing, not a universal effect runtime. CPU adapters and GPU
+payload preparation retain the library; submission completion retains the
+existing immutable `EffectLibrary` snapshot. Installed absolute SPIR-V paths
+extend that library's existing loading path, not GPU execution or synchronization.
+
+Desktop and CLI compose the installed catalog once and inject it into their
+existing session/evaluation/file/runtime owners. The session validates effective
+authored parameter edits and previews before publication, so a custom editor
+cannot bypass the same constraint enforced for command and headless callers.
+QML editors and demo panels enter the existing registries and shared chrome.
+
+Descriptors carry a persistent `stateIdentity`; incompatible/missing installed
+state stays unavailable and retains authored parameters, animation and links.
+Package/processing versions participate in runtime result identity separately
+from state compatibility. File-open/recovery uses the installed inventory, not
+the previous document's compatibility-filtered catalog.
+
+ColorWarp's bounded mesh, fold criterion, scene-linear opponent transform,
+alpha/data policy and independent CPU/Slang/GLSL kernels live in the separate
+[`examples/colorwarp`](../../examples/colorwarp/README.md) package. Its editor is
+new owner-approved content, not a historical prototype image. Public API,
+new-node and image approval remain owner gates; implementation evidence does
+not remove them.
 
 ## Verification seam
 

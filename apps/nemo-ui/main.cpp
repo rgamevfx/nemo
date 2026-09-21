@@ -13,6 +13,8 @@
 #include "WorkspaceController.hpp"
 #include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
+#include "nemo/extensions/GpuPackages.hpp"
+#include "nemo/extensions/InstalledPackages.hpp"
 #include "nemo/media/MediaImportService.hpp"
 #include "nemo/media/ViewingTransform.hpp"
 
@@ -40,6 +42,7 @@
 #include <cmath>
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -147,12 +150,24 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Composition root: discover the installed extension packages ONCE for this
+    // process and keep the inventory alive for the whole application (the
+    // loader retains every accepted package's native library until the last
+    // CPU/GPU user releases it). The composed inventory is the single source of
+    // node schema/execution, editor declarations and panels; a refused package
+    // is reported honestly on stderr and omitted rather than aborting startup.
+    nemo::extensions::InstalledPackages packages(nemo::extensions::installedPackageRoots());
+    for (const std::string& diagnostic : packages.diagnostics())
+        std::cerr << "nemo-ui: extension: " << diagnostic << '\n';
+    const std::shared_ptr<const nemo::NodeContributions> contributions = packages.contributions();
+
     // App-owned GPU stack, declared before the engine so it is destroyed
     // after every Qt window/scene graph (and can be quiesced before that
     // teardown frees adopted presentation images).
     nemo::ui::ViewerRuntime runtime;
     try {
-        runtime.bootstrap(extensions.value(), NEMO_SLANG_SPV_DIR, cacheOptions);
+        runtime.bootstrap(extensions.value(), NEMO_SLANG_SPV_DIR, cacheOptions,
+                          nemo::extensions::gpuContributions(packages));
     } catch (const std::exception& error) {
         std::cerr << "nemo-ui: gpu bootstrap failed: " << error.what() << '\n';
         return 1;
@@ -160,7 +175,9 @@ int main(int argc, char* argv[]) {
 
     // The application composes one project owner; presentation facades may
     // come and go without taking the document or shared history with them.
-    nemo::ProjectSession projectSession;
+    // The session's document is created from the composed catalog, so an
+    // installed package's node type is a first-class part of the project model.
+    nemo::ProjectSession projectSession(nemo::Document(contributions->catalog()), 256, contributions);
     nemo::ui::HistoryController historyController(projectSession);
     // A fresh project adopts the owner-approved creation-time color default:
     // the version-pinned OCIO-embedded ACES Studio config with its scene-linear
@@ -227,6 +244,20 @@ int main(int argc, char* argv[]) {
                                 QStringLiteral("MediaBinPanel.qml"), QString());
     workspace.registerPanelType(QStringLiteral("animation"), QStringLiteral("Animation"),
                                 QStringLiteral("AnimationPanel.qml"), QString());
+    // Installed package panels register through the SAME panel-type registry as
+    // the built-ins, so a package panel is a normal workspace panel with no
+    // special shell path. The descriptor's source is an absolute file URL the
+    // panel loader resolves directly; a package that names a built-in id is
+    // refused by the registry (ids are claimed in registration order) and its
+    // diagnostic is surfaced instead of silently replacing a built-in panel.
+    for (const auto& panel : packages.panels()) {
+        const QString id = QString::fromStdString(panel.id);
+        workspace.registerPanelType(id, QString::fromStdString(panel.title), QString::fromStdString(panel.source),
+                                    QString());
+        const QString panelError = workspace.error();
+        if (!panelError.isEmpty())
+            std::cerr << "nemo-ui: panel '" << panel.id << "': " << panelError.toStdString() << '\n';
+    }
     // The media library adapter owns the QML-facing catalog surface, the
     // asynchronous import/probe service and the bounded thumbnail provider.
     // Declared before the QML engine and after the workspace/router it reveals
@@ -278,10 +309,12 @@ int main(int argc, char* argv[]) {
         engine.rootContext()->setContextProperty(QStringLiteral("mediaLibrary"), &mediaLibrary);
         engine.rootContext()->setContextProperty(QStringLiteral("deliveryController"), &delivery);
         engine.rootContext()->setContextProperty(QStringLiteral("viewportPicker"), &viewportPicker);
-        // The same contribution list supplies schema, execution and optional
-        // editor metadata. The existing presentation host still owns controls,
-        // consumed rows, unavailable-editor fallback and their lifetimes.
-        const auto contributions = nemo::builtinNodeContributions();
+        // The SAME composed inventory that built the session and the runtime
+        // supplies schema, execution and optional editor metadata: an installed
+        // package's editors register beside the built-ins, and a package is
+        // never re-derived from a built-in-only list here. The existing
+        // presentation host still owns controls, consumed rows,
+        // unavailable-editor fallback and their lifetimes.
         for (const auto& contribution : contributions->entries()) {
             for (const auto& editor : contribution.editors) {
                 QStringList consumes;

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "nemo/eval/ChannelProjection.hpp"
+#include "nemo/eval/GpuContribution.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
 #include "nemo/eval/SourceSession.hpp"
 #include "nemo/eval/ViewIntent.hpp"
@@ -78,8 +79,20 @@ public:
     // keeps the OCIO application default: the $OCIO environment variable is
     // resolved on the first viewing request. A non-empty path overrides it for
     // this session only, without mutating process-global environment state.
+    //
+    // `contributions` is the session's COMPLETE immutable native inventory
+    // (issue #37): the built-in projection plus every installed package's
+    // callbacks and metadata the owner assembled. The default is the real
+    // built-in-only assembly `builtinGpuContributions()`, which is exactly what
+    // this session used to load implicitly — a caller that supplies a list gets
+    // its own list, never a merge with a hidden second inventory and never a
+    // mutable global registry. The list is moved, once, into the session's own
+    // immutable `EffectLibrary` snapshot — the session never borrows a package
+    // list that its owner could destroy. Shader loading and compilation stay on
+    // the worker that constructs the session.
     ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                  const std::filesystem::path& shaderDirectory, std::string ocioConfigPath = {});
+                  const std::filesystem::path& shaderDirectory, std::string ocioConfigPath = {},
+                  std::vector<GpuNodeContribution> contributions = builtinGpuContributions());
     ~ViewerSession();
     ViewerSession(const ViewerSession&) = delete;
     ViewerSession& operator=(const ViewerSession&) = delete;

@@ -717,7 +717,12 @@ void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::K
                                     std::to_string(session.revision()),
                                 session.revision());
     }
-    nemo::ProjectReadResult loaded = recovery ? nemo::ProjectFile::readRecovery(path) : nemo::ProjectFile::read(path);
+    // Read against the SAME composed catalog the session was constructed with,
+    // so an installed package's node is understood on open/recover instead of
+    // degrading to an unknown type.
+    nemo::ProjectReadResult loaded = recovery
+                                         ? nemo::ProjectFile::readRecovery(path, session.contributions()->catalog())
+                                         : nemo::ProjectFile::read(path, session.contributions()->catalog());
     if (!loaded.ok) {
         session.setLastFileError(loaded.error.message);
         return projectErrorJson(projectErrorCode(loaded.error.code), loaded.error.message, session.revision());
@@ -819,7 +824,8 @@ void putAnimationKeyIds(Json& target, const char* key, const std::vector<nemo::K
 }
 
 }  // namespace
-int commandProjectSession(const std::vector<std::string>& args) {
+int commandProjectSession(const std::vector<std::string>& args,
+                          std::shared_ptr<const nemo::NodeContributions> contributions) {
     if (args.size() != 1) {
         std::cerr << "usage: nemo-cli project-session <project.json> "
                      "(graph queries and edits require network_id)\n"
@@ -836,14 +842,21 @@ int commandProjectSession(const std::vector<std::string>& args) {
         return 2;
     }
     try {
-        nemo::ProjectReadResult loaded = nemo::ProjectFile::read(args.front());
+        if (!contributions)
+            throw std::invalid_argument("project-session requires a composed node inventory");
+        // The session owns the composed catalog. This reads the project against
+        // that catalog, so an installed package's node type stays known (and a
+        // genuinely uninstalled one is reported as such) instead of every
+        // external node degrading to an unknown type.
+        nemo::Document document(contributions->catalog());
+        nemo::ProjectSession session(std::move(document), 256, std::move(contributions));
+        nemo::ProjectReadResult loaded = nemo::ProjectFile::read(args.front(), session.contributions()->catalog());
         if (!loaded.ok)
             throw std::runtime_error(loaded.error.message.empty() ? "cannot open project: " + args.front()
                                                                   : loaded.error.message);
         std::vector<std::string> warnings = loaded.warnings;
         for (const auto& warning : warnings)
             std::cerr << "project-session: warning: " << warning << '\n';
-        nemo::ProjectSession session;
         const nemo::ProjectReplaceResult opened = session.open(std::move(loaded));
         if (!opened.replaced)
             throw std::runtime_error(opened.error ? opened.error->message : "cannot open project: " + args.front());

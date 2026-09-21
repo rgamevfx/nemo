@@ -90,7 +90,7 @@ if(NEMO_BUILD_UI)
     # resources at startup. Linking the module's plugin propagates the generated
     # registration and resource objects so static linking cannot drop them.
     qt_add_executable(nemo-ui main.cpp)
-    target_link_libraries(nemo-ui PRIVATE nemo_ui_shared nemo_ui_sharedplugin)
+    target_link_libraries(nemo-ui PRIVATE nemo_ui_shared nemo_ui_sharedplugin nemo::extensions_gpu)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

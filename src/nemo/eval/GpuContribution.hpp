@@ -3,10 +3,12 @@
 #include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/evaluation/Request.hpp"
 #include "nemo/core/evaluation/SourceRequest.hpp"
+#include "nemo/eval/BindingContract.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <span>
@@ -16,14 +18,6 @@
 #include <vector>
 
 namespace nemo::eval {
-
-// Identity of the native binding contract below. Any change to the meaning,
-// layout or coordinate convention of these bindings requires a new value: the
-// effect library mixes it into its fingerprint, so no cached result can
-// survive a semantic change to the interface the kernels were compiled
-// against. Node-local payload layouts are versioned separately by their own
-// declaring node.
-inline constexpr std::string_view kEffectBindingContractVersion = "nemo.native.bindings.v8";
 
 // Internal binding contract v8 (issues #88, #90, #98, #93). Only coordinate/time facts
 // and the resolved named-channel projection are common to effects. Node-local
@@ -184,6 +178,9 @@ struct EffectPassDefinition {
     // Read-only node-local geometry words at set 4/binding 0. The executor
     // owns upload and retention; the contribution owns the versioned layout.
     bool geometry{false};
+    // Installed shader packages supply an absolute SPIR-V location. Built-in
+    // shaders keep the configured-directory/name convention above.
+    std::filesystem::path spirvPath{};
 };
 
 // Coverage of one scratch image the selected local passes produce. A scratch

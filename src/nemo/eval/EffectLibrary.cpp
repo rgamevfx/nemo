@@ -47,8 +47,10 @@ void validateGpu(const GpuNodeContribution& contribution) {
     for (const auto& pass : implementation.passes) {
         if (pass.id.empty() || !ids.insert(pass.id).second)
             invalid(node, "duplicate or empty local pass identity '" + pass.id + "'");
-        if (pass.shader.empty() && pass.glsl.empty())
+        if (pass.shader.empty() && pass.glsl.empty() && pass.spirvPath.empty())
             invalid(node, "local pass '" + pass.id + "' has no shader implementation");
+        if (!pass.spirvPath.empty() && !pass.spirvPath.is_absolute())
+            invalid(node, "local pass '" + pass.id + "' requires an absolute installed SPIR-V path");
         if ((pass.output.kind != EffectImageKind::Output && pass.output.kind != EffectImageKind::Scratch) ||
             (pass.output.kind == EffectImageKind::Output && pass.output.index != 0))
             invalid(node, "local pass '" + pass.id + "' has an invalid output reference");
@@ -116,7 +118,7 @@ EffectLibrary::EffectLibrary(std::vector<GpuNodeContribution> contributions, Eff
         validateGpu(contribution);
         if (contribution.gpu) {
             for (const auto& pass : contribution.gpu->passes) {
-                if (pass.shader.empty())
+                if (pass.shader.empty() || !pass.spirvPath.empty())
                     continue;
                 const auto basename = std::filesystem::path(pass.shader).filename().string();
                 const auto [entry, inserted] = shaderNames.emplace(basename, pass.shader);
@@ -142,12 +144,16 @@ EffectLibrary::EffectLibrary(std::vector<GpuNodeContribution> contributions, Eff
             for (const auto& pass : implementation.passes) {
                 EffectProgram program;
                 const auto relative = std::filesystem::path(pass.shader);
-                const auto spvPath = spvDir / (relative.filename().string() + ".spv");
+                const auto spvPath =
+                    pass.spirvPath.empty() ? spvDir / (relative.filename().string() + ".spv") : pass.spirvPath;
                 const auto sourcePath = sourceDir / (pass.shader + ".slang");
-                program.sourcePath =
-                    !sourceDir.empty() && std::filesystem::exists(sourcePath) ? sourcePath.string() : spvPath.string();
+                const auto displayPath =
+                    pass.spirvPath.empty() && !sourceDir.empty() && std::filesystem::exists(sourcePath) ? sourcePath
+                                                                                                        : spvPath;
+                const auto displayUtf8 = displayPath.generic_u8string();
+                program.sourcePath.assign(displayUtf8.begin(), displayUtf8.end());
                 try {
-                    if (backend == EffectBackend::Slang && pass.shader.empty())
+                    if (backend == EffectBackend::Slang && pass.shader.empty() && pass.spirvPath.empty())
                         throw std::runtime_error("no native Slang implementation is supplied");
                     if (backend == EffectBackend::Glsl) {
                         program.sourcePath = pass.shader + " (GLSL reference, local pass '" + pass.id + "')";

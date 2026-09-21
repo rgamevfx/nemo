@@ -5,12 +5,21 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 namespace nemo {
 namespace {
 constexpr std::size_t kRequestCapacity = 256;
+
+[[nodiscard]] const Network* findNetwork(const Document& document, NetworkId id) {
+    for (const auto& network : document.networks())
+        if (network.id() == id)
+            return &network;
+    return nullptr;
+}
 
 // Parameter authoring shares the animation owner's keyframe/value command
 // helpers (AnimationCommands): the key identity, interpolation and tangent
@@ -105,8 +114,105 @@ ProjectSession::~ProjectSession() {
     assertOwnerThread();
 }
 
-ProjectSession::ProjectSession(Document document, std::size_t historyCapacity)
-    : document_(std::move(document)), commands_(document_, historyCapacity), eventCapacity_(historyCapacity) {
+void ProjectSession::validateAuthoredParameters(const Document& before, const Document& after,
+                                                const ChangeRecorder& touched, std::optional<double> time) const {
+    using Target = std::tuple<NetworkId, NodeId, NetworkInstanceId>;
+    std::map<Target, std::set<double>> targets;
+    const auto admit = [&](NetworkId network, NodeId node, NetworkInstanceId instance) {
+        auto& times = targets[{network, node, instance}];
+        if (time)
+            times.insert(*time);
+    };
+    for (const auto& [networkId, nodeId] : touched.nodes()) {
+        const auto* network = findNetwork(after, networkId);
+        if (!network)
+            continue;
+        const auto* node = network->graph().node(nodeId);
+        const auto* oldNetwork = findNetwork(before, networkId);
+        const auto* oldNode = oldNetwork ? oldNetwork->graph().node(nodeId) : nullptr;
+        if (node && (!oldNode || node->params != oldNode->params))
+            admit(networkId, nodeId, kInvalidNetworkInstance);
+    }
+    for (const auto id : touched.instances()) {
+        const auto* instance = after.instance(id);
+        if (!instance)
+            continue;
+        const auto* previous = before.instance(id);
+        for (const auto& [node, parameters] : instance->params) {
+            const auto old = previous ? previous->params.find(node) : instance->params.end();
+            if (!previous || old == previous->params.end() || old->second != parameters)
+                admit(instance->definition, node, id);
+        }
+        if (previous)
+            for (const auto& [node, parameters] : previous->params) {
+                static_cast<void>(parameters);
+                if (!instance->params.contains(node))
+                    admit(instance->definition, node, id);
+            }
+    }
+    for (const auto id : touched.animationChannels()) {
+        const auto* channel = after.animationChannel(id);
+        if (!channel)
+            channel = before.animationChannel(id);
+        if (!channel || channel->address.rotoElement != kInvalidRotoElement)
+            continue;
+        const auto& address = channel->address;
+        auto& times = targets[{address.network, address.node, address.instance}];
+        if (time)
+            times.insert(*time);
+        else
+            for (const auto& key : channel->keys)
+                times.insert(key.time);
+    }
+    for (const auto& [target, times] : targets) {
+        const auto& [networkId, nodeId, instanceId] = target;
+        const auto* network = findNetwork(after, networkId);
+        const auto* node = network ? network->graph().node(nodeId) : nullptr;
+        if (!node)
+            continue;
+        const auto* contribution = contributions_->find(node->type);
+        if (!contribution || !contribution->validateParameters || !network->graph().descriptor(node->type))
+            continue;  // Unavailable authored state remains recoverable.
+        ParameterValues values = node->params;
+        if (instanceId != kInvalidNetworkInstance) {
+            const auto* instance = after.instance(instanceId);
+            if (!instance)
+                continue;
+            const auto overrides = instance->params.find(nodeId);
+            if (overrides != instance->params.end())
+                for (const auto& [key, value] : overrides->second)
+                    values[key] = value;
+        }
+        // Declared defaults fill exactly the keys neither the node nor its
+        // occurrence authored: the same resolved state evaluation seeds from the
+        // registered descriptor before it validates. Node and occurrence values
+        // keep precedence, and a touched animation channel still overrides both.
+        for (const ParameterSpec& parameter : contribution->descriptor.parameters)
+            values.try_emplace(parameter.name, parameter.defaultValue);
+        const auto validate = [&](const ParameterValues& effective) {
+            if (const auto problem = contributions_->validateParameters(network->graph().catalog(), *node, effective))
+                throw GraphException(GraphError::ParameterValue, "network " + std::to_string(networkId) + ", node '" +
+                                                                     node->name + "' (" + std::to_string(nodeId) +
+                                                                     "): " + *problem);
+        };
+        if (times.empty()) {
+            validate(values);
+        } else {
+            for (const double sample : times) {
+                ParameterValues effective = values;
+                applyAnimationParameters(after, networkId, nodeId, instanceId, sample, effective);
+                validate(effective);
+            }
+        }
+    }
+}
+
+ProjectSession::ProjectSession(Document document, std::size_t historyCapacity,
+                               std::shared_ptr<const NodeContributions> contributions)
+    : document_(std::move(document)), contributions_(std::move(contributions)), commands_(document_, historyCapacity),
+      eventCapacity_(historyCapacity) {
+    if (!contributions_)
+        throw std::invalid_argument("project session requires an immutable contribution inventory");
     captureSavedBaseline();
 }
 
@@ -236,12 +342,6 @@ void ProjectSession::derivePublication(const Document& before, const Document& a
     result.committed = true;
     result.revision = revision_ + 1;
 
-    const auto findNetwork = [](const Document& document, NetworkId id) -> const Network* {
-        for (const auto& network : document.networks())
-            if (network.id() == id)
-                return &network;
-        return nullptr;
-    };
     const auto addNetworkChange = [&result](NetworkId id) {
         if (id != kInvalidNetwork)
             result.changedNetworkIds.push_back(id);
@@ -496,6 +596,8 @@ EditResult ProjectSession::execute(Operation operation, Command* command, const 
     try {
         const CommandStack::BeforeCommit prepare = [&](const Document& before, const Document& after,
                                                        const ChangeRecorder& touched) {
+            if (operation == Operation::Submit)
+                validateAuthoredParameters(before, after, touched);
             derivePublication(before, after, touched, result, options.requestId);
         };
         switch (operation) {
@@ -611,6 +713,7 @@ ParameterGestureResult ProjectSession::beginParameterGestureInternal(std::vector
                 preview.apply(*snapshot);
             }
         });
+        validateAuthoredParameters(document_, *snapshot, touched, keyedTime);
         const auto token = nextGestureToken_++;
         ParameterGestureState state;
         state.token = token;
@@ -690,6 +793,7 @@ ParameterGestureResult ProjectSession::beginValueParameterGesture(double time, s
                 preview.apply(*snapshot);
             });
         }
+        validateAuthoredParameters(document_, *snapshot, touched, time);
         const auto token = nextGestureToken_++;
         ParameterGestureState state;
         state.token = token;
@@ -782,6 +886,9 @@ ParameterGestureResult ProjectSession::updateParameterGesture(ParameterGestureTo
                 preview.apply(*snapshot);
             }
         });
+        validateAuthoredParameters(document_, *snapshot, touched,
+                                   gesture_->mode == GestureMode::Static ? std::nullopt
+                                                                         : std::optional<double>{gesture_->time});
         gesture_->edits = std::move(merged);
         gesture_->snapshot = snapshot;
         return makeGesturePreview(gesture_->token, gesture_->expectedRevision, std::move(snapshot));

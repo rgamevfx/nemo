@@ -318,8 +318,12 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
 // Explicit diagnostic edits affect only an in-memory project session and the
 // last explicitly requested frame. Never rewrites the input project.
 [[nodiscard]] Json probeInvalidation(nemo::eval::ViewerSession& session, const nemo::Document& original,
-                                     const CacheCommandOptions& options, std::uint64_t& generation) {
-    nemo::ProjectSession projectSession(original);
+                                     const CacheCommandOptions& options, std::uint64_t& generation,
+                                     const std::shared_ptr<const nemo::NodeContributions>& contributions) {
+    // The probe session edits a copy of the document; it is composed with the
+    // same inventory the document was read against, so a package node edit is
+    // validated exactly as it would be in the live session.
+    nemo::ProjectSession projectSession(original, 256, contributions);
     Json probes = Json::array();
     const auto frameNumber = options.requestedFrames.back();
     const auto probe = [&](const char* kind, nemo::Command command, bool viewOnly) {
@@ -424,8 +428,12 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
          "two diagnostic full-frame GPU-to-host readbacks (source viewer and one cached replay); never the hot path"}};
 }
 
-int runGpuHarness(const CacheCommandOptions& options, Json& report) {
-    const nemo::ProjectReadResult loaded = nemo::ProjectFile::read(options.project);
+int runGpuHarness(const CacheCommandOptions& options, Json& report,
+                  const std::shared_ptr<const nemo::NodeContributions>& contributions,
+                  const std::vector<nemo::eval::GpuNodeContribution>& gpuContributions) {
+    // Read against the composed catalog: an installed package's node type is
+    // known here, exactly as it is in the application session.
+    const nemo::ProjectReadResult loaded = nemo::ProjectFile::read(options.project, contributions->catalog());
     if (!loaded.ok)
         throw std::runtime_error(loaded.error.message.empty() ? "cannot open project: " + options.project.string()
                                                               : loaded.error.message);
@@ -504,7 +512,8 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
         // Establish the source-view oracle in a standalone session with no
         // cache configured. This prevents a pre-existing disk entry from
         // becoming a self-comparison when --fidelity is requested.
-        nemo::eval::ViewerSession sourceSession(*instance, *device, *allocator, shaders, ocioConfigPath);
+        nemo::eval::ViewerSession sourceSession(*instance, *device, *allocator, shaders, ocioConfigPath,
+                                                gpuContributions);
         const nemo::EvaluationRequest sourceRequest = makeRequest(loaded.document, options, fidelityFrame);
         nemo::eval::ViewerFrame sourceFrame =
             sourceSession.render(loaded.document, sourceRequest, 10'000'000'000ULL, 0);
@@ -517,7 +526,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
     std::uint64_t generation = 1;
     double editProbeMs = 0.0;
     {
-        nemo::eval::ViewerSession session(*instance, *device, *allocator, shaders, ocioConfigPath);
+        nemo::eval::ViewerSession session(*instance, *device, *allocator, shaders, ocioConfigPath, gpuContributions);
         session.configureCache(cacheOptions);
         buildBefore = session.cacheCounts();
         if ((!options.viewAfter.empty() || options.edit.requested()) && buildBefore.diskBytes != 0)
@@ -568,7 +577,8 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
         buildAfter = session.cacheCounts();
         if (!options.viewAfter.empty() || options.edit.requested()) {
             const auto probeStart = Clock::now();
-            report["invalidation_probes"] = probeInvalidation(session, loaded.document, options, generation);
+            report["invalidation_probes"] =
+                probeInvalidation(session, loaded.document, options, generation, contributions);
             editProbeMs = elapsedMs(probeStart, Clock::now());
             for (const auto& probe : report["invalidation_probes"])
                 if (!probe.at("ok").get<bool>())
@@ -614,7 +624,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
     nemo::CacheCounts replayReuseAfter;
     const auto replayStart = Clock::now();
     {
-        nemo::eval::ViewerSession replay(*instance, *device, *allocator, shaders, ocioConfigPath);
+        nemo::eval::ViewerSession replay(*instance, *device, *allocator, shaders, ocioConfigPath, gpuContributions);
         replay.configureCache(cacheOptions);
         replayBefore = replay.cacheCounts();
         replayReuseBefore = replay.reuseCounts();
@@ -739,12 +749,20 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report) {
 
 }  // namespace
 
-int commandViewerCache(const std::vector<std::string>& args) {
+int commandViewerCache(const std::vector<std::string>& args,
+                       std::shared_ptr<const nemo::NodeContributions> contributions
+#ifdef NEMO_BUILD_GPU
+                       ,
+                       std::vector<nemo::eval::GpuNodeContribution> gpuContributions
+#endif
+) {
     Json report{{"ok", false}, {"command", "cache-viewer"}, {"errors", Json::array()}};
     try {
+        if (!contributions)
+            throw std::invalid_argument("cache-viewer requires a composed node inventory");
         const CacheCommandOptions options = parseArguments(args);
 #ifdef NEMO_BUILD_GPU
-        const int result = runGpuHarness(options, report);
+        const int result = runGpuHarness(options, report, contributions, gpuContributions);
         report["ok"] = result == 0;
         std::cout << report.dump(2) << '\n';
         return result;

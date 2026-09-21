@@ -97,7 +97,8 @@ bool isKnownPresentationEnvelope(const nlohmann::json& envelope) {
 ProjectFileController::ProjectFileController(nemo::ProjectSession& session,
                                              nemo::workspace::WorkspaceController& workspace,
                                              PanelContextRouter& router, NativeFileChooser& chooser, QObject* parent)
-    : QObject(parent), session_(session), workspace_(workspace), router_(router), chooser_(chooser) {
+    : QObject(parent), session_(session), workspace_(workspace), router_(router), chooser_(chooser),
+      catalog_(session.contributions()->catalog()) {
     appDataDirectory_ = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     ioWorker_.moveToThread(&ioThread_);
     ioThread_.start();
@@ -426,14 +427,20 @@ void ProjectFileController::beginRead(const std::filesystem::path& path, bool re
     beginOperation();
     const std::uint64_t requestRevision = session_.revision();
     const std::uint64_t generation = ++loadGeneration_;
+    // The catalog is captured here, on the owner thread: the worker never
+    // reaches into the live session, and the immutable snapshot outlives the
+    // queued invocation even if the document is replaced meanwhile.
+    const std::shared_ptr<const nemo::NodeCatalog> catalog = catalog_;
     QMetaObject::invokeMethod(
         &ioWorker_,
-        [this, path, recovery, requestRevision, generation] {
+        [this, path, recovery, requestRevision, generation, catalog] {
             // Backend owns recovery semantics: one readRecovery path infers the
             // protected original for autosave slots and .bak alike, so its
-            // recoveryOriginal/sourcePath are never overridden here.
+            // recoveryOriginal/sourcePath are never overridden here. The
+            // composed catalog keeps an installed package's node type known to
+            // this read instead of degrading it to an unknown type.
             const nemo::ProjectReadResult result =
-                recovery ? nemo::ProjectFile::readRecovery(path) : nemo::ProjectFile::read(path);
+                recovery ? nemo::ProjectFile::readRecovery(path, catalog) : nemo::ProjectFile::read(path, catalog);
             QMetaObject::invokeMethod(
                 this,
                 [this, result = std::move(result), requestRevision, generation, recovery]() mutable {

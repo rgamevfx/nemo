@@ -32,6 +32,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -41,7 +42,9 @@
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
+#include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
+#include "nemo/extensions/InstalledPackages.hpp"
 #include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/ImageIO.hpp"
 #include "nemo/media/ImageSource.hpp"
@@ -51,6 +54,7 @@
 #include "nemo/eval/DeliveryJob.hpp"
 #include "nemo/eval/GpuExecutor.hpp"
 #include "nemo/eval/SourceSession.hpp"
+#include "nemo/extensions/GpuPackages.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
@@ -75,8 +79,11 @@ namespace {
 // All CLI project readers go through the shared file owner so project-relative
 // source and OCIO paths resolve identically and unknown/missing-dependency
 // diagnostics are preserved. `report` must already own a "warnings" array.
-[[nodiscard]] nemo::ProjectReadResult readProject(const std::string& path, nlohmann::json& report) {
-    nemo::ProjectReadResult loaded = nemo::ProjectFile::read(path);
+// `catalog` is the composed inventory's schema projection, so a node type an
+// installed package contributes is resolved rather than reported unknown.
+[[nodiscard]] nemo::ProjectReadResult readProject(const std::string& path, nlohmann::json& report,
+                                                  const std::shared_ptr<const nemo::NodeCatalog>& catalog) {
+    nemo::ProjectReadResult loaded = nemo::ProjectFile::read(path, catalog);
     for (const auto& warning : loaded.warnings)
         report["warnings"].push_back(warning);
     if (!loaded.ok) {
@@ -117,13 +124,14 @@ int printUsage() {
     return 2;
 }
 
-int commandValidate(const std::vector<std::string>& args) {
+int commandValidate(const std::vector<std::string>& args,
+                    const std::shared_ptr<const nemo::NodeContributions>& contributions) {
     if (args.empty()) {
         return printUsage();
     }
     nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        const nemo::ProjectReadResult loaded = readProject(args.front(), report);
+        const nemo::ProjectReadResult loaded = readProject(args.front(), report, contributions->catalog());
         if (loaded.ok) {
             report["ok"] = true;
             nlohmann::json info;
@@ -172,7 +180,8 @@ void writePpm(std::ostream& out, int width, int height, int frame) {
     }
 }
 
-int commandRender(const std::vector<std::string>& args) {
+int commandRender(const std::vector<std::string>& args,
+                  const std::shared_ptr<const nemo::NodeContributions>& contributions) {
     if (args.empty()) {
         return printUsage();
     }
@@ -207,7 +216,7 @@ int commandRender(const std::vector<std::string>& args) {
 
     nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        const nemo::ProjectReadResult loaded = readProject(args.front(), report);
+        const nemo::ProjectReadResult loaded = readProject(args.front(), report, contributions->catalog());
         if (loaded.ok) {
             std::ofstream out(outPath, std::ios::binary);
             if (!out) {
@@ -242,7 +251,8 @@ void writeCpuPpm(std::ostream& out, const nemo::CpuImage& image) {
     }
 }
 
-int commandEvaluate(const std::vector<std::string>& args) {
+int commandEvaluate(const std::vector<std::string>& args,
+                    const std::shared_ptr<const nemo::NodeContributions>& contributions) {
     if (args.empty()) {
         return printUsage();
     }
@@ -283,7 +293,7 @@ int commandEvaluate(const std::vector<std::string>& args) {
 
     nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        const nemo::ProjectReadResult loaded = readProject(args.front(), report);
+        const nemo::ProjectReadResult loaded = readProject(args.front(), report, contributions->catalog());
         if (loaded.ok) {
             nemo::EvaluationRequest request;
             request.network = network == nemo::kInvalidNetwork ? loaded.document.rootNetworkId() : network;
@@ -291,7 +301,8 @@ int commandEvaluate(const std::vector<std::string>& args) {
             request.localTime = frame;
             request.region = {0, 0, width, height};
             nemo::media::ImageSourceProvider sources;
-            const nemo::CpuEvaluation evaluation = nemo::evaluateCpu(loaded.document, request, nullptr, &sources);
+            const nemo::CpuEvaluation evaluation =
+                nemo::evaluateCpu(loaded.document, request, nullptr, &sources, contributions);
 
             std::ofstream out(outPath, std::ios::binary);
             if (!out) {
@@ -355,9 +366,16 @@ int commandEvaluate(const std::vector<std::string>& args) {
 }
 #endif
 
-int commandDeliver(const std::vector<std::string>& args) {
+int commandDeliver(const std::vector<std::string>& args,
+                   const std::shared_ptr<const nemo::NodeContributions>& contributions
+#ifdef NEMO_BUILD_GPU
+                   ,
+                   const std::vector<nemo::eval::GpuNodeContribution>& gpuContributions
+#endif
+) {
 #ifndef NEMO_BUILD_GPU
     (void)args;
+    (void)contributions;
     std::cerr << "deliver requires the native GPU evaluation build; no CPU export fallback is used\n";
     return 2;
 #else
@@ -454,7 +472,7 @@ int commandDeliver(const std::vector<std::string>& args) {
 #endif
     nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        const auto loaded = readProject(args.front(), report);
+        const auto loaded = readProject(args.front(), report, contributions->catalog());
         if (loaded.ok) {
             const auto network =
                 request.network == nemo::kInvalidNetwork ? loaded.document.rootNetworkId() : request.network;
@@ -501,7 +519,10 @@ int commandDeliver(const std::vector<std::string>& args) {
             auto instance = nemo::gpu::Instance::create({.validation = true});
             auto device = nemo::gpu::Device::create(*instance);
             auto allocator = nemo::gpu::Allocator::create(*instance, *device, {.max_device_bytes = 2ULL << 30});
-            nemo::eval::DeliveryQueue queue(*instance, *device, *allocator, request.shaders);
+            // The composed native list (built-ins plus installed packages)
+            // replaces the queue's built-in default assembly.
+            nemo::eval::DeliveryQueue queue(*instance, *device, *allocator, request.shaders,
+                                            /*maxAcceptedJobs=*/8, gpuContributions);
             if (request.preflight) {
                 const auto plan =
                     queue.plan(loaded.document, network, write->id, settings, request.frame, loaded.colorConfigPath);
@@ -575,7 +596,9 @@ int commandDeliver(const std::vector<std::string>& args) {
 // requested output for the machine-readable report and the PPM. The
 // readback is the verification seam; the executor path itself is
 // readback-free.
-int commandEvaluateGpu(const std::vector<std::string>& args) {
+int commandEvaluateGpu(const std::vector<std::string>& args,
+                       const std::shared_ptr<const nemo::NodeContributions>& contributions,
+                       const std::vector<nemo::eval::GpuNodeContribution>& gpuContributions) {
     if (args.empty()) {
         return printUsage();
     }
@@ -631,7 +654,7 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
 
     nlohmann::json report{{"ok", false}, {"errors", nlohmann::json::array()}, {"warnings", nlohmann::json::array()}};
     try {
-        const nemo::ProjectReadResult loaded = readProject(args.front(), report);
+        const nemo::ProjectReadResult loaded = readProject(args.front(), report, contributions->catalog());
         if (loaded.ok) {
             nemo::EvaluationRequest request;
             request.network = network == nemo::kInvalidNetwork ? loaded.document.rootNetworkId() : network;
@@ -649,10 +672,14 @@ int commandEvaluateGpu(const std::vector<std::string>& args) {
                     report["errors"].push_back("no Slang shader directory: pass --shaders <spv-dir> or configure with "
                                                "-D NEMO_DOWNLOAD_SLANGC=ON / -D NEMO_SLANGC=<path>");
                 } else {
-                    effects = nemo::eval::loadSlangEffectLibrary(shaderDir, NEMO_SLANG_SRC_DIR);
+                    // The composed list replaces the built-in assembly: this
+                    // build renders exactly the node set the process discovered,
+                    // installed packages included.
+                    effects = nemo::eval::EffectLibrary(gpuContributions, nemo::eval::EffectBackend::Slang, shaderDir,
+                                                        NEMO_SLANG_SRC_DIR);
                 }
             } else {
-                effects = nemo::eval::glslEffectLibrary();
+                effects = nemo::eval::EffectLibrary(gpuContributions, nemo::eval::EffectBackend::Glsl);
             }
             if (report["errors"].empty()) {
                 std::filesystem::path mediaShaderDir = shaderDir;
@@ -863,33 +890,55 @@ int main(int argc, char** argv) {
     }
     const std::string command = argv[1];
     std::vector<std::string> args(argv + 2, argv + argc);
+    // Composition root: discover the installed extension packages ONCE for this
+    // process and hold the inventory for its whole lifetime (the loader retains
+    // the native library handle until the last CPU/GPU user releases it). A
+    // refused package is reported honestly on stderr and omitted; it never
+    // aborts an unrelated command.
+    nemo::extensions::InstalledPackages packages(nemo::extensions::installedPackageRoots());
+    for (const std::string& diagnostic : packages.diagnostics())
+        std::cerr << "nemo-cli: extension: " << diagnostic << '\n';
+    const std::shared_ptr<const nemo::NodeContributions> contributions = packages.contributions();
+#ifdef NEMO_BUILD_GPU
+    const std::vector<nemo::eval::GpuNodeContribution> gpuContributions = nemo::extensions::gpuContributions(packages);
+#endif
     if (command == "cache-viewer") {
-        return commandViewerCache(args);
+        return commandViewerCache(args, contributions
+#ifdef NEMO_BUILD_GPU
+                                  ,
+                                  gpuContributions
+#endif
+        );
     }
     if (command == "probe-media") {
         return commandProbeMedia(args);
     }
     if (command == "project-session") {
-        return commandProjectSession(args);
+        return commandProjectSession(args, contributions);
     }
     if (argc < 3) {
         return printUsage();
     }
     if (command == "validate") {
-        return commandValidate(args);
+        return commandValidate(args, contributions);
     }
     if (command == "render") {
-        return commandRender(args);
+        return commandRender(args, contributions);
     }
     if (command == "evaluate") {
-        return commandEvaluate(args);
+        return commandEvaluate(args, contributions);
     }
     if (command == "deliver") {
-        return commandDeliver(args);
+        return commandDeliver(args, contributions
+#ifdef NEMO_BUILD_GPU
+                              ,
+                              gpuContributions
+#endif
+        );
     }
 #ifdef NEMO_BUILD_GPU
     if (command == "evaluate-gpu") {
-        return commandEvaluateGpu(args);
+        return commandEvaluateGpu(args, contributions, gpuContributions);
     }
 #endif
     if (command == "imageinfo") {

@@ -1,11 +1,11 @@
 include_guard(GLOBAL)
 
-# Check the link interfaces of the persistent and evaluation layers after all
-# targets have been declared. This is intentionally a small graph walk rather
+# Check the persistent, evaluation and installed-adapter link interfaces after
+# all targets have been declared. This is a small graph walk rather
 # than a source-text policy: CMake's actual target/link relationships are the
 # architecture contract.
 function(nemo_check_dependency_direction)
-    foreach(_nemo_root IN ITEMS nemo_core nemo_eval)
+    foreach(_nemo_root IN ITEMS nemo_core nemo_eval nemo_extensions nemo_extensions_gpu)
         if(NOT TARGET "${_nemo_root}")
             continue()
         endif()
@@ -46,16 +46,20 @@ function(nemo_check_dependency_direction)
                     endif()
 
                     set(_nemo_forbidden FALSE)
-                    if(_nemo_root STREQUAL "nemo_core")
+                    if(_nemo_dependency MATCHES
+                       "^(nemo_workspace|nemo::workspace|nemo-ui|Qt[0-9]+::.*)$")
+                        set(_nemo_forbidden TRUE)
+                    elseif(_nemo_root STREQUAL "nemo_core" OR _nemo_root STREQUAL "nemo_extensions")
                         if(_nemo_dependency MATCHES
-                           "^(nemo_core|nemo::core|nemo_eval|nemo::eval|nemo_gpu|nemo::gpu|nemo_media|nemo::media|nemo_workspace|nemo::workspace|nemo-ui|nemo::gpu_viewerinterop|nemo_openfx|nemo::openfx|Vulkan::.*|GPUOpen::.*|glslang::.*|SPIRV::.*|OpenFX::.*|Qt[0-9]+::.*|PkgConfig::LIBAV)$")
+                           "^(nemo_eval|nemo::eval|nemo_gpu|nemo::gpu|nemo_media|nemo::media|nemo_extensions_gpu|nemo::extensions_gpu|nemo::gpu_viewerinterop|nemo_openfx|nemo::openfx|Vulkan::.*|GPUOpen::.*|glslang::.*|SPIRV::.*|OpenFX::.*|PkgConfig::LIBAV)$")
+                            set(_nemo_forbidden TRUE)
+                        elseif(_nemo_root STREQUAL "nemo_core" AND _nemo_dependency MATCHES
+                               "^(nemo_core|nemo::core|nemo_extensions|nemo::extensions)$")
                             set(_nemo_forbidden TRUE)
                         endif()
-                    elseif(_nemo_root STREQUAL "nemo_eval")
-                        if(_nemo_dependency MATCHES
-                           "^(nemo_workspace|nemo::workspace|nemo-ui|Qt[0-9]+::.*)$")
-                            set(_nemo_forbidden TRUE)
-                        endif()
+                    elseif(_nemo_root STREQUAL "nemo_eval" AND _nemo_dependency MATCHES
+                           "^(nemo_extensions|nemo::extensions|nemo_extensions_gpu|nemo::extensions_gpu)$")
+                        set(_nemo_forbidden TRUE)
                     endif()
 
                     if(_nemo_forbidden)
@@ -63,8 +67,7 @@ function(nemo_check_dependency_direction)
                             "Nemo dependency direction violation: '${_nemo_root}' "
                             "depends on forbidden '${_nemo_dependency}' via "
                             "${_nemo_current_path} -> ${_nemo_dependency} "
-                            "(${_nemo_property}). Persistent core/evaluation "
-                            "must remain independent of UI/runtime dependencies.")
+                            "(${_nemo_property}).")
                     endif()
 
                     if(TARGET "${_nemo_dependency}")

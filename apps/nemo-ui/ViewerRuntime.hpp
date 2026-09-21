@@ -2,6 +2,7 @@
 
 #include "ViewerItem.hpp"
 #include "nemo/eval/DeliveryJob.hpp"
+#include "nemo/eval/GpuContribution.hpp"
 #include "nemo/eval/Viewer.hpp"
 #include "nemo/eval/ViewerCache.hpp"
 #include "nemo/eval/ViewerScheduler.hpp"
@@ -116,8 +117,21 @@ class ViewerRuntime final : public QObject {
 public:
     ViewerRuntime() = default;
     ~ViewerRuntime() override;
+    // `contributions` is the application's COMPLETE native inventory (issue
+    // #37): the built-in projection plus every installed package's GPU callbacks
+    // and node metadata, assembled once by the owner of the extension packages.
+    // The default is the real built-in-only assembly
+    // `eval::builtinGpuContributions()` — exactly the inventory this runtime
+    // loaded implicitly before — so an application with no installed packages
+    // is unchanged, while an application that supplies packages gets their
+    // effects in the viewer worker AND in the shared delivery queue. One
+    // immutable copy is handed to the delivery queue, and one is moved into the
+    // viewer worker: this runtime takes contribution VALUES, never a package or
+    // loader reference, so it never mutates the list, never registers it
+    // anywhere process-global, and never loads package code itself.
     void bootstrap(const std::vector<std::string>& extensions, const std::filesystem::path& shaders,
-                   eval::ViewerCacheOptions cacheOptions);
+                   eval::ViewerCacheOptions cacheOptions,
+                   std::vector<eval::GpuNodeContribution> contributions = eval::builtinGpuContributions());
     // Idempotent for the same window: the first successful call adopts the
     // Vulkan presentation device, hosts every panel's frame-slot pinning and
     // shows the window. A second window is refused rather than sharing one
@@ -215,7 +229,7 @@ signals:
 private:
     using Pending = eval::ViewerScheduledRequest;
 
-    void run(const std::filesystem::path& shaders);
+    void run(const std::filesystem::path& shaders, const std::vector<eval::GpuNodeContribution>& contributions);
     bool publish(ViewerWorkResult result, const Pending& pending);
     void finishRange(const Pending& pending, bool cacheAccepted);
     // mutex_ is held by callers; refreshes the shared cache snapshot and

@@ -23,7 +23,8 @@ ViewerRuntime::~ViewerRuntime() {
 }
 
 void ViewerRuntime::bootstrap(const std::vector<std::string>& extensions, const std::filesystem::path& shaders,
-                              eval::ViewerCacheOptions cacheOptions) {
+                              eval::ViewerCacheOptions cacheOptions,
+                              std::vector<eval::GpuNodeContribution> contributions) {
     if (instance_)
         throw std::runtime_error("viewer runtime already initialized");
     cacheOptions_ = std::move(cacheOptions);
@@ -37,12 +38,20 @@ void ViewerRuntime::bootstrap(const std::vector<std::string>& extensions, const 
     // ONE delivery queue for the whole application, borrowing the native owners
     // and the compiled shader directory the viewer already uses (issue #94). It
     // starts its own worker and resolves its effects lazily, so bootstrap stays
-    // a device-creation step.
-    delivery_ = std::make_unique<eval::DeliveryQueue>(*instance_, *device_, *allocator_, shaders);
+    // a device-creation step. The application's native inventory (issue #37)
+    // travels with it, so a delivery and the viewer beside it evaluate the same
+    // installed effects.
+    delivery_ = std::make_unique<eval::DeliveryQueue>(*instance_, *device_, *allocator_, shaders, 8, contributions);
     VkFormatProperties format{};
     vkGetPhysicalDeviceFormatProperties(device_->physical(), VK_FORMAT_R8G8B8A8_UNORM, &format);
     filterLinear_ = (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
-    worker_ = std::thread([this, shaders] { run(shaders); });
+    // The viewer worker owns its own copy of the same inventory for as long as
+    // the runtime lives: every ViewerSession it builds (the initial one and each
+    // OCIO configuration swap) is constructed from it, so a package's effects
+    // can never be missing from a frame or present in only one of the two
+    // workers. The capture is the worker's own immutable list — no member state,
+    // no lock, and no lifetime shared with the caller's vector.
+    worker_ = std::thread([this, shaders, contributions = std::move(contributions)] { run(shaders, contributions); });
 }
 
 bool ViewerRuntime::submit(Document document, eval::ViewIntent intent, std::uint64_t id,
@@ -265,7 +274,8 @@ void ViewerRuntime::refreshColorConfig() {
     ready_.notify_all();
 }
 
-void ViewerRuntime::run(const std::filesystem::path& shaders) {
+void ViewerRuntime::run(const std::filesystem::path& shaders,
+                        const std::vector<eval::GpuNodeContribution>& contributions) {
     std::unique_ptr<eval::ViewerSession> session;
     // Authored color configuration the current worker session was built with;
     // a different request config replaces the session, never the environment.
@@ -312,9 +322,11 @@ void ViewerRuntime::run(const std::filesystem::path& shaders) {
                 // The project's authored config replaces the worker-owned
                 // ViewerSession; an empty path keeps the OCIO environment
                 // fallback. No process-global state is mutated and the GUI
-                // thread never waits for the swap.
+                // thread never waits for the swap. The replacement is built from
+                // the SAME native inventory (issue #37), so swapping the color
+                // configuration can never drop a package's effects.
                 auto configured = std::make_unique<eval::ViewerSession>(*instance_, *device_, *allocator_, shaders,
-                                                                        pending.colorConfigPath);
+                                                                        pending.colorConfigPath, contributions);
                 configured->configureCache(cacheOptions_);
                 session = std::move(configured);
                 sessionColorConfig = pending.colorConfigPath;

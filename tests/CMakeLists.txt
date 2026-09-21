@@ -67,6 +67,22 @@ include(GoogleTest)
 gtest_discover_tests(nemo_core_tests)
 gtest_discover_tests(nemo_media_tests)
 
+# The contributor example is built and installed independently. Set
+# NEMO_TEST_EXTENSION_ROOT to that installation to exercise the real ABI.
+add_executable(nemo_extension_tests ExtensionTests.cpp)
+target_link_libraries(nemo_extension_tests PRIVATE nemo::extensions GTest::gtest_main)
+if(NEMO_BUILD_GPU)
+    target_link_libraries(nemo_extension_tests PRIVATE nemo::extensions_gpu nemo::eval nemo::gpu)
+    target_compile_definitions(nemo_extension_tests PRIVATE NEMO_TEST_GPU=1)
+    if(DEFINED NEMO_SLANG_SPV_DIR)
+        target_compile_definitions(nemo_extension_tests PRIVATE
+            NEMO_SLANG_SPV_DIR="${NEMO_SLANG_SPV_DIR}"
+            NEMO_SLANG_SRC_DIR="${CMAKE_SOURCE_DIR}/src/nemo/nodes")
+        add_dependencies(nemo_extension_tests nemo_shaders)
+    endif()
+endif()
+gtest_discover_tests(nemo_extension_tests)
+
 if(NEMO_BUILD_GPU)
     gtest_discover_tests(nemo_color_tests)
     gtest_discover_tests(nemo_hwmedia_tests)
@@ -162,6 +178,7 @@ if(NEMO_BUILD_UI)
         Issue74ReadViewerUiTests.cpp
         Issue92CropReformatUiTests.cpp
         RotoUiTests.cpp
+        ExtensionUiTests.cpp
         PanelContextRouterTests.cpp
         PanelContextUiTests.cpp
         MediaLibraryModelTests.cpp
@@ -170,7 +187,7 @@ if(NEMO_BUILD_UI)
         NEMO_UI_QML_DIR="${PROJECT_SOURCE_DIR}/apps/nemo-ui/qml"
     )
     target_link_libraries(nemo_workspace_ui_tests PRIVATE
-        nemo_ui_shared GTest::gtest Qt6::Test
+        nemo_ui_shared nemo_ui_sharedplugin nemo::extensions_gpu GTest::gtest Qt6::Test
     )
     gtest_discover_tests(nemo_workspace_ui_tests)
 endif()

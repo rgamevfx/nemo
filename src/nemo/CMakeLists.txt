@@ -89,6 +89,7 @@ if(NEMO_BUILD_GPU)
     add_subdirectory(eval)
  endif()
 add_subdirectory(media)
+add_subdirectory(extensions)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(nemo_core PRIVATE -Wall -Wextra -Wpedantic)

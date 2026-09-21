@@ -856,6 +856,44 @@ TEST(PersistenceTest, UnavailableNodeAnimationIsRetainedAndRecoversWithCatalog) 
     EXPECT_FALSE(recoveredOpaque->keys.front().opaqueValue.is_null());
 }
 
+TEST(PersistenceTest, IncompatibleExtensionStatePreservesParametersConnectionsAndAnimation) {
+    NodeDescriptor descriptor;
+    descriptor.type = "test.warp";
+    descriptor.displayName = "Warp";
+    descriptor.inputs = {{PortKind::Image, "in"}};
+    descriptor.outputs = {{PortKind::Image, "out"}};
+    descriptor.parameters = {{.name = "position", .type = ParameterType::Float, .defaultValue = 0.0}};
+    descriptor.stateIdentity = "test.warp.state.1";
+    const auto catalog = std::make_shared<const NodeCatalog>(extendedBuiltinSchema({descriptor}));
+    Document document(catalog);
+    auto& graph = root(document).graph();
+    const auto source = graph.addNode("constcolor", "source");
+    const auto warp = graph.addNode("test.warp", "warp");
+    const auto output = graph.nodeByName("Output")->id;
+    graph.connect({source, 0}, {warp, 0});
+    graph.connect({warp, 0}, {output, 0});
+    setKeyframesCommand({{{document.rootNetworkId(), warp, "position"}, Keyframe{0, 0, 0.1}},
+                         {{document.rootNetworkId(), warp, "position"}, Keyframe{0, 10, 0.2}}})
+        .apply(document);
+    const auto saved = saveDocument(document);
+    descriptor.stateIdentity = "test.warp.state.2";
+    descriptor.parameters.front().type = ParameterType::Boolean;
+    descriptor.parameters.front().defaultValue = false;
+    const auto incompatible = std::make_shared<const NodeCatalog>(extendedBuiltinSchema({descriptor}));
+    const auto missing = loadDocument(saved, incompatible);
+    EXPECT_EQ(root(missing.document).graph().descriptor("test.warp"), nullptr);
+    EXPECT_EQ(saveDocument(missing.document), saved);
+    EXPECT_TRUE(std::any_of(missing.warnings.begin(), missing.warnings.end(), [](const std::string& message) {
+        return message.find("test.warp.state.1") != std::string::npos &&
+               message.find("test.warp.state.2") != std::string::npos;
+    }));
+    const auto restored = loadDocument(saveDocument(missing.document), catalog);
+    EXPECT_NE(root(restored.document).graph().descriptor("test.warp"), nullptr);
+    EXPECT_EQ(saveDocument(restored.document), saved);
+    EXPECT_EQ(animatedParameterValue(restored.document, {document.rootNetworkId(), warp, "position"}, 10),
+              ParameterValue{0.2});
+}
+
 TEST(PersistenceTest, OpaqueAnimatedValueMakesOnlyItsOwnEvaluationUnavailable) {
     Document document;
     auto& rootNetwork = root(document);

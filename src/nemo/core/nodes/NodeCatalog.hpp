@@ -145,6 +145,10 @@ struct NodeDescriptor {
     std::vector<PortSpec> outputs;
     std::vector<ParameterSpec> parameters;
     NodeCapabilities capabilities;
+    // Exact authored-state contract of a separately supplied node. Empty for
+    // built-ins, whose state is versioned by the document schema. A mismatch
+    // makes the installed type unavailable for that document, not unreadable.
+    std::string stateIdentity{};
 };
 class NodeCatalog {
 public:

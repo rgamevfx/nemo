@@ -59,6 +59,85 @@ EditOptions current(ProjectSession& session) {
 }
 }  // namespace
 
+TEST(ProjectSessionTest, ContributionConstraintsValidateAtomicBatchesAndCancelledPreviews) {
+    auto entries = builtinContributions();
+    NodeContribution bounded;
+    bounded.descriptor =
+        NodeDescriptor{.type = "test.interval",
+                       .displayName = "Interval",
+                       .group = "Test",
+                       .parameters = {{.name = "low", .type = ParameterType::Float, .defaultValue = 0.0},
+                                      {.name = "high", .type = ParameterType::Float, .defaultValue = 1.0}}};
+    bounded.nativeGpu = false;
+    bounded.cpuUnavailableReason = "authoring-only test contribution";
+    // The interpretation judges the resolved values it is handed, like a real
+    // contribution: a declared key the node did not author must already carry
+    // its declared default here rather than being looked up a second time.
+    bounded.validateParameters = [](const NodeCatalog&, const NodeInstance&,
+                                    const ParameterValues& values) -> std::optional<std::string> {
+        const auto resolved = [&](const char* key) -> std::optional<double> {
+            const auto found = values.find(key);
+            return found == values.end() ? std::nullopt : std::optional<double>{std::get<double>(found->second)};
+        };
+        const auto low = resolved("low");
+        const auto high = resolved("high");
+        if (!low || !high)
+            return "declared parameters must be resolved before validation";
+        return *low < *high ? std::nullopt : std::optional<std::string>{"low must precede high"};
+    };
+    entries.push_back(std::move(bounded));
+    const auto contributions = std::make_shared<const NodeContributions>(std::move(entries));
+    Document document(contributions->catalog());
+    const auto network = document.rootNetworkId();
+    // A loaded node authors only one of its declared keys: admission must
+    // resolve the omitted `high` to its declared default exactly as evaluation
+    // does, so both paths judge one effective state.
+    const auto node = document.network(network).graph().addNodeWithId(7, "test.interval", "range",
+                                                                      ParameterValues{{"low", ParameterValue{0.5}}});
+    ProjectSession session(std::move(document), 256, contributions);
+    ASSERT_TRUE(session.submit(setParamCommand(network, node, "low", 0.75), current(session)).committed);
+    EXPECT_EQ(animatedParameterValue(session.document(), {network, node, "high"}, 0), ParameterValue{1.0});
+    // 2.0 is refused only because the omitted `high` resolved to its declared
+    // default; the failed edit publishes nothing.
+    const auto invalid = session.submit(setParamCommand(network, node, "low", 2.0), current(session));
+    ASSERT_FALSE(invalid.committed);
+    ASSERT_TRUE(invalid.error);
+    EXPECT_NE(invalid.error->message.find("range"), std::string::npos);
+    EXPECT_EQ(session.document().network(network).graph().node(node)->params.at("low"), ParameterValue{0.75});
+    const auto batch = session.submit(
+        setParametersCommand({{{network, node, "low"}, 2.0}, {{network, node, "high"}, 3.0}}), current(session));
+    ASSERT_TRUE(batch.committed);
+    auto gesture = session.beginParameterGesture({{{network, node, "low"}, 2.5}}, current(session));
+    ASSERT_TRUE(gesture.snapshot);
+    const auto invalidPreview = session.updateParameterGesture(gesture.token, {{{network, node, "low"}, 4.0}});
+    ASSERT_TRUE(invalidPreview.result.error);
+    EXPECT_DOUBLE_EQ(std::get<double>(gesture.snapshot->network(network).graph().node(node)->params.at("low")), 2.5);
+    ASSERT_FALSE(session.cancelParameterGesture(gesture.token).error);
+    EXPECT_DOUBLE_EQ(std::get<double>(session.document().network(network).graph().node(node)->params.at("low")), 2.0);
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    // Back at the loaded state the evaluation seam resolves the same declared
+    // default the authored path admitted against.
+    EXPECT_EQ(animatedParameterValue(session.document(), {network, node, "high"}, 0), ParameterValue{1.0});
+    EXPECT_EQ(animatedParameterValue(session.document(), {network, node, "low"}, 0), ParameterValue{0.75});
+    ASSERT_TRUE(session.undo(current(session)).committed);
+    EXPECT_FALSE(session.canUndo());
+    EXPECT_EQ(animatedParameterValue(session.document(), {network, node, "low"}, 0), ParameterValue{0.5});
+    ASSERT_TRUE(session.redo(current(session)).committed);
+    EXPECT_EQ(animatedParameterValue(session.document(), {network, node, "low"}, 0), ParameterValue{0.75});
+    // An animated value overrides the seeded default at admission exactly as it
+    // does during evaluation: a valid key is accepted, an invalid one is refused
+    // without disturbing the channel.
+    const ParameterAddress channelAddress{network, node, "low"};
+    ASSERT_TRUE(
+        session.submit(setKeyframesCommand({{channelAddress, Keyframe{0, 0.0, ParameterValue{0.5}}}}), current(session))
+            .committed);
+    EXPECT_EQ(animatedParameterValue(session.document(), channelAddress, 0.0), ParameterValue{0.5});
+    const auto invalidKey = session.submit(
+        setKeyframesCommand({{channelAddress, Keyframe{0, 0.0, ParameterValue{2.0}}}}), current(session));
+    ASSERT_FALSE(invalidKey.committed);
+    EXPECT_EQ(animatedParameterValue(session.document(), channelAddress, 0.0), ParameterValue{0.5});
+}
+
 TEST(CommandStackTest, PushAppliesImmediately) {
     Document doc = emptyDocument();
     CommandStack stack(doc);

@@ -1,0 +1,1033 @@
+{
+  "format": 1,
+  "id": "org.nemo.colorwarp",
+  "version": 1,
+  "stateVersion": 1,
+  "processingVersion": 1,
+  "api": {
+    "minimum": 1,
+    "maximum": 1
+  },
+  "dependencies": [],
+  "capabilities": [
+    "nemo.effect.pointwise.v1",
+    "nemo.ui.qml.v1"
+  ],
+  "library": "libnemo_colorwarp.so",
+  "node": {
+    "type": "org.nemo.colorwarp",
+    "displayName": "ColorWarp",
+    "group": "Color",
+    "parameters": [
+      {
+        "name": "strength",
+        "type": "float",
+        "default": 1.0,
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "softMinimum": 0.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "label": "Strength",
+        "section": "ColorWarp",
+        "editor": "org.nemo.colorwarp.mesh"
+      },
+      {
+        "name": "hue0",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue1",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue2",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue3",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue4",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue5",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue6",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue7",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue8",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue9",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue10",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue11",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue12",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue13",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue14",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue15",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue16",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue17",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue18",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue19",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue20",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue21",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue22",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue23",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue24",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue25",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue26",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue27",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue28",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue29",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue30",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue31",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue32",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue33",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue34",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "hue35",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation0",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation1",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation2",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation3",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation4",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation5",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation6",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation7",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation8",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation9",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation10",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation11",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation12",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation13",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation14",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation15",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation16",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation17",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation18",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation19",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation20",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation21",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation22",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation23",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation24",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation25",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation26",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation27",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation28",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation29",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation30",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation31",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation32",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation33",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation34",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "saturation35",
+        "type": "float",
+        "default": 0.0,
+        "softMinimum": -1.0,
+        "softMaximum": 1.0,
+        "step": 0.01,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin0",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin1",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin2",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin3",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin4",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin5",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin6",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin7",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin8",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin9",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin10",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin11",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin12",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin13",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin14",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin15",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin16",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin17",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin18",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin19",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin20",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin21",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin22",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin23",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin24",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin25",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin26",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin27",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin28",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin29",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin30",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin31",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin32",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin33",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin34",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      },
+      {
+        "name": "pin35",
+        "type": "boolean",
+        "default": false,
+        "section": "ColorWarp"
+      }
+    ]
+  },
+  "gpu": {
+    "bindings": "nemo.native.bindings.v8",
+    "payloadBytes": 592,
+    "payloadLayout": "org.nemo.colorwarp.payload.v1",
+    "spirv": "ColorWarp.spv",
+    "glsl": "ColorWarp.glsl"
+  },
+  "editors": [
+    {
+      "id": "org.nemo.colorwarp.mesh",
+      "source": "qml/ColorWarpEditor.qml",
+      "presentation": "section",
+      "consumes": [
+        "strength",
+        "hue0",
+        "hue1",
+        "hue2",
+        "hue3",
+        "hue4",
+        "hue5",
+        "hue6",
+        "hue7",
+        "hue8",
+        "hue9",
+        "hue10",
+        "hue11",
+        "hue12",
+        "hue13",
+        "hue14",
+        "hue15",
+        "hue16",
+        "hue17",
+        "hue18",
+        "hue19",
+        "hue20",
+        "hue21",
+        "hue22",
+        "hue23",
+        "hue24",
+        "hue25",
+        "hue26",
+        "hue27",
+        "hue28",
+        "hue29",
+        "hue30",
+        "hue31",
+        "hue32",
+        "hue33",
+        "hue34",
+        "hue35",
+        "saturation0",
+        "saturation1",
+        "saturation2",
+        "saturation3",
+        "saturation4",
+        "saturation5",
+        "saturation6",
+        "saturation7",
+        "saturation8",
+        "saturation9",
+        "saturation10",
+        "saturation11",
+        "saturation12",
+        "saturation13",
+        "saturation14",
+        "saturation15",
+        "saturation16",
+        "saturation17",
+        "saturation18",
+        "saturation19",
+        "saturation20",
+        "saturation21",
+        "saturation22",
+        "saturation23",
+        "saturation24",
+        "saturation25",
+        "saturation26",
+        "saturation27",
+        "saturation28",
+        "saturation29",
+        "saturation30",
+        "saturation31",
+        "saturation32",
+        "saturation33",
+        "saturation34",
+        "saturation35",
+        "pin0",
+        "pin1",
+        "pin2",
+        "pin3",
+        "pin4",
+        "pin5",
+        "pin6",
+        "pin7",
+        "pin8",
+        "pin9",
+        "pin10",
+        "pin11",
+        "pin12",
+        "pin13",
+        "pin14",
+        "pin15",
+        "pin16",
+        "pin17",
+        "pin18",
+        "pin19",
+        "pin20",
+        "pin21",
+        "pin22",
+        "pin23",
+        "pin24",
+        "pin25",
+        "pin26",
+        "pin27",
+        "pin28",
+        "pin29",
+        "pin30",
+        "pin31",
+        "pin32",
+        "pin33",
+        "pin34",
+        "pin35"
+      ]
+    }
+  ],
+  "panels": [
+    {
+      "id": "org.nemo.colorwarp.example",
+      "title": "ColorWarp Extension Example",
+      "source": "qml/ColorWarpPanel.qml"
+    }
+  ]
+}

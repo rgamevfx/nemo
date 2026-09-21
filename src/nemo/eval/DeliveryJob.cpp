@@ -498,9 +498,13 @@ struct ResolvedDeliveryNode {
 // `SourceSession`, so a source's geometry, channel naming and frame mapping come
 // from its own media owner for exactly the frame the request will read, and no
 // second (CPU) decode path can describe the raster differently from what is
-// delivered.
+// delivered. `contributions` is the queue's OWN inventory (issue #37), never an
+// implicit built-in assembly: an installed package's node upstream of the target
+// is described by the very registration whose callback the executor renders it
+// with, so a described chain and a delivered one are the same list.
 [[nodiscard]] ImageDescription describeTarget(const Document& document, const NetworkId network, const NodeId node,
-                                              const std::int64_t localTime, SourceDescriptionProvider* sources) {
+                                              const std::int64_t localTime, const NodeContributions& contributions,
+                                              SourceDescriptionProvider* sources) {
     EvaluationRequest request;
     request.network = network;
     request.output = node;
@@ -510,8 +514,7 @@ struct ResolvedDeliveryNode {
     request.region = {0, 0, 1, 1};
     request.fullWidth = 1;
     request.fullHeight = 1;
-    const ImageDescriptionPlan described =
-        describeDependencies(document, request, *builtinNodeContributions(), sources);
+    const ImageDescriptionPlan described = describeDependencies(document, request, contributions, sources);
     if (described.order.empty()) {
         throw DeliveryException("network " + std::to_string(network) + " node " + std::to_string(node) +
                                 " has no describable image to deliver");
@@ -588,9 +591,12 @@ struct JobPlan {
 // Preflights one job without writing anything. Everything expensive or
 // filesystem-visible happens here, which is why the queue runs it on its worker
 // thread and reports a refusal as a failed job instead of blocking a submitter.
+// `contributions` is the queue's own immutable inventory (issue #37): the raster
+// this plan reports is described through exactly the registrations the job's
+// frames are rendered with.
 [[nodiscard]] JobPlan planJob(const Document& document, const NetworkId network, const NodeId node,
                               const DeliverySettings& settings, const std::int64_t localTime,
-                              SourceDescriptionProvider* sources) {
+                              const NodeContributions& contributions, SourceDescriptionProvider* sources) {
     JobPlan preflight;
     preflight.plan.settings = settings;
     preflight.movie = isMovieType(settings.output.fileType);
@@ -674,7 +680,8 @@ struct JobPlan {
     // frozen for the whole job (a later frame whose graph describes a different
     // raster is reported per frame, never silently written at a different size).
     try {
-        const ImageDescription described = describeTarget(document, network, node, settings.frameFirst, sources);
+        const ImageDescription described =
+            describeTarget(document, network, node, settings.frameFirst, contributions, sources);
         preflight.description = described;
         preflight.format = described.format;
         preflight.raster = deliveryWindow(described);
@@ -934,9 +941,22 @@ struct DeliveryQueue::Impl {
     };
 
     Impl(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator, std::filesystem::path shaders,
-         const std::size_t maxAcceptedJobs)
+         const std::size_t maxAcceptedJobs, std::vector<GpuNodeContribution> contributions)
         : instance_(&instance), device_(&device), allocator_(&allocator), shaders_(std::move(shaders)),
-          maxAcceptedJobs_(maxAcceptedJobs) {
+          maxAcceptedJobs_(maxAcceptedJobs), contributions_(std::move(contributions)) {
+        // The description inventory is assembled ONCE, here, from the very list
+        // this queue will build its native library from (issue #37): a pure
+        // descriptor projection that loads and compiles nothing, so a preflight
+        // that needs it — the blocking CLI query, or the worker's own preflight
+        // before its first frame — never forces the native effect library to be
+        // built earlier than the existing lifecycle demands, and never falls
+        // back to an implicit built-in assembly either.
+        std::vector<NodeContribution> descriptors;
+        descriptors.reserve(contributions_.size());
+        for (const GpuNodeContribution& contribution : contributions_) {
+            descriptors.push_back(contribution.node);
+        }
+        registrations_ = std::make_shared<const NodeContributions>(std::move(descriptors));
         worker_ = std::thread([this] { run(); });
     }
 
@@ -1141,6 +1161,18 @@ struct DeliveryQueue::Impl {
     gpu::Allocator* allocator_ = nullptr;
     std::filesystem::path shaders_;
     std::size_t maxAcceptedJobs_{8};
+    // The complete immutable native inventory this queue was created with
+    // (issue #37). It is retained — not re-derived and not registered anywhere
+    // globally — until the worker builds the native effect library below, so
+    // every job of this queue evaluates through exactly the caller's list.
+    std::vector<GpuNodeContribution> contributions_;
+    // The SAME list as an immutable registration snapshot (issue #37), assembled
+    // once when the queue is created and never replaced: every delivery
+    // description — the blocking CLI preflight included — resolves its nodes
+    // through this one, so a described chain and the executor's own inventory can
+    // never disagree. It is a value snapshot of descriptors only; the native
+    // library below still compiles lazily, on the worker.
+    std::shared_ptr<const NodeContributions> registrations_;
     // Worker-owned: the native effect library, loaded on first use.
     EffectLibrary effects_;
     bool effectsReady_{false};
@@ -1185,7 +1217,17 @@ void DeliveryQueue::Impl::requireEffects() {
         throw DeliveryException(
             "delivery needs the compiled native shader directory; the queue was constructed without one");
     }
-    effects_ = loadSlangEffectLibrary(shaders_);
+    // The library is built from THIS queue's retained inventory (issue #37)
+    // rather than from an implicit built-in assembly, so an installed package's
+    // callbacks and metadata reach every delivered frame and no job can evaluate
+    // through a different inventory than the queue was created with. Assembly
+    // validates the whole declaration before it publishes anything and throws
+    // with the offending relationship; the retained list is therefore only
+    // released once an assembly actually succeeded, so a refused inventory keeps
+    // reporting the same refusal to every later job instead of degrading into an
+    // empty library.
+    effects_ = EffectLibrary(contributions_, EffectBackend::Slang, shaders_);
+    contributions_.clear();
     effectsReady_ = true;
 }
 
@@ -1411,8 +1453,8 @@ void DeliveryQueue::Impl::execute(const std::shared_ptr<Job>& job) {
     // nothing is written.
     JobPlan planned;
     try {
-        planned =
-            planJob(job->document, job->network, job->node, job->settings, job->settings.frameFirst, sources.get());
+        planned = planJob(job->document, job->network, job->node, job->settings, job->settings.frameFirst,
+                          *registrations_, sources.get());
     } catch (const std::exception& error) {
         fail(job, error.what());
         return;
@@ -1562,8 +1604,9 @@ bool DeliveryQueue::Impl::cancelJob(const std::uint64_t id) {
 }
 
 DeliveryQueue::DeliveryQueue(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                             const std::filesystem::path& shaders, const std::size_t maxAcceptedJobs)
-    : impl_(std::make_unique<Impl>(instance, device, allocator, shaders, maxAcceptedJobs)) {}
+                             const std::filesystem::path& shaders, const std::size_t maxAcceptedJobs,
+                             std::vector<GpuNodeContribution> contributions)
+    : impl_(std::make_unique<Impl>(instance, device, allocator, shaders, maxAcceptedJobs, std::move(contributions))) {}
 
 DeliveryQueue::~DeliveryQueue() = default;
 
@@ -1666,7 +1709,7 @@ DeliveryPlan DeliveryQueue::plan(const Document& document, const NetworkId netwo
         }
         SourceSession sources(*impl_->instance_, *impl_->device_, *impl_->allocator_,
                               impl_->shaders_ / "mediaConvert.spv", configPath);
-        plan = planJob(document, network, node, settings, localTime, &sources).plan;
+        plan = planJob(document, network, node, settings, localTime, *impl_->registrations_, &sources).plan;
         if (plan.problem.empty()) {
             // The delivered COLOR is resolved here too, exactly as execution
             // resolves it before its first write: a named color space or

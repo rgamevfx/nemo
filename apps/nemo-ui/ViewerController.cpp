@@ -6,7 +6,6 @@
 #include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/Animation.hpp"
 #include "nemo/core/evaluation/CpuReference.hpp"
-#include "nemo/core/evaluation/Params.hpp"
 #include "nemo/core/evaluation/SourceRequest.hpp"
 #include "nemo/core/nodes/NodeCatalog.hpp"
 
@@ -859,17 +858,18 @@ struct ParameterKeyState {
     return state;
 }
 
-// Resolves a node's static and animated parameters from a document snapshot and
-// runs the executor's own admissibility check, so an authoring gesture cannot
-// publish a value the executor would reject (for example a non-positive gamma
-// on an enabled Grade channel). Presentation never evaluates the graph.
-[[nodiscard]] std::optional<QString> validateEffectEdit(const nemo::Document& document,
-                                                        const nemo::ParameterAddress& address, double frame) {
+// Read's document-aware source mapping remains with its existing adapter.
+// Contribution parameter validation is owned by ProjectSession for every
+// command client, including installed editors and headless authoring.
+[[nodiscard]] std::optional<QString> validateReadEdit(const nemo::Document& document,
+                                                      const nemo::ParameterAddress& address, double frame) {
     try {
         const auto& definition = document.network(address.network);
         const auto* authored = definition.graph().node(address.node);
         if (!authored)
             return QStringLiteral("node parameter edit target no longer exists");
+        if (authored->type != "source")
+            return std::nullopt;
         nemo::NodeInstance local = *authored;
         if (address.instance != nemo::kInvalidNetworkInstance) {
             const auto* occurrence = document.instance(address.instance);
@@ -881,9 +881,6 @@ struct ParameterKeyState {
         }
         nemo::ParameterValues parameters = local.params;
         nemo::applyAnimationParameters(document, address.network, address.node, address.instance, frame, parameters);
-        if (const auto problem =
-                nemo::builtinNodeContributions()->validateParameters(definition.graph().catalog(), local, parameters))
-            return QString::fromStdString(*problem);
         // A Read's cross-field constraints (a Custom range must be ordered, a
         // non-default Step must be nonzero, choice/hint combinations) are owned
         // by the shared Read vocabulary. The resolved scoped set is validated
@@ -3225,7 +3222,7 @@ QString ViewerController::beginParameterGestureFor(const QString& networkValue, 
             return {};
         }
         if (gesture.snapshot) {
-            if (const auto problem = validateEffectEdit(*gesture.snapshot, *address, frame)) {
+            if (const auto problem = validateReadEdit(*gesture.snapshot, *address, frame)) {
                 static_cast<void>(session_.cancelParameterGesture(gesture.token));
                 fail(*problem);
                 return {};
@@ -3324,7 +3321,7 @@ bool ViewerController::updateParameterGestureValues(const QString& tokenValue, c
         }
         if (gesture.snapshot) {
             if (const auto problem =
-                    validateEffectEdit(*gesture.snapshot, *parameterGestureAddress_, static_cast<double>(frame_))) {
+                    validateReadEdit(*gesture.snapshot, *parameterGestureAddress_, static_cast<double>(frame_))) {
                 parameterGestureInvalid_ = true;
                 fail(*problem);
                 return false;

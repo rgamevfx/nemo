@@ -1,0 +1,274 @@
+{
+  "issue": 37,
+  "tracker": 24,
+  "reviewBaseline": "a18520f3bde2b3da24ed2a2ae42c0f706acc18c6",
+  "classification": {
+    "installedPackage": "system extension",
+    "sharedInspectorAndPanel": "prototype port through accepted owners",
+    "wheelContent": "approved new design"
+  },
+  "references": {
+    "preEditContract": "https://github.com/rgamevfx/nemo/issues/37#issuecomment-5755251815",
+    "sharedPreviewAddendum": "https://github.com/rgamevfx/nemo/issues/37#issuecomment-5756249277",
+    "prototypeArchive": "docs/evidence/assets/issue25-prototype-reference-v1.tar.gz",
+    "sharedDocking": "compact-docking-session.json /verified/0 through /verified/7",
+    "sharedInspector": "workflow-session.json /verified/3 and /behavior/1 through /behavior/2",
+    "currentSemantics": "Issue #60 group-only A–E routing supersedes historical inspector double-click behavior"
+  },
+  "native": {
+    "command": "NEMO_TEST_NATIVE_UI=1 NEMO_TEST_VIEWER_WINDOW=1 NEMO_TEST_EXTENSION_ROOT=/tmp/nemo-issue37-install/share/nemo/extensions NEMO37_EVIDENCE_DIR=$PWD/docs/evidence/assets/issue37-colorwarp QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 DISPLAY=:1 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus build/debug/tests/nemo_workspace_ui_tests --gtest_filter='*Issue37*'",
+    "passed": 3,
+    "surface": "Real Main.qml on native Wayland windows, public installed package inventory and normal command/gesture controllers",
+    "observed": [
+      "catalog creation and shared inspector mounting",
+      "smooth mesh drag changes viewer pixels; one undo step and redo",
+      "Escape cancellation and fold refusal preserve accepted state",
+      "pin, unpin, reset selected, reset all, shared Strength and numeric keying",
+      "held shared Strength slider updates the drawn mesh before release, survives the editor's frame refresh, and restores the accepted mesh on Escape",
+      "project save/reopen and narrow inspector",
+      "shared panel type menu, body focus routing, Paper/Graphite appearance",
+      "split, divider resize, full-header docking into tabs, close/reopen",
+      "saved layout survives absent package and restores its body when installed"
+    ],
+    "ownerImageApproval": "pending"
+  },
+  "headless": {
+    "retainedInput": "docs/evidence/assets/issue37-colorwarp/issue37-headless.nemo",
+    "reproductionCommands": [
+      "NEMO_EXTENSION_PATH=/tmp/nemo-issue37-install/share/nemo/extensions build/debug/apps/nemo-cli/nemo-cli project-session docs/evidence/assets/issue37-colorwarp/issue37-headless.nemo",
+      "NEMO_EXTENSION_PATH=/tmp/nemo-issue37-install/share/nemo/extensions build/debug/apps/nemo-cli/nemo-cli evaluate docs/evidence/assets/issue37-colorwarp/issue37-headless.nemo --out /tmp/nemo-issue37-cpu.ppm --frame 0 --width 1920 --height 1080",
+      "NEMO_EXTENSION_PATH=/tmp/nemo-issue37-install/share/nemo/extensions build/debug/apps/nemo-cli/nemo-cli evaluate-gpu docs/evidence/assets/issue37-colorwarp/issue37-headless.nemo --out /tmp/nemo-issue37-gpu.ppm --frame 0 --width 1920 --height 1080"
+    ],
+    "runs": [
+      {
+        "mode": "present",
+        "exitCode": 0,
+        "ok": true,
+        "errors": [],
+        "rendered": {
+          "frame": 0,
+          "height": 1080,
+          "network": 1,
+          "path": "/tmp/nemo-issue37-sdk-FO0qTI/present-full.ppm",
+          "width": 1920
+        },
+        "result": {
+          "channels": [
+            "R",
+            "G",
+            "B",
+            "A"
+          ],
+          "color": "scene-linear",
+          "contentHash": "d084640c0676e769",
+          "height": 1080,
+          "pixelAspect": 1,
+          "precision": "float32",
+          "residency": "host-cpu-reference",
+          "width": 1920
+        },
+        "steps": [
+          {
+            "name": "plate",
+            "hash": "d891535f65bfd74f"
+          },
+          {
+            "name": "ColorWarp",
+            "hash": "d084640c0676e769"
+          },
+          {
+            "name": "Output",
+            "hash": "d084640c0676e769"
+          }
+        ],
+        "keys": [
+          "errors",
+          "evaluation",
+          "ok",
+          "rendered",
+          "warnings"
+        ]
+      },
+      {
+        "mode": "restored",
+        "exitCode": 0,
+        "ok": true,
+        "errors": [],
+        "rendered": {
+          "frame": 0,
+          "height": 1080,
+          "network": 1,
+          "path": "/tmp/nemo-issue37-sdk-FO0qTI/restored-full.ppm",
+          "width": 1920
+        },
+        "result": {
+          "channels": [
+            "R",
+            "G",
+            "B",
+            "A"
+          ],
+          "color": "scene-linear",
+          "contentHash": "d084640c0676e769",
+          "height": 1080,
+          "pixelAspect": 1,
+          "precision": "float32",
+          "residency": "host-cpu-reference",
+          "width": 1920
+        },
+        "steps": [
+          {
+            "name": "plate",
+            "hash": "d891535f65bfd74f"
+          },
+          {
+            "name": "ColorWarp",
+            "hash": "d084640c0676e769"
+          },
+          {
+            "name": "Output",
+            "hash": "d084640c0676e769"
+          }
+        ],
+        "keys": [
+          "errors",
+          "evaluation",
+          "ok",
+          "rendered",
+          "warnings"
+        ]
+      },
+      {
+        "mode": "gpu",
+        "exitCode": 0,
+        "ok": true,
+        "errors": [],
+        "rendered": {
+          "backend": "slang",
+          "color": "scene-linear",
+          "device": "NVIDIA GeForce GTX 1070",
+          "frame": 0,
+          "height": 1080,
+          "network": 1,
+          "path": "/tmp/nemo-issue37-sdk-FO0qTI/gpu-full.ppm",
+          "precision": "float32",
+          "width": 1920
+        },
+        "result": {
+          "channels": [
+            "R",
+            "G",
+            "B",
+            "A"
+          ],
+          "color": "scene-linear",
+          "contentHash": "3ae42d9a309b1ec6",
+          "height": 1080,
+          "pixelAspect": 1,
+          "precision": "float32",
+          "residency": "gpu-device",
+          "width": 1920
+        },
+        "steps": [
+          {
+            "name": "plate",
+            "hash": "0000000000000000"
+          },
+          {
+            "name": "ColorWarp",
+            "hash": "0000000000000000"
+          },
+          {
+            "name": "Output",
+            "hash": "3ae42d9a309b1ec6"
+          }
+        ],
+        "keys": [
+          "errors",
+          "evaluation",
+          "ok",
+          "readback",
+          "rendered",
+          "warnings"
+        ]
+      }
+    ],
+    "comparison": {
+      "restoredIdentical": true,
+      "cpuSha256": "9739131a2b6077ca823ea189c13a9a520d10b576327800cad497f61a1214410b",
+      "gpuSha256": "a11829a50dfd53ff6902287d381576935806a10b51c50d5363e69aa6d34b8108",
+      "changedBytes": 10,
+      "maximumByteDifference": 1
+    },
+    "missingPackage": {
+      "exitCode": 1,
+      "error": "node 'ColorWarp' (id 4, type 'org.nemo.colorwarp'): unknown node type has no registered implementation"
+    },
+    "note": "The existing render command emits a bootstrap pattern, not graph evaluation; it was excluded from rendering evidence. Quantized CPU/GPU exports differ in ten bytes by one level; raw independent fixtures use 2e-5 absolute + 2e-5 relative tolerance. Output paths record temporary execution locations; temporary images were removed after comparison. The retained input has ColorWarp connected to Output through the public command API."
+  },
+  "gates": {
+    "debugPackageTests": 14,
+    "cpuOnlyPackageTests": 11,
+    "nativeTests": 3,
+    "asanCoreTests": 2,
+    "asanPackageTests": 14,
+    "asanPolicy": "ctest --preset asan, existing tests/lsan_suppressions.txt for vendor libdbus lifetime allocations; both host and package instrumented",
+    "asanCommand": "NEMO_TEST_EXTENSION_ROOT=/tmp/nemo-issue37-asan-install/share/nemo/extensions ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ctest --preset asan -R '^ExtensionTest\\.|^ProjectSessionTest.ContributionConstraintsValidateAtomicBatchesAndCancelledPreviews$|^PersistenceTest.IncompatibleExtensionStatePreservesParametersConnectionsAndAnimation$' --output-on-failure",
+    "fullDebugSuite": {
+      "command": "env -u NEMO_TEST_NATIVE_UI -u NEMO_TEST_VIEWER_WINDOW -u NEMO_EXTENSION_PATH NEMO_TEST_EXTENSION_ROOT=/tmp/nemo-issue37-install/share/nemo/extensions ctest --preset debug --output-on-failure --parallel 1",
+      "runs": 1,
+      "total": 992,
+      "passed": 923,
+      "skipped": 68,
+      "failed": 1,
+      "seconds": 414.64,
+      "failure": "Viewer.InterpretationMapIsParsedStrictly",
+      "diagnostic": "source interpretation has unknown field 'colorimetry'; known fields: transfer, primaries, matrix, range, chromaLocation",
+      "chronology": "The full suite ran once before the final QML numeric-preview token-retention correction. That correction was verified red/green with the native editor regression and all three native scenarios.",
+      "scope": "Known pre-existing failure recorded on roadmap #24 under #83 through #88. Viewer test unchanged by this issue; user CpuReference changes preserved. This is not a green full-suite claim. Native opt-in scenarios were exercised separately."
+    },
+    "debugBuild": "passed",
+    "releaseBuild": "passed",
+    "standalonePackageBuildAndInstall": "passed",
+    "relocatedExampleWithSdkPath": "passed",
+    "missingShaderCompiler": "configure refused incomplete package"
+  },
+  "standaloneApplication": {
+    "command": "build/debug/apps/nemo-ui/nemo-ui with isolated workspace state and NEMO_EXTENSION_PATH",
+    "surface": "Native Wayland/Vulkan, NVIDIA GeForce GTX 1070",
+    "scenarios": ["present", "absent", "incompatible API [999,999]", "restored"],
+    "result": "All four reached swapchain readiness without QML warnings and retained the installed panel record; incompatible metadata produced the explicit ABI-1 diagnostic before activation.",
+    "workspaceSha256": "4421fe6bc84ab81569904a71533a03add687d534c15f77c246955f548fac8db5",
+    "note": "Standalone processes were stopped after startup evidence. Screenshots and interaction proof come from the native Main.qml scenarios, not an asserted standalone screenshot."
+  },
+  "dependencyBoundaryProbe": {
+    "method": "Throwaway CMake projects exercising the real nemo_check_dependency_direction function",
+    "validGraph": "accepted",
+    "refusedEdges": [
+      "nemo_core -> nemo_extensions",
+      "nemo_extensions -> Vulkan::Vulkan",
+      "nemo_extensions -> Qt6::Core",
+      "nemo_eval -> nemo_extensions_gpu",
+      "nemo_extensions_gpu -> Qt6::Core"
+    ],
+    "result": "Every invalid graph failed configuration and named the offending dependency path."
+  },
+  "review": {
+    "candidate": "9036153",
+    "standardsFindingsResolved": 4,
+    "specFindingsResolved": 2,
+    "corrections": [
+      "Numeric previews retain only their originating live token across frame refreshes; retirement and successor gestures clear them. Native regression failed with displacement 15.556349 instead of 7.071068 before the fix and passed after it.",
+      "Delivery preflight and execution share the injected contribution inventory; installed EXR delivery is checked against independent pixels.",
+      "Authored validation seeds schema defaults before animation overrides; omitted defaults, rejected previews, cancellation and undo are exercised.",
+      "Unused PackageRecord.root removed.",
+      "Dependency enforcement and ownership documentation include both extension adapters."
+    ],
+    "correctiveDeltaReview": "Parallel delta review completed: Standards had no remaining finding; Spec found the frame-refresh preview loss, subsequently corrected and verified by native red/green. No additional full-branch review is claimed."
+  },
+  "limitations": [
+    "Windows runtime not exercised",
+    "Owner approval of public ABI, new node type and images remains required before landing",
+    "CPU-only CLI configuration exposed existing unconditional hardware-media linker references; CPU-only package tests and the Qt-free normal CLI were exercised instead"
+  ]
+}

@@ -65,6 +65,9 @@ FocusScope {
     // controller's cancellation path instead of being refused.
     property string activeToken: ""
     property var activeRow: null
+    // Accepted UI-keyed values let section editors follow numeric previews
+    // without rebuilding the inspector or becoming a second gesture owner.
+    signal editPreviewed(string token, var values)
     // The most recent rejected edit, attributed to one row. It is presentation
     // state only; the controller/catalog remain the validation authority, and
     // the row hands it to the control's own error affordance rather than
@@ -419,6 +422,8 @@ FocusScope {
         var result = controller.updateNodeParameterEdits(String(token), values);
         if (!result)
             recordError();
+        else
+            editPreviewed(String(token), values);
         return result;
     }
 
@@ -433,9 +438,15 @@ FocusScope {
             return false;
         // The single-control API retains the resolved occurrence/exposed address.
         // A batch map instead names concrete keys on its captured target.
+        var key = String(activeRow.parameterKey);
         var result = controller.updateNodeParameterEdit(String(token), value);
-        if (!result)
+        if (!result) {
             recordError();
+        } else {
+            var values = ({});
+            values[key] = value;
+            editPreviewed(String(token), values);
+        }
         return result;
     }
 

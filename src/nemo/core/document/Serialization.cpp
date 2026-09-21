@@ -1768,6 +1768,9 @@ nlohmann::json saveDocument(const Document& document) {
                     value["outputPorts"].push_back(portJson(p));
             }
             applyUnknownFields(value, node.extension);
+            if (const auto* descriptor = network.graph().descriptor(node.type);
+                descriptor && !descriptor->stateIdentity.empty())
+                value["stateIdentity"] = descriptor->stateIdentity;
             nodes.push_back(std::move(value));
         }
         nlohmann::json edges = nlohmann::json::array();
@@ -1944,7 +1947,44 @@ LoadResult loadDocument(const nlohmann::json& json, std::shared_ptr<const NodeCa
         throw DeserializeError("document schema " + std::to_string(schema) + " is newer than this build supports (" +
                                std::to_string(Document::kSchemaVersion) + ")");
     checkRequiredFeatures(json);
-    LoadResult result{Document(std::move(catalog)), {}};
+    // Resolve state compatibility BEFORE interpreting typed parameters. A
+    // different installed schema must not turn a recoverable node into a
+    // whole-project parse failure or silently reinterpret its animation.
+    std::set<std::string> incompatible;
+    std::vector<std::string> compatibilityWarnings;
+    const auto inspectNodes = [&](const nlohmann::json& nodes) {
+        if (!nodes.is_array())
+            return;  // The structural parser below owns malformed containers.
+        for (const auto& node : nodes) {
+            if (!node.is_object() || !node.contains("type") || !node.at("type").is_string())
+                continue;
+            const std::string type = node.at("type").get<std::string>();
+            if (node.contains("stateIdentity") && !node.at("stateIdentity").is_string())
+                throw DeserializeError("node type '" + type + "': stateIdentity must be a string");
+            const std::string saved = node.value("stateIdentity", std::string{});
+            const auto* installed = catalog->find(type);
+            if (installed && saved != installed->stateIdentity) {
+                if (incompatible.insert(type).second)
+                    compatibilityWarnings.push_back("node type '" + type + "' requires authored-state '" + saved +
+                                                    "', installed '" + installed->stateIdentity +
+                                                    "'; retained as unavailable data");
+            }
+        }
+    };
+    if (const auto networks = json.find("networks"); networks != json.end() && networks->is_array())
+        for (const auto& network : *networks)
+            if (network.is_object() && network.contains("nodes"))
+                inspectNodes(network.at("nodes"));
+    if (json.contains("nodes"))
+        inspectNodes(json.at("nodes"));
+    if (!incompatible.empty()) {
+        std::vector<NodeDescriptor> compatible;
+        for (const auto& descriptor : catalog->descriptors())
+            if (!incompatible.contains(descriptor.type))
+                compatible.push_back(descriptor);
+        catalog = std::make_shared<const NodeCatalog>(std::move(compatible));
+    }
+    LoadResult result{Document(std::move(catalog)), std::move(compatibilityWarnings)};
     // "presentation" belongs to the session/file envelope; the codec neither
     // reads, preserves nor writes it.
     result.document.extension = collectUnknownFields(

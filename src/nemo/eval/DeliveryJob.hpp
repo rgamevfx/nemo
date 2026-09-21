@@ -49,6 +49,7 @@
 
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Ids.hpp"
+#include "nemo/eval/GpuContribution.hpp"
 #include "nemo/gpu/Allocator.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
@@ -226,8 +227,26 @@ struct DeliveryJobInfo {
 // retained through the device's own submission queue.
 class DeliveryQueue {
 public:
+    // `shaders` is the compiled native shader directory the viewer also renders
+    // with. `contributions` is the queue's COMPLETE immutable native inventory
+    // (issue #37) — the built-in projection plus every installed package's
+    // callbacks and metadata the application assembled. The default is the real
+    // built-in-only assembly `builtinGpuContributions()`, i.e. exactly what this
+    // queue used to load implicitly; a caller that supplies a list gets its own
+    // list rather than a merge with a hidden second inventory, and there is no
+    // mutable global registry. The list is retained by the queue and consumed on
+    // its OWN worker when the native EffectLibrary is first built
+    // (shader loading and compilation are CPU preparation and never run on the
+    // UI event thread), so a job can never evaluate through a different
+    // inventory than the one the queue was created with. The same list is
+    // projected once into the queue's own registration snapshot at construction,
+    // so the raster a job's preflight DESCRIBES resolves through that
+    // inventory too — an installed node upstream of the Write is described and
+    // rendered by one registration. An inventory the descriptor assembly refuses
+    // is refused here, by exception, before any job is accepted.
     DeliveryQueue(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                  const std::filesystem::path& shaders, std::size_t maxAcceptedJobs = 8);
+                  const std::filesystem::path& shaders, std::size_t maxAcceptedJobs = 8,
+                  std::vector<GpuNodeContribution> contributions = builtinGpuContributions());
     ~DeliveryQueue();
     DeliveryQueue(const DeliveryQueue&) = delete;
     DeliveryQueue& operator=(const DeliveryQueue&) = delete;

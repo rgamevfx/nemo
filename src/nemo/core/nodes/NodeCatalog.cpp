@@ -178,6 +178,9 @@ void validateDescriptor(const NodeDescriptor& descriptor) {
     }
     if (descriptor.implementationVersion == 0)
         throw std::invalid_argument(context + ": implementation version must be nonzero");
+    if (!descriptor.stateIdentity.empty() &&
+        (descriptor.stateIdentity.find('.') == std::string::npos || hasControlCharacters(descriptor.stateIdentity)))
+        throw std::invalid_argument(context + ": state identity must be namespaced and contain no control characters");
 
     auto validatePorts = [&context](const std::vector<PortSpec>& ports, const char* direction) {
         std::set<std::string> names;

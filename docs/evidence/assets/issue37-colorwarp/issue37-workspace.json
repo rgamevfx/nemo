@@ -1,0 +1,89 @@
+{
+  "activeWorkspaceId": "workspace-1",
+  "appearance": {
+    "accentOverride": "",
+    "categoryColors": {
+      "Blur": "#305d7d",
+      "Channels": "#66622c",
+      "Color": "#594271",
+      "Compositing": "#74602b",
+      "Draw": "#743c4a",
+      "Generators": "#485566",
+      "I/O": "#2e5966",
+      "Transform": "#326347",
+      "Utility": "#505b67"
+    },
+    "preset": "Graphite"
+  },
+  "version": 3,
+  "workspaces": [
+    {
+      "id": "workspace-1",
+      "layout": {
+        "root": {
+          "children": [
+            {
+              "active": "panel-15",
+              "id": "leaf-viewer",
+              "kind": "tabs",
+              "panels": [
+                {
+                  "group": "A",
+                  "id": "panel-viewer",
+                  "state": {
+                    "viewerIndex": 0
+                  },
+                  "type": "viewer"
+                },
+                {
+                  "group": "A",
+                  "id": "panel-15",
+                  "type": "org.nemo.colorwarp.example"
+                }
+              ]
+            },
+            {
+              "children": [
+                {
+                  "active": "panel-params",
+                  "id": "leaf-params",
+                  "kind": "tabs",
+                  "panels": [
+                    {
+                      "group": "A",
+                      "id": "panel-params",
+                      "state": {},
+                      "type": "parameters"
+                    }
+                  ]
+                },
+                {
+                  "active": "panel-12",
+                  "id": "leaf-13",
+                  "kind": "tabs",
+                  "panels": [
+                    {
+                      "group": "A",
+                      "id": "panel-12",
+                      "type": "viewer"
+                    }
+                  ]
+                }
+              ],
+              "id": "split-right",
+              "kind": "split",
+              "orientation": "horizontal",
+              "ratio": 0.5
+            }
+          ],
+          "id": "split-root",
+          "kind": "split",
+          "orientation": "horizontal",
+          "ratio": 0.5
+        },
+        "version": 1
+      },
+      "name": "Installed extension"
+    }
+  ]
+}

@@ -70,11 +70,18 @@ ViewerProjection resolveViewerProjection(const std::vector<std::string>& request
 }
 
 ViewerSession::ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::Allocator& allocator,
-                             const std::filesystem::path& shaderDirectory, std::string ocioConfigPath)
+                             const std::filesystem::path& shaderDirectory, std::string ocioConfigPath,
+                             std::vector<GpuNodeContribution> contributions)
     : instance_(instance), device_(device), allocator_(allocator), ocioConfigPath_(std::move(ocioConfigPath)),
       replayShader_(shaderDirectory / "mediaConvert.spv"),
       sources_(instance, device, allocator, replayShader_, ocioConfigPath_),
-      effects_(loadSlangEffectLibrary(shaderDirectory)), projections_(device, allocator), reuse_(16) {}
+      // The caller's complete inventory becomes THIS session's immutable native
+      // projection (issue #37). The built-in default is the same assembly the
+      // implicit load used to build, so a caller that supplies nothing still gets
+      // exactly the built-in effects; a caller that supplies installed package
+      // contributions gets those and only those.
+      effects_(std::move(contributions), EffectBackend::Slang, shaderDirectory), projections_(device, allocator),
+      reuse_(16) {}
 
 ViewerSession::~ViewerSession() = default;
 

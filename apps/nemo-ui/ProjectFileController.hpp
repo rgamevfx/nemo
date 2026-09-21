@@ -3,6 +3,7 @@
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
 #include "WorkspaceController.hpp"
+#include "nemo/core/nodes/NodeCatalog.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
@@ -15,6 +16,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 
 namespace nemo::ui {
 
@@ -150,6 +152,11 @@ private:
     nemo::workspace::WorkspaceController& workspace_;
     PanelContextRouter& router_;
     NativeFileChooser& chooser_;
+    // The session's immutable node inventory, captured on this thread at
+    // construction. Every worker-thread read resolves unknown node types and
+    // missing dependencies against the SAME catalog the live session was
+    // composed with, so an installed package's node survives open/recovery.
+    std::shared_ptr<const nemo::NodeCatalog> catalog_;
     nemo::ProjectSession::Subscription sessionSubscription_;
 
     QThread ioThread_;

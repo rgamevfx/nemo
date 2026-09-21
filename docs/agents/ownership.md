@@ -53,28 +53,39 @@ nemo::gpu        -> Vulkan, glslang (PUBLIC); VMA (PRIVATE)  (NEMO_BUILD_GPU)
 nemo::media      -> nemo::core                           (plus GPU/FFmpeg in GPU builds)
 nemo::eval       -> nemo::core, nemo::gpu, nemo::media   (NEMO_BUILD_GPU)
 nemo::workspace  -> nlohmann_json                       (Qt-free)
-nemo-cli        -> nemo::core, nemo::media              (plus nemo::eval in GPU builds)
-nemo-ui         -> nemo::workspace, nemo::eval, Qt6     (NEMO_BUILD_UI)
+nemo::extensions     -> nemo::core                     (system loader PRIVATE; no Qt/GPU)
+nemo::extensions_gpu -> nemo::extensions, nemo::eval   (NEMO_BUILD_GPU)
+nemo-cli        -> nemo::core, nemo::media, nemo::extensions
+                   (plus nemo::eval, nemo::extensions_gpu in GPU builds)
+nemo-ui         -> nemo::workspace, nemo::eval, nemo::extensions_gpu, Qt6
+                   (NEMO_BUILD_UI)
 ```
 
 The target definitions are in [`src/nemo/CMakeLists.txt`](../../src/nemo/CMakeLists.txt),
 [`src/nemo/eval/CMakeLists.txt`](../../src/nemo/eval/CMakeLists.txt),
 [`src/nemo/media/CMakeLists.txt`](../../src/nemo/media/CMakeLists.txt),
+[`src/nemo/extensions/CMakeLists.txt`](../../src/nemo/extensions/CMakeLists.txt),
 [`apps/nemo-ui/CMakeLists.txt`](../../apps/nemo-ui/CMakeLists.txt), and
 [`apps/nemo-cli/CMakeLists.txt`](../../apps/nemo-cli/CMakeLists.txt).
 `nemo::core` owns the persistent model, catalog, commands/session, and CPU
 reference evaluation; it remains free of Qt, Vulkan, plugin-runtime, and UI
 links. `nemo::workspace` is the Qt-free arrangement model, not a dependency of
-core or evaluation. UI/workspace code may consume evaluation and core, never the
-reverse. Shared operations retain the `NEMO_BUILD_UI=OFF` and
-`NEMO_BUILD_GPU=OFF` path.
+core or evaluation. Installed-package discovery/native loading is a composition
+adapter outside the persistent model: `nemo::extensions` consumes core's public
+contribution contract, and its optional GPU adapter projects the same inventory
+into evaluation. Neither core nor evaluation depends on package discovery.
+UI/workspace code may consume these adapters, evaluation and core, never the
+reverse. The package loader remains available with `NEMO_BUILD_UI=OFF` and
+`NEMO_BUILD_GPU=OFF`.
 
 The interface check is target-based, not a source-text scan. It is implemented
 by [`cmake/NemoDependencyChecks.cmake`](../../cmake/NemoDependencyChecks.cmake),
 which defines `nemo_check_dependency_direction()` and is invoked at the end of
 the top-level `CMakeLists.txt`, after all subdirectories are declared. It walks
-the `LINK_LIBRARIES` and `INTERFACE_LINK_LIBRARIES` properties of `nemo_core`
-and `nemo_eval`. The normal check is part of configuration. To prove the
+the `LINK_LIBRARIES` and `INTERFACE_LINK_LIBRARIES` properties of `nemo_core`,
+`nemo_eval`, `nemo_extensions` and `nemo_extensions_gpu`. It rejects UI links
+from all four, execution/device links from the loader, and discovery links
+from core/evaluation. The normal check is part of configuration. To prove the
 forbidden direction fails, use:
 
 ```bash
@@ -175,8 +186,9 @@ This injects `nemo_core -> nemo::workspace` and must fail configuration (with
 Built-ins use one explicit inventory, `src/nemo/nodes/BuiltinNodes.inc`.
 `builtinNodeContributions()` derives immutable schema/CPU/editor declarations;
 `builtinGpuContributions()` derives the native projection from the same list.
-Desktop and CLI use these builders, not private inventories. See
-[ADR-0008](../decisions/0008-built-in-node-contributions.md).
+Desktop and CLI compose these with `extensions/InstalledPackages` at startup,
+then inject the resulting inventory; they do not maintain private catalogs.
+See [ADR-0008](../decisions/0008-built-in-node-contributions.md).
 
 1. Add `src/nemo/nodes/<slug>/Contribution.cpp`: a namespaced persistent type,
    immutable descriptor, role, versioned CPU adapter, and optional namespaced
@@ -244,6 +256,22 @@ through session history, save/reopen and CPU/native evaluation.
 These internal C++ interfaces are not a plugin loader or stable binary SDK.
 New types, public interfaces, shaders, dependencies and image baselines still
 require owner review; performance claims additionally need the #16 gate.
+
+#### Add an installed pointwise package
+
+Use [`examples/colorwarp/README.md`](../../examples/colorwarp/README.md) for the
+separate configure/build/install recipe and the versioned C ABI. The loader
+owns admission and library lifetime; `gpuContributions()` projects accepted
+native adapters into the existing `EffectLibrary`. An installed effect adds no
+built-in inventory entry and no effect-specific host UI or evaluator branch.
+Its editor uses the existing parameter gesture/numeric/key controls; its panel
+uses `WorkspaceController::registerPanelType` and shared docking chrome.
+
+Keep state compatibility (`NodeDescriptor::stateIdentity`) distinct from
+processing/cache identity. Missing or incompatible packages retain node data
+and workspace records until a compatible package is restored on restart.
+Validate authored constraints in the contribution: `ProjectSession` applies
+them to command batches and gesture previews, including headless callers.
 
 #### Parameter and inspector boundary
 
@@ -328,6 +356,11 @@ rows stay usable, with the refusal reason reported by `editor(id)`.
 Numeric row editors can consume the host's `rowAdapter` and
 `panel.numericEditorComponent` to change track presentation without rebuilding
 parameter metadata, validation or gesture handling.
+Section content can observe `panel.editPreviewed(token, values)` for accepted
+UI-keyed preview values while structural refresh is deferred. Match the token
+and `activeRow` to the editor's target; the existing retirement/refresh contract
+restores committed values. This notification adds no gesture or document owner
+and never publishes a refused candidate (#37).
 Section editors address sibling keys of their own node. A single exposed
 parameter keeps the generic typed/key/exposure control instead; the host neither
 mounts the aggregate editor nor consumes its sibling keys for that interface

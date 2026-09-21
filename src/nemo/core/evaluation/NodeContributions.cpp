@@ -96,6 +96,8 @@ namespace {
         return "the implementation version differs (document " + std::to_string(document.implementationVersion) +
                ", registered " + std::to_string(registered.implementationVersion) + ")";
     }
+    if (document.stateIdentity != registered.stateIdentity)
+        return "the authored-state contract differs";
     if (document.isOutput != registered.isOutput)
         return "the network-output declaration differs";
     if (document.isDeliverySink != registered.isDeliverySink)
@@ -206,6 +208,7 @@ void validateDeclaration(const NodeContribution& contribution,
     for (const NodeContribution& contribution : contributions) {
         hashMixText(hash, contribution.descriptor.type);
         hashMixWord(hash, contribution.descriptor.implementationVersion);
+        hashMixText(hash, contribution.descriptor.stateIdentity);
         hashMixWord(hash, contribution.descriptor.mainInput);
         hashMixWord(hash, static_cast<std::uint64_t>(contribution.role));
         hashMixWord(hash, contribution.nativeGpu ? 1U : 0U);

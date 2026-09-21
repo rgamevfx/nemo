@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include "nemo/core/document/Document.hpp"
+#include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
 
 namespace nemo {
@@ -192,7 +193,12 @@ public:
         std::uint64_t id_{};
     };
 
-    explicit ProjectSession(Document document = {}, std::size_t historyCapacity = 256);
+    explicit ProjectSession(Document document = {}, std::size_t historyCapacity = 256,
+                            std::shared_ptr<const NodeContributions> contributions = builtinNodeContributions());
+    [[nodiscard]] const std::shared_ptr<const NodeContributions>& contributions() const noexcept {
+        assertOwnerThread();
+        return contributions_;
+    }
     ProjectSession(const ProjectSession&) = delete;
     ProjectSession& operator=(const ProjectSession&) = delete;
     ProjectSession(ProjectSession&&) = delete;
@@ -437,6 +443,10 @@ private:
     // reports nothing and untouched state is never examined.
     void derivePublication(const Document& before, const Document& after, const ChangeRecorder& touched,
                            EditResult& result, const std::string& requestId);
+    // Validate only touched authoring targets before publication. Runtime
+    // callbacks remain session-owned, never in the persistent Document.
+    void validateAuthoredParameters(const Document& before, const Document& after, const ChangeRecorder& touched,
+                                    std::optional<double> time = {}) const;
     // Exact content comparison against the saved baseline version.
     [[nodiscard]] bool documentContentDiverged() const;
     [[nodiscard]] ProjectReplaceResult replaceInternal(Document document, std::filesystem::path path,
@@ -446,6 +456,7 @@ private:
     void invalidateDirtyCache() noexcept {}
 
     Document document_;
+    std::shared_ptr<const NodeContributions> contributions_;
     CommandStack commands_;
     std::map<std::uint64_t, Observer> observers_;
     std::uint64_t nextObserverId_{1};

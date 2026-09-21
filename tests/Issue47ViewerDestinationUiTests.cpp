@@ -2,6 +2,7 @@
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
+#include "ParameterInteraction.hpp"
 #include "ProjectFileController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
@@ -129,6 +130,9 @@ protected:
     QTemporaryDir directory_;
     std::unique_ptr<nemo::ui::ViewerRuntime> runtime_;
     std::unique_ptr<nemo::ProjectSession> session_;
+    // One presentation interaction per project (issue #102): every controller
+    // this fixture composes for the session shares it, and it outlives them.
+    nemo::ui::ParameterInteraction interaction_;
     // The shared presentation history the application composes: declared after
     // the session and before the engine, so both lifetimes stay valid.
     std::unique_ptr<nemo::ui::HistoryController> history_;
@@ -185,8 +189,8 @@ protected:
         session_ = std::make_unique<nemo::ProjectSession>();
         history_ = std::make_unique<nemo::ui::HistoryController>(*session_);
         router_ = std::make_unique<nemo::ui::PanelContextRouter>(*session_);
-        facade_ = std::make_unique<nemo::ui::ViewerController>(runtime_.get(), *session_);
-        registry_ = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime_.get(), *session_);
+        facade_ = std::make_unique<nemo::ui::ViewerController>(runtime_.get(), *session_, interaction_);
+        registry_ = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime_.get(), *session_, interaction_);
 
         // A clean two-viewer workspace: two side-by-side panels in groups A and
         // B, each selecting one of the graph's two Viewer nodes. Written through

@@ -291,6 +291,75 @@
     },
     "ownerAcceptance": "Pending owner manual app review; screenshots are evidence, not owner sign-off."
   },
+  "parameterInteractionFollowUp": {
+    "baseCommit": "9699987",
+    "branch": "issue/102-parameter-handoff",
+    "scope": "Owner-directed shared parameter interaction handoff; no effect-specific gesture implementation, styling changes, core overlap-guard changes or new dependency.",
+    "interfaceChanges": [
+      "ViewerController, ViewerControllerRegistry and RotoController require the explicitly injected project ParameterInteraction owner.",
+      "Registered QML editors retain and pass their own tokens to the shared host's update/commit/cancel methods.",
+      "Armed/in-flight viewport picking reserves no core parameter gesture; only an accepted sample starts and commits one.",
+      "Notification-time cancellation retains the core token until cancellation can complete."
+    ],
+    "red": {
+      "filter": "CropReformatSurface.AbandonedPickerYieldsToAnotherParameter",
+      "observed": "Before the handoff implementation, arming Gain then typing Multiply left the picker active, Multiply unchanged at 1, and the revision unchanged; the controller reported an edit already in progress.",
+      "after": "The same native sequence passes: Gain and alpha are preserved, Multiply becomes 2, and only that edit enters history."
+    },
+    "builds": [
+      "cmake --build --preset debug -j 3: passed; final affected test target rebuilt after fixture corrections",
+      "cmake --build --preset release -j 2: passed",
+      "cmake --build --preset asan --target nemo-ui nemo_workspace_ui_tests -j 2: passed"
+    ],
+    "nativeFocused": {
+      "executable": "build/debug/tests/nemo_workspace_ui_tests",
+      "argument": "--gtest_filter=<handoffFilter>:<existingControlsFilter>",
+      "handoffFilter": "Interactive.ParameterGestureOwnershipMovesBetweenSessionControllers:Interactive.DestroyedControllerReleasesTheSessionInteraction:Interactive.NotificationCancellationCannotOrphanOrCancelTheNextGesture:Interactive.ParameterEditsDefineSingleUndoEntryAndRespectKeying:RotoHandoff.NodeGesturesAndParameterEditsYieldToEachOther:CropReformatSurface.AbandonedPickerYieldsToAnotherParameter:CropReformatSurface.Issue102ViewportPickSamplesTheDisplayedTarget:CropReformatSurface.RearmedPickerSamplesOnlyTheNewestParameter:CropReformatSurface.LateSampleNeverLandsAfterAnotherParameterStarts:CropReformatSurface.CheckboxChoiceAndScrubEditsCancelAnArmedPick:CropReformatSurface.InspectorPickerRetiresViewerHandleGesture",
+      "existingControlsFilter": "AnimationSurface.NumericEditor*:AnimationSurface.TransformTranslatePairKeepsIndependentIdentities:AnimationSurface.GradeLinkedRgbEditingPreservesComponentsAndAlpha:AnimationSurface.GraphDoubleClickAndKeyedSliderShareInspectorTargetAndHistory:AnimationSurface.ParametersPanelAdaptsColumnsWithoutRewritingThePreference:AnimationSurface.InspectorFollowingPinsAndMasksSurviveGroupAndWorkspaceChanges:HistorySurface.NumericTextMenuDoesNotCommitOrUndoDocument:HistorySurface.UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit:RotoSurface.InspectorOnlyScrubCancelsBeforeUndoingTheDocument:RotoSurface.SelectionBoxScalesAndRotatesPointsAndTangentsInImageSpace:CropReformatSurface.Issue94WriteInspectorEditsAndDeliversExplicitly:CropReformatSurface.Issue92CropCoordinatesShareTypedAndKeyedSemantics:CropReformatSurface.Issue92ReformatFormatEditorAppliesPresetsByValue:ReadSourceUiTest.AnimatedReadOffsetEditAuthorsAKeyInsteadOfAShadowedStaticValue:ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt:ShuffleSurface.MissingCustomEditorKeepsGenericMappingEditableAndRecovers",
+      "environment": {
+        "WAYLAND_DISPLAY": "wayland-1",
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "QT_QPA_PLATFORM": "wayland",
+        "NEMO_TEST_NATIVE_UI": "1",
+        "NEMO_TEST_VIEWER_WINDOW": "1",
+        "NEMO92_EVIDENCE_DIR": "/tmp/nemo-parameter-handoff-final"
+      },
+      "passed": 29,
+      "exitCode": 0,
+      "seconds": 95.23,
+      "testCorrections": [
+        "History assertions now observe the shared slider's displayed preview, not its unchanged authored value during a drag.",
+        "The native fixture waits for the inspector's queued workspace restoration before opening it. Without this readiness boundary, Write passed alone but startup restoration discarded its inspector in a batch. No timeout increase or production workaround was added."
+      ]
+    },
+    "sanitizerOwnership": {
+      "executable": "build/asan/tests/nemo_workspace_ui_tests",
+      "filter": "Interactive.ParameterGestureOwnershipMovesBetweenSessionControllers:Interactive.DestroyedControllerReleasesTheSessionInteraction:Interactive.NotificationCancellationCannotOrphanOrCancelTheNextGesture:Interactive.ParameterEditsDefineSingleUndoEntryAndRespectKeying:RotoHandoff.NodeGesturesAndParameterEditsYieldToEachOther",
+      "environment": {
+        "QT_QPA_PLATFORM": "offscreen",
+        "ASAN_OPTIONS": "detect_leaks=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+        "LSAN_OPTIONS": "suppressions=/home/rgame/dev/Nemo_Dev2/tests/lsan_suppressions.txt"
+      },
+      "passed": 5,
+      "exitCode": 0,
+      "scope": "Controller ownership, destruction, notification cancellation, keyed editing and Roto handoff. This is not a native desktop sanitizer pass."
+    },
+    "capture": {
+      "file": "parameter-handoff.png",
+      "sha256": "f944dc066678900d2c3711aa4815368165bc7fab42319b5fc73e6bcf1acff31d",
+      "pixelSize": [1274, 687],
+      "observed": "Native Grade inspector after abandoning the Gain picker and committing Multiply=2; Gain remains 0.5, with no active-picker/error indication."
+    },
+    "nativeDesktopProbe": {
+      "result": "Separate desktop-tool inspection is not a passing gate: traversing the idle application's accessibility tree crashed both debug and ASan launches.",
+      "diagnostic": "parameter-handoff-accessibility-crash.json",
+      "boundary": "ASan reports a null-page read in strlen -> QMetaObject::normalizedType -> QMetaType::idHelper -> QVariant::toString -> QtGui/QtDBus event dispatch; no parameter editing was performed.",
+      "classification": "Root cause and regression baseline are not established. Recorded for follow-up; no accessibility suppression, dependency change or unrelated application patch was made.",
+      "captureLimitation": "Desktop screenshot capture also reports that this harness lacks the Wayland PipeWire feature. The retained native screenshot comes from the real application's Qt window in the focused scenario."
+    },
+    "landing": "Local uncommitted branch changes; no push, merge or issue closure. Full suites, hosted CI and Windows execution remain unrun per owner direction; manual owner acceptance remains pending."
+  },
   "limitations": [
     "Full suites, hosted CI and Windows execution were not run, per owner direction.",
     "Native file chooser selection and end-to-end physical label drag initiation still need manual acceptance; existing native exposure authoring/drop receiver behavior passed.",

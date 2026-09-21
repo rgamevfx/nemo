@@ -32,6 +32,11 @@ ColumnLayout {
     property var controller
     property var panel
 
+    // The panel's live interaction token, or empty when this editor has no
+    // host. A control compares it with the token IT captured, so live means the
+    // gesture it began is still the session's.
+    readonly property string panelActiveToken: cropEditor.panel ? String(cropEditor.panel.activeToken) : ""
+
     readonly property color textColor: cropEditor.theme ? cropEditor.theme.text : "#dce0e6"
     readonly property color mutedColor: cropEditor.theme ? cropEditor.theme.muted : "#979ea8"
     readonly property color borderColor: cropEditor.theme ? cropEditor.theme.border : "#30343a"
@@ -272,24 +277,27 @@ ColumnLayout {
         cropEditor.panel.rejectText(cropEditor.rowFor(key), text);
     }
 
+    // The field keeps its own token from the begin to the commit or cancel, so
+    // a scrub whose gesture was retired cannot preview into or publish over the
+    // interaction that replaced it.
     function beginScrub(key) {
         if (!cropEditor.panel)
-            return;
-        cropEditor.panel.beginScrub(cropEditor.rowFor(key));
+            return "";
+        return cropEditor.panel.beginScrub(cropEditor.rowFor(key));
     }
 
-    function updateScrub(key, stated) {
+    function updateScrub(key, token, stated) {
         if (!cropEditor.panel)
             return false;
-        return cropEditor.panel.updateScrub(cropEditor.authoredValue(key, stated));
+        return cropEditor.panel.updateScrub(token, cropEditor.authoredValue(key, stated));
     }
 
-    function finishScrub() {
-        return cropEditor.panel ? cropEditor.panel.finishScrub() : false;
+    function finishScrub(token) {
+        return cropEditor.panel ? cropEditor.panel.finishScrub(token) : false;
     }
 
-    function cancelScrub() {
-        return cropEditor.panel ? cropEditor.panel.cancelScrub() : false;
+    function cancelScrub(token) {
+        return cropEditor.panel ? cropEditor.panel.cancelScrub(token) : false;
     }
 
     // The most recent rejected edit attributed to one of the consumed keys. The
@@ -306,12 +314,14 @@ ColumnLayout {
         var format = selectedPreset.length ? formats.find(function(entry) { return entry.name === cropEditor.selectedPreset; }) : formats[0];
         if (!format || !panel) return;
         var values = {x: 0, y: 0, right: Number(format.width), top: Number(format.height)};
-        if (!panel.beginEditForMany(networkId, nodeId, Object.keys(values))) return;
-        if (!panel.updateEditMany(values)) {
-            panel.cancelEdit();
+        var token = panel.beginEditForMany(networkId, nodeId, Object.keys(values));
+        if (token.length === 0)
+            return;
+        if (!panel.updateEditMany(token, values)) {
+            panel.cancelEdit(token);
             return;
         }
-        panel.commitEdit();
+        panel.commitEdit(token);
     }
 
     component Caption: ExposureLabel {
@@ -418,11 +428,15 @@ ColumnLayout {
                 required property var modelData
                 readonly property string fieldKey: String(modelData.key)
                 readonly property var fieldParameter: cropEditor.paramRow(fieldKey)
+                // This field's own gesture token: the preview, the commit and
+                // the cancel only ever name the gesture it began.
+                property string gestureToken: ""
                 Layout.fillWidth: true
                 spacing: 3
                 Caption { editKey: fieldRow.fieldKey; labelText: fieldRow.modelData.label }
                 NumericField {
                     objectName: "cropBox_" + cropEditor.nodeId + "_" + fieldRow.fieldKey
+                    interactionOwner: cropEditor.panel
                     theme: cropEditor.theme
                     value: cropEditor.displayValue(fieldRow.fieldKey)
                     hasMinimum: false
@@ -436,14 +450,25 @@ ColumnLayout {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 40
                     enabled: !!cropEditor.controller && !!fieldRow.fieldParameter
-                    gestureLive: cropEditor.panel ? cropEditor.panel.activeToken.length > 0 : false
+                    gestureLive: fieldRow.gestureToken.length > 0
+                                 && cropEditor.panelActiveToken === fieldRow.gestureToken
                     onTextCommitted: function(text) { cropEditor.commitText(fieldRow.fieldKey, text); }
                     onTextRejected: function(text) { cropEditor.rejectText(fieldRow.fieldKey, text); }
                     onStepped: function(value) { cropEditor.commitValue(fieldRow.fieldKey, value); }
-                    onScrubStarted: cropEditor.beginScrub(fieldRow.fieldKey)
-                    onScrubbed: function(value) { cropEditor.updateScrub(fieldRow.fieldKey, value); }
-                    onScrubFinished: cropEditor.finishScrub()
-                    onScrubCancelled: cropEditor.cancelScrub()
+                    onScrubStarted: fieldRow.gestureToken = cropEditor.beginScrub(fieldRow.fieldKey)
+                    onScrubbed: function(value) {
+                        cropEditor.updateScrub(fieldRow.fieldKey, fieldRow.gestureToken, value);
+                    }
+                    onScrubFinished: {
+                        var token = fieldRow.gestureToken;
+                        fieldRow.gestureToken = "";
+                        cropEditor.finishScrub(token);
+                    }
+                    onScrubCancelled: {
+                        var token = fieldRow.gestureToken;
+                        fieldRow.gestureToken = "";
+                        cropEditor.cancelScrub(token);
+                    }
                     onKeyRequested: cropEditor.keyAtFrame(fieldRow.fieldKey)
                 }
             }

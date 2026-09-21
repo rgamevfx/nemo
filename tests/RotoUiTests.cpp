@@ -4,7 +4,9 @@
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
+#include "ParameterInteraction.hpp"
 #include "ProjectFileController.hpp"
+#include "RotoController.hpp"
 #include "ScopedEnvironment.hpp"
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
@@ -32,6 +34,7 @@
 #include <QTest>
 #include <QWheelEvent>
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -53,6 +56,9 @@ protected:
     std::unique_ptr<nemo::test::ScopedEnvironment> colorEnvironment;
     std::unique_ptr<nemo::ui::ViewerRuntime> runtime;
     std::unique_ptr<nemo::ProjectSession> session;
+    // One presentation interaction per project (issue #102): every controller
+    // this fixture composes for the session shares it, and it outlives them.
+    nemo::ui::ParameterInteraction interaction;
     std::unique_ptr<nemo::ui::HistoryController> history;
     std::unique_ptr<nemo::ui::PanelContextRouter> router;
     std::unique_ptr<nemo::ui::ViewerController> facade;
@@ -107,8 +113,8 @@ protected:
         session = std::make_unique<nemo::ProjectSession>();
         history = std::make_unique<nemo::ui::HistoryController>(*session);
         router = std::make_unique<nemo::ui::PanelContextRouter>(*session);
-        facade = std::make_unique<nemo::ui::ViewerController>(runtime.get(), *session);
-        registry = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime.get(), *session);
+        facade = std::make_unique<nemo::ui::ViewerController>(runtime.get(), *session, interaction);
+        registry = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime.get(), *session, interaction);
         const QString path = directory.filePath("workspace.json");
         QFile file(path);
         ASSERT_TRUE(file.open(QIODevice::WriteOnly));
@@ -944,6 +950,82 @@ TEST_F(RotoSurface, SelectionBoxScalesAndRotatesPointsAndTangentsInImageSpace) {
     ASSERT_TRUE(history->undo());
     const auto restored = nemo::evaluateRoto(session->document(), network.toULongLong(), roto.toULongLong(), 10);
     EXPECT_EQ(restored.elements[0].points, atTen.elements[0].points);
+}
+
+// Issue #102: the Roto adapter and the parameter inspector of the SAME project
+// share one presentation interaction, so a node gesture and a continuous
+// parameter edit hand the session over in BOTH directions instead of locking
+// it. Each direction is exercised through the real controller seams: the
+// retired side keeps its own token, which can neither update nor commit the
+// other side's gesture, and only the surviving gesture is one history entry.
+TEST(RotoHandoff, NodeGesturesAndParameterEditsYieldToEachOther) {
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ProjectSession session;
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
+    QObject owner;
+    const auto scope = controller.rootNetworkId();
+    const auto roto = controller.createGraphNode(scope, "roto", "HandoffRoto", 0, 0, {}, {});
+    ASSERT_FALSE(roto.isEmpty()) << controller.error().toStdString();
+    auto* adapter =
+        qobject_cast<nemo::ui::RotoController*>(controller.createRotoControllerFor(scope, roto, "A", &owner));
+    ASSERT_NE(adapter, nullptr);
+    const auto element = adapter->createShape("rectangle", 0.25, 0.25, 0.75, 0.75);
+    ASSERT_FALSE(element.isEmpty()) << adapter->error().toStdString();
+    const auto elementOpacity = [&] {
+        return adapter->parameterState(element, QString{}, QStringLiteral("opacity"))
+            .value(QStringLiteral("value"))
+            .toDouble();
+    };
+    const auto nodeOpacity = [&] {
+        const auto values = session.queryValues(static_cast<nemo::NetworkId>(scope.toULongLong()),
+                                                static_cast<nemo::NodeId>(roto.toULongLong()), "opacity");
+        return values.empty() ? std::nan("") : std::get<double>(values.front().value);
+    };
+    const QVariantList targets{QVariantMap{{QStringLiteral("element"), element},
+                                           {QStringLiteral("point"), QString{}},
+                                           {QStringLiteral("key"), QStringLiteral("opacity")}}};
+    const auto revision = session.revision();
+
+    // A node gesture owns the interaction and previews without authoring.
+    auto nodeToken = adapter->beginGesture(targets);
+    ASSERT_FALSE(nodeToken.isEmpty()) << adapter->error().toStdString();
+    EXPECT_TRUE(adapter->gestureActive());
+    ASSERT_TRUE(adapter->updateGesture(nodeToken, QVariantList{0.4}));
+
+    // A parameter edit retires the node gesture: the retired node token cannot
+    // preview or commit afterwards, and its preview publishes nothing.
+    const auto parameterToken = controller.beginNodeParameterEdit(scope, roto, QStringLiteral("opacity"));
+    ASSERT_FALSE(parameterToken.isEmpty()) << controller.error().toStdString();
+    EXPECT_FALSE(adapter->gestureActive()) << "the node gesture yields to the parameter edit";
+    EXPECT_FALSE(adapter->updateGesture(nodeToken, QVariantList{0.9}));
+    EXPECT_FALSE(adapter->commitGesture(nodeToken)) << "a retired node token never commits";
+    EXPECT_EQ(session.revision(), revision);
+    EXPECT_DOUBLE_EQ(elementOpacity(), 1.0) << "the retired node preview is discarded";
+
+    // The surviving parameter edit commits as exactly one history entry.
+    ASSERT_TRUE(controller.updateNodeParameterEdit(parameterToken, 0.6));
+    ASSERT_TRUE(controller.commitNodeParameterEdit(parameterToken)) << controller.error().toStdString();
+    EXPECT_EQ(session.revision(), revision + 1);
+    EXPECT_DOUBLE_EQ(nodeOpacity(), 0.6);
+
+    // The other direction: a node gesture retires the live parameter edit.
+    const auto secondRevision = session.revision();
+    const auto liveParameterToken = controller.beginNodeParameterEdit(scope, roto, QStringLiteral("opacity"));
+    ASSERT_FALSE(liveParameterToken.isEmpty()) << controller.error().toStdString();
+    ASSERT_TRUE(controller.updateNodeParameterEdit(liveParameterToken, 0.2));
+    nodeToken = adapter->beginGesture(targets);
+    ASSERT_FALSE(nodeToken.isEmpty()) << adapter->error().toStdString();
+    EXPECT_FALSE(controller.updateNodeParameterEdit(liveParameterToken, 0.9));
+    EXPECT_FALSE(controller.commitNodeParameterEdit(liveParameterToken));
+    EXPECT_EQ(session.revision(), secondRevision) << "the retired parameter preview publishes nothing";
+    EXPECT_DOUBLE_EQ(nodeOpacity(), 0.6);
+    ASSERT_TRUE(adapter->updateGesture(nodeToken, QVariantList{0.3}));
+    ASSERT_TRUE(adapter->commitGesture(nodeToken)) << adapter->error().toStdString();
+    EXPECT_FALSE(adapter->gestureActive());
+    EXPECT_EQ(session.revision(), secondRevision + 1) << "the node gesture is one history entry";
+    EXPECT_NEAR(elementOpacity(), 0.3, 1e-6);
+    EXPECT_DOUBLE_EQ(nodeOpacity(), 0.6) << "the retired parameter edit never landed";
 }
 
 }  // namespace

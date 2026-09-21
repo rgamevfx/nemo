@@ -44,6 +44,12 @@ FocusScope {
     property string networkId: ""
     property string nodeId: ""
     property string parameterKey: ""
+    // The one session-scoped interaction owner this control retires before it
+    // starts typing: a bound inspector field names its panel, which routes to
+    // the shared session owner and so releases an armed viewport pick; a
+    // consumer whose gesture belongs to another owner names that owner instead.
+    // Null means there is nothing to hand off.
+    property var interactionOwner: panel
     property string keyStatus: "none"
     property string scope: ""
     property int frame: 0
@@ -92,9 +98,10 @@ FocusScope {
     property bool scrubChanged: false
     property real scrubOrigin: 0
     // The host's live parameter gesture: false once the host no longer accepts
-    // preview updates. The host binds it from its own gesture owner, so this
-    // control never talks to the panel. A cancellation (Escape or a
-    // preview-only Undo) ends the local scrub at once - the authored value is
+    // preview updates. The host binds it from the token IT began, so this
+    // control never infers ownership from another control's gesture. A retired
+    // gesture (Escape, a preview-only Undo, or another control taking the
+    // interaction over) ends the local scrub at once - the authored value is
     // shown again without waiting for a document refresh - and the press that
     // produced the scrub may not start another one, so neither renewed motion
     // nor the release can publish the cancelled preview.
@@ -174,6 +181,13 @@ FocusScope {
     function beginTextEdit() {
         if (!enabled || editing)
             return;
+        // A text edit is a parameter interaction from the first keystroke even
+        // though its value is only known at commit, so whatever the session was
+        // doing is retired first through the owning presentation interface.
+        // That is what releases an armed viewport pick without this control
+        // knowing anything about picking.
+        if (interactionOwner)
+            interactionOwner.prepareParameterInteraction();
         editing = true;
         editSeed = !valueAvailable ? "" : text.length > 0 ? text : displayText(value);
         buffer = editSeed;

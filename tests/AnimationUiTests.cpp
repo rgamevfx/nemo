@@ -3,6 +3,7 @@
 #include "HistoryController.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
+#include "ParameterInteraction.hpp"
 #include "ProjectFileController.hpp"
 #include "ViewerController.hpp"
 #include "WorkspaceController.hpp"
@@ -232,7 +233,10 @@ protected:
     // the session and before the engine, so both lifetimes stay valid.
     ui::HistoryController historyController{session};
     ui::ViewerRuntime runtime;
-    ui::ViewerController controller{&runtime, session};
+    // One presentation interaction per project (issue #102): every controller
+    // for this session shares it, and it outlives them.
+    ui::ParameterInteraction interaction;
+    ui::ViewerController controller{&runtime, session, interaction};
     ui::PanelContextRouter router{session};
     ui::NativeFileChooser chooser;
     ui::ProjectFileController file{session, workspace, router, chooser};

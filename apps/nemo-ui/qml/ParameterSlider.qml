@@ -9,14 +9,17 @@ import QtQuick
 //   valueEdited()   the snapped value under the pointer, previewed only
 //   editFinished()  release after a real change: publish
 //   editCancelled() release without a change, Escape, a preview-only Undo or a
-//                   refused begin: publish nothing
+//                   gesture the session handed to another control: publish
+//                   nothing
 //
-// A press seeks the value under the pointer. If the host refuses the gesture
-// (`gestureLive` stays false) or cancels it mid-drag, the handle returns to the
-// authored value at once and neither renewed motion nor the release can publish
-// the abandoned preview. `graduated` adds a linear ruler with tick labels and
-// `markers` places the per-channel positions of an expanded tuple; both are
-// linear divisions of [from, to] and imply no transfer function.
+// A press seeks the value under the pointer. Beginning the host gesture retires
+// whatever interaction the session was running first, so a press always owns
+// the next one. If the host does not grant it (`gestureLive` stays false) or
+// retires it mid-drag, the handle returns to the authored value at once and
+// neither renewed motion nor the release can publish the abandoned preview.
+// `graduated` adds a linear ruler with tick labels and `markers` places the
+// per-channel positions of an expanded tuple; both are linear divisions of
+// [from, to] and imply no transfer function.
 Item {
     id: slider
 

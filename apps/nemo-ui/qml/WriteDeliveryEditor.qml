@@ -59,6 +59,11 @@ ColumnLayout {
     property var controller
     property var panel
 
+    // The panel's live interaction token, or empty when this editor has no
+    // host. A control compares it with the token IT captured, so live means the
+    // gesture it began is still the session's.
+    readonly property string panelActiveToken: writeEditor.panel ? String(writeEditor.panel.activeToken) : ""
+
     // --- inspector metrics --------------------------------------------------
     // The shared inspector tokens, with the same fallback chain the shared
     // controls use: a custom or older theme states the base metrics and the row
@@ -385,24 +390,27 @@ ColumnLayout {
         writeEditor.panel.rejectText(writeEditor.rowFor(key), text);
     }
 
+    // The cell keeps its own token from begin to commit or cancel, so a scrub
+    // whose gesture was retired cannot preview into or publish over the
+    // interaction that replaced it.
     function beginScrub(key) {
         if (!writeEditor.panel)
-            return;
-        writeEditor.panel.beginScrub(writeEditor.rowFor(key));
+            return "";
+        return writeEditor.panel.beginScrub(writeEditor.rowFor(key));
     }
 
-    function updateScrub(key, value) {
+    function updateScrub(token, value) {
         if (!writeEditor.panel)
             return false;
-        return writeEditor.panel.updateScrub(value);
+        return writeEditor.panel.updateScrub(token, value);
     }
 
-    function finishScrub() {
-        return writeEditor.panel ? writeEditor.panel.finishScrub() : false;
+    function finishScrub(token) {
+        return writeEditor.panel ? writeEditor.panel.finishScrub(token) : false;
     }
 
-    function cancelScrub() {
-        return writeEditor.panel ? writeEditor.panel.cancelScrub() : false;
+    function cancelScrub(token) {
+        return writeEditor.panel ? writeEditor.panel.cancelScrub(token) : false;
     }
 
     // The most recent rejected edit attributed to one of the consumed keys. The
@@ -642,6 +650,9 @@ ColumnLayout {
         id: numberCell
         required property string cellKey
         property string caption: ""
+        // This cell's own gesture token: the preview, the commit and the cancel
+        // only ever name the gesture it began.
+        property string gestureToken: ""
         spacing: 5
         InlineLabel {
             editKey: numberCell.cellKey
@@ -678,14 +689,23 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.minimumWidth: 40
             enabled: writeEditor.controller !== null && writeEditor.paramRow(numberCell.cellKey) !== null
-            gestureLive: writeEditor.panel ? writeEditor.panel.activeToken.length > 0 : false
+            gestureLive: numberCell.gestureToken.length > 0
+                         && writeEditor.panelActiveToken === numberCell.gestureToken
             onTextCommitted: function(text) { writeEditor.commitText(numberCell.cellKey, text); }
             onTextRejected: function(text) { writeEditor.rejectText(numberCell.cellKey, text); }
             onStepped: function(value) { writeEditor.commitValue(numberCell.cellKey, value); }
-            onScrubStarted: writeEditor.beginScrub(numberCell.cellKey)
-            onScrubbed: function(value) { writeEditor.updateScrub(numberCell.cellKey, value); }
-            onScrubFinished: writeEditor.finishScrub()
-            onScrubCancelled: writeEditor.cancelScrub()
+            onScrubStarted: numberCell.gestureToken = writeEditor.beginScrub(numberCell.cellKey)
+            onScrubbed: function(value) { writeEditor.updateScrub(numberCell.gestureToken, value); }
+            onScrubFinished: {
+                var token = numberCell.gestureToken;
+                numberCell.gestureToken = "";
+                writeEditor.finishScrub(token);
+            }
+            onScrubCancelled: {
+                var token = numberCell.gestureToken;
+                numberCell.gestureToken = "";
+                writeEditor.cancelScrub(token);
+            }
             onKeyRequested: writeEditor.keyAtFrame(numberCell.cellKey)
         }
     }
@@ -878,6 +898,10 @@ ColumnLayout {
             ToolTip.visible: hovered && !activeFocus
             ToolTip.text: writeEditor.exrFormat ? "Output path or sequence pattern: each '#' is one zero-padded frame digit" : "One movie path: the whole frame range becomes this single file"
             onEditingFinished: writeEditor.commitValue("file", String(text))
+            // Typing is a parameter interaction from the first keystroke, so it
+            // retires whatever the session owns through the same owner.
+            onActiveFocusChanged: if (activeFocus && writeEditor.panel)
+                writeEditor.panel.prepareParameterInteraction()
             Keys.onEscapePressed: function(event) {
                 event.accepted = true;
                 fileField.text = writeEditor.textValue("file");
@@ -1079,6 +1103,10 @@ ColumnLayout {
             ToolTip.visible: hovered && !activeFocus
             ToolTip.text: "Optional .cube LUT applied after the selected output transform, to primary RGB only. Color mode raw writes the working pixels unchanged: no base conversion runs at all."
             onEditingFinished: writeEditor.commitValue("lutFile", String(text))
+            // Typing is a parameter interaction from the first keystroke, so it
+            // retires whatever the session owns through the same owner.
+            onActiveFocusChanged: if (activeFocus && writeEditor.panel)
+                writeEditor.panel.prepareParameterInteraction()
             Keys.onEscapePressed: function(event) {
                 event.accepted = true;
                 lutField.text = writeEditor.textValue("lutFile");

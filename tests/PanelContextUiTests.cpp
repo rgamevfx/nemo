@@ -1,5 +1,6 @@
 #include "HistoryController.hpp"
 #include "PanelContextRouter.hpp"
+#include "ParameterInteraction.hpp"
 #include "ProjectFileController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerRuntime.hpp"
@@ -102,7 +103,8 @@ protected:
     // the session and before the engine, so both lifetimes stay valid.
     nemo::ui::HistoryController historyController{projectSession};
     nemo::ui::ViewerRuntime viewerRuntime;
-    nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
+    nemo::ui::ParameterInteraction parameterInteraction;
+    nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession, parameterInteraction};
     nemo::ui::PanelContextRouter router{projectSession};
     // Main.qml reads the project file state; the harness injects the same
     // adapter and shared native chooser the application composes.

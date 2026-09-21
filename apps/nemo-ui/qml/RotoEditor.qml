@@ -539,12 +539,19 @@ ColumnLayout {
         return editor.commitScalar(elementId, pointId, key, value);
     }
 
+    // Keying and unkeying are discrete authored commands rather than a preview
+    // gesture, so they retire whatever the session owns first through the same
+    // interaction owner their gestures use.
     function keyAtFrame(elementId, pointId, key) {
-        return editor.roto ? editor.roto.keyAtFrame(String(elementId), pointId ? String(pointId) : "", String(key)) : false;
+        if (!editor.roto)
+            return false;
+        return editor.roto.keyAtFrame(String(elementId), pointId ? String(pointId) : "", String(key));
     }
 
     function removeKeyAtFrame(elementId, pointId, key) {
-        return editor.roto ? editor.roto.removeKeyAtFrame(String(elementId), pointId ? String(pointId) : "", String(key)) : false;
+        if (!editor.roto)
+            return false;
+        return editor.roto.removeKeyAtFrame(String(elementId), pointId ? String(pointId) : "", String(key));
     }
 
     // One continuous scrub per field: begin, preview, then exactly one commit
@@ -598,8 +605,18 @@ ColumnLayout {
         editor.cancelScrub();
     }
 
-    function gestureLive() {
-        return editor.roto ? editor.roto.gestureActive === true : false;
+    // The live scrub belongs to exactly ONE field. A control compares the
+    // address it is bound to with the staged scrub, so a gesture the session
+    // handed to a successor (the controller clears the scrub on gestureChanged)
+    // never keeps this field's preview alive, and stale events reach nothing.
+    function scrubLive(elementId, pointId, key, component) {
+        var scrub = editor.scrub;
+        if (!scrub || !editor.roto || editor.roto.gestureActive !== true)
+            return false;
+        return String(scrub.element) === String(elementId)
+                && String(scrub.point) === String(pointId === undefined || pointId === null ? "" : pointId)
+                && String(scrub.key) === String(key)
+                && Number(scrub.component) === Number(component);
     }
 
     // --- structural edits ---------------------------------------------------
@@ -939,7 +956,8 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.minimumWidth: 40
             enabled: editor.elementEditable()
-            gestureLive: editor.gestureLive()
+            interactionOwner: editor.roto
+            gestureLive: editor.scrubLive(scalarRow.elementId, scalarRow.pointId, scalarRow.fieldKey, -1)
             onTextCommitted: function(text) {
                 editor.commitScalar(scalarRow.elementId, scalarRow.pointId, scalarRow.fieldKey, Number(text));
             }
@@ -993,7 +1011,9 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 34
                 enabled: editor.elementEditable()
-                gestureLive: editor.gestureLive()
+                interactionOwner: editor.roto
+                gestureLive: editor.scrubLive(vectorRow.elementId, vectorRow.pointId, vectorRow.fieldKey,
+                                              componentField.index)
                 onTextCommitted: function(text) {
                     editor.commitVector(vectorRow.elementId, vectorRow.pointId, vectorRow.fieldKey,
                                         componentField.index, Number(text));
@@ -2058,6 +2078,7 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.minimumWidth: 34
             enabled: !editor.selectedIsLocked
+            interactionOwner: editor.roto
             onTextCommitted: function(text) {
                 editor.roto.setElementProperty(editor.selectedElement, "firstFrame", Number(text));
             }
@@ -2085,6 +2106,7 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.minimumWidth: 34
             enabled: !editor.selectedIsLocked
+            interactionOwner: editor.roto
             onTextCommitted: function(text) {
                 editor.roto.setElementProperty(editor.selectedElement, "lastFrame", Number(text));
             }

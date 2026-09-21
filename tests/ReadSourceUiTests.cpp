@@ -15,6 +15,7 @@
 
 #include "MediaLibraryModel.hpp"
 #include "NativeFileChooser.hpp"
+#include "ParameterInteraction.hpp"
 #include "ReadSourceController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerRuntime.hpp"
@@ -336,7 +337,10 @@ public:
     nemo::ui::NativeFileChooser chooser_;
     nemo::ui::ReadSourceController controller_;
     nemo::ui::ViewerRuntime runtime_;
-    nemo::ui::ViewerController viewer_{&runtime_, session_};
+    // One presentation interaction per project (issue #102): declared after the
+    // session and before the controller it is shared with, so it outlives it.
+    nemo::ui::ParameterInteraction interaction_;
+    nemo::ui::ViewerController viewer_{&runtime_, session_, interaction_};
     NodeId first_{nemo::kInvalidNode};
     nemo::NetworkId definition_{nemo::kInvalidNetwork};
 };
@@ -650,10 +654,12 @@ TEST(ReadSourceUiTest, StartAtAndOffsetAreTheSameMapping) {
 // An animated Read timing parameter must never be edited as a static override
 // shadowed by its channel. The Read editor's consumed rows route such an edit
 // through the SHARED parameter gesture (panel.beginEditFor -> updateEdit ->
-// commitEdit), which is exactly this owner: with a channel present the keyed
-// gesture authors the current-frame key. A cancelled gesture publishes nothing,
-// one commit is one undo entry, and resetting the value authors the schema
-// default at the current frame without touching the other keys or the curve.
+// commitEdit, each step naming the token that begin returned, so a successor
+// interaction in another panel retires this one instead of being refused). That
+// is exactly this owner: with a channel present the keyed gesture authors the
+// current-frame key. A cancelled gesture publishes nothing, one commit is one
+// undo entry, and resetting the value authors the schema default at the current
+// frame without touching the other keys or the curve.
 TEST(ReadSourceUiTest, AnimatedReadOffsetEditAuthorsAKeyInsteadOfAShadowedStaticValue) {
     ReadSourceFixture fixture;
     const auto pattern = fixture.temporary_.path().toStdString() + "/anim.####.exr";

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ParameterInteraction.hpp"
 #include "ViewerRuntime.hpp"
 #include "nemo/core/evaluation/Image.hpp"
 #include "nemo/core/evaluation/Request.hpp"
@@ -113,7 +114,7 @@ class ViewerController final : public QObject {
     Q_PROPERTY(QString layerReason READ layerReason NOTIFY displayChanged)
     Q_PROPERTY(QString timecode READ timecode NOTIFY frameChanged)
 public:
-    explicit ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session);
+    explicit ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session, ParameterInteraction& interaction);
     ~ViewerController() override;
     // The panel owns its query adapter; the application-owned session outlives
     // every QML panel. No per-panel document or animation history is created.
@@ -218,8 +219,13 @@ public:
                                                const QString& key) const;
     Q_INVOKABLE bool keyNodeParameter(const QString& networkId, const QVariant& nodeId, const QString& key);
     Q_INVOKABLE bool removeNodeParameterKey(const QString& networkId, const QVariant& nodeId, const QString& key);
+    // Retire unfinished parameter input before another control starts editing.
+    // The same injected owner serves every controller/window of this project.
+    Q_INVOKABLE void prepareParameterInteraction();
+    [[nodiscard]] ParameterInteraction& parameterInteraction() { return interaction_; }
     // Continuous edit gesture: begin returns a decimal token ("" on failure),
     // update previews, commit publishes one history entry, cancel discards.
+    // Begin supersedes the previous presentation interaction, not core safety.
     Q_INVOKABLE QString beginNodeParameterEdit(const QString& networkId, const QVariant& nodeId, const QString& key);
     Q_INVOKABLE bool updateNodeParameterEdit(const QString& token, const QVariant& value);
     // Batch shape of the same gesture. Each address follows the core owner's
@@ -404,6 +410,7 @@ public:
     [[nodiscard]] bool filterLinear() const { return runtime_->presentationFilterLinear(); }
 
 signals:
+    void parameterEditEnded(const QString& token);
     void sourceChanged();
     void statusChanged();
     void resolutionChanged();
@@ -557,6 +564,7 @@ private:
     [[nodiscard]] bool advancePlayback();
     ViewerRuntime* runtime_;
     nemo::ProjectSession& session_;
+    ParameterInteraction& interaction_;
     // The scheduler destination this panel owns. Unset, the controller is a
     // pure command/metadata facade.
     std::optional<eval::ViewerDestination> destination_;
@@ -675,6 +683,7 @@ private:
     [[nodiscard]] QString beginParameterGestureFor(const QString& networkValue, const QVariant& nodeValue,
                                                    const QStringList& keys);
     bool updateParameterGestureValues(const QString& tokenValue, const QVariantMap& values);
+    void finishParameterGesture();
     // The media role's displayed target is the routed CATALOG reference, which
     // is not a persisted node: one request-owned Read addressing it is inserted
     // into the request's own snapshot, so the viewport sampler and the render

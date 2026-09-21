@@ -58,9 +58,11 @@ FocusScope {
     property int revision: 0
     property bool refreshPending: false
 
-    // Only one parameter gesture is active at a time (beginNodeParameterEdit
-    // rejects a second begin). The panel tracks the single live token and the
-    // row it belongs to, so a rejected edit can name the parameter.
+    // One parameter interaction is live in the session at a time, owned by the
+    // control that began it. The panel tracks the token it last accepted and
+    // the row it belongs to, so it can name a rejected edit and keep its own
+    // presentation; a later begin retires the previous owner through the
+    // controller's cancellation path instead of being refused.
     property string activeToken: ""
     property var activeRow: null
     // The most recent rejected edit, attributed to one row. It is presentation
@@ -353,12 +355,12 @@ FocusScope {
 
     // --- gestures ---------------------------------------------------------
 
-    // Identity-scoped begin, also usable by registered custom editors. Only one
-    // gesture may be live; a second begin fails and returns the empty token.
+    // Identity-scoped begin, also usable by registered custom editors. The
+    // controller retires whatever interaction was live first, so beginning a
+    // second one never leaves the session locked; the returned token belongs to
+    // THIS caller and is the only authority its later updates may name.
     function beginEditFor(networkId, nodeId, parameterKey) {
         if (!controller)
-            return "";
-        if (activeToken.length > 0)
             return "";
         if (!validIdentity(networkId) || !validIdentity(nodeId) || !validIdentity(parameterKey))
             return "";
@@ -380,7 +382,7 @@ FocusScope {
     // shapes below are the one-element case of these, so both go through one
     // owner in the controller.
     function beginEditForMany(networkId, nodeId, parameterKeys) {
-        if (!controller || activeToken.length > 0)
+        if (!controller)
             return "";
         if (!validIdentity(networkId) || !validIdentity(nodeId) || !parameterKeys || parameterKeys.length === 0)
             return "";
@@ -404,34 +406,38 @@ FocusScope {
         return token;
     }
 
-    function updateEditMany(values) {
-        if (activeToken.length === 0)
+    // Every preview, commit and cancel names the interaction it belongs to. A
+    // token that is not the live one was retired by a successor: it is ignored,
+    // so no stale control can preview into, commit or cancel the replacement.
+    function updateEditMany(token, values) {
+        if (String(token).length === 0 || String(token) !== activeToken)
             return false;
-        return controller.updateNodeParameterEdits(activeToken, values);
+        return controller.updateNodeParameterEdits(String(token), values);
     }
 
     function beginEdit(row) {
         return row ? beginEditFor(row.networkId, row.nodeId, row.parameterKey) : "";
     }
 
-    function updateEdit(value) {
-        if (activeToken.length === 0)
+    function updateEdit(token, value) {
+        if (String(token).length === 0 || String(token) !== activeToken)
             return false;
         if (!activeRow)
             return false;
         // The single-control API retains the resolved occurrence/exposed address.
         // A batch map instead names concrete keys on its captured target.
-        return controller.updateNodeParameterEdit(activeToken, value);
+        return controller.updateNodeParameterEdit(String(token), value);
     }
 
-    function commitEdit() {
-        if (activeToken.length === 0)
+    // Publishing names the token too. The controller retires it through the same
+    // notice as any cancellation, so the local state is cleared by that notice;
+    // the row captured here still names the parameter in a failure message.
+    function commitEdit(token) {
+        if (String(token).length === 0 || String(token) !== activeToken)
             return false;
         var row = activeRow;
-        var result = controller.commitNodeParameterEdit(activeToken);
-        activeToken = "";
-        activeRow = null;
-        flushRefresh();
+        var result = controller.commitNodeParameterEdit(String(token));
+        retireToken(String(token));
         if (!result) {
             gestureError = controller ? String(controller.error) : "";
             gestureErrorKey = row ? String(row.parameterKey) : "";
@@ -439,21 +445,47 @@ FocusScope {
         return result;
     }
 
-    function cancelEdit() {
-        if (activeToken.length === 0)
+    function cancelEdit(token) {
+        if (String(token).length === 0 || String(token) !== activeToken)
             return false;
-        var result = controller.cancelNodeParameterEdit(activeToken);
+        var result = controller.cancelNodeParameterEdit(String(token));
+        retireToken(String(token));
+        return result;
+    }
+
+    // The controller retires a token through its cancellation path (a successor
+    // interaction started, or this panel's own commit/cancel). Only matching
+    // local presentation is dropped here: cancelling again would reach the
+    // owner that replaced it. The re-query is queued because the notice can
+    // arrive inside the owner's own call (a commit, a successor's begin) or
+    // inside a document notification, and a gesture that begins before it runs
+    // simply defers the refresh again instead of letting it re-enter a live
+    // interaction.
+    function retireToken(token) {
+        var value = token === undefined || token === null ? "" : String(token);
+        if (value.length === 0 || value !== activeToken)
+            return false;
         activeToken = "";
         activeRow = null;
-        flushRefresh();
-        return result;
+        Qt.callLater(function () { parametersPanel.requestRefresh(); });
+        return true;
+    }
+
+    // Retire whatever interaction the session owns before a control starts a
+    // text edit whose value is not yet known. Arming a viewport pick reserves
+    // no core gesture, so this is the one path that releases it before the
+    // first keystroke; discrete, key and reset commands hand off through their
+    // own begin or through this call.
+    function prepareParameterInteraction() {
+        if (controller && controller.prepareParameterInteraction)
+            controller.prepareParameterInteraction();
     }
 
     // Shared history routing: a preview-only Undo reaches the one row gesture
     // through its own cancellation path, so committing it stays impossible
     // (commitEdit returns false once the token is cleared).
     function cancelHistoryGesture() {
-        cancelEdit();
+        cancelEdit(activeToken);
     }
     function syncHistoryGesture() {
         historyController.setGesture(parametersPanel, historyGestureActive);
@@ -502,7 +534,9 @@ FocusScope {
 
     // One discrete control action (toggle, choice, typed field, vector/color
     // component, arrow-key step) is a single begin/update/commit gesture, hence
-    // one undo step. A no-op and a rejected value create no history entry.
+    // one undo step. A no-op and a rejected value create no history entry. The
+    // gesture is this call's own token from begin to commit, so a successor
+    // interaction can never receive its update or its commit.
     function gestureSingle(row, value) {
         // Identity and parameter key are the required contract: a row may omit
         // its inspector metadata (registered editors build these rows locally),
@@ -513,19 +547,20 @@ FocusScope {
         clearGestureError();
         if (row.parameter && sameValue(row.parameter.value, value))
             return true;
-        if (beginEdit(row).length === 0) {
+        var token = beginEdit(row);
+        if (token.length === 0) {
             gestureError = controller ? String(controller.error) : "";
             gestureErrorKey = String(row.parameterKey);
             return false;
         }
-        if (updateEdit(value) === false) {
+        if (updateEdit(token, value) === false) {
             var message = controller ? String(controller.error) : "";
-            cancelEdit();
+            cancelEdit(token);
             gestureError = message;
             gestureErrorKey = String(row.parameterKey);
             return false;
         }
-        return commitEdit();
+        return commitEdit(token);
     }
 
     // Typed numeric entry keeps the exact text; the catalog parses it, so an
@@ -545,49 +580,52 @@ FocusScope {
             if (Number.isFinite(numeric) && sameValue(row.parameter.value, numeric))
                 return true;
         }
-        if (beginEdit(row).length === 0) {
+        var token = beginEdit(row);
+        if (token.length === 0) {
             gestureError = controller ? String(controller.error) : "";
             gestureErrorKey = String(row.parameterKey);
             return false;
         }
-        if (updateEdit(text) === false) {
+        if (updateEdit(token, text) === false) {
             var message = controller ? String(controller.error) : "";
-            cancelEdit();
+            cancelEdit(token);
             gestureError = message;
             gestureErrorKey = String(row.parameterKey);
             return false;
         }
-        return commitEdit();
+        return commitEdit(token);
     }
 
-    // Continuous scrub shares the one live gesture; a scrub that never changed
-    // the value cancels instead of publishing a no-op history entry.
+    // Continuous scrub: the caller states its identity and keeps the returned
+    // token, so previews, the one commit and the cancel all name the gesture
+    // they belong to. A scrub that never changed the value cancels instead of
+    // publishing a no-op history entry.
     function beginScrub(row) {
         clearGestureError();
-        if (beginEdit(row).length === 0) {
+        var token = beginEdit(row);
+        if (token.length === 0) {
             gestureError = controller ? String(controller.error) : "";
             gestureErrorKey = row ? String(row.parameterKey) : "";
         }
+        return token;
     }
 
-    function updateScrub(value) {
-        return updateEdit(value);
+    function updateScrub(token, value) {
+        return updateEdit(token, value);
     }
 
-    function finishScrub() {
-        if (activeToken.length === 0)
-            return false;
-        return commitEdit();
+    function finishScrub(token) {
+        return commitEdit(token);
     }
 
-    function cancelScrub() {
-        if (activeToken.length === 0)
-            return false;
-        return cancelEdit();
+    function cancelScrub(token) {
+        return cancelEdit(token);
     }
 
     // Reset delegates to the identity-scoped controller command: one history
-    // entry, schema default, never Remove Animation.
+    // entry, schema default, never Remove Animation. It publishes no preview of
+    // its own, so it retires the live interaction first rather than editing
+    // under one.
     function resetValue(row) {
         if (!controller || !row)
             return false;
@@ -673,7 +711,7 @@ FocusScope {
             return;
         stateReady = false;
         restoredForPanelId = "";
-        cancelEdit();
+        cancelEdit(activeToken);
         Qt.callLater(restoreState);
     }
 
@@ -684,7 +722,7 @@ FocusScope {
     // token would otherwise keep every later edit out.
     onInspectorsChanged: {
         if (activeToken.length > 0)
-            cancelEdit();
+            cancelEdit(activeToken);
         Qt.callLater(inspectorContent.packCards);
     }
 
@@ -710,6 +748,12 @@ FocusScope {
         function onCatalogChanged() {
             parametersPanel.requestRefresh();
         }
+        // The session retired an interaction through its cancellation path,
+        // which may have been this panel's own. Only the matching token clears
+        // local state, so a successor gesture keeps working.
+        function onParameterEditEnded(token) {
+            parametersPanel.retireToken(String(token));
+        }
     }
 
     // Escape cancels the one active gesture without leaving a partial edit.
@@ -717,7 +761,7 @@ FocusScope {
         sequence: "Escape"
         context: Qt.WindowShortcut
         enabled: parametersPanel.activeToken.length > 0
-        onActivated: parametersPanel.cancelEdit()
+        onActivated: parametersPanel.cancelEdit(parametersPanel.activeToken)
     }
 
     // --- header tools -----------------------------------------------------
@@ -1579,6 +1623,9 @@ FocusScope {
                             model: parameterRow.kind === "vector3" ? 3 : 2
                             delegate: RowLayout {
                                 required property int index
+                                // This component's own gesture: a preview or a
+                                // release only ever names the token it began.
+                                property string gestureToken: ""
                                 Layout.fillWidth: true
                                 spacing: 2
                                 Text {
@@ -1589,6 +1636,7 @@ FocusScope {
                                 }
                                 NumericField {
                                     objectName: "vector_" + index + "_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
+                                    interactionOwner: parametersPanel
                                     theme: parametersPanel.theme
                                     value: parameterRow.componentValue(index)
                                     hasMinimum: parameterRow.hasMinimum
@@ -1621,15 +1669,27 @@ FocusScope {
                                     onStepped: function (value) {
                                         parameterRow.commitComponent(index, value);
                                     }
-                                    onScrubStarted: parametersPanel.beginScrub(parameterRow.rowRef())
-                                    onScrubbed: parametersPanel.updateScrub(parameterRow.componentEdited(index, value))
-                                    onScrubFinished: parametersPanel.finishScrub()
-                                    onScrubCancelled: parametersPanel.cancelScrub()
+                                    onScrubStarted: gestureToken = parametersPanel.beginScrub(parameterRow.rowRef())
+                                    onScrubbed: function (value) {
+                                        parametersPanel.updateScrub(gestureToken, parameterRow.componentEdited(index, value));
+                                    }
+                                    onScrubFinished: {
+                                        var token = gestureToken;
+                                        gestureToken = "";
+                                        parametersPanel.finishScrub(token);
+                                    }
+                                    onScrubCancelled: {
+                                        var token = gestureToken;
+                                        gestureToken = "";
+                                        parametersPanel.cancelScrub(token);
+                                    }
                                     onKeyRequested: parameterRow.keyAtFrame()
-                                    // A cancelled gesture (Escape or a
-                                    // preview-only Undo) returns the component
-                                    // to the authored value at once.
+                                    // A retired gesture (Escape, a preview-only
+                                    // Undo or a successor interaction) returns
+                                    // the component to the authored value at
+                                    // once.
                                     gestureLive: parametersPanel.activeToken.length > 0
+                                                 && String(parametersPanel.activeToken) === gestureToken
                                 }
                             }
                         }
@@ -1657,6 +1717,9 @@ FocusScope {
                             model: 4
                             delegate: RowLayout {
                                 required property int index
+                                // This component's own gesture: a preview or a
+                                // release only ever names the token it began.
+                                property string gestureToken: ""
                                 Layout.fillWidth: true
                                 spacing: 2
                                 Text {
@@ -1667,6 +1730,7 @@ FocusScope {
                                 }
                                 NumericField {
                                     objectName: "color_" + index + "_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
+                                    interactionOwner: parametersPanel
                                     theme: parametersPanel.theme
                                     value: parameterRow.componentValue(index)
                                     hasMinimum: parameterRow.hasMinimum
@@ -1698,15 +1762,27 @@ FocusScope {
                                     onStepped: function (value) {
                                         parameterRow.commitComponent(index, value);
                                     }
-                                    onScrubStarted: parametersPanel.beginScrub(parameterRow.rowRef())
-                                    onScrubbed: parametersPanel.updateScrub(parameterRow.componentEdited(index, value))
-                                    onScrubFinished: parametersPanel.finishScrub()
-                                    onScrubCancelled: parametersPanel.cancelScrub()
+                                    onScrubStarted: gestureToken = parametersPanel.beginScrub(parameterRow.rowRef())
+                                    onScrubbed: function (value) {
+                                        parametersPanel.updateScrub(gestureToken, parameterRow.componentEdited(index, value));
+                                    }
+                                    onScrubFinished: {
+                                        var token = gestureToken;
+                                        gestureToken = "";
+                                        parametersPanel.finishScrub(token);
+                                    }
+                                    onScrubCancelled: {
+                                        var token = gestureToken;
+                                        gestureToken = "";
+                                        parametersPanel.cancelScrub(token);
+                                    }
                                     onKeyRequested: parameterRow.keyAtFrame()
-                                    // A cancelled gesture (Escape or a
-                                    // preview-only Undo) returns the component
-                                    // to the authored value at once.
+                                    // A retired gesture (Escape, a preview-only
+                                    // Undo or a successor interaction) returns
+                                    // the component to the authored value at
+                                    // once.
                                     gestureLive: parametersPanel.activeToken.length > 0
+                                                 && String(parametersPanel.activeToken) === gestureToken
                                 }
                             }
                         }
@@ -1726,6 +1802,10 @@ FocusScope {
                         selectByMouse: true
                         Accessible.name: parameterRow.rowLabel
                         onEditingFinished: parameterRow.commitDiscrete(String(text))
+                        // Typing is a parameter interaction from the first
+                        // keystroke, so it retires whatever the session owns.
+                        onActiveFocusChanged: if (activeFocus)
+                            parametersPanel.prepareParameterInteraction()
                         Keys.onEscapePressed: function (event) {
                             event.accepted = true;
                             stringField.text = parameterRow.stringValue;
@@ -1851,18 +1931,15 @@ FocusScope {
             property int textSize: 0
 
             readonly property string keyStatus: numericControl.row && numericControl.row.keyStatus !== undefined ? String(numericControl.row.keyStatus) : "none"
-            // The one live gesture belongs to THIS row: the panel publishes the
-            // identity of the gesture it accepted, so a control whose begin was
-            // refused can never preview into another parameter's edit and a
-            // cancellation (Escape or a preview-only Undo) stops the preview
-            // immediately.
-            readonly property bool ownsGesture: {
-                var live = numericControl.panel;
-                if (!live || !numericControl.row || live.activeToken.length === 0 || !live.activeRow)
-                    return false;
-                return String(live.activeRow.parameterKey) === String(numericControl.row.parameterKey)
-                        && String(live.activeRow.nodeId) === String(numericControl.row.nodeId);
-            }
+            // The gesture THIS bundle began. Both controls of the bundle edit
+            // the same row, so they share one token; live means that token is
+            // still the panel's, so a retired gesture (Escape, a preview-only
+            // Undo, or a successor interaction) stops the preview at once and
+            // one that was never granted can never preview into another edit.
+            property string gestureToken: ""
+            readonly property bool gestureLive: numericControl.gestureToken.length > 0
+                                                 && numericControl.panel !== null
+                                                 && String(numericControl.panel.activeToken) === numericControl.gestureToken
 
             spacing: 2
 
@@ -1873,7 +1950,8 @@ FocusScope {
 
                 // The shared slider: it owns the pointer gesture and the host's
                 // one parameter gesture is begun, previewed, committed or
-                // cancelled through these four signals. A refused begin
+                // cancelled through these four signals. Every call names the
+                // token this bundle captured, so a begin that was not granted
                 // (gestureLive stays false) publishes nothing.
                 ParameterSlider {
                     id: bundleSlider
@@ -1891,23 +1969,31 @@ FocusScope {
                     value: numericControl.row ? numericControl.row.numberValue : 0
                     graduated: numericControl.graduated
                     label: numericControl.row ? numericControl.row.rowLabel : ""
-                    gestureLive: numericControl.ownsGesture
+                    gestureLive: numericControl.gestureLive
                     Layout.fillWidth: true
                     Layout.minimumWidth: 40
                     Layout.preferredWidth: 120
                     Layout.alignment: Qt.AlignVCenter
                     onEditStarted: if (numericControl.panel && numericControl.row)
-                        numericControl.panel.beginScrub(numericControl.row.rowRef())
+                        numericControl.gestureToken = numericControl.panel.beginScrub(numericControl.row.rowRef())
                     onValueEdited: function (value) {
                         if (!numericControl.panel)
                             return;
                         var integer = numericControl.row && numericControl.row.integerParameter;
-                        numericControl.panel.updateScrub(integer ? Math.round(value) : value);
+                        numericControl.panel.updateScrub(numericControl.gestureToken, integer ? Math.round(value) : value);
                     }
-                    onEditFinished: if (numericControl.panel)
-                        numericControl.panel.finishScrub()
-                    onEditCancelled: if (numericControl.panel)
-                        numericControl.panel.cancelScrub()
+                    onEditFinished: {
+                        var token = numericControl.gestureToken;
+                        numericControl.gestureToken = "";
+                        if (numericControl.panel)
+                            numericControl.panel.finishScrub(token);
+                    }
+                    onEditCancelled: {
+                        var token = numericControl.gestureToken;
+                        numericControl.gestureToken = "";
+                        if (numericControl.panel)
+                            numericControl.panel.cancelScrub(token);
+                    }
                     onKeyRequested: if (numericControl.row)
                         numericControl.row.keyAtFrame()
                 }
@@ -1915,6 +2001,7 @@ FocusScope {
                 NumericField {
                     id: bundleField
                     objectName: numericControl.row ? "param_" + numericControl.row.nodeId + "_" + numericControl.row.parameterKey : ""
+                    interactionOwner: numericControl.panel
                     theme: numericControl.theme
                     value: numericControl.row ? numericControl.row.numberValue : 0
                     text: numericControl.row && numericControl.row.exactText !== undefined ? numericControl.row.exactText : ""
@@ -1958,20 +2045,30 @@ FocusScope {
                             numericControl.row.commitDiscrete(value);
                     }
                     onScrubStarted: if (numericControl.panel && numericControl.row)
-                        numericControl.panel.beginScrub(numericControl.row.rowRef())
+                        numericControl.gestureToken = numericControl.panel.beginScrub(numericControl.row.rowRef())
                     onScrubbed: function (value) {
-                        if (numericControl.panel)
-                            numericControl.panel.updateScrub(value);
+                        if (!numericControl.panel)
+                            return;
+                        numericControl.panel.updateScrub(numericControl.gestureToken, value);
                     }
-                    onScrubFinished: if (numericControl.panel)
-                        numericControl.panel.finishScrub()
-                    onScrubCancelled: if (numericControl.panel)
-                        numericControl.panel.cancelScrub()
+                    onScrubFinished: {
+                        var token = numericControl.gestureToken;
+                        numericControl.gestureToken = "";
+                        if (numericControl.panel)
+                            numericControl.panel.finishScrub(token);
+                    }
+                    onScrubCancelled: {
+                        var token = numericControl.gestureToken;
+                        numericControl.gestureToken = "";
+                        if (numericControl.panel)
+                            numericControl.panel.cancelScrub(token);
+                    }
                     onKeyRequested: if (numericControl.row)
                         numericControl.row.keyAtFrame()
-                    // A cancelled gesture (Escape or a preview-only Undo)
-                    // returns the field to the authored value at once.
-                    gestureLive: numericControl.ownsGesture
+                    // A retired gesture (Escape, a preview-only Undo or a
+                    // successor interaction) returns the field to the authored
+                    // value at once.
+                    gestureLive: numericControl.gestureLive
                 }
             }
 

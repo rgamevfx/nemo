@@ -1002,14 +1002,14 @@ ColumnLayout {
             shuffleEditor.gestureProblem = shuffleEditor.controller ? String(shuffleEditor.controller.error) : "";
             return false;
         }
-        if (shuffleEditor.panel.updateEditMany(values) !== true) {
+        if (shuffleEditor.panel.updateEditMany(token, values) !== true) {
             var message = shuffleEditor.controller ? String(shuffleEditor.controller.error) : "";
-            shuffleEditor.panel.cancelEdit();
+            shuffleEditor.panel.cancelEdit(token);
             shuffleEditor.gestureProblem = message;
             shuffleEditor.refresh();
             return false;
         }
-        if (shuffleEditor.panel.commitEdit() !== true) {
+        if (shuffleEditor.panel.commitEdit(token) !== true) {
             shuffleEditor.gestureProblem = shuffleEditor.controller ? String(shuffleEditor.controller.error) : "";
             shuffleEditor.refresh();
             return false;

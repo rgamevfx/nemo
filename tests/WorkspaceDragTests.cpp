@@ -2,6 +2,7 @@
 #include "GraphItem.hpp"
 #include "HistoryController.hpp"
 #include "PanelContextRouter.hpp"
+#include "ParameterInteraction.hpp"
 #include "ProjectFileController.hpp"
 #include "TimelineItem.hpp"
 #include "ViewerController.hpp"
@@ -90,7 +91,8 @@ protected:
     nemo::ui::PanelContextRouter panelContextRouter{projectSession};
     // Context bindings persist through the same workspace presentation state.
     // Rendering and document ownership remain in their existing objects.
-    nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession};
+    nemo::ui::ParameterInteraction parameterInteraction;
+    nemo::ui::ViewerController viewerController{&viewerRuntime, projectSession, parameterInteraction};
     // Main.qml reads the project file state; the harness injects the same
     // adapter and shared native chooser the application composes.
     nemo::ui::NativeFileChooser chooser;

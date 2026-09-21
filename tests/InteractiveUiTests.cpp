@@ -1,4 +1,5 @@
 #include "ParameterEditorRegistry.hpp"
+#include "ParameterInteraction.hpp"
 #include "ScopedEnvironment.hpp"
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
@@ -51,7 +52,8 @@ QVariantMap namedNode(const nemo::ui::ViewerController& controller, const QStrin
 TEST(Interactive, GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     controller.setNodeParameter(namedNode(controller, "background").value("id").toString(), "color",
                                 QVariantList{QVariant{0.2}, QVariant{0.3}, QVariant{0.4}, QVariant{1.0}});
@@ -84,7 +86,8 @@ TEST(Interactive, GraphCommandsUndoAndReplaceOccupiedConnectionsAtomically) {
 TEST(Interactive, GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto snapshot = controller.graphSnapshot(scope);
     EXPECT_TRUE(snapshot.value("available").toBool());
@@ -116,7 +119,8 @@ TEST(Interactive, GraphSnapshotPublishesAuthoredPositionsPortsRoutesAndStableIds
 TEST(Interactive, GraphScopeEditsDoNotFallBackToRoot) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto root = controller.rootNetworkId();
     const auto rootBefore = controller.graphSnapshot(root);
     const auto created = std::make_shared<nemo::NetworkId>();
@@ -141,7 +145,8 @@ TEST(Interactive, GraphScopeEditsDoNotFallBackToRoot) {
 TEST(Interactive, CollapseSelectionReturnsCommittedInstanceNodeAndRestoresAtomically) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto source = controller.createGraphNode(scope, "source", "collapseSource", 0.0, 0.0, {}, {});
     const auto merge = controller.createGraphNode(scope, "merge", "collapseMerge", 140.0, 0.0, {}, {});
@@ -173,7 +178,8 @@ TEST(Interactive, CollapseSelectionReturnsCommittedInstanceNodeAndRestoresAtomic
 TEST(Interactive, DisconnectedProcessingNodeDropsOntoWireAtomically) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto sourceId = controller.createGraphNode(scope, "source", "wireSource", 0.0, 0.0, {}, {});
     const auto outputId = controller.createGraphNode(scope, "output", "wireOutput", 300.0, 0.0, {}, {});
@@ -200,7 +206,8 @@ TEST(Interactive, DisconnectedProcessingNodeDropsOntoWireAtomically) {
 TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     const auto before = controller.graphEdges();
     const auto scope = QString::number(session.document().rootNetworkId());
@@ -220,7 +227,8 @@ TEST(Interactive, GraphCreationUndoPreservesExistingConnections) {
 TEST(Interactive, TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.openSource("/tmp/nemo-interactive-command-source.mkv");
     controller.setFrame(3);
     controller.slipTimelineClip("src", 7);
@@ -242,7 +250,8 @@ TEST(Interactive, TimelineSlipAndRetimeUseSourceMappingAndUndoIndependently) {
 TEST(Interactive, UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     // A probe/render consumer owns a scheduler destination (issue #47); an
     // unassigned controller is a command-only facade and never probes.
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
@@ -263,7 +272,8 @@ TEST(Interactive, UndoingSourceImportCancelsProbeAndRedoRequestsFreshMetadata) {
 TEST(Interactive, ViewerAssignmentAttachesTargetAndIsOneUndoableCommand) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto colorId = controller.createGraphNode(scope, "constcolor", "viewerColor", 0.0, 0.0, {}, {});
     const auto mergeId = controller.createGraphNode(scope, "merge", "viewerMerge", 120.0, 0.0, {}, {});
@@ -323,7 +333,8 @@ TEST(Interactive, RoutedMediaCanvasDoesNotReuseGraphScopeFormat) {
         throw;
     }
     nemo::ProjectSession session{std::move(document)};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto awaitFormat = [&](QSizeF format) {
         QElapsedTimer deadline;
@@ -354,7 +365,8 @@ TEST(Interactive, RoutedMediaCanvasDoesNotReuseGraphScopeFormat) {
 TEST(Interactive, ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto colorId = controller.createGraphNode(scope, "constcolor", "orderedColor", 0.0, 0.0, {}, {});
     const auto mergeId = controller.createGraphNode(scope, "merge", "orderedMerge", 120.0, 0.0, {}, {});
@@ -383,7 +395,8 @@ TEST(Interactive, ViewerIndicesFollowNodeIdOrderAndActiveViewerSelectsTarget) {
 TEST(Interactive, ViewerDetachAndNodeDeletionLeaveEmptyWithoutOutputFallback) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto colorId = controller.createGraphNode(scope, "constcolor", "detachColor", 0.0, 0.0, {}, {});
@@ -436,7 +449,8 @@ TEST(Interactive, MediaFreeViewerRendersAttachedComposite) {
     }
     // A media-free graph: no source is imported, only generators and a merge.
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     // The render consumer owns a scheduler destination (issue #47).
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto scope = QString::number(session.document().rootNetworkId());
@@ -475,7 +489,8 @@ TEST(Interactive, MediaFreeViewerRendersAttachedComposite) {
 TEST(Interactive, PlaybackWaitsForTheFrameItSubmitted) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto color = controller.createGraphNode(scope, "constcolor", "playbackColor", 0.0, 0.0, {}, {});
@@ -526,7 +541,8 @@ TEST(Interactive, PlaybackPublishesEveryFrameItRenders) {
         throw;
     }
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto color = controller.createGraphNode(scope, "constcolor", "playbackColor", 0.0, 0.0, {}, {});
@@ -586,7 +602,8 @@ TEST(Interactive, CacheRangeSupersedingDescriptionDoesNotStallViewer) {
         throw;
     }
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto scope = QString::number(session.document().rootNetworkId());
     const auto color = controller.createGraphNode(scope, "constcolor", "rangeColor", 0.0, 0.0, {}, {});
@@ -643,8 +660,9 @@ TEST(Interactive, TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement) 
     }
 
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController viewerA(&runtime, session);
-    nemo::ui::ViewerController viewerB(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController viewerA(&runtime, session, interaction);
+    nemo::ui::ViewerController viewerB(&runtime, session, interaction);
     const auto destinationA = runtime.allocateDestination(QStringLiteral("scenario-a"));
     const auto destinationB = runtime.allocateDestination(QStringLiteral("scenario-b"));
     ASSERT_TRUE(destinationA.has_value());
@@ -723,7 +741,8 @@ TEST(Interactive, TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement) 
 TEST(Interactive, ViewerControllerRegistryAllocatesIndependentDestinations) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerControllerRegistry registry(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerControllerRegistry registry(&runtime, session, interaction);
     auto* first = qobject_cast<nemo::ui::ViewerController*>(registry.controller(QStringLiteral("panel-a")));
     auto* second = qobject_cast<nemo::ui::ViewerController*>(registry.controller(QStringLiteral("panel-b")));
     ASSERT_TRUE(first);
@@ -764,7 +783,8 @@ TEST(Interactive, ViewerControllerRegistryAllocatesIndependentDestinations) {
 TEST(Interactive, ViewerItemOutlivesItsReleasedControllerWithoutDereferencingIt) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerControllerRegistry registry(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerControllerRegistry registry(&runtime, session, interaction);
     auto* controller = qobject_cast<nemo::ui::ViewerController*>(registry.controller(QStringLiteral("panel-a")));
     ASSERT_TRUE(controller);
     ASSERT_EQ(registry.activeCount(), 1);
@@ -786,13 +806,14 @@ TEST(Interactive, PresentationConsumersShareSessionHistoryAndLifetime) {
     nemo::ui::ViewerRuntime firstRuntime;
     nemo::ui::ViewerRuntime secondRuntime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController first(&firstRuntime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController first(&firstRuntime, session, interaction);
     QSignalSpy firstGraph(&first, &nemo::ui::ViewerController::graphChanged);
     QSignalSpy firstTimeline(&first, &nemo::ui::ViewerController::timelineChanged);
     QSignalSpy firstCatalog(&first, &nemo::ui::ViewerController::catalogChanged);
 
     {
-        nemo::ui::ViewerController second(&secondRuntime, session);
+        nemo::ui::ViewerController second(&secondRuntime, session, interaction);
         QSignalSpy secondGraph(&second, &nemo::ui::ViewerController::graphChanged);
         QSignalSpy secondTimeline(&second, &nemo::ui::ViewerController::timelineChanged);
         QSignalSpy secondCatalog(&second, &nemo::ui::ViewerController::catalogChanged);
@@ -862,7 +883,8 @@ TEST(Interactive, IntegerTextEditsPreservePrecisionAndRejectOverflowAtomically) 
     const auto node = document.network(network).graph().addNode("test.integer", "control");
     nemo::ProjectSession session(std::move(document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto id = QString::number(node);
     controller.setNodeParameterText(id, "count", "9223372036854775807");
     ASSERT_EQ(session.revision(), 2u);
@@ -1030,7 +1052,8 @@ TEST(Interactive, ParameterInspectorPublishesSchemaMetadataAndValues) {
     auto fixture = inspectorFixture();
     nemo::ProjectSession session(std::move(fixture.document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto network = QString::number(session.document().rootNetworkId());
     const auto node = QString::number(fixture.node);
 
@@ -1131,7 +1154,8 @@ TEST(Interactive, ParameterInspectorReportsUnavailableTargets) {
     const auto orphan = fixture.document.network(networkId).graph().addNode("test.unregistered", "orphan");
     nemo::ProjectSession session(std::move(fixture.document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto network = QString::number(networkId);
 
     const auto missingNetwork = controller.parameterInspector(QStringLiteral("424242"), QString::number(fixture.node));
@@ -1155,7 +1179,8 @@ TEST(Interactive, NodeParameterKeyingUpsertsRemovesAndReportsStatus) {
     auto fixture = inspectorFixture();
     nemo::ProjectSession session(std::move(fixture.document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto networkId = session.document().rootNetworkId();
     const auto network = QString::number(networkId);
     const auto node = QString::number(fixture.node);
@@ -1214,7 +1239,8 @@ TEST(Interactive, ParameterEditsDefineSingleUndoEntryAndRespectKeying) {
     auto fixture = inspectorFixture();
     nemo::ProjectSession session(std::move(fixture.document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto networkId = session.document().rootNetworkId();
     const auto network = QString::number(networkId);
     const auto node = QString::number(fixture.node);
@@ -1247,11 +1273,25 @@ TEST(Interactive, ParameterEditsDefineSingleUndoEntryAndRespectKeying) {
     ASSERT_FALSE(values.empty());
     EXPECT_EQ(values.front().value, nemo::ParameterValue{std::int64_t{0}});
 
-    // Only one gesture may be active at a time.
+    // Starting another interaction hands the session gesture over (issue #102):
+    // the previous edit is retired with its own token instead of locking the
+    // session, and the retired token cannot touch the replacement.
     const auto active = controller.beginNodeParameterEdit(network, node, QStringLiteral("count"));
     ASSERT_FALSE(active.isEmpty());
-    EXPECT_TRUE(controller.beginNodeParameterEdit(network, node, QStringLiteral("count")).isEmpty());
-    EXPECT_TRUE(controller.cancelNodeParameterEdit(active));
+    EXPECT_TRUE(controller.updateNodeParameterEdit(active, 5));
+    const auto replacement = controller.beginNodeParameterEdit(network, node, QStringLiteral("count"));
+    ASSERT_FALSE(replacement.isEmpty()) << controller.error().toStdString();
+    EXPECT_NE(replacement, active);
+    EXPECT_FALSE(controller.updateNodeParameterEdit(active, 6))
+        << "an ended gesture's token must not drive the replacement's preview";
+    EXPECT_FALSE(controller.commitNodeParameterEdit(active)) << "a superseded token publishes nothing";
+    EXPECT_EQ(session.revision(), revision) << "neither the retired preview nor the retired commit may author";
+    EXPECT_TRUE(controller.updateNodeParameterEdit(replacement, 7));
+    EXPECT_TRUE(controller.commitNodeParameterEdit(replacement));
+    EXPECT_EQ(session.revision(), revision + 1);
+    values = session.queryValues(networkId, fixture.node, "count");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(values.front().value, nemo::ParameterValue{std::int64_t{7}});
 
     // A key already at the current frame is updated in place.
     const nemo::ParameterAddress gainAddress{networkId, fixture.node, "gain", nemo::kInvalidNetworkInstance};
@@ -1272,11 +1312,150 @@ TEST(Interactive, ParameterEditsDefineSingleUndoEntryAndRespectKeying) {
     EXPECT_EQ(channel->keys.front().value, nemo::ParameterValue{3.25});
 }
 
+// Issue #102: ONE presentation interaction per session. Every controller of a
+// session shares the injected owner, so starting an edit in another panel
+// retires the previous panel's unfinished edit instead of locking the session:
+// the retired preview never lands, its token can neither update nor commit the
+// replacement, and the replacement stays one undoable history entry.
+TEST(Interactive, ParameterGestureOwnershipMovesBetweenSessionControllers) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerControllerRegistry registry(&runtime, session, interaction);
+    auto* first = qobject_cast<nemo::ui::ViewerController*>(registry.controller(QStringLiteral("panel-a")));
+    auto* second = qobject_cast<nemo::ui::ViewerController*>(registry.controller(QStringLiteral("panel-b")));
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    ASSERT_NE(first, second);
+    const auto networkId = session.document().rootNetworkId();
+    const auto network = QString::number(networkId);
+    const auto node = QString::number(fixture.node);
+
+    // Panel A previews 2.0 without committing anything.
+    const auto revision = session.revision();
+    const auto firstToken = first->beginNodeParameterEdit(network, node, QStringLiteral("gain"));
+    ASSERT_FALSE(firstToken.isEmpty()) << first->error().toStdString();
+    ASSERT_TRUE(first->updateNodeParameterEdit(firstToken, 2.0));
+
+    // Panel B starts its own parameter interaction. A's edit ends first, with
+    // its own token and synchronously, and its preview is discarded.
+    second->prepareParameterInteraction();
+    EXPECT_EQ(session.revision(), revision) << "a retired preview publishes nothing";
+    EXPECT_FALSE(first->updateNodeParameterEdit(firstToken, 3.0));
+    EXPECT_FALSE(first->commitNodeParameterEdit(firstToken));
+    EXPECT_EQ(session.revision(), revision);
+
+    const auto secondToken = second->beginNodeParameterEdit(network, node, QStringLiteral("gain"));
+    ASSERT_FALSE(secondToken.isEmpty()) << second->error().toStdString();
+    ASSERT_TRUE(second->updateNodeParameterEdit(secondToken, 3.5));
+    // A's ended token cannot reach B's live gesture, neither by cancelling it
+    // nor by committing on its behalf.
+    EXPECT_FALSE(first->cancelNodeParameterEdit(firstToken));
+    EXPECT_FALSE(first->commitNodeParameterEdit(firstToken));
+    EXPECT_TRUE(second->updateNodeParameterEdit(secondToken, 3.5));
+    ASSERT_TRUE(second->commitNodeParameterEdit(secondToken)) << second->error().toStdString();
+    EXPECT_EQ(session.revision(), revision + 1) << "the replacement is exactly one history entry";
+    auto values = session.queryValues(networkId, fixture.node, "gain");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(values.front().value, nemo::ParameterValue{3.5});
+
+    // One undo removes the committed edit and nothing of the retired one.
+    ASSERT_TRUE(session.undo(nemo::EditOptions{.expectedRevision = session.revision()}).committed);
+    values = session.queryValues(networkId, fixture.node, "gain");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(values.front().value, nemo::ParameterValue{1.0});
+}
+
+TEST(Interactive, NotificationCancellationCannotOrphanOrCancelTheNextGesture) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController first(&runtime, session, interaction);
+    nemo::ui::ViewerController second(&runtime, session, interaction);
+    const auto networkId = session.document().rootNetworkId();
+    const auto network = QString::number(networkId);
+    const auto node = QString::number(fixture.node);
+    const auto token = first.beginNodeParameterEdit(network, node, "gain");
+    ASSERT_FALSE(token.isEmpty());
+    ASSERT_TRUE(first.updateNodeParameterEdit(token, 2.0));
+    struct Cancellation {
+        nemo::ui::ViewerController* controller;
+        QString token;
+    } cancellation{&first, token};
+    {
+        auto subscription = session.subscribe(&cancellation, [](void* context) noexcept {
+            const auto* pending = static_cast<Cancellation*>(context);
+            static_cast<void>(pending->controller->cancelNodeParameterEdit(pending->token));
+        });
+        ASSERT_TRUE(session
+                        .submit(nemo::setParamCommand(networkId, fixture.node, "count", std::int64_t{5}),
+                                {.expectedRevision = session.revision()})
+                        .committed);
+    }
+    const auto afterChange = session.revision();
+    const auto next = second.beginNodeParameterEdit(network, node, "gain");
+    ASSERT_FALSE(next.isEmpty()) << second.error().toStdString();
+    QCoreApplication::sendPostedEvents(&first, QEvent::MetaCall);
+    ASSERT_TRUE(second.updateNodeParameterEdit(next, 3.5));
+    ASSERT_TRUE(second.commitNodeParameterEdit(next));
+    EXPECT_EQ(session.revision(), afterChange + 1);
+    ASSERT_TRUE(session.undo({.expectedRevision = session.revision()}).committed);
+    EXPECT_EQ(session.queryValues(networkId, fixture.node, "gain").front().value, nemo::ParameterValue{1.0});
+    EXPECT_EQ(session.queryValues(networkId, fixture.node, "count").front().value,
+              nemo::ParameterValue{std::int64_t{5}});
+}
+
+// A controller destroyed while it owns a live gesture must release the shared
+// interaction: the session is never left locked, its preview publishes nothing,
+// and the next controller can begin, preview and commit normally. A released
+// participant is never cancelled afterwards, which is what lets a destroyed
+// controller stay unreachable.
+TEST(Interactive, DestroyedControllerReleasesTheSessionInteraction) {
+    auto fixture = inspectorFixture();
+    nemo::ProjectSession session(std::move(fixture.document));
+    nemo::ui::ViewerRuntime runtime;
+    nemo::ui::ParameterInteraction interaction;
+    const auto networkId = session.document().rootNetworkId();
+    const auto network = QString::number(networkId);
+    const auto node = QString::number(fixture.node);
+    const auto revision = session.revision();
+
+    auto owning = std::make_unique<nemo::ui::ViewerController>(&runtime, session, interaction);
+    const auto token = owning->beginNodeParameterEdit(network, node, QStringLiteral("gain"));
+    ASSERT_FALSE(token.isEmpty()) << owning->error().toStdString();
+    ASSERT_TRUE(owning->updateNodeParameterEdit(token, 3.25));
+    owning.reset();
+    EXPECT_EQ(session.revision(), revision) << "the destroyed controller's preview is discarded, not committed";
+
+    // The owner holds no participant after that destruction: cancelling the
+    // session interaction must not reach the destroyed controller, and a probe
+    // owner is the only one a later cancel can reach.
+    interaction.cancel();
+    int cancellations = 0;
+    interaction.acquire(&cancellations, [](void* owner) { ++*static_cast<int*>(owner); });
+    interaction.release(&cancellations);
+    interaction.cancel();
+    EXPECT_EQ(cancellations, 0) << "a released participant is never cancelled";
+
+    auto replacement = std::make_unique<nemo::ui::ViewerController>(&runtime, session, interaction);
+    const auto next = replacement->beginNodeParameterEdit(network, node, QStringLiteral("gain"));
+    ASSERT_FALSE(next.isEmpty()) << replacement->error().toStdString();
+    ASSERT_TRUE(replacement->updateNodeParameterEdit(next, 0.75));
+    ASSERT_TRUE(replacement->commitNodeParameterEdit(next)) << replacement->error().toStdString();
+    EXPECT_EQ(session.revision(), revision + 1);
+    const auto values = session.queryValues(networkId, fixture.node, "gain");
+    ASSERT_FALSE(values.empty());
+    EXPECT_EQ(values.front().value, nemo::ParameterValue{0.75});
+}
+
 TEST(Interactive, JavaScriptArrayEditsConvertVectorAndColorParameters) {
     auto fixture = inspectorFixture();
     nemo::ProjectSession session(std::move(fixture.document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto networkId = session.document().rootNetworkId();
     const auto network = QString::number(networkId);
     const auto node = QString::number(fixture.node);
@@ -1325,7 +1504,8 @@ TEST(Interactive, MediaRoleViewsCatalogReferenceWithoutAuthoringAGraphNode) {
                             nemo::EditOptions{.expectedRevision = session.revision()})
                     .committed);
 
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     controller.setDestination(nemo::eval::ViewerDestination::Interactive);
     const auto network = session.document().rootNetworkId();
     // The fixture authors exactly the media import result: a source reference
@@ -1406,7 +1586,8 @@ TEST(Interactive, ParameterEditorRegistryRegistersAndResolvesEditors) {
 TEST(Interactive, SubnetExposurePublishesTypedControlsWithInstanceLocalEdits) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = controller.rootNetworkId();
     const auto source = controller.createGraphNode(scope, "constcolor", "exposeSource", 0.0, 0.0, {}, {});
     const auto merge = controller.createGraphNode(scope, "merge", "exposeMerge", 160.0, 0.0, {}, {});
@@ -1505,7 +1686,8 @@ TEST(Interactive, BetweenKeyEditAuthorsTheCurrentFrameKey) {
     auto fixture = inspectorFixture();
     nemo::ProjectSession session(std::move(fixture.document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto networkId = session.document().rootNetworkId();
     const auto network = QString::number(networkId);
     const auto node = QString::number(fixture.node);
@@ -1547,7 +1729,8 @@ TEST(Interactive, ResetRestoresDefaultAtTheAuthoredScope) {
     auto fixture = inspectorFixture();
     nemo::ProjectSession session(std::move(fixture.document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto networkId = session.document().rootNetworkId();
     const auto network = QString::number(networkId);
     const auto node = QString::number(fixture.node);
@@ -1605,7 +1788,8 @@ TEST(Interactive, ResetResolvesOccurrenceAndExposedIdentity) {
     auto fixture = inspectorFixture();
     nemo::ProjectSession session(std::move(fixture.document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = controller.rootNetworkId();
     // A collapsible selection is a connected image chain of ordinary nodes: the
     // network's formal Output terminal stays outside the selection.
@@ -1698,7 +1882,8 @@ TEST(Interactive, ResetResolvesOccurrenceAndExposedIdentity) {
 TEST(Interactive, NodeInputOccupancyGuardsTheAtomicSwap) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = controller.rootNetworkId();
     const auto first = controller.createGraphNode(scope, "constcolor", "first", 0.0, 0.0, {}, {});
     const auto second = controller.createGraphNode(scope, "constcolor", "second", 0.0, 80.0, {}, {});
@@ -1781,7 +1966,8 @@ TEST(Interactive, SemanticBoundsStayAuthoritativeWhilePresentationTravelIsSoft) 
     // round-trips through a JavaScript double.
     nemo::ProjectSession session(std::move(document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto row = inspectorRow(controller.parameterInspector(QString::number(network), QString::number(read)),
                                   QStringLiteral("frameStep"));
     ASSERT_FALSE(row.isEmpty());
@@ -1817,7 +2003,8 @@ TEST(Interactive, SemanticBoundsStayAuthoritativeWhilePresentationTravelIsSoft) 
     const auto exactNetwork = exact.rootNetworkId();
     const auto exactNode = exact.network(exactNetwork).graph().addNode("source", "exact");
     nemo::ProjectSession exactSession(std::move(exact));
-    nemo::ui::ViewerController exactController(&runtime, exactSession);
+    nemo::ui::ParameterInteraction exactInteraction;
+    nemo::ui::ViewerController exactController(&runtime, exactSession, exactInteraction);
     const auto token = exactController.beginNodeParameterEdit(QString::number(exactNetwork), QString::number(exactNode),
                                                               QStringLiteral("frameOffset"));
     ASSERT_FALSE(token.isEmpty()) << exactController.error().toStdString();
@@ -1842,7 +2029,8 @@ TEST(Interactive, MixedAnimatedAndStaticBatchIsOneAtomicEdit) {
     nemo::setKeyframesCommand({nemo::KeyframeEdit{choiceAddress, authoredChoice}}).apply(document);
     nemo::ProjectSession session(std::move(document));
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = QString::number(network);
     const auto id = QString::number(node);
     controller.setFrame(5);
@@ -1936,7 +2124,8 @@ TEST(Interactive, MixedAnimatedAndStaticBatchIsOneAtomicEdit) {
 TEST(Interactive, OccurrenceExposuresResolveTheirOwnChildTarget) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
-    nemo::ui::ViewerController controller(&runtime, session);
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller(&runtime, session, interaction);
     const auto scope = controller.rootNetworkId();
     const auto readA = controller.createGraphNode(scope, "source", "ReadA", 0.0, 0.0, {}, {});
     const auto readB = controller.createGraphNode(scope, "source", "ReadB", 0.0, 120.0, {}, {});

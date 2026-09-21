@@ -302,6 +302,19 @@ The CLI exposes `begin-parameter-gesture`, `update-parameter-gesture`,
 `expected_revision`. Successful previews/cancellation report `ok: true`
 and `committed: false`, not a document change.
 
+Desktop interaction handoff (#102) is separate from that core invariant.
+One explicitly injected `ui::ParameterInteraction` per project retires the
+previous presentation participant before another parameter interaction starts,
+including across controller instances/windows and Roto/node controls. This
+small cancellation owner replaces independent UI begin-refusal policies; it
+owns neither document state nor a second transaction/history implementation.
+Participants retain token-specific callbacks and release on destruction.
+Cancellation refused during session notification must retain ownership until
+it can complete, rather than forgetting a still-registered core gesture.
+Viewport picking reserves no core gesture while armed or awaiting a worker;
+only an accepted current sample starts and commits one. Core/CLI overlap,
+revision and validation guards are unchanged.
+
 Value edits are routed by state captured at begin (issue #76).
 `beginValueParameterGesture` records, per edited address, whether that address
 authors the current-frame key on an existing animation channel — through the

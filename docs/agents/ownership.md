@@ -382,14 +382,37 @@ Linking or collapsing is presentation state: it never
 equalizes stored values, Alpha is never edited by a linked RGB change, and
 changing editor presentation never changes the effect's execution parameters.
 
+Parameter interaction handoff is project-scoped (`ParameterInteraction.hpp`,
+#102). The application explicitly injects the same owner into the shared
+`ViewerController`, `ViewerControllerRegistry` and its controllers; Roto
+adapters inherit it through their factory. It outlives those participants.
+Starting another parameter interaction cancels the previous participant through
+its existing cancellation path, without publishing its preview or undo entry.
+Core still permits only one validated parameter gesture.
+
+Registered editors use the host's token-returning begin methods and pass that
+token to `updateEdit(token, value)`, `updateEditMany(token, values)`,
+`commitEdit(token)` and `cancelEdit(token)`. Retired tokens cannot affect a
+successor. `parameterEditEnded(token)` clears matching presentation/history
+state; re-query is deferred out of the notification. Keep a refused reentrant
+core cancellation owned until it can complete after session publication.
+`NumericField.interactionOwner` implements `prepareParameterInteraction()`;
+inspector fields name their panel and Roto fields name their Roto adapter.
+Typing retires an unfinished interaction before a value is ready to commit.
+Discrete edits/key/reset use the same handoff in their command adapter.
+`HistoryController` remains history routing, not interaction ownership.
+
 The RGB editor's white button arms `ViewportPicker`. The next click in any
 open viewer uses that panel's existing image-coordinate mapping and displayed
 request identity. `ViewerRuntime` schedules one full-resolution working-RGB
 sample through `ViewerSession::sampleWorkingPixel` and shared export staging,
 before the viewing transform. No pointer-motion readback occurs. The picker
-rejects stale frames/results, preserves the authored parameter alpha, and
-commits through the ordinary captured parameter gesture. Main registers the
-preview with shared history; Escape or preview-only Undo cancels it.
+rejects stale frames/results and preserves the authored parameter alpha. An
+armed or in-flight pick owns only transient presentation state; it starts the
+ordinary one-undo parameter gesture only when applying an accepted sample.
+Another parameter interaction cancels the arm/request; late results are
+discarded. Main registers the arm with shared history; Escape or preview-only
+Undo cancels it.
 
 Inspector arrangement lives in workspace `panel.state.inspectors`, not graph
 selection. `ParametersPanel.qml` saves arrangement edits there and rehydrates

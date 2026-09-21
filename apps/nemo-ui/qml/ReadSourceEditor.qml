@@ -25,6 +25,11 @@ ColumnLayout {
     property var controller
     property var panel
 
+    // The panel's live interaction token, or empty when this editor has no
+    // host. A control compares it with the token IT captured, so live means the
+    // gesture it began is still the session's.
+    readonly property string panelActiveToken: readEditor.panel ? String(readEditor.panel.activeToken) : ""
+
     // The controller is an application context property; guard for hosts that
     // load this editor without it (the generic control stays usable).
     readonly property var readSource: typeof readSourceController !== "undefined" && readSourceController ? readSourceController : null
@@ -329,28 +334,31 @@ ColumnLayout {
     // The PANEL wrappers are the entry point: they own the live token, defer a
     // document/frame refresh while a gesture is live (so nothing rebuilds this
     // editor mid-scrub) and route Escape to cancel the active gesture. They are
-    // the same controller owner underneath.
+    // the same controller owner underneath, and every call names the token this
+    // editor captured, so a retired gesture cannot reach its successor.
     function gestureBegin(keys) {
         if (!readEditor.panel || !readEditor.panel.beginEditForMany)
             return "";
         return String(readEditor.panel.beginEditForMany(readEditor.networkId, readEditor.nodeId, keys));
     }
 
-    function gestureUpdate(values) {
-        if (!readEditor.panel || !readEditor.panel.updateEditMany)
+    function gestureUpdate(token, values) {
+        if (!readEditor.panel || !readEditor.panel.updateEditMany || String(token).length === 0)
             return false;
-        return readEditor.panel.updateEditMany(values) === true;
+        return readEditor.panel.updateEditMany(String(token), values) === true;
     }
 
-    function gestureCommit() {
-        if (!readEditor.panel || !readEditor.panel.commitEdit)
+    function gestureCommit(token) {
+        if (!readEditor.panel || !readEditor.panel.commitEdit || String(token).length === 0)
             return false;
-        return readEditor.panel.commitEdit() === true;
+        return readEditor.panel.commitEdit(String(token)) === true;
     }
 
-    function gestureCancel() {
+    function gestureCancel(token) {
+        if (String(token).length === 0)
+            return;
         if (readEditor.panel && readEditor.panel.cancelEdit)
-            readEditor.panel.cancelEdit();
+            readEditor.panel.cancelEdit(String(token));
     }
 
     // One atomic value gesture over the given keys. Values are exact text for
@@ -370,14 +378,14 @@ ColumnLayout {
             readEditor.fieldError = readEditor.gestureError();
             return false;
         }
-        if (!readEditor.gestureUpdate(mapped)) {
+        if (!readEditor.gestureUpdate(token, mapped)) {
             const message = readEditor.gestureError();
-            readEditor.gestureCancel();
+            readEditor.gestureCancel(token);
             readEditor.fieldError = message;
             readEditor.refresh();
             return false;
         }
-        if (!readEditor.gestureCommit()) {
+        if (!readEditor.gestureCommit(token)) {
             readEditor.fieldError = readEditor.gestureError();
             readEditor.refresh();
             return false;
@@ -409,16 +417,17 @@ ColumnLayout {
         if (text.length === 0)
             return;
         values[readEditor.parameterForField(key)] = text;
-        if (!readEditor.gestureUpdate(values))
+        if (!readEditor.gestureUpdate(readEditor.scrubToken, values))
             readEditor.fieldError = readEditor.gestureError();  // the preview stays valid either way
     }
 
     function scrubFinish(key) {
         if (readEditor.scrubToken.length === 0 || key !== readEditor.scrubKey)
             return;
+        var token = readEditor.scrubToken;
         readEditor.scrubToken = "";
         readEditor.scrubKey = "";
-        if (!readEditor.gestureCommit())
+        if (!readEditor.gestureCommit(token))
             readEditor.fieldError = readEditor.gestureError();
         readEditor.refresh();
     }
@@ -428,9 +437,10 @@ ColumnLayout {
     function scrubCancel() {
         if (readEditor.scrubToken.length === 0)
             return;
+        var token = readEditor.scrubToken;
         readEditor.scrubToken = "";
         readEditor.scrubKey = "";
-        readEditor.gestureCancel();
+        readEditor.gestureCancel(token);
         readEditor.refresh();
     }
 
@@ -712,10 +722,12 @@ ColumnLayout {
         }
         onScrubFinished: readEditor.scrubFinish(fieldName)
         onScrubCancelled: readEditor.scrubCancel()
-        // A cancelled gesture (Escape or a preview-only Undo) returns the field
-        // to the authored value at once instead of holding the cancelled
-        // preview until release.
-        gestureLive: readEditor.panel ? readEditor.panel.activeToken.length > 0 : false
+        // A retired gesture (Escape, a preview-only Undo or a successor
+        // interaction) returns the field to the authored value at once instead
+        // of holding the cancelled preview until release.
+        interactionOwner: readEditor.panel
+        gestureLive: readEditor.scrubToken.length > 0 && readEditor.scrubKey === fieldName
+                     && readEditor.panelActiveToken === readEditor.scrubToken
         onTextCommitted: function (committed) {
             readEditor.commitFor(fieldName, String(committed));
         }
@@ -847,6 +859,10 @@ ColumnLayout {
             selectByMouse: true
             text: readEditor.fieldText("path")
             onTextEdited: edited = true
+            // Typing is a parameter interaction from the first keystroke, so it
+            // retires whatever the session owns through the same owner.
+            onActiveFocusChanged: if (activeFocus && readEditor.panel)
+                readEditor.panel.prepareParameterInteraction()
             onEditingFinished: {
                 // Enter and later focus departure both emit editingFinished.
                 // Only the first ends this edit; a second probe would discard

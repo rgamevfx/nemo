@@ -1061,12 +1061,17 @@ FocusScope {
     }
 
     function beginCropGesture(handle, px, py) {
-        if (!controller || cropGestureToken.length > 0)
+        if (!controller)
             return false
         var overlay = cropOverlay
         if (!overlay)
             return false
         cropGestureError = ""
+        // One interaction is live in the session at a time: this begin retires
+        // whatever was live first through the controller's cancellation path,
+        // so a press always starts a drag instead of being refused and leaving
+        // the parameter locked. Any notice for a previous token of this panel
+        // has already cleared the local drag state below.
         var token = String(controller.beginNodeParameterEdits(overlay.network, overlay.node,
                                                               ["x", "y", "right", "top"]))
         if (token.length === 0) {
@@ -1195,6 +1200,24 @@ FocusScope {
         if (token.length === 0)
             return false
         return controller.cancelNodeParameterEdit(token)
+    }
+
+    // The session retired an interaction, which may have been this panel's crop
+    // gesture because another control took over. Only the matching token drops
+    // the local drag, so the replacement keeps working and the cancellation is
+    // never repeated against it. The re-derive is queued because this notice
+    // arrives inside the owner's own call.
+    function retireCropGesture(token) {
+        if (String(token).length === 0 || String(token) !== cropGestureToken)
+            return false
+        cropGestureToken = ""
+        cropGestureActive = false
+        cropDragHandle = ""
+        cropDragFrozen = null
+        cropPreviewBox = null
+        cropDragMoved = false
+        Qt.callLater(function () { viewerPanel.refreshCropOverlay() })
+        return true
     }
 
     // Escape and a preview-only Undo reach the one live box or Roto gesture
@@ -2277,6 +2300,11 @@ FocusScope {
             viewerPanel.cropEpoch++;
             viewerPanel.refreshCropOverlay();
             viewerPanel.refreshRotoOverlay();
+        }
+        // The session retired an interaction through its cancellation path.
+        // When it was this panel's crop drag, the local drag ends with it.
+        function onParameterEditEnded(token) {
+            viewerPanel.retireCropGesture(String(token))
         }
     }
     onGraphRevisionChanged: {

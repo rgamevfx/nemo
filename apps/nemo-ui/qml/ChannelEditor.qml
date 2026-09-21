@@ -30,7 +30,12 @@ Item {
     readonly property real step: parameter && parameter.step !== undefined ? Number(parameter.step) : 0.01
     readonly property int decimals: parameter && parameter.displayDecimals !== undefined ? Number(parameter.displayDecimals) : -1
     readonly property string fieldLabel: parameter && parameter.label ? String(parameter.label) : parameterKey
-    readonly property bool gestureLive: panel ? panel.activeToken.length > 0 : false
+    // This editor's own gesture token. Live means the token it began is still
+    // the panel's, so a retired gesture (Escape, a preview-only Undo or a
+    // successor interaction) drops the local preview and can never publish.
+    property string gestureToken: ""
+    readonly property bool gestureLive: panel !== null && gestureToken.length > 0
+                                        && String(panel.activeToken) === gestureToken
     readonly property var picker: typeof viewportPicker !== "undefined" ? viewportPicker : null
     readonly property var channelColors: ["#ed5559", "#56ce65", "#5e85ed", theme ? theme.muted : "#979ea8"]
     readonly property int controlHeight: theme && theme.inspectorControlHeight !== undefined ? theme.inspectorControlHeight : 30
@@ -69,28 +74,33 @@ Item {
         errorText = "";
         gestureBase = Array.prototype.slice.call(components);
         if (panel)
-            panel.beginEditFor(networkId, nodeId, parameterKey);
+            gestureToken = panel.beginEditFor(networkId, nodeId, parameterKey);
+        return gestureToken;
     }
 
     function preview(index, value) {
         if (!gestureLive)
             return;
         var tuple = editedTuple(index, value, gestureBase);
-        if (panel.updateEdit(tuple))
+        if (panel.updateEdit(gestureToken, tuple))
             previewComponents = tuple;
     }
 
     function finishGesture() {
-        if (panel && gestureLive) {
-            var committed = panel.commitEdit();
+        var token = gestureToken;
+        gestureToken = "";
+        if (panel && token.length > 0) {
+            var committed = panel.commitEdit(token);
             errorText = committed ? "" : (controller ? String(controller.error) : "");
         }
         previewComponents = [];
     }
 
     function cancelGesture() {
-        if (panel)
-            panel.cancelEdit();
+        var token = gestureToken;
+        gestureToken = "";
+        if (panel && token.length > 0)
+            panel.cancelEdit(token);
         previewComponents = [];
     }
 

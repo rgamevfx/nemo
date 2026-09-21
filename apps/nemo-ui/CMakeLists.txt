@@ -34,6 +34,7 @@ if(NEMO_BUILD_UI)
         RotoController.cpp RotoController.hpp
         WorkspaceController.cpp WorkspaceController.hpp
         ViewerController.cpp ViewerController.hpp
+        ParameterInteraction.hpp
         ViewerControllerRegistry.cpp ViewerControllerRegistry.hpp
         ViewerRuntime.cpp ViewerRuntime.hpp
         ViewportPicker.cpp ViewportPicker.hpp

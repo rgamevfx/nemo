@@ -17,6 +17,7 @@ class ProjectSession;
 namespace nemo::ui {
 class ViewerController;
 class ViewerRuntime;
+class ParameterInteraction;
 
 // Panel-instance ownership of viewer renderers. Every viewer panel asks for its
 // own ViewerController, which renders through its own scheduler destination;
@@ -27,7 +28,8 @@ class ViewerRuntime;
 class ViewerControllerRegistry final : public QObject {
     Q_OBJECT
 public:
-    ViewerControllerRegistry(ViewerRuntime* runtime, nemo::ProjectSession& session, QObject* parent = nullptr);
+    ViewerControllerRegistry(ViewerRuntime* runtime, nemo::ProjectSession& session, ParameterInteraction& interaction,
+                             QObject* parent = nullptr);
     ~ViewerControllerRegistry() override;
 
     // Borrowed by QML; the registry owns every controller it creates, and
@@ -57,6 +59,7 @@ private:
 
     ViewerRuntime* runtime_;
     nemo::ProjectSession& session_;
+    ParameterInteraction& interaction_;
     // Keyed by creation sequence: ordered iteration makes primary() the
     // first-created live controller.
     std::map<std::uint64_t, Entry> controllers_;

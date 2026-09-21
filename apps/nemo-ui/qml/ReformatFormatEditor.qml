@@ -23,6 +23,10 @@ ColumnLayout {
     readonly property string queryNetwork: parameter && parameter.targetNetwork !== undefined ? String(parameter.targetNetwork) : networkId
     readonly property string queryNode: parameter && parameter.targetNode !== undefined ? String(parameter.targetNode) : nodeId
     readonly property int revision: panel ? Number(panel.revision) : 0
+    // The panel's live interaction token, or empty when this editor has no
+    // host. A control compares it with the token IT captured, so live means the
+    // gesture it began is still the session's.
+    readonly property string panelActiveToken: panel ? String(panel.activeToken) : ""
     readonly property int frame: controller ? Number(controller.frame) : 0
     readonly property int dragThreshold: controller ? Number(controller.dragDistance) : 4
     readonly property bool editable: !!controller && !!panel
@@ -83,14 +87,17 @@ ColumnLayout {
         return panel ? panel.gestureSingle(rowFor(key), value) : false;
     }
     function gestureFormat(values) {
-        if (!panel || !panel.beginEditForMany(networkId, nodeId, Object.keys(values)))
+        if (!panel)
             return false;
-        if (!panel.updateEditMany(values)) {
+        var token = panel.beginEditForMany(networkId, nodeId, Object.keys(values));
+        if (token.length === 0)
+            return false;
+        if (!panel.updateEditMany(token, values)) {
             formatProblem = controller ? String(controller.error) : "";
-            panel.cancelEdit();
+            panel.cancelEdit(token);
             return false;
         }
-        if (!panel.commitEdit()) {
+        if (!panel.commitEdit(token)) {
             formatProblem = controller ? String(controller.error) : "";
             return false;
         }
@@ -253,10 +260,14 @@ ColumnLayout {
         required property string editKey
         required property string label
         property bool integer: false
+        // This cell's own gesture token: the preview, the commit and the cancel
+        // only ever name the gesture it began.
+        property string gestureToken: ""
         spacing: 4
         ParameterLabel { editKey: numberCell.editKey; labelText: numberCell.label }
         NumericField {
             objectName: "reformat_" + formatEditor.nodeId + "_" + numberCell.editKey
+            interactionOwner: formatEditor.panel
             theme: formatEditor.theme
             value: Number(formatEditor.valueOf(numberCell.editKey, 1))
             label: numberCell.label
@@ -268,15 +279,26 @@ ColumnLayout {
             fieldWidth: 62
             step: numberCell.integer ? 1 : 0.01
             dragThreshold: formatEditor.dragThreshold
-            gestureLive: formatEditor.panel ? formatEditor.panel.activeToken.length > 0 : false
+            gestureLive: numberCell.gestureToken.length > 0
+                         && formatEditor.panelActiveToken === numberCell.gestureToken
             enabled: formatEditor.editable
             onTextCommitted: function(text) { formatEditor.panel.gestureText(formatEditor.rowFor(numberCell.editKey), text); }
             onTextRejected: function(text) { formatEditor.panel.rejectText(formatEditor.rowFor(numberCell.editKey), text); }
             onStepped: function(value) { formatEditor.commitValue(numberCell.editKey, numberCell.integer ? Math.round(value) : value); }
-            onScrubStarted: formatEditor.panel.beginScrub(formatEditor.rowFor(numberCell.editKey))
-            onScrubbed: function(value) { formatEditor.panel.updateScrub(numberCell.integer ? Math.round(value) : value); }
-            onScrubFinished: formatEditor.panel.finishScrub()
-            onScrubCancelled: formatEditor.panel.cancelScrub()
+            onScrubStarted: numberCell.gestureToken = formatEditor.panel.beginScrub(formatEditor.rowFor(numberCell.editKey))
+            onScrubbed: function(value) {
+                formatEditor.panel.updateScrub(numberCell.gestureToken, numberCell.integer ? Math.round(value) : value);
+            }
+            onScrubFinished: {
+                var token = numberCell.gestureToken;
+                numberCell.gestureToken = "";
+                formatEditor.panel.finishScrub(token);
+            }
+            onScrubCancelled: {
+                var token = numberCell.gestureToken;
+                numberCell.gestureToken = "";
+                formatEditor.panel.cancelScrub(token);
+            }
             onKeyRequested: formatEditor.keyAtFrame(numberCell.editKey)
         }
     }

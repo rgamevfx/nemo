@@ -4,6 +4,7 @@
 #include "MediaLibraryModel.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
+#include "ParameterInteraction.hpp"
 #include "ProjectFileController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerRuntime.hpp"
@@ -37,7 +38,10 @@ protected:
     nemo::ui::HistoryController history{session};
     nemo::workspace::WorkspaceController workspace{directory.filePath("workspace.json")};
     nemo::ui::ViewerRuntime runtime;
-    nemo::ui::ViewerController controller{&runtime, session};
+    // One presentation interaction per project (issue #102): every controller
+    // for this session shares it, and it outlives them.
+    nemo::ui::ParameterInteraction interaction;
+    nemo::ui::ViewerController controller{&runtime, session, interaction};
     nemo::ui::PanelContextRouter router{session};
     nemo::ui::NativeFileChooser chooser;
     nemo::ui::ProjectFileController file{session, workspace, router, chooser};
@@ -306,18 +310,18 @@ TEST_F(HistorySurface, UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit
     auto* slider = item("slider_" + node + "_translateX");
     ASSERT_NE(slider, nullptr);
     ASSERT_TRUE(slider->isVisible());
-    const auto sliderBefore = slider->property("value");
+    const auto sliderBefore = slider->property("displayValue");
     const auto sliderStart = center(slider);
     moveHeld(sliderStart, sliderStart + QPoint(30, 0));
-    ASSERT_NE(slider->property("value"), sliderBefore);
+    ASSERT_NE(slider->property("displayValue"), sliderBefore);
     EXPECT_FALSE(history.canRedo());
     key(true);
     EXPECT_EQ(session.revision(), revision);
     key();
-    EXPECT_EQ(slider->property("value"), sliderBefore);
+    EXPECT_EQ(slider->property("displayValue"), sliderBefore);
     movePressed(sliderStart + QPoint(50, 0));
     QTest::qWait(20);
-    EXPECT_EQ(slider->property("value"), sliderBefore);
+    EXPECT_EQ(slider->property("displayValue"), sliderBefore);
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, sliderStart + QPoint(50, 0));
     QTest::qWait(30);
     EXPECT_EQ(session.revision(), revision);
@@ -326,7 +330,7 @@ TEST_F(HistorySurface, UndoCancelsGraphAndParameterPreviewAndReleaseCannotCommit
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, sliderStart + QPoint(30, 0));
     QTest::qWait(30);
     EXPECT_EQ(session.revision(), revision + 1);
-    EXPECT_NE(slider->property("value"), sliderBefore);
+    EXPECT_NE(slider->property("displayValue"), sliderBefore);
     key();
     EXPECT_TRUE(nemo::documentContentEquals(session.document(), before));
     capture("cancelled-previews");

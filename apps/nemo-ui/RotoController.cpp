@@ -313,10 +313,32 @@ struct OverlayProbe {
 
 }  // namespace
 
-RotoController::RotoController(ProjectSession& session, NetworkId network, NodeId node, QObject* parent)
-    : QObject(parent), session_(session), network_(network), node_(node),
+RotoController::RotoController(ProjectSession& session, ParameterInteraction& interaction, NetworkId network,
+                               NodeId node, QObject* parent)
+    : QObject(parent), session_(session), interaction_(interaction), network_(network), node_(node),
       subscription_(session.subscribe(this, &RotoController::sessionChanged)) {
     refresh();
+}
+
+RotoController::~RotoController() {
+    if (gestureToken_ != 0)
+        static_cast<void>(session_.cancelParameterGesture(gestureToken_));
+    interaction_.release(this);
+}
+
+void RotoController::prepareParameterInteraction() {
+    interaction_.cancel();
+}
+
+void RotoController::finishGesture() {
+    gestureToken_ = 0;
+    gestureAddresses_.clear();
+    gestureSpecs_.clear();
+    gestureInvalid_ = false;
+    preview_.reset();
+    transformTargets_.clear();
+    interaction_.release(this);
+    emit gestureChanged();
 }
 
 void RotoController::sessionChanged(void* context) noexcept {
@@ -897,8 +919,7 @@ std::vector<RotoController::Scope> RotoController::selectionScopes() const {
 }
 
 QString RotoController::beginGesture(const QVariantList& targets) {
-    if (gestureToken_ != 0)
-        return fail(QStringLiteral("a Roto edit is already in progress")), QString{};
+    prepareParameterInteraction();
     if (targets.isEmpty())
         return fail(QStringLiteral("a Roto edit requires at least one target")), QString{};
     try {
@@ -956,6 +977,7 @@ QString RotoController::beginGesture(const QVariantList& targets) {
         gestureSpecs_ = std::move(specs);
         gestureInvalid_ = false;
         preview_ = gesture.snapshot;
+        interaction_.acquire(this, [](void* owner) { static_cast<RotoController*>(owner)->cancelHistoryGesture(); });
         clearError();
         emit gestureChanged();
         return QString::number(static_cast<qulonglong>(gesture.token));
@@ -1013,25 +1035,13 @@ bool RotoController::commitGesture(const QString& token) {
     if (gestureInvalid_) {
         const auto problem = error_.isEmpty() ? QStringLiteral("the Roto edit was rejected") : error_;
         static_cast<void>(session_.cancelParameterGesture(gestureToken_));
-        gestureToken_ = 0;
-        gestureAddresses_.clear();
-        gestureSpecs_.clear();
-        gestureInvalid_ = false;
-        preview_.reset();
-        transformTargets_.clear();
-        emit gestureChanged();
+        finishGesture();
         return fail(problem);
     }
     const auto result = session_.commitParameterGesture(gestureToken_, {.expectedRevision = session_.revision()});
     if (!result.committed && result.error)
         static_cast<void>(session_.cancelParameterGesture(gestureToken_));
-    gestureToken_ = 0;
-    gestureAddresses_.clear();
-    gestureSpecs_.clear();
-    gestureInvalid_ = false;
-    preview_.reset();
-    transformTargets_.clear();
-    emit gestureChanged();
+    finishGesture();
     if (!result.committed && !result.error) {
         // A batch whose every address is unchanged publishes nothing; that is a
         // completed no-op, not a rejection.
@@ -1052,13 +1062,20 @@ bool RotoController::cancelGesture(const QString& token) {
         return fail(QStringLiteral("the Roto edit cancel requires the active gesture token"));
     const auto rejected = gestureInvalid_;
     const auto result = session_.cancelParameterGesture(gestureToken_);
-    gestureToken_ = 0;
-    gestureAddresses_.clear();
-    gestureSpecs_.clear();
-    gestureInvalid_ = false;
-    preview_.reset();
-    transformTargets_.clear();
-    emit gestureChanged();
+    if (result.error && result.error->code == EditErrorCode::ReentrantMutation) {
+        // Publication callbacks may retire a view, but the session cannot be
+        // mutated until notification returns. Keep ownership until cancellation
+        // succeeds; otherwise the next editor would inherit an orphaned lock.
+        QMetaObject::invokeMethod(
+            this,
+            [this, parsed] {
+                if (gestureToken_ == parsed)
+                    static_cast<void>(cancelGesture(QString::number(parsed)));
+            },
+            Qt::QueuedConnection);
+        return false;
+    }
+    finishGesture();
     if (result.error)
         return fail(QString::fromStdString(result.error->message));
     if (rejected)
@@ -1075,6 +1092,7 @@ void RotoController::cancelHistoryGesture() {
 }
 
 bool RotoController::keyAtFrame(const QString& elementId, const QString& pointId, const QString& key) {
+    prepareParameterInteraction();
     const auto element = identity(elementId);
     if (!element)
         return fail(QStringLiteral("keying requires an element identity"));
@@ -1133,6 +1151,7 @@ bool RotoController::keyAtFrame(const QString& elementId, const QString& pointId
 }
 
 bool RotoController::removeKeyAtFrame(const QString& elementId, const QString& pointId, const QString& key) {
+    prepareParameterInteraction();
     const auto element = identity(elementId);
     if (!element)
         return fail(QStringLiteral("key removal requires an element identity"));
@@ -1169,6 +1188,7 @@ bool RotoController::removeKeyAtFrame(const QString& elementId, const QString& p
 }
 
 bool RotoController::commitData(RotoData data) {
+    prepareParameterInteraction();
     try {
         const auto result = session_.submit(setRotoDataCommand(network_, node_, std::move(data)),
                                             {.expectedRevision = session_.revision()});
@@ -1705,6 +1725,7 @@ bool RotoController::deleteSelection() {
 }
 
 bool RotoController::keySelection(bool remove) {
+    prepareParameterInteraction();
     const auto scopes = selectionScopes();
     if (!available_ || !authoredData())
         return fail(reason_.isEmpty() ? QStringLiteral("the Roto node is unavailable") : reason_);
@@ -1785,6 +1806,7 @@ QVariantList RotoController::keyTimesFor(const std::vector<Scope>& scopes) const
 }
 
 bool RotoController::insertCurvePoint(const QString& elementId, int segment, double t) {
+    prepareParameterInteraction();
     const auto element = identity(elementId);
     if (!element || !authoredData())
         return fail(QStringLiteral("the element identity is invalid"));
@@ -1930,8 +1952,7 @@ bool RotoController::insertCurvePoint(const QString& elementId, int segment, dou
 }
 
 QString RotoController::beginSelectionTransform() {
-    if (gestureToken_ != 0)
-        return fail(QStringLiteral("a Roto edit is already in progress")), QString{};
+    prepareParameterInteraction();
     const auto* authored = authoredData();
     if (!available_ || !authored)
         return fail(reason_.isEmpty() ? QStringLiteral("the Roto node is unavailable") : reason_), QString{};
@@ -2583,14 +2604,14 @@ void RotoController::refresh() {
     // A target that vanished under a live gesture can never be committed: the
     // preview is discarded and nothing is published.
     if (hadGesture && (!available || !hasAuthored_)) {
-        static_cast<void>(session_.cancelParameterGesture(gestureToken_));
-        gestureToken_ = 0;
-        gestureAddresses_.clear();
-        gestureSpecs_.clear();
-        gestureInvalid_ = false;
-        preview_.reset();
-        transformTargets_.clear();
-        emit gestureChanged();
+        const auto token = gestureToken_;
+        QMetaObject::invokeMethod(
+            this,
+            [this, token] {
+                if (gestureToken_ == token)
+                    static_cast<void>(cancelGesture(QString::number(token)));
+            },
+            Qt::QueuedConnection);
     }
     const auto keyTimes = available ? keyTimesFor(selectionScopes()) : QVariantList{};
     if (keyTimes_ != keyTimes) {

@@ -9,8 +9,8 @@
 
 namespace nemo::ui {
 ViewerControllerRegistry::ViewerControllerRegistry(ViewerRuntime* runtime, nemo::ProjectSession& session,
-                                                   QObject* parent)
-    : QObject(parent), runtime_(runtime), session_(session) {}
+                                                   ParameterInteraction& interaction, QObject* parent)
+    : QObject(parent), runtime_(runtime), session_(session), interaction_(interaction) {}
 
 ViewerControllerRegistry::~ViewerControllerRegistry() {
     // Publication identity is retired before any controller is destroyed, so a
@@ -28,7 +28,7 @@ QObject* ViewerControllerRegistry::controller(const QString& panelId) {
         return controllers_.at(existing->second).controller.get();
     Entry entry;
     entry.panelId = panelId;
-    entry.controller = std::make_unique<ViewerController>(runtime_, session_);
+    entry.controller = std::make_unique<ViewerController>(runtime_, session_, interaction_);
     entry.destination = runtime_->allocateDestination(panelId);
     entry.controller->setDestination(entry.destination);
     if (!entry.destination) {

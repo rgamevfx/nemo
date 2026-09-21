@@ -15,6 +15,7 @@
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
+#include "ParameterInteraction.hpp"
 #include "ProjectFileController.hpp"
 #include "ReadSourceController.hpp"
 #include "ViewerController.hpp"
@@ -150,6 +151,9 @@ protected:
     QTemporaryDir directory_;
     std::unique_ptr<nemo::ui::ViewerRuntime> runtime_;
     std::unique_ptr<ProjectSession> session_;
+    // One presentation interaction per project (issue #102): every controller
+    // this fixture composes for the session shares it, and it outlives them.
+    nemo::ui::ParameterInteraction interaction_;
     // The shared presentation history the application composes: declared after
     // the session and before the engine, so both lifetimes stay valid.
     std::unique_ptr<nemo::ui::HistoryController> history_;
@@ -245,8 +249,8 @@ protected:
         // scenario can prove that nothing mutated the document across window
         // creation, event pumping and the baseline render.
         constructionBoundaryRevision = session_->revision();
-        facade_ = std::make_unique<ViewerController>(runtime_.get(), *session_);
-        registry_ = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime_.get(), *session_);
+        facade_ = std::make_unique<ViewerController>(runtime_.get(), *session_, interaction_);
+        registry_ = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime_.get(), *session_, interaction_);
 
         const auto workspacePath = directory_.filePath(QStringLiteral("workspace.json"));
         // A confirmation run may point at the application's real workspace

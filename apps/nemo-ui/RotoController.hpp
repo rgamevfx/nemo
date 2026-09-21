@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ParameterInteraction.hpp"
 #include "nemo/core/document/Roto.hpp"
 #include "nemo/core/session/ProjectSession.hpp"
 
@@ -85,7 +86,10 @@ class RotoController final : public QObject {
     // True while one numeric gesture owns the session preview.
     Q_PROPERTY(bool gestureActive READ gestureActive NOTIFY gestureChanged)
 public:
-    RotoController(ProjectSession& session, NetworkId network, NodeId node, QObject* parent = nullptr);
+    RotoController(ProjectSession& session, ParameterInteraction& interaction, NetworkId network, NodeId node,
+                   QObject* parent = nullptr);
+    ~RotoController() override;
+    Q_INVOKABLE void prepareParameterInteraction();
 
     [[nodiscard]] QString networkId() const;
     [[nodiscard]] QString nodeId() const;
@@ -273,6 +277,7 @@ private:
     void refresh();
     bool fail(const QString& message);
     void clearError();
+    void finishGesture();
 
     [[nodiscard]] const RotoData* authoredData() const { return hasAuthored_ ? &authored_ : nullptr; }
     [[nodiscard]] const RotoData* evaluatedData() const;
@@ -333,6 +338,7 @@ private:
     void finishDraftTool();
 
     ProjectSession& session_;
+    ParameterInteraction& interaction_;
     NetworkId network_{kInvalidNetwork};
     NodeId node_{kInvalidNode};
     ProjectSession::Subscription subscription_;

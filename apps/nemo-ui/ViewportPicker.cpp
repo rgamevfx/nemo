@@ -56,17 +56,14 @@ void ViewportPicker::setStatus(const QString& text) {
 }
 
 void ViewportPicker::documentChanged() {
-    if (!active() || session_.document().stateRevision() == armedRevision_)
+    if (!active() || (session_.document().stateRevision() == armedRevision_ &&
+                      session_.projectGeneration() == armedProjectGeneration_))
         return;
     release();
     setStatus(QStringLiteral("The project changed while the picker was armed; nothing was authored"));
 }
 
 bool ViewportPicker::begin(const QString& networkId, const QVariant& nodeId, const QString& parameterKey) {
-    if (active()) {
-        setStatus(QStringLiteral("A viewport pick is already armed"));
-        return false;
-    }
     const QString key = parameterKey.trimmed();
     const QVariantMap inspector = controller_.parameterInspector(networkId, nodeId);
     if (!inspector.value(QStringLiteral("available")).toBool()) {
@@ -80,14 +77,11 @@ bool ViewportPicker::begin(const QString& networkId, const QVariant& nodeId, con
         setStatus(QStringLiteral("Parameter '%1' is not an available color value").arg(key));
         return false;
     }
-    const QString token = controller_.beginNodeParameterEdit(networkId, nodeId, key);
-    if (token.isEmpty()) {
-        setStatus(controller_.error());
-        return false;
-    }
-    capturedValue_ = captured;
+    controller_.parameterInteraction().acquire(this,
+                                               [](void* owner) { static_cast<ViewportPicker*>(owner)->cancel(); });
+    target_ = Target{networkId, nodeId, key, captured};
     armedRevision_ = session_.document().stateRevision();
-    token_ = token;
+    armedProjectGeneration_ = session_.projectGeneration();
     setStatus(QStringLiteral("Click a viewer to sample %1; Escape cancels").arg(key));
     emit activeChanged();
     return true;
@@ -100,11 +94,10 @@ void ViewportPicker::cancel() {
 
 void ViewportPicker::release() {
     const bool wasActive = active();
-    const QString token = std::exchange(token_, {});
-    capturedValue_.clear();
+    target_.reset();
     armedRevision_ = 0;
-    if (!token.isEmpty())
-        static_cast<void>(controller_.cancelNodeParameterEdit(token));
+    armedProjectGeneration_ = 0;
+    controller_.parameterInteraction().release(this);
     dropOutstanding();
     if (wasActive)
         emit activeChanged();
@@ -198,16 +191,21 @@ void ViewportPicker::receive() {
             return;
         }
     }
-    QVariantList value = capturedValue_;
+    if (!target_)
+        return;
+    auto target = std::move(*target_);
     for (int index = 0; index < 3; ++index)
-        value[index] = static_cast<double>(sample->rgba[static_cast<std::size_t>(index)]);
+        target.value[index] = static_cast<double>(sample->rgba[static_cast<std::size_t>(index)]);
 
-    // End our arm before commit publishes its document revision. The controller
-    // retains the sole validated gesture until update/commit consumes it.
-    const QString token = std::exchange(token_, {});
+    // No transaction is reserved while waiting for a click or a worker. Only
+    // this accepted result acquires the ordinary one-undo parameter gesture.
     release();
-    emit activeChanged();
-    if (!controller_.updateNodeParameterEdit(token, value)) {
+    const QString token = controller_.beginNodeParameterEdit(target.network, target.node, target.key);
+    if (token.isEmpty()) {
+        setStatus(controller_.error());
+        return;
+    }
+    if (!controller_.updateNodeParameterEdit(token, target.value)) {
         const QString error = controller_.error();
         static_cast<void>(controller_.cancelNodeParameterEdit(token));
         setStatus(error);

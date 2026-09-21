@@ -16,7 +16,7 @@
 namespace nemo::ui {
 class ViewerRuntime;
 
-// GUI-thread owner of one armed parameter gesture. A click in an open viewer
+// GUI-thread owner of one armed pick, not a document gesture. A viewer click
 // queues one working-space pixel on a dedicated bounded runtime destination.
 // Only a current result commits; cancel, stale results and failures author nothing.
 // Runtime, facade and session are injected and must outlive this object.
@@ -30,7 +30,7 @@ public:
                    QObject* parent = nullptr);
     ~ViewportPicker() override;
 
-    [[nodiscard]] bool active() const { return !token_.isEmpty(); }
+    [[nodiscard]] bool active() const { return target_.has_value(); }
     [[nodiscard]] bool picking() const { return outstanding_ != 0; }
     [[nodiscard]] QString status() const { return status_; }
 
@@ -58,9 +58,15 @@ private:
     ViewerRuntime& runtime_;
     ViewerController& controller_;
     nemo::ProjectSession& session_;
-    QVariantList capturedValue_;
+    struct Target {
+        QString network;
+        QVariant node;
+        QString key;
+        QVariantList value;
+    };
+    std::optional<Target> target_;
     std::uint64_t armedRevision_{};
-    QString token_;
+    std::uint64_t armedProjectGeneration_{};
     std::uint64_t outstanding_{};
     std::uint64_t nextRequestId_{};
     std::uint64_t submittedRevision_{};

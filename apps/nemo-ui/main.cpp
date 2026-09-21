@@ -192,7 +192,8 @@ int main(int argc, char* argv[]) {
         // empty project color configuration stay in effect.
     }
     nemo::ui::PanelContextRouter panelContextRouter(projectSession);
-    nemo::ui::ViewerController viewerController(&runtime, projectSession);
+    nemo::ui::ParameterInteraction parameterInteraction;
+    nemo::ui::ViewerController viewerController(&runtime, projectSession, parameterInteraction);
     // The shared facade keeps serving the graph/parameters/timeline panels and
     // the command-line source load. It owns a destination so source probing and
     // metadata keep working, but it never renders: no ViewerItem attaches to
@@ -200,7 +201,7 @@ int main(int argc, char* argv[]) {
     viewerController.setDestination(runtime.allocateDestination(QStringLiteral("shared-facade")));
     // Panels own their renderers. Declared before the QML engine so the
     // registry outlives every panel that borrowed a controller from it.
-    nemo::ui::ViewerControllerRegistry viewerControllers(&runtime, projectSession);
+    nemo::ui::ViewerControllerRegistry viewerControllers(&runtime, projectSession, parameterInteraction);
     QObject::connect(&viewerController, &nemo::ui::ViewerController::sourceChanged, &panelContextRouter, [&] {
         if (!viewerController.hasSource())
             return;

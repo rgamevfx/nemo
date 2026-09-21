@@ -17,6 +17,7 @@
 #include "NativeFileChooser.hpp"
 #include "PanelContextRouter.hpp"
 #include "ParameterEditorRegistry.hpp"
+#include "ParameterInteraction.hpp"
 #include "ProjectFileController.hpp"
 #include "ViewerController.hpp"
 #include "ViewerControllerRegistry.hpp"
@@ -143,6 +144,9 @@ protected:
     QTemporaryDir directory_;
     std::unique_ptr<nemo::ui::ViewerRuntime> runtime_;
     std::unique_ptr<nemo::ProjectSession> session_;
+    // One presentation interaction per project (issue #102): every controller
+    // this fixture composes for the session shares it, and it outlives them.
+    nemo::ui::ParameterInteraction interaction_;
     // The shared presentation history the application composes: declared after
     // the session and before the engine, so both lifetimes stay valid.
     std::unique_ptr<nemo::ui::HistoryController> history_;
@@ -207,8 +211,8 @@ protected:
         session_ = std::make_unique<nemo::ProjectSession>();
         history_ = std::make_unique<nemo::ui::HistoryController>(*session_);
         router_ = std::make_unique<nemo::ui::PanelContextRouter>(*session_);
-        facade_ = std::make_unique<nemo::ui::ViewerController>(runtime_.get(), *session_);
-        registry_ = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime_.get(), *session_);
+        facade_ = std::make_unique<nemo::ui::ViewerController>(runtime_.get(), *session_, interaction_);
+        registry_ = std::make_unique<nemo::ui::ViewerControllerRegistry>(runtime_.get(), *session_, interaction_);
 
         // A viewer and a parameters panel in the SAME group, so the handles and
         // the inspector really share the group context the contract describes.
@@ -368,6 +372,30 @@ protected:
         return std::nan("");
     }
 
+    // The authored colour of one parameter, or NaN components when it is not a
+    // colour address.
+    std::array<float, 4> authoredColor(const QString& node, const QString& key) const {
+        for (const auto& value :
+             session_->queryValues(networkIdentity(network_), nodeIdentity(node), key.toStdString())) {
+            if (value.key != key.toStdString())
+                continue;
+            if (const auto* color = std::get_if<nemo::ColorValue>(&value.value))
+                return color->value;
+        }
+        return {std::nanf(""), std::nanf(""), std::nanf(""), std::nanf("")};
+    }
+
+    std::string authoredChoice(const QString& node, const QString& key) const {
+        for (const auto& value :
+             session_->queryValues(networkIdentity(network_), nodeIdentity(node), key.toStdString())) {
+            if (value.key != key.toStdString())
+                continue;
+            if (const auto* choice = std::get_if<nemo::ChoiceValue>(&value.value))
+                return choice->value;
+        }
+        return {};
+    }
+
     void setCropBox(double x, double y, double right, double top) {
         // Four authored edits through the shared command path; the caller states
         // the expected box afterwards, so this is setup only.
@@ -380,6 +408,9 @@ protected:
     void inspect(const QString& node) {
         auto* panel = parametersPanel();
         ASSERT_NE(panel, nullptr);
+        // Window exposure can precede the panel's queued workspace restoration.
+        // Do not open an inspector that startup restoration would then replace.
+        ASSERT_TRUE(waitFor([&] { return panel->property("stateReady").toBool(); }, 2000));
         QVariant result;
         ASSERT_TRUE(QMetaObject::invokeMethod(panel, "openInspector", Qt::DirectConnection,
                                               Q_RETURN_ARG(QVariant, result), Q_ARG(QVariant, network_),
@@ -458,6 +489,26 @@ protected:
     void awaitOverlay() {
         ASSERT_TRUE(waitFor([this] { return overlay().isValid() && !overlay().isNull(); }))
             << "the inspected, directly viewed crop must publish a handle overlay";
+    }
+
+    // A grade node downstream of the crop so the panel REALLY displays it, with
+    // its inspector open: the pick arm's colour parameter and the sampled frame
+    // then come from the same presented target. Empty when the graph refuses it.
+    QString createInspectedGrade(const QString& name) {
+        const QString grade = controller_->createGraphNode(network_, QStringLiteral("grade"), name, 0.0, 270.0, {}, {});
+        if (grade.isEmpty() || !controller_->connectOrReplaceGraph(network_, cropId_, 0, grade, 0) ||
+            !controller_->connectOrReplaceGraph(network_, grade, 0, viewerId_, 0))
+            return {};
+        if (!waitFor([&] {
+                const auto shown = controller_->presentation();
+                return controller_->viewerTargetId() == grade && shown && !controller_->outdated() &&
+                       QString::number(static_cast<qulonglong>(shown->request.output)) == grade;
+            })) {
+            return {};
+        }
+        inspect(grade);
+        QTest::qWait(100);
+        return grade;
     }
 };
 
@@ -1255,8 +1306,15 @@ TEST_F(CropReformatSurface, Issue94WriteInspectorEditsAndDeliversExplicitly) {
     controller_->setNodeParameter(write, QStringLiteral("precision"), QStringLiteral("float"));
     controller_->setNodeParameter(write, QStringLiteral("compression"), QStringLiteral("dwaa"));
     inspect(write);
-    ASSERT_TRUE(waitFor([&] { return item(QStringLiteral("writeDeliveryEditor_") + write) != nullptr; }, 2000))
-        << "Write's registered section must render, not leave an empty File row";
+    const bool editorLoaded =
+        waitFor([&] { return item(QStringLiteral("writeDeliveryEditor_") + write) != nullptr; }, 2000);
+    if (!editorLoaded) {
+        capture(QStringLiteral("issue94-write-load-failure"));
+        for (const auto& warning : *warnings_)
+            for (const auto& error : warning.front().value<QList<QQmlError>>())
+                ADD_FAILURE() << error.toString().toStdString();
+    }
+    ASSERT_TRUE(editorLoaded) << "Write's registered section must render, not leave an empty File row";
 
     // One combo's current entries. A model assigned from QML crosses back as a
     // string list, a variant list or a JS sequence depending on how the binding
@@ -1751,11 +1809,18 @@ TEST_F(CropReformatSurface, Issue102ViewportPickSamplesTheDisplayedTarget) {
     EXPECT_FALSE(viewportPicker_->status().isEmpty());
     EXPECT_EQ(authoredGain(), authored) << "a refused click never authors a value";
 
-    // A parameter that is not a colour is refused before anything is armed.
+    // A parameter that is not a colour is refused before anything is armed, and
+    // the refused arm leaves the live pick alone.
     EXPECT_FALSE(viewportPicker_->begin(network_, cropId_, QStringLiteral("x")));
     EXPECT_TRUE(viewportPicker_->active()) << "the refused arm must leave the live one alone";
-    EXPECT_FALSE(viewportPicker_->begin(network_, grade, QStringLiteral("gain")))
-        << "a second arm is refused while one is live";
+
+    // A valid re-arm REPLACES the live pick (issue #102): the artist's newest
+    // intent owns the pending sample instead of being refused while the previous
+    // parameter still holds the arm.
+    EXPECT_TRUE(viewportPicker_->begin(network_, grade, QStringLiteral("gain")))
+        << viewportPicker_->status().toStdString();
+    EXPECT_TRUE(viewportPicker_->active()) << "the replacement keeps the pick armed";
+    EXPECT_FALSE(viewportPicker_->status().isEmpty()) << "an armed pick states what the next click will do";
 
     // Escape withdraws the armed pick from the viewer too, without history.
     const auto revisionBeforeCancel = session_->revision();
@@ -1775,12 +1840,262 @@ TEST_F(CropReformatSurface, Issue102ViewportPickSamplesTheDisplayedTarget) {
     QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, click);
     controller_->setNodeParameter(grade, QStringLiteral("mix"), 0.75);
     EXPECT_FALSE(viewportPicker_->active());
-    EXPECT_FALSE(viewportPicker_->status().isEmpty());
     const auto revisionAfterChange = session_->revision();
     QTest::qWait(500);
     EXPECT_EQ(authoredGain()[3], 0.25F) << "the authored value must be untouched";
     EXPECT_NEAR(authoredGain()[0], authored[0], 1e-6F) << "a stale sample never lands after the project moved";
     EXPECT_EQ(session_->revision(), revisionAfterChange) << "a released pick publishes no history entry";
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+TEST_F(CropReformatSurface, AbandonedPickerYieldsToAnotherParameter) {
+    awaitFirstFrame();
+    const auto grade = controller_->createGraphNode(network_, "grade", "HandoffGrade", 0, 270, {}, {});
+    ASSERT_FALSE(grade.isEmpty());
+    controller_->setNodeParameter(grade, "gain", QVariantList{0.5, 0.5, 0.5, 0.25});
+    inspect(grade);
+    QTest::qWait(100);
+    auto* pick = item("channels_pick_" + grade + "_gain");
+    auto* field = item("channels_linked_" + grade + "_multiply");
+    ASSERT_NE(pick, nullptr);
+    ASSERT_NE(field, nullptr);
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(pick));
+    ASSERT_TRUE(viewportPicker_->active());
+    const auto before = session_->revision();
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(field));
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    QTest::keyClick(window_, Qt::Key_2);
+    QTest::keyClick(window_, Qt::Key_Return);
+    QTest::qWait(40);
+    EXPECT_FALSE(viewportPicker_->active());
+    EXPECT_EQ(session_->queryValues(networkIdentity(network_), nodeIdentity(grade), "multiply").front().value,
+              (nemo::ParameterValue{nemo::ColorValue{{2, 2, 2, 1}}}));
+    EXPECT_EQ(session_->queryValues(networkIdentity(network_), nodeIdentity(grade), "gain").front().value,
+              (nemo::ParameterValue{nemo::ColorValue{{0.5, 0.5, 0.5, 0.25}}}));
+    EXPECT_EQ(session_->revision(), before + 1) << facade_->error().toStdString();
+    capture("issue102-picker-handoff");
+
+    // An outside project change while the pick is armed must leave no core
+    // gesture behind: the next parameter interaction still begins normally, so a
+    // retired pick can never occupy the session gesture permanently.
+    ASSERT_TRUE(viewportPicker_->begin(network_, grade, "gain"));
+    ASSERT_TRUE(session_
+                    ->submit(nemo::setParamCommand(networkIdentity(network_), nodeIdentity(grade), "mix", 0.65),
+                             {.expectedRevision = session_->revision()})
+                    .committed);
+    QTest::qWait(20);
+    EXPECT_FALSE(viewportPicker_->active()) << "an outside project change retires the armed pick";
+    const auto afterMix = session_->revision();
+    const auto orphanCheck = controller_->beginNodeParameterEdit(network_, grade, "multiply");
+    ASSERT_FALSE(orphanCheck.isEmpty()) << controller_->error().toStdString();
+    EXPECT_TRUE(controller_->cancelNodeParameterEdit(orphanCheck));
+    EXPECT_EQ(session_->revision(), afterMix) << "a cancelled interaction publishes nothing";
+}
+
+// Issue #102: arming a valid pick REPLACES the live arm instead of being
+// refused, and the replacement owns the pending sample: the newest parameter
+// takes the sampled colour while the abandoned one keeps its authored value.
+TEST_F(CropReformatSurface, RearmedPickerSamplesOnlyTheNewestParameter) {
+    awaitFirstFrame();
+    const QString grade = createInspectedGrade(QStringLiteral("rearmGrade"));
+    ASSERT_FALSE(grade.isEmpty());
+    controller_->setNodeParameter(grade, QStringLiteral("gain"), QVariantList{0.5, 0.5, 0.5, 0.25});
+    controller_->setNodeParameter(grade, QStringLiteral("multiply"), QVariantList{0.125, 0.125, 0.125, 1.0});
+    ASSERT_TRUE(waitFor([&] { return !controller_->outdated(); }));
+    QTest::qWait(150);
+
+    const auto gainBefore = authoredColor(grade, QStringLiteral("gain"));
+    ASSERT_FLOAT_EQ(gainBefore[3], 0.25F) << "the scenario starts from a non-opaque authored alpha";
+
+    ASSERT_TRUE(viewportPicker_->begin(network_, grade, QStringLiteral("gain")));
+    ASSERT_TRUE(viewportPicker_->active());
+    ASSERT_TRUE(viewportPicker_->begin(network_, grade, QStringLiteral("multiply")))
+        << "a valid re-arm replaces the live pick: " << viewportPicker_->status().toStdString();
+    EXPECT_TRUE(viewportPicker_->active()) << "the replacement keeps the pick armed";
+    const auto revisionBefore = session_->revision();
+    const int width = static_cast<int>(controller_->compositionSize().width());
+    const int height = static_cast<int>(controller_->compositionSize().height());
+    ASSERT_GT(width, 8);
+    ASSERT_GT(height, 8);
+    const auto demand = controller_->workingSampleRequest(width / 2.0, height / 2.0);
+    ASSERT_TRUE(demand.has_value());
+    const auto expected = nemo::evaluateCpu(demand->document, demand->request).image.pixel(0, 0);
+    ASSERT_TRUE(viewportPicker_->sample(controller_, width / 2.0, height / 2.0))
+        << viewportPicker_->status().toStdString();
+    ASSERT_TRUE(waitFor([&] { return !viewportPicker_->active(); }, 120000)) << viewportPicker_->status().toStdString();
+    EXPECT_EQ(session_->revision(), revisionBefore + 1) << "the sample is one history entry";
+
+    const auto multiplyAfter = authoredColor(grade, QStringLiteral("multiply"));
+    for (std::size_t component = 0; component < 3; ++component)
+        EXPECT_NEAR(multiplyAfter[component], expected[component], 1e-3F);
+    EXPECT_FLOAT_EQ(multiplyAfter[3], 1.0F) << "the parameter's own alpha is preserved";
+    EXPECT_FLOAT_EQ(authoredColor(grade, QStringLiteral("gain"))[0], gainBefore[0])
+        << "the abandoned arm must author nothing";
+    EXPECT_FLOAT_EQ(authoredColor(grade, QStringLiteral("gain"))[3], 0.25F);
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// Issue #102: a sample still in flight when another parameter interaction starts
+// is cancelled, so its late answer never lands and the interaction the artist
+// actually started is the only history entry.
+TEST_F(CropReformatSurface, LateSampleNeverLandsAfterAnotherParameterStarts) {
+    awaitFirstFrame();
+    const QString grade = createInspectedGrade(QStringLiteral("lateGrade"));
+    ASSERT_FALSE(grade.isEmpty());
+    controller_->setNodeParameter(grade, QStringLiteral("gain"), QVariantList{0.5, 0.5, 0.5, 0.25});
+    controller_->setNodeParameter(grade, QStringLiteral("multiply"), QVariantList{0.125, 0.125, 0.125, 1.0});
+    ASSERT_TRUE(waitFor([&] { return !controller_->outdated(); }));
+    QTest::qWait(150);
+    auto* field = item(QStringLiteral("channels_linked_") + grade + QStringLiteral("_multiply"));
+    ASSERT_NE(field, nullptr);
+
+    const auto gainBefore = authoredColor(grade, QStringLiteral("gain"));
+    ASSERT_TRUE(viewportPicker_->begin(network_, grade, QStringLiteral("gain")));
+    ASSERT_TRUE(viewportPicker_->active());
+    const int width = static_cast<int>(controller_->compositionSize().width());
+    const int height = static_cast<int>(controller_->compositionSize().height());
+    ASSERT_TRUE(viewportPicker_->sample(controller_, width / 2.0, height / 2.0))
+        << viewportPicker_->status().toStdString();
+    EXPECT_TRUE(viewportPicker_->picking()) << "the sample must still be in flight for this scenario";
+
+    const auto typedRevision = session_->revision();
+    // QWindow QtTest delivers the click through the platform input path before
+    // processing queued events, so the pending sample is superseded first.
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(field));
+    EXPECT_FALSE(viewportPicker_->active()) << "starting another parameter interaction retires the pick";
+    EXPECT_FALSE(viewportPicker_->picking());
+    QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+    typeText(window_, QStringLiteral("2"));
+    QTest::keyClick(window_, Qt::Key_Return);
+    ASSERT_TRUE(waitFor([&] { return authoredColor(grade, QStringLiteral("multiply"))[0] == 2.0F; }, 2000))
+        << "the started edit must commit";
+    QTest::qWait(500);
+    EXPECT_FALSE(viewportPicker_->picking());
+    EXPECT_EQ(session_->revision(), typedRevision + 1) << "the late sample publishes nothing";
+    EXPECT_FLOAT_EQ(authoredColor(grade, QStringLiteral("gain"))[0], gainBefore[0])
+        << "the late sample never lands in the abandoned parameter";
+    EXPECT_FLOAT_EQ(authoredColor(grade, QStringLiteral("gain"))[3], 0.25F);
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// Issue #102: the representative discrete and continuous inspector controls —
+// a checkbox, a choice and a scrub — all take the session interaction over from
+// an armed pick, which is cancelled silently and authors nothing.
+TEST_F(CropReformatSurface, CheckboxChoiceAndScrubEditsCancelAnArmedPick) {
+    awaitFirstFrame();
+    const QString grade = controller_->createGraphNode(network_, QStringLiteral("grade"), QStringLiteral("ownerGrade"),
+                                                       0.0, 450.0, {}, {});
+    ASSERT_FALSE(grade.isEmpty());
+    const QString reformat = controller_->createGraphNode(network_, QStringLiteral("reformat"),
+                                                          QStringLiteral("ownerReformat"), 0.0, 540.0, {}, {});
+    ASSERT_FALSE(reformat.isEmpty()) << "the reformat node type must be registered";
+    controller_->setNodeParameter(grade, QStringLiteral("gain"), QVariantList{0.5, 0.5, 0.5, 0.25});
+    controller_->setNodeParameter(grade, QStringLiteral("multiply"), QVariantList{0.25, 0.25, 0.25, 1.0});
+    controller_->setNodeParameter(reformat, QStringLiteral("flip"), false);
+    controller_->setNodeParameter(reformat, QStringLiteral("resize"), QStringLiteral("fit"));
+    inspect(grade);
+    inspect(reformat);
+    QTest::qWait(100);
+
+    const auto gainBefore = authoredColor(grade, QStringLiteral("gain"));
+    const auto arm = [&] {
+        const bool armed = viewportPicker_->begin(network_, grade, QStringLiteral("gain"));
+        EXPECT_TRUE(armed) << viewportPicker_->status().toStdString();
+        QTest::qWait(20);
+        return armed;
+    };
+
+    // A checkbox: one authored transition, and the armed pick is retired.
+    auto* flip = item(QStringLiteral("toggle_") + reformat + QStringLiteral("_flip"));
+    ASSERT_NE(flip, nullptr);
+    ASSERT_TRUE(flip->isVisible());
+    const auto toggleRevision = session_->revision();
+    ASSERT_TRUE(arm());
+    ASSERT_TRUE(viewportPicker_->active());
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(flip));
+    ASSERT_TRUE(waitFor([&] {
+        return std::get<bool>(
+            session_->queryValues(networkIdentity(network_), nodeIdentity(reformat), "flip").front().value);
+    })) << "the toggle must author its new state";
+    EXPECT_EQ(session_->revision(), toggleRevision + 1) << "one toggle is one history entry";
+    EXPECT_FALSE(viewportPicker_->active()) << "the toggle retires the armed pick";
+    EXPECT_TRUE(viewportPicker_->status().isEmpty()) << "the handoff cancels the arm silently";
+
+    // A choice: picking an entry authors once and retires the arm.
+    auto* resize = item(QStringLiteral("choice_") + reformat + QStringLiteral("_resize"));
+    ASSERT_NE(resize, nullptr);
+    const auto resizeBefore = authoredChoice(reformat, QStringLiteral("resize"));
+    const auto choiceRevision = session_->revision();
+    ASSERT_TRUE(arm());
+    ASSERT_TRUE(viewportPicker_->active());
+    QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(resize));
+    QTest::qWait(80);
+    QTest::keyClick(window_, Qt::Key_Down);
+    QTest::keyClick(window_, Qt::Key_Return);
+    ASSERT_TRUE(waitFor([&] { return authoredChoice(reformat, QStringLiteral("resize")) != resizeBefore; }, 2000))
+        << "the choice must author the selected entry";
+    EXPECT_EQ(session_->revision(), choiceRevision + 1) << "one choice is one history entry";
+    EXPECT_FALSE(viewportPicker_->active()) << "the choice retires the armed pick";
+
+    // A scrub on a real numeric cell: one history entry, and the arm is gone.
+    auto* multiply = item(QStringLiteral("channels_linked_") + grade + QStringLiteral("_multiply"));
+    ASSERT_NE(multiply, nullptr);
+    ASSERT_TRUE(multiply->isVisible());
+    const auto multiplyBefore = authoredColor(grade, QStringLiteral("multiply"));
+    const auto scrubRevision = session_->revision();
+    ASSERT_TRUE(arm());
+    ASSERT_TRUE(viewportPicker_->active());
+    drag(center(multiply), center(multiply) + QPoint(40, 0));
+    ASSERT_TRUE(waitFor([&] { return authoredColor(grade, QStringLiteral("multiply")) != multiplyBefore; }, 3000))
+        << "a real scrub must author the parameter";
+    EXPECT_EQ(session_->revision(), scrubRevision + 1) << "one scrub is one history entry";
+    EXPECT_FALSE(viewportPicker_->active()) << "the scrub retires the armed pick";
+    EXPECT_FLOAT_EQ(authoredColor(grade, QStringLiteral("gain"))[0], gainBefore[0])
+        << "no handled interaction may author the abandoned pick's parameter";
+    EXPECT_FLOAT_EQ(authoredColor(grade, QStringLiteral("gain"))[3], 0.25F);
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+// A new inspector interaction retires the viewer's held crop gesture. Motion
+// and release from the old press must not commit or cancel its replacement.
+TEST_F(CropReformatSurface, InspectorPickerRetiresViewerHandleGesture) {
+    awaitFirstFrame();
+    const QString grade = controller_->createGraphNode(network_, QStringLiteral("grade"), QStringLiteral("panelGrade"),
+                                                       0.0, 450.0, {}, {});
+    ASSERT_FALSE(grade.isEmpty());
+    controller_->setNodeParameter(grade, QStringLiteral("gain"), QVariantList{0.5, 0.5, 0.5, 0.25});
+    setCropBox(200.0, 200.0, 1000.0, 900.0);
+    QTest::qWait(200);
+    // Picker input retains precedence over crop handles while armed; begin
+    // the crop first, then supersede it through the inspector's picker owner.
+    inspect(cropId_);
+    awaitOverlay();
+
+    const QRectF before = cropRect();
+    ASSERT_GT(before.width(), 8.0);
+    const auto gainBefore = authoredColor(grade, QStringLiteral("gain"));
+    const auto revisionBefore = session_->revision();
+
+    const QPoint start(static_cast<int>(std::lround(before.right())) - 1,
+                       static_cast<int>(std::lround(before.center().y())));
+    QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, start);
+    moveTo(QPoint(start.x() + 20, start.y()));
+    ASSERT_TRUE(viewerPanel()->property("cropGestureActive").toBool());
+    ASSERT_TRUE(viewportPicker_->begin(network_, grade, QStringLiteral("gain")));
+    EXPECT_FALSE(viewerPanel()->property("cropGestureActive").toBool());
+    moveTo(QPoint(start.x() + 40, start.y()));
+    QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, QPoint(start.x() + 40, start.y()));
+    QTest::qWait(30);
+
+    EXPECT_EQ(authoredNumber(cropId_, QStringLiteral("right")), 1000.0);
+    EXPECT_EQ(session_->revision(), revisionBefore);
+    EXPECT_TRUE(viewportPicker_->active()) << "the old release cannot cancel the new interaction";
+    viewportPicker_->cancel();
+    drag(start, QPoint(start.x() + 40, start.y()));
+    EXPECT_NE(authoredNumber(cropId_, QStringLiteral("right")), 1000.0);
+    EXPECT_EQ(session_->revision(), revisionBefore + 1);
+    EXPECT_FLOAT_EQ(authoredColor(grade, QStringLiteral("gain"))[0], gainBefore[0])
+        << "the retired pick must author nothing";
     EXPECT_EQ(warnings_->count(), 0);
 }
 

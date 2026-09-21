@@ -902,8 +902,9 @@ struct ParameterKeyState {
     return std::nullopt;
 }
 }  // namespace
-ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session)
-    : runtime_(runtime), session_(session), schedulerPoll_(this), playback_(this) {
+ViewerController::ViewerController(ViewerRuntime* runtime, nemo::ProjectSession& session,
+                                   ParameterInteraction& interaction)
+    : runtime_(runtime), session_(session), interaction_(interaction), schedulerPoll_(this), playback_(this) {
     connect(runtime_, &ViewerRuntime::resultReady, this, &ViewerController::receive, Qt::QueuedConnection);
     connect(
         runtime_, &ViewerRuntime::rangeFailed, this,
@@ -949,7 +950,10 @@ void ViewerController::sessionDocumentChanged(void* context) noexcept {
     }
 }
 
-ViewerController::~ViewerController() = default;
+ViewerController::~ViewerController() {
+    if (parameterGestureToken_ != 0)
+        static_cast<void>(cancelNodeParameterEdit(QString::number(parameterGestureToken_)));
+}
 
 QObject* ViewerController::createAnimationModel(QObject* owner) {
     if (!owner)
@@ -971,7 +975,7 @@ QObject* ViewerController::createRotoControllerFor(const QString& networkValue, 
         found->second->attachView(owner);
         return found->second;
     }
-    auto created = std::make_unique<RotoController>(session_, *network, static_cast<NodeId>(*node), this);
+    auto created = std::make_unique<RotoController>(session_, interaction_, *network, static_cast<NodeId>(*node), this);
     rotoControllers_.emplace(key, created.get());
     created->attachView(owner);
     return created.release();  // QObject parent owns the adapter.
@@ -2712,6 +2716,7 @@ QString ViewerController::pasteGraphSelection(const QString& networkValue, doubl
 }
 
 void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString& keyValue, const QVariant& value) {
+    prepareParameterInteraction();
     // QML identities travel as decimal strings, not lossy JavaScript doubles.
     bool validId = false;
     const auto nodeId = nodeValue.toString().toULongLong(&validId);
@@ -2748,6 +2753,7 @@ void ViewerController::setNodeParameter(const QVariant& nodeValue, const QString
 }
 
 void ViewerController::setNodeParameterText(const QVariant& nodeValue, const QString& keyValue, const QString& text) {
+    prepareParameterInteraction();
     bool validId = false;
     const auto nodeId = nodeValue.toString().toULongLong(&validId);
     const auto key = keyValue.trimmed().toStdString();
@@ -2772,6 +2778,7 @@ void ViewerController::setNodeParameterText(const QVariant& nodeValue, const QSt
 
 bool ViewerController::resetNodeParameterEdit(const QString& networkValue, const QVariant& nodeValue,
                                               const QString& keyValue) {
+    prepareParameterInteraction();
     const auto key = keyValue.trimmed();
     if (key.isEmpty()) {
         fail(QStringLiteral("node parameter reset requires a parameter key"));
@@ -2812,6 +2819,7 @@ bool ViewerController::resetNodeParameterEdit(const QString& networkValue, const
 }
 
 void ViewerController::setNodeParameters(const QVariantList& edits) {
+    prepareParameterInteraction();
     if (edits.isEmpty()) {
         fail(QStringLiteral("parameter batch requires at least one edit"));
         return;
@@ -3060,6 +3068,7 @@ QString ViewerController::nodeParameterKeyStatus(const QString& networkValue, co
 
 bool ViewerController::keyNodeParameter(const QString& networkValue, const QVariant& nodeValue,
                                         const QString& keyValue) {
+    prepareParameterInteraction();
     QString error;
     const auto target =
         resolveInspectorTarget(session_.document(), networkValue, nodeValue, keyValue.trimmed().toStdString(), error);
@@ -3107,6 +3116,7 @@ bool ViewerController::keyNodeParameter(const QString& networkValue, const QVari
 
 bool ViewerController::removeNodeParameterKey(const QString& networkValue, const QVariant& nodeValue,
                                               const QString& keyValue) {
+    prepareParameterInteraction();
     QString error;
     const auto target =
         resolveInspectorTarget(session_.document(), networkValue, nodeValue, keyValue.trimmed().toStdString(), error);
@@ -3141,6 +3151,19 @@ bool ViewerController::removeNodeParameterKey(const QString& networkValue, const
     }
 }
 
+void ViewerController::prepareParameterInteraction() {
+    interaction_.cancel();
+}
+
+void ViewerController::finishParameterGesture() {
+    const auto token = std::exchange(parameterGestureToken_, 0);
+    parameterGestureAddress_.reset();
+    parameterGestureInvalid_ = false;
+    interaction_.release(this);
+    if (token != 0)
+        emit parameterEditEnded(QString::number(token));
+}
+
 QString ViewerController::beginNodeParameterEdit(const QString& networkValue, const QVariant& nodeValue,
                                                  const QString& keyValue) {
     return beginParameterGestureFor(networkValue, nodeValue, QStringList{keyValue});
@@ -3158,10 +3181,7 @@ QString ViewerController::beginNodeParameterEdits(const QString& networkValue, c
 // private keyed/static branch lives here.
 QString ViewerController::beginParameterGestureFor(const QString& networkValue, const QVariant& nodeValue,
                                                    const QStringList& keys) {
-    if (parameterGestureToken_ != 0) {
-        fail(QStringLiteral("a node parameter edit is already in progress"));
-        return {};
-    }
+    prepareParameterInteraction();
     if (keys.isEmpty()) {
         fail(QStringLiteral("node parameter edit requires at least one parameter key"));
         return {};
@@ -3214,6 +3234,10 @@ QString ViewerController::beginParameterGestureFor(const QString& networkValue, 
         parameterGestureAddress_ = address;
         parameterGestureToken_ = gesture.token;
         parameterGestureInvalid_ = false;
+        interaction_.acquire(this, [](void* owner) {
+            auto* controller = static_cast<ViewerController*>(owner);
+            static_cast<void>(controller->cancelNodeParameterEdit(QString::number(controller->parameterGestureToken_)));
+        });
         clearError();
         return QString::number(gesture.token);
     } catch (const std::exception& failure) {
@@ -3326,9 +3350,7 @@ bool ViewerController::commitNodeParameterEdit(const QString& tokenValue) {
     if (parameterGestureInvalid_) {
         const auto problem = error_.isEmpty() ? QStringLiteral("node parameter edit was rejected") : error_;
         static_cast<void>(session_.cancelParameterGesture(parameterGestureToken_));
-        parameterGestureAddress_.reset();
-        parameterGestureToken_ = 0;
-        parameterGestureInvalid_ = false;
+        finishParameterGesture();
         fail(problem);
         return false;
     }
@@ -3337,9 +3359,7 @@ bool ViewerController::commitNodeParameterEdit(const QString& tokenValue) {
         // A conflict leaves the session gesture registered; release it so the
         // next gesture is not blocked by a stale preview.
         static_cast<void>(session_.cancelParameterGesture(parameterGestureToken_));
-    parameterGestureAddress_.reset();
-    parameterGestureToken_ = 0;
-    parameterGestureInvalid_ = false;
+    finishParameterGesture();
     if (!result.committed && !result.error) {
         // The committed batch was entirely unchanged: the owner publishes
         // nothing and reports a non-committed, error-free result. That is a
@@ -3359,9 +3379,19 @@ bool ViewerController::cancelNodeParameterEdit(const QString& tokenValue) {
     }
     const auto rejected = parameterGestureInvalid_;
     const auto result = session_.cancelParameterGesture(parameterGestureToken_);
-    parameterGestureAddress_.reset();
-    parameterGestureToken_ = 0;
-    parameterGestureInvalid_ = false;
+    if (result.error && result.error->code == EditErrorCode::ReentrantMutation) {
+        // Do not forget a token the session still owns. A view can be retired
+        // during publication; complete its cancellation after notification.
+        QMetaObject::invokeMethod(
+            this,
+            [this, token] {
+                if (parameterGestureToken_ == token)
+                    static_cast<void>(cancelNodeParameterEdit(QString::number(token)));
+            },
+            Qt::QueuedConnection);
+        return false;
+    }
+    finishParameterGesture();
     if (result.error) {
         fail(QString::fromStdString(result.error->message));
         return false;

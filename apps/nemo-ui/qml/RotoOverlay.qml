@@ -1695,6 +1695,16 @@ Item {
             }
             function onDraftChanged() { canvas.requestPaint() }
             function onToolChanged() { canvas.requestPaint() }
+            // A drag whose gesture the session handed to another control ends
+            // with it: the local drag is dropped, so no later move can preview
+            // into or publish over the replacement.
+            function onGestureChanged() {
+                var drag = overlay.drag
+                if (drag !== null && overlay.roto !== null && !overlay.roto.gestureActive
+                        && String(drag.token || "").length > 0)
+                    overlay.drag = null
+                canvas.requestPaint()
+            }
         }
         Connections {
             target: overlay.theme
